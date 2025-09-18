@@ -3,26 +3,39 @@
 Author: Maxim Zaks  
 Date: September 18, 2025
 
-This document proposes the introduction of a new type in the standard library that allows developers to define compile-time optional fields.
+This document proposes the introduction of a new type in the standard library
+that allows developers to define compile-time optional fields.
 
-# Motivation
+## Motivation
 
 The memory footprint of a type can be divided into:
 
-- **Inherent complexity**: required for representing the data itself (e.g., the encoded contents of a string).  
-- **Feature-based complexity**: additional fields to enable certain operations (e.g., size and capacity fields for in-place mutation of a string).
+- **Inherent complexity**: required for representing the data itself (e.g., the
+encoded contents of a string).  
+- **Feature-based complexity**: additional fields to enable certain operations
+(e.g., size and capacity fields for in-place mutation of a string).
 
-Traditionally, reduced-feature variants are modeled as distinct types. However, Mojo’s compile-time metaprogramming allows types to be parameterized. This makes it possible to conditionally include or exclude fields, reducing memory footprint without introducing many new types. We propose standardizing this pattern with an `OptionalField` type.
+Traditionally, reduced-feature variants are modeled as distinct types. However,
+Mojo’s compile-time metaprogramming allows types to be parameterized. This makes
+it possible to conditionally include or exclude fields, reducing memory
+footprint without introducing many new types. We propose standardizing this
+pattern with an `OptionalField` type.
 
-# Proposed Type
+## Proposed Type
 
 ```mojo
-struct OptionalField[active: Bool, ElementType: Copyable & Movable](Copyable, Movable):
+struct OptionalField[
+    active: Bool, ElementType: Copyable & Movable
+](Copyable, Movable):
     var field: InlineArray[ElementType, 1 if active else 0]
 
     fn __init__(out self):
-        constrained[not active, "Constructor only available with no active field"]()
-        self.field = InlineArray[ElementType, 1 if active else 0](uninitialized=True)
+        constrained[
+            not active, "Constructor only available with no active field"
+        ]()
+        self.field = InlineArray[ElementType, 1 if active else 0](
+            uninitialized=True
+        )
 
     fn __init__(out self, var value: ElementType):
         constrained[active, "Constructor only available with active field"]()
@@ -31,17 +44,24 @@ struct OptionalField[active: Bool, ElementType: Copyable & Movable](Copyable, Mo
     fn __init__(out self, var value: Optional[ElementType]):
         @parameter
         if active:
-            self.field = InlineArray[ElementType, 1 if active else 0](value.take())
+            self.field = InlineArray[ElementType, 1 if active else 0](
+                value.take()
+            )
         else:
-            self.field = InlineArray[ElementType, 1 if active else 0](uninitialized=True)
+            self.field = InlineArray[ElementType, 1 if active else 0](
+                uninitialized=True
+            )
 
     @always_inline
     fn __getitem__(ref self) -> ref [self.field] Self.ElementType:
-        constrained[Self.active, "Field is not active, you should not access it."]()
+        constrained[
+            Self.active, "Field is not active, you should not access it."
+        ]()
         return self.field[0]
 ```
 
-Inactive fields occupy 0 bytes, achieved through `InlineArray`. This implementation is illustrative, not prescriptive.
+Inactive fields occupy 0 bytes, achieved through `InlineArray`. This
+implementation is illustrative, not prescriptive.
 
 ## Usage Examples
 
@@ -62,9 +82,15 @@ struct Person[withAge: Bool](Copyable, Movable):
     fn print_info(ref self):
         @parameter
         if withAge:
-            print("Name: ", self.name, ", Age: ", self.age[], " (Size: ", size_of[Self](), " bytes)")
+            print(
+                "Name: ", self.name, ", Age: ", self.age[], 
+                " (Size: ", size_of[Self](), " bytes)"
+            )
         else:
-            print("Name: ", self.name, ", Age: N/A (Size: ", size_of[Self](), " bytes)")
+            print(
+                "Name: ", self.name, ", Age: N/A (Size: ", 
+                size_of[Self](), " bytes)"
+            )
 ```
 
 ```mojo
@@ -76,12 +102,13 @@ a2.print_info()
 
 Output:
 
-```
+```shell
 Name:  Alice , Age:  30  (Size:  32  bytes)
 Name:  Bob , Age: N/A (Size:  24  bytes)
 ```
 
-With a runtime Optional, both instances would occupy 40 bytes, showing the overhead avoided by OptionalField.
+With a runtime Optional, both instances would occupy 40 bytes, showing the
+overhead avoided by OptionalField.
 
 ### Compile-Time Sum Type
 
@@ -90,27 +117,47 @@ struct Address[AddressType: Int]:
     alias postal = 1
     alias email = 2
     alias phone = 3
-    var _postal: OptionalField[AddressType == Self.postal, (String, String, String)]  # Street, City, Country
+    var _postal: OptionalField[
+        AddressType == Self.postal, (String, String, String)
+    ]  # Street, City, Country
     var _email: OptionalField[AddressType == Self.email, String]
     var _phone: OptionalField[AddressType == Self.phone, (String, String)]
     
     fn __init__(out self, var value: String):
-        constrained[AddressType == Self.email, "Address type shoudl be email"]()
-        self._postal = OptionalField[AddressType == Self.postal, (String, String, String)]()
+        constrained[
+            AddressType == Self.email, "Address type shoudl be email"
+        ]()
+        self._postal = OptionalField[
+            AddressType == Self.postal, (String, String, String)
+        ]()
         self._email = OptionalField[AddressType == Self.email, String](value^)
-        self._phone = OptionalField[AddressType == Self.phone, (String, String)]()
+        self._phone = OptionalField[
+            AddressType == Self.phone, (String, String)
+        ]()
 
     fn __init__(out self, var value: (String, String)):
-        constrained[AddressType == Self.phone, "Address type should be phone"]()
-        self._postal = OptionalField[AddressType == Self.postal, (String, String, String)]()
+        constrained[
+            AddressType == Self.phone, "Address type should be phone"
+        ]()
+        self._postal = OptionalField[
+            AddressType == Self.postal, (String, String, String)
+        ]()
         self._email = OptionalField[AddressType == Self.email, String]()
-        self._phone = OptionalField[AddressType == Self.phone, (String, String)](value^)
+        self._phone = OptionalField[
+            AddressType == Self.phone, (String, String)
+        ](value^)
 
     fn __init__(out self, var value: (String, String, String)):
-        constrained[AddressType == Self.postal, "Address type should be postal"]()
-        self._postal = OptionalField[AddressType == Self.postal, (String, String, String)](value^)
+        constrained[
+            AddressType == Self.postal, "Address type should be postal"
+        ]()
+        self._postal = OptionalField[
+            AddressType == Self.postal, (String, String, String)
+        ](value^)
         self._email = OptionalField[AddressType == Self.email, String]()
-        self._phone = OptionalField[AddressType == Self.phone, (String, String)]()
+        self._phone = OptionalField[
+            AddressType == Self.phone, (String, String)
+        ]()
 
     fn postal_address(ref self) -> (String, String, String):
         constrained[AddressType == Self.postal, "Not a postal address"]()
@@ -127,11 +174,20 @@ struct Address[AddressType: Int]:
     fn print_info(ref self):
         @parameter
         if AddressType == Self.postal:
-            print("Postal Address: ", self._postal[][0], self._postal[][1], self._postal[][2], " (Size: ", size_of[Self](), " bytes)")
+            print(
+                "Postal Address: ", self._postal[][0], self._postal[][1], 
+                self._postal[][2], " (Size: ", size_of[Self](), " bytes)"
+            )
         elif AddressType == Self.email:
-            print("Email Address: ", self._email[], " (Size: ", size_of[Self](), " bytes)")
+            print(
+                "Email Address: ", self._email[], 
+                " (Size: ", size_of[Self](), " bytes)"
+            )
         elif AddressType == Self.phone:
-            print("Phone Number: ", self._phone[][0], self._phone[][1], " (Size: ", size_of[Self](), " bytes)")
+            print(
+                "Phone Number: ", self._phone[][0], self._phone[][1],
+                " (Size: ", size_of[Self](), " bytes)"
+            )
         else:
             print("Invalid Address Type")
 ```
@@ -150,7 +206,7 @@ print("Address2 Size: ", size_of[Address2](), " bytes")
 
 Output:
 
-```
+```shell
 Postal Address:  123 Main St Anytown USA  (Size:  72  bytes)
 Email Address:  alice@example.com  (Size:  24  bytes)
 Phone Number:  +1 555-123-4567  (Size:  48  bytes)
@@ -168,9 +224,10 @@ alias Address2 = Variant[
 ]
 ```
 
-has a fixed footprint (80 bytes in this case), regardless of which case is active.
+has a fixed footprint (80 bytes in this case), regardless of which case is
+active.
 
-# Alternative: Decorator Syntax
+## Alternative: Decorator Syntax
 
 A more natural syntax would use a decorator:
 
@@ -181,15 +238,23 @@ struct Person[withAge: Bool](Copyable, Movable):
     var age: Int
 ```
 
-This syntax is cleaner but requires compiler support. We propose introducing OptionalField in the standard library first, and later replacing it with a decorator-based syntax once available.
+This syntax is cleaner but requires compiler support. We propose introducing
+`OptionalField` in the standard library first, and later replacing it with a
+decorator-based syntax once available.
 
-# Rationale and Trade-offs
+## Rationale and Trade-offs
 
 - Compared to runtime `Optional`
- 	- Benefit: OptionalField avoids the extra memory overhead of storing a runtime tag or pointer.
- 	- Trade-off: The presence or absence of the field must be known at compile time. This reduces flexibility in exchange for efficiency.
+  - Benefit: OptionalField avoids the extra memory overhead of storing a runtime
+  tag or pointer.
+  - Trade-off: The presence or absence of the field must be known at compile
+  time. This reduces flexibility in exchange for efficiency.
 - Compared to `Variant`
- 	- Benefit: `OptionalField` produces specialized layouts with smaller memory footprints for each case.
- 	- Trade-off: Variants centralize case handling and can represent multiple alternatives at runtime, while `OptionalField` only expresses compile-time choices.
+  - Benefit: `OptionalField` produces specialized layouts with smaller memory
+  footprints for each case.
+  - Trade-off: Variants centralize case handling and can represent multiple
+  alternatives at runtime, while `OptionalField` only expresses compile-time
+  choices.
 
-Overall, `OptionalField` provides a lightweight mechanism for compile-time memory optimization.
+Overall, `OptionalField` provides a lightweight mechanism for compile-time
+memory optimization.
