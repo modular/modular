@@ -296,8 +296,7 @@ struct Int(
 
     @doc_private
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, mlir_value: __mlir_type.index):
+    fn __init__(out self, *, mlir_value: __mlir_type.index):
         """Construct Int from the given index value.
 
         Args:
