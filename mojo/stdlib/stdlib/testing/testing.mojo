@@ -101,7 +101,7 @@ fn assert_false[
 
 @always_inline
 fn assert_equal[
-    T: EqualityComparable & Stringable, //
+    T: EqualityComparable & Writable, //
 ](
     lhs: T,
     rhs: T,
@@ -308,7 +308,7 @@ fn assert_equal_pyobj(
 
 @always_inline
 fn assert_not_equal[
-    T: EqualityComparable & Stringable, //
+    T: EqualityComparable & Writable, //
 ](
     lhs: T,
     rhs: T,

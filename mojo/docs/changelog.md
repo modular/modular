@@ -25,6 +25,9 @@ what we publish.
 
 ### Standard library changes
 
+- `assert_equal` and `assert_not_equal` now take in `Writable` arguments instead
+  of `Stringable` ones.
+
 ### Tooling changes
 
 ### ❌ Removed
