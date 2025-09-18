@@ -7,6 +7,9 @@
 #include "Support/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 
+#include <cmath>
+#include <iomanip>
+#include <sstream>
 #include <string>
 
 void M::replaceAll(std::string &str, StringRef oldStr, StringRef newStr) {
@@ -20,4 +23,34 @@ void M::replaceAll(std::string &str, StringRef oldStr, StringRef newStr) {
     str.replace(pos, oldSize, newStr);
     pos += newStr.size();
   }
+}
+
+static std::string prettyPrint(double val, size_t scale = 1,
+                               int precision = 2) {
+  std::stringstream stream;
+  val = val / scale;
+  if (std::floor(val) == val)
+    stream << static_cast<size_t>(val);
+  else
+    stream << std::setprecision(precision) << std::fixed << val;
+  return stream.str();
+}
+
+/// Prints the memory size in a human form with the units.
+std::string M::humanMemorySize(size_t size) {
+  // These variables do not match our coding style for variable naming (which is
+  // camelBack). Since they represent well-known units, ignore them with
+  // clang-tidy.
+  constexpr size_t KB = 1024;    // NOLINT
+  constexpr size_t MB = KB * KB; // NOLINT
+  constexpr size_t GB = KB * MB; // NOLINT
+
+  if (size >= GB)
+    return prettyPrint(size, GB) + "GB";
+  if (size >= MB)
+    return prettyPrint(size, MB) + "MB";
+  if (size >= KB)
+    return prettyPrint(size, KB) + "KB";
+
+  return prettyPrint(size) + "B";
 }
