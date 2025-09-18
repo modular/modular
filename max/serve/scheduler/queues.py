@@ -78,9 +78,6 @@ class SchedulerZmqConfigs:
         MAXPullQueue[dict[RequestID, SchedulerResult[Any]]],
         MAXPushQueue[list[RequestID]],
     ]:
-        print(
-            f"request_queue_factory endpoint: {self.request_queue_config._endpoint}"
-        )
         return (
             self.request_queue_config.push(),
             self.response_queue_config.pull(),
@@ -94,9 +91,6 @@ class SchedulerZmqConfigs:
         MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
         MAXPullQueue[list[RequestID]],
     ]:
-        print(
-            f"request_queue_factory endpoint: {self.request_queue_config._endpoint}"
-        )
         return (
             self.request_queue_config.pull(),
             self.response_queue_config.push(),
