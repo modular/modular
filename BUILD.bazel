@@ -1,3 +1,4 @@
+load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
 load("//bazel:api.bzl", "mojo_binary", "requirement")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "TOP_LEVEL_TAG")
@@ -9,26 +10,7 @@ mojo_binary(
     testonly = True,
     srcs = ["repro.mojo"],
     tags = ["manual"],
-    deps = [
-        "@mojo//:_cublas",
-        "@mojo//:_cudnn",
-        "@mojo//:_cufft",
-        "@mojo//:_curand",
-        "@mojo//:_rocblas",
-        "@mojo//:comm",
-        "@mojo//:compiler",
-        "@mojo//:compiler_internal",
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:nvml",
-        "@mojo//:quantization",
-        "@mojo//:register",
-        "@mojo//:shmem",
-        "@mojo//:stdlib",
-        "@mojo//:tensor_internal",
+    deps = ALL_MOJOPKGS + [
         requirement("numpy"),
         requirement("torch"),
     ],
