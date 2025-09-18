@@ -20,14 +20,13 @@ import signal
 from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic
+from typing import Any, Callable
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    AudioGenerationOutput,
     AudioGenerationRequest,
-    AudioGeneratorContext,
-    AudioGeneratorOutput,
     EmbeddingsGenerationOutput,
     GenerationStatus,
     LogProbabilities,
@@ -35,7 +34,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
 from max.serve.process_control import ProcessMonitor
@@ -63,7 +62,9 @@ class TokenGeneratorPipeline:
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer[TextContext, int, TextGenerationRequest],
+        tokenizer: PipelineTokenizer[
+            TextAndVisionContext | TextContext, int, TextGenerationRequest
+        ],
         worker_monitor: ProcessMonitor,
         scheduler_zmq_configs: SchedulerZmqConfigs,
         lora_queue: LoRAQueue | None = None,
@@ -319,14 +320,14 @@ class TokenGeneratorPipeline:
             os.kill(os.getpid(), signal.SIGTERM)
 
 
-class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
+class AudioGeneratorPipeline:
     """Base class for LLM audio generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
         tokenizer: PipelineTokenizer[
-            AudioGeneratorContext, object, AudioGenerationRequest
+            TTSContext, object, AudioGenerationRequest
         ],
         worker_monitor: ProcessMonitor,
         scheduler_zmq_configs: SchedulerZmqConfigs,
@@ -342,16 +343,14 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         self.lora_queue = lora_queue
 
         self._background_tasks: set[asyncio.Task[object]] = set()
-        self.engine_queue = EngineQueue[
-            AudioGeneratorContext, AudioGeneratorOutput
-        ](
+        self.engine_queue = EngineQueue[TTSContext, AudioGenerationOutput](
             worker_monitor=worker_monitor,
             scheduler_zmq_configs=scheduler_zmq_configs,
         )
 
     async def next_chunk(
         self, request: AudioGenerationRequest
-    ) -> AsyncGenerator[AudioGeneratorOutput, None]:
+    ) -> AsyncGenerator[AudioGenerationOutput, None]:
         """Generates and streams audio for the provided request."""
         total_sw = StopWatch()
         self.logger.debug(
@@ -379,9 +378,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
     async def generate_full_audio(
         self, request: AudioGenerationRequest
-    ) -> AudioGeneratorOutput:
+    ) -> AudioGenerationOutput:
         """Generates complete audio for the provided request."""
-        audio_chunks: list[AudioGeneratorOutput] = []
+        audio_chunks: list[AudioGenerationOutput] = []
         np_chunks: list[npt.NDArray[np.floating[Any]]] = []
         async for chunk in self.next_chunk(request):
             if chunk.audio_data.size == 0 or chunk.audio_data.size == 0:
@@ -394,7 +393,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         import numpy as np
 
         if len(audio_chunks) == 0:
-            return AudioGeneratorOutput(
+            return AudioGenerationOutput(
                 final_status=GenerationStatus.END_OF_SEQUENCE
             )
 
@@ -407,7 +406,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         last_chunk = audio_chunks[-1]
         assert last_chunk.is_done
 
-        return AudioGeneratorOutput(
+        return AudioGenerationOutput(
             audio_data=combined_audio,
             metadata=last_chunk.metadata,
             final_status=GenerationStatus.END_OF_SEQUENCE,

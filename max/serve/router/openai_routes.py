@@ -37,9 +37,7 @@ from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
 from max.interfaces import (
     AudioGenerationRequest,
-    AudioGeneratorContext,
     GenerationStatus,
-    InputContext,
     LoRAOperation,
     LoRARequest,
     LoRAStatus,
@@ -169,11 +167,11 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
 
 async def get_pipeline(
     request: Request, model_name: str
-) -> TokenGeneratorPipeline | AudioGeneratorPipeline[AudioGeneratorContext]:
+) -> TokenGeneratorPipeline | AudioGeneratorPipeline:
     app_state: State = request.app.state
-    pipeline: (
-        TokenGeneratorPipeline | AudioGeneratorPipeline[AudioGeneratorContext]
-    ) = app_state.pipeline
+    pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
+        app_state.pipeline
+    )
 
     models = [pipeline.model_name]
 
@@ -512,9 +510,7 @@ class OpenAIEmbeddingsResponseGenerator:
 
 
 class OpenAISpeechResponseGenerator:
-    def __init__(
-        self, pipeline: AudioGeneratorPipeline[AudioGeneratorContext]
-    ) -> None:
+    def __init__(self, pipeline: AudioGeneratorPipeline) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAISpeechResponseGenerator"
         )
@@ -720,7 +716,7 @@ async def openai_create_chat_completion(
             request_json
         )
         pipeline: (
-            TokenGeneratorPipeline | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -893,7 +889,7 @@ async def openai_create_embeddings(
             request_json = await request.json()
         embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
         pipeline: (
-            TokenGeneratorPipeline | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, embeddings_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -1204,7 +1200,7 @@ async def openai_create_completion(
             ) / 1e6
 
         pipeline: (
-            TokenGeneratorPipeline | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -1346,7 +1342,7 @@ async def create_streaming_audio_speech(
             request_json
         )
         pipeline: (
-            TokenGeneratorPipeline | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
         sampling_params = SamplingParams(

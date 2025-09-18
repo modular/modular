@@ -22,10 +22,11 @@ from collections.abc import Generator
 from typing import Any
 
 from max.interfaces import (
-    AudioGenerator,
-    AudioGeneratorOutput,
+    AudioGenerationInputs,
+    AudioGenerationOutput,
     MAXPullQueue,
     MAXPushQueue,
+    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
@@ -206,11 +207,14 @@ class AudioGenerationScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: AudioGenerationSchedulerConfig,
-        pipeline: AudioGenerator[TTSContext],
+        pipeline: Pipeline[
+            AudioGenerationInputs[TTSContext],
+            AudioGenerationOutput,
+        ],
         *,
         request_queue: MAXPullQueue[tuple[RequestID, TTSContext]],
         response_queue: MAXPushQueue[
-            dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
+            dict[RequestID, SchedulerResult[AudioGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager[TTSContext],
@@ -295,7 +299,10 @@ class AudioGenerationScheduler(Scheduler):
 
         # execute the batch
         with Tracer(f"_schedule({batch})"):
-            responses = self.pipeline.next_chunk(batch.reqs)
+            responses = self.pipeline.execute(
+                AudioGenerationInputs[TTSContext](batch=batch.reqs)
+            )
+
             for response in responses.values():
                 if response.steps_executed:
                     self._prev_num_steps = response.steps_executed

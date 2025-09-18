@@ -127,7 +127,7 @@ async def lifespan(
             METRICS.pipeline_load(
                 serving_settings.pipeline_config.model_config.model_name
             )
-            pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline[Any]
+            pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
             if serving_settings.pipeline_task in (
                 PipelineTask.TEXT_GENERATION,
                 PipelineTask.EMBEDDINGS_GENERATION,

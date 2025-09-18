@@ -25,7 +25,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Callable
 
 import uvloop
-from max.interfaces import AudioGenerator, Pipeline, PipelinesFactory
+from max.interfaces import Pipeline, PipelinesFactory
 from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
@@ -43,7 +43,7 @@ logger = logging.getLogger("max.serve")
 
 
 def get_pipeline_model(
-    pipeline: Pipeline[Any, Any] | AudioGenerator[Any],
+    pipeline: Pipeline[Any, Any],
 ) -> PipelineModel[Any] | None:
     if pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         return pipeline.speech_lm_pipeline._pipeline_model  # type: ignore

@@ -15,7 +15,8 @@ from __future__ import annotations
 from typing import Any, TypeVar, Union, cast
 
 from max.interfaces import (
-    AudioGenerator,
+    AudioGenerationInputs,
+    AudioGenerationOutput,
     InputContext,
     MAXPullQueue,
     MAXPushQueue,
@@ -58,8 +59,7 @@ T = TypeVar("T", bound=InputContext)
 
 
 def load_scheduler(
-    pipeline: Pipeline[PipelineInputsType, PipelineOutputType]
-    | AudioGenerator[TTSContext],
+    pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
     pipeline_config: PipelineConfig,
     settings: Settings,
     scheduler_zmq_configs: SchedulerZmqConfigs,
@@ -84,8 +84,8 @@ def load_scheduler(
             cancel_queue=cancel_queue,
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
-        assert isinstance(pipeline, AudioGenerator)
-        paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager  # type: ignore
+        assert hasattr(pipeline, "speech_lm_pipeline")
+        paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager
         assert isinstance(paged_manager, PagedKVCacheManager)
 
         assert pipeline_config.ce_delay_ms is not None
@@ -106,13 +106,18 @@ def load_scheduler(
             enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
             data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )
+        audio_pipeline = cast(
+            Pipeline[
+                AudioGenerationInputs[TTSContext],
+                AudioGenerationOutput,
+            ],
+            pipeline,
+        )
 
         return AudioGenerationScheduler(
             scheduler_config=token_gen_config,
-            pipeline=pipeline,
-            request_queue=cast(
-                MAXPullQueue[tuple[RequestID, TTSContext]], request_queue
-            ),
+            pipeline=audio_pipeline,
+            request_queue=request_queue,
             response_queue=response_queue,
             cancel_queue=cancel_queue,
             paged_manager=paged_manager,

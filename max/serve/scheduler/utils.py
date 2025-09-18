@@ -17,11 +17,11 @@ import logging
 import os
 import time
 from collections import OrderedDict
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, TypeVar
 
 from max.interfaces import (
-    AudioGenerator,
-    AudioGeneratorOutput,
+    AudioGenerationOutput,
     InputContext,
     MAXPullQueue,
     MAXPushQueue,
@@ -246,10 +246,8 @@ def maybe_restore_chunked_request(
 
 def release_terminated_requests(
     sch_output: SchedulerOutput | AudioGenerationSchedulerOutput,
-    responses: dict[RequestID, TextGenerationOutput]
-    | dict[RequestID, AudioGeneratorOutput],
-    pipeline: Pipeline[PipelineInputsType, PipelineOutputType]
-    | AudioGenerator[TTSContext],
+    responses: Mapping[RequestID, TextGenerationOutput | AudioGenerationOutput],
+    pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
     tg_reqs: dict[RequestID, ContextType] | dict[RequestID, TTSContext],
 ) -> None:
     for req_id, response in responses.items():
@@ -266,8 +264,7 @@ def release_cancelled_requests(
         dict[RequestID, SchedulerResult[PipelineOutputType]]
     ],
     tg_reqs: dict[RequestID, ContextType] | dict[RequestID, TTSContext],
-    pipeline: Pipeline[PipelineInputsType, PipelineOutputType]
-    | AudioGenerator[TTSContext],
+    pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
 ) -> None:
     for req_ids in drain_queue(cancel_q):
         for req_id in req_ids:
