@@ -295,9 +295,8 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable):
         ]()
 
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Index):
-        self._mlir_value = value
+    fn __init__(out self, *, mlir_value: Index):
+        self._mlir_value = mlir_value
 
     @always_inline("builtin")
     @implicit
@@ -308,15 +307,21 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable):
 
     @always_inline("builtin")
     fn __add__(lhs, rhs: Int) -> Int:
-        return __mlir_op.`index.add`(lhs._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.add`(lhs._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("builtin")
     fn __sub__(lhs, rhs: Int) -> Int:
-        return __mlir_op.`index.sub`(lhs._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.sub`(lhs._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("builtin")
     fn __mul__(lhs, rhs: Int) -> Int:
-        return __mlir_op.`index.mul`(lhs._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.mul`(lhs._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __iadd__(mut self, rhs: Int):
@@ -350,7 +355,9 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable):
 
     @always_inline("builtin")
     fn _positive_div(self, rhs: Int) -> Int:
-        return Int(__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value))
+        return Int(
+            mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
+        )
 
 
 @register_passable("trivial")

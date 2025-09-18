@@ -297,16 +297,22 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     assert(lv && "Each dest is known to be an lvalue");
     ValueDest eltDest(lv, EC_TupleElement);
 
-    // Bind the i parameters.  Int implicitly constructs from index type.
-    TypedAttr iParam =
+    // Bind the i parameters.  Int explicitly constructs from index type now.
+    TypedAttr indexAttr =
         IntegerAttr::get(IndexType::get(emitter.getContext()), index);
 
-    SyntheticNode indexExpr(expr->getLoc(), PValue(iParam));
+    CValue intIndexCValue =
+        emitter.emitInt(ASTExprAnd<PValue>{PValue(indexAttr), value.expr},
+                        ExprContext::EC_CallParamValue);
+    PValue intIndex = intIndexCValue.getIfPValue();
+    assert(intIndex && "Int must be PValue when constructed from int attr");
+
+    SyntheticNode indexExpr(expr->getLoc(), intIndex);
     Operand exprOperand(&indexExpr, expr->getLoc(),
                         Operand::PassKind::kPositional);
     SubscriptNode subscript(expr, expr->getLoc(), {}, expr->getLoc());
 
-    // We emit the extraction from the tuple as a synthesized subscript with
+    // Emit the extraction from the tuple as a synthesized subscript with
     // this value as an index.
     if (!emitGetterSetterAccess(&subscript, {bvalue, value.expr}, exprOperand,
                                 eltDest, emitter)) {
