@@ -40,10 +40,6 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 archive_override(
     module_name = "rules_mojo",
     integrity = "sha256-zgnOpUJ8OY8T3lw2+x0wkXqtwKH5BH8BQPdn7pD7Pnc=",
-    patch_strip = 1,
-    patches = [
-        "//bazel/public-patches:rules_mojo_version.patch",
-    ],
     strip_prefix = "rules_mojo-355c0ebc7aa5cf40f21388309be89401bee42461",
     urls = [
         "https://github.com/modular/rules_mojo/archive/355c0ebc7aa5cf40f21388309be89401bee42461.tar.gz",
