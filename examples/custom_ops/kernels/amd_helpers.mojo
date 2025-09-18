@@ -27,7 +27,8 @@ from layout.layout_tensor import (
     ThreadScope,
 )
 from layout.swizzle import Swizzle
-from layout._utils import TensorCoreKGroup, make_amd_buffer_resource
+from layout.tensor_core import TiledTensorCore
+from layout._utils import make_amd_buffer_resource
 from layout.element import Element
 from memory import UnsafePointer, Pointer
 from gpu import global_idx, thread_idx, block_dim, block_idx, barrier
@@ -202,7 +203,7 @@ struct AMD_MMA[
     WK: Int,
 ]:
     alias type_alignment = align_of[SIMD[in_type, Self.simd_width]]()
-    alias tensor_core_mma = TensorCoreKGroup[
+    alias tensor_core_mma = TiledTensorCore[
         out_type,
         in_type,
         shape,

@@ -47,7 +47,6 @@ from layout.layout import blocked_product
 
 
 from layout.swizzle import Swizzle
-from layout._utils import TensorCoreKGroup
 
 from math import ceildiv
 from memory import UnsafePointer

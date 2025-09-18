@@ -2850,6 +2850,28 @@ struct LayoutTensor[
 
             return tile_type(self.ptr.offset(offset), runtime_layout)
 
+    alias SIMDTileType[tile_size: Int] = Self.TileType[
+        tile_size, simd_width_of[Self.dtype]()
+    ]
+
+    @always_inline
+    fn simd_tile[
+        tile_size: Int
+    ](self, tile_idx: Int) -> Self.SIMDTileType[tile_size]:
+        """Return a SIMD[dtype] sized tile of size `tile_size` at `tile_idx`.
+
+        Parameters:
+            tile_size: The size of the tile along the tiled axis used for
+                vectorization.
+
+        Args:
+            tile_idx: The index of the tile to extract along the tiled axis.
+
+        Returns:
+            A SIMD[dtype] tile of size `tile_size` at `tile_idx`
+        """
+        return self.tile[tile_size, simd_width_of[Self.dtype]()](tile_idx)
+
     @always_inline
     fn tile_with_offset[
         *tile_sizes: Int,
@@ -4026,6 +4048,18 @@ struct LayoutTensor[
         ]()
         # FIXME: this is ugly, is there a simpler way to do this?
         return rebind[Self.VectorizedType[*vector_shape]](ret)
+
+    alias SIMDVectorizedType = Self.VectorizedType[1, simd_width_of[dtype]()]
+
+    @always_inline
+    fn vectorize(self) -> Self.SIMDVectorizedType:
+        """Return a SIMD[dtype] vectorized view of this tensor.
+
+        Returns:
+            A `Self.VectorizedType[1, simd_width_of[Self.dtype]()]` view whose
+            width equals the SIMD width for the tensor's dtype.
+        """
+        return self.vectorize[1, simd_width_of[Self.dtype]()]()
 
     @staticmethod
     fn _compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
@@ -7221,8 +7255,8 @@ fn copy_local_to_shared[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-    row_major: Bool = False
-    # row_major is used when using prefetching from dram to sram via registers for AMD GPUs
+    *,
+    row_major: Bool = False,
 ](
     dst: LayoutTensor[*_, address_space = _GPUAddressSpace.SHARED, **_],
     src: LayoutTensor[*_, address_space = _GPUAddressSpace.LOCAL, **_],

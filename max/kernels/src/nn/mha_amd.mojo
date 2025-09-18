@@ -36,7 +36,8 @@ from gpu.sync import (
 from memory import AddressSpace as BaseAddressSpace
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import blocked_product
-from layout._utils import idx2crd, TensorCoreKGroup, make_amd_buffer_resource
+from layout._utils import idx2crd, make_amd_buffer_resource
+from layout.tensor_core import TiledTensorCore
 from layout.element import Element
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -337,11 +338,11 @@ struct KBuffer[
         var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
             wtile_coord0, wtile_coord1
         )
-        alias tensor_core_mma = TensorCoreKGroup[
+        alias tensor_core_mma = TiledTensorCore[
             accum_type,
             mma_input_type,
             mma_shape,
-            k_group_size=k_group_size,
+            group_size=k_group_size,
             transpose_b=transpose_b,
         ]()
         tensor_core_mma.mma_op.load_b[swizzle=swizzle](
@@ -1420,11 +1421,11 @@ fn mha_single_batch_amd[
             smem_manager.get_kv_ptr[k_tile.dtype](),
         )
 
-        alias tensor_core_mma = TensorCoreKGroup[
+        alias tensor_core_mma = TiledTensorCore[
             accum_type,
             q_type,
             mma_shape,
-            k_group_size=k_group_size,
+            group_size=k_group_size,
             transpose_b=True,
         ]()
 
@@ -1637,11 +1638,11 @@ fn mma[
         b_smem_iter.layout.stride[0].value() // simd_width,
     ) if token_gen else Layout.row_major(num_threads // 4, 4)
 
-    alias tensor_core_mma = TensorCoreKGroup[
+    alias tensor_core_mma = TiledTensorCore[
         accum_type,
         mma_input_type,
         IndexList[3](MMA_M, MMA_N, MMA_K),
-        k_group_size=k_group_size,
+        group_size=k_group_size,
         transpose_b=transpose_b,
     ]()
 
