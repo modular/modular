@@ -7,54 +7,21 @@
 #include "Init/Init.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "Config/Version.h"
+#include "Init/DevelopmentSignalHandler.h"
 #include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/HTTP/HTTPClient.h"
-#include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Telemetry.h"
-#include "llvm/Support/Signals.h"
-#include "llvm/Support/Threading.h"
 
 using namespace M;
 
-static void logHostMachineInfo(llvm::raw_fd_ostream &crashLog) {
-  auto hostMachineOr = M::getHostMachineInfo();
-  if (hostMachineOr.isError()) {
-    crashLog
-        << "Failed to get machine info.  Not including it in the crash log."
-        << '\n';
-  } else {
-    crashLog << "Host machine info below:" << '\n';
-    M::HostMachineInfo hostInfo = hostMachineOr.takeValue();
-    hostInfo.print(crashLog);
-  }
-}
-
-static void crashHandler(void *context) {
-  std::string *programName = reinterpret_cast<std::string *>(context);
-
-  // Crash dumps saved by Crashpad first and then the logging here is reached
-  // after Crashpad re-raises to our previously registered signal handler.
-  llvm::errs() << *programName << " crashed!\n";
-  llvm::errs() << "Please file a bug report.\n";
-
-#ifndef MODULAR_PRODUCTION
-  llvm::sys::PrintStackTrace(llvm::errs());
-  llvm::errs() << '\n';
-  logHostMachineInfo(llvm::errs());
-#endif // MODULAR_PRODUCTION
-}
-
-static void registerSignalHandler(StringRef programName) {
-  // Ensure that the handler is only registered once.
-  static std::string programNameStorage;
-  static llvm::once_flag flag;
-  llvm::call_once(flag, [&]() {
-    programNameStorage = std::string(programName);
-    llvm::sys::AddSignalHandler(crashHandler,
-                                reinterpret_cast<void *>(&programNameStorage));
-  });
+static constexpr bool isProductionBuild() {
+#ifdef MODULAR_PRODUCTION
+  return true;
+#else
+  return false;
+#endif
 }
 
 ErrorOr<ContextRef> Init::createContext(StringRef programName,
@@ -80,18 +47,19 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   if (!caInfo.empty())
     httpCtx->setCAInfo(std::string(caInfo));
 
-  bool enabled = settings.getValueAsBool("crash_reporting.enabled",
+  bool crashReportingEnabled =
+      settings.getValueAsBool("crash_reporting.enabled",
 #ifdef MODULAR_PRODUCTION
-                                         true);
+                              true);
 #else
-                                         false);
+                              false);
 #endif // MODULAR_PRODUCTION
 
   // Enable crash logging, if appropriate.
-  if (!options.forceDisableCrashReporting && enabled) {
+  if (!isProductionBuild() && !crashReportingEnabled)
+    Init::registerDevelopmentSignalHandler(programName);
+  else if (!options.forceDisableCrashReporting && crashReportingEnabled)
     initCrashpadForProgram(programName, &settings);
-    registerSignalHandler(programName);
-  }
 
   // Move everything into the context. Construct here may used the settings.
   ctx->emplace<HTTPContextRef>(std::move(httpCtx));

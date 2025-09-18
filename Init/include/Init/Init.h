@@ -21,6 +21,7 @@ public:
     forceDisableCrashReporting = v;
     return *this;
   }
+
   Options &withRuntimeOptions(const AsyncRT::RuntimeOptions &v = {}) {
     runtimeOptions.emplace(v);
     return *this;
