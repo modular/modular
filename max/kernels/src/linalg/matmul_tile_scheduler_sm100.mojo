@@ -32,6 +32,7 @@ from linalg.matmul_tile_scheduler import RasterOrder
 
 from gpu.cluster import block_rank_in_cluster
 from gpu.id import warp_id
+from math import ceildiv
 
 
 @fieldwise_init
@@ -183,19 +184,11 @@ struct TileScheduler[
 
         @parameter
         if Self.block_swizzle_size != 0:
-            var m_bound = (
-                Int(cluster_dim[0])
-                / log_block_swizzle_size
-                * Self.block_swizzle_size
-            )
-            var n_bound = (
-                Int(cluster_dim[1])
-                / log_block_swizzle_size
-                * Self.block_swizzle_size
-            )
+            var swizzle_m_size = Int(cluster_dim[0]) / log_block_swizzle_size
+            var swizzle_n_size = Int(cluster_dim[1]) / log_block_swizzle_size
+
             var m_local = (new_normalized_m / log_block_swizzle_size) + (
-                (Int(cluster_dim[0]) / log_block_swizzle_size)
-                * (new_normalized_n % log_block_swizzle_size)
+                (swizzle_m_size) * (new_normalized_n % log_block_swizzle_size)
             )
             var n_local = new_normalized_m % log_block_swizzle_size
 
@@ -203,10 +196,12 @@ struct TileScheduler[
                 (new_normalized_n / log_block_swizzle_size) % 2 == 0
             )
 
+            var m_bound = swizzle_m_size * Self.block_swizzle_size
+            var n_bound = swizzle_n_size * Self.block_swizzle_size
             if new_normalized_m < m_bound and new_normalized_n < n_bound:
                 new_m_global = is_even_subtile * m_local + (
                     1 - is_even_subtile
-                ) * (Int(cluster_dim[0]) - m_local - 1)
+                ) * (m_bound - m_local - 1)
                 new_n_global = n_local + (
                     Int(new_normalized_n / log_block_swizzle_size)
                     * Self.block_swizzle_size
