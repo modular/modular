@@ -55,7 +55,7 @@ fn small_sort[size: Int, dtype: DType](mut list: List[Scalar[dtype]]):
     fn _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
         return lhs < rhs
 
-    _small_sort[size, Scalar[dtype], _less_than](list.unsafe_ptr())
+    _small_sort[size, Scalar[dtype], _less_than](list)
 
 
 @always_inline

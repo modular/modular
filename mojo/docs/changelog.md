@@ -25,6 +25,8 @@ what we publish.
 
 ### Standard library changes
 
+- Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
+
 ### Tooling changes
 
 ### ❌ Removed

@@ -401,6 +401,21 @@ struct Span[
         """
         return rebind[Self.Immutable](self)
 
+    @always_inline
+    fn unsafe_get(self, index: Some[Indexer]) -> ref [origin, address_space] T:
+        """Get a reference to the element at `index` without bounds checking.
+
+        Args:
+            index: The index of the element to get.
+
+        ### Safety
+            * This function does not do bounds checking and assumes the provided
+            index is `< len(self)`. Not upholding this contract will result in
+            undefined behavior.
+            * This function does not support wraparound for negative indices.
+        """
+        return self._data[index]
+
     @always_inline("builtin")
     fn unsafe_ptr(
         self,
@@ -512,7 +527,24 @@ struct Span[
         for ref element in self:
             element = value.copy()
 
-    fn swap_elements(self: Span[mut=True, T], a: UInt, b: UInt) raises:
+    @always_inline
+    fn unsafe_swap_elements(self: Span[mut=True, T], a: Int, b: Int):
+        """Swap the values at indices `a` and `b` without performing bounds checking.
+
+        Args:
+            a: The first element's index.
+            b: The second element's index.
+
+        ## Safety:
+            * Both `a` and `b` must be `< len(self)`.
+            * `a` cannot be equal to `b`.
+        """
+        var ptr = self.unsafe_ptr()
+        var tmp = ptr.offset(a).take_pointee()
+        ptr.offset(a).init_pointee_move_from(ptr.offset(b))
+        ptr.offset(b).init_pointee_move(tmp^)
+
+    fn swap_elements(self: Span[mut=True, T], a: Int, b: Int) raises:
         """
         Swap the values at indices `a` and `b`.
 
@@ -523,6 +555,9 @@ struct Span[
         Raises:
             If a or b are larger than the length of the span.
         """
+        if a == b:
+            return
+
         var length = UInt(len(self))
         if a > length or b > length:
             raise Error(
@@ -535,11 +570,7 @@ struct Span[
                 ")",
             )
 
-        var ptr = self.unsafe_ptr()
-        var tmp = InlineArray[T, 1](uninitialized=True)
-        tmp.unsafe_ptr().init_pointee_move_from(ptr.offset(a))
-        ptr.offset(a).init_pointee_move_from(ptr.offset(b))
-        ptr.offset(b).init_pointee_move_from(tmp.unsafe_ptr())
+        self.unsafe_swap_elements(a, b)
 
     @always_inline("nodebug")
     fn __merge_with__[
@@ -707,3 +738,17 @@ struct Span[
         vectorize[do_count, simdwidth](length)
 
         return UInt(countv.reduce_add() + count)
+
+    @always_inline
+    fn unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
+        """Returns a subspan of the current span.
+
+        Args:
+            offset: The starting offset of the subspan (self._data + offset).
+            length: The length of the new subspan.
+
+        ### Safety
+            This function does not do bounds checking and assumes the current
+            span contains the specified subspan.
+        """
+        return Self(ptr=self._data + offset, length=length)

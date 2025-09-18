@@ -77,7 +77,7 @@ fn test_sort_small_3() raises:
     fn _less_than(lhs: Int, rhs: Int) -> Bool:
         return lhs < rhs
 
-    _small_sort[length, Int, _less_than](list.unsafe_ptr())
+    _small_sort[length, Int, _less_than](list)
 
     var expected = [1, 2, 9]
     for i in range(length):
@@ -99,7 +99,7 @@ fn test_sort_small_5() raises:
     fn _less_than(lhs: Int, rhs: Int) -> Bool:
         return lhs < rhs
 
-    _small_sort[length, Int, _less_than](list.unsafe_ptr())
+    _small_sort[length, Int, _less_than](list)
 
     var expected = [1, 2, 3, 4, 9]
     for i in range(length):
