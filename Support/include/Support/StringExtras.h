@@ -17,6 +17,10 @@ namespace M {
 /// indices).
 void replaceAll(std::string &str, StringRef oldStr, StringRef newStr);
 
+/// Pretty prints the memory in a human readable form (e.g. 1024 is
+// printed as 1KB).
+std::string humanMemorySize(size_t size);
+
 } // namespace M
 
 #endif // SUPPORT_STRINGEXTRAS_H
