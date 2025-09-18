@@ -81,7 +81,22 @@ fn _horner_evaluate[
         The polynomial specified by the coefficients evaluated at value x.
     """
     alias num_coefficients = len(coefficients)
+    constrained[
+        num_coefficients > 0,
+        (
+            "the number of coefficients for the polynomial evaluation should be"
+            " a positive number"
+        ),
+    ]()
+
     alias c_last = coefficients[num_coefficients - 1]
+
+    @parameter
+    if num_coefficients == 1:
+        # The degenerate case is when the number of coefficients is 1. In those
+        # cases we need to return c0.
+        return c_last
+
     alias c_second_from_last = coefficients[num_coefficients - 2]
 
     var result = x.fma(c_last, c_second_from_last)
