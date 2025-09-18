@@ -561,6 +561,25 @@ fn isnan[
 
     alias signaling_nan_test: UInt32 = 0x0001
     alias quiet_nan_test: UInt32 = 0x0002
+
+    # Workaround for RDNA v_cmp_u_f32 codegen issue
+    # LLVM generates incorrect v_cmp_u_f32 s[0:1], v1, v1 on RDNA
+    # which should write to VCC, not scalar registers
+    from sys import is_amd_gpu
+    # Check for RDNA architectures (gfx1100-1103 for RDNA3, gfx1200-1201 for RDNA4)
+    @parameter
+    if is_amd_gpu["amdgpu:gfx1100"]() or is_amd_gpu["amdgpu:gfx1101"]() or is_amd_gpu["amdgpu:gfx1102"]() or is_amd_gpu["amdgpu:gfx1103"]() or is_amd_gpu["amdgpu:gfx1200"]() or is_amd_gpu["amdgpu:gfx1201"]():
+        # Use bitwise comparison for NaN detection on RDNA
+        @parameter
+        if dtype is DType.float32:
+            var bits = val.to_bits()
+            # NaN: exponent = 0xFF, mantissa != 0
+            return (bits & 0x7F800000).eq(0x7F800000) & (bits & 0x007FFFFF).ne(0)
+        elif dtype is DType.float64:
+            var bits = val.to_bits()
+            # NaN: exponent = 0x7FF, mantissa != 0
+            return (bits & 0x7FF0000000000000).eq(0x7FF0000000000000) & (bits & 0x000FFFFFFFFFFFFF).ne(0)
+
     return llvm_intrinsic[
         "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
     ](val._mlir_value, signaling_nan_test | quiet_nan_test)
