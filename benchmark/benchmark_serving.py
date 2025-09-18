@@ -917,7 +917,18 @@ async def benchmark(
         )
         skip_first_n_requests = 0
 
-    full_backend = backend + ("-chat" if chat else "")
+    # Handle backend construction: add "-chat" only if not already present
+    # and if the resulting backend exists in ASYNC_REQUEST_FUNCS
+    if chat and not backend.endswith("-chat"):
+        potential_chat_backend = backend + "-chat"
+        if potential_chat_backend in ASYNC_REQUEST_FUNCS:
+            full_backend = potential_chat_backend
+        else:
+            # If chat variant doesn't exist, use the base backend
+            full_backend = backend
+    else:
+        full_backend = backend
+
     if full_backend in ASYNC_REQUEST_FUNCS:
         request_func = ASYNC_REQUEST_FUNCS[full_backend]
     else:
