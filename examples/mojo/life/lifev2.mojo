@@ -85,4 +85,4 @@ def run_display(
 
 def main():
     start = Grid[128, 128].random()
-    run_display(start)
+    run_display(start^)

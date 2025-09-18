@@ -17,7 +17,7 @@ from collections import Optional
 from memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](ImplicitlyCopyable, Movable, Stringable):
+struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -55,7 +55,7 @@ struct Grid[rows: Int, cols: Int](ImplicitlyCopyable, Movable, Stringable):
         grid = Self()
         random.randint(grid.data, grid.num_cells, 0, 1)
 
-        return grid
+        return grid^
 
     # ===-------------------------------------------------------------------===#
     # Indexing
@@ -115,4 +115,4 @@ struct Grid[rows: Int, cols: Int](ImplicitlyCopyable, Movable, Stringable):
                 if num_neighbors | self[row, col] == 3:
                     next_generation[row, col] = 1
 
-        return next_generation
+        return next_generation^

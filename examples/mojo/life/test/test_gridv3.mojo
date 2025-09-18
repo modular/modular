@@ -27,7 +27,7 @@ def grid4x4() -> Grid[4, 4]:
     for row in range(4):
         for col in range(4):
             grid[row, col] = materialize[data4x4]()[row][col]
-    return grid
+    return grid^
 
 
 def test_gridv3_init():

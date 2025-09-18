@@ -16,7 +16,7 @@ from collections import Optional
 
 
 @fieldwise_init
-struct Grid(ImplicitlyCopyable, Movable, Stringable):
+struct Grid(Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -24,15 +24,6 @@ struct Grid(ImplicitlyCopyable, Movable, Stringable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
-
-    # ===-------------------------------------------------------------------===#
-    # Lifecycle
-    # ===-------------------------------------------------------------------===#
-
-    fn __copyinit__(out self, existing: Self):
-        self.rows = existing.rows
-        self.cols = existing.cols
-        self.data = existing.data.copy()
 
     # ===-------------------------------------------------------------------===#
     # Indexing
