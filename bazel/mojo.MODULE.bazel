@@ -8,7 +8,7 @@ mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
     base_url = BASE_URL,
     use_prebuilt_packages = False,
-    version = PACKAGE_VERSION,
+    version = "0." + PACKAGE_VERSION,
 )
 use_repo(mojo, "mojo_toolchains")
 
