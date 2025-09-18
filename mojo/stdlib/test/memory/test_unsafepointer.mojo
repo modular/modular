@@ -52,9 +52,7 @@ def test_unsafepointer_move_pointee_move_count():
     assert_equal(0, value.move_count)
     ptr.init_pointee_move(value^)
 
-    # -----
     # Test that `UnsafePointer.move_pointee` performs exactly one move.
-    # -----
 
     assert_equal(1, ptr[].move_count)
 
@@ -196,9 +194,7 @@ def test_unsafepointer_aligned_alloc():
 # Test that `UnsafePointer.alloc()` no longer artificially extends the lifetime
 # of every local variable in methods where its used.
 def test_unsafepointer_alloc_origin():
-    # -----------------------------------------
     # Test with MutableAnyOrigin alloc() origin
-    # -----------------------------------------
 
     var did_del_1 = False
 
@@ -325,6 +321,23 @@ def test_offset():
     ptr2.free()
 
 
+def test_pointer_subtraction():
+    # Allocate pointer of trivial type Bool
+    var ptr = UnsafePointer[Bool].alloc(8)
+    for i in range(8):
+        ptr[i] = true 
+
+    var start_ptr = ptr
+    var end_ptr = ptr + 5
+
+    # Subtract two pointers to get element difference
+    assert_equal(end_ptr.__sub__(start_ptr), 5)
+    assert_equal(start_ptr.__sub__(end_ptr), -5)
+    assert_equal(end_ptr.__sub__(end_ptr), 0)
+
+    ptr.free()
+
+
 def test_load_and_store_simd():
     var ptr = UnsafePointer[Int8].alloc(16)
     for i in range(16):
@@ -396,6 +409,7 @@ def main():
     test_bool()
     test_alignment()
     test_offset()
+    test_pointer_subtraction()
     test_load_and_store_simd()
     test_volatile_load_and_store_simd()
     test_merge()
