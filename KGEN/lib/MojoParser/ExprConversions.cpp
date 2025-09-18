@@ -423,9 +423,13 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
       MBValue packRefMBValue =
           MBValue(thunk.getArgument(thunkVariadicArgIndex));
 
-      auto index = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
+      auto indexAttr = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
+      CValue indexCValue = emitter.emitInt(
+          ASTExprAnd<PValue>{PValue(indexAttr), &node}, EC_CallParamValue);
+      PValue index = indexCValue.getIfPValue();
+      assert(index && "Int must be PValue when constructed from int attr");
 
-      SyntheticNode indexSynthNode(moduleDecl.getLoc(), PValue(index));
+      SyntheticNode indexSynthNode(moduleDecl.getLoc(), index);
 
       auto variadicTypeFromFunctionType =
           functionType.getInputs()[thunkVariadicArgIndex];

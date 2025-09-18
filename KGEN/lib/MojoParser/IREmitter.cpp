@@ -1737,6 +1737,23 @@ CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ExprContext context) {
   return emitBool(value, dest);
 }
 
+CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest) {
+  ASTType intType = shared.lookupBuiltinType("Int", getDeclScope(),
+                                             indexValue.expr->getLoc());
+
+  // Build Int from __mlir_type.index explicitly: Int.__init__(*, mlir_value=…)
+  CallOperands intCtorOperands;
+  intCtorOperands.add(StringAttr::get(getContext(), "mlir_value"), indexValue);
+  return emitConstructorCall(intType, std::move(intCtorOperands),
+                             indexValue.expr, CallSyntax::kTypeCall, dest);
+}
+
+CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue,
+                          ExprContext context) {
+  ValueDest dest(context);
+  return emitInt(indexValue, dest);
+}
+
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
 ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,

@@ -272,11 +272,6 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}Int::@"__neg__{{.*}}(%[[POW]])
   # CHECK-NEXT:  lit.ref.store %[[NEG]], %z
   z = -2**z
-  # CHECK-NEXT: %[[Z:.*]] = lit.ref.load %z
-  # CHECK-NEXT: %[[ONE:.*]] = kgen{{.*}}{1}
-  # CHECK-NEXT: %[[RES:.*]] = lit.call {{.*}}Int::@"__radd__(::Int,::Int)"(%[[Z]], %[[ONE]])
-  # CHECK-NEXT: lit.ref.store %[[RES]], %z
-  z = Int(1)._mlir_value + z
 
   # div tests
   # CHECK: lit.call {{.*}}__truediv__
@@ -310,43 +305,61 @@ fn precedence_associativity(a: Int):
   var c = 10
   z = 0 if c == 10 else 1 if c == 11 else 2
 
+struct LHS:
+  @implicit
+  fn __init__(out self, value: Int):
+    pass
+
+struct RHS(Movable, ImplicitlyCopyable):
+  fn __radd__(self, lhs: LHS) -> RHS: return self
+  fn __rsub__(self, lhs: LHS) -> RHS: return self
+  fn __rmul__(self, lhs: LHS) -> RHS: return self
+  fn __rfloordiv__(self, lhs: LHS) -> RHS: return self
+  fn __rmod__(self, lhs: LHS) -> RHS: return self
+  fn __rpow__(self, lhs: LHS) -> RHS: return self
+  fn __rlshift__(self, lhs: LHS) -> RHS: return self
+  fn __rrshift__(self, lhs: LHS) -> RHS: return self
+  fn __rand__(self, lhs: LHS) -> RHS: return self
+  fn __ror__(self, lhs: LHS) -> RHS: return self
+  fn __rxor__(self, lhs: LHS) -> RHS: return self
+
 # CHECK-LABEL: lit.fn @"reverse_operators
-fn reverse_operators(a: Int):
-  # CHECK: lit.call {{.*}}Int::@"__radd__(::Int,::Int)"
-  var z = Int(1)._mlir_value + a
+fn reverse_operators(a: RHS):
+  # CHECK: lit.call {{.*}}RHS::@"__radd__(expressions::RHS,expressions::LHS)"
+  var z = Int(1) + a
 
-  # CHECK: lit.call {{.*}}Int::@"__rsub__(::Int,::Int)"
-  z = Int(2)._mlir_value - z
+  # CHECK: lit.call {{.*}}RHS::@"__rsub__(expressions::RHS,expressions::LHS)"
+  z = Int(2) - z
 
-  # CHECK: lit.call {{.*}}Int::@"__rmul__(::Int,::Int)"
-  z = Int(3)._mlir_value * z
+  # CHECK: lit.call {{.*}}RHS::@"__rmul__(expressions::RHS,expressions::LHS)"
+  z = Int(3) * z
 
   # div tests
   # CHECK: lit.call {{.*}}__rtruediv__
-  # CHECK: lit.call {{.*}}Int::@"__rfloordiv__(::Int,::Int)"
+  # CHECK: lit.call {{.*}}RHS::@"__rfloordiv__(expressions::RHS,expressions::LHS)"
   var r1 = 33.0 / Float32(42.0)
-  z = Int(33)._mlir_value // z
+  z = Int(33) // z
 
-  # CHECK: lit.call {{.*}}Int::@"__rmod__(::Int,::Int)"
-  var i0 = Int(10)._mlir_value % z
+  # CHECK: lit.call {{.*}}RHS::@"__rmod__(expressions::RHS,expressions::LHS)"
+  var i0 = Int(10) % z
 
-# CHECK: lit.call {{.*}}Int::@"__rpow__(::Int,::Int)"
-  var i1 = Int(3)._mlir_value ** z
+  # CHECK: lit.call {{.*}}RHS::@"__rpow__(expressions::RHS,expressions::LHS)"
+  var i1 = Int(3) ** z
 
-  # CHECK: lit.call {{.*}}Int::@"__rlshift__(::Int,::Int)"
-  var i2 = Int(1)._mlir_value << z
+  # CHECK: lit.call {{.*}}RHS::@"__rlshift__(expressions::RHS,expressions::LHS)"
+  var i2 = Int(1) << z
 
-  # CHECK: lit.call {{.*}}Int::@"__rrshift__(::Int,::Int)"
-  var i3 = Int(1)._mlir_value >> z
+  # CHECK: lit.call {{.*}}RHS::@"__rrshift__(expressions::RHS,expressions::LHS)"
+  var i3 = Int(1) >> z
 
-  # CHECK: lit.call {{.*}}Int::@"__rand__(::Int,::Int)"
-  z = Int(1)._mlir_value & z
+  # CHECK: lit.call {{.*}}RHS::@"__rand__(expressions::RHS,expressions::LHS)"
+  z = Int(1) & z
 
-  # CHECK: lit.call {{.*}}Int::@"__ror__(::Int,::Int)"
-  z = Int(2)._mlir_value | z
+  # CHECK: lit.call {{.*}}RHS::@"__ror__(expressions::RHS,expressions::LHS)"
+  z = Int(2) | z
 
-  # CHECK: lit.call {{.*}}Int::@"__rxor__(::Int,::Int)"
-  z = Int(3)._mlir_value ^ z
+  # CHECK: lit.call {{.*}}RHS::@"__rxor__(expressions::RHS,expressions::LHS)"
+  z = Int(3) ^ z
 
 # CHECK-LABEL: lit.fn @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:

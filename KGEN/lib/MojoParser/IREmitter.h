@@ -587,6 +587,10 @@ public:
   CValue emitBool(ASTExprAnd<PValue> value, ValueDest &dest);
   CValue emitBool(ASTExprAnd<PValue> value, ExprContext context);
 
+  /// Emit a `Int`-typed value from an `index` value.
+  CValue emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest);
+  CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprContext context);
+
   /// Given an expression that can be used in __origin_of or a ref expression,
   /// analyze it to determine which origin it represents.  If it doesn't work,
   /// emit an error and return null.
