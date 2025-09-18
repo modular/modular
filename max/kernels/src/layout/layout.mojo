@@ -353,14 +353,14 @@ struct Layout(
     """The dimensions of the layout.
 
     This field defines the size of each dimension in the logical coordinate space.
-    For example, a shape of (3, 4) represents a 3×4 grid of elements.
+    For example, a shape of (3, 4) represents a 3x4 grid of elements.
     """
 
     var stride: IntTuple
     """The memory step sizes for each dimension.
 
     This field defines how many elements to skip in memory when moving one unit
-    in each dimension. For example, in a row-major 3×4 layout, the strides might
+    in each dimension. For example, in a row-major 3x4 layout, the strides might
     be (4, 1), meaning moving one unit in the first dimension requires skipping
     4 elements in memory, while moving one unit in the second dimension requires
     skipping 1 element.

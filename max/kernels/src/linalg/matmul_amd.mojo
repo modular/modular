@@ -102,20 +102,20 @@ struct MmaOpAMD[
     fn smem_tile_layout[block_rows: Int, k_tile_size: Int]() -> Layout:
         # Shared memory layout
         #
-        # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rows×k_tile_size tiles
+        # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rows x k_tile_size tiles
         # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
         # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
         #
-        # Resulting shape: block_rows×(k_tile_size × num_repeats) = block_rows × block_cols tensor
-        # Where block_cols = k_tile_size × num_repeats, k_tile_size = MMA_K × k_group_size
+        # Resulting shape: block_rowsx(k_tile_size x num_repeats) = block_rows x block_cols tensor
+        # Where block_cols = k_tile_size x num_repeats, k_tile_size = MMA_K x k_group_size
         #
-        # This creates num_repeats blocks of block_rows×k_tile_size arranged horizontally:
+        # This creates num_repeats blocks of block_rows x k_tile_size arranged horizontally:
         # Within each k_tile_size-column block, elements are consecutive (stride 1)
-        # Between blocks: stride = block_rows × k_tile_size
+        # Between blocks: stride = block_rows x k_tile_size
         #
         # ASCII diagram for block_rows=64, k_tile_size=32, block_cols=64 (showing first 2 of 2 blocks):
         # ┌─────────────────────────────────────────────────────────────────────────┐
-        # │         Block 0 (64×32)             │         Block 1 (64×32)           │
+        # │         Block 0 (64x32)             │         Block 1 (64x32)           │
         # ├─────────────────────────────────────┼───────────────────────────────────┤
         # │   0    1    2  ...   30   31        │ 2048 2049 2050 ... 2078 2079      │
         # │  32   33   34  ...   62   63        │ 2080 2081 2082 ... 2110 2111      │
@@ -124,7 +124,7 @@ struct MmaOpAMD[
         # │ ...                                 │  ...                              │
         # │2016 2017 2018  ... 2046 2047        │ 4064 4065 4066 ... 4094 4095      │
         # └─────────────────────────────────────────────────────────────────────────┘
-        # stride between blocks = block_rows × k_tile_size = 64 × 32 = 2048
+        # stride between blocks = block_rows x k_tile_size = 64 x 32 = 2048
 
         alias base_layout = Layout.row_major(block_rows, k_tile_size)
         alias num_repeats = block_cols // k_tile_size

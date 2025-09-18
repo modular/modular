@@ -2741,19 +2741,19 @@ struct LayoutTensor[
         Parameters:
             tile_sizes: The dimensions of each tile along each axis of the
                 tensor. For example, in a 2D tensor, `tile[32, 32]` creates
-                32×32 tiles.
+                32x32 tiles.
 
         Args:
             tile_coords: The coordinates of the specific tile to extract. For
                 example, `tile[32, 32](1, 2)` extracts the tile at position
-                (1, 2) in the grid of 32×32 tiles.
+                (1, 2) in the grid of 32x32 tiles.
 
         Returns:
             A view into the original tensor representing the specified tile.
 
         Example:
 
-        For a 4×4 tensor with values:
+        For a 4x4 tensor with values:
 
         ```
         [1 2 3 4]
@@ -3010,7 +3010,7 @@ struct LayoutTensor[
         Parameters:
             tile_sizes: The dimensions of each tile along each axis of the
                 tensor. For example, in a 2D tensor, `tiled_iterator[32, 32]`
-                creates an iterator over 32×32 tiles.
+                creates an iterator over 32x32 tiles.
             axis: The axis along which the iterator will traverse. Default is 0
                 (first dimension). For example, with axis=0, the iterator will
                 move vertically through tiles.
@@ -3421,7 +3421,7 @@ struct LayoutTensor[
 
         Parameters:
             threads_layout: Defines the logical arrangement of threads (e.g.,
-                2×2 grid of 4 threads). This layout determines how the tensor is
+                2x2 grid of 4 threads). This layout determines how the tensor is
                 partitioned.
             axis: Optional. If specified, restricts distribution to only this
                 axis. For example, with axis=0 in a 2D thread layout, threads
@@ -3441,7 +3441,7 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 row-major tensor distributed across 4 threads in a 2×2 row-major grid:
+        For a 4x4 row-major tensor distributed across 4 threads in a 2x2 row-major grid:
 
         - Thread 0 will receive a LayoutTensor with a view into
             (0,0), (0,2), (2,0), (2,2) of the original tensor.
@@ -4005,7 +4005,7 @@ struct LayoutTensor[
         Parameters:
             vector_shape: The dimensions of each vector unit along each axis of
                 the tensor. or example, in a 2D tensor, `vectorize[4, 4]` treats
-                4×4 blocks as vector units.
+                4x4 blocks as vector units.
 
         Returns:
             A view of the tensor with a vectorized layout, where each element in
@@ -4014,8 +4014,8 @@ struct LayoutTensor[
 
         Example:
 
-        For a 16×16 tensor, `vectorize[4, 4]` will produce a 4×4 tensor
-        where each element represents a 4×4 block from the original tensor.
+        For a 16x16 tensor, `vectorize[4, 4]` will produce a 4x4 tensor
+        where each element represents a 4x4 block from the original tensor.
 
         Performance:
 
@@ -4146,7 +4146,7 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 tensor, `t` with values:
+        For a 4x4 tensor, `t` with values:
 
         ```
         [1 2 3 4]
@@ -4258,7 +4258,7 @@ struct LayoutTensor[
 
         Example:
 
-        Given a 3×4×5 tensor, `t`, the following example extracts a 2×2 slice
+        Given a 3x4x5 tensor, `t`, the following example extracts a 2x2 slice
         from dimensions 0 and 2, with dimension 1 fixed at index 1.
 
         ```mojo
@@ -4372,7 +4372,7 @@ struct LayoutTensor[
 
         Example:
 
-        For a 3×4×5 tensor, `t`, the following example extracts a 1D slice from
+        For a 3x4x5 tensor, `t`, the following example extracts a 1D slice from
         dimension 0, with dimensions 1 and 2 fixed at indices 1 and 2:
 
         ```mojo
@@ -4452,14 +4452,14 @@ struct LayoutTensor[
 
         Example:
 
-        For a 2×3 tensor with values:
+        For a 2x3 tensor with values:
 
         ```
         [1 2 3]
         [4 5 6]
         ```
 
-        `transpose()` will produce a 3×2 tensor:
+        `transpose()` will produce a 3x2 tensor:
 
         ```
         [1 4]
@@ -4526,8 +4526,8 @@ struct LayoutTensor[
 
         Example:
 
-        Given a 2×6 row-major tensor, `reshape[Layout.col_major(3, 4)]()`
-        produces a 3×4 tensor with the same elements in column-major order.
+        Given a 2x6 row-major tensor, `reshape[Layout.col_major(3, 4)]()`
+        produces a 3x4 tensor with the same elements in column-major order.
 
         Performance:
 
@@ -4590,9 +4590,9 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 tensor with a standard row-major layout, composing with a
-        layout that represents a 2×2 tiling would result in a tensor that
-        logically views the data as 2×2 blocks.
+        For a 4x4 tensor with a standard row-major layout, composing with a
+        layout that represents a 2x2 tiling would result in a tensor that
+        logically views the data as 2x2 blocks.
 
         Performance:
 
@@ -5219,7 +5219,7 @@ struct LayoutTensor[
             print(tensor)  # Internally calls `write_to` with a StringWriter
         ```
 
-        Output for a 2×3 tensor:
+        Output for a 2x3 tensor:
 
         ```
         [[1.0, 1.0, 1.0],

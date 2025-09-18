@@ -41,8 +41,8 @@ Supported Data Types:
 
 Supported Matrix Shapes:
 ----------------------
-- NVIDIA: 16×8×8, 16×8×4, 16×8×16, 8×8×4, 16×8×32
-- AMD: 16×16×4, 16×16×16, 32×32×8
+- NVIDIA: 16x8x8, 16x8x4, 16x8x16, 8x8x4, 16x8x32
+- AMD: 16x16x4, 16x16x16, 32x32x8
 """
 
 from collections import OptionalReg
@@ -156,18 +156,18 @@ struct TensorCore[
         out_type: The data type for output/accumulation operations.
         in_type: The data type for input matrix elements.
         shape: The shape parameters for the matrix operation in the form [M, N, K]
-               where M×N is the output shape and K is the inner dimension.
+               where MxN is the output shape and K is the inner dimension.
         transpose_b: Whether to transpose the B matrix before multiplication. Defaults to False.
 
     Note:
         Different shapes and data types are supported depending on the GPU hardware.
         For NVIDIA GPUs:
-          - float32: 16×8×8 or 16×8×4
-          - half-precision: 16×8×16
-          - float8: 16×8×32
+          - float32: 16x8x8 or 16x8x4
+          - half-precision: 16x8x16
+          - float8: 16x8x32
         For AMD GPUs:
-          - float32: 16×16×4
-          - half-precision: 16×16×16 or 32×32×8
+          - float32: 16x16x4
+          - half-precision: 16x16x16 or 32x32x8
     """
 
     # Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
@@ -1339,7 +1339,7 @@ fn get_mma_shape[
 
     Returns:
         An `IndexList[3]` containing the MMA dimensions in the format `[M, N, K]`,
-        where `M×N` is the output matrix size and `K` is the reduction dimension.
+        where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
 
     @parameter

@@ -171,20 +171,20 @@ struct KBuffer[
 
     # Shared memory layout
     # Layout construction for standard memory access:
-    # - base_layout: Layout.row_major(BN, simd_width) -> BN×simd_width tiles
+    # - base_layout: Layout.row_major(BN, simd_width) -> BNxsimd_width tiles
     # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
     # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
     #
-    # Resulting shape: BN×(simd_width × num_repeats) = BN×BK tensor
-    # Where BK = simd_width × num_repeats, typically simd_width=8, num_repeats=BK/8
+    # Resulting shape: BNx(simd_width x num_repeats) = BNxBK tensor
+    # Where BK = simd_width x num_repeats, typically simd_width=8, num_repeats=BK/8
     #
-    # This creates num_repeats blocks of BN×simd_width arranged horizontally:
+    # This creates num_repeats blocks of BNxsimd_width arranged horizontally:
     # Within each simd_width-column block, elements are consecutive (stride 1)
-    # Between blocks: stride = BN × simd_width
+    # Between blocks: stride = BN x simd_width
     #
     # ASCII diagram for BN=128, simd_width=8, BK=32 (showing first 2 of 4 blocks):
     # ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-    # │        Block 0 (128×8)                     │        Block 1 (128×8)                     │     ... 2 more blocks           │
+    # │        Block 0 (128x8)                     │        Block 1 (128x8)                     │     ... 2 more blocks           │
     # ├────────────────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────┤
     # │   0    1    2    3    4    5    6    7     │ 1024 1025 1026 1027 1028 1029 1030 1031    │ (Block 2: 2048-3071)            │
     # │   8    9   10   11   12   13   14   15     │ 1032 1033 1034 1035 1036 1037 1038 1039    │ (Block 3: 3072-4095)            │
@@ -193,7 +193,7 @@ struct KBuffer[
     # │ ...                                        │  ...                                       │                                 │
     # │1016 1017 1018 1019 1020 1021 1022 1023     │ 2040 2041 2042 2043 2044 2045 2046 2047    │                                 │
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-    # stride between blocks = BN × simd_width = 128 × 8 = 1024
+    # stride between blocks = BN x simd_width = 128 x 8 = 1024
 
     alias base_layout = Layout.row_major(BN, Self.simd_width)
     alias tiler_layout = Layout.row_major(1, Self.num_repeats)
@@ -377,20 +377,20 @@ struct VBuffer[
     alias num_repeats = BK // Self.simd_width
 
     # V Buffer shared memory layout
-    # - base_layout: Layout.row_major(depth + padding, simd_width) -> (depth+padding)×simd_width tiles
+    # - base_layout: Layout.row_major(depth + padding, simd_width) -> (depth+padding)xsimd_width tiles
     # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
     # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout with padding
     #
-    # Resulting shape: (depth + padding)×(simd_width × num_repeats) = (depth + depth//8)×BK tensor
-    # Where padding = depth//8 helps avoid bank conflicts, BK = simd_width × num_repeats
+    # Resulting shape: (depth + padding)x(simd_width x num_repeats) = (depth + depth//8)xBK tensor
+    # Where padding = depth//8 helps avoid bank conflicts, BK = simd_width x num_repeats
     #
-    # This creates num_repeats blocks of (depth+padding)×simd_width arranged horizontally:
+    # This creates num_repeats blocks of (depth+padding)xsimd_width arranged horizontally:
     # Within each simd_width-column block, elements are consecutive (stride 1)
-    # Between blocks: stride = (depth + padding) × simd_width
+    # Between blocks: stride = (depth + padding) x simd_width
     #
     # ASCII diagram for depth=128, padding=16, simd_width=8, BK=32 (showing first 2 of 4 blocks):
     # ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-    # │        Block 0 (144×8)                     │        Block 1 (144×8)                     │     ... 2 more blocks           │
+    # │        Block 0 (144x8)                     │        Block 1 (144x8)                     │     ... 2 more blocks           │
     # ├────────────────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────┤
     # │   0    1    2    3    4    5    6    7     │ 1152 1153 1154 1155 1156 1157 1158 1159    │ (Block 2: 2304-3455)            │
     # │   8    9   10   11   12   13   14   15     │ 1160 1161 1162 1163 1164 1165 1166 1167    │ (Block 3: 3456-4607)            │
@@ -399,7 +399,7 @@ struct VBuffer[
     # │ ...                                        │  ...                                       │                                 │
     # │1144 1145 1146 1147 1148 1149 1150 1151     │ 2296 2297 2298 2299 2300 2301 2302 2303    │                                 │
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-    # stride between blocks = (depth + padding) × simd_width = 144 × 8 = 1152
+    # stride between blocks = (depth + padding) x simd_width = 144 x 8 = 1152
 
     alias base_layout = Layout.row_major(
         Self.pad[depth](),
