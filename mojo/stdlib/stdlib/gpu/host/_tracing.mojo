@@ -68,8 +68,8 @@ fn _setup_categories(
     _setup_category(name_category, _TraceType_MAX, "Max")
 
 
-fn _on_error_msg() -> String:
-    return String(
+fn _on_error_msg() -> Error:
+    return Error(
         (
             "Cannot find the GPU Tracing libraries. Please make sure that "
             "the library path is correctly set in one of the following paths ["

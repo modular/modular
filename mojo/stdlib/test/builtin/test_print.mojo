@@ -20,13 +20,13 @@ from utils import IndexList
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> String:
-    return loc.prefix(String("AssertionError: ", msg))
+fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> Error:
+    return Error(loc.prefix(String("AssertionError: ", msg)))
 
 
 fn _assert_equal_error(
     lhs: String, rhs: String, msg: String, loc: _SourceLocation
-) -> String:
+) -> Error:
     var err = (
         "`left == right` comparison failed:\n   left: "
         + lhs

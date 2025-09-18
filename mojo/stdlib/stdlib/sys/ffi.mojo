@@ -608,7 +608,7 @@ struct _Global[
     StorageType: Movable, //,
     name: StaticString,
     init_fn: fn () -> StorageType,
-    on_error_msg: Optional[fn () -> String] = None,
+    on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
     alias ResultType = UnsafePointer[StorageType]
 
