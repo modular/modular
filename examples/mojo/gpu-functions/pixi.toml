@@ -1,6 +1,6 @@
 [project]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "https://conda.modular.com/max/"]
 description = "Examples of using Mojo to write GPU functions"
 name = "Mojo GPU Functions"
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]

@@ -1,6 +1,6 @@
 [project]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "https://conda.modular.com/max/"]
 description = "An example of a custom model architecture served by MAX"
 name = "Custom MAX Model Serving"
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
