@@ -40,20 +40,6 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         )
         self.pos += len_bytes
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        """Write a sequence of Writable arguments to the provided Writer.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Args:
-            args: Sequence of arguments to write to this Writer.
-        """
-
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
-
 
 fn check_float[dtype: DType, //, expected: StaticString](f8: Scalar[dtype]):
     var f8_str = Buffer[len(expected)]()

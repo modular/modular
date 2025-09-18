@@ -107,18 +107,3 @@ struct FileDescriptor(Writer):
                 "`read_bytes()` is not yet implemented for unknown platform.",
             ]()
             return abort[UInt]()
-
-    @always_inline
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        """Write a sequence of Writable arguments to the provided Writer.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Args:
-            args: Sequence of arguments to write to this Writer.
-        """
-
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
