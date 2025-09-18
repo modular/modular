@@ -52,6 +52,7 @@ from max.interfaces import (
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
 )
+from max.pipelines.core.exceptions import InputError
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.parser import LlamaToolParser, parse_json_from_text
@@ -307,8 +308,20 @@ class OpenAIChatResponseGenerator(
         except Exception as e:
             # Note that for SSE, the server will have already responded with a
             # 200 when establishing the connection.
-            status_code = 400 if isinstance(e, ValueError) else 500
-            logger.exception("Exception in request %s", request.request_id)
+            if isinstance(e, InputError):
+                status_code = 400
+                logger.warning(
+                    "Input validation error in request %s: %s",
+                    request.request_id,
+                    str(e),
+                )
+            elif isinstance(e, ValueError):
+                status_code = 400
+                logger.exception("Exception in request %s", request.request_id)
+            else:
+                status_code = 500
+                logger.exception("Exception in request %s", request.request_id)
+
             error_response = ErrorResponse(
                 error=Error(
                     code=str(status_code), message=str(e), param="", type=""
@@ -814,6 +827,11 @@ async def openai_create_chat_completion(
     except (TypeError, ValidationError) as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.exception("ValueError in request %s", request_id)
         # NOTE(SI-722): These errors need to return more helpful details,
@@ -936,6 +954,11 @@ async def openai_create_embeddings(
     except (TypeError, ValidationError) as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.exception("ValueError in request %s", request_id)
         # NOTE(SI-722): These errors need to return more helpful details,
@@ -1046,6 +1069,17 @@ class OpenAICompletionResponseGenerator(
                 status_code=status_code,
                 content={"detail": "Too Many Requests"},
                 headers={"Retry-After": "30"},
+            )
+        except InputError as e:
+            status_code = 400
+            logger.warning(
+                "Input validation error in request %s: %s",
+                request.request_id,
+                str(e),
+            )
+            yield JSONResponse(
+                status_code=status_code,
+                content={"detail": "Input validation error", "message": str(e)},
             )
         except ValueError as e:
             status_code = 500
@@ -1375,6 +1409,11 @@ async def create_streaming_audio_speech(
     except (TypeError, ValidationError) as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.exception("ValueError in request %s", request_id)
         # NOTE(SI-722): These errors need to return more helpful details,
