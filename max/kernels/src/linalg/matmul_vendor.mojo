@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import align_of, simd_width_of
+from sys import align_of, simd_width_of, size_of
+from sys.info import _is_sm_100x_or_newer
 
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
+from gpu.host.info import B200
 
 from utils import Index, IndexList
 
@@ -56,7 +58,13 @@ fn matmul[
         return
     else:
         alias epilogue = elementwise_lambda_fn.value()
-        alias simd_size = simd_width_of[c.type, target = get_gpu_target()]()
+        # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
+        # arch support 32B load/store to global memory, see KERN-2037.
+        alias simd_size = 32 // size_of[
+            c.type
+        ]() if ctx.default_device_info >= B200 else simd_width_of[
+            c.type, target = get_gpu_target()
+        ]()
 
         @parameter
         @__copy_capture(c)
@@ -66,9 +74,10 @@ fn matmul[
             var c_coord = Index(idx[0], idx[1])
             var c_val = c.load[
                 width=simd_width,
-                alignment = align_of[SIMD[c.type, simd_width]](),
+                # Load takes alignment in bytes, lambda takes number of elements
+                alignment = alignment * size_of[c_type](),
             ](c_coord)
-            epilogue[c.type, simd_width](c_coord, c_val)
+            epilogue[c.type, simd_width, alignment=alignment](c_coord, c_val)
 
         # If c is already allocated, we can just use the vendor matmul and
         # apply the epilogue.
