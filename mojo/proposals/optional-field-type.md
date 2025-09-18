@@ -156,7 +156,7 @@ Email Address:  alice@example.com  (Size:  24  bytes)
 Phone Number:  +1 555-123-4567  (Size:  48  bytes)
 ```
 
-By contrast, a Variant-based representation: 
+By contrast, a Variant-based representation:
 
 ```mojo
 from utils import Variant
@@ -185,11 +185,11 @@ This syntax is cleaner but requires compiler support. We propose introducing Opt
 
 # Rationale and Trade-offs
 
--	Compared to runtime `Optional`
-	-	Benefit: OptionalField avoids the extra memory overhead of storing a runtime tag or pointer.
-	-	Trade-off: The presence or absence of the field must be known at compile time. This reduces flexibility in exchange for efficiency.
--	Compared to `Variant`
-	-   Benefit: `OptionalField` produces specialized layouts with smaller memory footprints for each case.
-	-	Trade-off: Variants centralize case handling and can represent multiple alternatives at runtime, while `OptionalField` only expresses compile-time choices.
+- Compared to runtime `Optional`
+ 	- Benefit: OptionalField avoids the extra memory overhead of storing a runtime tag or pointer.
+ 	- Trade-off: The presence or absence of the field must be known at compile time. This reduces flexibility in exchange for efficiency.
+- Compared to `Variant`
+ 	- Benefit: `OptionalField` produces specialized layouts with smaller memory footprints for each case.
+ 	- Trade-off: Variants centralize case handling and can represent multiple alternatives at runtime, while `OptionalField` only expresses compile-time choices.
 
 Overall, `OptionalField` provides a lightweight mechanism for compile-time memory optimization.
