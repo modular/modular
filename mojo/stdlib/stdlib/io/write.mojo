@@ -149,11 +149,11 @@ trait Writable:
     """
 
     fn write_to(self, mut writer: Some[Writer]):
-        """
-        Formats the string representation of this type to the provided Writer.
+        """Formats the string representation of this type to the provided
+        `Writer`.
 
         Args:
-            writer: The type conforming to `Writable`.
+            writer: The type conforming to `Writer`.
         """
         ...
 

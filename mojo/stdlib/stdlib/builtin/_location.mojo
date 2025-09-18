@@ -39,9 +39,27 @@ struct _SourceLocation(ImplicitlyCopyable, Movable, Stringable, Writable):
         """
         return String("At ", self, ": ", msg)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    # FIXME(#5274): this should use the Writer trait but it doesn't yet accept
+    # capturing write_to functions.
+    @no_inline
+    fn _prefix_error[
+        append_message: fn[W: Writer] (mut writer: W) capturing
+    ](self) -> Error:
+        """Return the given message prefixed with the pretty-printer location.
+
+        Parameters:
+            append_message: The function to write the message to be appended.
         """
-        Formats the source location to the provided Writer.
+
+        @parameter
+        fn write_to[W: Writer](mut writer: W):
+            writer.write("At ", self, ": ")
+            append_message(writer)
+
+        return Error.__init__[write_to]()
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats the source location to the provided Writer.
 
         Args:
             writer: The object to write to.
