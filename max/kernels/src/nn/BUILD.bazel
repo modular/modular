@@ -7,6 +7,8 @@ mojo_library(
     srcs = glob(["**/*.mojo"]),
     docs_base_path = "kernels",
     deps = [
+        "@mojo//:_cudnn",
+        "@mojo//:_cufft",
         "@mojo//:kv_cache",
         "@mojo//:layout",
         "@mojo//:linalg",

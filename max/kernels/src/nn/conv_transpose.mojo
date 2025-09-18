@@ -21,12 +21,12 @@ from nn.conv import (
 from .conv_utils import elementwise_simd_epilogue_type
 
 from gpu.host import DeviceContext
-from gpu._cudnn.cnn_infer import (
+from _cudnn.cnn_infer import (
     cudnnConvolutionMode_t,
     cudnnSetConvolution2dDescriptor,
     cudnnConvolutionBackwardData,
 )
-from gpu._cudnn.infer import (
+from _cudnn.infer import (
     cudnnConvolutionBwdDataAlgo_t,
     cudnnDataType_t,
     cudnnSetFilter4dDescriptor,

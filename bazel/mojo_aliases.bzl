@@ -20,6 +20,11 @@ _PACKAGES = {
     "comm": "max/kernels/src/comm",
     "testdata": "max/kernels/test/testdata",
     "compiler": "max/compiler/src:compiler",
+    "_cublas": "max/kernels/src/_cublas",
+    "_cufft": "max/kernels/src/_cufft",
+    "_curand": "max/kernels/src/_curand",
+    "_cudnn": "max/kernels/src/_cudnn",
+    "_rocblas": "max/kernels/src/_rocblas",
 }
 
 def _mojo_aliases_impl(rctx):

@@ -13,7 +13,7 @@
 """Inverse real FFT kernel using cuFFT."""
 
 from complex import ComplexFloat32
-from gpu._cufft.cufft import (
+from _cufft.cufft import (
     cufftCreate,
     cufftEstimate1d,
     cufftExecC2R,
@@ -24,8 +24,8 @@ from gpu._cufft.cufft import (
     cufftSetStream,
     cufftSetWorkArea,
 )
-from gpu._cufft.types import Type
-from gpu._cufft.utils import check_error
+from _cufft.types import Type
+from _cufft.utils import check_error
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
 from layout import LayoutTensor

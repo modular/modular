@@ -13,9 +13,9 @@
 from sys import has_amd_gpu_accelerator, size_of
 from sys.ffi import _get_global_or_null, external_call
 
-import gpu._rocblas
+import _rocblas
 from buffer import NDBuffer
-from gpu._cublas.cublas import (
+from _cublas.cublas import (
     Algorithm,
     ComputeType,
     _convert_to_cublas_datatype,
@@ -31,7 +31,7 @@ from gpu._cublas.cublas import (
     cublasSetMathMode,
     cublasSetStream,
 )
-from gpu._cublas.cublaslt import (
+from _cublas.cublaslt import (
     Context,
     Preference,
     cublasLtLoggerSetLevel,
@@ -51,8 +51,8 @@ from gpu._cublas.cublaslt import (
     cublasLtMatrixLayoutCreate,
     cublasLtMatrixLayoutDestroy,
 )
-from gpu._cublas.dtype import DataType
-from gpu._rocblas.hipblaslt import (
+from _cublas.dtype import DataType
+from _rocblas.hipblaslt import (
     _check_hipblas_error,
     _convert_to_hip_datatype,
     hipblasComputeType_t,
