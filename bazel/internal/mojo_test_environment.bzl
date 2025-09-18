@@ -39,7 +39,7 @@ def _extract_linker_variables(ctx):
     )
 
     # TODO: Fix -Wl, exclusion
-    system_libs = ",".join([x for x in link_arguments if not x.startswith("-Wl,")])
+    system_libs = [x for x in link_arguments if not x.startswith("-Wl,")]
 
     return linker_driver, system_libs, env, cc_toolchain.all_files
 
@@ -106,6 +106,14 @@ def _mojo_test_environment_implementation(ctx):
 
     # NOTE: env should probably be used here but can't be passed through directly, right now it is only ZERO_AR_DATE
     linker_driver, system_libs, _, extra_files = _extract_linker_variables(ctx)
+    if ctx.attr.short_path:
+        linker_driver = linker_driver.replace("external/", "../")
+    new_system_libs = []
+    for lib in system_libs:
+        if ctx.attr.short_path:
+            new_system_libs.append(lib.replace("external/", "../"))
+        else:
+            new_system_libs.append(lib)
 
     return [
         CcInfo(),  # Requirement of py_test
@@ -122,7 +130,7 @@ def _mojo_test_environment_implementation(ctx):
             "LLD_PATH": mojo_toolchain.lld.short_path if ctx.attr.short_path else mojo_toolchain.lld.path,
             "MOJO_BINARY_PATH": mojo_toolchain.mojo.short_path if ctx.attr.short_path else mojo_toolchain.mojo.path,
             "MOJO_LINKER_DRIVER": linker_driver,
-            "MOJO_LINKER_SYSTEM_LIBS": system_libs,
+            "MOJO_LINKER_SYSTEM_LIBS": ",".join(new_system_libs),
         }),
     ]
 
