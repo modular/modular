@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "modular_cc_test")
+
+modular_cc_test(
+    name = "InitTests",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "//Init",
+        "@llvm-project//llvm:Support",
+    ],
+)
