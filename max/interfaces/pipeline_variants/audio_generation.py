@@ -12,20 +12,13 @@ responses, including status tracking and audio data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Generic,
-    Optional,
-    Protocol,
-    Union,
-    runtime_checkable,
-)
+from typing import Any, Generic, Optional, Union
 
 import msgspec
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
-from max.interfaces.pipeline import PipelineOutput
+from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 from typing_extensions import TypeVar
@@ -84,7 +77,7 @@ class AudioGenerationMetadata(
     Represents metadata associated with audio generation.
 
     This class will eventually replace the metadata dictionary used throughout
-    the AudioGeneratorOutput object, providing a structured and type-safe
+    the AudioGenerationOutput object, providing a structured and type-safe
     alternative for audio generation metadata.
 
     Configuration:
@@ -125,13 +118,38 @@ class AudioGenerationMetadata(
         return result
 
 
-def _check_audio_generator_output_implements_pipeline_output(
-    x: AudioGeneratorOutput,
-) -> PipelineOutput:
-    return x
+AudioGenerationContextType = TypeVar(
+    "AudioGenerationContextType", bound=BaseContext
+)
+"""Type variable for audio generation context types.
+
+This type variable is bound to BaseContext and represents the specific context
+type used in audio generation pipelines. It allows for type-safe generic
+programming while ensuring that all context types inherit from BaseContext
+and maintain the required interface for audio generation operations.
+"""
 
 
-class AudioGeneratorOutput(msgspec.Struct, tag=True, omit_defaults=True):
+@dataclass(frozen=True)
+class AudioGenerationInputs(
+    PipelineInputs, Generic[AudioGenerationContextType]
+):
+    """Input data structure for audio generation pipelines.
+
+    This class represents the input data required for audio generation operations
+    within the pipeline framework. It extends PipelineInputs and provides type-safe
+    generic support for different audio generation context types.
+    """
+
+    batch: dict[RequestID, AudioGenerationContextType]
+    """A dictionary mapping RequestID to AudioGenerationContextType instances.
+    This batch structure allows for processing multiple audio generation
+    requests simultaneously while maintaining request-specific context
+    and configuration data.
+    """
+
+
+class AudioGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
     """Represents a response from the audio generation API.
 
     This class encapsulates the result of an audio generation request, including
@@ -163,35 +181,7 @@ class AudioGeneratorOutput(msgspec.Struct, tag=True, omit_defaults=True):
         return self.final_status.is_done
 
 
-AudioGeneratorContext = TypeVar("AudioGeneratorContext", bound=BaseContext)
-
-
-@runtime_checkable
-class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
-    """Interface for audio generation models."""
-
-    def next_chunk(
-        self, batch: dict[str, AudioGeneratorContext]
-    ) -> dict[str, AudioGeneratorOutput]:
-        """Computes the next audio chunk for a single batch.
-
-        The new speech tokens are saved to the context. The most recently
-        generated audio is return through the `AudioGeneratorOutput`.
-
-        Args:
-            batch (dict[str, AudioGeneratorContext]): Batch of contexts.
-
-        Returns:
-            dict[str, AudioGeneratorOutput]: Dictionary mapping request IDs to
-                audio generation responses.
-        """
-        ...
-
-    def release(self, request_id: RequestID) -> None:
-        """Release any resources or state associated with a specific request.
-
-        Args:
-            request_id (RequestID): The unique identifier of the request to
-                release resources for.
-        """
-        ...
+def _check_audio_generator_output_implements_pipeline_output(
+    x: AudioGenerationOutput,
+) -> PipelineOutput:
+    return x

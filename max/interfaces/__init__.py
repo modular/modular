@@ -30,11 +30,11 @@ from .pipeline import (
     PipelineOutputType,
 )
 from .pipeline_variants import (
+    AudioGenerationContextType,
+    AudioGenerationInputs,
     AudioGenerationMetadata,
+    AudioGenerationOutput,
     AudioGenerationRequest,
-    AudioGenerator,
-    AudioGeneratorContext,
-    AudioGeneratorOutput,
     EmbeddingsGenerationContextType,
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
@@ -62,15 +62,15 @@ from .utils import (
 
 PipelinesFactory = Callable[
     # TODO(GENAI-245): Use of Any here is not safe.
-    [], Union[AudioGenerator[Any], Pipeline[Any, Any]]
+    [], Pipeline[Any, Any]
 ]
 
 __all__ = [
+    "AudioGenerationContextType",
+    "AudioGenerationInputs",
     "AudioGenerationMetadata",
+    "AudioGenerationOutput",
     "AudioGenerationRequest",
-    "AudioGenerator",
-    "AudioGeneratorContext",
-    "AudioGeneratorOutput",
     "BaseContext",
     "BaseContextType",
     "BatchLogitsProcessor",

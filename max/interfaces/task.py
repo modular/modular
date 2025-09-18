@@ -63,7 +63,7 @@ class PipelineTask(str, Enum):
             type: The output type for the pipeline task.
         """
         from .pipeline_variants import (
-            AudioGeneratorOutput,
+            AudioGenerationOutput,
             EmbeddingsGenerationOutput,
             TextGenerationOutput,
         )
@@ -77,7 +77,7 @@ class PipelineTask(str, Enum):
         elif self == PipelineTask.EMBEDDINGS_GENERATION:
             return dict[str, SchedulerResult[EmbeddingsGenerationOutput]]
         elif self == PipelineTask.AUDIO_GENERATION:
-            return dict[str, SchedulerResult[AudioGeneratorOutput]]
+            return dict[str, SchedulerResult[AudioGenerationOutput]]
         else:
             raise ValueError(
                 f"PipelineTask ({self}) does not have an output_type defined."
