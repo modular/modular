@@ -54,25 +54,27 @@ class WithLazyPipelineOptions(click.Command):
         return pipeline_config_options(callback)
 
     def _ensure_options_loaded(self) -> None:
-        if not self._options_loaded:
-            # Lazily load and apply pipeline_config_options decorator
+        if self._options_loaded:
+            return
 
-            # In Click, each command has a callback function that's executed when the command runs.
-            # The callback contains the actual implementation of the command.
-            # Here, we're applying the pipeline_config_options decorator to add CLI parameters
-            # to our callback function dynamically, rather than statically at import time.
-            assert self.callback is not None
-            self.callback = self._add_options(self.callback)
-            self._options_loaded = True
+        # Lazily load and apply pipeline_config_options decorator
 
-            # When Click decorators (like @click.option) are applied to a function,
-            # they attach Parameter objects to the function via a __click_params__ attribute.
-            # We need to extract these parameters and add them to the command's params list
-            # so Click knows about them for argument parsing, help text generation, etc.
-            # Create a copy to avoid modifying the original list
-            self.params = self.params.copy()
-            for param in getattr(self.callback, "__click_params__", []):
-                self.params.append(param)
+        # In Click, each command has a callback function that's executed when the command runs.
+        # The callback contains the actual implementation of the command.
+        # Here, we're applying the pipeline_config_options decorator to add CLI parameters
+        # to our callback function dynamically, rather than statically at import time.
+        assert self.callback is not None
+        self.callback = self._add_options(self.callback)
+        self._options_loaded = True
+
+        # When Click decorators (like @click.option) are applied to a function,
+        # they attach Parameter objects to the function via a __click_params__ attribute.
+        # We need to extract these parameters and add them to the command's params list
+        # so Click knows about them for argument parsing, help text generation, etc.
+        # Create a copy to avoid modifying the original list
+        self.params = self.params.copy()
+        for param in getattr(self.callback, "__click_params__", []):
+            self.params.append(param)
 
     def get_help(self, ctx: click.Context) -> str:
         self._ensure_options_loaded()
@@ -164,11 +166,6 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         help=(
             "Whether to enable pyinstrument profiling on the serving endpoint."
         ),
-    )
-    @click.option(
-        "--served-model-name",
-        type=str,
-        help="Model name used in HTTP API. If unspecified, the model name is equal to --model",
     )
     @click.option(
         "--sim-failure",
