@@ -2323,10 +2323,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if len(elems) == 0:
             return String()
 
-        var sep = StaticString(
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
-        )
-        var total_bytes = _TotalWritableBytes(elems, sep=sep).size
+        var total_bytes = _TotalWritableBytes(elems, sep=self).size
         var result = String(capacity=total_bytes)
 
         if result._is_inline():
