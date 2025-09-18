@@ -166,6 +166,28 @@ def test_tokenizer__truncates_to_max_length(
         _ = asyncio.run(tokenizer.new_context(long_request))
 
 
+def test_tokenizer__with_context_validation(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    def raise_fn(context: TextContext | TextAndVisionContext) -> None:
+        raise ValueError("test")
+
+    tokenizer = TextTokenizer(
+        llama_3_1_8b_instruct_local_path,
+        trust_remote_code=True,
+        context_validators=[raise_fn],
+    )
+
+    request = TextGenerationRequest(
+        request_id="request_with_short_message",
+        model_name=llama_3_1_8b_instruct_local_path,
+        prompt="Short message",
+    )
+
+    with pytest.raises(ValueError, match="test"):
+        _ = asyncio.run(tokenizer.new_context(request))
+
+
 def test_tokenizer_regression_MODELS_467() -> None:
     """Regression test for
     https://linear.app/modularml/issue/MODELS-467/[bug]-no-text-response-mistralaimistral-7b-instruct-v03
