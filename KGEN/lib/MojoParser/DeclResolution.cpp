@@ -56,6 +56,18 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
   return success();
 }
 
+static LogicalResult resolveDefaultedOpFromTrait(DeclResolver &resolver,
+                                                 Operation *defaultedOp,
+                                                 ASTDecl *structDecl) {
+  auto traitFnDecl = defaultedOp->getParentOfType<TraitDeclOp>();
+
+  auto traitSymbolRef = getFullyResolvedSymbolRef(traitFnDecl);
+  auto conformanceSymName = getFlattenedSymbolName(traitSymbolRef);
+  auto conformanceDecl = structDecl->lookupInCurrentScope(conformanceSymName);
+
+  return resolver.resolveBody(*conformanceDecl.front(),
+                              conformanceDecl.front()->getLoc());
+}
 //===----------------------------------------------------------------------===//
 // Decorator Support
 //===----------------------------------------------------------------------===//
@@ -2010,19 +2022,8 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       rhsValue = cast<TypedAttr>(
           GeneratorAttr::get(remappedBody, cast<GeneratorType>(type)));
     }
-
-    if (isa_and_nonnull<LIT::TraitDeclOp>(parentDecl.getIfOperation())) {
-      p.emitError(identifierLoc) << "associated alias declarations in a trait "
-                                    "shouldn't have an initializer";
-      // Don't add it to attrs, just pretend it has no value.
-      // Though above, we did use the value to figure out the type above, which
-      // is nice.
-      // Don't return; continue parsing as if it has no value, so that
-      // references to the name will resolve.
-    } else {
-      // Remember the value
-      attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
-    }
+    // Remember the value
+    attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
   } else {
     if (!isa_and_nonnull<LIT::TraitDeclOp>(parentDecl.getIfOperation())) {
       // Disallow this, because it would create diamond inheritance problems.
@@ -2829,35 +2830,102 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
              parentDecl.getSymbolRef();
     };
 
+    auto isDefaulted = [](auto nestedOp) {
+      if constexpr (std::is_same_v<FnOp, decltype(nestedOp)>)
+        return nestedOp.isDefaultedTraitFn();
+      else if constexpr (std::is_same_v<AliasDeclOp, decltype(nestedOp)>)
+        return nestedOp.isDefaultedAssociatedAlias();
+      return false;
+    };
+
+    auto insertDefaultDecl = [&](auto newOp, StringAttr childName,
+                                 ASTDecl *childDecl) -> LogicalResult {
+      if (!isDefaulted(newOp) || isInherited(newOp, parentDecl))
+        return success();
+
+      if constexpr (std::is_same_v<AliasDeclOp, decltype(newOp)>) {
+        // Since we do not allow alias to be overloaded, we can at
+        // most insert one defaulted alias per name into the
+        // struct (if there is no user-provided one already) or it
+        // will lead to redefinition error. If there are multiple
+        // defaulted alias with the same name, raise an error.
+        for (ASTDecl *existingDecl :
+             structDecl.lookupInCurrentScope(childName)) {
+          Operation *op = existingDecl->getIfOperation();
+          if (auto existingAlias = dyn_cast_or_null<AliasDeclOp>(op);
+              existingAlias && existingAlias.isDefaultedAssociatedAlias()) {
+
+            SymbolRefAttr currentTraitRef = getFullyResolvedSymbolRef(
+                existingAlias->getParentOfType<TraitDeclOp>());
+
+            StringRef currentTraitName = currentTraitRef.getLeafReference();
+            StringRef otherTraitName =
+                childDecl->getParentDecl()->getSymbolRef().getLeafReference();
+
+            // There are multiple default associated aliases with
+            // the same name. Raise an error.
+            auto diag =
+                shared.emitError(structDecl.getLoc())
+                << "trait associated alias requirement '"
+                << demangleParameterName(existingAlias.getDeclName().getValue())
+                << "' has conflicting default implementations in "
+                << otherTraitName << " and " << currentTraitName
+                << ", you must implement it manually";
+
+            diag.attachNote(existingDecl->getLoc())
+                << "original default implementation from trait "
+                << currentTraitName << " here";
+
+            diag.attachNote(newOp.getLoc())
+                << "conflicting implementation from trait " << otherTraitName
+                << " here";
+
+            structDecl.setErroneous();
+            return failure();
+          }
+          // This is a user provided alias, which shadows the
+          // default value.
+          return success();
+        }
+      }
+
+      // Create a decl corresponding to the trait method we're inheriting.
+      //
+      // NOTE: this decl points to the lit.fn op in the actual trait so we now
+      // have two decls pointing to the same lit.fn op.
+      //
+      // Ideally we'd create a stub lit.fn op in the struct with it's
+      // inheritedFrom attribute pointing to the symbol ref attr of the trait
+      // method, but since symbols are only created at signature resolution
+      // time for lit.fn ops that's not an option (and attempting to signature
+      // resolve trait methods at this point tends to cause cycles so is not
+      // an option).
+      //
+      // Stashing the trait's lit.fn op here gives us an easy way to refer
+      // back to it, signature resolving this struct's decl will actually
+      // create the lit.fn op in the struct.decl op's body.
+      auto &decl = shared.getDeclResolver().addDecl(
+          newOp, childDecl->getLoc(), childName, &structDecl, LexerCursor(),
+          LexerCursor(), -1);
+      decl.resolvedness = DeclResolvedness::unparsed;
+      return success();
+    };
+
     StructEmitter emitter(structDecl);
     SmallVector<std::pair<FnOp, ASTDecl *>> nonEmptyTraitFns;
     for (auto &[childName, childDecls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *childDecl : childDecls) {
-        auto fnOp = dyn_cast_if_present<FnOp>(childDecl->getIfOperation());
+        if (auto nestedOp = childDecl->getIfOperation()) {
+          LogicalResult result =
+              TypeSwitch<Operation &, LogicalResult>(*nestedOp)
+                  .Case<FnOp, AliasDeclOp>([&](auto nestedOp) {
+                    return insertDefaultDecl(nestedOp, childName, childDecl);
+                  })
+                  .Default(LogicalResult::success());
 
-        if (!fnOp || !fnOp.isDefaultedTraitFn() ||
-            isInherited(fnOp, parentDecl))
-          continue;
-
-        // Create a decl corresponding to the trait method we're inheriting.
-        //
-        // NOTE: this decl points to the lit.fn op in the actual trait so we now
-        // have two decls pointing to the same lit.fn op.
-        //
-        // Ideally we'd create a stub lit.fn op in the struct with it's
-        // inheritedFrom attribute pointing to the symbol ref attr of the trait
-        // method, but since symbols are only created at signature resolution
-        // time for lit.fn ops that's not an option (and attempting to signature
-        // resolve trait methods at this point tends to cause cycles so is not
-        // an option).
-        //
-        // Stashing the trait's lit.fn op here gives us an easy way to refer
-        // back to it, signature resolving this struct's decl will actually
-        // create the lit.fn op in the struct.decl op's body.
-        auto &decl = shared.getDeclResolver().addDecl(
-            fnOp, childDecl->getLoc(), childName, &structDecl, LexerCursor(),
-            LexerCursor(), -1);
-        decl.resolvedness = DeclResolvedness::unparsed;
+          if (failed(result))
+            return failure();
+        }
       }
     }
   }
@@ -3278,17 +3346,8 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
 
   // This covers the case of trait -> struct default method inheritance.
   if (inheritedFnOp.isDefaultedTraitFn() &&
-      isa_and_nonnull<StructDeclOp>(childTraitDecl->getIfOperation())) {
-    auto traitFnDecl = inheritedFnOp->getParentOfType<TraitDeclOp>();
-
-    auto traitSymbolRef = getFullyResolvedSymbolRef(traitFnDecl);
-    auto conformanceSymName = getFlattenedSymbolName(traitSymbolRef);
-    auto conformanceDecl =
-        childTraitDecl->lookupInCurrentScope(conformanceSymName);
-
-    return resolveBody(*conformanceDecl.front(),
-                       conformanceDecl.front()->getLoc());
-  }
+      isa_and_nonnull<StructDeclOp>(childTraitDecl->getIfOperation()))
+    return resolveDefaultedOpFromTrait(*this, inheritedFnOp, childTraitDecl);
 
   // This is the actual child trait of the decl.
   TraitDeclOp childTraitDeclOp =
@@ -3488,9 +3547,15 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
   assert(isa<TraitDeclOp>(inheritedAliasOp->getParentOp()) &&
          "Expected synthetic alias decl's parent to be a trait");
 
+  ASTDecl *childTraitDecl = childTraitAliasDecl.getParentDecl();
+  // This covers the case of trait -> struct default associated alias.
+  if (inheritedAliasOp.isDefaultedAssociatedAlias() &&
+      isa_and_nonnull<StructDeclOp>(childTraitDecl->getIfOperation()))
+    return resolveDefaultedOpFromTrait(*this, inheritedAliasOp, childTraitDecl);
+
   // This is the actual child trait of the decl.
   TraitDeclOp childTraitDeclOp =
-      cast<TraitDeclOp>(childTraitAliasDecl.getParentDecl()->getIfOperation());
+      cast<TraitDeclOp>(childTraitDecl->getIfOperation());
 
   // And this is the parent trait of the alias decl we're inheriting from.
   TraitDeclOp parentTraitDeclOp =

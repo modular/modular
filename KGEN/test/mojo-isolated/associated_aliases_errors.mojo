@@ -43,11 +43,6 @@ trait MyTrait:  # expected-note {{trait 'MyTrait' declared here}}
     alias N: Int
 
 
-trait TraitWithInitializedAlias:
-    # expected-error @below {{associated alias declarations in a trait shouldn't have an initializer}}
-    alias Z: Int = Int()
-
-
 # expected-error @below {{'StructConformingExplicitlyWithNoMatchingAlias' does not implement all requirements for 'MyTrait'}}
 struct StructConformingExplicitlyWithNoMatchingAlias(MyTrait):
     pass
@@ -115,8 +110,6 @@ struct TensorIndex[rank: Int]:
 
 trait Stencil:
     alias rank: Int
-    # expected-error @below {{associated alias declarations in a trait shouldn't have an initializer}}
-    alias Index = TensorIndex[Self.rank]
 
 
 # // -----
