@@ -230,7 +230,7 @@ context type that implements the BaseContext protocol.
 """
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     """
     Input parameters for text generation pipeline operations.
@@ -255,3 +255,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     def batch(self) -> dict[RequestID, TextGenerationContextType]:
         """Returns merged batches."""
         return {k: v for batch in self.batches for k, v in batch.items()}
+
+    def __repr__(self) -> str:
+        return f"TextGenerationInputs(batch_size={len(self.batch)}, num_steps={self.num_steps})"

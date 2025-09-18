@@ -24,6 +24,7 @@ from .logit_processors_type import (
 from .lora import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus, LoRAType
 from .pipeline import (
     Pipeline,
+    PipelineInputs,
     PipelineInputsType,
     PipelineOutput,
     PipelineOutputsDict,
@@ -90,6 +91,7 @@ __all__ = [
     "MAXPullQueue",
     "MAXPushQueue",
     "Pipeline",
+    "PipelineInputs",
     "PipelineInputsType",
     "PipelineOutput",
     "PipelineOutputType",
