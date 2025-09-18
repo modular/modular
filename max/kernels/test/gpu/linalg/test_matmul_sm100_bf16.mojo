@@ -153,9 +153,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         cta_group=2,
         block_swizzle_size=block_swizzle_size,
     ](
-        c_device.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device.to_layout_tensor(),
+        a_device.to_layout_tensor(),
+        b_device.to_layout_tensor(),
         ctx,
     )
 

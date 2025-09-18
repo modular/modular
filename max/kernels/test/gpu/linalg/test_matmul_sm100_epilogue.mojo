@@ -154,9 +154,9 @@ def test_matmul_sm100_epilogue[
         cta_group=2,
         elementwise_compute_lambda_fn=optional_lambda_fn,
     ](
-        c_device.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device.to_layout_tensor(),
+        a_device.to_layout_tensor(),
+        b_device.to_layout_tensor(),
         ctx,
     )
 

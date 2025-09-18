@@ -1493,11 +1493,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
 fn blackwell_matmul_tma_umma_warp_specialized[
     c_type: DType,
-    c_shape: DimList,
+    c_layout: Layout,
     a_type: DType,
-    a_shape: DimList,
+    a_layout: Layout,
     b_type: DType,
-    b_shape: DimList,
+    b_layout: Layout,
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -1510,15 +1510,11 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     num_pipeline_stages: Optional[UInt] = None,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c_device: LayoutTensor[c_type, c_layout, *_, **_],
+    a_device: LayoutTensor[a_type, a_layout, *_, **_],
+    b_device: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
-
     constrained[
         transpose_b,
         "Only support transposed B",
@@ -1555,7 +1551,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
 
     a_tma_op = create_tma_tile[
         a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
-    ](ctx, a)
+    ](ctx, a_device)
 
     b_tma_op = create_tma_tile[
         b_type,
@@ -1565,7 +1561,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
-    ](ctx, b)
+    ](ctx, b_device)
 
     # If MMA_M is 256, the warps read the entire MMA_N.
     # That MMA_N to be multiple of 32 for me to use large N dim on C buf write out
@@ -1583,7 +1579,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         2,
         c_tma_tile_shape,
         swizzle_mode=c_swizzle,
-    ](ctx, c)
+    ](ctx, c_device)
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -1682,7 +1678,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         num_pipeline_stages = UInt(pipeline_stage),
         num_clc_pipeline_stages=num_clc_pipeline_stages,
         num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
-        n = c.shape[1](),
+        n = c_device.shape[1](),
         num_output_stages = UInt(num_output_stages),
         output_tile_shape=output_tile_shape,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -1708,7 +1704,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         c_tma_op,
         cluster_dim,
         K // BK,
-        c.dim[0](),
+        c_device.dim[0](),
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),

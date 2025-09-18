@@ -58,6 +58,10 @@ fn matmul_dispatch_sm100[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
+    var c_tensor = from_ndbuffer_row_major(c)
+    var a_tensor = from_ndbuffer_row_major(a)
+    var b_tensor = from_ndbuffer_row_major(b)
+
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
         alias BM = env_get_int["BM", 128]()
@@ -85,16 +89,12 @@ fn matmul_dispatch_sm100[
             cta_group=2,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             rasterize_order = RasterOrder(RASTERIZE_ORDER),
-        ](c, a, b, ctx)
+        ](c_tensor, a_tensor, b_tensor, ctx)
 
         return DISPATCH_HIT
 
     @parameter
     if elementwise_lambda_fn:
-        var a_tensor = from_ndbuffer_row_major(a)
-        var b_tensor = from_ndbuffer_row_major(b)
-        var c_tensor = from_ndbuffer_row_major(c)
-
         alias umma_shape = Index(64, 128, 16)
         alias BK = 64
         alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
@@ -147,7 +147,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=2,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 4096:
             alias block_tile_shape = Index(128, 128, BK)
@@ -166,7 +166,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=2,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 8192:
             alias block_tile_shape = Index(128, 128, BK)
@@ -185,7 +185,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=1,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
 
     # 4096x8192x7168: BM=128 / BN=128 / CLUSTER=(2,1,1)
@@ -210,7 +210,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=8,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 4096:
             alias block_tile_shape = Index(128, 128, BK)
@@ -225,7 +225,7 @@ fn matmul_dispatch_sm100[
             )
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b, config=config, cta_group=2
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 8192:
             alias block_tile_shape = Index(128, 128, BK)
@@ -244,7 +244,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=8,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
 
     # 4096x14336x8192: BM=128 / BN=112 / CLUSTER=(2,1,1)
@@ -269,7 +269,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=1,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 4096:
             alias block_tile_shape = Index(128, 112, BK)
@@ -288,7 +288,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=8,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 8192:
             alias block_tile_shape = Index(128, 128, BK)
@@ -307,7 +307,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=8,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
 
     # 8192x2560x8192: BM=128 / BN=80 / CLUSTER=(2,1,1)
@@ -328,7 +328,7 @@ fn matmul_dispatch_sm100[
             )
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b, config=config, cta_group=2
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 4096:
             alias block_tile_shape = Index(128, 72, BK)
@@ -347,7 +347,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=8,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
         elif m == 8192:
             alias block_tile_shape = Index(128, 80, BK)
@@ -362,7 +362,7 @@ fn matmul_dispatch_sm100[
             )
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b, config=config, cta_group=2
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
 
     # 4096x4096x4096: BM=128 / BN=128 / CLUSTER=(2,1,1)
@@ -385,7 +385,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=0,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
 
     @parameter
@@ -407,7 +407,7 @@ fn matmul_dispatch_sm100[
                 cta_group=2,
                 block_swizzle_size=8,
                 rasterize_order = RasterOrder.AlongM,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
             return DISPATCH_HIT
 
     # Global fallback for any unmatched cases
@@ -428,7 +428,7 @@ fn matmul_dispatch_sm100[
         config=fallback_config,
         cta_group=2,
         block_swizzle_size=0,
-    ](c, a, b, ctx)
+    ](c_tensor, a_tensor, b_tensor, ctx)
 
     return DISPATCH_HIT
 
@@ -456,6 +456,10 @@ fn matmul_dispatch_sm100_seperate_epilogue[
     operations if there is any.
     """
 
+    var c_tensor = from_ndbuffer_row_major(c)
+    var a_tensor = from_ndbuffer_row_major(a)
+    var b_tensor = from_ndbuffer_row_major(b)
+
     @parameter
     if not elementwise_lambda_fn:
         if not c.data:
@@ -467,7 +471,7 @@ fn matmul_dispatch_sm100_seperate_epilogue[
             cta_group=cta_group,
             block_swizzle_size=block_swizzle_size,
             num_pipeline_stages=num_pipeline_stages,
-        ](c, a, b, ctx)
+        ](c_tensor, a_tensor, b_tensor, ctx)
         return
 
     else:
@@ -497,7 +501,7 @@ fn matmul_dispatch_sm100_seperate_epilogue[
                 config=config,
                 cta_group=cta_group,
                 block_swizzle_size=block_swizzle_size,
-            ](c, a, b, ctx)
+            ](c_tensor, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
                 Index(m, n), ctx
@@ -544,6 +548,10 @@ fn matmul_sm100_entrypoint[
         "a_type and b_type must be bfloat16",
     ]()
 
+    var c_tensor = from_ndbuffer_row_major(c)
+    var a_tensor = from_ndbuffer_row_major(a)
+    var b_tensor = from_ndbuffer_row_major(b)
+
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
         alias BM = env_get_int["TUNE_BM", 128]()
@@ -573,7 +581,7 @@ fn matmul_sm100_entrypoint[
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             rasterize_order = RasterOrder(RASTERIZE_ORDER),
             num_pipeline_stages = UInt(PIPELINE_STAGE),
-        ](c, a, b, ctx)
+        ](c_tensor, a_tensor, b_tensor, ctx)
 
         return DISPATCH_HIT
 
