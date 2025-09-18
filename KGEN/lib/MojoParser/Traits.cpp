@@ -490,86 +490,136 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       return success();
     }
 
-    assert(!traitAlias.getValueAttr() && "trait alias shouldn't have a value");
     Type traitAliasType = traitAlias.getType();
 
     ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
+    // If there is no user defined alias nor defaulted alias, raise an error.
+    // When there are multiple decls, it can not be an AliasDeclOp either,
+    // otherwise we should have already reported "redefinition" error.
     if (decls.empty() ||
-        !isa_and_nonnull<LIT::AliasDeclOp>(decls.front()->getIfOperation())) {
+        !isa_and_nonnull<AliasDeclOp>(decls.front()->getIfOperation())) {
       diag->attachNote(traitAlias->getLoc())
           << "required alias '" << name.str() << "' is not specified";
       return failure(); // Stop the outer loop.
     }
     ASTDecl *structAliasDecl = decls.front();
-    AliasDeclOp structAliasDeclOp =
-        cast<LIT::AliasDeclOp>(structAliasDecl->getIfOperation());
-    if (failed(shared.declResolver->resolveSignature(*structAliasDecl,
-                                                     structDecl.getLoc()))) {
-      hadErrors = true;
-      return success();
+    auto structAliasDeclOp = cast<AliasDeclOp>(decls.front()->getIfOperation());
+
+    PValue aliasValue;
+    if (!structAliasDeclOp.isDefaultedAssociatedAlias()) {
+      if (failed(shared.declResolver->resolveSignature(*structAliasDecl,
+                                                       structDecl.getLoc()))) {
+        hadErrors = true;
+        return success();
+      }
+      Type structAliasType = structAliasDeclOp.getType();
+      TypedAttr initializerExpr = structAliasDeclOp.getValueAttr();
+      assert(initializerExpr && "Struct's alias should have initializer");
+
+      // We don't yet put initializerExpr into the traitAliasReplacer or
+      // aliasValues because they need to be converted first to the trait's
+      // alias's type (see SAVMBCTATBS).
+      SyntheticNode synthNode(structAliasDecl->getLoc());
+      if (!IREmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
+                                                 traitAliasType,
+                                                 emitter.getDeclScope())) {
+        diag->attachNote(traitAliasDecl->getLoc())
+            << "alias '" + name.str() + "' type " << structAliasType
+            << " doesn't conform to trait's alias '" << name.str() << "' type "
+            << traitAliasType;
+        return failure();
+      }
+
+      // Struct Alias Values Must Be Converted To Trait Alias's Type Before
+      // Substitution (SAVMBCTATBS):
+      //
+      // Things get a little trickier when we're using an alias as an input
+      // parameter to something else, like here:
+      //
+      //     struct Container[T: AnyType]:
+      //         ...
+      //     trait MyTrait:
+      //         alias X: AnyType
+      //         fn zork(self) -> Container[X]:
+      //             ...
+      //     struct MyStruct:
+      //         alias X: Copyable = Int     <-- "Int as Copyable" TypeParamAttr
+      //         fn zork(self) -> Container[Int]
+      //
+      // Notice the X: Copyable.
+      // That means that the struct's `X` has a value that's a TypeParamAttr,
+      // basically an `Int` that's masquerading as a `Copyable`.
+      // Unfortunately, when we do our substitution into our
+      // `fn zork(self) -> Container[X]` needle, it becomes a
+      // `fn zork(self) -> Container[Int as Copyable] needle, which is both
+      // wrong and also doesn't exist in the struct, because the struct
+      // contains: `fn zork(self) -> Container[Int as AnyType]. I say it's wrong
+      // because an "Int as Copyable" parameter-value cannot be given to a
+      // parameter-decl that expects an AnyType. The vtables don't line up.
+      //
+      // So, to fix that, when we substitute into the needle, we first convert
+      // the struct alias's value (Int as Copyable) to the trait alias's type
+      // (AnyType).
+      // Here, we do it ahead of time, just before putting it into the replacer.
+      //
+      // TODO(MOCO-1993): Make sure this is consistently followed other places
+      // we do trait substitution, and maybe centralize this arcana to
+      // somewhere.
+      ValueDest dest(traitAliasType, EC_AliasValue);
+      CValue convertedValue = emitter.emitImplicitConversionToType(
+          {initializerExpr, synthNode}, traitAliasType, dest);
+
+      aliasValue = convertedValue.getIfPValue();
+    } else {
+      // Handle cases where this is a default value.
+
+      // Found the decl in the trait that provided the default value, body
+      // resolve the aliasDeclOp to get the concrete value.
+      ArrayRef<ASTDecl *> decls = traitDecl.lookupInCurrentScope(name);
+      assert(decls.size() == 1 &&
+             isa_and_nonnull<AliasDeclOp>(decls.front()->getIfOperation()) &&
+             "expected one AliasDeclOp in the trait");
+      // NOTE: Strictly speaking, we only need the alias type here to verify
+      // conformance, but AliasDeclOp resolves it body (i.e., value) as well in
+      // at signature resolution phase. The extra work is a source of parsing
+      // cycle.
+      if (failed(shared.declResolver->resolveSignature(*decls.front(),
+                                                       traitDecl.getLoc()))) {
+        hadErrors = true;
+        return success();
+      }
+
+      auto defaultAliasOp = cast<AliasDeclOp>(decls.front()->getIfOperation());
+      // Position builder before the first ConformanceOp (there will always be
+      // one since the struct should at least conform the trait that we are
+      // cloning the defaulted value from).
+
+      ConformanceOp firstConformanceOp =
+          *structDeclOp.getFields().front().getOps<ConformanceOp>().begin();
+      ImplicitLocOpBuilder builder(structDeclOp.getLoc(),
+                                   firstConformanceOp.getOperation());
+      auto clonedDefault = cast<AliasDeclOp>(builder.clone(*defaultAliasOp));
+      auto structSelf = PValue(structDecl.getTypeDeclSelf());
+      auto traitSelfDecl =
+          cast<ParamDeclRefAttr>(PValue(traitDecl.getTypeDeclSelf()).get());
+
+      ParserParameterEvaluator evaluator(shared);
+      evaluator.setDeclBinding(traitSelfDecl.getName(), structSelf);
+      Attribute newValAttr =
+          evaluator.replace(clonedDefault->getAttrDictionary());
+      clonedDefault->setAttrs(cast<DictionaryAttr>(newValAttr));
+      structAliasDecl->setIRValue(clonedDefault);
+      structAliasDecl->resolvedness = DeclResolvedness::body;
+
+      aliasValue = PValue(clonedDefault.getValueAttr());
+      // Since we cloned the defaulted op from the trait, there is no need for
+      // us to convert the type as they are guaranteed to be matched.
     }
-    Type structAliasType = structAliasDeclOp.getType();
 
-    TypedAttr initializerExpr = structAliasDeclOp.getValueAttr();
-    assert(initializerExpr && "Struct's alias should have initializer");
+    witnessTable.emplace_back(name, aliasValue.get());
 
-    // We don't yet put initializerExpr into the traitAliasReplacer or
-    // aliasValues because they need to be converted first to the trait's
-    // alias's type (see SAVMBCTATBS).
-    SyntheticNode synthNode(structAliasDecl->getLoc());
-    if (!IREmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
-                                               traitAliasType,
-                                               emitter.getDeclScope())) {
-      diag->attachNote(traitAliasDecl->getLoc())
-          << "alias '" + name.str() + "' type " << structAliasType
-          << " doesn't conform to trait's alias '" << name.str() << "' type "
-          << traitAliasType;
-      return failure();
-    }
-
-    ValueDest dest(traitAliasType, EC_AliasValue);
-    CValue convertedValue = emitter.emitImplicitConversionToType(
-        {initializerExpr, synthNode}, traitAliasType, dest);
-    witnessTable.emplace_back(name, convertedValue.getIfPValue().get());
-
-    // Struct Alias Values Must Be Converted To Trait Alias's Type Before
-    // Substitution (SAVMBCTATBS):
-    //
-    // Things get a little trickier when we're using an alias as an input
-    // parameter to something else, like here:
-    //
-    //     struct Container[T: AnyType]:
-    //         ...
-    //     trait MyTrait:
-    //         alias X: AnyType
-    //         fn zork(self) -> Container[X]:
-    //             ...
-    //     struct MyStruct:
-    //         alias X: Copyable = Int       <-- "Int as Copyable" TypeParamAttr
-    //         fn zork(self) -> Container[Int]
-    //
-    // Notice the X: Copyable.
-    // That means that the struct's `X` has a value that's a TypeParamAttr,
-    // basically an `Int` that's masquerading as a `Copyable`.
-    // Unfortunately, when we do our substitution into our
-    // `fn zork(self) -> Container[X]` needle, it becomes a
-    // `fn zork(self) -> Container[Int as Copyable] needle, which is both wrong
-    // and also doesn't exist in the struct, because the struct contains:
-    // `fn zork(self) -> Container[Int as AnyType].
-    // I say it's wrong because an "Int as Copyable" parameter-value cannot be
-    // given to a parameter-decl that expects an AnyType. The vtables don't line
-    // up.
-    //
-    // So, to fix that, when we substitute into the needle, we first convert the
-    // struct alias's value (Int as Copyable) to the trait alias's type
-    // (AnyType).
-    // Here, we do it ahead of time, just before putting it into the replacer.
-    //
-    // TODO(MOCO-1993): Make sure this is consistently followed other places we
-    // do trait substitution, and maybe centralize this arcana to somewhere.
-    traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(),
-                                      convertedValue.getIfPValue());
-    aliasValues[name] = convertedValue.getIfPValue();
+    traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasValue);
+    aliasValues[name] = aliasValue;
 
     return success();
   };

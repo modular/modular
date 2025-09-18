@@ -2876,8 +2876,20 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
-  skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
-
+  bool isDefaultedAlias = false;
+  llvm::unique_function<bool()> defaultAliasDetector = {};
+  if (isa_and_nonnull<TraitDeclOp>(curDeclScope->getIfOperation())) {
+    defaultAliasDetector = [&]() -> bool {
+      // if we found one `=`
+      if (getToken().is(Token::equal))
+        isDefaultedAlias = true;
+      // Keep parsing.
+      return false;
+    };
+  }
+  skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true,
+                       std::move(defaultAliasDetector));
+  declOp.setDefaultedAssociatedAlias(isDefaultedAlias);
   // Skip the trailing docstring if it has one. We treat these as part of the
   // alias decl.
   (void)consumeIf(Token::string);

@@ -816,7 +816,11 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     // The trait symbol this function is inherited from. None if self-declared.
-    OptionalAttr<SymbolRefAttr>:$inheritedFrom
+    OptionalAttr<SymbolRefAttr>:$inheritedFrom,
+    // Present for defaulted associated alias. This bit should be set before
+    // parsing the alias declaration this allow use to probe whether the alias
+    // decl is defaulted or not without body resolve it first.
+    UnitAttr:$defaultedAssociatedAlias
   );
   let assemblyFormat = [{
     custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
@@ -826,13 +830,17 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     StringAttr getName() { return getParamDecl().getName(); }
     StringAttr getDeclName() { return getName(); }
     Type getType() { return getParamDecl().getType(); }
+
+    /// Return true if this is a defaulted trait method.
+    bool isDefaultedAssociatedAlias() { return getDefaultedAssociatedAlias(); }
   }];
 
   let builders = [
     OpBuilder<(ins "ParamDeclAttr":$decl,
               CArg<"TypedAttr", "{}">:$value), [{
       build($_builder, $_state, decl, value, /*docString=*/{},
-            /*deprecationWarning=*/{}, /*inheritedFrom=*/{});
+            /*deprecationWarning=*/{}, /*inheritedFrom=*/{},
+            /*defaultedAssociatedAlias=*/false);
     }]>,
   ];
 
