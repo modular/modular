@@ -136,7 +136,7 @@ def test_try_create_ce_batch() -> None:
     request_push_socket.put_nowait((mock_request.request_id, mock_request))
     scheduler._retrieve_pending_requests()
 
-    batch = scheduler.batch_constructor.construct_batch().batch_inputs
+    batch = scheduler.batch_constructor.construct_batch().inputs.batch
     assert len(batch) == 1
     assert mock_request.request_id in batch
     # Cache management is now handled by the paged_manager/pipeline
@@ -153,7 +153,7 @@ def test_try_create_chunked_ce_batch() -> None:
     request_push_socket.put_nowait((mock_data.request_id, mock_data))
     scheduler._retrieve_pending_requests()
 
-    batch = scheduler.batch_constructor.construct_batch().batch_inputs
+    batch = scheduler.batch_constructor.construct_batch().inputs.batch
     assert len(batch) == 1
     assert mock_data.request_id in batch
     # Cache management is now handled by the paged_manager/pipeline
@@ -178,7 +178,9 @@ def test_scheduler_handle_terminated_responses() -> None:
     batch_responses[mock_2.request_id].tokens = []
     scheduler.batch_constructor.tg_reqs = OrderedDict(batch_executed)
 
-    sch_output = SchedulerOutput(batch_inputs=batch_executed)
+    sch_output = SchedulerOutput(
+        inputs=TextGenerationInputs(batches=[batch_executed], num_steps=1)
+    )
     release_terminated_requests(
         sch_output,
         cast(dict[str, TextGenerationOutput], batch_responses),
@@ -245,8 +247,7 @@ def test_schedule_ce() -> None:
     }
     sch_output = SchedulerOutput(
         batch_type=BatchType.CE,
-        batch_inputs=batch_to_execute,
-        num_steps=1,
+        inputs=TextGenerationInputs(batches=[batch_to_execute], num_steps=1),
     )
 
     scheduler._schedule(sch_output)
@@ -272,11 +273,16 @@ def test_schedule_ce_with_chunked_prefill() -> None:
     assert len(scheduler.batch_constructor.ce_reqs) == 1
 
     batch_to_execute = (
-        scheduler.batch_constructor.construct_batch().batch_inputs
+        scheduler.batch_constructor.construct_batch().inputs.batch
     )
     assert len(batch_to_execute) > 0
+
     sch_output = SchedulerOutput(
-        batch_type=BatchType.CE, batch_inputs=batch_to_execute
+        batch_type=BatchType.CE,
+        inputs=TextGenerationInputs(
+            batches=[batch_to_execute],
+            num_steps=1,
+        ),
     )
 
     scheduler._schedule(sch_output)
@@ -315,11 +321,12 @@ def test_schedule_mixed_ce_tg() -> None:
     scheduler._retrieve_pending_requests()
 
     batch_to_execute = (
-        scheduler.batch_constructor.construct_batch().batch_inputs
+        scheduler.batch_constructor.construct_batch().inputs.batch
     )
     assert len(batch_to_execute) == 1
     sch_output = SchedulerOutput(
-        batch_type=BatchType.CE, batch_inputs=batch_to_execute
+        batch_type=BatchType.CE,
+        inputs=TextGenerationInputs(batches=[batch_to_execute], num_steps=1),
     )
 
     scheduler._schedule(sch_output)
@@ -330,7 +337,7 @@ def test_schedule_mixed_ce_tg() -> None:
         (mock_request_ce.request_id, mock_request_ce)
     )
     scheduler._retrieve_pending_requests()
-    batch = scheduler.batch_constructor.construct_batch().batch_inputs
+    batch = scheduler.batch_constructor.construct_batch().inputs.batch
 
     # `batch_to_execute` should contain 1 token from req1 and 19 tokens from req2
     assert len(batch) == 2
@@ -350,8 +357,10 @@ def test_schedule_tg() -> None:
         mock_request.request_id: mock_request
     }
     sch_output = SchedulerOutput(
-        batch_inputs=batch_to_execute,
-        num_steps=scheduler.scheduler_config.max_forward_steps_tg,
+        inputs=TextGenerationInputs(
+            batches=[batch_to_execute],
+            num_steps=scheduler.scheduler_config.max_forward_steps_tg,
+        ),
     )
 
     scheduler._schedule(sch_output)

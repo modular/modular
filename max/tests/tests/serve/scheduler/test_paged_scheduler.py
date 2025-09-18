@@ -272,7 +272,7 @@ def create_batch_and_execute(
     batch_size = batch_to_execute.batch_size
     batch_type = batch_to_execute.batch_type
     input_tokens = batch_to_execute.input_tokens
-    num_steps = batch_to_execute.num_steps
+    num_steps = batch_to_execute.inputs.num_steps
     if batch_to_execute.batch_size == 0:
         return BatchInfo.empty()
 
