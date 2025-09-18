@@ -178,6 +178,7 @@ platform(
         "@platforms//os:linux",
         ":amd_gpu",
         ":has_gpu",
+        ":has_multi_gpu",
         ":mi300x_gpu",
     ],
     exec_properties = {
