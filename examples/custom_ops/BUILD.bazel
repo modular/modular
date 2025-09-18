@@ -13,28 +13,16 @@ filegroup(
 custom_op_example_py_binary(
     name = "addition",
     srcs = ["addition.py"],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
 )
 
 custom_op_example_py_binary(
     name = "parametric_addition",
     srcs = ["parametric_addition.py"],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
 )
 
 custom_op_example_py_binary(
     name = "mandelbrot",
     srcs = ["mandelbrot.py"],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
 )
 
 custom_op_example_py_binary(
@@ -44,28 +32,16 @@ custom_op_example_py_binary(
     extra_deps = [
         requirement("pillow"),
     ],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
 )
 
 custom_op_example_py_binary(
     name = "vector_addition",
     srcs = ["vector_addition.py"],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2399
 )
 
 custom_op_example_py_binary(
     name = "top_k",
     srcs = ["top_k.py"],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
 )
 
 custom_op_example_py_binary(
@@ -87,19 +63,11 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "matrix_multiplication",
     srcs = ["matrix_multiplication.py"],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
 )
 
 custom_op_example_py_binary(
     name = "histogram",
     srcs = ["histogram.py"],
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
 )
 
 mojo_binary(
