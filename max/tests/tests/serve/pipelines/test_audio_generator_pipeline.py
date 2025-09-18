@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 from max.interfaces import (
     AudioGenerationMetadata,
+    AudioGenerationOutput,
     AudioGenerationRequest,
-    AudioGeneratorOutput,
     GenerationStatus,
 )
 from max.serve.pipelines.llm import AudioGeneratorPipeline
@@ -23,7 +23,7 @@ from max.serve.pipelines.llm import AudioGeneratorPipeline
 class MockAudioGeneratorPipeline(AudioGeneratorPipeline):
     """Mock implementation of AudioGeneratorPipeline for testing."""
 
-    def __init__(self, mock_chunks: list[AudioGeneratorOutput]) -> None:
+    def __init__(self, mock_chunks: list[AudioGenerationOutput]) -> None:
         # Skip the parent constructor that requires real dependencies such as
         # `PipelineTokenizer`.
         self.model_name = "test-model"
@@ -34,7 +34,7 @@ class MockAudioGeneratorPipeline(AudioGeneratorPipeline):
 
     async def next_chunk(
         self, request: AudioGenerationRequest
-    ) -> AsyncGenerator[AudioGeneratorOutput, None]:
+    ) -> AsyncGenerator[AudioGenerationOutput, None]:
         """Mock implementation that yields predefined chunks."""
         for chunk in self._mock_chunks:
             yield chunk
@@ -61,17 +61,17 @@ def test_generate_full_audio_multiple_chunks() -> None:
 
     # Create test chunks with the last one marked as done.
     chunks = [
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk1_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100, duration=0.1),
             final_status=GenerationStatus.ACTIVE,
         ),
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk2_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100, duration=0.2),
             final_status=GenerationStatus.ACTIVE,
         ),
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk3_audio,
             metadata=AudioGenerationMetadata(
                 sample_rate=44100, duration=0.3, final_chunk=True
@@ -109,7 +109,7 @@ def test_generate_full_audio_single_chunk() -> None:
 
     # Create test chunk marked as done.
     chunks = [
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=22050, duration=0.5),
             final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -154,7 +154,7 @@ def test_generate_full_audio_last_chunk_not_done() -> None:
 
     # Create test chunk NOT marked as done - this should trigger the assertion.
     chunks = [
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100),
             final_status=GenerationStatus.ACTIVE,  # This should cause the assertion to fail
@@ -179,17 +179,17 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
 
     # Create test chunks.
     chunks = [
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk1_audio,
             metadata=AudioGenerationMetadata(chunk_id=1),
             final_status=GenerationStatus.ACTIVE,
         ),
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk2_audio,
             metadata=AudioGenerationMetadata(chunk_id=2),
             final_status=GenerationStatus.ACTIVE,
         ),
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk3_audio,
             metadata=AudioGenerationMetadata(chunk_id=3, final_chunk=True),
             final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -219,21 +219,21 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
 
 
 def test_generate_full_audio_preserves_chunk_objects() -> None:
-    """Test that generate_full_audio properly handles complete AudioGeneratorOutput objects."""
+    """Test that generate_full_audio properly handles complete AudioGenerationOutput objects."""
     # Create test audio data.
     chunk1_audio = np.array([[1.0]], dtype=np.float32)
     chunk2_audio = np.array([[2.0]], dtype=np.float32)
 
     # Create test chunks with different metadata.
     chunks = [
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk1_audio,
             metadata=AudioGenerationMetadata(
                 chunk_id=1, timestamp="2024-01-01"
             ),
             final_status=GenerationStatus.ACTIVE,
         ),
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk2_audio,
             metadata=AudioGenerationMetadata(
                 chunk_id=2,

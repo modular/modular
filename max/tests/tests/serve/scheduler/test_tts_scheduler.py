@@ -17,10 +17,11 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import (
-    AudioGenerator,
-    AudioGeneratorOutput,
+    AudioGenerationInputs,
+    AudioGenerationOutput,
     GenerationStatus,
     MAXPushQueue,
+    Pipeline,
     RequestID,
     SchedulerResult,
 )
@@ -162,7 +163,7 @@ def create_paged_scheduler(
 
     request_queue: queue.Queue[tuple[RequestID, TTSContext]] = queue.Queue()
     response_queue: queue.Queue[
-        dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
+        dict[RequestID, SchedulerResult[AudioGenerationOutput]]
     ] = queue.Queue()
     cancel_queue: queue.Queue[list[RequestID]] = queue.Queue()
 
@@ -178,7 +179,9 @@ def create_paged_scheduler(
     return scheduler, request_queue
 
 
-class FakeAudioGeneratorPipeline(AudioGenerator):
+class FakeAudioGeneratorPipeline(
+    Pipeline[AudioGenerationInputs[TTSContext], AudioGenerationOutput]
+):
     def __init__(
         self, paged_manager: PagedKVCacheManager, max_num_steps: int
     ) -> None:
@@ -186,10 +189,10 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
         self.max_num_steps = max_num_steps
         self._prev_num_steps: int | None = None
 
-    def next_chunk(
-        self, batch: dict[RequestID, TTSContext]
-    ) -> dict[str, AudioGeneratorOutput]:
-        needs_ce = next(iter(batch.values())).needs_ce
+    def execute(
+        self, inputs: AudioGenerationInputs[TTSContext]
+    ) -> dict[RequestID, AudioGenerationOutput]:
+        needs_ce = next(iter(inputs.batch.values())).needs_ce
 
         if needs_ce:
             num_tokens = 1
@@ -197,7 +200,7 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
             num_tokens = self.max_num_steps
 
         # Truncate num steps based on the max seq len
-        for context in batch.values():
+        for context in inputs.batch.values():
             num_available_steps = context.compute_num_available_steps(
                 self.paged_manager.max_seq_len
             )
@@ -206,21 +209,21 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
 
         self._prev_num_steps = num_tokens
 
-        ctxs: list[TTSContext] = list(batch.values())
+        ctxs: list[TTSContext] = list(inputs.batch.values())
 
         self.paged_manager.fetch(ctxs, num_steps=num_tokens)
 
         # Generate the responses
         responses = {}
-        for req_id, context in batch.items():
-            resp = AudioGeneratorOutput(
+        for req_id, context in inputs.batch.items():
+            resp = AudioGenerationOutput(
                 GenerationStatus.ACTIVE, steps_executed=num_tokens
             )
             for _ in range(num_tokens):
                 context.update(new_token=rand(1)[0])
 
                 if context.current_length == context.max_length:
-                    resp = AudioGeneratorOutput(
+                    resp = AudioGenerationOutput(
                         GenerationStatus.MAXIMUM_LENGTH,
                         steps_executed=num_tokens,
                     )

@@ -15,8 +15,8 @@ import numpy as np
 import torch
 from max.interfaces import (
     AudioGenerationMetadata,
+    AudioGenerationOutput,
     AudioGenerationRequest,
-    AudioGeneratorOutput,
     GenerationStatus,
     SamplingParams,
 )
@@ -26,7 +26,7 @@ from max.serve.pipelines.llm import AudioGeneratorPipeline
 class MockAudioGeneratorPipelineWithSamplingParams(AudioGeneratorPipeline):
     """Mock implementation of AudioGeneratorPipeline for testing SamplingParams."""
 
-    def __init__(self, mock_chunks: list[AudioGeneratorOutput]) -> None:
+    def __init__(self, mock_chunks: list[AudioGenerationOutput]) -> None:
         # Skip the parent constructor that requires real dependencies
         self.model_name = "test-model"
         self.logger = Mock()
@@ -37,7 +37,7 @@ class MockAudioGeneratorPipelineWithSamplingParams(AudioGeneratorPipeline):
 
     async def next_chunk(
         self, request: AudioGenerationRequest
-    ) -> AsyncGenerator[AudioGeneratorOutput, None]:
+    ) -> AsyncGenerator[AudioGenerationOutput, None]:
         """Mock implementation that captures sampling_params and yields predefined chunks."""
         # Capture the sampling_params for verification
         self.received_sampling_params = request.sampling_params
@@ -76,7 +76,7 @@ def test_pipeline_receives_sampling_params() -> None:
     # Create test audio data.
     chunk_audio = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
     chunks = [
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100),
             final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -103,7 +103,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
     # Create test audio data.
     chunk_audio = np.array([[4.0, 5.0]], dtype=np.float32)
     chunks = [
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=22050),
             final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -160,7 +160,7 @@ def test_multiple_requests_different_sampling_params() -> None:
     # Create test audio data
     chunk_audio = np.array([[1.0]], dtype=np.float32)
     chunks = [
-        AudioGeneratorOutput(
+        AudioGenerationOutput(
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(),
             final_status=GenerationStatus.END_OF_SEQUENCE,
