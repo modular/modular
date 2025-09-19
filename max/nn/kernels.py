@@ -1726,7 +1726,7 @@ def moe_create_indices(
         num_local_experts: The number of experts on this device.
 
     Returns:
-        A tuple of four tensors:
+        A tuple of five tensors:
         - token_expert_order: The reordered token indices, grouped by assigned expert.
         - expert_start_indices: The starting index for each expert's token group in
             the reordered sequence.
