@@ -8,7 +8,7 @@
 #define INIT_DEVELOPMENT_SIGNAL_HANDLER_H
 
 namespace llvm {
-struct StringRef;
+class StringRef;
 }
 
 namespace M::Init {
