@@ -89,10 +89,7 @@ D4 = {
         " dictionary. It is {soooo} bad (#{x}).".format(sooo="soooo", x=2)
     ),
     "A %s %s"
-    % (
-        "formatted",
-        "string",
-    ): (
+    % ("formatted", "string",): (
         "This is a really really really long string that has to go inside of a"
         " dictionary. It is %s bad (#%d)."
     )
@@ -251,8 +248,9 @@ assert some_type_of_boolean_expression, (
 
 assert some_type_of_boolean_expression, (
     "Followed by a really really really long string that is used to provide"
-    " context to the AssertionError exception, which uses dynamic string {}."
-    .format("formatting")
+    " context to the AssertionError exception, which uses dynamic string {}.".format(
+        "formatting"
+    )
 )
 
 assert some_type_of_boolean_expression, (

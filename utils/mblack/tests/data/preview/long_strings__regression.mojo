@@ -761,9 +761,7 @@ class A:
         return (
             (  # xx -x xxxxxxx xx xxx xxxxxxx.
                 "{{xxx_xxxxxxxxxx_xxxxxxxx}} xxx xxxx {} {{xxxx}} >&2".format(
-                    "{xxxx} {xxxxxx}"
-                    if xxxxx.xx_xxxxxxxxxx
-                    else (  # Disappearing Comment
+                    "{xxxx} {xxxxxx}" if xxxxx.xx_xxxxxxxxxx else (  # Disappearing Comment
                         "--xxxxxxx --xxxxxx=x --xxxxxx-xxxxx=xxxxxx"
                         " --xxxxxx-xxxx=xxxxxxxxxxx.xxx"
                     )
@@ -828,9 +826,11 @@ class A:
     def foo():
         some_func_call(
             "xxxxxxxxxx",
-            "xx {xxxxxxxxxxx}/xxxxxxxxxxx.xxx xxxx.xxx && xxxxxx -x "
-            '"xxxx xxxxxxx xxxxxx xxxx; xxxx xxxxxx_xxxxx xxxxxx xxxx; '
-            "xxxx.xxxx_xxxxxx(['xxxx.xxx'], xxxx.xxxxxxx().xxxxxxxxxx)\" ",
+            (
+                "xx {xxxxxxxxxxx}/xxxxxxxxxxx.xxx xxxx.xxx && xxxxxx -x "
+                '"xxxx xxxxxxx xxxxxx xxxx; xxxx xxxxxx_xxxxx xxxxxx xxxx; '
+                "xxxx.xxxx_xxxxxx(['xxxx.xxx'], xxxx.xxxxxxx().xxxxxxxxxx)\" "
+            ),
             None,
             ("xxxxxxxxxxx",),
         ),
@@ -839,9 +839,11 @@ class A:
 class A:
     def foo():
         some_func_call(
-            "xx {xxxxxxxxxxx}/xxxxxxxxxxx.xxx xxxx.xxx && xxxxxx -x "
-            "xxxx, ('xxxxxxx xxxxxx xxxx, xxxx') xxxxxx_xxxxx xxxxxx xxxx; "
-            "xxxx.xxxx_xxxxxx(['xxxx.xxx'], xxxx.xxxxxxx().xxxxxxxxxx)\" ",
+            (
+                "xx {xxxxxxxxxxx}/xxxxxxxxxxx.xxx xxxx.xxx && xxxxxx -x "
+                "xxxx, ('xxxxxxx xxxxxx xxxx, xxxx') xxxxxx_xxxxx xxxxxx xxxx; "
+                "xxxx.xxxx_xxxxxx(['xxxx.xxx'], xxxx.xxxxxxx().xxxxxxxxxx)\" "
+            ),
             None,
             ("xxxxxxxxxxx",),
         ),
@@ -912,28 +914,36 @@ class A:
 
 some_dictionary = {
     "xxxxx006": [
-        "xxx-xxx"
-        " xxxxx3xxxx1xx2xxxxxxxxxxxxxx0xx6xxxxxxxxxx2xxxxxx9xxxxxxxxxx0xxxxx1xxx2x/xx9xx6+x+xxxxxxxxxxxxxx4xxxxxxxxxxxxxxxxxxxxx43xxx2xx2x4x++xxx6xxxxxxxxx+xxxxx/xx9x+xxxxxxxxxxxxxx8x15xxxxxxxxxxxxxxxxx82xx/xxxxxxxxxxxxxx/x5xxxxxxxxxxxxxx6xxxxxx74x4/xxx4x+xxxxxxxxx2xxxxxxxx87xxxxx4xxxxxxxx3xx0xxxxx4xxx1xx9xx5xxxxxxx/xxxxx5xx6xx4xxxx1x/x2xxxxxxxxxxxx64xxxxxxx1x0xx5xxxxxxxxxxxxxx=="
-        " xxxxx000 xxxxxxxxxx\n",
-        "xxx-xxx"
-        " xxxxx3xxxx1xx2xxxxxxxxxxxxxx6xxxxxxxxxxxxxx9xxxxxxxxxxxxx3xxx9xxxxxxxxxxxxxxxx0xxxxxxxxxxxxxxxxx2xxxx2xxx6xxxxx/xx54xxxxxxxxx4xxx3xxxxxx9xx3xxxxx39xxxxxxxxx5xx91xxxx7xxxxxx8xxxxxxxxxxxxxxxx9xxx93xxxxxxxxxxxxxxxxx7xxx8xx8xx4/x1xxxxx1x3xxxxxxxxxxxxx3xxxxxx9xx4xx4x7xxxxxxxxxxxxx1xxxxxxxxx7xxxxxxxxxxxxxx4xx6xxxxxxxxx9xxx7xxxx2xxxxxxxxxxxxxxxxxxxxxx8xxxxxxxxxxxxxxxxxxxx6xx=="
-        " xxxxx010 xxxxxxxxxx\n",
+        (
+            "xxx-xxx"
+            " xxxxx3xxxx1xx2xxxxxxxxxxxxxx0xx6xxxxxxxxxx2xxxxxx9xxxxxxxxxx0xxxxx1xxx2x/xx9xx6+x+xxxxxxxxxxxxxx4xxxxxxxxxxxxxxxxxxxxx43xxx2xx2x4x++xxx6xxxxxxxxx+xxxxx/xx9x+xxxxxxxxxxxxxx8x15xxxxxxxxxxxxxxxxx82xx/xxxxxxxxxxxxxx/x5xxxxxxxxxxxxxx6xxxxxx74x4/xxx4x+xxxxxxxxx2xxxxxxxx87xxxxx4xxxxxxxx3xx0xxxxx4xxx1xx9xx5xxxxxxx/xxxxx5xx6xx4xxxx1x/x2xxxxxxxxxxxx64xxxxxxx1x0xx5xxxxxxxxxxxxxx=="
+            " xxxxx000 xxxxxxxxxx\n"
+        ),
+        (
+            "xxx-xxx"
+            " xxxxx3xxxx1xx2xxxxxxxxxxxxxx6xxxxxxxxxxxxxx9xxxxxxxxxxxxx3xxx9xxxxxxxxxxxxxxxx0xxxxxxxxxxxxxxxxx2xxxx2xxx6xxxxx/xx54xxxxxxxxx4xxx3xxxxxx9xx3xxxxx39xxxxxxxxx5xx91xxxx7xxxxxx8xxxxxxxxxxxxxxxx9xxx93xxxxxxxxxxxxxxxxx7xxx8xx8xx4/x1xxxxx1x3xxxxxxxxxxxxx3xxxxxx9xx4xx4x7xxxxxxxxxxxxx1xxxxxxxxx7xxxxxxxxxxxxxx4xx6xxxxxxxxx9xxx7xxxx2xxxxxxxxxxxxxxxxxxxxxx8xxxxxxxxxxxxxxxxxxxx6xx=="
+            " xxxxx010 xxxxxxxxxx\n"
+        ),
     ],
     "xxxxx016": [
-        "xxx-xxx"
-        " xxxxx3xxxx1xx2xxxxxxxxxxxxxx0xx6xxxxxxxxxx2xxxxxx9xxxxxxxxxx0xxxxx1xxx2x/xx9xx6+x+xxxxxxxxxxxxxx4xxxxxxxxxxxxxxxxxxxxx43xxx2xx2x4x++xxx6xxxxxxxxx+xxxxx/xx9x+xxxxxxxxxxxxxx8x15xxxxxxxxxxxxxxxxx82xx/xxxxxxxxxxxxxx/x5xxxxxxxxxxxxxx6xxxxxx74x4/xxx4x+xxxxxxxxx2xxxxxxxx87xxxxx4xxxxxxxx3xx0xxxxx4xxx1xx9xx5xxxxxxx/xxxxx5xx6xx4xxxx1x/x2xxxxxxxxxxxx64xxxxxxx1x0xx5xxxxxxxxxxxxxx=="
-        " xxxxx000 xxxxxxxxxx\n",
-        "xxx-xxx"
-        " xxxxx3xxxx1xx2xxxxxxxxxxxxxx6xxxxxxxxxxxxxx9xxxxxxxxxxxxx3xxx9xxxxxxxxxxxxxxxx0xxxxxxxxxxxxxxxxx2xxxx2xxx6xxxxx/xx54xxxxxxxxx4xxx3xxxxxx9xx3xxxxx39xxxxxxxxx5xx91xxxx7xxxxxx8xxxxxxxxxxxxxxxx9xxx93xxxxxxxxxxxxxxxxx7xxx8xx8xx4/x1xxxxx1x3xxxxxxxxxxxxx3xxxxxx9xx4xx4x7xxxxxxxxxxxxx1xxxxxxxxx7xxxxxxxxxxxxxx4xx6xxxxxxxxx9xxx7xxxx2xxxxxxxxxxxxxxxxxxxxxx8xxxxxxxxxxxxxxxxxxxx6xx=="
-        " xxxxx010 xxxxxxxxxx\n",
+        (
+            "xxx-xxx"
+            " xxxxx3xxxx1xx2xxxxxxxxxxxxxx0xx6xxxxxxxxxx2xxxxxx9xxxxxxxxxx0xxxxx1xxx2x/xx9xx6+x+xxxxxxxxxxxxxx4xxxxxxxxxxxxxxxxxxxxx43xxx2xx2x4x++xxx6xxxxxxxxx+xxxxx/xx9x+xxxxxxxxxxxxxx8x15xxxxxxxxxxxxxxxxx82xx/xxxxxxxxxxxxxx/x5xxxxxxxxxxxxxx6xxxxxx74x4/xxx4x+xxxxxxxxx2xxxxxxxx87xxxxx4xxxxxxxx3xx0xxxxx4xxx1xx9xx5xxxxxxx/xxxxx5xx6xx4xxxx1x/x2xxxxxxxxxxxx64xxxxxxx1x0xx5xxxxxxxxxxxxxx=="
+            " xxxxx000 xxxxxxxxxx\n"
+        ),
+        (
+            "xxx-xxx"
+            " xxxxx3xxxx1xx2xxxxxxxxxxxxxx6xxxxxxxxxxxxxx9xxxxxxxxxxxxx3xxx9xxxxxxxxxxxxxxxx0xxxxxxxxxxxxxxxxx2xxxx2xxx6xxxxx/xx54xxxxxxxxx4xxx3xxxxxx9xx3xxxxx39xxxxxxxxx5xx91xxxx7xxxxxx8xxxxxxxxxxxxxxxx9xxx93xxxxxxxxxxxxxxxxx7xxx8xx8xx4/x1xxxxx1x3xxxxxxxxxxxxx3xxxxxx9xx4xx4x7xxxxxxxxxxxxx1xxxxxxxxx7xxxxxxxxxxxxxx4xx6xxxxxxxxx9xxx7xxxx2xxxxxxxxxxxxxxxxxxxxxx8xxxxxxxxxxxxxxxxxxxx6xx=="
+            " xxxxx010 xxxxxxxxxx\n"
+        ),
     ],
 }
 
 
 def foo():
     xxx_xxx = (  # xxxx xxxxxxxxxx xxxx xx xxxx xx xxx xxxxxxxx xxxxxx xxxxx.
-        'xxxx xxx xxxxxxxx_xxxx xx "xxxxxxxxxx".\n xxx: xxxxxx'
-        " xxxxxxxx_xxxx=xxxxxxxxxx"
+        'xxxx xxx xxxxxxxx_xxxx xx "xxxxxxxxxx".'
+        "\n xxx: xxxxxx xxxxxxxx_xxxx=xxxxxxxxxx"
     )
 
 
@@ -1043,12 +1053,10 @@ class A:
             if not hasattr(module, name):
                 raise ValueError(
                     "Could not find object %s in %s.\nPlease note that you"
-                    " cannot"
-                    " serialize things like inner classes. Please move the"
-                    " object into"
-                    " the main module body to use migrations.\nFor more"
-                    " information,"
-                    " see https://docs.djangoproject.com/en/%s/topics/migrations/#serializing-values"
+                    " cannot serialize things like inner classes. Please move"
+                    " the object into the main module body to use"
+                    " migrations.\nFor more information, see"
+                    " https://docs.djangoproject.com/en/%s/topics/migrations/#serializing-values"
                     % (name, module_name, get_docs_version())
                 )
 
@@ -1080,8 +1088,7 @@ xxxxxxx_xxxxxx_xxxxxxx = xxx(
         xxxxxxxxxxxx(
             xxxxxx_xxxxxxx=(
                 '((x.aaaaaaaaa = "xxxxxx.xxxxxxxxxxxxxxxxxxxxx") ||'
-                " (x.xxxxxxxxx ="
-                ' "xxxxxxxxxxxx")) && '
+                ' (x.xxxxxxxxx = "xxxxxxxxxxxx")) && '
                 # xxxxx xxxxxxxxxxxx xxxx xxx (xxxxxxxxxxxxxxxx) xx x xxxxxxxxx xx xxxxxx.
                 "(x.bbbbbbbbbbbb.xxx != "
                 '"xxx:xxx:xxx::cccccccccccc:xxxxxxx-xxxx/xxxxxxxxxxx/xxxxxxxxxxxxxxxxx") && '
@@ -1093,9 +1100,8 @@ xxxxxxx_xxxxxx_xxxxxxx = xxx(
 if __name__ == "__main__":
     for i in range(4, 8):
         cmd = (
-            r"for pid in $(ps aux | grep paster | grep -v grep | grep '\-%d'"
-            r" | awk"
-            r" '{print $2}'); do kill $pid; done" % (i)
+            r"for pid in $(ps aux | grep paster | grep -v grep | grep '\-%d' |"
+            r" awk '{print $2}'); do kill $pid; done" % (i)
         )
 
 
@@ -1248,9 +1254,8 @@ assert (
 assert (
     str(suffix_arr)
     not in "['$', 'angaroo$', 'angrykangaroo$', 'aroo$', 'garoo$',"
-    " 'grykangaroo$',"
-    " 'kangaroo$', 'ngaroo$', 'ngrykangaroo$', 'o$', 'oo$', 'roo$',"
-    " 'rykangaroo$', 'ykangaroo$']"
+    " 'grykangaroo$', 'kangaroo$', 'ngaroo$', 'ngrykangaroo$', 'o$',"
+    " 'oo$', 'roo$', 'rykangaroo$', 'ykangaroo$']"
 )
 message = (
     f"1. Go to Google Developers Console and log in with your Google account."
