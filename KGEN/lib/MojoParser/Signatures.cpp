@@ -918,8 +918,7 @@ PogListAttr TypeCheckedParamList::getParamListAttr() const {
   return PogListAttr::get(
       shared.getContext(),
       PogListAttr::toPogs(names, passingKinds, variadicKinds), defaultPosParams,
-      defaultKwOnlyParams, ArgConvention::ByRefError, ArgConvention::ReadMem,
-      /*constraints=*/{});
+      defaultKwOnlyParams, ArgConvention::ByRefError, ArgConvention::ReadMem);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2264,8 +2263,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
 
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argPogs, defaultPosArgs, defaultKwOnlyArgs,
-                       argPackOrigConvention, argVariadicOrigConvention,
-                       /*constraints=*/{}),
+                       argPackOrigConvention, argVariadicOrigConvention),
       implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramList.getParamListAttr(),
                                    paramList.paramDeclAttrs, paramList.shared,

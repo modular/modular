@@ -36,24 +36,6 @@
 // CHECK-SAME: {pogs = #lit.pog_list<[], [], []>}
 "empty.pogs"() {pogs = #lit.pog_list<[], [], []>} : () -> ()
 
-// CHECK-LABEL: "pogs.with_constraints"
-// CHECK-SAME: pog1 = #lit.pog_list<
-// CHECK-SAME:   [<"a", pos, not_vararg>], [], []
-// CHECK-SAME:   {<1, #{{[[:alnum:]]+}}, "First constraint">, <0, #{{[[:alnum:]]+}}, "Second constraint">}
-// CHECK-SAME: pog2 = #lit.pog_list<
-// CHECK-SAME:   [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, pack_vararg>], [], [], owned_in_mem
-// CHECK-SAME:   {<1, #{{[[:alnum:]]+}}, "First constraint">, <0, #{{[[:alnum:]]+}}, "Second constraint">}
-"pogs.with_constraints"() {
-  pog1 = #lit.pog_list<
-    [<"a", pos, not_vararg>], [], []
-    {<1, loc("test.mojo":5:10), "First constraint">, <0, loc("test.mojo":6:15), "Second constraint">}
-  >,
-  pog2 = #lit.pog_list<
-    [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, pack_vararg>], [], [], owned_in_mem
-    {<1, loc("test.mojo":5:10), "First constraint">, <0, loc("test.mojo":6:15), "Second constraint">}
-  >
-} : () -> ()
-
 // CHECK-LABEL: "empty.metadata"
 // CHECK-SAME: #lit.fn_metadata<<[], [], []>, 0>
 "empty.metadata"() {metadata = #lit.fn_metadata<<[], [], []>, 0>} : () -> ()

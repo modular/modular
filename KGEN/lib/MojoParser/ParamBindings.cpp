@@ -652,44 +652,6 @@ ParamBindings::verifyBindingsImpl(
     return {{}, fitness};
   }
 
-  // Check that no constraints are violated.
-  if (!paramListAttr.getConstraints().empty()) {
-    ParserParameterEvaluator constraintEvaluator(shared, newBindings);
-    SmallVector<ConstraintAttr> assumptions;
-    declScope.getKnownAssumptionsIncludingParents(assumptions);
-    DenseSet<TypedAttr> assumptionProps;
-    for (ConstraintAttr assumption : assumptions)
-      assumptionProps.insert(assumption.getProposition());
-
-    SmallVector<ConstraintAttr> failedConstraints;
-    SmallVector<ConstraintAttr> unprovableConstraints;
-    for (ConstraintAttr constraint : paramListAttr.getConstraints()) {
-      TypedAttr prop =
-          constraintEvaluator.getReboundAttribute(constraint.getProposition());
-      if (assumptionProps.contains(prop))
-        continue;
-
-      if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
-        if (intValue.getValue().isZero())
-          failedConstraints.push_back(constraint);
-      } else {
-        unprovableConstraints.push_back(constraint);
-      }
-    }
-
-    if (!failedConstraints.empty()) {
-      if (diagEmitter)
-        diagEmitter->emitConstraintViolations(failedConstraints);
-      return {{}, fitness};
-    }
-
-    if (!unprovableConstraints.empty()) {
-      if (diagEmitter)
-        diagEmitter->emitUnprovableConstraints(unprovableConstraints);
-      return {{}, fitness};
-    }
-  }
-
   return {ParameterExprArrayAttr::get(emitter.getContext(), newBindings),
           fitness};
 }

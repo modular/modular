@@ -238,10 +238,10 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogListAttr::get(
-      ctx, paramNames, paramPassingKinds, defaultPosParams, defaultKwOnlyParams,
-      argsVariadic, std::move(origPackConvention),
-      std::move(origVariadicConvention), /*constraints=*/{});
+  paramListAttr = PogListAttr::get(ctx, paramNames, paramPassingKinds,
+                                   defaultPosParams, defaultKwOnlyParams,
+                                   argsVariadic, std::move(origPackConvention),
+                                   std::move(origVariadicConvention));
   return success();
 }
 
@@ -436,14 +436,10 @@ ParseResult LIT::parseOptionalParamSignature(
   if (parseBody && failed(parseBody()))
     return failure();
 
-  SmallVector<ConstraintAttr> constraints;
-  if (failed(parseOptionalWhereClauses(p, constraints)))
-    return failure();
-
-  paramListAttr = PogListAttr::get(
-      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, argVariadics, std::nullopt,
-      std::move(origVariadicConvention), constraints);
+  paramListAttr =
+      PogListAttr::get(p.getContext(), paramNames, paramPassingKinds,
+                       defaultPosParams, defaultKwOnlyParams, argVariadics,
+                       std::nullopt, std::move(origVariadicConvention));
   return success();
 }
 
