@@ -497,6 +497,63 @@ def test_speculative_decoding_context_update(
     )
 
 
+def test_draft_model_encoding_selection():
+    """Test that draft model encoding is correctly selected from config or fallback."""
+    model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
+
+    # Test 1: When draft_model_config.quantization_encoding is specified explicitly
+    pipeline_config = PipelineConfig(
+        model_path=model_name,
+        quantization_encoding=SupportedEncoding.float32,
+        device_specs=[DeviceSpec.accelerator()],
+        draft_model_path=model_name,
+        max_batch_size=4,
+        max_num_steps=5,
+        max_length=1024,
+    )
+    pipeline_config.model_config.kv_cache_config.cache_strategy = (
+        KVCacheStrategy.PAGED
+    )
+    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
+    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
+
+    # Set draft model quantization encoding explicitly
+    assert pipeline_config.draft_model_config is not None
+    pipeline_config.draft_model_config.quantization_encoding = (
+        SupportedEncoding.float32
+    )
+
+    _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    assert isinstance(pipeline, SpeculativeDecodingTextGenerationPipeline)
+
+    # Test 2: When draft_model_config.quantization_encoding is None (fallback to first supported)
+    # This test verifies that the fallback mechanism works when no explicit encoding is set
+    pipeline_config2 = PipelineConfig(
+        model_path=model_name,
+        quantization_encoding=SupportedEncoding.float32,
+        device_specs=[DeviceSpec.accelerator()],
+        draft_model_path=model_name,
+        max_batch_size=4,
+        max_num_steps=5,
+        max_length=1024,
+    )
+    pipeline_config2.model_config.kv_cache_config.cache_strategy = (
+        KVCacheStrategy.PAGED
+    )
+    pipeline_config2.model_config.kv_cache_config.kv_cache_page_size = 128
+    pipeline_config2.model_config.kv_cache_config.device_memory_utilization = (
+        0.3
+    )
+
+    # Ensure draft model quantization encoding is None to test fallback
+    assert pipeline_config2.draft_model_config is not None
+    pipeline_config2.draft_model_config.quantization_encoding = None
+
+    # The pipeline should still be created successfully, falling back to the first supported encoding
+    _, pipeline2 = PIPELINE_REGISTRY.retrieve(pipeline_config2)
+    assert isinstance(pipeline2, SpeculativeDecodingTextGenerationPipeline)
+
+
 def test_kv_cache_claiming_protocol():
     """Test that external_claim is called before fetch in prepare_batch."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
