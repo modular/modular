@@ -19,6 +19,11 @@
 using namespace M;
 
 namespace {
+
+// Function pointer for Python stack trace printing
+// This can be set by nanobind-enabled code
+static void (*pythonStackTraceCallback)() = nullptr;
+
 struct SignalInfo {
   std::string info;
   int signal = 0;
@@ -218,9 +223,16 @@ static void developmentSignalHandler(void *context) {
   if (!sigInfo.info.empty())
     llvm::errs() << sigInfo.info << "\n";
 
-  llvm::errs() << "Stack trace:\n";
+  llvm::errs() << "C++ stack trace:\n";
   llvm::sys::PrintStackTrace(llvm::errs());
   llvm::errs() << "\n";
+
+  // Print Python stack trace if available
+  if (pythonStackTraceCallback) {
+    llvm::errs() << "Python stack trace:\n";
+    pythonStackTraceCallback();
+    llvm::errs() << "\n";
+  }
 
   logHostMachineInfo(llvm::errs());
 
@@ -258,4 +270,8 @@ void M::Init::registerDevelopmentSignalHandler(llvm::StringRef programName) {
     sigaction(SIGTRAP, &sa, nullptr); // Trace/breakpoint trap
     sigaction(SIGSYS, &sa, nullptr);  // Bad system call
   });
+}
+
+void M::Init::registerPythonStackTraceCallback(void (*callback)()) {
+  pythonStackTraceCallback = callback;
 }
