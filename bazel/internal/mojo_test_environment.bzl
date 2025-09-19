@@ -83,7 +83,8 @@ def _mojo_test_environment_implementation(ctx):
             transitive_files.append(tool)
 
     compilerrt = None
-    for lib in mojo_toolchain.implicit_deps:
+    cc_deps = mojo_toolchain.implicit_deps + ([ctx.attr._link_extra_lib] if ctx.attr._link_extra_lib else [])
+    for lib in cc_deps:
         if CcInfo not in lib:
             continue
 
@@ -140,6 +141,10 @@ mojo_test_environment = rule(
         "short_path": attr.bool(default = True),
         "data": attr.label_list(
             providers = [MojoInfo],
+        ),
+        "_link_extra_lib": attr.label(
+            default = "@bazel_tools//tools/cpp:link_extra_lib",
+            providers = [CcInfo],
         ),
     },
     toolchains = use_cpp_toolchain() + [
