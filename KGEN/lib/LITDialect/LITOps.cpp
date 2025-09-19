@@ -580,14 +580,6 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<ConstraintAttr> constraints;
   if (failed(parseOptionalWhereClauses(p, constraints)))
     return failure();
-  if (!constraints.empty()) {
-    // Add constraints to the param list attr.
-    paramListAttr = PogListAttr::get(
-        paramListAttr.getContext(), paramListAttr.getPogs(),
-        paramListAttr.getDefaultPos(), paramListAttr.getDefaultKwOnly(),
-        paramListAttr.getOrigPackConvention(),
-        paramListAttr.getOrigVariadicConvention(), constraints);
-  }
 
   SmallVector<PassingKind> argPassingKinds;
   passingKindParser.populatePassingKinds(argPassingKinds);
@@ -700,7 +692,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                        signature.getFnEffects(),
                        /*optionalResultList=*/true);
 
-  printOptionalWhereClauses(p, signature.getParamListAttrs().getConstraints(),
+  printOptionalWhereClauses(p, signature.getFnMetadata().getConstraints(),
                             &evaluator);
 }
 

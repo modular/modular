@@ -750,12 +750,12 @@ fn test_raising_computed_getter() raises:
 
 # CHECK: lit.fn @"int_abs[[INT_ABS_NONNEG:[^"]+]]"
 fn int_abs[x: Int]() -> Int
-    requires x > -1:
+    where x > -1:
     return x
 
 # CHECK: lit.fn @"int_abs[[INT_ABS_NEG:[^"]+]]"
 fn int_abs[x: Int]() -> Int
-    requires x < 0:
+    where x < 0:
     return 0 - x
 
 # CHECK: lit.fn @"constraint_overloading

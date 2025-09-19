@@ -1252,7 +1252,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   fnSignature.parseResultIfPresent(p);
 
   // Parse the constraints if present.
-  if (failed(parsedParamList.parseConstraintsIfPresent(p)))
+  if (failed(fnSignature.parseConstraintsIfPresent(p)))
     return failure();
   std::optional<TypeCheckedParamList> paramListOrError =
       TypeCheckedParamList::create(parsedParamList, sigDecl);
@@ -1308,7 +1308,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (!signature)
     return failure();
 
-  decl.insertKnownAssumptions(tcSignature.paramList.constraints);
+  decl.insertKnownAssumptions(tcSignature.constraints);
 
   /// configure FnOp
 

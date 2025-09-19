@@ -1201,9 +1201,9 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   }
   mangledName += ')';
 
-  // Add constraints to the mangled name. These are already sorted (RASCFNM).
+  // Add constraints to the mangled name.
   ArrayRef<ConstraintAttr> constraints =
-      fullSig.getParamListAttrs().getConstraints();
+      fullSig.getFnMetadata().getConstraints();
   if (!constraints.empty()) {
     mangledName += '{';
     llvm::interleave(

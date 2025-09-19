@@ -153,20 +153,12 @@ public:
   /// The full ParsedArgument for each parameter.
   SmallVector<ParsedArgument> params;
 
-  /// Constraints specified with 'requires' clauses.
-  SmallVector<ParsedConstraint> constraints;
-
   /// Parse a parameter signature if present.
   ///
   /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
   /// param_list   ::= argument_list | "(" ")"
   /// param_result_types ::= expression ("," expression)*
   ParseResult parseParametersIfPresent(ParserBase &p, ArgListKind kind);
-
-  /// Parse constraint clauses if present.
-  ///
-  /// constraint_clauses ::= ("requires" expression ("," string_literal)?)*
-  ParseResult parseConstraintsIfPresent(ParserBase &p);
 };
 
 /// This contains the result state from type checking a parameter signature.
@@ -200,10 +192,6 @@ public:
   SmallVector<TypedAttr> defaultPosParams;
   /// Default values for keyword-only params.
   SmallVector<TypedAttr> defaultKwOnlyParams;
-
-  /// Constraints specified with 'requires' clauses. Sorted by constraint
-  /// expression (RASCFNM).
-  SmallVector<ConstraintAttr> constraints;
 };
 
 //===----------------------------------------------------------------------===//
@@ -218,6 +206,8 @@ public:
   /// The result specifier if present.
   ParsedArgument resultArg;
   FnEffects effects;
+  /// Constraints specified with 'where' clauses.
+  SmallVector<ParsedConstraint> constraints;
 
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
@@ -227,6 +217,11 @@ public:
   /// Parse the result specifier starting with a `->` if present.
   void parseResultIfPresent(ParserBase &p,
                             std::optional<size_t> stmtIndent = std::nullopt);
+
+  /// Parse the constraints if present.
+  ///
+  /// constraint_clauses ::= ("where" expression string_literal?)*
+  ParseResult parseConstraintsIfPresent(ParserBase &p);
 };
 
 /// This is all the state built up when parsing a capture signature.
@@ -277,6 +272,9 @@ public:
   /// origins applied, e.g. "!lit.ref<String>" or "!kgen.variadic<Int>"
   SmallVector<Type> fullArgTypes;
   SmallVector<ParamDeclAttr> implicitOriginDecls;
+
+  /// Constraints specified with 'where' clauses.
+  SmallVector<ConstraintAttr> constraints;
 
   /// This is the result type + variant for throwing functions.  This is what
   /// finally gets treated as the ABI for the function.

@@ -909,32 +909,6 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
   }
 
-  IREmitter constraintEmitter(declScope, EC_Requires);
-  for (const ParsedConstraint &constraint : parsedParams.constraints) {
-    RValue propI1 =
-        constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
-    if (!propI1) {
-      constraintEmitter.emitError(constraint.loc,
-                                  "failed to emit constraint expression");
-      continue;
-    }
-
-    PValue propVal = propI1.getIfPValue();
-    if (!propI1) {
-      constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
-      continue;
-    }
-
-    result.constraints.push_back(ConstraintAttr::get(
-        propVal, result.shared.translateLocation(constraint.loc),
-        constraint.errorMsg));
-  }
-  // Sort constraints by proposition (RASCFNM).
-  llvm::stable_sort(
-      result.constraints, [](const ConstraintAttr &a, const ConstraintAttr &b) {
-        return ParameterAttr::compare(a.getProposition(), b.getProposition());
-      });
-
   if (hasErrors)
     return std::nullopt;
   return result;
@@ -945,7 +919,7 @@ PogListAttr TypeCheckedParamList::getParamListAttr() const {
       shared.getContext(),
       PogListAttr::toPogs(names, passingKinds, variadicKinds), defaultPosParams,
       defaultKwOnlyParams, ArgConvention::ByRefError, ArgConvention::ReadMem,
-      constraints);
+      /*constraints=*/{});
 }
 
 //===----------------------------------------------------------------------===//
@@ -959,12 +933,8 @@ ParseResult ParsedConstraint::parse(ParserBase &p) {
   if (p.parseExpression(propExpr))
     return failure();
 
-  // Check for optional error message: comma followed by string literal
-  if (p.consumeIf(Token::comma)) {
-    if (!p.getToken().is(Token::string))
-      return p.emitError(p.getToken().getLoc(),
-                         "expected string literal for error message");
-
+  // Check for optional error message
+  if (p.getToken().is(Token::string)) {
     std::string value =
         Lexer::getStringLiteralValue(p.getToken().getSpelling());
     errorMsg = StringAttr::get(p.getContext(), value);
@@ -993,17 +963,6 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
-}
-
-ParseResult ParsedParamList::parseConstraintsIfPresent(ParserBase &p) {
-  while (p.consumeIf(Token::kw_requires)) {
-    ParsedConstraint constraint;
-    if (constraint.parse(p))
-      return failure();
-
-    constraints.push_back(constraint);
-  }
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1129,6 +1088,9 @@ ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
     } else if (spelling == "register_passable") {
       handleEffect(&FnEffects::isRegisterPassable,
                    &FnEffects::setRegisterPassable);
+    } else if (spelling == "where") {
+      // `where` clauses signal the end of the effects list.
+      break;
     } else {
       // If this isn't a known effect, then it could be an error like a missing
       // colon at the end of a function declaration.  If so, emit a nice error
@@ -1206,6 +1168,17 @@ void ParsedArgumentList::parseResultIfPresent(
 
   // Indicate a present result by setting its convention to 'out'.
   resultArg.convention = ParsedArgument::kConventionOut;
+}
+
+ParseResult ParsedArgumentList::parseConstraintsIfPresent(ParserBase &p) {
+  while (p.consumeIfSoftIdentifier("where")) {
+    ParsedConstraint constraint;
+    if (constraint.parse(p))
+      return failure();
+
+    constraints.push_back(constraint);
+  }
+  return success();
 }
 
 /// This function creates a new anonymous origin decl for the specified
@@ -2014,6 +1987,28 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
           typeEmitter.emitExprPValue(originExpr, EC_Origin, setType);
     }
   }
+
+  // Type check the constraints.
+  IREmitter constraintEmitter(paramList.declScope, EC_Requires);
+  for (const ParsedConstraint &constraint : argList.constraints) {
+    RValue propI1 =
+        constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
+    if (!propI1) {
+      constraintEmitter.emitError(constraint.loc,
+                                  "failed to emit constraint expression");
+      continue;
+    }
+
+    PValue propVal = propI1.getIfPValue();
+    if (!propI1) {
+      constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
+      continue;
+    }
+
+    constraints.push_back(
+        ConstraintAttr::get(propVal, shared.translateLocation(constraint.loc),
+                            constraint.errorMsg));
+  }
 }
 
 /// This performs any special checks over the declaration based on its name
@@ -2275,7 +2270,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
       getOriginsAccessibleByParams(paramList.getParamListAttr(),
                                    paramList.paramDeclAttrs, paramList.shared,
                                    captureOrigins),
-      isNestedOriginExclusivityCheckingDisabled, /*constraints=*/{});
+      isNestedOriginExclusivityCheckingDisabled, constraints);
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.
