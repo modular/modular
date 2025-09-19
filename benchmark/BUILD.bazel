@@ -17,6 +17,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("nvitop"),
         requirement("pillow"),
+        requirement("psutil"),
         requirement("pyyaml"),
         requirement("tqdm"),
         requirement("transformers"),

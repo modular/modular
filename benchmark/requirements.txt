@@ -5,6 +5,7 @@ huggingface_hub
 msgspec
 numpy
 protobuf
+psutil
 tqdm
 transformers
 nvitop
