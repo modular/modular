@@ -31,6 +31,35 @@ struct StructWithMatchingAlias(TraitWithAlias):
         pass
 
 
+struct S[n: Int]:
+    fn __init__(out self):
+        pass
+
+
+# CHECK-LABEL: lit.trait.decl @TraitWithDependentAlias
+trait TraitWithDependentAlias:
+    # CHECK-NEXT: lit.alias.decl *"N`1": !Int
+    alias N: Int
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`2": @{{.*}}::@S<:!Int #kgen.get_witness<:!{{.*}} *"_Self`", "{{.*}}::{{.*}}", "N">>
+    alias depend_on_N: S[Self.N]
+
+
+# CHECK-LABEL: lit.struct.decl @StructWithMatchingDependentAlias1
+struct StructWithMatchingDependentAlias1(TraitWithDependentAlias):
+    # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
+    alias N: Int = 1
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @{{.*}}::@S<:!Int {1}>
+    alias depend_on_N = S[1]()
+
+
+# CHECK-LABEL: lit.struct.decl @StructWithMatchingDependentAlias2
+struct StructWithMatchingDependentAlias2(TraitWithDependentAlias):
+    # CHECK-NEXT: lit.alias.decl *"N`": !Int = <{1}>
+    alias N: Int = 1
+    # CHECK-NEXT: lit.alias.decl *"depend_on_N`1": @{{.*}}::@S<:!Int {1}>
+    alias depend_on_N = S[Self.N]()
+
+
 # This tests that we correctly call get_witness when looking up a trait's
 # alias.
 # CHECK-LABEL: lit.fn @"getNFromTraitWithAlias
@@ -948,18 +977,23 @@ fn receiveStructWithExplicitOverride[T: StructWithExplicitOverride]():
 
 # // -----
 
+
 # Tests that a bug originally introduced by (#65985) is no longer present.
 struct ZInt:
     pass
 
+
 trait A:
     alias foo: ZInt
+
 
 trait B(A):
     alias foo: ZInt
 
+
 trait C(B):
     pass
+
 
 # TODO(MOCO-2123): Make this work:
 # trait TraitWithNoOverride(A, B):
@@ -995,25 +1029,31 @@ trait C(B):
 # Tests that we can correctly access associated aliases via an instance of a
 # parametric type whose trait is known.
 
+
 @fieldwise_init
 @register_passable("trivial")
 struct ZInt:
     pass
 
+
 trait MyTrait:
     alias BIT_WIDTH: ZInt
 
+
 trait MyTrait2:
     pass
+
 
 @fieldwise_init
 struct MyStruct(MyTrait, MyTrait2):
     alias BIT_WIDTH = ZInt()
 
+
 # CHECK-LABEL: lit.fn @"bitwidth_from_instance
 fn bitwidth_from_instance[T: MyTrait, Inst: T]() -> ZInt:
     # CHECK-NEXT: #kgen.get_witness<:!MyTrait T, "{{.*}}::MyTrait", "BIT_WIDTH">
     return Inst.BIT_WIDTH
+
 
 # CHECK-LABEL: lit.fn @"bitwidth_from_composition_instance
 fn bitwidth_from_composition_instance[T: MyTrait & MyTrait2, Inst: T]() -> ZInt:
