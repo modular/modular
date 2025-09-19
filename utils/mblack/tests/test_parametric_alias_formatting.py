@@ -11,16 +11,15 @@ import unittest
 from pathlib import Path
 
 import mblack
-from mblack.mode import Mode, TargetVersion
+from mblack.mode import TargetVersion
 
 
-@unittest.skip("TODO(MOTO-1320): Re-enable")
 class TestParametricAliasFormatting(unittest.TestCase):
     """Test that parametric aliases are formatted correctly."""
 
     def setUp(self):
         """Set up test mode with Mojo target version."""
-        self.mode = Mode(target_versions={TargetVersion.MOJO})
+        self.mode = mblack.Mode(target_versions={TargetVersion.MOJO})
 
     def test_simple_parametric_alias(self):
         """Test basic parametric alias formatting."""
@@ -322,7 +321,7 @@ alias addOne[x: Int]: Int = x + 1  # Add one to x
     def test_parametric_alias_spaces_in_dict_literals(self):
         """Test parametric alias with spaces in dict literals."""
         source = "alias DictSpacing[x: String, y: Int] = { x : y , 'default' : 0 }"
-        expected = "alias DictSpacing[x: String, y: Int] = {x: y, 'default': 0}\n"
+        expected = 'alias DictSpacing[x: String, y: Int] = {x: y, "default": 0}\n'
 
         actual = mblack.format_str(source, mode=self.mode)
         self.assertEqual(expected, actual)
@@ -399,7 +398,9 @@ alias AnotherSpacing[y: Int]: Int = y * 2  # Multiply by two
     x    +    len( y )
 )"""
         expected = """alias ComplexWhitespace[x: Int = 1 + 2, y: String = "  hello  "]: Tuple = (
-    x * 2, y.strip(), x + len(y)
+    x * 2,
+    y.strip(),
+    x + len(y),
 )
 """
 
@@ -413,10 +414,12 @@ alias AnotherSpacing[y: Int]: Int = y * 2  # Multiply by two
     len( y    .    strip( )    )    ,
     x    **    2    +    y    .    count( ' ' )    *    10
 )"""
-        expected = """alias ComplexEdgeCase[x: Int = 1 + 2 * 3 // 4 % 5 ** 6, y: String = "  hello  world  "]: Tuple = (
+        expected = """alias ComplexEdgeCase[
+    x: Int = 1 + 2 * 3 // 4 % 5**6, y: String = "  hello  world  "
+]: Tuple = (
     x + y.strip().split()[0],
     len(y.strip()),
-    x ** 2 + y.count(' ') * 10,
+    x**2 + y.count(" ") * 10,
 )
 """
 
