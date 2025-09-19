@@ -1179,3 +1179,39 @@ fn broadcast(val: UInt) -> UInt:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
     return UInt(Int(shuffle_idx(Int32(val), 0)))
+
+
+# ===-----------------------------------------------------------------------===#
+# Warp Vote
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _vote_nvidia_helper(vote: Bool) -> SIMD[DType.uint32, 1]:
+    return llvm_intrinsic[
+        "llvm.nvvm.vote.ballot.sync",
+        UInt32,
+        UInt32,
+        Bool,
+        has_side_effect=False,
+    ](0xFFFFFFFF, vote).cast[DType.uint32]()
+
+
+@always_inline
+fn vote(val: Bool) -> SIMD[DType.uint32, 1]:
+    """Creates a 32 bit mask among all threads in the warp, where each bit is set to 1 if the corresponding thread voted True,
+    and 0 otherwise.
+
+    This function takes a boolean value signaling if the thread vote.
+
+    Args:
+        val: The boolean vote.
+
+    Returns:
+        A mask containing the vote of all threads in the warp.
+    """
+    constrained[
+        is_nvidia_gpu(),
+        "This intrinsic is currently only defined for NVIDIA GPUs",
+    ]()
+    return _vote_nvidia_helper(val)
