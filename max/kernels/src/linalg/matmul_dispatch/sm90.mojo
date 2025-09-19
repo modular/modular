@@ -22,10 +22,10 @@ from linalg.matmul_tile_scheduler import MatmulSchedule, RasterOrder
 
 from utils.index import Index
 from logger import Logger
-from .utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from .utils_gpu import MatmulConfig
-from .matmul_sm90 import warp_specialize_gemm_with_multicasting
-from .matmul_sm90_splitk import warp_specialize_gemm_with_multicasting_splitk
+from ..utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ..utils_gpu import MatmulConfig
+from ..matmul_sm90 import warp_specialize_gemm_with_multicasting
+from ..matmul_sm90_splitk import warp_specialize_gemm_with_multicasting_splitk
 
 
 from internal_utils import Table, TuningConfig
