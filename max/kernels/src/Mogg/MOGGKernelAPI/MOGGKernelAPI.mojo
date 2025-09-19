@@ -4389,8 +4389,6 @@ struct Concat:
         inputs: FusedInputVariadicTensors[dtype, rank, *_],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
         @parameter
@@ -4431,7 +4429,7 @@ struct Concat:
         ](
             normalize_neg_index(Int(axis), rank),
             input_shapes,
-            output_buf,
+            output.to_layout_tensor(),
             ctx,
         )
 
@@ -4506,21 +4504,28 @@ struct ConcatFromList:
         constrained[
             target == "cpu", "only cpu is supported for concat_from_list"
         ]()
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        alias inputs_layout = Layout.row_major[rank]()
 
         # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
-        var input_as_ndbuffer = List[NDBuffer[dtype, rank, MutableAnyOrigin]](
-            capacity=len(inputs)
-        )
+        var input_as_layout_tensor = List[
+            LayoutTensor[dtype, inputs_layout, MutableAnyOrigin]
+        ](capacity=len(inputs))
         for i in range(len(inputs)):
-            input_as_ndbuffer.append(
-                managed_tensor_slice_to_ndbuffer(inputs[i])
+            var lt = inputs[i].to_layout_tensor()
+            input_as_layout_tensor.append(
+                LayoutTensor[dtype, inputs_layout, MutableAnyOrigin](
+                    lt.ptr,
+                    RuntimeLayout[inputs_layout].row_major(
+                        lt.runtime_layout.shape.value.canonicalize()
+                    ),
+                )
             )
 
-        _concat_cpu[rank, dtype, None, False](
-            output_buf,
+        _concat_cpu[dtype, None, False](
+            output.to_layout_tensor(),
             normalize_neg_index(Int(axis), rank),
-            input_as_ndbuffer,
+            input_as_layout_tensor,
         )
 
     @staticmethod
