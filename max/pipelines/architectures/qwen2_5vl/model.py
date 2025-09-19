@@ -349,6 +349,7 @@ class Qwen2_5VLModel(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_state_dict,
+            vision_state_dict=vision_state_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
             cache_dtype=self.encoding.cache_dtype,

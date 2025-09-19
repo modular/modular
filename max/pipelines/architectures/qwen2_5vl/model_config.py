@@ -34,6 +34,9 @@ class VisionConfig:
     dtype: DType
     """DType of the Qwen2.5VL vision model weights."""
 
+    llm_dtype: DType
+    """DType of the Qwen2.5VL language model weights."""
+
     devices: list[DeviceRef]
     """Devices that the Qwen2.5VL vision encoder model is parallelized over."""
 
@@ -77,6 +80,7 @@ class VisionConfig:
     def generate(
         vision_config: AutoConfig,
         dtype: DType,
+        llm_dtype: DType,
         pipeline_config: PipelineConfig,
     ) -> VisionConfig:
         """Generate VisionConfig from HuggingFace vision config.
@@ -89,6 +93,7 @@ class VisionConfig:
         """
         return VisionConfig(
             dtype=dtype,
+            llm_dtype=llm_dtype,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model_config.device_specs
@@ -199,6 +204,7 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         llm_state_dict: dict[str, WeightData],
+        vision_state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
         cache_dtype: DType,
@@ -229,7 +235,8 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
             raise ValueError("vision_config not found in huggingface_config")
         vision_config = VisionConfig.generate(
             hf_vision_config,
-            dtype,
+            vision_state_dict["vision_encoder.patch_embed.proj.weight"].dtype,
+            llm_state_dict["language_model.embed_tokens.weight"].dtype,
             pipeline_config,
         )
 
