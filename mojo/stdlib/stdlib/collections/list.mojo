@@ -93,6 +93,43 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
+@fieldwise_init
+struct _TakeListIter[T: Copyable & Movable, origin: Origin[True]](
+    ImplicitlyCopyable, Iterable, Iterator, Movable
+):
+    """Iterator for List that pops the first element per iteration.
+
+    Parameters:
+        T: The type of the elements in the list.
+        origin: The origin of the List
+    """
+
+    alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+
+    var src: Pointer[List[Self.Element], origin]
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return len(self.src[]) > 0
+
+    @always_inline
+    fn __next__(mut self) -> Self.Element:
+        return self.src[].pop(0)
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len: Int = len(self.src[])
+        return (iter_len, {iter_len})
+
+
 struct List[T: Copyable & Movable](
     Boolable, Copyable, Defaultable, Iterable, Movable, Sized
 ):
@@ -838,6 +875,34 @@ struct List[T: Copyable & Movable](
         self._len -= 1
 
         return ret_val^
+
+    fn take_items(mut self) -> _TakeListIter[T, __origin_of(self)]:
+        """Returns a mutating iterator that pops items out of the list.
+
+        Examples:
+        ```mojo
+        var l = List[String]("a", "b", "c")
+        for item in l.take_items():
+            # Unlike the default iterator, we
+            # can take ownership of each item.
+            var v = item^
+            print(v)
+        print('List length:', len(l))
+        ```
+
+        This will print:
+
+        ```
+        a
+        b
+        c
+        List length: 0
+        ```
+
+        Returns:
+            A mutating iterator that pops items out of the list.
+        """
+        return _TakeListIter(Pointer(to=self))
 
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
