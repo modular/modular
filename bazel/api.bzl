@@ -150,10 +150,6 @@ def modular_py_test(
     if _has_internal_reference(deps) or _has_internal_reference(data):
         return
 
-    # TODO: These are broken on macOS OSS only
-    return
-
-    # buildifier: disable=unreachable
     _modular_py_test(
         name = name,
         data = data,
