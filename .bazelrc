@@ -23,6 +23,9 @@ build --remote_instance_name=modular-public
 build --disk_cache=~/.cache/bazel-disk-cache
 build --experimental_disk_cache_gc_max_size=100G
 
+build --compilation_mode=dbg
+build --//:modular_config=default
+
 build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
 build:public-cache --build_metadata=VISIBILITY=PUBLIC

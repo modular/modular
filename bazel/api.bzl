@@ -1,6 +1,8 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
+load("@rules_cc//cc:cc_binary.bzl", _cc_binary = "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", _cc_library = "cc_library")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
@@ -17,6 +19,8 @@ load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: 
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
+modular_cc_binary = _cc_binary
+modular_cc_library = _cc_library
 modular_py_venv = _modular_py_venv
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test

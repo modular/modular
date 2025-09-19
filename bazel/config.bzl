@@ -11,3 +11,16 @@ ALLOW_UNUSED_TAG = "maybe-unused"
 
 # Default GPU memory for scheduling remote exec tests
 DEFAULT_GPU_MEMORY = "0.8"
+
+MODULAR_CONFIGS = [
+    "default",
+    "debug_modular",
+    "debug_everything",
+    "ci_build",
+    "release",
+    "production",
+    "asan",
+    "tsan",
+    "ubsan",
+    "coverage",
+]
