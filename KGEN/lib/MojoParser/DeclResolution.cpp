@@ -3829,17 +3829,11 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
 ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
   // TODO: Sink this to when the body is actually resolved.
   decl.resolvedness = DeclResolvedness::body;
-
   // Verify conformance explicitly.
   std::optional<InflightDiag> diag;
-  WitnessTable witnesses;
-  if (failed(verifyConformance(*decl.getParentDecl(), op.getTraitRefAttr(),
-                               diag, witnesses)))
+  if (failed(verifyAndBuildConformance(*decl.getParentDecl(),
+                                       op.getTraitRefAttr(), diag, op)))
     return failure();
-  ImplicitLocOpBuilder b =
-      ImplicitLocOpBuilder::atBlockEnd(op.getLoc(), &op.getBody().front());
-  for (auto &[name, value] : witnesses)
-    b.create<WitnessOp>(name, value);
 
   return success();
 }

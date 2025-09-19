@@ -30,9 +30,7 @@ trait B:
 struct Foo(B):
     alias a: Int = 1
 
-    # TODO: can parser fold it?
-    #
-    # CHECK: lit.alias.decl *"c`2": !Int = <#kgen.get_witness<:!mt_Foo !Foo, "{{.*}}::B", "a">>
+    # CHECK: lit.alias.decl *"c`2": !Int = <{1}>
     #
     # Make sure that trait._Self is replaced properly.
-    # CHECK: lit.alias.decl *"T`3": meta<!lit.struct<#DT <:!Int #kgen.get_witness<:!mt_Foo !Foo, "{{.*}}::B", "a">>>> = <@{}::@DT<:!Int #kgen.get_witness<:!mt_Foo !Foo, "{}::B", "a">>>
+    # CHECK: lit.alias.decl *"T`3": meta<!lit.struct<#DT <:!Int {1}>>> = <@default_associated_alias::@DT<:!Int {1}>>

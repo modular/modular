@@ -29,47 +29,6 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-/// When dealing with a trait method that mentions an associated alias T, like
-///
-///     trait MyTrait[_Self: AnyType]: # Implicit _Self param-decl shown
-///         alias T: AnyType
-///         fn foo(self: _Self, x: Self.T) -> Int:
-///             ...
-///     struct MyStruct(MyTrait):
-///         alias T = Bool
-///         fn foo(self, x: Bool) -> Int:
-///             ...
-///
-/// At some point verifyConformance will verify that MyStruct conforms to
-/// MyTrait. During that, it'll look at the trait's
-/// `fn foo(self: _Self, x: Self.T) -> Int` signature, to see if the same thing
-/// exists in the struct.
-///
-/// To do that, we first need to substitute _Self and Self, to make
-/// `fn foo(self: MyStruct, x: MyStruct.T)`
-/// but we'll still need to simplify the `MyStruct.T` to get our desired
-/// signature:
-///
-/// `fn foo(self: MyStruct, x: Bool)`
-///
-/// This last step is accomplished by this function here.
-static FnTypeGeneratorType
-simplifyGetWitnessOnSelf(PValue selfType,
-                         const DenseMap<StringRef, TypedAttr> *aliasValues,
-                         FnTypeGeneratorType signature) {
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](KGEN::GetWitnessAttr attr) -> Attribute {
-    if (attr.getTypeValue() == selfType.get()) {
-      auto aliasName = attr.getWitnessName();
-      auto iter = aliasValues->find(aliasName.getValue());
-      if (iter != aliasValues->end())
-        return iter->second;
-    }
-    return attr;
-  });
-  return cast<FnTypeGeneratorType>(replacer.replace(signature));
-}
-
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
@@ -77,7 +36,6 @@ static std::pair<FnTypeGeneratorType, ParamBindings>
 getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
                           ASTType structSelfType, SymbolRefAttr traitSymbol,
                           const ExprNode *expr,
-                          const DenseMap<StringRef, TypedAttr> &aliasValues,
                           ParserParameterEvaluator &traitAliasReplacer) {
   TraitType trait = TraitType::get(traitSymbol);
   FnTypeGeneratorType signature = traitFn.getFullSignature();
@@ -97,10 +55,6 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
   FnTypeGeneratorType newSignature = signature.getSpecializedGenerator(
       params, &emitter.getDeclScope().getShared().getEvaluationContext());
 
-  auto selfStructAsTrait = TypeParamAttr::get(structSelfType, trait);
-
-  newSignature =
-      simplifyGetWitnessOnSelf(selfStructAsTrait, &aliasValues, newSignature);
   newSignature = traitAliasReplacer.replace(newSignature);
   return {newSignature, bindings};
 }
@@ -124,7 +78,7 @@ static bool isInheritedFnOp(FnOp fnOp) {
 // signature.
 static LogicalResult signatureResolveDefaultTraitFnStubs(
     ASTDecl &structDecl, ASTDecl &traitDecl, StringAttr name,
-    ArrayRef<ASTDecl *> candidates, DenseMap<StringRef, TypedAttr> &aliasValues,
+    ArrayRef<ASTDecl *> candidates,
     ParserParameterEvaluator &traitAliasReplacer) {
 
   auto &shared = structDecl.getShared();
@@ -145,7 +99,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [wrapperSignature, bindings] = getTraitFunctionSignature(
         emitter, traitFn, structSelfType, traitDecl.getSymbolRef(),
-        syntheticNode, aliasValues, traitAliasReplacer);
+        syntheticNode, traitAliasReplacer);
 
     // If a function with matching signature is defined in the same trait we're
     // golden since existing machinery takes care of reporting there is a
@@ -327,9 +281,31 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
   return success();
 }
 
-LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
-                                     std::optional<InflightDiag> &diag,
-                                     WitnessTable &witnessTable) {
+LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
+                                             SymbolRefAttr parent,
+                                             std::optional<InflightDiag> &diag,
+                                             ConformanceOp op) {
+  // Set up builder to insert witness entry. We install witness op in the
+  // conformance op as we verifying such that get_witness will be folded
+  // correctly by the evaluation context. This allows us to fold dependent decls
+  // in side the trait definition. E.g.,
+  //
+  // trait A:
+  //    alias a : Int
+  //    alias b : S[Self.a]
+  //
+  // Note that this is not only an optimization but also necessary to verify
+  // dependent trait entry. Otherwise, for the following example:
+  //
+  // struct S(A):
+  //    alias a : Int = 1
+  //    alias b : S[1]
+  //
+  // `S[1]` is not the same type as `S[Self.a]` without a folding Self.a to `1`
+  // (or we would need to insert a rebind).
+  ImplicitLocOpBuilder b =
+      ImplicitLocOpBuilder::atBlockEnd(op.getLoc(), &op.getBody().front());
+
   auto &shared = structDecl.getShared();
   auto structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
 
@@ -393,12 +369,14 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   // `fn zork(self) -> Int` needle.
   // We then check if that exists in the struct and it does, excellent.
   //
-  // These traitAliasReplacer and aliasValues maps help us do the needle
-  // substitutions later.
+  // These traitAliasReplacer help us do the needle substitutions later.
   //
   // TODO(MOCO-1993): Consolidate docs on this.
+  auto structSelf = PValue(structDecl.getTypeDeclSelf());
+  auto traitSelfDecl =
+      cast<ParamDeclRefAttr>(PValue(traitDecl.getTypeDeclSelf()).get());
   ParserParameterEvaluator traitAliasReplacer(shared);
-  DenseMap<StringRef, TypedAttr> aliasValues;
+  traitAliasReplacer.setDeclBinding(traitSelfDecl.getName(), structSelf);
 
   // Prepare an error. It will be abandoned if the check succeeds.
   diag = shared.emitError(structDecl.getLoc())
@@ -441,9 +419,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     // the current trait here. We have to do this before the upcoming signature
     // resolution of all decls with a matching name to avoid cycles between
     // verifyConformance and signature resolution for FnOps.
-    if (failed(signatureResolveDefaultTraitFnStubs(structDecl, traitDecl, name,
-                                                   decls, aliasValues,
-                                                   traitAliasReplacer))) {
+    if (failed(signatureResolveDefaultTraitFnStubs(
+            structDecl, traitDecl, name, decls, traitAliasReplacer))) {
       diag->abandon();
       return failure();
     }
@@ -459,8 +436,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [traitSignature, bindings] = getTraitFunctionSignature(
-        emitter, traitFn, selfType, parent, syntheticNode, aliasValues,
-        traitAliasReplacer);
+        emitter, traitFn, selfType, parent, syntheticNode, traitAliasReplacer);
 
     // Match against the transformed calling convention if the struct is
     // register-passable.
@@ -472,7 +448,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
           return diag->attachNote(traitFnDecl->getLoc());
         }));
     if (result)
-      witnessTable.emplace_back(name, result.get());
+      b.create<WitnessOp>(name, result.get());
     else {
       return failure();
     }
@@ -490,7 +466,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       return success();
     }
 
-    Type traitAliasType = traitAlias.getType();
+    Type traitAliasType =
+        traitAliasReplacer.getReboundType(traitAlias.getType());
 
     ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
     // If there is no user defined alias nor defaulted alias, raise an error.
@@ -516,9 +493,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       TypedAttr initializerExpr = structAliasDeclOp.getValueAttr();
       assert(initializerExpr && "Struct's alias should have initializer");
 
-      // We don't yet put initializerExpr into the traitAliasReplacer or
-      // aliasValues because they need to be converted first to the trait's
-      // alias's type (see SAVMBCTATBS).
+      // We don't yet put initializerExpr into the traitAliasReplacer because
+      // they need to be converted first to the trait's alias's type (see
+      // SAVMBCTATBS).
       SyntheticNode synthNode(structAliasDecl->getLoc());
       if (!IREmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
                                                  traitAliasType,
@@ -599,14 +576,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       ImplicitLocOpBuilder builder(structDeclOp.getLoc(),
                                    firstConformanceOp.getOperation());
       auto clonedDefault = cast<AliasDeclOp>(builder.clone(*defaultAliasOp));
-      auto structSelf = PValue(structDecl.getTypeDeclSelf());
-      auto traitSelfDecl =
-          cast<ParamDeclRefAttr>(PValue(traitDecl.getTypeDeclSelf()).get());
-
-      ParserParameterEvaluator evaluator(shared);
-      evaluator.setDeclBinding(traitSelfDecl.getName(), structSelf);
       Attribute newValAttr =
-          evaluator.replace(clonedDefault->getAttrDictionary());
+          traitAliasReplacer.replace(clonedDefault->getAttrDictionary());
       clonedDefault->setAttrs(cast<DictionaryAttr>(newValAttr));
       structAliasDecl->setIRValue(clonedDefault);
       structAliasDecl->resolvedness = DeclResolvedness::body;
@@ -615,11 +586,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       // Since we cloned the defaulted op from the trait, there is no need for
       // us to convert the type as they are guaranteed to be matched.
     }
-
-    witnessTable.emplace_back(name, aliasValue.get());
-
+    b.create<WitnessOp>(name, aliasValue.get());
     traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasValue);
-    aliasValues[name] = aliasValue;
 
     return success();
   };
@@ -833,7 +801,6 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 static FnTypeGeneratorType
 createRequirementSignature(FnOp traitFn, ASTType newSelfType,
                            ParserParameterEvaluator *traitAliasReplacer,
-                           const DenseMap<StringRef, TypedAttr> *aliasValues,
                            DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
   // value below.
@@ -881,15 +848,6 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   if (traitAliasReplacer)
     signature = traitAliasReplacer->replace(signature);
 
-  // However, zork's `Self.T` is different, like: `get_witness(Self, "MyTrait",
-  // "T")`. And after the first step, that Self is actually the struct, so the
-  // requirementFn is really more like: `get_witness(MyStruct, "MyTrait", "T")`.
-  // We'll manually replace those entire `get_witness` calls.
-  if (aliasValues) {
-    signature =
-        simplifyGetWitnessOnSelf(PValue(newSelfType), aliasValues, signature);
-  }
-
   // At this point, signature's `self` argument's type is the struct or
   // trait.  For example when binding Self down to some "MTT: Movable", we have:
   //    !lit.generator<<trait<@AnyType>>[1]("self":
@@ -915,7 +873,7 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
 
 FnTypeGeneratorType LIT::specializeSignature(FnOp traitFn, ASTType newSelfType,
                                              DeclResolver &declResolver) {
-  return createRequirementSignature(traitFn, newSelfType, nullptr, nullptr,
+  return createRequirementSignature(traitFn, newSelfType, nullptr,
                                     declResolver);
 }
 
@@ -977,8 +935,8 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
   if (auto aliasDecl = dyn_cast_or_null<AliasDeclOp>(entry.getIfOperation())) {
     resultType = aliasDecl.getType();
   } else if (auto fnDecl = dyn_cast_or_null<FnOp>(entry.getIfOperation())) {
-    resultType = createRequirementSignature(fnDecl, type, nullptr, nullptr,
-                                            *shared.declResolver);
+    resultType =
+        createRequirementSignature(fnDecl, type, nullptr, *shared.declResolver);
   } else {
     llvm_unreachable("expected an alias or a function");
   }
