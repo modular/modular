@@ -16,8 +16,7 @@
 
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
-#include "Support/ML/Float16.h"
-#include "Support/ML/Float8.h"
+#include "Support/ML/FloatTypes.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/STLExtras.h"
