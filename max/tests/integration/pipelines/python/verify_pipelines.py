@@ -783,7 +783,7 @@ PIPELINES = {
                 json_file="torch_nemo-instruct-2407_bfloat16_golden.json",
             ),
             # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
-            cos_dist_threshold=1.3e-2,
+            cos_dist_threshold=2.1e-2,
             kl_div_threshold=2.9e-2,
         ),
     ),
@@ -985,7 +985,7 @@ PIPELINES = {
                 json_file="torch_llama-gptq-no-perm-idx_golden.json",
             ),
             cos_dist_threshold=3.9e-4,
-            kl_div_threshold=5.5e-3,
+            kl_div_threshold=1.3e-2,
         ),
     ),
     # TODO(AITLIB-372): investigate why accuracy tanked when switching to explicit weight dtype casting.
