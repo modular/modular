@@ -578,7 +578,7 @@ fn _matmul_gpu[
             a_type,
             b_type,
             transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
+            elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
