@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from functools import cached_property
 from typing import Any
 
 import numpy as np
@@ -93,7 +94,6 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
             num_layers=num_layers,
             devices=devices,
             session=session,
-            is_ragged=True,
         )
 
         max_batch_size_per_replica = (
@@ -279,6 +279,13 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
         for manager in self._replica_managers:
             manager.reset_num_blocks_copied()
 
+    @cached_property
+    def increment_cache_lengths_model(self):
+        """Override to use the ragged increment cache lengths graph."""
+        return self.session.load(
+            self._create_ragged_increment_cache_lengths_graph()
+        )
+
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
         input_symbols = self.input_symbols()
         cache_lengths_types = [
@@ -335,7 +342,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
 
         return graph
 
-    def _increment_cache_lengths_ragged(
+    def increment_cache_lengths(
         self,
         kv_cache_inputs: list[RaggedKVCacheInputs],
         prev_model_inputs: Any,

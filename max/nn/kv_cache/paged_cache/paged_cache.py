@@ -273,7 +273,6 @@ class PagedKVCacheManager(KVCacheManager[T]):
             num_layers=num_layers,
             devices=devices,
             session=session,
-            is_ragged=True,
         )
 
         # Whether prefix caching is enabled.

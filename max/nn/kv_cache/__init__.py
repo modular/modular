@@ -18,7 +18,6 @@ from .manager import (
     KVCacheInputsSequence,
     KVCacheInputSymbols,
     KVCacheManager,
-    PaddedKVCacheInputs,
     RaggedKVCacheInputs,
 )
 from .paged_cache import (
