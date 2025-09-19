@@ -367,7 +367,7 @@ int main(int argc, char **argv) {
   if (verifyModule(*module, &llvm::errs()))
     return 1;
 
-  if (isMetalTriple) {
+  if (isMetalTriple && outputKind == OK_OutputBitcode) {
     M::KGEN::WriteBitcodeToFile(*module, out->os(),
                                 /*ShouldPreserveUseListOrder = */ false,
                                 /*ModuleSummaryIndex =*/nullptr,
