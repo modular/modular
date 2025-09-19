@@ -1,0 +1,107 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+from __future__ import annotations
+
+import pytest
+from max.driver import Accelerator
+from tests.serve.scheduler.common import (
+    CE,
+    TG,
+    BatchInfo,
+    create_paged_scheduler,
+    enqueue_request_with_prompt,
+    rand,
+    run_until_completion,
+)
+
+
+@pytest.mark.parametrize("enable_kvcache_swapping_to_host", [True, False])
+def test_paged_scheduler_paging_to_host(
+    enable_kvcache_swapping_to_host: bool,
+) -> None:
+    num_prompts = 3
+    prompt_len = 550
+    page_size = 128
+    num_new_tokens = 3
+    # We only have 5 gpu blocks which is only enough for 1 request.
+    num_gpu_blocks = 5
+    device = Accelerator(0)
+    scheduler, request_queue = create_paged_scheduler(
+        enable_chunked_prefill=False,
+        enable_in_flight_batching=False,
+        enable_prefix_caching=True,
+        num_blocks=num_gpu_blocks,
+        page_size=page_size,
+        max_batch_size=999,
+        target_tokens_per_batch_ce=200,
+        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        max_seq_len=prompt_len + num_new_tokens,
+        device=device,
+    )
+
+    prompts = [rand(prompt_len) for _ in range(num_prompts)]
+
+    # Submit reqs for the first time
+    for prompt in prompts:
+        enqueue_request_with_prompt(
+            request_queue,
+            tokens=prompt,
+            max_seq_len=prompt_len + num_new_tokens,
+        )
+
+    # Submit same reqs again to try to get cache hits
+    for prompt in prompts:
+        enqueue_request_with_prompt(
+            request_queue,
+            tokens=prompt,
+            max_seq_len=prompt_len + num_new_tokens,
+        )
+
+    actual = run_until_completion(scheduler)
+
+    if enable_kvcache_swapping_to_host:
+        # When paging to host is enabled, our effective cache size increases so
+        # we can get cache hits on the latter CE iterations.
+        expected = [
+            # batch_type, batch_size, terminated, num_steps, input_tokens
+            BatchInfo(CE, 1, 0, 1, 550),
+            BatchInfo(TG, 1, 1, 3, 1),
+            # d2h copies. device blocks evicted and then offloaded to cpu!
+            BatchInfo(CE, 1, 0, 1, 550),
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(CE, 1, 0, 1, 550),
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(CE, 1, 0, 1, 38),  # h2d copies. cpu cache hit!
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(CE, 1, 0, 1, 38),
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(CE, 1, 0, 1, 38),
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+    else:
+        # When paging to host is disabled, we can't get cache hits because all
+        # of the GPU blocks are evicted and discarded.
+        expected = [
+            # batch_type, batch_size, terminated, num_steps, input_tokens
+            BatchInfo(CE, 1, 0, 1, 550),
+            BatchInfo(TG, 1, 1, 3, 1),
+            # device blocks evicted but not offloaded :(
+            BatchInfo(CE, 1, 0, 1, 550),
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(CE, 1, 0, 1, 550),
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(CE, 1, 0, 1, 550),  # no cache hits :(
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(CE, 1, 0, 1, 550),
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(CE, 1, 0, 1, 550),
+            BatchInfo(TG, 1, 1, 3, 1),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+
+    assert len(actual) == len(expected) and actual == expected

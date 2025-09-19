@@ -1,0 +1,56 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+[
+    modular_py_test(
+        name = src.split("/")[-1].split(".")[0],
+        srcs = [src],
+        deps = [
+            ":common",
+        ],
+    )
+    for src in glob(
+        ["*.py"],
+        exclude = [
+            "common.py",
+            "*_gpu.py",
+        ],
+    )
+]
+
+[
+    modular_py_test(
+        name = src.split("/")[-1].split(".")[0],
+        srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": "1",
+        },
+        gpu_constraints = [
+            "//:has_gpu",
+            "//:nvidia_gpu",
+        ] + select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        tags = ["gpu"],
+        deps = [
+            ":common",
+        ],
+    )
+    for src in glob(
+        ["*_gpu.py"],
+        exclude = ["common.py"],
+    )
+]
+
+modular_py_library(
+    name = "common",
+    srcs = ["common.py"],
+    deps = [
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/serve/scheduler",
+        requirement("numpy"),
+        requirement("pytest-mock"),
+        requirement("pytest-asyncio"),
+    ],
+)

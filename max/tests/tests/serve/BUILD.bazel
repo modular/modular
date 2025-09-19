@@ -44,52 +44,6 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "scheduler_tests",
-    srcs = glob(
-        [
-            "scheduler/*.py",
-        ],
-    ),
-    data = [
-        "//SDK/lib/API/python/tests/serve/testdata",
-    ],
-    env = {
-        "MAX_SERVE_DISABLE_TELEMETRY": "True",
-        "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
-    },
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:nvidia_gpu",
-    ] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
-    tags = ["gpu"],
-    deps = [
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/serve/pipelines",
-        "//SDK/lib/API/python/max/serve/router",
-        "//SDK/lib/API/python/max/serve/scheduler",
-        "//SDK/lib/API/python/max/serve/schemas",
-        "//SDK/lib/API/python/max/serve/telemetry",
-        "//SDK/lib/API/python/max/support",
-        requirement("async-asgi-testclient"),
-        requirement("fastapi"),
-        requirement("gguf"),
-        requirement("hypothesis"),
-        requirement("opentelemetry-sdk"),
-        requirement("pytest-asyncio"),
-        requirement("pytest-grpc"),
-        requirement("pytest-mock"),
-        requirement("sse-starlette"),
-        requirement("sseclient-py"),
-        requirement("transformers"),
-        requirement("pyzmq"),
-    ],
-)
-
-modular_py_test(
     name = "parser_tests",
     srcs = glob(
         [
