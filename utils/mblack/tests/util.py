@@ -86,9 +86,6 @@ def assert_format(
     separate from TargetVerson Mode configuration.
     """
     actual = mblack.format_str(source, mode=mode)
-    print("START")
-    print(actual)
-    print("END")
     _assert_format_equal(expected, actual)
     # It's not useful to run safety checks if we're expecting no changes anyway. The
     # assertion right above will raise if reality does actually make changes. This just
