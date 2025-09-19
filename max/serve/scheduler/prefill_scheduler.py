@@ -45,7 +45,7 @@ from max.serve.scheduler.text_batch_constructor import (
 )
 
 from .base import SchedulerProgress
-from .utils import SchedulerLogger, maybe_restore_chunked_request
+from .utils import SchedulerLogger, add_newly_encoded_reqs_to_tg_batch
 
 logger = logging.getLogger("max.serve")
 
@@ -160,14 +160,14 @@ class PrefillScheduler(Scheduler):
         inputs = TextGenerationInputs(batches=batches, num_steps=1)
         responses = self.pipeline.execute(inputs)
 
-        maybe_restore_chunked_request(
+        add_newly_encoded_reqs_to_tg_batch(
             inputs.batch,
             responses,
-            self.batch_constructor.ce_reqs,
+            self.batch_constructor,
         )
 
-        # Send completed requests to decode queue.
-        for req_id, context in inputs.batch.items():
+        # Send fully encoded requests to decode queue.
+        for req_id, context in self.batch_constructor.tg_reqs.items():
             identity, transfer_engine_name, dst_idxs = (
                 self.request_id_to_reply_context.pop(req_id)
             )
@@ -220,6 +220,9 @@ class PrefillScheduler(Scheduler):
                 ),
                 identity,
             )
+
+        # Remove all TG requests from the batch constructor.
+        self.batch_constructor.tg_reqs.clear()
 
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes prefill requests.

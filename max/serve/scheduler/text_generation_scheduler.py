@@ -41,7 +41,7 @@ from .text_batch_constructor import (
 )
 from .utils import (
     SchedulerLogger,
-    maybe_restore_chunked_request,
+    add_newly_encoded_reqs_to_tg_batch,
     release_cancelled_requests,
     release_terminated_requests,
 )
@@ -151,14 +151,11 @@ class TokenGenerationScheduler(Scheduler):
         # Process each batch (usually just one unless using data parallelism)
         for executed_batch in sch_output.inputs.batches:
             # If there is a chunked request, we put it back into the request queue
-            maybe_restore_chunked_request(
+            add_newly_encoded_reqs_to_tg_batch(
                 executed_batch,
                 responses,
-                self.batch_constructor.ce_reqs,
+                self.batch_constructor,
             )
-
-            # add the encoded requests to the continuous batch
-            self.batch_constructor.tg_reqs |= executed_batch
 
         # remove terminated requests from the batch
         release_terminated_requests(

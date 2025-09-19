@@ -16,6 +16,7 @@ import logging
 import queue
 import time
 import uuid
+from collections import OrderedDict
 
 from max.interfaces import (
     MAXPullQueue,
@@ -48,10 +49,9 @@ from .text_batch_constructor import (
     TokenGenerationSchedulerConfig,
 )
 from .utils import (
-    OrderedDict,
     SchedulerLogger,
     SchedulerOutput,
-    maybe_restore_chunked_request,
+    add_newly_encoded_reqs_to_tg_batch,
     release_terminated_requests,
 )
 
@@ -285,15 +285,10 @@ class DecodeScheduler(Scheduler):
         assert sch_output.batch_size > 0
         responses = self.pipeline.execute(sch_output.inputs)
 
-        # Even though this is CE specific, it is possible for decode_scheduler
-        # to execute CE if a request is preempted. We do not send such a preempted
-        # request back to prefill. Instead the decode worker just runs CE on the
-        # preempted request.
-        self.batch_constructor.tg_reqs |= sch_output.inputs.batch
-        maybe_restore_chunked_request(
+        add_newly_encoded_reqs_to_tg_batch(
             sch_output.inputs.batch,
             responses,
-            self.batch_constructor.ce_reqs,
+            self.batch_constructor,
         )
 
         # remove terminated requests from the batch

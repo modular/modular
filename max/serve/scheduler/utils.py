@@ -16,13 +16,11 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections import OrderedDict
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from max.interfaces import (
     AudioGenerationOutput,
-    InputContext,
     MAXPullQueue,
     MAXPushQueue,
     RequestID,
@@ -36,20 +34,20 @@ from max.interfaces.pipeline import (
 )
 from max.interfaces.queue import drain_queue
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TTSContext
+from max.pipelines.core import TextContext, TTSContext
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .text_batch_constructor import (
     BatchType,
     SchedulerOutput,
+    TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
 
 if TYPE_CHECKING:
     from .audio_generation_scheduler import AudioGenerationSchedulerOutput
 
-ContextType = TypeVar("ContextType", bound=InputContext)
 
 logger = logging.getLogger("max.serve")
 
@@ -85,7 +83,7 @@ class SchedulerLogger:
         self,
         sch_config: TokenGenerationSchedulerConfig,
         sch_output: SchedulerOutput,
-        paged_cache: PagedKVCacheManager[ContextType] | None,
+        paged_cache: PagedKVCacheManager[TextContext] | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -227,28 +225,30 @@ class SchedulerLogger:
             )
 
 
-def maybe_restore_chunked_request(
-    batch: dict[str, ContextType],
+def add_newly_encoded_reqs_to_tg_batch(
+    batch: dict[str, TextContext],
     responses: dict[str, TextGenerationOutput],
-    ce_reqs: OrderedDict[str, ContextType],
+    batch_constructor: TextBatchConstructor,
 ) -> None:
     # Only the last request in a batch could be chunked. We discard its response
     # and put it back into the request queue if it is chunked.
     # We know if a request is chunked because it still needs CE even after one
     # round of execution.
+    batch_constructor.tg_reqs |= batch
     last_req = list(batch.values())[-1]
+    req_id = last_req.request_id
     if last_req.needs_ce:
-        req_id, data = batch.popitem()
-        ce_reqs[req_id] = data
-        ce_reqs.move_to_end(req_id, last=False)
+        batch_constructor.ce_reqs[req_id] = last_req
+        batch_constructor.ce_reqs.move_to_end(req_id, last=False)
         del responses[req_id]
+        del batch_constructor.tg_reqs[req_id]
 
 
 def release_terminated_requests(
     sch_output: SchedulerOutput | AudioGenerationSchedulerOutput,
     responses: Mapping[RequestID, TextGenerationOutput | AudioGenerationOutput],
     pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
-    tg_reqs: dict[RequestID, ContextType] | dict[RequestID, TTSContext],
+    tg_reqs: dict[RequestID, TextContext] | dict[RequestID, TTSContext],
 ) -> None:
     for req_id, response in responses.items():
         if not response.is_done:
@@ -263,7 +263,7 @@ def release_cancelled_requests(
     response_q: MAXPushQueue[
         dict[RequestID, SchedulerResult[PipelineOutputType]]
     ],
-    tg_reqs: dict[RequestID, ContextType] | dict[RequestID, TTSContext],
+    tg_reqs: dict[RequestID, TextContext] | dict[RequestID, TTSContext],
     pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
 ) -> None:
     for req_ids in drain_queue(cancel_q):
