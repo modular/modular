@@ -15,7 +15,7 @@ from threading import Thread
 from typing import Any
 
 import numpy as np
-from max.driver import Accelerator, Tensor
+from max.driver import CPU, Tensor
 from max.nn.kv_cache import KVTransferEngine
 
 
@@ -38,7 +38,7 @@ def test_notification_delivery_is_prompt():
     exit_codes = [-1, -1]
 
     def sender():
-        acc = Accelerator(0)
+        acc = CPU()
         blocks = Tensor.from_numpy(
             np.ones((num_blocks, bytes_per_block), dtype=np.int8)
         ).to(acc)
@@ -75,7 +75,7 @@ def test_notification_delivery_is_prompt():
         exit_codes[0] = 0
 
     def receiver():
-        acc = Accelerator(1)
+        acc = CPU()
         blocks = Tensor.from_numpy(
             np.ones((num_blocks, bytes_per_block), dtype=np.int8)
         ).to(acc)
