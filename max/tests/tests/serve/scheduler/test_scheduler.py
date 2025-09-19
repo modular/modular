@@ -30,7 +30,7 @@ from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
 from max.serve.scheduler.utils import (
-    maybe_restore_chunked_request,
+    add_newly_encoded_reqs_to_tg_batch,
     release_terminated_requests,
 )
 
@@ -209,13 +209,12 @@ def test_scheduler_handle_chunked_requests() -> None:
     batch_responses[req_1.request_id].is_done = False
     batch_responses[req_2.request_id].is_done = False
 
-    maybe_restore_chunked_request(
+    add_newly_encoded_reqs_to_tg_batch(
         batch_executed,
         cast(dict[str, TextGenerationOutput], batch_responses),
-        scheduler.batch_constructor.ce_reqs,
+        scheduler.batch_constructor,
     )
 
-    assert req_2.request_id not in batch_executed
     assert req_2.request_id not in batch_responses
     assert scheduler.batch_constructor.ce_reqs
 
