@@ -510,6 +510,18 @@ struct IntervalTree[
         self._root = {}
         self._len = 0
 
+    fn __del__(deinit self):
+        Self._del_helper(self._root)
+
+    @staticmethod
+    fn _del_helper(node: UnsafePointer[_IntervalNode[T, U]]):
+        if node[].left:
+            Self._del_helper(node[].left)
+        if node[].right:
+            Self._del_helper(node[].right)
+        node.destroy_pointee()
+        node.free()
+
     fn _left_rotate(
         mut self, rotation_node: UnsafePointer[_IntervalNode[T, U]]
     ):
