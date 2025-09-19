@@ -49,12 +49,107 @@
 #include "llvm/ADT/bit.h"
 
 namespace M {
-namespace {
 
-constexpr bool is_little_endian =
+//===----------------------------------------------------------------------===//
+// Utility Functions
+//===----------------------------------------------------------------------===//
+
+namespace Detail {
+
+static constexpr bool is_little_endian =
     llvm::endianness::native == llvm::endianness::little;
 
-} // namespace
+template <llvm::APFloat::Semantics Semantics, int BitWidth>
+struct float_conversion_generic_t {
+  float_conversion_generic_t(float v) : bits(toBits(v)) {}
+  explicit float_conversion_generic_t(uint8_t rawBits) : bits(rawBits) {}
+
+  operator float() {
+    // We use APFloat to do the heavy lifting here. This is probably not the
+    // most efficient way, but it should be battle tested.
+    llvm::APInt apInt(8, bits);
+    llvm::APFloat apFloat(llvm::APFloat::EnumToSemantics(Semantics), apInt);
+    bool ignore;
+    apFloat.convert(llvm::APFloat::IEEEsingle(),
+                    llvm::APFloat::rmNearestTiesToEven, &ignore);
+    return apFloat.convertToFloat();
+  }
+
+  operator uint8_t() const { return bits; }
+
+private:
+  static inline uint8_t toBits(float v) {
+    // We use APFloat to do the heavy lifting here. This is probably not the
+    // most efficient way, but it should be battle tested.
+    llvm::APFloat apFloat(v);
+    bool ignore;
+    apFloat.convert(llvm::APFloat::EnumToSemantics(Semantics),
+                    llvm::APFloat::rmNearestTiesToEven, &ignore);
+
+    // APInt will store a uint64_t array, which in this case should be
+    // singleton. We will index into this, taking endianness into account.
+    const uint64_t *rawData = apFloat.bitcastToAPInt().getRawData();
+    constexpr size_t index = is_little_endian ? 0 : BitWidth - 1;
+    return reinterpret_cast<const uint8_t *>(rawData)[index];
+  }
+
+  uint8_t bits;
+};
+
+template <llvm::APFloat::Semantics Semantics>
+struct float8_generic_t : float_conversion_generic_t<Semantics, 8> {};
+} // namespace Detail
+
+//===----------------------------------------------------------------------===//
+// Float4
+//===----------------------------------------------------------------------===//
+
+namespace Float4 {
+struct float4_e2m1fn_t
+    : Detail::float_conversion_generic_t<llvm::APFloat::S_Float4E2M1FN, 4> {
+  explicit float4_e2m1fn_t(uint8_t rawBits)
+      : float_conversion_generic_t<llvm::APFloat::S_Float4E2M1FN, 4>(rawBits) {}
+};
+}; // namespace Float4
+
+//===----------------------------------------------------------------------===//
+// Float8
+//===----------------------------------------------------------------------===//
+
+namespace Float8 {
+
+struct float8_e3m4_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E3M4> {
+  explicit float8_e3m4_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E3M4>(rawBits) {}
+};
+struct float8_e4m3_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3> {
+  explicit float8_e4m3_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E4M3>(rawBits) {}
+};
+struct float8_e4m3fn_t
+    : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FN> {
+  explicit float8_e4m3fn_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E4M3FN>(rawBits) {}
+};
+struct float8_e4m3fnuz_t
+    : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ> {
+  explicit float8_e4m3fnuz_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ>(rawBits) {}
+};
+struct float8_e5m2_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2> {
+  explicit float8_e5m2_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E5M2>(rawBits) {}
+};
+struct float8_e5m2fnuz_t
+    : Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2FNUZ> {
+  explicit float8_e5m2fnuz_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E5M2FNUZ>(rawBits) {}
+};
+} // namespace Float8
+
+//===----------------------------------------------------------------------===//
+// BFloat
+//===----------------------------------------------------------------------===//
 
 namespace BFloat {
 
@@ -71,7 +166,7 @@ struct bfloat16_t {
   static bfloat16_t max() { return bfloat16_t(MAX_BITS); }
 
   operator float() {
-    constexpr size_t index = is_little_endian ? 1 : 0;
+    constexpr size_t index = Detail::is_little_endian ? 1 : 0;
     float result = 0.;
     auto shorts = reinterpret_cast<uint16_t *>(&result);
     shorts[index] = bits;
@@ -80,7 +175,7 @@ struct bfloat16_t {
 
 private:
   static inline uint16_t floatToBf16Bits(float v) {
-    constexpr size_t index = is_little_endian ? 1 : 0;
+    constexpr size_t index = Detail::is_little_endian ? 1 : 0;
     return reinterpret_cast<uint16_t *>(&v)[index];
   }
 
@@ -88,6 +183,10 @@ private:
 };
 
 } // namespace BFloat
+
+//===----------------------------------------------------------------------===//
+// Float16
+//===----------------------------------------------------------------------===//
 
 namespace Float16 {
 struct float16_t {
@@ -102,7 +201,7 @@ struct float16_t {
 
   operator float() {
     // If the system is big-endian, reverse the byte order of the bits.
-    if constexpr (!is_little_endian)
+    if constexpr (!Detail::is_little_endian)
       bits = (bits >> 8) | (bits << 8);
 
     // We use APFloat to do the heavy lifting here. This is probably not the
@@ -127,7 +226,7 @@ private:
     // APInt will store a uint64_t array, which in this case should be
     // singleton. We will index into this, taking endianness into account.
     const uint64_t *rawData = apFloat.bitcastToAPInt().getRawData();
-    constexpr size_t index = is_little_endian ? 0 : 3;
+    constexpr size_t index = Detail::is_little_endian ? 0 : 3;
     return reinterpret_cast<const uint16_t *>(rawData)[index];
   }
 
