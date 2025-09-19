@@ -3660,11 +3660,10 @@ fn mha_decoding_single_batch[
     # Apply softmax denumerator.
     @parameter
     for m_mma in range(num_m_mmas):
-        var rowsum_inv = Scalar[accum_type](1.0)
 
         @parameter
         if m_mma * MMA_M < group:
-            rowsum_inv = recip(rowsum[2 * m_mma])
+            var rowsum_inv = Scalar[accum_type](recip(rowsum[2 * m_mma]))
 
             @parameter
             for n_mma in range(num_n_mmas):
@@ -3673,7 +3672,7 @@ fn mha_decoding_single_batch[
 
         @parameter
         if m_mma * MMA_M + MMA_M // 2 < group:
-            rowsum_inv = recip(rowsum[2 * m_mma + 1])
+            var rowsum_inv = Scalar[accum_type](recip(rowsum[2 * m_mma + 1]))
 
             @parameter
             for n_mma in range(num_n_mmas):
