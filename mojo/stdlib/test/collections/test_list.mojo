@@ -189,141 +189,73 @@ def test_list_pop_slice():
     var list = [1, 2, 3]
 
     var popped = list.pop({1, None, None})
-    assert_equal(popped[0], 2)
-    assert_equal(popped[1], 3)
-    assert_equal(len(popped), 2)
-    assert_equal(list[0], 1)
-    assert_equal(len(list), 1)
+    assert_equal(popped, [2, 3])
+    assert_equal(list, [1])
 
     list = [1, 2, 3]
     popped = list.pop({None, -1, None})
-    assert_equal(popped[0], 1)
-    assert_equal(popped[1], 2)
-    assert_equal(len(popped), 2)
-    assert_equal(list[0], 3)
-    assert_equal(len(list), 1)
+    assert_equal(popped, [1, 2])
+    assert_equal(list, [3])
 
     list = [1, 2, 3]
     popped = list.pop({1, -1, 1})
-    assert_equal(popped[0], 2)
-    assert_equal(len(popped), 1)
-    assert_equal(list[0], 1)
-    assert_equal(list[1], 3)
-    assert_equal(len(list), 2)
+    assert_equal(popped, [2])
+    assert_equal(list, [1, 3])
 
     list = [1, 2, 3]
     popped = list.pop({None, None, -1})
-    assert_equal(popped[0], 3)
-    assert_equal(popped[1], 2)
-    assert_equal(popped[2], 1)
-    assert_equal(len(popped), 3)
+    assert_equal(popped, [3, 2, 1])
     assert_equal(len(list), 0)
 
     list = [1, 2, 3]
     popped = list.pop({None, None, None})
-    assert_equal(popped[0], 1)
-    assert_equal(popped[1], 2)
-    assert_equal(popped[2], 3)
-    assert_equal(len(popped), 3)
+    assert_equal(popped, [1, 2, 3])
     assert_equal(len(list), 0)
 
     list = [1, 2, 3]
     popped = list.pop({1, 0, -1})
-    assert_equal(popped[0], 2)
-    assert_equal(len(popped), 1)
-    assert_equal(list[0], 1)
-    assert_equal(list[1], 3)
-    assert_equal(len(list), 2)
-
-    list = [1, 2, 3]
-    popped = list.pop({2, 1, -1})
-    assert_equal(popped[0], 3)
-    assert_equal(len(popped), 1)
-    assert_equal(list[0], 1)
-    assert_equal(list[1], 2)
-    assert_equal(len(list), 2)
+    assert_equal(popped, [2])
+    assert_equal(list, [1, 3])
 
     list = [1, 2, 3]
     popped = list.pop({None, 0, -1})
-    assert_equal(popped[0], 3)
-    assert_equal(popped[1], 2)
-    assert_equal(len(popped), 2)
-    assert_equal(list[0], 1)
-    assert_equal(len(list), 1)
+    assert_equal(popped, [3, 2])
+    assert_equal(list, [1])
 
     list = [1, 2, 3]
     popped = list.pop({1, 2, -1})
     assert_equal(len(popped), 0)
-    assert_equal(list[0], 1)
-    assert_equal(list[1], 2)
-    assert_equal(list[2], 3)
-    assert_equal(len(list), 3)
+    assert_equal(list, [1, 2, 3])
 
     list = [1, 2, 3, 4, 5, 6]
     popped = list.pop({None, None, 2})
-    assert_equal(popped[0], 1)
-    assert_equal(popped[1], 3)
-    assert_equal(popped[2], 5)
-    assert_equal(len(popped), 3)
-    assert_equal(list[0], 2)
-    assert_equal(list[1], 4)
-    assert_equal(list[2], 6)
-    assert_equal(len(list), 3)
+    assert_equal(popped, [1, 3, 5])
+    assert_equal(list, [2, 4, 6])
 
     list = [1, 2, 3, 4, 5, 6]
     popped = list.pop({1, None, 2})
-    assert_equal(popped[0], 2)
-    assert_equal(popped[1], 4)
-    assert_equal(popped[2], 6)
-    assert_equal(len(popped), 3)
-    assert_equal(list[0], 1)
-    assert_equal(list[1], 3)
-    assert_equal(list[2], 5)
-    assert_equal(len(list), 3)
+    assert_equal(popped, [2, 4, 6])
+    assert_equal(list, [1, 3, 5])
 
     list = [1, 2, 3, 4, 5, 6]
     popped = list.pop({1, 4, 2})
-    assert_equal(popped[0], 2)
-    assert_equal(popped[1], 4)
-    assert_equal(len(popped), 2)
-    assert_equal(list[0], 1)
-    assert_equal(list[1], 3)
-    assert_equal(list[2], 5)
-    assert_equal(list[3], 6)
-    assert_equal(len(list), 4)
+    assert_equal(popped, [2, 4])
+    assert_equal(list, [1, 3, 5, 6])
 
     list = [1, 2, 3, 4, 5, 6]
     popped = list.pop({None, None, -2})
-    assert_equal(popped[0], 6)
-    assert_equal(popped[1], 4)
-    assert_equal(popped[2], 2)
-    assert_equal(len(popped), 3)
-    assert_equal(list[0], 1)
-    assert_equal(list[1], 3)
-    assert_equal(list[2], 5)
-    assert_equal(len(list), 3)
+    assert_equal(popped, [6, 4, 2])
+    assert_equal(list, [1, 3, 5])
 
     list = [1, 2, 3, 4, 5, 6]
     popped = list.pop({4, None, -2})
-    assert_equal(popped[0], 5)
-    assert_equal(popped[1], 3)
-    assert_equal(popped[2], 1)
-    assert_equal(len(popped), 3)
-    assert_equal(list[0], 2)
-    assert_equal(list[1], 4)
-    assert_equal(list[2], 6)
-    assert_equal(len(list), 3)
+    assert_equal(popped, [5, 3, 1])
+    assert_equal(list, [2, 4, 6])
 
     list = [1, 2, 3, 4, 5, 6]
     popped = list.pop({4, 1, -2})
-    assert_equal(popped[0], 5)
-    assert_equal(popped[1], 3)
-    assert_equal(len(popped), 2)
-    assert_equal(list[0], 1)
-    assert_equal(list[1], 2)
-    assert_equal(list[2], 4)
-    assert_equal(list[3], 6)
-    assert_equal(len(list), 4)
+    assert_equal(popped, [5, 3])
+    assert_equal(list, [1, 2, 4, 6])
 
 
 def test_list_variadic_constructor():
