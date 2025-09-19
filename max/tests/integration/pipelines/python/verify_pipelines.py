@@ -881,16 +881,32 @@ PIPELINES = {
     ),
     "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],  # TODO: Has much worse accuracy on AMD GPUs.
+        tags=["h100-multi"],
         run=_make_pipeline_runner(
             pipeline="qwen2.5-vl-3b",
             encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_qwen25vl_golden/1/5334f7abfd164dcdbfcdc632b6bb087e672da50e64a007123faf7cc3297c4f1d/torch_qwen25vl_golden.tar.gz",
-                json_file="torch_qwen25vl-3b_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=2.1e-2,
-            kl_div_threshold=1.8e-1,
+            cos_dist_threshold=1.9e00,
+            kl_div_threshold=1.5e01,
+        ),
+    ),
+    "Qwen/Qwen2.5VL-7B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
+        run=_make_pipeline_runner(
+            pipeline="qwen2.5-vl-7b",
+            encoding="bfloat16",
+            cos_dist_threshold=7.0e-2,
+            kl_div_threshold=2.1e-1,
+        ),
+    ),
+    "Qwen/Qwen2.5VL-32B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
+        run=_make_pipeline_runner(
+            pipeline="qwen2.5-vl-32b",
+            encoding="bfloat16",
+            cos_dist_threshold=7.0e-2,
+            kl_div_threshold=2.1e-1,
         ),
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(

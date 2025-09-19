@@ -480,7 +480,7 @@ class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
             # it's not a problem, but it's a good idea to disable it anyway.)
             enable_chunked_prefill=False,
             # TODO(GEX-2365): Handle this in model memory estimation.
-            device_memory_utilization=0.4,
+            device_memory_utilization=0.6,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -501,7 +501,8 @@ class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            # Qwen2.5VL 32B uses float32 for the vision model, and bfloat16 for the language model
+            # So, we don't set the encoding dtype for the torch model
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -995,6 +996,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
     "qwen2.5-vl-3b": Qwen2_5VLPipelineOracle("Qwen/Qwen2.5-VL-3B-Instruct"),
+    "qwen2.5-vl-7b": Qwen2_5VLPipelineOracle("Qwen/Qwen2.5-VL-7B-Instruct"),
+    "qwen2.5-vl-32b": Qwen2_5VLPipelineOracle("Qwen/Qwen2.5-VL-32B-Instruct"),
     "qwen3": GenericOracle(
         model_path="Qwen/Qwen3-8B",
         config_params={"max_length": 512},
