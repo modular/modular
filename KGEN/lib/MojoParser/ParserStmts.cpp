@@ -2124,11 +2124,23 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     return success();
   };
 
+  // Parse a nested suite inside a param-if region. Inserts the param-if's
+  // condition as a known assumption before parsing the suite.
+  auto parseParamIfRegion = [&](Location loc) -> ParseResult {
+    DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+    llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+    pushChildScope(scopeGuard, keepDecl);
+
+    curDeclScope->insertKnownAssumptions(
+        {ConstraintAttr::get(paramIfOp.getCond(), loc)});
+    return parseSuite(curIndent);
+  };
+
   if (parseCondAndTerminateElifCondition(ifLoc) ||
       parseToken(Token::colon, "expected ':' after 'if' expression"))
     return failure();
   builder.createBlock(&paramIfOp.getThenRegion());
-  if (failed(parseLocalScopeSuite(curIndent)))
+  if (failed(parseParamIfRegion(ifLoc)))
     return failure();
   builder.create<ParamYieldOp>(ifLoc);
 
@@ -2147,7 +2159,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
 
     builder.create<ParamYieldOp>(elifLoc);
     builder.createBlock(&paramIfOp.getThenRegion());
-    if (failed(parseLocalScopeSuite(curIndent)))
+    if (failed(parseParamIfRegion(elifLoc)))
       return failure();
     builder.create<ParamYieldOp>(elifLoc);
   }
@@ -2157,7 +2169,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
       consumeIf(Token::kw_else)) {
     if (parseToken(Token::colon, "expected ':' after else"))
       return failure();
-    if (failed(parseLocalScopeSuite(curIndent)))
+    if (failed(parseParamIfRegion(ifLoc)))
       return failure();
   }
   builder.create<ParamYieldOp>(ifLoc);

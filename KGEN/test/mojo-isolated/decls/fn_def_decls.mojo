@@ -228,3 +228,22 @@ fn foldable_requires_passthru[a: Int, b: Int]()
         foldable_requires_2[b, a]()
         foldable_requires_1[a]()
         foldable_requires_1[b]()
+
+
+# CHECK-LABEL: lit.fn @"foldable_requires_param_if
+fn foldable_requires_param_if[a: Int, b: Int]():
+    @parameter
+    if a > 10:
+        @parameter
+        if b < 1:
+            foldable_requires_2[b, a]()
+    elif a < 1:
+        @parameter
+        if b > 10:
+            foldable_requires_2[a, b]()
+    elif a:
+        foldable_requires_1[a]()
+    elif b:
+        foldable_requires_1[b]()
+    else:
+        foldable_requires_1[42]()
