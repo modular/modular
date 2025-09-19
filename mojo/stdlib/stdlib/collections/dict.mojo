@@ -140,8 +140,8 @@ struct _TakeDictEntryIter[
     var index: Int
     var src: Pointer[Dict[K, V, H], origin]
 
-    fn __init__(out self, index: Int, ref [origin]dict: Dict[K, V, H]):
-        self.index = index
+    fn __init__(out self, ref [origin]dict: Dict[K, V, H]):
+        self.index = 0
         self.src = Pointer(to=dict)
 
     @always_inline
@@ -158,17 +158,17 @@ struct _TakeDictEntryIter[
     ) -> Self.Element:
         while True:
             ref opt_entry_ref = self.src[]._entries[self.index]
-
             self.index += 1
 
             if opt_entry_ref:
-                ref key = opt_entry_ref.value().key
+                ref key = opt_entry_ref.unsafe_value().key
                 var hash = hash[HasherType=H](key)
-                var found, slot, index = self.src[]._find_index(hash, key)
+                var (found, slot, index) = self.src[]._find_index(hash, key)
+                debug_assert(found, "entry should exist")
 
-                if found:
-                    # TODO: Should we call `self.src[]._compact()` if len(self.src[]) is 0?
-                    return self.src[]._unsafe_take_entry(slot, index)
+                # Safety: We just checked the validity of the entry with the
+                # given key/hash.
+                return self.src[]._unsafe_take_entry(slot, index)
 
 
 @fieldwise_init
@@ -1056,17 +1056,10 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
 
         for ref entry in reversed(self._entries):
             if entry:
-                # note: we must call self._find_index before
-                # moving the entry out of _entries with entry.unsafe_take()
-                # because _find_index needs to look at the entry hash and
-                # key in order to verify it found the correct location
-                var (_, slot, _) = self._find_index(
+                var (_, slot, index) = self._find_index(
                     entry.unsafe_value().hash, entry.unsafe_value().key
                 )
-                self._set_index(slot, Self.REMOVED)
-                var entry_value = entry.unsafe_take()
-                self._len -= 1
-                return entry_value^
+                return self._unsafe_take_entry(slot, index)
 
         raise "KeyError: popitem(): dictionary is empty"
 
@@ -1131,7 +1124,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         # prints 0
         ```
         """
-        return _TakeDictEntryIter(0, self)
+        return _TakeDictEntryIter(self)
 
     fn update(mut self, other: Self, /):
         """Update the dictionary with the key/value pairs from other,
@@ -1184,7 +1177,6 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         ref entry = self._entries[index]
         debug_assert(entry.__bool__(), "entry in index must be full")
         var entry_value = entry.unsafe_take()
-        entry = None
         self._len -= 1
         return entry_value^
 

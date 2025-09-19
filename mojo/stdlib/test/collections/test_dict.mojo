@@ -275,20 +275,33 @@ def test_iter_items():
 
 
 def test_iter_take_items():
-    var dict: Dict[String, Int] = {}
-    dict["a"] = 1
-    dict["b"] = 2
+    var dict: Dict[Int, String] = {0: "a", 1: "b", 2: "c"}
 
-    var keys = String()
-    var sum = 0
+    var values = String()
+    var keys = 0
+
     for entry in dict.take_items():
         keys += entry.key
-        sum += entry.value
+        values += entry.value
 
-    assert_equal(keys, "ab")
-    assert_equal(sum, 3)
+    assert_equal(values, "abc")
+    assert_equal(keys, 3)
     assert_equal(len(dict), 0)
     assert_false(dict.take_items().__has_next__())
+
+    for i in range(3):
+        with assert_raises(contains="KeyError"):
+            _ = dict[i]
+
+
+def test_iter_take_items_empty():
+    var dict: Dict[Int, String] = {}
+
+    var count = 0
+    for _ in dict.take_items():
+        count += 1
+    assert_equal(len(dict), 0)
+    assert_equal(count, 0)
 
 
 def test_dict_contains():
@@ -526,6 +539,8 @@ def test_dict():
     test["test_mojo_issue_1729", test_mojo_issue_1729]()
     test["test dict or", test_dict_or]()
     test["test dict popitem", test_dict_popitem]()
+    test["test_iter_take_items", test_iter_take_items]()
+    test["test_iter_take_items_empty", test_iter_take_items_empty]()
 
 
 def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
