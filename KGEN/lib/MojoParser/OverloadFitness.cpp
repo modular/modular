@@ -653,6 +653,59 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
   return 2 * passesVarArgArgument + 1 * hasVariadicParams;
 }
 
+static LogicalResult checkConstraints(ASTDecl &declScope,
+                                      ParamBindings::DiagEmitter &diagEmitter,
+                                      ArrayRef<ConstraintAttr> constraints) {
+  if (constraints.empty())
+    return success();
+
+  SmallVector<ConstraintAttr> assumptions;
+  declScope.getKnownAssumptionsIncludingParents(assumptions);
+  SmallVector<TypedAttr> overallAssumptionOperands;
+  for (ConstraintAttr assumption : assumptions)
+    overallAssumptionOperands.push_back(assumption.getProposition());
+  // A null overallAssumption means no contextual assumptions.
+  TypedAttr overallAssumption;
+  if (overallAssumptionOperands.size() == 1) {
+    // Single assumption: no need to wrap in an AND.
+    overallAssumption = overallAssumptionOperands.front();
+  } else if (!overallAssumptionOperands.empty()) {
+    overallAssumption =
+        ParamOperatorAttr::get(POC::And, overallAssumptionOperands);
+  }
+
+  SmallVector<ConstraintAttr> failedConstraints;
+  SmallVector<ConstraintAttr> unprovableConstraints;
+  for (ConstraintAttr constraint : constraints) {
+    TypedAttr prop = constraint.getProposition();
+    // If there are contextual assumptions, and the constraint is implied by
+    // them, skip it.
+    if (overallAssumption &&
+        ParamOperatorAttr::get(POC::And, {overallAssumption, prop}) ==
+            overallAssumption)
+      continue;
+
+    if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
+      if (intValue.getValue().isZero())
+        failedConstraints.push_back(constraint);
+    } else {
+      unprovableConstraints.push_back(constraint);
+    }
+  }
+
+  if (!failedConstraints.empty()) {
+    diagEmitter.emitConstraintViolations(failedConstraints);
+    return failure();
+  }
+
+  if (!unprovableConstraints.empty()) {
+    diagEmitter.emitUnprovableConstraints(unprovableConstraints);
+    return failure();
+  }
+
+  return success();
+}
+
 OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           const OverloadSet &callable,
                                           PValue selfPValue) {
@@ -1156,6 +1209,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     return emitDiagFor.badImplicitConversion(fromType,
                                              signature.getUserResultType());
   }
+
+  // Check that all constraints are satisfied.
+  if (failed(checkConstraints(callable.paramBindings.declScope, bindingDiag,
+                              signature.getFnMetadata().getConstraints())))
+    return std::move(diag);
 
   // Otherwise we succeeded!
   return result;

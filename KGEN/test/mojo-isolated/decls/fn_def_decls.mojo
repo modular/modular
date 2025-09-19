@@ -201,30 +201,30 @@ def return_def_arg_box(abc: MemoryOnly) -> ref [abc] MemoryOnly:
     return abc
 
 
-# CHECK-LABEL: lit.fn @"foldable_requires_2
-# CHECK-SAME: where {
-# CHECK-SAME:   lt(#lit.struct.extract<:!Int x, "_mlir_value">, {{.*}} "x must be less than 1"
-# CHECK-SAME:   ge(#lit.struct.extract<:!Int y, "_mlir_value">, 11)
-fn foldable_requires_2[x: Int, y: Int]()
-    requires y > 10
-    requires x < 1, "x must be less than 1":
-        pass
-
-
 # CHECK-LABEL: lit.fn @"foldable_requires_1
 # CHECK-SAME: where {
 # CHECK-SAME:   ne(#lit.struct.extract<:!Int x, "_mlir_value">, 0), {{.*}}, "x must be True">}
 fn foldable_requires_1[x: Int]()
-    requires x, "x must be True":
+    where x "x must be True":
+        pass
+
+
+# CHECK-LABEL: lit.fn @"foldable_requires_2
+# CHECK-SAME: where {
+# CHECK-SAME:   ge(#lit.struct.extract<:!Int y, "_mlir_value">, 11)
+# CHECK-SAME:   lt(#lit.struct.extract<:!Int x, "_mlir_value">, {{.*}} "x must be less than 1"
+fn foldable_requires_2[x: Int, y: Int]()
+    where y > 10
+    where x < 1 "x must be less than 1":
         pass
 
 
 # CHECK-LABEL: lit.fn @"foldable_requires_passthru
 fn foldable_requires_passthru[a: Int, b: Int]()
-    requires a > 10
-    requires b < 1, "b must be less than 1"
-    requires b, "b must be truthy"
-    requires a, "a must be truthy":
+    where a > 10
+    where b < 1 "b must be less than 1"
+    where b "b must be truthy"
+    where a "a must be truthy":
         foldable_requires_2[b, a]()
         foldable_requires_1[a]()
         foldable_requires_1[b]()

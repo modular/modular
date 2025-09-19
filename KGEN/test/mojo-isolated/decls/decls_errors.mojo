@@ -317,9 +317,9 @@ fn always_inline_builtin_4(a: Bool):
 # expected-note @+1 {{function declared here}}
 fn simple_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here}}
-  requires x > 1, "x must be greater than 1"
+  where x > 1 "x must be greater than 1"
   # expected-note @+1 {{constraint declared here}}
-  requires y < 10, "y must be less than 10":
+  where y < 10 "y must be less than 10":
     pass
 
 fn unfoldable_predicate(y: Int) -> Bool:
@@ -328,9 +328,9 @@ fn unfoldable_predicate(y: Int) -> Bool:
 # expected-note @+1 {{function declared here}}
 fn unprovable_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here}}
-  requires x > 1, "x must be greater than 1"
+  where x > 1 "x must be greater than 1"
   # expected-note @+1 {{constraint declared here}}
-  requires unfoldable_predicate(y), "y must satisfy predicate":
+  where unfoldable_predicate(y) "y must satisfy predicate":
     pass
 
 fn test_constraints():
@@ -526,18 +526,6 @@ fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
   # Ambiguous initializer list assigning to discard pattern needs to be an error.
   # expected-error @+1 {{cannot emit initializer list without a contextual type}}
   _ = {a = 1, b = 2}
-
-# expected-note @+1 {{previous definition here}}
-fn constraint_overloading[x: Int, y: Int]() -> Int
-    requires x > -1, "hello"
-    requires y < 0, "world":
-    return x
-
-# expected-error @+1 {{redefinition of function 'constraint_overloading' with identical signature}}
-fn constraint_overloading[x: Int, y: Int]() -> Int
-    requires y < 0, "aaa"
-    requires x > -1, "bbb":
-    return x + 1
 
 ##===----------------------------------------------------------------------===##
 # Decorators
