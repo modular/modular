@@ -70,7 +70,13 @@ match a, *b, c:
 match match(
     case,
     match(
-        match, case, match, looooooooooooooooooooooooooooooooooooong, match, case, match
+        match,
+        case,
+        match,
+        looooooooooooooooooooooooooooooooooooong,
+        match,
+        case,
+        match,
     ),
     case,
 ):
@@ -129,6 +135,9 @@ match bar1:
 
 match bar1:
     case Foo(
-        normal=x, perhaps=[list, {an: d, dict: 1.0}] as y, otherwise=something, q=t as u
+        normal=x,
+        perhaps=[list, {an: d, dict: 1.0}] as y,
+        otherwise=something,
+        q=t as u,
     ):
         pass

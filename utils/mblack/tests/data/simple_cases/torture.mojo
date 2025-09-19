@@ -106,9 +106,11 @@ importA
 class A:
     def foo(self):
         for _ in range(10):
-            aaaaaaaaaaaaaaaaaaa = bbbbbbbbbbbbbbb.cccccccccc(
-                xxxxxxxxxxxx
-            )  # pylint: disable=no-member
+            aaaaaaaaaaaaaaaaaaa = (
+                bbbbbbbbbbbbbbb.cccccccccc(  # pylint: disable=no-member
+                    xxxxxxxxxxxx
+                )
+            )
 
 
 def test(self, othr):

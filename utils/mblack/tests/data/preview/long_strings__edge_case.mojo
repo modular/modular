@@ -196,13 +196,9 @@ return (
     "Hi there. This is areally really reallllly long string that needs to be"
     " split!!!"
 )
-ternary_expression = (
-    "Short String"
-    if some_condition
-    else (
-        "This is a really long string that will eventually need to be split"
-        " right here."
-    )
+ternary_expression = "Short String" if some_condition else (
+    "This is a really long string that will eventually need to be split"
+    " right here."
 )
 return f"{x}/b/c/d/d/d/dadfjsadjsaidoaisjdsfjaofjdfijaidfjaodfjaoifjodjafojdoajaaaaaaaaaaa"
 return f"{x}/b/c/d/d/d/dadfjsadjsaidoaisjdsfjaofjdfijaidfjaodfjaoifjodjafojdoajaaaaaaaaaaaa"

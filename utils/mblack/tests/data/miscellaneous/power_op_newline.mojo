@@ -19,4 +19,8 @@ importA
 # output
 
 importA
-(() << 0**0)  #
+(
+    ()
+    << 0
+    ** 0
+)  #

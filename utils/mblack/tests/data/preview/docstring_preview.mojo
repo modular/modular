@@ -68,11 +68,13 @@ def single_quote_docstring_over_line_limit2():
 
 
 def docstring_almost_at_line_limit():
-    """long docstring................................................................."""
+    """long docstring.................................................................
+    """
 
 
 def docstring_almost_at_line_limit_with_prefix():
-    f"""long docstring................................................................"""
+    f"""long docstring................................................................
+    """
 
 
 def mulitline_docstring_almost_at_line_limit():
@@ -90,23 +92,27 @@ def mulitline_docstring_almost_at_line_limit_with_prefix():
 
 
 def docstring_at_line_limit():
-    """long docstring................................................................"""
+    """long docstring................................................................
+    """
 
 
 def docstring_at_line_limit_with_prefix():
-    f"""long docstring..............................................................."""
+    f"""long docstring...............................................................
+    """
 
 
 def multiline_docstring_at_line_limit():
     """first line-----------------------------------------------------------------------
 
-    second line----------------------------------------------------------------------"""
+    second line----------------------------------------------------------------------
+    """
 
 
 def multiline_docstring_at_line_limit_with_prefix():
     f"""first line----------------------------------------------------------------------
 
-    second line----------------------------------------------------------------------"""
+    second line----------------------------------------------------------------------
+    """
 
 
 def single_quote_docstring_over_line_limit():

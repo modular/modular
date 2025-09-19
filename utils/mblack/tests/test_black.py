@@ -2067,7 +2067,11 @@ def assert_collected_sources(
     )
     assert sorted(collected) == sorted(gs_expected)
 
-@pytest.mark.skip("TODO(MOTO-1320): Re-enable")
+# NOTE: these tests are fundamentally borked because bazel's sandboxing
+# completely violates the assumptions these tests make about paths (e.g. how the
+# root is related to the test files). This is probably okay, since we don't make
+# changes to the collection logic, only the formatting logic.
+@pytest.mark.skip("bazel's sandboxing breaks the assumptions of these tests")
 class TestFileCollection:
     def test_include_exclude(self) -> None:
         path = THIS_DIR / "data" / "include_exclude_tests"
