@@ -19,10 +19,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2397
-    "test_matmul_1_sram.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
     "test_stencil1d.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
