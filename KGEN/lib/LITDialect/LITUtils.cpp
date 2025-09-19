@@ -245,10 +245,11 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   return success();
 }
 
-ParseResult LIT::parseOptionalRequiresClauses(
-    AsmParser &p, SmallVectorImpl<ConstraintAttr> &constraints) {
+ParseResult
+LIT::parseOptionalWhereClauses(AsmParser &p,
+                               SmallVectorImpl<ConstraintAttr> &constraints) {
   // Parse an optional 'requires' clause.
-  if (succeeded(p.parseOptionalKeyword("requires"))) {
+  if (succeeded(p.parseOptionalKeyword("where"))) {
     if (p.parseLBrace())
       return failure();
     do {
@@ -264,15 +265,16 @@ ParseResult LIT::parseOptionalRequiresClauses(
   return success();
 }
 
-void LIT::printOptionalRequiresClauses(AsmPrinter &p,
-                                       ArrayRef<ConstraintAttr> constraints,
-                                       ParameterEvaluator &evaluator) {
+void LIT::printOptionalWhereClauses(AsmPrinter &p,
+                                    ArrayRef<ConstraintAttr> constraints,
+                                    ParameterEvaluator *evaluator) {
   if (constraints.empty())
     return;
-  p << " requires {";
+  p << " where {";
   llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
-    constraint =
-        cast<ConstraintAttr>(evaluator.getReboundAttribute(constraint));
+    if (evaluator)
+      constraint =
+          cast<ConstraintAttr>(evaluator->getReboundAttribute(constraint));
     constraint.print(p);
   });
   p << "}";
@@ -435,7 +437,7 @@ ParseResult LIT::parseOptionalParamSignature(
     return failure();
 
   SmallVector<ConstraintAttr> constraints;
-  if (failed(parseOptionalRequiresClauses(p, constraints)))
+  if (failed(parseOptionalWhereClauses(p, constraints)))
     return failure();
 
   paramListAttr = PogListAttr::get(

@@ -380,7 +380,7 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
   auto list = PogListAttr::get(context);
   return FnMetadataAttr::get(
       list, /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
-      /*isNestedOriginExclusivityCheckingDisabled=*/false);
+      /*isNestedOriginExclusivityCheckingDisabled=*/false, /*constraints=*/{});
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numArgs,
@@ -389,27 +389,29 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numArgs,
   auto normal = PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly,
                                      VariadicKind::None);
   args.resize(numArgs, normal);
-  return FnMetadataAttr::get(
-      PogListAttr::get(ctx, args), numImplicitOriginDecls,
-      /*captureOrigins=*/nullptr,
-      /*isNestedOriginExclusivityCheckingDisabled=*/false);
+  return get(PogListAttr::get(ctx, args), numImplicitOriginDecls,
+             /*captureOrigins=*/nullptr,
+             /*isNestedOriginExclusivityCheckingDisabled=*/false,
+             /*constraints=*/{});
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    size_t numImplicitOriginDecls,
                                    TypedAttr captureOrigins,
-                                   bool nestedOriginFlag) {
+                                   bool nestedOriginFlag,
+                                   ArrayRef<ConstraintAttr> constraints) {
   MLIRContext *ctx = argListAttrs.getContext();
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
   return get(ctx, argListAttrs, numImplicitOriginDecls, captureOrigins,
-             nestedOriginFlag);
+             nestedOriginFlag, constraints);
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    size_t numImplicitOriginDecls) {
   return get(argListAttrs, numImplicitOriginDecls, /*captureOrigins=*/nullptr,
-             /*isNestedOriginExclusivityCheckingDisabled=*/false);
+             /*isNestedOriginExclusivityCheckingDisabled=*/false,
+             /*constraints=*/{});
 }
 
 FnMetadataAttrInterface
@@ -432,7 +434,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
       argListAttrs.getOrigPackConvention(),
       argListAttrs.getOrigVariadicConvention(), argListAttrs.getConstraints());
   return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
-             getIsNestedOriginExclusivityCheckingDisabled());
+             getIsNestedOriginExclusivityCheckingDisabled(), getConstraints());
 }
 
 SmallVector<VariadicKind>
@@ -512,7 +514,7 @@ FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
       OriginSetUnionAttr::get(origins, type)};
   return get(getArgListAttrs(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
-             getIsNestedOriginExclusivityCheckingDisabled());
+             getIsNestedOriginExclusivityCheckingDisabled(), getConstraints());
 }
 
 size_t FnMetadataAttr::getNumArgs() const {

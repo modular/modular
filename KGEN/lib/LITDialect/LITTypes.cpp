@@ -977,8 +977,8 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadics, origArgPackConvention,
                        origVariadicConvention, /*constraints=*/{}),
-      numOriginDecls, captureOrigins,
-      isNestedOriginExclusivityCheckingDisabled);
+      numOriginDecls, captureOrigins, isNestedOriginExclusivityCheckingDisabled,
+      /*constraints=*/{});
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
                            argConventions, effects, metadata);
@@ -1158,7 +1158,8 @@ FunctionType FnType::substituteImplicitOriginsIntoValues(
 FnType FnType::getWithCaptureOrigins(TypedAttr origins) {
   return getWithMetadata(FnMetadataAttr::get(
       getArgListAttrs(), getNumImplicitOriginDecls(), origins,
-      getIsNestedOriginExclusivityCheckingDisabled()));
+      getIsNestedOriginExclusivityCheckingDisabled(),
+      getMetadata().getConstraints()));
 }
 
 bool FnType::isAnyVarArg(size_t index) {

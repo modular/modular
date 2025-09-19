@@ -1082,7 +1082,8 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
       mainWrapperFnMeta.getArgListAttrs(),
       mainWrapperFnMeta.getNumImplicitOriginDecls(),
       mainWrapperFnMeta.getCaptureOrigins(),
-      mainWrapperFnMeta.getIsNestedOriginExclusivityCheckingDisabled());
+      mainWrapperFnMeta.getIsNestedOriginExclusivityCheckingDisabled(),
+      mainWrapperFnMeta.getConstraints());
   auto strippedMainWrapperSig =
       FuncType::get(getContext(), mainWrapperSig.getValues(),
                     mainWrapperSig.getArgConventions(),

@@ -68,11 +68,13 @@ TEST_F(FuncTypeGeneratorTypeTest, TestSpecialization) {
     FnMetadataAttr fnMetadata = FnMetadataAttr::get(
         pogs,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
-        /*isNestedOriginExclusivityCheckingDisabled=*/false);
+        /*isNestedOriginExclusivityCheckingDisabled=*/false,
+        /*constraints=*/{});
     FnMetadataAttr fnMetadataNoParams = FnMetadataAttr::get(
         pogs,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
-        /*isNestedOriginExclusivityCheckingDisabled=*/false);
+        /*isNestedOriginExclusivityCheckingDisabled=*/false,
+        /*constraints=*/{});
     FuncTypeGeneratorType sigGen =
         FuncTypeGeneratorType::get(inputParamTypes, funcType, /*argConvs=*/{},
                                    /*effects=*/{}, fnMetadata, pogs);

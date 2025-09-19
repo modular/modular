@@ -286,7 +286,8 @@ static FnType getReducedFnType(FnType sig) {
       newPogListAttr, sig.getNumImplicitOriginDecls(),
       // Don't keep the capture origins, thunks don't care about those. Only the
       // parameter-value passed in at the callsite cares about those.
-      {}, sig.getIsNestedOriginExclusivityCheckingDisabled());
+      {}, sig.getIsNestedOriginExclusivityCheckingDisabled(),
+      sig.getMetadata().getConstraints());
   return FuncType::get(sig.getValues(), sig.getArgConventions(),
                        sig.getFnEffects(), metadata);
 }
@@ -672,7 +673,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       reducedExpected.getArgListAttrs(),
       reducedExpected.getNumImplicitOriginDecls(),
       reducedExpected.getCaptureOrigins(),
-      reducedExpected.getIsNestedOriginExclusivityCheckingDisabled());
+      reducedExpected.getIsNestedOriginExclusivityCheckingDisabled(),
+      reducedExpected.getFnMetadata().getConstraints());
   auto thunkFuncType = cast<FunctionType>(
       paramRefsReplacer.getReboundType(reducedExpected.getValues()));
   auto thunkSignature = FuncTypeGeneratorType::get(
