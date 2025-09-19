@@ -97,7 +97,8 @@ public:
   // Dumping
   //===--------------------------------------------------------------------===//
 
-  void Dump(llvm::raw_ostream &output, llvm::StringRef filter) override;
+  void Dump(llvm::raw_ostream &output, llvm::StringRef filter,
+            bool show_color) override;
 
   bool DumpTypeValue(lldb::opaque_compiler_type_t type, lldb_private::Stream &s,
                      lldb::Format format,

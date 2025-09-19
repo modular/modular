@@ -306,7 +306,7 @@ void KGEN::splitPerExported(LLVMModuleAndContext module,
 
 static unsigned getGPUSharedAddressSpace(const llvm::Triple &triple) {
   if (triple.isNVPTX())
-    return mlir::NVVM::kSharedMemorySpace;
+    return static_cast<unsigned>(mlir::NVVM::NVVMMemorySpace::Shared);
   if (triple.isAMDGPU())
     return mlir::ROCDL::ROCDLDialect::kSharedMemoryAddressSpace;
   if (isMetalTriple(triple))
