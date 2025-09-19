@@ -450,6 +450,8 @@ class SpeculativeDecodingTextGenerationPipeline(
             num_steps = self.calculate_num_steps(
                 model, model.huggingface_config, num_steps, context, is_draft
             )
+            if not model.kv_manager.contains(context.request_id):
+                model.kv_manager.external_claim(context.request_id)
 
         kv_cache_inputs = model.kv_manager.fetch(batch, num_steps)
         if is_draft:
