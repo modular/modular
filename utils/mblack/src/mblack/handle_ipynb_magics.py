@@ -319,7 +319,7 @@ def _is_ipython_magic(node: ast.expr) -> TypeGuard[ast.Attribute]:
 def _get_str_args(args: List[ast.expr]) -> List[str]:
     str_args = []
     for arg in args:
-        assert isinstance(arg, ast.Str)
+        assert isinstance(arg, ast.Constant)
         str_args.append(arg.s)
     return str_args
 

@@ -211,7 +211,9 @@ def validate_regex(
     try:
         return re_compile_maybe_verbose(value) if value is not None else None
     except re.error as e:
-        raise click.BadParameter(f"Not a valid regular expression: {e}") from None
+        raise click.BadParameter(
+            f"Not a valid regular expression: {e}"
+        ) from None
 
 
 @click.command(
@@ -220,7 +222,9 @@ def validate_regex(
     # (annoyingly) strips 'em so we need to set it here too.
     help="The uncompromising code formatter.",
 )
-@click.option("-c", "--code", type=str, help="Format the code passed in as a string.")
+@click.option(
+    "-c", "--code", type=str, help="Format the code passed in as a string."
+)
 @click.option(
     "-l",
     "--line-length",
@@ -488,8 +492,9 @@ def main(  # noqa: C901
         out(main.get_usage(ctx) + "\n\nOne of 'SRC' or 'code' is required.")
         ctx.exit(1)
 
-    root, method = (
-        find_project_root(src, stdin_filename) if code is None else (None, None)
+    root, method = find_project_root(src, stdin_filename) if code is None else (
+        None,
+        None,
     )
     ctx.obj["root"] = root
 
@@ -502,18 +507,18 @@ def main(  # noqa: C901
 
             normalized = [
                 (
-                    (source, source)
-                    if source == "-"
-                    else (normalize_path_maybe_ignore(Path(source), root), source)
+                    (source, source) if source
+                    == "-" else (
+                        normalize_path_maybe_ignore(Path(source), root),
+                        source,
+                    )
                 )
                 for source in src
             ]
             srcs_string = ", ".join(
                 [
                     (
-                        f'"{_norm}"'
-                        if _norm
-                        else f'\033[31m"{source} (skipping - invalid)"\033[34m'
+                        f'"{_norm}"' if _norm else f'\033[31m"{source} (skipping - invalid)"\033[34m'
                     )
                     for _norm, source in normalized
                 ]
@@ -552,7 +557,9 @@ def main(  # noqa: C901
         err("Cannot pass both `pyi` and `ipynb` flags!")
         ctx.exit(1)
 
-    write_back = WriteBack.from_configuration(check=check, diff=diff, color=color)
+    write_back = WriteBack.from_configuration(
+        check=check, diff=diff, color=color
+    )
 
     # When formatting files, this will be overridden by the file extension
     is_mojo = False
@@ -640,7 +647,9 @@ def main(  # noqa: C901
             )
 
     if verbose or not quiet:
-        if code is None and (verbose or report.change_count or report.failure_count):
+        if code is None and (
+            verbose or report.change_count or report.failure_count
+        ):
             out()
         out(error_msg if report.return_code else "All done! ✨ 🍰 ✨")
         if code is None:
@@ -667,7 +676,10 @@ def get_sources(
     root = ctx.obj["root"]
 
     using_default_exclude = exclude is None
-    exclude = re_compile_maybe_verbose(DEFAULT_EXCLUDES) if exclude is None else exclude
+    exclude = (
+        re_compile_maybe_verbose(DEFAULT_EXCLUDES) if exclude
+        is None else exclude
+    )
     gitignore: Optional[PathSpec] = None
     root_gitignore = get_gitignore(root)
 
@@ -680,7 +692,9 @@ def get_sources(
             is_stdin = False
 
         if is_stdin or p.is_file():
-            normalized_path = normalize_path_maybe_ignore(p, ctx.obj["root"], report)
+            normalized_path = normalize_path_maybe_ignore(
+                p, ctx.obj["root"], report
+            )
             if normalized_path is None:
                 continue
 
@@ -691,7 +705,9 @@ def get_sources(
             else:
                 force_exclude_match = None
             if force_exclude_match and force_exclude_match.group(0):
-                report.path_ignored(p, "matches the --force-exclude regular expression")
+                report.path_ignored(
+                    p, "matches the --force-exclude regular expression"
+                )
                 continue
 
             if is_stdin:
@@ -802,7 +818,9 @@ def reformat_one(
                 mode = replace(mode, is_pyi=True)
             elif src.suffix == ".ipynb":
                 mode = replace(mode, is_ipynb=True)
-            if format_stdin_to_stdout(fast=fast, write_back=write_back, mode=mode):
+            if format_stdin_to_stdout(
+                fast=fast, write_back=write_back, mode=mode
+            ):
                 changed = Changed.YES
         else:
             cache: Cache = {}
@@ -810,15 +828,17 @@ def reformat_one(
                 cache = read_cache(mode)
                 res_src = src.resolve()
                 res_src_s = str(res_src)
-                if res_src_s in cache and cache[res_src_s] == get_cache_info(res_src):
+                if res_src_s in cache and cache[res_src_s] == get_cache_info(
+                    res_src
+                ):
                     changed = Changed.CACHED
             if changed is not Changed.CACHED and format_file_in_place(
                 src, fast=fast, write_back=write_back, mode=mode
             ):
                 changed = Changed.YES
-            if (write_back is WriteBack.YES and changed is not Changed.CACHED) or (
-                write_back is WriteBack.CHECK and changed is Changed.NO
-            ):
+            if (
+                write_back is WriteBack.YES and changed is not Changed.CACHED
+            ) or (write_back is WriteBack.CHECK and changed is Changed.NO):
                 write_cache(cache, [src], mode)
         report.done(src, changed)
     except Exception as exc:
@@ -877,7 +897,9 @@ def format_file_in_place(
         src_name = f"{src}\t{then} +0000"
         dst_name = f"{src}\t{now} +0000"
         if mode.is_ipynb:
-            diff_contents = ipynb_diff(src_contents, dst_contents, src_name, dst_name)
+            diff_contents = ipynb_diff(
+                src_contents, dst_contents, src_name, dst_name
+            )
         else:
             diff_contents = diff(src_contents, dst_contents, src_name, dst_name)
 
@@ -966,7 +988,9 @@ def check_stability_and_equivalence(
     assert_stable(src_contents, dst_contents, mode=mode)
 
 
-def format_file_contents(src_contents: str, *, fast: bool, mode: Mode) -> FileContent:
+def format_file_contents(
+    src_contents: str, *, fast: bool, mode: Mode
+) -> FileContent:
     """Reformat contents of a file and return new contents.
 
     If `fast` is False, additionally confirm that the reformatted code is
@@ -1006,11 +1030,14 @@ def validate_cell(src: str, mode: Mode) -> None:
     Due to the impossibility of safely roundtripping in such situations, cells
     containing transformed magics will be ignored.
     """
-    if any(transformed_magic in src for transformed_magic in TRANSFORMED_MAGICS):
+    if any(
+        transformed_magic in src for transformed_magic in TRANSFORMED_MAGICS
+    ):
         raise NothingChanged
     if (
         src[:2] == "%%"
-        and src.split()[0][2:] not in PYTHON_CELL_MAGICS | mode.python_cell_magics
+        and src.split()[0][2:]
+        not in PYTHON_CELL_MAGICS | mode.python_cell_magics
     ):
         raise NothingChanged
 
@@ -1065,7 +1092,9 @@ def validate_metadata(nb: MutableMapping[str, Any]) -> None:
         raise NothingChanged from None
 
 
-def format_ipynb_string(src_contents: str, *, fast: bool, mode: Mode) -> FileContent:
+def format_ipynb_string(
+    src_contents: str, *, fast: bool, mode: Mode
+) -> FileContent:
     """Format Jupyter notebook.
 
     Operate cell-by-cell, only on code cells, only for Python notebooks.
@@ -1143,7 +1172,9 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:
         versions = mode.target_versions
     else:
         future_imports = get_future_imports(src_node)
-        versions = detect_target_versions(src_node, future_imports=future_imports)
+        versions = detect_target_versions(
+            src_node, future_imports=future_imports
+        )
 
     normalize_fmt_off(src_node, preview=mode.preview)
     lines = LineGenerator(mode=mode)
@@ -1172,7 +1203,9 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:
     if mode.preview and not dst_contents:
         # Use decode_bytes to retrieve the correct source newline (CRLF or LF),
         # and check if normalized_content has more than one line
-        normalized_content, _, newline = decode_bytes(src_contents.encode("utf-8"))
+        normalized_content, _, newline = decode_bytes(
+            src_contents.encode("utf-8")
+        )
         if "\n" in normalized_content:
             return newline
         return ""
@@ -1227,7 +1260,11 @@ def get_features_used(  # noqa: C901
                 features.add(Feature.F_STRINGS)
                 if Feature.DEBUG_F_STRINGS not in features:
                     for span_beg, span_end in iter_fexpr_spans(n.value):
-                        if n.value[span_beg : span_end - 1].rstrip().endswith("="):
+                        if (
+                            n.value[span_beg : span_end - 1]
+                            .rstrip()
+                            .endswith("=")
+                        ):
                             features.add(Feature.DEBUG_F_STRINGS)
                             break
 
@@ -1275,7 +1312,9 @@ def get_features_used(  # noqa: C901
             n.type in {syms.return_stmt, syms.yield_expr}
             and len(n.children) >= 2
             and n.children[1].type == syms.testlist_star_expr
-            and any(child.type == syms.star_expr for child in n.children[1].children)
+            and any(
+                child.type == syms.star_expr for child in n.children[1].children
+            )
         ):
             features.add(Feature.UNPACKING_ON_FLOW)
 
@@ -1314,7 +1353,9 @@ def detect_target_versions(
     """Detect the version to target based on the nodes used."""
     features = get_features_used(node, future_imports=future_imports)
     return {
-        version for version in TargetVersion if features <= VERSION_TO_FEATURES[version]
+        version
+        for version in TargetVersion
+        if features <= VERSION_TO_FEATURES[version]
     }
 
 
@@ -1332,8 +1373,12 @@ def get_future_imports(node: Node) -> Set[str]:
 
             elif child.type == syms.import_as_name:
                 orig_name = child.children[0]
-                assert isinstance(orig_name, Leaf), "Invalid syntax parsing imports"
-                assert orig_name.type == token.NAME, "Invalid syntax parsing imports"
+                assert isinstance(
+                    orig_name, Leaf
+                ), "Invalid syntax parsing imports"
+                assert (
+                    orig_name.type == token.NAME
+                ), "Invalid syntax parsing imports"
                 yield orig_name.value
 
             elif child.type == syms.import_as_names:
@@ -1360,7 +1405,10 @@ def get_future_imports(node: Node) -> Set[str]:
 
         elif first_child.type == syms.import_from:
             module_name = first_child.children[1]
-            if not isinstance(module_name, Leaf) or module_name.value != "__future__":
+            if (
+                not isinstance(module_name, Leaf)
+                or module_name.value != "__future__"
+            ):
                 break
 
             imports |= set(get_imports_from_children(first_child.children[3:]))
