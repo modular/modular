@@ -91,6 +91,9 @@ def _main() -> None:
 
     errors = []
     for file in all_test_files - lit_test_files:
+        if file.name == "pytest_runner.py":
+            continue
+
         directive = _get_lit_directives(file)
         if directive:
             filecheck_only = all(x.startswith("CHECK") for x in directive)

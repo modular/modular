@@ -21,6 +21,13 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "pytest_runner",
+    testonly = True,
+    srcs = ["pytest_runner.py"],
+    visibility = ["//visibility:public"],
+)
+
 alias(
     name = "uv",
     actual = select({
