@@ -28,7 +28,6 @@ def test_python_stack_trace_in_signal_handler():
         capture_output=True,
         text=True,
         timeout=10,
-        cwd=current_dir,  # Run from the test directory
     )
 
     print(f"Process exit code: {result.returncode}")

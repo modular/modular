@@ -1,23 +1,11 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 #
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-import os
 import sys
 
-# Add the current directory to Python path to find init_bindings
-current_dir = os.path.dirname(__file__)
-sys.path.insert(0, current_dir)
-
-try:
-    import init_bindings
-except ImportError as e:
-    print(f"Failed to import init_bindings: {e}", file=sys.stderr)
-    print(f"Python path: {sys.path}", file=sys.stderr)
-    print(f"Current working directory: {os.getcwd()}", file=sys.stderr)
-    sys.exit(1)
+import init_bindings
 
 
 def deep_function_3():

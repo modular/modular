@@ -28,4 +28,7 @@ modular_py_test(
         "test_script.py",
         ":init_bindings",
     ],
+    env = {
+        "PYTHONPATH": "Init/integration-test/python",
+    },
 )
