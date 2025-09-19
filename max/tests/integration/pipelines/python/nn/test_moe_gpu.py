@@ -79,7 +79,23 @@ def test_moe_create_indices() -> None:
 
         # check that tokens for the same expert are consecutive
         # this array should be monotonic increasing
-        assert np.all(experts_for_tokens == np.sort(experts_for_tokens))
+
+        current_expert = experts_for_tokens[0]
+        current_count = 1
+
+        unique_experts, counts = np.unique(
+            experts_for_tokens, return_counts=True
+        )
+        expert_counts = dict(zip(unique_experts, counts))
+
+        for exp in experts_for_tokens[1:]:
+            if exp != current_expert:
+                assert expert_counts[current_expert] == current_count
+                expert_counts[current_expert] = 0
+                current_expert = exp
+                current_count = 1
+            else:
+                current_count += 1
 
         # check output 2
         assert isinstance(results[2], Tensor)
@@ -100,26 +116,18 @@ def test_moe_create_indices() -> None:
         assert max_M_among_experts == np.max(bin_counts)
         assert num_experts_used == np.sum(bin_counts > 0)
 
-        # check output 1
-        assert isinstance(results[1], Tensor)
-        expert_start_indices = from_dlpack(results[1]).cpu().numpy()
-        # check that expert_offsets is the prefix sum of bin_counts
-        # Get indices of non-zero bin counts
-        non_zero_indices = np.nonzero(bin_counts)[0]
-        # Calculate cumulative sum of non-zero bin counts
-        cumsum_non_zero = np.cumsum(bin_counts[non_zero_indices])
-        # Create expected start indices
-        expected_indices = np.concatenate([[0], cumsum_non_zero])
-        # Verify expert_start_indices matches expected values
-        assert np.all(
-            expert_start_indices[: num_experts_used + 1] == expected_indices
-        )
-
-        # check output 3
-        assert isinstance(results[3], Tensor)
         expert_ids = from_dlpack(results[3]).cpu().numpy()
-        # it should be the non-zero bin_counts indices
-        assert np.all(expert_ids[:num_experts_used] == non_zero_indices)
+        expert_start_indices = from_dlpack(results[1]).cpu().numpy()
+
+        for i in range(num_experts_used):
+            start_idx = expert_start_indices[i]
+            end_idx = expert_start_indices[i + 1]
+
+            assert np.all(
+                experts_for_tokens[start_idx:end_idx] == expert_ids[i]
+            )
+
+        assert end_idx == NUM_TOKENS
 
     topk_ids_0 = torch.randint(
         0, NUM_EXPERTS, size=(2500,), dtype=torch.int32
