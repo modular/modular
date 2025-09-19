@@ -2257,9 +2257,15 @@ struct ConvertPOPCallToAIRIntrinsic
       return failure();
 
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(airFunctionName);
+
+    SmallVector<Value> newOperands =
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
     if (!func) {
       // Create LLVM function type from the intrinsic operation
-      SmallVector<Type> argTypes(adaptor.getOperands().getTypes());
+      SmallVector<Type> argTypes;
+      for (Value value : newOperands)
+        argTypes.push_back(value.getType());
+
       Type returnType = op.getResultTypes().empty()
                             ? LLVM::LLVMVoidType::get(op.getContext())
                             : types[0];
@@ -2273,7 +2279,7 @@ struct ConvertPOPCallToAIRIntrinsic
       symtab.insert(func);
     }
     // Replace the intrinsic call with a regular function call
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, adaptor.getOperands());
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, newOperands);
     return success();
   }
 };
