@@ -299,19 +299,26 @@ class SpeculativeDecodingTextGenerationPipeline(
         draft_hf_repo = (
             self.pipeline_config.draft_model_config.huggingface_weight_repo
         )
-        encodings = draft_hf_repo.supported_encodings
-        if not encodings:
-            raise ValueError(
-                "could not identify supported encodings for draft model."
-            )
 
-        if len(encodings) > 1:
-            raise ValueError(
-                "repos that only support one encoding, currently supported for draft model."
+        # Use the quantization_encoding from draft_model_config if provided
+        if self.pipeline_config.draft_model_config.quantization_encoding:
+            draft_encoding = (
+                self.pipeline_config.draft_model_config.quantization_encoding
             )
+        else:
+            # Fall back to first supported encoding if not specified
+            encodings = draft_hf_repo.supported_encodings
+            if not encodings:
+                raise ValueError(
+                    "could not identify supported encodings for draft model."
+                )
+            logger.warning(
+                f"using first supported encoding for draft model: {encodings[0]}"
+            )
+            draft_encoding = encodings[0]
 
         # Get weight files
-        weight_files = draft_hf_repo.files_for_encoding(encoding=encodings[0])
+        weight_files = draft_hf_repo.files_for_encoding(encoding=draft_encoding)
 
         if not weight_files:
             raise ValueError("could not identify weight_files for draft model.")
@@ -343,7 +350,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             pipeline_config=self.pipeline_config,
             session=draft_session,
             huggingface_config=draft_config,
-            encoding=encodings[0],
+            encoding=draft_encoding,
             devices=self.draft_devices,
             kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
             weights=draft_weights,
