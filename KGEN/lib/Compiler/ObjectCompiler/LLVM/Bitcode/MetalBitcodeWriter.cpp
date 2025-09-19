@@ -693,6 +693,7 @@ static void writeStringRecord(BitstreamWriter &Stream, unsigned Code,
 uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
   switch (Kind) {
   default:
+  case Attribute::Captures:
     // Return 0 for unknown attributes (newer LLVM attributes not supported
     // in 5.0)
     return M::KGEN::UNSUPPORTED_ATTR_KIND_ENCODING;
@@ -889,8 +890,6 @@ uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
     return bitc::ATTR_KIND_INITIALIZES;
   case Attribute::NoExt:
     return bitc::ATTR_KIND_NO_EXT;
-  case Attribute::Captures:
-    return bitc::ATTR_KIND_CAPTURES;
   case Attribute::DeadOnReturn:
     return bitc::ATTR_KIND_DEAD_ON_RETURN;
   case Attribute::EndAttrKinds:
@@ -1001,7 +1000,10 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
       }
     }
 
-    Stream.EmitRecord(bitc::PARAMATTR_GRP_CODE_ENTRY, Record);
+    if (Record.size() > 2) {
+      // Nothing was added to the record. Don't emit it
+      Stream.EmitRecord(bitc::PARAMATTR_GRP_CODE_ENTRY, Record);
+    }
     Record.clear();
   }
 

@@ -264,11 +264,11 @@ static void replaceWithBitcast(Module &module, Value *value) {
   }
 }
 
-// append a single instruction's pointer return value with a no-op bitcast
+/// append a single instruction's pointer return value with a no-op bitcast
+/// FIXME: Revisit the need of this function
 static void appendBitcast(Module &module, Instruction *inst) {
   assert(inst->getType()->isPtrOrPtrVectorTy() &&
          "Expected a pointer-returning instruction");
-
   // Create a true no-op bitcast (same type to same type)
   Instruction *cst =
       CastInst::Create(Instruction::BitCast, inst, inst->getType());
@@ -337,6 +337,16 @@ static bool bitcastInstructionOperands(Module &module) {
       prependBitcast(module, gep, gep->getPointerOperandIndex());
       appendBitcast(module, gep);
     } else if (auto *alloca = dyn_cast<AllocaInst>(inst)) {
+      if (llvm::any_of(alloca->users(), [](User *user) {
+            auto *intr = dyn_cast<IntrinsicInst>(user);
+            return intr &&
+                   (intr->getIntrinsicID() == Intrinsic::lifetime_start ||
+                    intr->getIntrinsicID() == Intrinsic::lifetime_end);
+          })) {
+        // LLVM verifies that pointer of lifetime.start/lifetime.end comes
+        // directly from alloca
+        continue;
+      }
       appendBitcast(module, alloca);
     } else
       llvm_unreachable("Unhandled instruction");
