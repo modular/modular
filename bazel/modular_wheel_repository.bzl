@@ -56,6 +56,7 @@ load("@rules_python//python:defs.bzl", "py_library")
 # depend on some closed-source portions of the wheel.
 _OPEN_SOURCE_GLOBS = [
     "modular/lib/mojo/*",
+    "max/diagnostics/**",
     "max/entrypoints/**",
     "max/graph/**",
     "max/nn/**",

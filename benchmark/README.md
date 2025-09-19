@@ -19,7 +19,7 @@ Key features:
 > [vLLM](https://github.com/vllm-project/vllm/blob/main/benchmarks),
 > licensed under Apache 2.0. We forked this script to ensure consistency with
 > vLLM's measurement methodology and extended it with features we found helpful,
-> such as client-side NVIDIA GPU metric collection via `nvitop`.
+> such as client-side GPU metric collection via `max.diagnostics`.
 
 ## Table of contents
 

@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "diagnostics",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("msgspec"),
+        requirement("taskgroup"),
+        requirement("typing-extensions"),
+    ],
+)

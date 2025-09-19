@@ -17,15 +17,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import ctypes
+import contextlib
 import itertools
 import json
 import logging
 import math
 import os
-import platform
 import random
 import resource
+import statistics
 import sys
 import time
 import traceback
@@ -34,7 +34,7 @@ from collections.abc import AsyncGenerator, Awaitable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 from urllib.parse import urlparse
 
 import aiohttp
@@ -45,6 +45,10 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
+
+if TYPE_CHECKING:
+    from max.diagnostics.gpu import BackgroundRecorder as GPUBackgroundRecorder
+    from max.diagnostics.gpu import GPUStats
 
 try:
     from .benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
@@ -115,38 +119,6 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
 )
 
 logger = logging.getLogger("benchmark_serving")
-
-
-# TODO: This should be refactored into a common utility lib so it can be reused
-# in other internal benchmarking tools.
-def is_nvml_available() -> bool:
-    """Check if NVML (NVIDIA Management Library) is available on the system.
-
-    Returns:
-        bool: True if NVML is available, False otherwise.
-    """
-    try:
-        if platform.system() == "Linux":
-            # Try to load libnvidia-ml.so.1
-            try:
-                ctypes.CDLL("libnvidia-ml.so.1")
-                return True
-            except OSError:
-                return False
-        elif platform.system() == "Windows":
-            # Try to load nvml.dll
-            try:
-                ctypes.CDLL("nvml.dll")
-                return True
-            except OSError:
-                return False
-        elif platform.system() == "Darwin":
-            # macOS doesn't support NVML
-            return False
-        else:
-            return False
-    except Exception:
-        return False
 
 
 @dataclass
@@ -629,7 +601,7 @@ def calculate_metrics(
     outputs: list[RequestFuncOutput],
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
-    gpu_metrics: dict[str, Any],
+    gpu_metrics: list[dict[str, GPUStats]] | None,
     cpu_metrics: dict[str, Any],
     skip_first_n_requests: int,
     max_concurrency: Optional[int],
@@ -724,34 +696,35 @@ def calculate_metrics(
     peak_gpu_memory_mib = []
     available_gpu_memory_mib = []
     gpu_utilization = []
-    if collect_gpu_stats:
-        if is_nvml_available():
-            from nvitop import Device
+    if collect_gpu_stats and gpu_metrics:
+        # Simplification: We assume that whatever devices are available at the
+        # start of benchmarking stays the same throughout the run.  If someone
+        # is hotplugging GPUs during a benchmark this may not be true, but that
+        # doesn't seem likely.
+        all_devices = list(gpu_metrics[0].keys())
+        if not all_devices:
+            logger.warning("No GPUs found, so there are no GPU stats to report")
 
-            device_count = Device.count()
-        else:
-            logger.warning("NVML not available, skipping GPU stats collection")
-            device_count = 0
-
-        for i in range(device_count):
+        BYTES_PER_MIB = 1024 * 1024
+        for device_name in all_devices:
             peak_gpu_memory_mib.append(
-                float(
-                    gpu_metrics.get(f"benchmark/gpu:{i}/memory_used (MiB)/max")
-                    or 0
+                max(
+                    snapshot[device_name].memory.used_bytes
+                    for snapshot in gpu_metrics
                 )
+                / BYTES_PER_MIB
             )
             available_gpu_memory_mib.append(
-                float(
-                    gpu_metrics.get(f"benchmark/gpu:{i}/memory_free (MiB)/min")
-                    or 0
+                min(
+                    snapshot[device_name].memory.free_bytes
+                    for snapshot in gpu_metrics
                 )
+                / BYTES_PER_MIB
             )
             gpu_utilization.append(
-                float(
-                    gpu_metrics.get(
-                        f"benchmark/gpu:{i}/gpu_utilization (%)/mean"
-                    )
-                    or 0
+                statistics.mean(
+                    snapshot[device_name].utilization.gpu_usage_percent
+                    for snapshot in gpu_metrics
                 )
             )
 
@@ -1002,50 +975,119 @@ async def benchmark(
     #                 if max_concurrency else contextlib.nullcontext())
     semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
 
-    gpu_collector = None
-    if collect_gpu_stats:
-        if is_nvml_available():
-            from nvitop import ResourceMetricCollector
+    with contextlib.ExitStack() as benchmark_stack:
+        gpu_recorder: GPUBackgroundRecorder | None = None
+        if collect_gpu_stats:
+            try:
+                from max.diagnostics.gpu import BackgroundRecorder
+            except ImportError:
+                logger.warning(
+                    "max.diagnostics not available, skipping GPU stats collection"
+                )
+            else:
+                gpu_recorder = benchmark_stack.enter_context(
+                    BackgroundRecorder()
+                )
 
-            gpu_collector = ResourceMetricCollector()
-            gpu_collector.start("benchmark")
+        cpu_collector = None
+        if collect_cpu_stats:
+            try:
+                pids = collect_pids_for_port(
+                    int(urlparse(api_url).port or 8000)
+                )
+                cpu_collector = CpuMetricsCollector(pids)
+                cpu_collector.start()
+            except:
+                logger.warning(
+                    "Cannot access max-serve PIDs, skipping CPU stats collection"
+                )
+
+        benchmark_start_time = time.perf_counter_ns()
+        if max_benchmark_duration_s is None:
+            benchmark_should_end_time = None
         else:
-            logger.warning("NVML not available, skipping GPU stats collection")
+            benchmark_should_end_time = (
+                benchmark_start_time + max_benchmark_duration_s * 1e9
+            )
+        tasks: list[asyncio.Task] = []  # type: ignore[type-arg, unused-ignore]
+        outputs: list[RequestFuncOutput] = []
+        if not num_chat_sessions:
+            # single-turn chat scenario
+            if timing_data is None:
+                timing_data = {}
+            pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
-    cpu_collector = None
-    if collect_cpu_stats:
-        try:
-            pids = collect_pids_for_port(int(urlparse(api_url).port or 8000))
-            cpu_collector = CpuMetricsCollector(pids)
-            cpu_collector.start()
-        except:
-            logger.warning(
-                "Cannot access max-serve PIDs, skipping CPU stats collection"
+            async def limited_request_func(
+                request_func_input: RequestFuncInput,
+            ) -> RequestFuncOutput:
+                if semaphore is None:
+                    return await request_func(
+                        request_func_input=request_func_input, pbar=pbar
+                    )
+                async with semaphore:
+                    if benchmark_should_end_time is not None:
+                        if time.perf_counter_ns() >= benchmark_should_end_time:
+                            return RequestFuncOutput(cancelled=True)
+                    return await request_func(
+                        request_func_input=request_func_input, pbar=pbar
+                    )
+
+            async for request in get_request(
+                input_requests, request_rate, timing_data, burstiness
+            ):
+                # If the request length is pinned, then we use ignore_eos+max_tokens
+                # to force the model's hand into the given request length. Otherwise,
+                # we run until the model generates EOS. Letting the model choose
+                # request lengths has some downsides (e.g., benchmarking is
+                # vulnerable to correctness bugs or even minor optimizations), but
+                # sometimes necessary if we have no other way to set the appropriate
+                # distribution of output lengths.
+                ignore_eos = request.output_len is not None
+                max_tokens = min_ignore_none(
+                    (request.output_len, max_output_len)
+                )
+
+                request_func_input = RequestFuncInput(
+                    model=model_id,
+                    lora=lora_id,
+                    prompt=request.prompt_formatted,
+                    api_url=api_url,
+                    prompt_len=request.prompt_len,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    ignore_eos=ignore_eos,
+                    img=request.encoded_img,
+                )
+                tasks.append(
+                    asyncio.create_task(
+                        limited_request_func(request_func_input)
+                    )
+                )
+            outputs = await asyncio.gather(*tasks)
+
+        else:
+            # multi-turn chat scenario
+            if disable_tqdm:
+                pbar = None
+            else:
+                num_qa_turns = [
+                    (len(session.messages) // 2) for session in chat_sessions
+                ]
+                pbar = tqdm(total=sum(num_qa_turns))
+
+            # Track total sent requests among chat sessions
+            request_counter = RequestCounter(
+                max_requests=max_requests,
+                req_counter_lock=asyncio.Lock(),
+                total_sent_requests=0,
             )
 
-    benchmark_start_time = time.perf_counter_ns()
-    if max_benchmark_duration_s is None:
-        benchmark_should_end_time = None
-    else:
-        benchmark_should_end_time = (
-            benchmark_start_time + max_benchmark_duration_s * 1e9
-        )
-    tasks: list[asyncio.Task] = []  # type: ignore[type-arg, unused-ignore]
-    outputs: list[RequestFuncOutput] = []
-    if not num_chat_sessions:
-        # single-turn chat scenario
-        if timing_data is None:
-            timing_data = {}
-        pbar = None if disable_tqdm else tqdm(total=len(input_requests))
-
-        async def limited_request_func(
-            request_func_input: RequestFuncInput,
-        ) -> RequestFuncOutput:
-            if semaphore is None:
-                return await request_func(
-                    request_func_input=request_func_input, pbar=pbar
-                )
-            async with semaphore:
+            # Limit the request function only to deal with timeouts.
+            async def limited_request_func(
+                request_func_input: RequestFuncInput,
+            ) -> RequestFuncOutput:
                 if benchmark_should_end_time is not None:
                     if time.perf_counter_ns() >= benchmark_should_end_time:
                         return RequestFuncOutput(cancelled=True)
@@ -1053,116 +1095,63 @@ async def benchmark(
                     request_func_input=request_func_input, pbar=pbar
                 )
 
-        async for request in get_request(
-            input_requests, request_rate, timing_data, burstiness
-        ):
-            # If the request length is pinned, then we use ignore_eos+max_tokens
-            # to force the model's hand into the given request length. Otherwise,
-            # we run until the model generates EOS. Letting the model choose
-            # request lengths has some downsides (e.g., benchmarking is
-            # vulnerable to correctness bugs or even minor optimizations), but
-            # sometimes necessary if we have no other way to set the appropriate
-            # distribution of output lengths.
-            ignore_eos = request.output_len is not None
-            max_tokens = min_ignore_none((request.output_len, max_output_len))
+            # apply the semaphore at the session level
+            # ex: with max_concurrency = 1,
+            # the first session finishes before the second session starts
+            async def limited_chat_session_driver(
+                chat_session: ChatSession,
+            ) -> list[RequestFuncOutput]:
+                if semaphore is None:
+                    return await chat_session_driver(
+                        model_id,
+                        lora_id,
+                        api_url,
+                        limited_request_func,
+                        request_counter,
+                        chat_session,
+                        tokenizer.model_max_length,
+                        delay_between_chat_turns,
+                        skip_first_n_requests,
+                        ignore_first_turn_stats,
+                    )
+                async with semaphore:
+                    return await chat_session_driver(
+                        model_id,
+                        lora_id,
+                        api_url,
+                        limited_request_func,
+                        request_counter,
+                        chat_session,
+                        tokenizer.model_max_length,
+                        delay_between_chat_turns,
+                        skip_first_n_requests,
+                        ignore_first_turn_stats,
+                    )
 
-            request_func_input = RequestFuncInput(
-                model=model_id,
-                lora=lora_id,
-                prompt=request.prompt_formatted,
-                api_url=api_url,
-                prompt_len=request.prompt_len,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                ignore_eos=ignore_eos,
-                img=request.encoded_img,
-            )
-            tasks.append(
-                asyncio.create_task(limited_request_func(request_func_input))
-            )
-        outputs = await asyncio.gather(*tasks)
+            for idx, chat_session in enumerate(chat_sessions):
+                if (
+                    warmup_delay_ms > 0
+                    and max_concurrency
+                    and idx < max_concurrency
+                ):
+                    await asyncio.sleep(warmup_delay_ms / 1000)
+                tasks.append(
+                    asyncio.create_task(
+                        limited_chat_session_driver(chat_session)
+                    )
+                )
 
-    else:
-        # multi-turn chat scenario
-        if disable_tqdm:
-            pbar = None
-        else:
-            num_qa_turns = [
-                (len(session.messages) // 2) for session in chat_sessions
+            session_outputs = await asyncio.gather(*tasks)
+            outputs = [
+                output for sublist in session_outputs for output in sublist
             ]
-            pbar = tqdm(total=sum(num_qa_turns))
 
-        # Track total sent requests among chat sessions
-        request_counter = RequestCounter(
-            max_requests=max_requests,
-            req_counter_lock=asyncio.Lock(),
-            total_sent_requests=0,
-        )
+        benchmark_duration = (
+            time.perf_counter_ns() - benchmark_start_time
+        ) / 1e9
 
-        # Limit the request function only to deal with timeouts.
-        async def limited_request_func(
-            request_func_input: RequestFuncInput,
-        ) -> RequestFuncOutput:
-            if benchmark_should_end_time is not None:
-                if time.perf_counter_ns() >= benchmark_should_end_time:
-                    return RequestFuncOutput(cancelled=True)
-            return await request_func(
-                request_func_input=request_func_input, pbar=pbar
-            )
-
-        # apply the semaphore at the session level
-        # ex: with max_concurrency = 1,
-        # the first session finishes before the second session starts
-        async def limited_chat_session_driver(
-            chat_session: ChatSession,
-        ) -> list[RequestFuncOutput]:
-            if semaphore is None:
-                return await chat_session_driver(
-                    model_id,
-                    lora_id,
-                    api_url,
-                    limited_request_func,
-                    request_counter,
-                    chat_session,
-                    tokenizer.model_max_length,
-                    delay_between_chat_turns,
-                    skip_first_n_requests,
-                    ignore_first_turn_stats,
-                )
-            async with semaphore:
-                return await chat_session_driver(
-                    model_id,
-                    lora_id,
-                    api_url,
-                    limited_request_func,
-                    request_counter,
-                    chat_session,
-                    tokenizer.model_max_length,
-                    delay_between_chat_turns,
-                    skip_first_n_requests,
-                    ignore_first_turn_stats,
-                )
-
-        for idx, chat_session in enumerate(chat_sessions):
-            if (
-                warmup_delay_ms > 0
-                and max_concurrency
-                and idx < max_concurrency
-            ):
-                await asyncio.sleep(warmup_delay_ms / 1000)
-            tasks.append(
-                asyncio.create_task(limited_chat_session_driver(chat_session))
-            )
-
-        session_outputs = await asyncio.gather(*tasks)
-        outputs = [output for sublist in session_outputs for output in sublist]
-
-    if pbar is not None:
-        pbar.close()
-
-    benchmark_duration = (time.perf_counter_ns() - benchmark_start_time) / 1e9
+        if pbar is not None:
+            pbar.close()
 
     if print_inputs_and_outputs:
         print("Generated output text:")
@@ -1176,14 +1165,9 @@ async def benchmark(
                 }
             )
 
-    if collect_gpu_stats and gpu_collector is not None:
-        gpu_metrics = gpu_collector.collect()
-        gpu_collector.stop()
-        # Delete the gpu_collector.
-        # Leaving it to be cleaned up later can lead to segfaults.
-        del gpu_collector
-    else:
-        gpu_metrics = {}
+    gpu_metrics: list[dict[str, GPUStats]] | None = None
+    if collect_gpu_stats and gpu_recorder is not None:
+        gpu_metrics = gpu_recorder.stats
 
     if collect_cpu_stats and cpu_collector is not None:
         cpu_collector.stop()
