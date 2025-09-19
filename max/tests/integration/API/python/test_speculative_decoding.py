@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
 from max.driver import DeviceSpec, Tensor
-from max.interfaces import PipelineTokenizer, TextGenerationInputs
+from max.interfaces import PipelineTokenizer, RequestID, TextGenerationInputs
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
@@ -494,3 +495,87 @@ def test_speculative_decoding_context_update(
             (draft_tokens[1, :reject_token2_idx], bonus_tokens[1])
         )
     )
+
+
+def test_kv_cache_claiming_protocol():
+    """Test that external_claim is called before fetch in prepare_batch."""
+    model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
+    pipeline_config = PipelineConfig(
+        model_path=model_name,
+        quantization_encoding=SupportedEncoding.float32,
+        device_specs=[DeviceSpec.accelerator()],
+        draft_model_path=model_name,
+        max_batch_size=4,
+        max_num_steps=5,
+        max_length=1024,
+    )
+    pipeline_config.model_config.kv_cache_config.cache_strategy = (
+        KVCacheStrategy.PAGED
+    )
+    pipeline_config.model_config.kv_cache_config.kv_cache_page_size = 128
+    pipeline_config.model_config.kv_cache_config.device_memory_utilization = 0.3
+
+    tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    assert isinstance(pipeline, SpeculativeDecodingTextGenerationPipeline)
+
+    # Create a test context
+    req_id = "test_request"
+    tokens = np.array([1, 450, 6593], dtype=np.int64)
+    context = TextContext(tokens=tokens, max_length=1024)
+    context.request_id = req_id
+    batch = [context]
+
+    # Mock the KV cache manager to track method calls
+    mock_kv_manager = Mock()
+    mock_kv_manager.contains.return_value = False  # Simulate new request
+    mock_kv_manager.fetch.return_value = []
+
+    # Track call order
+    call_order = []
+
+    def track_external_claim(request_id: RequestID):
+        call_order.append(("external_claim", request_id))
+
+    def track_fetch(batch: dict[RequestID, TextContext], num_steps: int):
+        call_order.append(
+            ("fetch", [ctx.request_id for ctx in batch], num_steps)  # type: ignore
+        )
+        return []
+
+    mock_kv_manager.external_claim.side_effect = track_external_claim
+    mock_kv_manager.fetch.side_effect = track_fetch
+
+    # Replace the KV manager in both models
+    with patch.object(pipeline._draft_model, "kv_manager", mock_kv_manager):
+        with patch.object(
+            pipeline._target_model, "kv_manager", mock_kv_manager
+        ):
+            # Call prepare_batch for draft model
+            pipeline.prepare_batch(
+                pipeline._draft_model,
+                batch,
+                num_steps=3,
+                return_n_logits=1,
+                is_draft=True,
+            )
+
+            # Verify that external_claim was called before fetch
+            assert len(call_order) >= 2, (
+                f"Expected at least 2 calls, got {len(call_order)}: {call_order}"
+            )
+
+            # Check that external_claim was called first
+            first_call = call_order[0]
+            assert first_call[0] == "external_claim", (
+                f"First call should be external_claim, got {first_call[0]}"
+            )
+            assert first_call[1] == req_id, (
+                f"external_claim should be called with request_id {req_id}, got {first_call[1]}"
+            )
+
+            # Check that fetch was called after external_claim
+            fetch_calls = [call for call in call_order if call[0] == "fetch"]
+            assert len(fetch_calls) > 0, "fetch should have been called"
+
+            # Verify contains was called to check if request was already claimed
+            mock_kv_manager.contains.assert_called_with(req_id)
