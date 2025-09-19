@@ -54,12 +54,12 @@ trait Iterator(Copyable, Movable):
 
         Example:
         ```mojo
-        fn build_list[I: Iterator & Iterable](iter: I) -> List[I.Element]:
+        fn to_int_list[I: Iterable](iter: I) -> List[Int]:
             var lower, _upper = iter.bounds()
-            var list = List[I.Element](capacity=lower)
+            var list = List[Int](capacity=lower)
             for element in iter:
-                list.append(element^)
-            return list
+                list.append(rebind[Int](element))
+            return list^
         ```
         """
         return (0, None)
