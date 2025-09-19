@@ -24,6 +24,7 @@ from math import (
     exp,
     floor,
     fma,
+    gcd,
     iota,
     isqrt,
     log,
@@ -33,7 +34,7 @@ from math import (
     tanh,
 )
 from random import randn, seed
-from sys import external_call, llvm_intrinsic
+from sys import external_call, llvm_intrinsic, align_of
 from sys.info import simd_width_of, size_of
 from sys.intrinsics import _type_is_eq
 
@@ -2178,11 +2179,44 @@ struct SliceDim:
         return tuple_to_dimlist(new_strides)
 
     @staticmethod
+    fn get_view_alignment[
+        rank: Int, dtype: DType
+    ](
+        input_strides: DimList,
+        axis: Int,
+        input_alignment: Int,
+        start: Dim,
+        step: Dim,
+    ) -> Int:
+        # Ignore the case where the step is unknown / negative.
+        if not step.has_value() or step.get() < 0:
+            return 1
+
+        if axis == rank - 1:
+            # Slicing the inner-most dimension
+            # We need to know the exact offset to compute the alignment
+            if not start.has_value():
+                return 1
+
+            var offset = start.get() * step.get() * align_of[dtype]()
+            # Check if the offset is aligned
+            return gcd(input_alignment, offset)
+
+        else:
+            # Check if the inner-most dimension is aligned
+            var stride = input_strides.at[rank - 1]()
+            if not stride.has_value():
+                return 1
+            var offset = stride.get() * align_of[dtype]()
+            return gcd(input_alignment, offset)
+
+    @staticmethod
     fn update_input_view[
         dtype: DType,
         rank: Int, //,
         output_static_shape: DimList,
         axis: Int,
+        static_start: DimList,
         static_step: DimList,
     ](
         input: InputTensor[dtype=dtype, rank=rank],
@@ -2193,9 +2227,16 @@ struct SliceDim:
             static_spec = input.static_spec.with_layout_and_alignment[rank](
                 output_static_shape,
                 Self.get_view_strides[rank, axis](
-                    input._static_strides, static_step.at[0]()
+                    input._static_strides,
+                    static_step.at[0](),
                 ),
-                1,
+                Self.get_view_alignment[rank, dtype](
+                    input._static_strides,
+                    axis,
+                    input.alignment,
+                    static_start.at[0](),
+                    static_step.at[0](),
+                ),
             )
         ],
     ):
@@ -2223,6 +2264,7 @@ struct SliceDim:
         dtype: DType,
         rank: Int,
         axis: Int,
+        static_start: DimList,
         static_step: DimList,
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
@@ -2233,7 +2275,7 @@ struct SliceDim:
         ctx: DeviceContextPtr,
     ) raises:
         var view_tensor = Self.update_input_view[
-            output._static_shape, axis, static_step
+            output._static_shape, axis, static_start, static_step
         ](input, starts, stops, steps)
 
         view_copy_impl[

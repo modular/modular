@@ -16,8 +16,8 @@ the underlying data. This type is used to build custom graph operations.
 """
 from collections import OptionalReg
 from math import ceil, fma
-from sys import align_of, simd_width_of
-from sys.info import is_gpu
+from sys import align_of, simd_width_of, size_of
+from sys.info import is_gpu, CompilationTarget
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
@@ -1322,8 +1322,20 @@ struct VariadicTensors[
 
 @doc_private
 fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
+    """Get the simd width used in lambda functions.
+
+    For non-simd arch like GPU, this is the width in terms of number of elements
+    used per load/store instruction.
+    """
+
     @parameter
     if _is_gpu[target]():
+        # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
+        # arch support 32B load/store to global memory, see KERN-2037.
+        @parameter
+        if CompilationTarget[get_gpu_target()]._is_arch["sm_100a"]():
+            return 32 // size_of[dtype]()
+
         return simd_width_of[dtype, target = get_gpu_target()]()
 
     return simd_width_of[dtype]()
