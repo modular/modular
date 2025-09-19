@@ -1,6 +1,11 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | kgen-opt -allow-unregistered-dialect | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
+// CHECK-DAG: #[[LOC1:.+]] = loc("test.mojo":5:10)
+#loc1 = loc("test.mojo":5:10)
+// CHECK-DAG: #[[LOC2:.+]] = loc("test.mojo":6:15)
+#loc2 = loc("test.mojo":6:15)
+
 // CHECK-LABEL: "pog.metadata"
 // CHECK-SAME: pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
 // CHECK-SAME: pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
@@ -49,18 +54,60 @@
   >
 } : () -> ()
 
-// CHECK-LABEL: "some.metadata"
+// CHECK-LABEL: "empty.metadata"
+// CHECK-SAME: #lit.fn_metadata<<[], [], []>, 0>
+"empty.metadata"() {metadata = #lit.fn_metadata<<[], [], []>, 0>} : () -> ()
+
+// CHECK-LABEL: "some.metadata1"
 // CHECK-SAME: #lit.fn_metadata
 // CHECK-SAME: <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
 // CHECK-SAME: 2, {mut lt}>
-"some.metadata"() {metadata = #lit.fn_metadata<
+"some.metadata1"() {metadata = #lit.fn_metadata<
   <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
   2, {mut lt}
 >} : () -> ()
 
-// CHECK-LABEL: "empty.metadata"
-// CHECK-SAME: #lit.fn_metadata<<[], [], []>, 0>
-"empty.metadata"() {metadata = #lit.fn_metadata<<[], [], []>, 0>} : () -> ()
+// CHECK-LABEL: "some.metadata2"
+// CHECK-SAME: 2, {mut lt}, true>
+"some.metadata2"() {metadata = #lit.fn_metadata<
+  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  2, {mut lt}, true
+>} : () -> ()
+
+// CHECK-LABEL: "some.metadata3"
+// CHECK-SAME: 2, true>
+"some.metadata3"() {metadata = #lit.fn_metadata<
+  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  2, true
+>} : () -> ()
+
+// CHECK-LABEL: "some.metadata4"
+// CHECK-SAME: 2, false>
+"some.metadata4"() {metadata = #lit.fn_metadata<
+  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  2, false
+>} : () -> ()
+
+// CHECK-LABEL: "some.metadata5"
+// CHECK-SAME: 2 where {<1, #[[LOC1]], "First constraint">, <0, #[[LOC2]], "Second constraint">}
+"some.metadata5"() {metadata = #lit.fn_metadata<
+  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  2 where {<1, #loc1, "First constraint">, <0, #loc2, "Second constraint">}
+>} : () -> ()
+
+// CHECK-LABEL: "some.metadata6"
+// CHECK-SAME: 2, false where {<1, #[[LOC1]], "First constraint">, <0, #[[LOC2]], "Second constraint">}
+"some.metadata6"() {metadata = #lit.fn_metadata<
+  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  2, false where {<1, #loc1, "First constraint">, <0, #loc2, "Second constraint">}
+>} : () -> ()
+
+// CHECK-LABEL: "some.metadata7"
+// CHECK-SAME: 2, {mut lt} where {<1, #[[LOC1]], "First constraint">, <0, #[[LOC2]], "Second constraint">}
+"some.metadata7"() {metadata = #lit.fn_metadata<
+  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  2, {mut lt} where {<1, #loc1, "First constraint">, <0, #loc2, "Second constraint">}
+>} : () -> ()
 
 // CHECK-LABEL: "none.type"
 // CHECK-SAME: #kgen.none : !kgen.none

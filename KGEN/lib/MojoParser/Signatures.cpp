@@ -2275,7 +2275,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
       getOriginsAccessibleByParams(paramList.getParamListAttr(),
                                    paramList.paramDeclAttrs, paramList.shared,
                                    captureOrigins),
-      isNestedOriginExclusivityCheckingDisabled);
+      isNestedOriginExclusivityCheckingDisabled, /*constraints=*/{});
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.

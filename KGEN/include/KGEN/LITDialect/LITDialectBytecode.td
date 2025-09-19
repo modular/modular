@@ -123,7 +123,8 @@ def FnMetadataAttr : DialectAttribute<(attr
   ConcreteAttribute<"PogListAttr">:$argListAttrs,
   VarInt:$numImplicitOriginDecls,
   TypedAttr:$captureOrigins,
-  Bool:$isNestedOriginExclusivityCheckingDisabled
+  Bool:$isNestedOriginExclusivityCheckingDisabled,
+  ConcreteAttrArray<"ConstraintAttr">:$constraints
 )>;
 
 def DocStringAttr : DialectAttribute<(attr
