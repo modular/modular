@@ -77,7 +77,10 @@ fn _get_w_and_q_from_float_string(
     exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
     significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
-    prt_to_array = UnsafePointer(to=exponent)
+    alias array_ptr = Pointer[
+        __type_of(exponent), __origin_of(exponent, significand)
+    ]
+    prt_to_array = array_ptr(to=exponent)
     array_index = CONTAINER_SIZE
     buffer = input_string.unsafe_ptr()
 
@@ -110,11 +113,11 @@ fn _get_w_and_q_from_float_string(
             )
         if buffer[i] == ord_dot:
             dot_or_e_found = True
-            if prt_to_array == UnsafePointer(to=exponent):
+            if prt_to_array == array_ptr(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
                 significand = exponent
                 exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
-                prt_to_array = UnsafePointer(to=significand)
+                prt_to_array = array_ptr(to=significand)
 
             additional_exponent = CONTAINER_SIZE - array_index - 1
             # We don't want to progress in the significand array.
@@ -128,7 +131,7 @@ fn _get_w_and_q_from_float_string(
         elif buffer[i] == ord_e or buffer[i] == ord_E:
             dot_or_e_found = True
             # We finished writing the exponent.
-            prt_to_array = UnsafePointer(to=significand)
+            prt_to_array = array_ptr(to=significand)
             array_index = CONTAINER_SIZE
         elif (ord_0 <= buffer[i]) and (buffer[i] <= ord_9):
             prt_to_array[][array_index] = buffer[i]
