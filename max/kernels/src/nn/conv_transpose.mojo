@@ -485,8 +485,8 @@ struct ConvTransposedPacked[
         alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
             input_layout.rank() - 2,
-            output_layout.shape[output_layout.rank() - 2],  # WO
-            output_layout.shape[output_layout.rank() - 1],  # F
+            Int(output_layout.shape[output_layout.rank() - 2]),  # WO
+            Int(output_layout.shape[output_layout.rank() - 1]),  # F
             conv_attr,
             simd_size,
         ]()
