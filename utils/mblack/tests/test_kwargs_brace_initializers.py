@@ -4,30 +4,27 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""Test brace initializers with keyword arguments."""
+import mblack
+
+# Test cases focusing on the brace initializer expressions
+
+SOURCES = [
+    "obj{field=value}",
+    "obj{field1=value1, field2=value2}",
+    "result = foo{3, y=4}",  # Python-valid version
+    "x = SomeType{x=1, y=2}"
+]
+
+EXPECTED_OUTPUTS = [
+    "obj {field = value}\n",
+    "obj {field1 = value1, field2 = value2}\n",
+    "result = foo {3, y = 4}\n",
+    "x = SomeType {x = 1, y = 2}\n"
+]
 
 def test_brace_initializer_simple():
     """Test that brace initializer syntax can be parsed without errors."""
-    import mblack
 
-    # Test cases focusing on the brace initializer expressions
-    test_cases = [
-        "obj{field=value}",
-        "obj{field1=value1, field2=value2}",
-        "result = foo{3, y=4}",  # Python-valid version
-        "x = SomeType{x=1, y=2}"
-    ]
-
-    for source in test_cases:
-        try:
-            # Just verify it doesn't crash during formatting
-            mblack.format_str(source, mode=mblack.FileMode())
-            print(f"✓ Passed: {source}")
-        except Exception as e:
-            print(f"✗ Failed: {source} - {e}")
-            raise AssertionError(f"Failed to format: {source}")
-
-
-if __name__ == "__main__":
-    test_brace_initializer_simple()
-    print("All tests passed!")
+    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
+    for source, expected in zip(SOURCES, EXPECTED_OUTPUTS):
+        assert mblack.format_str(source, mode=mode) == expected

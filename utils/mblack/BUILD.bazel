@@ -40,7 +40,7 @@ modular_py_test(
     srcs = glob(
         ["tests/*.py"],
         exclude = [
-            # Super broken
+            # We don't support blackd or ipynb notebooks.
             "tests/test_blackd.py",
             "tests/test_ipynb.py",
         ],
