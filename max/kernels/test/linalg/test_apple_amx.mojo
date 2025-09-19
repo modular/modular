@@ -17,7 +17,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from linalg.apple_amx_intrinsics import *
+from linalg.arch.cpu.apple_amx_intrinsics import *
 from testing import *
 
 

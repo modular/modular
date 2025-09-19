@@ -24,9 +24,9 @@ from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
 from linalg.accumulate import _Accumulator
 from linalg.matmul import elementwise_epilogue_type
-from linalg.neon_intrinsics import _neon_dotprod_lane
+from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
 from linalg.utils import partition_work
-from linalg.vnni_intrinsics import (
+from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )

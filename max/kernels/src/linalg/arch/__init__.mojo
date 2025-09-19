@@ -10,21 +10,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-# REQUIRES: system-linux, intel_amx
-# RUN: %mojo-no-debug %s
-
-from sys import CompilationTarget
-
-from linalg.arch.cpu.intel_amx_intrinsics import init_intel_amx
-from testing import assert_true
-
-
-fn test_has_intel_amx() raises:
-    assert_true(CompilationTarget.is_linux())
-    assert_true(CompilationTarget.has_intel_amx())
-    assert_true(init_intel_amx())
-
-
-fn main() raises:
-    test_has_intel_amx()
+"""Provides architecture specific utility functions."""
