@@ -137,6 +137,11 @@ def read_data(subdir_name: str, name: str, data: bool = True) -> Tuple[str, str]
 def read_data_from_file(file_name: Path) -> Tuple[str, str]:
     with open(file_name, "r", encoding="utf8") as test:
         lines = test.readlines()
+
+    # We added a proprietary header to our files, so we need to skip it.
+    if lines[2].startswith("# This file is Modular Inc proprietary."):
+        lines = lines[14:]
+
     _input: List[str] = []
     _output: List[str] = []
     result = _input

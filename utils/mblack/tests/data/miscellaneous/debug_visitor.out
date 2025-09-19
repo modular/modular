@@ -122,7 +122,7 @@ file_input
                 term
                   STRING
  ' '
- "' '"
+ '" "'
                   STAR
  ' '
  '*'
@@ -230,7 +230,7 @@ file_input
  '('
                       arglist
                         STRING
- "f'{indent}{_type}'"
+ 'f"{indent}{_type}"'
                         COMMA
  ','
                         argument
@@ -240,7 +240,7 @@ file_input
                           EQUAL
  '='
                           STRING
- "'yellow'"
+ '"yellow"'
                         /argument
                       /arglist
                       RPAR
@@ -371,7 +371,7 @@ file_input
  '('
                       arglist
                         STRING
- "f'{indent}/{_type}'"
+ 'f"{indent}/{_type}"'
                         COMMA
  ','
                         argument
@@ -381,7 +381,7 @@ file_input
                           EQUAL
  '='
                           STRING
- "'yellow'"
+ '"yellow"'
                         /argument
                         COMMA
  ','
@@ -495,7 +495,7 @@ file_input
  '('
                       arglist
                         STRING
- "f'{indent}{_type}'"
+ 'f"{indent}{_type}"'
                         COMMA
  ','
                         argument
@@ -505,7 +505,7 @@ file_input
                           EQUAL
  '='
                           STRING
- "'blue'"
+ '"blue"'
                         /argument
                         COMMA
  ','
@@ -558,7 +558,7 @@ file_input
  '('
                           arglist
                             STRING
- "f' {node.prefix!r}'"
+ 'f" {node.prefix!r}"'
                             COMMA
  ','
                             argument
@@ -568,7 +568,7 @@ file_input
                               EQUAL
  '='
                               STRING
- "'green'"
+ '"green"'
                             /argument
                             COMMA
  ','
@@ -614,7 +614,7 @@ file_input
  '('
                       arglist
                         STRING
- "f' {node.value!r}'"
+ 'f" {node.value!r}"'
                         COMMA
  ','
                         argument
@@ -624,7 +624,7 @@ file_input
                           EQUAL
  '='
                           STRING
- "'blue'"
+ '"blue"'
                         /argument
                         COMMA
  ','

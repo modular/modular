@@ -214,8 +214,6 @@ def _normalize(lineend: str, value: str) -> str:
 def stringify_ast(node: Union[ast.AST, ast3.AST], depth: int = 0) -> Iterator[str]:
     """Simple visitor generating strings to compare ASTs by content."""
 
-    node = fixup_ast_constants(node)
-
     yield f"{'  ' * depth}{node.__class__.__name__}("
 
     type_ignore_classes: Tuple[Type[Any], ...]
@@ -276,17 +274,3 @@ def stringify_ast(node: Union[ast.AST, ast3.AST], depth: int = 0) -> Iterator[st
             yield (f"{'  ' * (depth+2)}{normalized!r},  # {value.__class__.__name__}")
 
     yield f"{'  ' * depth})  # /{node.__class__.__name__}"
-
-
-def fixup_ast_constants(node: Union[ast.AST, ast3.AST]) -> Union[ast.AST, ast3.AST]:
-    """Map ast nodes deprecated in 3.8 to Constant."""
-    if isinstance(node, (ast.Str, ast3.Str, ast.Bytes, ast3.Bytes)):
-        return ast.Constant(value=node.s)
-
-    if isinstance(node, (ast.Num, ast3.Num)):
-        return ast.Constant(value=node.n)
-
-    if isinstance(node, (ast.NameConstant, ast3.NameConstant)):
-        return ast.Constant(value=node.value)
-
-    return node
