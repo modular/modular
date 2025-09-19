@@ -10,5 +10,6 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//SDK/lib/API/python/max/experimental",
+        "//SDK/lib/API/python/max/nn",
     ],
 )
