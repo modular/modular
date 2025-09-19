@@ -548,6 +548,7 @@ class VisionTransformer(Module):
         super().__init__()
 
         self.devices = config.devices
+        self.llm_dtype = config.llm_dtype
         self.spatial_merge_unit = (
             config.spatial_merge_size * config.spatial_merge_size
         )
@@ -699,6 +700,9 @@ class VisionTransformer(Module):
             for merger, h in zip(self.merger_shards, hs)
         ]
         merged = self.merger_allreduce(merged, signal_buffers)
+
+        # cast output to llm_dtype
+        merged = [h.cast(self.llm_dtype) for h in merged]
 
         # Re-order path embeddings (hidden_states) back to its original order before windowing.
         # TODO(GEX-1863): Implement ops.argsort
