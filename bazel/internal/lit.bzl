@@ -87,6 +87,7 @@ def _generate_site_cfg_impl(ctx):
         arguments = [ctx.file.src.path, tools_loader.path],
         inputs = [ctx.file.src, tools_loader],
         outputs = [combined_cfg],
+        use_default_shell_env = True,
     )
 
     ctx.actions.expand_template(
