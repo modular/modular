@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pytest
 import torch
 from max.driver import Accelerator, Device
 from max.dtype import DType
@@ -50,6 +51,10 @@ def generate_max_outputs(
         hidden_dim=config.hidden_size,
         num_experts=config.n_routed_experts,
         num_experts_per_token=config.num_experts_per_tok,
+        topk_method=config.topk_method,
+        n_group=config.n_group,
+        topk_group=config.topk_group,
+        routed_scaling_factor=config.routed_scaling_factor,
         dtype=DType.bfloat16,
     )
     model.load_state_dict(state_dict)
@@ -76,11 +81,20 @@ def generate_max_outputs(
     return max_topk_idxs, max_topk_weights
 
 
-def test_moe_gate(
+@pytest.mark.parametrize("topk_method", ["greedy", "group_limited_greedy"])
+def test_moe_gate_topk_methods(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
     dummy_moe_weight: torch.Tensor,
+    topk_method: str,
 ) -> None:
+    # Set the topk_method for the test
+    if topk_method != "greedy":  # greedy is the default in the config fixture
+        config.topk_method = topk_method
+        config.n_group = 8
+        config.topk_group = 3
+        config.routed_scaling_factor = 5.0
+
     torch_topk_idxs, torch_topk_weights = generate_torch_outputs(
         config, input_tensor, dummy_moe_weight, device="cuda"
     )
