@@ -264,21 +264,21 @@ struct LITLowerer {
   /// Lower LIT dialect operations in a function body.
   void lowerLITOps(FnOp func);
   /// Lower a lit.fn to kgen.generator.
-  LogicalResult lowerLITFunc(FnOp func, Block::iterator symTableIt,
+  LogicalResult lowerLITFunc(FnOp func, Block::iterator mainSymbolTablePosIter,
                              const Twine &parentPrefix);
-  LogicalResult lowerLITFunc(FnOp func, Block::iterator symTableIt,
+  LogicalResult lowerLITFunc(FnOp func, Block::iterator mainSymbolTablePosIter,
                              const Twine &parentPrefix,
                              ArrayRef<ParamDeclAttr> parentInputParams,
                              ArrayRef<VariadicKind> parentVariadics);
   /// Lower lit.struct.decl and its nested structures.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
-                                Block::iterator symTableIt);
+                                Block::iterator mainSymbolTablePosIter);
   /// Lower lit.trait.decl and its nested structures.
   LogicalResult lowerTraitDecl(TraitDeclOp traitDecl,
-                               Block::iterator symTableIt);
+                               Block::iterator mainSymbolTablePosIter);
   /// Lower the constructs within the body of a module decl.
   LogicalResult lowerModuleDecl(Block *moduleBody,
-                                Block::iterator symTableIt = {},
+                                Block::iterator mainSymbolTablePosIter = {},
                                 const Twine &parentPrefix = {});
 
   SymbolTable &getTopLevelSymbolTable() {
@@ -380,8 +380,9 @@ void LITLowerer::lowerLITOps(FnOp func) {
 /// Flatten the name of the given symbol operation and insert it in the given
 /// symbol table with that flattened name. Returns the flattened symbol name.
 template <typename T>
-static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
-                                         Block::iterator symbolTableIt) {
+static StringAttr
+flattenNameAndReinsertOp(T op, SymbolTable &symbolTable,
+                         Block::iterator mainSymbolTablePosIter) {
   auto mangled = MangledSymbol::mangle(op);
   StringAttr name = mangled.mangled;
   // No mangling occurred.
@@ -397,13 +398,15 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
     op->remove();
 
   op.setName(mangled.mangled);
-  symbolTable.insert(op, symbolTableIt);
+  symbolTable.insert(op, mainSymbolTablePosIter);
   return mangled.mangled;
 }
 
-LogicalResult LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
+LogicalResult LITLowerer::lowerLITFunc(FnOp func,
+                                       Block::iterator mainSymbolTablePosIter,
                                        const Twine &parentPrefix) {
-  return lowerLITFunc(func, symTableIt, parentPrefix, /*parentInputParams=*/{},
+  return lowerLITFunc(func, mainSymbolTablePosIter, parentPrefix,
+                      /*parentInputParams=*/{},
                       /*parentVariadics=*/{});
 }
 
@@ -411,14 +414,14 @@ LogicalResult LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
 /// If this is a method of a struct, the struct my have parameters indicated by
 /// parentInputParams.
 LogicalResult
-LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
+LITLowerer::lowerLITFunc(FnOp func, Block::iterator mainSymbolTablePosIter,
                          const Twine &parentPrefix,
                          ArrayRef<ParamDeclAttr> parentInputParams,
                          ArrayRef<VariadicKind> parentVariadics) {
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
-    StringAttr newName =
-        flattenAndRenameSymbol(func, getTopLevelSymbolTable(), symTableIt);
+    StringAttr newName = flattenNameAndReinsertOp(
+        func, getTopLevelSymbolTable(), mainSymbolTablePosIter);
 
     // If this function has a subprogram attached, update its information to
     // account for the new name.
@@ -507,11 +510,12 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
   func.erase();
 }
 
-LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
-                                          Block::iterator symTableIt) {
+LogicalResult
+LITLowerer::lowerStructDecl(StructDeclOp structDecl,
+                            Block::iterator mainSymbolTablePosIter) {
   // Update the name of this struct, incorporating any parents.
-  StringAttr structName =
-      flattenAndRenameSymbol(structDecl, getTopLevelSymbolTable(), symTableIt);
+  StringAttr structName = flattenNameAndReinsertOp(
+      structDecl, getTopLevelSymbolTable(), mainSymbolTablePosIter);
 
   // Build a StructGeneratorOp as its replacement.
   StructDecl info{};
@@ -580,18 +584,19 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
 
   getTopLevelSymbolTable().remove(structDecl);
   info.symRef = SymbolRefAttr::get(
-      getTopLevelSymbolTable().insert(structGen, symTableIt));
+      getTopLevelSymbolTable().insert(structGen, mainSymbolTablePosIter));
   getSymbolTableCollection().invalidateSymbolTable(structDecl);
   structDecl.erase();
   structDecls.structDecls.try_emplace(structName, std::move(info));
   return success();
 }
 
-LogicalResult LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
-                                         Block::iterator symTableIt) {
+LogicalResult
+LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
+                           Block::iterator mainSymbolTablePosIter) {
   // Update the name of this trait, incorporating any parents.
-  StringAttr traitName =
-      flattenAndRenameSymbol(traitDecl, getTopLevelSymbolTable(), symTableIt);
+  StringAttr traitName = flattenNameAndReinsertOp(
+      traitDecl, getTopLevelSymbolTable(), mainSymbolTablePosIter);
 
   // Process operations within the trait body.
   for (Operation &member : llvm::make_early_inc_range(
@@ -650,13 +655,14 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   return success();
 }
 
-LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
-                                          Block::iterator symTableIt,
-                                          const Twine &parentPrefix) {
-  bool isTopLevel = symTableIt == Block::iterator();
+LogicalResult
+LITLowerer::lowerModuleDecl(Block *moduleBody,
+                            Block::iterator mainSymbolTablePosIter,
+                            const Twine &parentPrefix) {
+  bool isTopLevel = mainSymbolTablePosIter == Block::iterator();
   for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
     // If we are already in the symbol table, use the the operations iterator.
-    auto opSymTableIt = isTopLevel ? op.getIterator() : symTableIt;
+    auto opSymTableIt = isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
 
     LogicalResult result =
         TypeSwitch<Operation *, LogicalResult>(&op)
@@ -702,8 +708,8 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
                   return mlir::success();
                 })
             .Case([&](mlir::SymbolOpInterface symbol) {
-              flattenAndRenameSymbol(symbol, getTopLevelSymbolTable(),
-                                     opSymTableIt);
+              flattenNameAndReinsertOp(symbol, getTopLevelSymbolTable(),
+                                       opSymTableIt);
               return mlir::success();
             })
             .Default(mlir::success());
