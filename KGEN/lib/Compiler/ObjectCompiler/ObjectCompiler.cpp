@@ -16,6 +16,7 @@
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
+#include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -1703,6 +1704,12 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
   std::vector<llvm::StringRef> metallibArgs = {
       xcrunPath,   "-sdk", "macosx",        "metallib",
       airTempFile, "-o",   metallibTempFile};
+
+  if (auto customAIR = KGENPassCLOptions::objectCompilerUseCustomAIR()) {
+    llvm::errs() << "WARNING: Using custom AIR file: " << customAIR << '\n';
+    metallibArgs = {xcrunPath,  "-sdk", "macosx",        "metallib",
+                    *customAIR, "-o",   metallibTempFile};
+  }
 
   std::string errorMsg;
   int result = llvm::sys::ExecuteAndWait(
