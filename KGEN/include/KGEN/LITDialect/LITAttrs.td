@@ -121,7 +121,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
   let description = [{
     The `#lit.pog_list` attribute contains metadata about an argument or
     parameter list of a function, including names, passing kinds, default
-    values, information about variadic arguments, and constraints on them.
+    values, and information about variadic arguments.
     The positional default values correspond to the trailing positional
     (i.e. pos-only or pos-or-kw) args/params, and the keyword-only default
     values similarly correspond to the trailing keyword-only args/params.
@@ -154,8 +154,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
     OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
     LIT_OptionalConventionParameter:$origPackConvention,
-    LIT_OptionalConventionParameter:$origVariadicConvention,
-    OptionalArrayRefParameter<"ConstraintAttr">:$constraints
+    LIT_OptionalConventionParameter:$origVariadicConvention
   );
 
   let assemblyFormat = [{
@@ -164,7 +163,6 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
         `[` (`]`) : ($defaultKwOnly^   `]`)?
         (`,` custom<ArgConvention>($origPackConvention)^)?
         (`,` custom<ArgConvention>($origVariadicConvention)^)?
-        (`{` $constraints^ `}`)?
     `>`
   }];
 
@@ -183,8 +181,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
                      "ArrayRef<VariadicKind>":$variadics,
                      "std::optional<ArgConvention>":$elementConventions,
-                     "std::optional<ArgConvention>":$origVariadicConvention,
-                     "ArrayRef<ConstraintAttr>":$constraints)>
+                     "std::optional<ArgConvention>":$origVariadicConvention)>
   ];
 
   let extraClassDeclaration = [{

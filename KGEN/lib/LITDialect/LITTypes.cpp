@@ -104,8 +104,7 @@ TypeSignatureType TypeSignatureType::remapToSignature(
                        remapper.replace(paramListAttrs.getDefaultPos()),
                        remapper.replace(paramListAttrs.getDefaultKwOnly()),
                        paramListAttrs.getOrigPackConvention(),
-                       paramListAttrs.getOrigVariadicConvention(),
-                       paramListAttrs.getConstraints());
+                       paramListAttrs.getOrigVariadicConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
 }
@@ -972,13 +971,17 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   SmallVector<PassingKind> argPassingKinds;
   passingKindParser.populatePassingKinds(argPassingKinds);
 
+  SmallVector<ConstraintAttr> constraints;
+  if (failed(parseOptionalWhereClauses(p, constraints)))
+    return failure();
+
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadics, origArgPackConvention,
-                       origVariadicConvention, /*constraints=*/{}),
+                       origVariadicConvention),
       numOriginDecls, captureOrigins, isNestedOriginExclusivityCheckingDisabled,
-      /*constraints=*/{});
+      constraints);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
                            argConventions, effects, metadata);
