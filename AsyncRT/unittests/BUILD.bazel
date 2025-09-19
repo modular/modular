@@ -170,9 +170,7 @@ modular_cc_test(
     name = "CUDADeviceContextTest",
     size = "small",
     srcs = ["CUDADeviceContextTest.cpp"],
-    gpu_constraints = [
-        "//:has_gpu",
-    ],
+    gpu_constraints = ["//:nvidia_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
@@ -185,7 +183,7 @@ modular_cc_test(
     size = "small",
     srcs = ["CUDADeviceContextTest.cpp"],
     gpu_constraints = [
-        "//:has_gpu",
+        "//:nvidia_gpu",
         "//:has_multi_gpu",
     ],
     tags = ["gpu"],
@@ -199,9 +197,19 @@ modular_cc_test(
     name = "GPUDeviceTest",
     size = "small",
     srcs = ["GPUDeviceTest.cpp"],
-    gpu_constraints = [
-        "//:has_gpu",
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:DeviceContextImpl",
     ],
+)
+
+modular_cc_test(
+    name = "MultiGPUDeviceTest",
+    size = "small",
+    srcs = ["MultiGPUDeviceTest.cpp"],
+    gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
