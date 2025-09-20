@@ -72,7 +72,8 @@ fn _quicksort_partition_right[
             right -= 1
         if left >= right:
             var pivot_pos = left - 1
-            span.unsafe_swap_elements(pivot_pos, 0)
+            if pivot_pos != 0:
+                span.unsafe_swap_elements(pivot_pos, 0)
             return pivot_pos
         span.unsafe_swap_elements(left, right)
         left += 1
