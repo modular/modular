@@ -1285,12 +1285,12 @@ struct _GridDim(Defaultable):
 alias grid_dim = _GridDim()
 
 # ===-----------------------------------------------------------------------===#
-# grid_idx
+# global_idx
 # ===-----------------------------------------------------------------------===#
 
 
 @register_passable("trivial")
-struct _GridIdx(Defaultable):
+struct _GlobalIdx(Defaultable):
     """GlobalIdx provides static methods for getting the x/y/z global offset of
     the kernel launch."""
 
@@ -1313,7 +1313,7 @@ struct _GridIdx(Defaultable):
         return math.fma(block_idx, block_dim, thread_idx)
 
 
-alias global_idx = _GridIdx()
+alias global_idx = _GlobalIdx()
 
 
 # ===-----------------------------------------------------------------------===#
