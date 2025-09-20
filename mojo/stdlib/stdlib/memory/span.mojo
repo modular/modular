@@ -21,9 +21,9 @@ from memory import Span
 """
 
 from algorithm import vectorize
+from builtin._location import __call_location
 from sys import align_of
 from sys.info import simd_width_of
-
 from collections._index_normalization import normalize_index
 from memory import Pointer
 
@@ -221,7 +221,9 @@ struct Span[
         # TODO: Introduce a new slice type that just has a start+end but no
         # step.  Mojo supports slice type inference that can express this in the
         # static type system instead of debug_assert.
-        debug_assert(step == 1, "Slice step must be 1")
+        debug_assert(
+            step == 1, "Slice step must be 1", location=__call_location()
+        )
 
         return Self(
             ptr=(self._data + start), length=UInt(len(range(start, end, step)))
@@ -402,19 +404,24 @@ struct Span[
         return rebind[Self.Immutable](self)
 
     @always_inline
-    fn unsafe_get(self, index: Some[Indexer]) -> ref [origin, address_space] T:
+    fn unsafe_get(self, idx: Some[Indexer]) -> ref [origin, address_space] T:
         """Get a reference to the element at `index` without bounds checking.
 
         Args:
-            index: The index of the element to get.
+            idx: The index of the element to get.
 
-        ### Safety
-            * This function does not do bounds checking and assumes the provided
-            index is `< len(self)`. Not upholding this contract will result in
-            undefined behavior.
-            * This function does not support wraparound for negative indices.
+        Safety:
+            - This function does not do bounds checking and assumes the provided
+            index is in: [0, len(self)). Not upholding this contract will result
+            in undefined behavior.
+            - This function does not support wraparound for negative indices.
         """
-        return self._data[index]
+        debug_assert(
+            0 <= index(idx) < len(self),
+            "Index out of bounds.",
+            location=__call_location(),
+        )
+        return self._data[idx]
 
     @always_inline("builtin")
     fn unsafe_ptr(
@@ -451,7 +458,11 @@ struct Span[
         Args:
             other: The `Span` to copy all elements from.
         """
-        debug_assert(len(self) == len(other), "Spans must be of equal length")
+        debug_assert(
+            len(self) == len(other),
+            "Spans must be of equal length",
+            location=__call_location(),
+        )
         for i in range(len(self)):
             self[i] = other[i].copy()
 
@@ -535,10 +546,23 @@ struct Span[
             a: The first element's index.
             b: The second element's index.
 
-        ## Safety:
-            * Both `a` and `b` must be `< len(self)`.
-            * `a` cannot be equal to `b`.
+        Safety:
+            - Both `a` and `b` must be in: [0, len(self)).
+            - `a` cannot be equal to `b`.
         """
+        debug_assert(
+            a != b, "`a` cannot be equal to `b`.", location=__call_location()
+        )
+        debug_assert(
+            0 <= a < len(self),
+            "Index `a` out of bounds.",
+            location=__call_location(),
+        )
+        debug_assert(
+            0 <= b < len(self),
+            "Index `b` out of bounds.",
+            location=__call_location(),
+        )
         var ptr = self.unsafe_ptr()
         var tmp = ptr.offset(a).take_pointee()
         ptr.offset(a).init_pointee_move_from(ptr.offset(b))
@@ -747,8 +771,23 @@ struct Span[
             offset: The starting offset of the subspan (self._data + offset).
             length: The length of the new subspan.
 
-        ### Safety
+        Safety:
             This function does not do bounds checking and assumes the current
             span contains the specified subspan.
         """
+        debug_assert(
+            0 <= offset < len(self),
+            "offset out of bounds.",
+            location=__call_location(),
+        )
+        debug_assert(
+            0 <= length <= len(self),
+            "length out of bounds.",
+            location=__call_location(),
+        )
+        debug_assert(
+            0 <= offset + length <= len(self),
+            "subspan out of bounds.",
+            location=__call_location(),
+        )
         return Self(ptr=self._data + offset, length=length)
