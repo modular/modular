@@ -719,25 +719,13 @@ struct Span[
             The amount of times the function returns `True`.
         """
 
-        alias simdwidth = simd_width_of[DType.int]()
-        var ptr = self.unsafe_ptr()
-        var length = len(self)
-        var countv = SIMD[DType.int, simdwidth](0)
-        var count = Scalar[DType.int](0)
+        alias D[w: Int] = SIMD[DType.uint, w]
 
         @parameter
-        fn do_count[width: Int](idx: Int):
-            var vec = func(ptr.load[width=width](idx)).cast[DType.int]()
+        fn reduce_fn[w: Int](lhs: D[w], rhs: D[w]) -> D[w]:
+            return lhs + rhs
 
-            @parameter
-            if width == 1:
-                count += rebind[__type_of(count)](vec)
-            else:
-                countv += rebind[__type_of(countv)](vec)
-
-        vectorize[do_count, simdwidth](length)
-
-        return UInt(countv.reduce_add() + count)
+        return UInt(self.map_reduce[map_fn=func, reduce_fn=reduce_fn]())
 
     @always_inline
     fn unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
@@ -752,3 +740,63 @@ struct Span[
             span contains the specified subspan.
         """
         return Self(ptr=self._data + offset, length=length)
+
+    fn map_reduce[
+        dtype: DType,
+        map_dtype_out: DType,
+        accum_dtype: DType, //,
+        *,
+        map_fn: fn[w: Int] (vec: SIMD[dtype, w]) capturing -> SIMD[
+            map_dtype_out, w
+        ],
+        reduce_fn: fn[w: Int] (
+            lhs: SIMD[accum_dtype, w], rhs: SIMD[accum_dtype, w]
+        ) capturing -> SIMD[accum_dtype, w],
+        accum_fill: Scalar[accum_dtype] = 0,
+    ](self: Span[Scalar[dtype]]) -> Scalar[accum_dtype]:
+        """Run a given map reduce operation on the `Span`.
+
+        Parameters:
+            dtype: The dtype of the `Span`.
+            map_dtype_out: The resulting dtype from the map function.
+            accum_dtype: The accumulation dtype for the reduction function.
+            map_fn: The map function.
+            reduce_fn: The reduction function.
+            accum_fill: The value with which to fill the accumulator at the
+                beginning.
+
+        Returns:
+            The result of the map reduce operation.
+        """
+
+        alias accum_width = simd_width_of[accum_dtype]()
+        alias dtype_width = simd_width_of[dtype]()
+        var length = len(self)
+        var ptr = self.unsafe_ptr()
+        var res_v = SIMD[accum_dtype, accum_width](accum_fill)
+        var res_s = Scalar[accum_dtype](accum_fill)
+
+        @always_inline
+        @parameter
+        fn red(vec: SIMD[accum_dtype]):
+            @parameter
+            if vec.size == 1:
+                res_s = reduce_fn(res_s, rebind[__type_of(res_s)](vec))
+            else:
+                res_v = reduce_fn(res_v, rebind[__type_of(res_v)](vec))
+
+        @parameter
+        fn run_fns[width: Int](idx: Int):
+            @parameter
+            if width == 1 or dtype_width <= accum_width:
+                red(map_fn(ptr.load[width=width](idx)).cast[accum_dtype]())
+            else:
+                var vec = map_fn(ptr.load[width=dtype_width](idx))
+
+                @parameter
+                for i in range(dtype_width // accum_width):
+                    var v = vec.slice[accum_width, offset = i * accum_width]()
+                    red(v.cast[accum_dtype]())
+
+        vectorize[run_fns, max(accum_width, dtype_width)](length)
+        return reduce_fn(res_v.reduce[reduce_fn, 1](), res_s)
