@@ -189,7 +189,6 @@ def test_list_pop():
 
 def test_list_pop_slice():
     var list = [1, 2, 3]
-
     var popped = list.pop({1, None, None})
     assert_equal(popped, [2, 3])
     assert_equal(list, [1])

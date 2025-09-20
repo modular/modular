@@ -856,13 +856,14 @@ struct List[T: Copyable & Movable](
             return Self()
 
         var res = Self(capacity=slice_len)
-        var remaining_items_idx = 0
-
         for pop_idx in slice_range:
             res.append((self._data + pop_idx).take_pointee())
 
-        if step == 1 or step == -1:
-            remaining_items_idx = max(end, start + 1)
+        var remaining_items_idx: Int
+        if step == 1:
+            remaining_items_idx = end
+        elif step == -1:
+            remaining_items_idx = start + 1
         else:
             var n_popped = 0
             var previous_popped_idx = min(end, start - 1)
