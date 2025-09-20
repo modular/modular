@@ -55,6 +55,7 @@ from sys import (
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
+    is_apple_gpu,
     llvm_intrinsic,
     simd_width_of,
     size_of,
@@ -2619,6 +2620,10 @@ struct SIMD[dtype: DType, size: Int](
             return slice_body()
 
         if is_compile_time():
+            return slice_body()
+
+        @parameter
+        if is_apple_gpu():
             return slice_body()
 
         return llvm_intrinsic[
