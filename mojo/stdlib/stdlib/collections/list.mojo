@@ -19,9 +19,10 @@ These APIs are imported automatically, just like builtins.
 from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq
+from sys.info import simd_byte_width
 
 from collections._index_normalization import normalize_index
-from memory import Pointer, memcpy
+from memory import Pointer, memcpy, stack_allocation
 
 from .optional import Optional
 
@@ -244,6 +245,18 @@ struct List[T: Copyable & Movable](
         T: The type of elements stored in the list.
     """
 
+    # aliases
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _ListIter[T, iterable_origin, True]
+    # TODO: while we can assume that the CPU will have bus sizes at least the
+    # size of the simd width, we should research and make sure we can't make
+    # this bigger (only if lists are statistically bigger than this).
+    alias INLINE_CAPACITY = max(
+        (simd_byte_width() - size_of[Self]()) // size_of[T](), 0
+    )
+    """The inline capacity for the given type."""
+
     # Fields
     var _data: UnsafePointer[T]
     """The underlying storage for the list."""
@@ -252,19 +265,17 @@ struct List[T: Copyable & Movable](
     var capacity: Int
     """The amount of elements that can fit in the list without resizing it."""
 
-    alias IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _ListIter[T, iterable_origin, True]
-
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
         """Constructs an empty list."""
-        self._data = UnsafePointer[T]()
+        self._data = stack_allocation[Self.INLINE_CAPACITY, T]().origin_cast[
+            True, MutableAnyOrigin
+        ]()
+        self.capacity = Self.INLINE_CAPACITY
         self._len = 0
-        self.capacity = 0
 
     fn __init__(out self, *, capacity: Int):
         """Constructs a list with the given capacity.
@@ -272,12 +283,12 @@ struct List[T: Copyable & Movable](
         Args:
             capacity: The requested capacity of the list.
         """
-        if capacity:
-            self._data = UnsafePointer[T].alloc(capacity)
+        if capacity <= Self.INLINE_CAPACITY:
+            self = Self()
         else:
-            self._data = UnsafePointer[T]()
-        self._len = 0
-        self.capacity = capacity
+            self._data = UnsafePointer[T].alloc(capacity)
+            self.capacity = capacity
+            self._len = 0
 
     fn __init__(out self, *, length: UInt, fill: T):
         """Constructs a list with the given capacity.
@@ -358,7 +369,8 @@ struct List[T: Copyable & Movable](
         if not T.__del__is_trivial:
             for i in range(len(self)):
                 (self._data + i).destroy_pointee()
-        self._data.free()
+        if self.capacity > Self.INLINE_CAPACITY:
+            self._data.free()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -650,7 +662,7 @@ struct List[T: Copyable & Movable](
             for i in range(len(self)):
                 (new_data + i).init_pointee_move_from(self._data + i)
 
-        if self._data:
+        if self._data and self.capacity > Self.INLINE_CAPACITY:
             self._data.free()
         self._data = new_data
         self.capacity = new_capacity
