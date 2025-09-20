@@ -10,15 +10,48 @@ This is a list of changes to the Mojo language, standard library, and tools.
 To check your current version, run `mojo --version`. To install or update
 Mojo, see the [install guide](/mojo/manual/install).
 
-## v25.7 nightly
+## v0.25.7 nightly
 
 This version is still a work in progress.
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
 
-## v25.6 (TBD)
+## v0.25.6 (2025-09-22)
+
+:::caution Version scheme change!
+
+This release is technically a version _downgrade_ because we've added a
+`0.` at the beginning: This version is `0.25.6`. This is necessary because
+we started publishing `mojo` packages on pypi.org and it's important that
+we don't publish a package greater than `1.0` yet.
+
+Temporarily, this means you need to add `<1.0.0` to the `mojo` version
+if you want a nightly build. For example:
+
+```sh
+pixi add "mojo<1.0.0"
+```
+
+If you want stable builds, this still works as expected:
+
+```sh
+pixi add "mojo=0.25.6"
+```
+
+We'll eventually pull down older packages such as the `25.5.xxx`
+nightly builds so there won't be anything greater than `1.0`.
+
+:::
 
 ### ✨ Highlights {#25-6-highlights}
+
+- You can now **`pip install mojo`**!
+
+  Although we still love the environment reliability of [Pixi](/pixi),
+  installing Mojo with `pip` or `uv` further enhances our interoperability
+  with the Python ecosystem, making it easier to [extend your Python code with
+  Mojo](/mojo/manual/python/mojo-from-python). For more information, see the
+  [Mojo install guide](/mojo/manual/install).
 
 - New [Mojo vision](/mojo/vision) doc explains our motivations and design
 decisions for the Mojo language.
@@ -27,9 +60,9 @@ decisions for the Mojo language.
 language across multiple phases.
 
 - The way copying is modeled in Mojo has been overhauled. The `Copyable` trait
-  has been updated to represent a type that can be *explicitly* copied (using a
+  has been updated to represent a type that can be _explicitly_ copied (using a
   `copy()` method), and a new `ImplicitlyCopyable` "marker" trait can be used to
-  *opt-in* to making a type implicitly copyable as well. **This swaps the
+  _opt-in_ to making a type implicitly copyable as well. **This swaps the
   default behavior from being implicitly copyable to being only explicitly
   copyable.** Several standard library traits, types, and functions now require
   now require explicit `Copyable` instead of `ImplicitlyCopyable`. See
@@ -209,8 +242,8 @@ language across multiple phases.
   but had significant usage limitations.
 
   Now, the new `Copyable` trait instead represents a type that can be
-  *explicitly* copied (using `.copy()`), and a new `ImplicitlyCopyable` "marker"
-  trait can be used to *opt-in* to making a type implicitly copyable as well.
+  _explicitly_ copied (using `.copy()`), and a new `ImplicitlyCopyable` "marker"
+  trait can be used to _opt-in_ to making a type implicitly copyable as well.
   This swaps the default behavior from being implicitly copyable to being only
   explicitly copyable.
 
@@ -1777,7 +1810,7 @@ String types in Mojo got several significant improvements:
   [`Pointer(to=...)`](/mojo/stdlib/memory/pointer/Pointer#__init__) and
   [`UnsafePointer(to=...)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#__init__)
   constructors instead. Conceptually, this is saying "please initialize a
-  `Pointer` (a reference, if you will) to *some other address in memory*. In the
+  `Pointer` (a reference, if you will) to _some other address in memory_. In the
   future, these `address_of()` functions will be removed.
 
 ### Tooling changes {#25-3-tooling-changes}
@@ -2575,7 +2608,7 @@ Special thanks to our community contributors:
   [`top_k.mojo`](https://github.com/modular/modular/blob/main/examples/custom_ops/kernels/top_k.mojo).
 
 - The [`layout` package](/mojo/kernels/layout/) includes APIs for working with
-  *layouts*, which describe the organization of a tensor (for example, row-major
+  _layouts_, which describe the organization of a tensor (for example, row-major
   or column-major layout), and the
   [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) type, which
   represents a tensor with a specified layout. The `layout` package can be used
@@ -4838,7 +4871,7 @@ Big themes for this release:
   `__refitem__()` to exist.  `__refitem__()` has thus been removed and replaced
   with `__getitem__()` that returns a reference.
 
-- Mojo added support for *infer-only parameters*. Infer-only parameters must
+- Mojo added support for _infer-only parameters_. Infer-only parameters must
   appear at the beginning of the parameter list and cannot be explicitly
   specified by the user. They are declared to the left of a `//` marker, much
   like positional-only parameters. This allows programmers to define functions
@@ -5706,7 +5739,7 @@ Special thanks to our community contributors:
   This prints "`In /path/to/some_file.mojo on line 193: always fails`".
   Note that `__call_location()` only works in `@always_inline` or
   `@always_inline("nodebug")` functions. It gives incorrect results if placed in
-  an `@always_inline` function that's called *from* an
+  an `@always_inline` function that's called _from_ an
   `@always_inline("nodebug")` function.
 
   This feature is still evolving and for the time being you need to explicitly
@@ -7141,7 +7174,7 @@ experience without dedicated sugar.
   specifying `-D MOJO_ENABLE_ASSERTIONS` when invoking `mojo` to
   compile your source file(s).  In the case that an assertion is fired,
   the assertion message will be printed along with the stack trace
-  before the program exits.  By default, assertions are *not enabled*
+  before the program exits.  By default, assertions are _not enabled_
   in the standard library right now for performance reasons.
 
 - The Mojo Language Server now implements the References request. IDEs use
@@ -7250,7 +7283,7 @@ experience without dedicated sugar.
   immutable array slices.
 
   While this is a major step forward for the lifetimes system in Mojo, it is
-  still *very* early and awkward to use.  Notably, there is no syntactic sugar
+  still _very_ early and awkward to use.  Notably, there is no syntactic sugar
   for using references, such as automatic dereferencing. Several aspects of it
   need to be more baked. It is getting exercised by variadic memory arguments,
   which is why they are starting to behave better now.
@@ -7573,8 +7606,8 @@ experience without dedicated sugar.
 
 - Traits have arrived!
 
-  You can now define a *trait*, which consists of a required set of method
-  prototypes. A struct can *conform to* the trait by implementing these methods.
+  You can now define a _trait_, which consists of a required set of method
+  prototypes. A struct can _conform to_ the trait by implementing these methods.
   This lets you write generic functions that work on any structs that conform to
   a given trait.
 
@@ -7692,7 +7725,7 @@ experience without dedicated sugar.
 ### ⭐️ New
 
 - The [Mojo Manual](/mojo/manual/) is an all-new, complete Mojo user guide.
-  It doesn't include *everything* about Mojo yet, but it includes a lot,
+  It doesn't include _everything_ about Mojo yet, but it includes a lot,
   and more than the original programming
   manual (now deprecated).
 
@@ -7715,7 +7748,7 @@ experience without dedicated sugar.
   ```
 
   In the first signature for `eat()`, the `b` parameter isn't bound, so it's
-  *implicitly* added as an input parameter on the function.
+  _implicitly_ added as an input parameter on the function.
 
   In the second signature for `eat()`, the author has explicitly defined an
   input parameter (`_b`), which is bound to the second parameter on the argument
@@ -7960,8 +7993,8 @@ the previous "read to EOF" behavior when size is negative.
 
 - There is an issue affecting Jupyter notebooks that use autotuning and traits.
   This issue only manifests on macOS, and the same code runs without issue
-  outside of the notebooks. This issue affects the *Matrix multiplication in
-  Mojo* notebook.
+  outside of the notebooks. This issue affects the _Matrix multiplication in
+  Mojo_ notebook.
 
 ## v0.5.0 (2023-11-2)
 
@@ -7976,7 +8009,7 @@ the previous "read to EOF" behavior when size is negative.
   function that allows you to concatenate two `SIMD` values together and produce
   a new `SIMD` value.
 
-- Mojo now supports compile-time *keyword parameters*, in addition to existing
+- Mojo now supports compile-time _keyword parameters_, in addition to existing
   support for [keyword
   arguments](/mojo/manual/parameters/#optional-parameters-and-keyword-parameters).
   For example:
@@ -8315,7 +8348,7 @@ the previous "read to EOF" behavior when size is negative.
       return self^
   ```
 
-  Here Mojo *cannot* invoke a noop `__exit__` method because the context
+  Here Mojo _cannot_ invoke a noop `__exit__` method because the context
   manager is consumed by the `__enter__` method.  This can be used for types
   (like file descriptors) that are traditionally used with `with` statements,
   even though Mojo's guaranteed early destruction doesn't require that.
@@ -9584,7 +9617,7 @@ busy this week.
   is currently unsupported).
 
   These should be generally reliable for both memory-only and register-passable
-  types, with the caveat that closures are known to *not* capture values
+  types, with the caveat that closures are known to _not_ capture values
   correctly.  Be very careful with interesting types in the vicinity of a
   closure!
 

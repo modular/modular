@@ -69,14 +69,17 @@ more help with it, see our [Pixi basics guide](/pixi).
       <TabItem value="nightly" label="Nightly">
 
         ```sh
-        pixi add mojo
+        pixi add "mojo<1.0.0"
         ```
+
+        The `<1.0.0` specifier is [temporarily
+        required](/mojo/changelog#v0256-2025-09-22).
 
       </TabItem>
       <TabItem value="stable" label="Stable">
 
         ```sh
-        pixi add "mojo=25.5"
+        pixi add "mojo=0.25.6"
         ```
 
       </TabItem>
@@ -118,10 +121,13 @@ more help with it, see our [Pixi basics guide](/pixi).
       <TabItem value="nightly" label="Nightly">
 
         ```sh
-        uv pip install mojo \
+        uv pip install "mojo<1.0.0" \
           --index-url https://dl.modular.com/public/nightly/python/simple/ \
           --prerelease allow
         ```
+
+        The `<1.0.0` specifier is [temporarily
+        required](/mojo/changelog#v0256-2025-09-22).
 
         </TabItem>
         <TabItem value="stable" label="Stable">
@@ -131,10 +137,10 @@ more help with it, see our [Pixi basics guide](/pixi).
         Either install nightly or switch to Pixi or Conda.
         ```
 
-        {/* ```sh
+        ```sh
         uv pip install mojo \
           --extra-index-url https://modular.gateway.scarf.sh/simple/
-        ``` */}
+        ```
 
         </TabItem>
       </Tabs>
@@ -162,9 +168,12 @@ more help with it, see our [Pixi basics guide](/pixi).
       <TabItem value="nightly" label="Nightly">
 
         ```sh
-        pip install --pre mojo \
+        pip install --pre "mojo<1.0.0" \
           --index-url https://dl.modular.com/public/nightly/python/simple/
         ```
+
+        The `<1.0.0` specifier is [temporarily
+        required](/mojo/changelog#v0256-2025-09-22).
 
         </TabItem>
         <TabItem value="stable" label="Stable">
@@ -174,10 +183,10 @@ more help with it, see our [Pixi basics guide](/pixi).
         Either install nightly or switch to Pixi or Conda.
         ```
 
-        {/* ```sh
+        ```sh
         pip install mojo \
           --extra-index-url https://modular.gateway.scarf.sh/simple/
-        ``` */}
+        ```
 
         </TabItem>
       </Tabs>
@@ -226,15 +235,18 @@ more help with it, see our [Pixi basics guide](/pixi).
 
         ```sh
         conda install -c conda-forge \
-          -c https://conda.modular.com/max-nightly/ mojo
+          -c https://conda.modular.com/max-nightly/ "mojo<1.0.0"
         ```
+
+        The `<1.0.0` specifier is [temporarily
+        required](/mojo/changelog#v0256-2025-09-22).
 
         </TabItem>
         <TabItem value="stable" label="Stable">
 
         ```sh
         conda install -c conda-forge \
-          -c https://conda.modular.com/max/ mojo
+          -c https://conda.modular.com/max/ "mojo=0.25.6"
         ```
 
         </TabItem>
