@@ -33,6 +33,7 @@ from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.process_control import ProcessControl
 from max.serve.queue.lora_queue import LoRAQueue
+from max.serve.scheduler.queues import SchedulerZmqConfigs
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -193,6 +194,8 @@ async def _async_worker(
         if pipeline_config.lora_config
         else None
     )
+    # Create Queues
+    scheduler_zmq_configs = SchedulerZmqConfigs(pipeline_task)
     async with (
         start_telemetry_consumer(settings) as metric_client,
         start_model_worker(
@@ -200,13 +203,14 @@ async def _async_worker(
             pipeline_config=pipeline_config,
             settings=settings,
             metric_client=metric_client,
-            pipeline_task=pipeline_task,
-        ) as engine_queue,
+            scheduler_zmq_configs=scheduler_zmq_configs,
+        ) as worker_monitor,
         TokenGeneratorPipeline(
             model_name=model_name,
             tokenizer=tokenizer,
-            engine_queue=engine_queue,
             lora_queue=lora_queue,
+            worker_monitor=worker_monitor,
+            scheduler_zmq_configs=scheduler_zmq_configs,
         ) as pipeline,
     ):
         pc.set_started()
@@ -233,7 +237,10 @@ async def _async_worker(
 
                 # Generate this request until complete
                 tokens = await pipeline.all_tokens(gen_request)
-                return "".join(t.decoded_token for t in tokens)
+                return "".join(
+                    t.decoded_token if t.decoded_token is not None else ""
+                    for t in tokens
+                )
 
             responses = await _async_map(
                 all_tokens, request.prompts, use_tqdm=request.use_tqdm

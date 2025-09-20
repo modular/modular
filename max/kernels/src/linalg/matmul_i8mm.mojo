@@ -20,7 +20,7 @@ from utils.index import Index, IndexList
 
 from .accumulate import _Accumulator
 from .matmul import InnerMatmulKernel
-from .neon_intrinsics import _neon_matmul
+from .arch.cpu.neon_intrinsics import _neon_matmul
 from .utils import GemmShape, get_matmul_prefetch_b_distance_k
 
 

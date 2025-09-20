@@ -165,10 +165,10 @@ fn load_AB[
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -427,14 +427,14 @@ fn promote_accumulators[
     ],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     work_tile_coord: Tuple[UInt, UInt],
@@ -782,7 +782,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     alias b_tma_rows = b_desc_layout.shape[0].value()
     alias c_smem_layout = Layout.row_major(BM, MMA_N)
 
-    # keep the physical SMEM buffer BM × MMA_N
+    # keep the physical SMEM buffer BM x MMA_N
     alias a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
@@ -810,16 +810,10 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (
-        (b_smem_base + b_smem_size)
-        .bitcast[Scalar[c_type]]()
-        .static_alignment_cast[128]()
-    )
-    var a_scales_smem_base = (
-        (c_smem_base + c_smem_size)
-        .bitcast[Scalar[a_scales_type]]()
-        .static_alignment_cast[128]()
-    )
+    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
+    var a_scales_smem_base = (c_smem_base + c_smem_size).bitcast[
+        Scalar[a_scales_type]
+    ]()
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -828,7 +822,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base.static_alignment_cast[128](),
+        a_smem_base,
         a_smem_size,
     )
 
@@ -839,7 +833,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base.static_alignment_cast[128](),
+        b_smem_base,
         b_smem_size,
     )
 
@@ -858,7 +852,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_scales_smem_base.static_alignment_cast[128](),
+        a_scales_smem_base,
         a_scales_smem_size,
     )
     var smem_pool = (a_scales_smem_base + a_scales_smem_size).bitcast[Int64]()
@@ -1258,7 +1252,7 @@ fn sm100_warp_specialized_blockwise_fp8[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     cta_group: Int = 1,
     num_clc_pipeline_stages: UInt = 2,
-    num_pipeline_stages: UInt = 4,
+    num_pipeline_stages: Optional[UInt] = None,
 ](
     c: LayoutTensor[c_type, c_layout, *_, **_],
     a: LayoutTensor[a_type, a_layout, *_, **_],
@@ -1294,6 +1288,10 @@ fn sm100_warp_specialized_blockwise_fp8[
     alias BM = MMA_M // cta_group
     alias BN = MMA_N // cta_group
     alias BK = config.block_tile_shape[2]
+
+    constrained[
+        MMA_N % 64 == 0, "BN must be multiple of 32. BN=" + String(BN)
+    ]()
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -1404,8 +1402,16 @@ fn sm100_warp_specialized_blockwise_fp8[
         "not enough smem even for one pipeline stage!",
     ]()
 
-    alias pipeline_stages = min(num_pipeline_stages, UInt(max_pipeline_stages))
+    @parameter
+    if num_pipeline_stages:
+        constrained[
+            num_pipeline_stages.value() <= max_pipeline_stages,
+            "num_pipeline_stages <= max_pipeline_stages",
+        ]()
 
+    alias pipeline_stages = num_pipeline_stages.value() if num_pipeline_stages else UInt(
+        max_pipeline_stages
+    )
     alias producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stages
 
     alias smem_size = (

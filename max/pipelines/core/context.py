@@ -18,19 +18,16 @@ from __future__ import annotations
 import math
 import time
 import uuid
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import llguidance
 import msgspec
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
-    BaseContext,
     GenerationStatus,
     InputContext,
     LogProbabilities,
-    PipelineTask,
-    RequestID,
     SamplingParams,
     TextGenerationOutput,
 )
@@ -156,6 +153,16 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
                 f"min_tokens ({self.min_tokens}) + prompt_len ({self._prompt_len}) must be less than or equal to max_length ({self.max_length})"
             )
 
+        if self.target_endpoint is not None:
+            if not self.target_endpoint.startswith(("tcp://", "ipc://")):
+                raise ValueError(
+                    f"target_endpoint must be prefixed with 'tcp://' or 'ipc://': {self.target_endpoint}"
+                )
+            if ":" not in self.target_endpoint.split("://")[-1]:
+                raise ValueError(
+                    f"target_endpoint must contain a port: {self.target_endpoint}"
+                )
+
         # Resize Data Up
         # Ensure the tokens array is at least self._size
         if self._end_idx < self._size:
@@ -222,29 +229,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     @property
     def matcher(self) -> llguidance.LLMatcher | None:
         return self._matcher
-
-    def rollback(self, idx: int) -> None:
-        new_active_idx = self.active_idx - idx
-        new_start_idx = self._start_idx
-
-        if self._start_idx >= new_active_idx:
-            new_start_idx = new_active_idx - 1
-
-        if new_start_idx < 0:
-            raise ValueError("cannot rollback before the start of the array")
-
-        self._start_idx = new_start_idx
-        self._active_idx = new_active_idx
-        self._end_idx = new_active_idx
-
-        # If the new active_idx is less than the completion end idx
-        # and current status suggests we have hit an EOS token
-        # reset the status
-        if self._active_idx < self._completion_end_idx:
-            self._completion_end_idx = new_active_idx
-
-            if self.status == GenerationStatus.END_OF_SEQUENCE:
-                self.status = GenerationStatus.ACTIVE
 
     @property
     def current_length(self) -> int:
@@ -317,14 +301,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         """
         return self.tokens[self._start_idx : self._active_idx]
 
-    def set_draft_offset(self, idx: int) -> None:
-        """Sets the draft offset index used for speculative decoding.
-
-        Args:
-            idx: The index to set as the draft offset.
-        """
-        self._draft_offset = idx
-
     @property
     def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """Returns the original prompt tokens.
@@ -342,6 +318,18 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             np.ndarray: Array of generated tokens from prompt_len to end_idx.
         """
         return self.tokens[self._prompt_len : self._end_idx]
+
+    @property
+    def last_generated_token(self) -> int:
+        """Returns the most recently generated token. If no tokens have been generated, raises an error.
+        Returns:
+            int: The most recently generated token.
+        """
+        if self._end_idx == self._prompt_len:
+            raise ValueError("No tokens have been generated")
+        # The `int(...)` is needed or else the returned value is a numpy.int64
+        # which is not serializable by msgspec!
+        return int(self.tokens[self._end_idx - 1])
 
     def _upsize(self) -> None:
         """Increases the size of the token array if needed.
@@ -688,34 +676,3 @@ class TTSContext(TextContext):
         chunk = self._speech_tokens[start_idx:end_idx]
 
         return chunk, buffer or 0
-
-    def has_undecoded_speech_tokens(self, exclude_last_n: int = 0) -> bool:
-        """Checks whether there are undecoded speech tokens.
-
-        Args:
-            exclude_last_n: Number of tokens to exclude from the end when
-                checking for undecoded tokens. For example, if set to 1,
-                the last token will not be considered when checking for
-                undecoded tokens.
-
-        Returns:
-            True if there are undecoded speech tokens (excluding the last n tokens),
-            False otherwise.
-        """
-        return self.decoded_index < self._speech_token_end_idx - exclude_last_n
-
-
-def get_request_payload_from_pipeline_task(
-    pipeline_task: PipelineTask,
-) -> type[tuple[RequestID, BaseContext]]:
-    if pipeline_task in [
-        PipelineTask.TEXT_GENERATION,
-        PipelineTask.EMBEDDINGS_GENERATION,
-    ]:
-        return tuple[RequestID, Union[TextContext, TextAndVisionContext]]
-    elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
-        return tuple[RequestID, TTSContext]
-    else:
-        raise ValueError(
-            f"no request payload for pipeline task ({pipeline_task})"
-        )

@@ -12,16 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import ceildiv
-
-from bit import next_power_of_two
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx
+from math import align_up, ceildiv
+import gpu.warp as warp
+from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    thread_idx,
+    block_idx,
+    WARP_SIZE,
+    barrier,
+)
 from gpu.host.info import is_gpu
+from sys.info import simd_width_of
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
-
+from gpu.memory import AddressSpace
+from os.atomic import Atomic
 from utils.index import IndexList, StaticTuple
+from bit import pop_count, next_power_of_two
 
 
 @__llvm_metadata(
@@ -194,6 +202,211 @@ fn moe_create_indices_kernel[
         expert_usage_stats[1] = num_experts_used
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+)
+fn moe_create_indices_bucket_sort_kernel[
+    input_type: DType,
+    token_expert_order_layout: Layout,
+    expert_start_indices_layout: Layout,
+    restore_token_order_layout: Layout,
+    expert_ids_layout: Layout,
+    expert_usage_stats_layout: Layout,
+    topk_ids_layout: Layout,
+    num_threads: Int = WARP_SIZE,
+    expected_count: Int = 8192,  # the max topk_ids size
+](
+    token_expert_order: LayoutTensor[
+        mut=True, DType.uint32, token_expert_order_layout, MutableAnyOrigin
+    ],
+    lock: LayoutTensor[DType.uint32, Layout.row_major(1), MutableAnyOrigin],
+    expert_start_indices: LayoutTensor[
+        mut=True, DType.uint32, expert_start_indices_layout, MutableAnyOrigin
+    ],
+    restore_token_order: LayoutTensor[
+        mut=True, DType.uint32, restore_token_order_layout, MutableAnyOrigin
+    ],
+    expert_ids: LayoutTensor[
+        mut=True, DType.int32, expert_ids_layout, MutableAnyOrigin
+    ],
+    expert_usage_stats: LayoutTensor[
+        mut=True, DType.uint32, expert_usage_stats_layout, MutableAnyOrigin
+    ],
+    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutableAnyOrigin],
+):
+    """
+    The main goal of this kernel is to group tokens that use the same expert together.
+    This allows for efficent batching when used by other kernels such as grouped matmul.
+
+    topk_ids: a 1D tensor of expert ids, the index of each expert_id cooresponds to a token.
+    For example if topk_ids is [1, 0, 1, 3, 4, 2], then the cooresponding tokens are [0, 1, 2, 3, 4, 5]
+
+    token_expert_order: a 1D tensor of tokens grouped together by expert id.
+    Using the previous topk_ids, the token expert order could be [0, 2, 1, 3, 4, 5]
+
+    expert_ids: a 1D tensor of all the experts that are being used. Using the previous topk_ids the
+    our expert_ids would be [1, 0, 3, 4, 2]
+
+    expert_start_indices: tells us where each expert starts and end in the token_expert_order. Based on the
+    order of our expert_ids our expert_start_indices would be [0, 2, 3, 4, 5, 6]. So if you wanted to see where
+    expert 1 starts and ends you would get the index 'i' of expert 1 in expert_ids and would query expert_start_indices[i]
+    and query expert_start_indices[i + 1] which is 0 and 2 respectively.
+
+    lock: a 1D tensor that holds a single scalar value, this single integer will be used to atomically
+    synchronize the writes back to global memory. It will do this by storing how many blocks have finished
+    writing and the current global memory offset.
+
+    expert_usage_stats: contains two values, the maximum number of tokens assigned to any expert and the
+    number of active experts. For our example the stats would be [2, 5]
+
+    restore_token_order: a 1D tensor where each index represents a cooresponding token and holds the new index of the token
+    in the token_expert_order tensor. For our example the restore_token_order would be [0, 2, 1, 3, 4, 5]
+    """
+
+    alias SmemVectorType = LayoutTensor[
+        DType.uint32,
+        Layout.row_major(1, expected_count),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+
+    var smem = SmemVectorType.stack_allocation()
+
+    alias token_expert_order_length = token_expert_order.layout.size()
+    alias width = simd_width_of[input_type]()
+
+    # each block is responsible for one expert
+    var expert = block_idx.x
+
+    var reads_per_iteration = num_threads * width
+    var topk_ids_length = topk_ids.dim(1)
+    var topk_ids_length_rounded = align_up(topk_ids_length, reads_per_iteration)
+
+    var total_writes: UInt32 = 0
+
+    var start_idx = thread_idx.x * width
+
+    # vectorized loads from gmem
+    for idx in range(start_idx, topk_ids_length_rounded, reads_per_iteration):
+        var g_vector: SIMD[input_type, width]
+
+        if idx + width <= topk_ids_length:
+            g_vector = topk_ids.aligned_load[width=width](0, idx)
+        else:
+            g_vector = SIMD[input_type, width](expert + 1)
+
+        @parameter
+        for i in range(width):
+            var expert_id = g_vector[i]
+            var state = expert_id == expert
+
+            var offset = total_writes
+
+            # if state is true this thread will write to smem
+            # but we need to know how many threads will write to smem before us
+            # to get the correct offset. So all threads vote and we tally the votes
+            # before us
+            var mask = warp.vote(state)
+
+            var writes = pop_count(mask)
+            total_writes += writes
+
+            var preceding_mask = mask & ((UInt32(1) << thread_idx.x) - 1)
+            offset += pop_count(preceding_mask)
+
+            if state:
+                smem[0, offset] = idx + i
+
+    # the rest that can't be vectorized are loaded normally from gmem
+    start_idx = (topk_ids_length // width) * width + thread_idx.x
+
+    var expert_id = (
+        topk_ids[0, start_idx] if start_idx < topk_ids_length else expert + 1
+    )
+    var state = expert_id == expert
+
+    var offset = total_writes
+
+    var mask = warp.vote(state)
+    var writes = pop_count(mask)
+    total_writes += writes
+
+    var preceding_mask = mask & ((UInt32(1) << thread_idx.x) - 1)
+    offset += pop_count(preceding_mask)
+
+    if state:
+        smem[0, offset] = start_idx
+
+    # copy back to token_expert_order
+    if total_writes > 0:
+        var expert_idx_and_offsets: UInt32 = 0
+
+        # in order to write back to gmem we need to know the current avilable offset
+        # so we use atomics to get the next available offset
+
+        if thread_idx.x == 0:
+            # we atomically update the offset and expert index with one update by adding to the offset using the last 24 bits
+            # and the expert index using the upper 8 bits
+            expert_idx_and_offsets = Atomic.fetch_add(
+                lock.ptr, total_writes | 0x01000000
+            )
+
+        expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
+        var expert_idx = expert_idx_and_offsets >> 24
+        var g_offset = expert_idx_and_offsets & 0x00FFFFFF
+
+        # add expert_id to expert_ids, this signals this exper is being used
+        expert_ids[expert_idx] = expert
+
+        # NOTE: expert_start_indices must be zero initialized otherwise the first offset will not be zero
+        # add starting index for the next expert, to expert_start_indices
+        expert_start_indices[expert_idx + 1] = g_offset + total_writes
+
+        if expert_idx == 0:
+            expert_start_indices[expert_idx] = 0
+
+        var total_writes_rounded = align_up(
+            Int(total_writes), reads_per_iteration
+        )
+
+        start_idx = thread_idx.x * width
+
+        for smem_idx in range(
+            start_idx, total_writes_rounded, reads_per_iteration
+        ):
+            if smem_idx + width <= Int(total_writes):
+                var source_vector = smem.aligned_load[width=width](0, smem_idx)
+
+                @parameter
+                for i in range(width):
+                    token_expert_order[g_offset + smem_idx + i] = source_vector[
+                        smem_idx + i
+                    ]
+                    restore_token_order[source_vector[smem_idx + i]] = (
+                        g_offset + smem_idx + i
+                    )
+
+        start_idx = UInt((total_writes // width) * width)
+
+        g_offset += start_idx
+
+        if thread_idx.x < Int(total_writes - start_idx):
+            token_expert_order[Int(g_offset + thread_idx.x)] = smem[
+                0, start_idx + thread_idx.x
+            ]
+            restore_token_order[smem[0, start_idx + thread_idx.x]] = (
+                g_offset + thread_idx.x
+            )
+
+        # update expert_usage_stats
+        if thread_idx.x == 0:
+            _ = Atomic.fetch_add(expert_usage_stats.ptr + 1, 1)
+
+            # NOTE: must be zero initialized otherwise atomic max will not work
+            _ = Atomic.max(expert_usage_stats.ptr, total_writes)
+
+
 @always_inline
 fn moe_create_indices[
     input_type: DType, //,
@@ -216,63 +429,128 @@ fn moe_create_indices[
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
     ):
-        var n = topk_ids.size()
-        var pow_2_length = next_power_of_two(n)
-        var padded_input_buffer = cuda_ctx.enqueue_create_buffer[input_type](
-            pow_2_length
-        )
-        alias unknown_layout = Layout.row_major(UNKNOWN_VALUE)
-        var padded_input = LayoutTensor[
-            mut=True, input_type, unknown_layout, token_expert_order.origin
-        ](
-            padded_input_buffer.unsafe_ptr(),
-            RuntimeLayout[unknown_layout].row_major(IndexList[1](pow_2_length)),
-        )
 
-        var padded_indices_buffer = cuda_ctx.enqueue_create_buffer[
-            DType.uint32
-        ](pow_2_length)
-        var padded_indices = LayoutTensor[
-            mut=True, DType.uint32, unknown_layout, token_expert_order.origin
-        ](
-            padded_indices_buffer.unsafe_ptr(),
-            RuntimeLayout[unknown_layout].row_major(IndexList[1](pow_2_length)),
-        )
+        @parameter
+        if cuda_ctx.default_device_info.api == "cuda":
+            var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](
+                1
+            ).enqueue_fill(0)
+            var lock = LayoutTensor[
+                DType.uint32, Layout.row_major(1), MutableAnyOrigin
+            ](lock_buffer.unsafe_ptr())
 
-        alias hw_info = cuda_ctx.default_device_info
-        alias registers_per_thread = 255
-        alias registers_per_block = hw_info.max_registers_per_block
-        alias block_size_unrounded = registers_per_block // registers_per_thread
-        alias block_size: UInt = UInt(
-            block_size_unrounded - (block_size_unrounded % 2)
-        )
+            alias topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
 
-        alias kernel = moe_create_indices_kernel[
-            input_type,
-            block_size,
-            token_expert_order.layout,
-            expert_start_indices.layout,
-            restore_token_order.layout,
-            expert_ids.layout,
-            expert_usage_stats.layout,
-            padded_indices.layout,
-            padded_input.layout,
-            topk_ids.layout,
-        ]
+            var topk_2D = LayoutTensor[
+                input_type, topk_layout, MutableAnyOrigin
+            ](
+                rebind[UnsafePointer[Scalar[input_type]]](topk_ids.ptr),
+                RuntimeLayout[topk_layout].row_major(
+                    IndexList[2](1, topk_ids.dim(0))
+                ),
+            )
 
-        cuda_ctx.enqueue_function_checked[kernel, kernel](
-            token_expert_order,
-            expert_start_indices,
-            restore_token_order,
-            expert_ids,
-            expert_usage_stats,
-            padded_indices,
-            padded_input,
-            topk_ids,
-            grid_dim=(1, 1, 1),
-            block_dim=(block_size, 1, 1),
-        )
+            var num_experts = expert_ids.dim(0)
 
-        # Free the temporary input buffer
-        _ = padded_input_buffer^
-        _ = padded_indices_buffer^
+            var expert_usage_stats_host = cuda_ctx.enqueue_create_host_buffer[
+                DType.uint32
+            ](2).enqueue_fill(0)
+            cuda_ctx.enqueue_copy[DType.uint32](
+                rebind[UnsafePointer[Scalar[DType.uint32]]](
+                    expert_usage_stats.ptr
+                ),
+                expert_usage_stats_host,
+            )
+
+            alias kernel = moe_create_indices_bucket_sort_kernel[
+                input_type,
+                token_expert_order.layout,
+                expert_start_indices.layout,
+                restore_token_order.layout,
+                expert_ids.layout,
+                expert_usage_stats.layout,
+                topk_layout,
+            ]
+
+            cuda_ctx.enqueue_function_checked[kernel, kernel](
+                token_expert_order,
+                lock,
+                expert_start_indices,
+                restore_token_order,
+                expert_ids,
+                expert_usage_stats,
+                topk_2D,
+                grid_dim=(num_experts),
+                block_dim=(WARP_SIZE),
+            )
+
+            _ = lock_buffer^
+            _ = expert_usage_stats_host^
+        else:
+            var n = topk_ids.size()
+            var pow_2_length = next_power_of_two(n)
+            var padded_input_buffer = cuda_ctx.enqueue_create_buffer[
+                input_type
+            ](pow_2_length)
+            alias unknown_layout = Layout.row_major(UNKNOWN_VALUE)
+            var padded_input = LayoutTensor[
+                mut=True, input_type, unknown_layout, token_expert_order.origin
+            ](
+                padded_input_buffer.unsafe_ptr(),
+                RuntimeLayout[unknown_layout].row_major(
+                    IndexList[1](pow_2_length)
+                ),
+            )
+
+            var padded_indices_buffer = cuda_ctx.enqueue_create_buffer[
+                DType.uint32
+            ](pow_2_length)
+            var padded_indices = LayoutTensor[
+                mut=True,
+                DType.uint32,
+                unknown_layout,
+                token_expert_order.origin,
+            ](
+                padded_indices_buffer.unsafe_ptr(),
+                RuntimeLayout[unknown_layout].row_major(
+                    IndexList[1](pow_2_length)
+                ),
+            )
+
+            alias hw_info = cuda_ctx.default_device_info
+            alias registers_per_thread = 255
+            alias registers_per_block = hw_info.max_registers_per_block
+            alias block_size_unrounded = registers_per_block // registers_per_thread
+            alias block_size: UInt = UInt(
+                block_size_unrounded - (block_size_unrounded % 2)
+            )
+
+            alias kernel = moe_create_indices_kernel[
+                input_type,
+                block_size,
+                token_expert_order.layout,
+                expert_start_indices.layout,
+                restore_token_order.layout,
+                expert_ids.layout,
+                expert_usage_stats.layout,
+                padded_indices.layout,
+                padded_input.layout,
+                topk_ids.layout,
+            ]
+
+            cuda_ctx.enqueue_function_checked[kernel, kernel](
+                token_expert_order,
+                expert_start_indices,
+                restore_token_order,
+                expert_ids,
+                expert_usage_stats,
+                padded_indices,
+                padded_input,
+                topk_ids,
+                grid_dim=(1, 1, 1),
+                block_dim=(block_size, 1, 1),
+            )
+
+            # Free the temporary input buffer
+            _ = padded_input_buffer^
+            _ = padded_indices_buffer^

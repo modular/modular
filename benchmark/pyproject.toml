@@ -3,14 +3,16 @@ authors = [{ name = "Modular", email = "hello@modular.com" }]
 dependencies = [
     "aiohttp",
     "datasets",
-    "huggingface-hub",
     "hf-transfer",
+    "huggingface-hub",
+    "jinja2",
     "msgspec",
     "numpy",
+    "psutil",
+    "taskgroup",
     "tqdm",
     "transformers",
-    "nvitop",
-    "jinja2",
+    "typing-extensions",
     "Pillow",
 ]
 description = "MAX Serve benchmarking tools"

@@ -860,7 +860,7 @@ fn _permute_data[
 ](
     input: UnsafePointer[Scalar[dtype]],
     output: UnsafePointer[Scalar[dtype]],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
 ):
     """
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
@@ -879,7 +879,7 @@ fn _fill_strides[
     dtype: DType,
 ](
     buf: NDBuffer[dtype, rank, _, input_shape],
-    strides: UnsafePointer[Scalar[DType.index]],
+    strides: UnsafePointer[Scalar[DType.int]],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -887,7 +887,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    _fill_strides(buf, NDBuffer[DType.index, 1, _, rank](strides))
+    _fill_strides(buf, NDBuffer[DType.int, 1, _, rank](strides))
 
 
 fn _fill_strides[
@@ -896,7 +896,7 @@ fn _fill_strides[
     dtype: DType,
 ](
     buf: NDBuffer[dtype, rank, _, input_shape],
-    strides: NDBuffer[mut=True, DType.index, 1, _, rank],
+    strides: NDBuffer[mut=True, DType.int, 1, _, rank],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -921,9 +921,7 @@ fn _fill_strides[
     dtype: DType,
 ](
     buf: LayoutTensor[dtype, input_layout, **_],
-    strides: LayoutTensor[
-        mut=True, DType.index, Layout.row_major(buf.rank), **_
-    ],
+    strides: LayoutTensor[mut=True, DType.int, Layout.row_major(buf.rank), **_],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -1056,7 +1054,7 @@ fn _simplify_transpose_perms[
 @always_inline
 fn _convert_transpose_perms_to_static_int_tuple[
     rank: Int
-](perms: UnsafePointer[Scalar[DType.index]]) -> IndexList[rank]:
+](perms: UnsafePointer[Scalar[DType.int]]) -> IndexList[rank]:
     var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
@@ -1107,7 +1105,7 @@ fn _transpose_2d_serial_tiled[
 ](
     output: NDBuffer[mut=True, dtype, rank, _, _],
     input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -1171,7 +1169,7 @@ fn _transpose_2d_parallel_tiled[
 ](
     output: NDBuffer[dtype, rank, _, _],
     input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -1238,7 +1236,7 @@ fn transpose_2d[
 ](
     output: NDBuffer[mut=True, dtype, rank, _, output_shape],
     input: NDBuffer[dtype, rank, _, input_shape],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -1346,7 +1344,7 @@ fn transpose_4d_swap_middle[
 ](
     output: NDBuffer[mut=True, dtype, rank, _, _],
     input: NDBuffer[dtype, rank, *_],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -1373,7 +1371,7 @@ fn transpose_3d_swap_outer[
 ](
     output: NDBuffer[mut=True, dtype, rank, _, output_shape],
     input: NDBuffer[dtype, rank, _, input_shape],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -1398,7 +1396,7 @@ fn transpose_3d_swap_inner[
 ](
     output: NDBuffer[mut=True, dtype, rank, _, _],
     input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -1468,8 +1466,8 @@ fn _copy_with_strides[
     axis: Int,
     output: NDBuffer[mut=True, dtype, rank, _, _],
     input: UnsafePointer[Scalar[dtype]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
-    output_strides: UnsafePointer[Scalar[DType.index]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
     input_offset: Int,
     output_offset: Int,
 ) raises:
@@ -1592,17 +1590,15 @@ fn transpose_strided[
 ](
     output: NDBuffer[mut=True, dtype, rank, _, _],
     input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
 ) raises:
     # Compute `permuted_input_strides`
-    var input_strides = UnsafePointer[Scalar[DType.index]].alloc(rank)
-    var permuted_input_strides = UnsafePointer[Scalar[DType.index]].alloc(rank)
+    var input_strides = UnsafePointer[Scalar[DType.int]].alloc(rank)
+    var permuted_input_strides = UnsafePointer[Scalar[DType.int]].alloc(rank)
     _fill_strides(input, input_strides)
-    _permute_data[rank, DType.index](
-        input_strides, permuted_input_strides, perms
-    )
+    _permute_data[rank, DType.int](input_strides, permuted_input_strides, perms)
     # Compute `output_strides`
-    var output_strides = UnsafePointer[Scalar[DType.index]].alloc(rank)
+    var output_strides = UnsafePointer[Scalar[DType.int]].alloc(rank)
     _fill_strides(output, output_strides)
     # Kickoff; for intuition on permuted input strides, note that
     #   transpose(output, input, [2, 0, 1])
@@ -1638,7 +1634,7 @@ fn transpose[
 ](
     output: NDBuffer[mut=True, dtype, rank, _, _],
     input: NDBuffer[dtype, rank, _, _],
-    perms: UnsafePointer[Scalar[DType.index]],
+    perms: UnsafePointer[Scalar[DType.int]],
 ) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in
@@ -1685,7 +1681,7 @@ fn transpose[
     if simplified_rank == 1:
         # memcpy
         return transpose_trivial_memcpy(output, input)
-    # TODO: Reenable once #15947 is fixed.
+    # TODO: Re-enable once #15947 is fixed.
     # elif simplified_rank == 2:
     #     # tiled transpose
     #     return transpose_2d[rank, output_shape, input_shape, dtype](

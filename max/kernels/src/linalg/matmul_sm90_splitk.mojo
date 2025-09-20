@@ -206,7 +206,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=True,
-    ](a_smem.static_alignment_cast[128](), a_smem_size)
+    ](a_smem, a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
         b_type,
@@ -214,7 +214,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=True,
-    ](b_smem.static_alignment_cast[128](), b_smem_size)
+    ](b_smem, b_smem_size)
 
     var c_smem_tile = LayoutTensor[
         c_type,
@@ -222,7 +222,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](c_smem.static_alignment_cast[128]())
+    ](c_smem)
 
     var a_mbars_ptr = smem_pool.bitcast[Int64]()
     var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
@@ -621,9 +621,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     var logger = Logger()
 
     logger.info("Executing Split-K Warp Specialized GEMM with Multicasting")
-    logger.info("block_tile_shape: ", config.block_tile_shape)
-    logger.info("cluster_shape: ", config.cluster_shape)
-    logger.info("mma_shape: ", config.mma_shape)
+    logger.info("block_tile_shape:", config.block_tile_shape)
+    logger.info("cluster_shape:", config.cluster_shape)
+    logger.info("mma_shape:", config.mma_shape)
 
     alias cluster_shape = StaticTuple[Int32, 3](
         config.cluster_shape[0],

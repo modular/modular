@@ -994,7 +994,7 @@ fn _mha_sm90[
     ]()
     alias k_smem_layout = k_tma_op.layout
     alias v_smem_layout = v_tma_op.layout
-    # for wgmma_0, we mutliply BM x depth @ depth x BN -> BM x BN
+    # for wgmma_0, we multiply BM x depth @ depth x BN -> BM x BN
     # for wgmma_1, we multiply BM x BN @ BN x depth -> BM x depth
     # For wgmma_0, we iterate over (depth//BK) tiles of size BKxBN
     # For wgmma_1, we iterate over (BN//BK) tiles of size BKxdepth
@@ -1613,7 +1613,7 @@ fn _mha_sm90[
                 accum_smem_tile.vectorize[1, simd_size](),
             )
 
-        startend = position.get_start_and_end_for_partitions[BN=BN](partition)
+        startend = position.get_start_and_end_for_partitions(partition)
         var kv_tile_start_row: UInt32 = startend[0]
         var end: UInt32 = startend[1]
 
@@ -1659,25 +1659,23 @@ fn _mha_sm90[
 
         apply_mask(position, mask_status, kv_tile_start_row)
 
+        # Include sink_weights in rowmax computation if present
+        @parameter
+        if not SinkType.is_null:
+            var head_idx = position.head_idx
+            var sink_weight = sink_weights_ptr[head_idx] * log2e
+
+            @parameter
+            for i in range(num_rows_per_warp):
+                rowmax[i] = sink_weight.cast[accum_type]()
+
         # Compute initial rowmax
         var attention_rowmax = _rowmax_online_softmax[
             # threads layout by warp
             1,
             mma_thread_layout,
             use_exp2=True,
-        ](vectorize_p_reg_tile(), rowmax, init_rowmax=True)
-
-        # Include sink_weights in rowmax computation if present
-        @parameter
-        if not SinkType.is_null:
-            var head_idx = position.head_idx
-            var sink_weight = sink_weights_ptr[head_idx]
-
-            @parameter
-            for i in range(num_rows_per_warp):
-                attention_rowmax[i] = max(
-                    attention_rowmax[i], sink_weight.cast[accum_type]()
-                )
+        ](vectorize_p_reg_tile(), rowmax, init_rowmax=SinkType.is_null)
 
         rowmax.copy_from(attention_rowmax)
 
@@ -1690,12 +1688,14 @@ fn _mha_sm90[
         @parameter
         if not SinkType.is_null:
             var head_idx = position.head_idx
-            var sink_weight = sink_weights_ptr[head_idx].cast[accum_type]()
+            var sink_weight = (
+                sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+            )
 
             @parameter
             for i in range(num_rows_per_warp):
                 # Compute exp2((sink_weight - rowmax[i]) * log2e)
-                var sink_contribution = exp2((sink_weight - rowmax[i]) * log2e)
+                var sink_contribution = exp2(sink_weight - rowmax[i])
                 attention_rowsum[i] = attention_rowsum[i] + sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
@@ -1769,12 +1769,14 @@ fn _mha_sm90[
                 @parameter
                 if not SinkType.is_null:
                     var head_idx = position.head_idx
-                    var sink_weight = sink_weights_ptr[head_idx]
+                    var sink_weight_log2 = (
+                        sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+                    )
 
                     @parameter
                     for i in range(num_rows_per_warp):
                         current_rowmax[i] = max(
-                            current_rowmax[i], sink_weight.cast[accum_type]()
+                            current_rowmax[i], sink_weight_log2
                         )
 
                 score_frag_rowmax = current_rowmax
@@ -1851,15 +1853,16 @@ fn _mha_sm90[
                     @parameter
                     if not SinkType.is_null:
                         var head_idx = position.head_idx
-                        var sink_weight = sink_weights_ptr[head_idx].cast[
-                            accum_type
-                        ]()
+                        var sink_weight_log2 = (
+                            sink_weights_ptr[head_idx].cast[accum_type]()
+                            * log2e
+                        )
 
                         @parameter
                         for i in range(num_rows_per_warp):
-                            # Compute exp2((sink_weight - rowmax[i]) * log2e)
+                            # Compute exp2(sink_weight_log2 - rowmax[i])
                             var sink_contribution = exp2(
-                                (sink_weight - rowmax[i]) * log2e
+                                sink_weight_log2 - rowmax[i]
                             )
                             score_frag_rowsum[i] = (
                                 score_frag_rowsum[i] + sink_contribution
@@ -1895,9 +1898,9 @@ fn _mha_sm90[
                 if not docontinue:
                     break
                 position = get_position(docontinue.value())
-                start, new_end = position.get_start_and_end_for_partitions[
-                    BN=BN
-                ](partition)
+                start, new_end = position.get_start_and_end_for_partitions(
+                    partition
+                )
                 kv_tile_start_row = start
                 end = new_end
             else:

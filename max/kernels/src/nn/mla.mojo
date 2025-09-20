@@ -597,17 +597,18 @@ fn mla_decoding_single_batch[
     var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
+    alias alignment = align_of[SIMD[q_type, simd_size]]()
     alias q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[q_type, simd_size]](),
+        alignment=alignment,
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment2,
+        alignment=alignment,
     ](
         rebind[
             __type_of(
@@ -616,7 +617,7 @@ fn mla_decoding_single_batch[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment2,
+                    alignment=alignment,
                 ]().ptr
             )
         ](q_smem),
@@ -1679,17 +1680,18 @@ fn mla_prefill_single_batch[
     var warp_x = warp_id % num_warps_n
 
     # The entire query block (BM x q_depth) is tiled in shared memory.
+    alias alignment = align_of[SIMD[q_type, simd_size]]()
     alias q_smem_size = BM * q_depth
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[q_type, simd_size]](),
+        alignment=alignment,
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment2,
+        alignment=alignment,
     ](
         rebind[
             __type_of(
@@ -1698,7 +1700,7 @@ fn mla_prefill_single_batch[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment2,
+                    alignment=alignment,
                 ]().ptr
             )
         ](q_smem),

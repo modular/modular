@@ -1726,7 +1726,7 @@ def moe_create_indices(
         num_local_experts: The number of experts on this device.
 
     Returns:
-        A tuple of four tensors:
+        A tuple of five tensors:
         - token_expert_order: The reordered token indices, grouped by assigned expert.
         - expert_start_indices: The starting index for each expert's token group in
             the reordered sequence.
@@ -2650,7 +2650,9 @@ def sgmv_qkv_lora_kernel(
     kv_params: KVCacheParams,
     layer_idx: TensorValue,
     max_lora_seq_len: int,
+    max_rank: int,
     q_dim: int,
+    kv_dim: int,
     bias: TensorValue | None = None,
 ) -> TensorValue:
     """
@@ -2693,9 +2695,9 @@ def sgmv_qkv_lora_kernel(
         bias,
     )
 
-    qkv_out = sgmv_kernel(
-        v_qkv,
-        lora_b,
+    q_out = sgmv_kernel(
+        v_qkv[:, :max_rank],
+        lora_b[:, :q_dim, :],
         lora_ids,
         lora_ranks,
         lora_grouped_offsets,
@@ -2703,13 +2705,31 @@ def sgmv_qkv_lora_kernel(
         bias,
     )
 
-    q_out = qkv_out[:, :q_dim]
+    k_out = sgmv_kernel(
+        v_qkv[:, max_rank:],
+        lora_b[:, q_dim : q_dim + kv_dim, :],
+        lora_ids,
+        lora_ranks,
+        lora_grouped_offsets,
+        max_lora_seq_len,
+        bias,
+    )
+
+    v_out = sgmv_kernel(
+        v_qkv[:, 2 * max_rank :],
+        lora_b[:, q_dim + kv_dim :, :],
+        lora_ids,
+        lora_ranks,
+        lora_grouped_offsets,
+        max_lora_seq_len,
+        bias,
+    )
 
     ops.inplace_custom(
         "mo.kv_cache.ragged.paged.radd",
         device=input.device,
         values=[
-            qkv_out[:, q_dim:],
+            ops.concat([k_out, v_out], axis=1),
             kv_collection,
             input_row_offsets,
             ops.constant(0, DType.uint32, DeviceRef.CPU()),

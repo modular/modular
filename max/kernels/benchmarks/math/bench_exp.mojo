@@ -62,11 +62,11 @@ def bench_unary[
     dtype: DType,
 ](mut m: Bench, size: Int, op_name: String):
     alias alignment = 64
-    var input_ptr = UnsafePointer[Scalar[dtype], alignment2=alignment].alloc(
-        size
+    var input_ptr = UnsafePointer[Scalar[dtype],].alloc(
+        size, alignment=alignment
     )
-    var output_ptr = UnsafePointer[Scalar[dtype], alignment2=alignment].alloc(
-        size
+    var output_ptr = UnsafePointer[Scalar[dtype],].alloc(
+        size, alignment=alignment
     )
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
@@ -139,8 +139,8 @@ fn ldexp2kf[
     dtype, simd_width
 ]:
     # return d * (pow2if[simd_width](e >> 1) * pow2if[simd_width](e - (e >> 1))).cast[dtype]();
-    var ans = d * (pow2if[simd_width](e)).cast[dtype]()
-    var y = bitcast[DType.int32, simd_width](ans)
+    var result = d * (pow2if[simd_width](e)).cast[dtype]()
+    var y = bitcast[DType.int32, simd_width](result)
 
     var msb = y
     for _ in range(32):
@@ -152,8 +152,8 @@ fn ldexp2kf[
     #     y=y-(y&mask)
     # if e>=23:
     #     y=y+1
-    ans = bitcast[dtype, simd_width](y)
-    return ans
+    result = bitcast[dtype, simd_width](y)
+    return result
 
 
 @always_inline

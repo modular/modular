@@ -45,7 +45,7 @@ fn keep(val: Int):
     Args:
       val: The value to not optimize away.
     """
-    keep(Scalar[DType.index](val))
+    keep(Scalar[DType.int](val))
 
 
 @always_inline

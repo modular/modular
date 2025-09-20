@@ -31,18 +31,20 @@ from bit import log2_floor
 from gpu.host import DeviceBuffer, HostBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_dim, block_idx, lane_id, thread_idx
-from gpu.intrinsics import buffer_load, buffer_store
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from layout._fillers import BATCH_SIZE
+from layout._utils import make_amd_buffer_resource
+
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
+from sys.intrinsics import readfirstlane
+from gpu.intrinsics import AMDBufferResource
 
-from ._utils import get_amd_buffer_descriptor
 from .int_tuple import (
     _get_index_type,
     _get_layout_type,
@@ -353,7 +355,6 @@ struct LayoutTensor[
     var ptr: UnsafePointer[
         Scalar[dtype],
         address_space=address_space,
-        alignment2=alignment,
         mut=mut,
         origin=origin,
     ]
@@ -840,23 +841,27 @@ struct LayoutTensor[
     fn bitcast[
         new_dtype: DType,
         /,
-        address_space: AddressSpace = Self.address_space,
+        target_address_space: AddressSpace = Self.address_space,
         element_layout: Layout = Self.element_layout,
-    ](self) -> Self.BitcastType[new_dtype, address_space, element_layout]:
+    ](self) -> Self.BitcastType[
+        new_dtype, target_address_space, element_layout
+    ]:
         """Bitcast the underlying pointer to a new data type.
 
         Parameters:
             new_dtype: The new data type it is casting to.
-            address_space: The address space of the returned `LayoutTensor`.
+            target_address_space: The address space of the returned `LayoutTensor`.
             element_layout: The element layout of the returned `LayoutTensor`.
 
         Returns:
             A new `LayoutTensor` with the same memory location but with the
             specified data type, address space, and element layout.
         """
-        return Self.BitcastType[new_dtype, address_space, element_layout](
+        return Self.BitcastType[
+            new_dtype, target_address_space, element_layout
+        ](
             self.ptr.bitcast[Scalar[new_dtype]]().address_space_cast[
-                address_space
+                target_address_space
             ](),
             self.runtime_layout,
         )
@@ -916,19 +921,19 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn address_space_cast[
-        address_space: AddressSpace = Self.address_space,
-    ](self) -> Self.AddressSpaceCastType[address_space]:
+        target_address_space: AddressSpace = Self.address_space,
+    ](self) -> Self.AddressSpaceCastType[target_address_space]:
         """Changes the origin or mutability of a pointer.
 
         Parameters:
-            address_space: The new address space.
+            target_address_space: The new address space.
 
         Returns:
             A new `LayoutTensor` object with the same type and origin
             as the original `LayoutTensor`, and the new specified address_space.
         """
-        return Self.AddressSpaceCastType[address_space](
-            self.ptr.address_space_cast[address_space](),
+        return Self.AddressSpaceCastType[target_address_space](
+            self.ptr.address_space_cast[target_address_space](),
             self.runtime_layout,
             self.runtime_element_layout,
         )
@@ -2076,7 +2081,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn store[
         width: Int
-    ](mut self, coords: IndexList[**_], val: SIMD[dtype, width]):
+    ](self, coords: IndexList[*_, **_], val: SIMD[dtype, width]):
         """Store a SIMD vector to the tensor at the specified 2D coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
@@ -2175,7 +2180,7 @@ struct LayoutTensor[
     @staticmethod
     @always_inline("nodebug")
     fn stack_allocation[
-        *, alignment: Int = Self.alignment
+        *, stack_alignment: Int = Self.alignment
     ]() -> Self.StackTensorType:
         """Allocates stack memory for a `LayoutTensor` with a fully static
         layout.
@@ -2192,7 +2197,7 @@ struct LayoutTensor[
                 alignment.
 
         Parameters:
-            alignment: Memory alignment value for the allocation in bytes. Must
+             stack_alignment: Memory alignment value for the allocation in bytes. Must
                 be a multiple of the tensor's minimum required alignment.
                 Default is the tensor's natural alignment based on its data type
                 and layout.
@@ -2218,9 +2223,9 @@ struct LayoutTensor[
 
         constrained[layout.all_dims_known(), "Requires fully static layout"]()
         constrained[
-            alignment % Self.alignment == 0,
+            stack_alignment % Self.alignment == 0,
             "Stack allocation alignment ",
-            String(alignment),
+            String(stack_alignment),
             " must be multiple of tensor alignment ",
             String(Self.alignment),
         ]()
@@ -2229,7 +2234,7 @@ struct LayoutTensor[
             stack_allocation[
                 layout.size() * element_layout.size(),
                 dtype,
-                alignment=alignment,
+                alignment=stack_alignment,
                 address_space=address_space,
             ]()
         )
@@ -2736,19 +2741,19 @@ struct LayoutTensor[
         Parameters:
             tile_sizes: The dimensions of each tile along each axis of the
                 tensor. For example, in a 2D tensor, `tile[32, 32]` creates
-                32×32 tiles.
+                32x32 tiles.
 
         Args:
             tile_coords: The coordinates of the specific tile to extract. For
                 example, `tile[32, 32](1, 2)` extracts the tile at position
-                (1, 2) in the grid of 32×32 tiles.
+                (1, 2) in the grid of 32x32 tiles.
 
         Returns:
             A view into the original tensor representing the specified tile.
 
         Example:
 
-        For a 4×4 tensor with values:
+        For a 4x4 tensor with values:
 
         ```
         [1 2 3 4]
@@ -2844,6 +2849,28 @@ struct LayoutTensor[
                 runtime_layout.shape.value[i] = shape_i
 
             return tile_type(self.ptr.offset(offset), runtime_layout)
+
+    alias SIMDTileType[tile_size: Int] = Self.TileType[
+        tile_size, simd_width_of[Self.dtype]()
+    ]
+
+    @always_inline
+    fn simd_tile[
+        tile_size: Int
+    ](self, tile_idx: Int) -> Self.SIMDTileType[tile_size]:
+        """Return a SIMD[dtype] sized tile of size `tile_size` at `tile_idx`.
+
+        Parameters:
+            tile_size: The size of the tile along the tiled axis used for
+                vectorization.
+
+        Args:
+            tile_idx: The index of the tile to extract along the tiled axis.
+
+        Returns:
+            A SIMD[dtype] tile of size `tile_size` at `tile_idx`
+        """
+        return self.tile[tile_size, simd_width_of[Self.dtype]()](tile_idx)
 
     @always_inline
     fn tile_with_offset[
@@ -2983,7 +3010,7 @@ struct LayoutTensor[
         Parameters:
             tile_sizes: The dimensions of each tile along each axis of the
                 tensor. For example, in a 2D tensor, `tiled_iterator[32, 32]`
-                creates an iterator over 32×32 tiles.
+                creates an iterator over 32x32 tiles.
             axis: The axis along which the iterator will traverse. Default is 0
                 (first dimension). For example, with axis=0, the iterator will
                 move vertically through tiles.
@@ -3226,7 +3253,7 @@ struct LayoutTensor[
     @always_inline
     fn split[
         axis: Int = 0,
-        alignment: Int = 1,
+        split_alignment: Int = 1,
     ](self, count: Int, idx: Int) -> Self.DynamicSplitType[axis]:
         """Retrieve a specific partition of the tensor after splitting along a
         specified axis.
@@ -3247,7 +3274,7 @@ struct LayoutTensor[
         Parameters:
             axis: The axis along which to split the tensor. Defaults to 0 (first
                 dimension).
-            alignment: Memory alignment value for the partition size. Defaults
+            split_alignment: Memory alignment value for the partition size. Defaults
                 to 1.
 
         Args:
@@ -3294,7 +3321,7 @@ struct LayoutTensor[
         var runtime_shape = Self.DynamicSplitType[
             axis
         ].RuntimeLayoutType.ShapeType()
-        var axis_partition_dim = align_up(axis_dim // count, alignment)
+        var axis_partition_dim = align_up(axis_dim // count, split_alignment)
 
         @parameter
         for i in range(flatten_rank):
@@ -3394,7 +3421,7 @@ struct LayoutTensor[
 
         Parameters:
             threads_layout: Defines the logical arrangement of threads (e.g.,
-                2×2 grid of 4 threads). This layout determines how the tensor is
+                2x2 grid of 4 threads). This layout determines how the tensor is
                 partitioned.
             axis: Optional. If specified, restricts distribution to only this
                 axis. For example, with axis=0 in a 2D thread layout, threads
@@ -3414,7 +3441,7 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 row-major tensor distributed across 4 threads in a 2×2 row-major grid:
+        For a 4x4 row-major tensor distributed across 4 threads in a 2x2 row-major grid:
 
         - Thread 0 will receive a LayoutTensor with a view into
             (0,0), (0,2), (2,0), (2,2) of the original tensor.
@@ -3978,7 +4005,7 @@ struct LayoutTensor[
         Parameters:
             vector_shape: The dimensions of each vector unit along each axis of
                 the tensor. or example, in a 2D tensor, `vectorize[4, 4]` treats
-                4×4 blocks as vector units.
+                4x4 blocks as vector units.
 
         Returns:
             A view of the tensor with a vectorized layout, where each element in
@@ -3987,8 +4014,8 @@ struct LayoutTensor[
 
         Example:
 
-        For a 16×16 tensor, `vectorize[4, 4]` will produce a 4×4 tensor
-        where each element represents a 4×4 block from the original tensor.
+        For a 16x16 tensor, `vectorize[4, 4]` will produce a 4x4 tensor
+        where each element represents a 4x4 block from the original tensor.
 
         Performance:
 
@@ -4021,6 +4048,18 @@ struct LayoutTensor[
         ]()
         # FIXME: this is ugly, is there a simpler way to do this?
         return rebind[Self.VectorizedType[*vector_shape]](ret)
+
+    alias SIMDVectorizedType = Self.VectorizedType[1, simd_width_of[dtype]()]
+
+    @always_inline
+    fn vectorize(self) -> Self.SIMDVectorizedType:
+        """Return a SIMD[dtype] vectorized view of this tensor.
+
+        Returns:
+            A `Self.VectorizedType[1, simd_width_of[Self.dtype]()]` view whose
+            width equals the SIMD width for the tensor's dtype.
+        """
+        return self.vectorize[1, simd_width_of[Self.dtype]()]()
 
     @staticmethod
     fn _compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
@@ -4107,7 +4146,7 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 tensor, `t` with values:
+        For a 4x4 tensor, `t` with values:
 
         ```
         [1 2 3 4]
@@ -4219,7 +4258,7 @@ struct LayoutTensor[
 
         Example:
 
-        Given a 3×4×5 tensor, `t`, the following example extracts a 2×2 slice
+        Given a 3x4x5 tensor, `t`, the following example extracts a 2x2 slice
         from dimensions 0 and 2, with dimension 1 fixed at index 1.
 
         ```mojo
@@ -4333,7 +4372,7 @@ struct LayoutTensor[
 
         Example:
 
-        For a 3×4×5 tensor, `t`, the following example extracts a 1D slice from
+        For a 3x4x5 tensor, `t`, the following example extracts a 1D slice from
         dimension 0, with dimensions 1 and 2 fixed at indices 1 and 2:
 
         ```mojo
@@ -4413,14 +4452,14 @@ struct LayoutTensor[
 
         Example:
 
-        For a 2×3 tensor with values:
+        For a 2x3 tensor with values:
 
         ```
         [1 2 3]
         [4 5 6]
         ```
 
-        `transpose()` will produce a 3×2 tensor:
+        `transpose()` will produce a 3x2 tensor:
 
         ```
         [1 4]
@@ -4487,8 +4526,8 @@ struct LayoutTensor[
 
         Example:
 
-        Given a 2×6 row-major tensor, `reshape[Layout.col_major(3, 4)]()`
-        produces a 3×4 tensor with the same elements in column-major order.
+        Given a 2x6 row-major tensor, `reshape[Layout.col_major(3, 4)]()`
+        produces a 3x4 tensor with the same elements in column-major order.
 
         Performance:
 
@@ -4551,9 +4590,9 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 tensor with a standard row-major layout, composing with a
-        layout that represents a 2×2 tiling would result in a tensor that
-        logically views the data as 2×2 blocks.
+        For a 4x4 tensor with a standard row-major layout, composing with a
+        layout that represents a 2x2 tiling would result in a tensor that
+        logically views the data as 2x2 blocks.
 
         Performance:
 
@@ -5180,7 +5219,7 @@ struct LayoutTensor[
             print(tensor)  # Internally calls `write_to` with a StringWriter
         ```
 
-        Output for a 2×3 tensor:
+        Output for a 2x3 tensor:
 
         ```
         [[1.0, 1.0, 1.0],
@@ -5746,28 +5785,29 @@ fn copy_dram_to_sram[
     alias dst_align = align_of[SIMD[dst.dtype, simd_width]]()
 
     alias num_stores_per_thread = dst_fragments.layout.size()
-    var descriptor = get_amd_buffer_descriptor(src_iter, bound)
+    var buffer = make_amd_buffer_resource(src_iter, bound)
     var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Int(
         src_iter.offset
     )
 
     @parameter
     for i in range(num_stores_per_thread):
-        alias src_static_idx = src_fragments.layout(i)
-        alias dst_idx = dst_fragments.layout(i)
-        var src_idx: Scalar[src_fragments.linear_idx_type]
+        var src_frag_idx: Scalar[src_fragments.linear_idx_type]
 
         @parameter
         if src_tensor.layout.all_dims_known():
-            src_idx = src_static_idx
+            alias frag_layout = src_fragments.layout(i)
+            src_frag_idx = frag_layout
         else:
-            src_idx = src_fragments.runtime_layout(i)
-        var src_vec = buffer_load[src_tensor.dtype, simd_width](
-            descriptor,
-            Int32(src_idx + Int(src_frag_offset)),
-        )
+            src_frag_idx = src_fragments.runtime_layout(i)
+
+        alias dst_frag_idx = dst_fragments.layout(i)
         dst_fragments.ptr.store[alignment=dst_align](
-            dst_idx, src_vec.cast[dst.dtype]()
+            dst_frag_idx,
+            buffer.load[src_tensor.dtype, simd_width](
+                Int32(src_frag_offset),
+                scalar_offset=Int32(src_frag_idx),
+            ).cast[dst.dtype](),
         )
 
 
@@ -6754,6 +6794,111 @@ fn copy_local_to_dram[
 
 
 @always_inline("nodebug")
+fn _copy_local_to_dram_static_row_major[
+    dst_type: DType
+](
+    src: LayoutTensor,
+    dst_fragments: LayoutTensor,
+    dst_frag_offset: Int32,
+    buffer: AMDBufferResource,
+):
+    alias M = dst_fragments.shape[0]()
+    alias N = dst_fragments.shape[1]()
+
+    @parameter
+    for i in range(M):
+
+        @parameter
+        for j in range(N):
+            alias idx = Layout.col_major(M, N)([i, j])
+            alias src_frag_idx = src.layout(idx)
+            alias dst_frag_idx = Int32(dst_fragments.layout(idx))
+
+            var src_element = Element[index_type = src.linear_idx_type].load(
+                src.ptr.offset(src_frag_idx),
+                src.runtime_element_layout,
+            )
+
+            buffer.store(
+                dst_frag_offset + dst_frag_idx,
+                src_element.element_data.cast[dst_type](),
+            )
+
+
+@always_inline("nodebug")
+fn _copy_local_to_dram[
+    dst_thread_layout: Layout,
+    num_threads: Int = dst_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1,
+](dst: LayoutTensor, src: LayoutTensor, buffer: AMDBufferResource):
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+
+    _copy_local_to_dram_validate_args(dst, src)
+
+    alias num_busy_threads = dst_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
+            return
+
+    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
+
+    var base_ptr = buffer.get_base_ptr()
+    var offset = (Int(dst.ptr) - base_ptr) // size_of[dst.dtype]()
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+
+    alias dst_element_stride = dst_fragments.element_layout.stride[1].value()
+
+    @parameter
+    if dst_element_stride == 1 and dst_fragments.layout.all_dims_known():
+        _copy_local_to_dram_static_row_major[dst.dtype](
+            src,
+            dst_fragments,
+            Int32(dst_frag_offset),
+            buffer,
+        )
+    else:
+        alias num_stores_per_thread = dst_fragments.layout.size()
+
+        @parameter
+        for i in range(num_stores_per_thread):
+            alias src_idx = src.layout(i)
+            alias dst_static_idx = dst_fragments.layout(i)
+            var dst_idx = dst_frag_offset
+
+            @parameter
+            if dst_fragments.layout.all_dims_known():
+                dst_idx += dst_static_idx
+            else:
+                dst_idx += dst_fragments.runtime_layout(i)
+
+            var src_element = Element[index_type = src.linear_idx_type].load(
+                src.ptr.offset(src_idx),
+                src.runtime_element_layout,
+            )
+
+            @parameter
+            if dst_element_stride == 1:
+                buffer.store(
+                    Int32(dst_idx),
+                    src_element.element_data.cast[dst.dtype](),
+                )
+            else:
+
+                @parameter
+                for i in range(dst_fragments.element_layout.size()):
+                    alias element_offset = dst_fragments.element_layout(i)
+                    var src = src_element.element_data[i].cast[dst.dtype]()
+                    buffer.store(
+                        Int32(dst_idx + element_offset),
+                        src,
+                    )
+
+
+@always_inline("nodebug")
 fn copy_local_to_dram[
     dst_thread_layout: Layout,
     num_threads: Int = dst_thread_layout.size(),
@@ -6803,10 +6948,30 @@ fn copy_local_to_dram[
         flexibility.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    var buffer = make_amd_buffer_resource(dst_base)
 
-    _copy_local_to_dram_validate_args(dst, src)
+    _copy_local_to_dram[
+        dst_thread_layout, num_threads, thread_scope, block_dim_count
+    ](dst, src, buffer)
 
-    alias num_busy_threads = dst_thread_layout.size()
+
+@always_inline("nodebug")
+fn _copy_dram_to_local[
+    src_thread_layout: Layout,
+    num_threads: Int = src_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1,
+](
+    dst: LayoutTensor,
+    src: LayoutTensor,
+    buffer: AMDBufferResource,
+    offset: OptionalReg[UInt] = None,
+):
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    alias simd_width = src.element_layout.size()
+    _copy_local_to_dram_validate_args(src, dst)
+
+    alias num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -6814,50 +6979,48 @@ fn copy_local_to_dram[
         if worker_idx >= UInt(num_busy_threads):
             return
 
-    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
-    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
-    var descriptor = get_amd_buffer_descriptor(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
-    alias num_stores_per_thread = dst_fragments.layout.size()
+    alias M = src_fragments.shape[0]()
+    alias N = src_fragments.shape[1]()
 
+    constrained[
+        src_fragments.layout.rank() == 2,
+        "src_fragments must be rank 2.",
+    ]()
+
+    constrained[
+        src_fragments.layout.all_dims_known(),
+        "src_fragments must have known layout.",
+    ]()
+
+    @always_inline
     @parameter
-    for i in range(num_stores_per_thread):
-        alias src_idx = src.layout(i)
-        alias dst_static_idx = dst_fragments.layout(i)
-        var dst_idx = dst_frag_offset
-
-        @parameter
-        if dst_fragments.layout.all_dims_known():
-            dst_idx += dst_static_idx
-        else:
-            dst_idx += dst_fragments.runtime_layout(i)
-
-        var src_element = Element[index_type = src.linear_idx_type].load(
-            src.ptr.offset(src_idx),
-            src.runtime_element_layout,
+    fn offset_helper(offset_val: UInt):
+        var src_frag_offset = Int32(
+            src_fragments.distance(src.ptr) + offset_val
         )
 
-        alias element_stride = dst_fragments.element_layout.stride[1].value()
-
+        # These loads need to be row-major for L1 cache performance
         @parameter
-        if element_stride == 1:
-            buffer_store(
-                descriptor,
-                Int32(dst_idx),
-                src_element.element_data.cast[dst.dtype](),
-            )
-        else:
+        for i in range(M):
 
             @parameter
-            for i in range(dst_fragments.element_layout.size()):
-                alias element_offset = dst_fragments.element_layout(i)
-                var src = src_element.element_data[i].cast[dst.dtype]()
-                buffer_store(
-                    descriptor,
-                    Int32(dst_idx + element_offset),
-                    src,
+            for j in range(N):
+                alias dst_frag_idx = Layout.col_major(M, N)([i, j])
+                alias src_frag_idx = Int32(src_fragments.layout([i, j]))
+                dst[dst_frag_idx, 0] = rebind[dst.element_type](
+                    buffer.load[src.dtype, simd_width](
+                        src_frag_offset,
+                        scalar_offset=src_frag_idx,
+                    )
                 )
+
+    if offset:
+        offset_helper(offset.value())
+    else:
+        var base_ptr = buffer.get_base_ptr()
+        offset_helper(UInt((Int(src.ptr) - base_ptr)) // size_of[src.dtype]())
 
 
 @always_inline("nodebug")
@@ -6901,7 +7064,7 @@ fn copy_dram_to_local[
         dst: The destination tensor in register memory (LOCAL address space).
         src: The source tensor in global memory (DRAM) to be copied.
         src_base: The original global memory tensor from which src is derived.
-            This is used to construct the buffer descriptor required by AMD's
+            This is used to construct the buffer struct required by AMD's
             `buffer_load` intrinsic.
         offset: The offset in the global memory.
 
@@ -6913,60 +7076,28 @@ fn copy_dram_to_local[
         before performing computations, reducing memory access latency.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    alias simd_width = src.element_layout.size()
-    _copy_local_to_dram_validate_args(src, dst)
+    var buffer = make_amd_buffer_resource(src_base)
 
-    alias num_busy_threads = src_thread_layout.size()
-    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+    _copy_dram_to_local[
+        src_thread_layout, num_threads, thread_scope, block_dim_count
+    ](dst, src, buffer, offset)
 
-    @parameter
-    if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
-            return
 
-    var src_fragments = src.distribute[src_thread_layout](worker_idx)
-    var descriptor = get_amd_buffer_descriptor(src_base)
-
-    alias M = src_fragments.shape[0]()
-    alias N = src_fragments.shape[1]()
-
-    constrained[
-        src_fragments.layout.rank() == 2,
-        "src_fragments must be rank 2.",
+@always_inline("nodebug")
+fn _copy_dram_to_local[
+    src_thread_layout: Layout,
+    num_threads: Int = src_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1,
+](dst: LayoutTensor, src_iter: LayoutTensorIter, buffer: AMDBufferResource):
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    var src_tensor = src_iter[].vectorize[
+        dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
     ]()
 
-    constrained[
-        src_fragments.layout.all_dims_known(),
-        "src_fragments must have known layout.",
-    ]()
-
-    @always_inline
-    @parameter
-    fn offset_helper(offset_val: UInt):
-        var src_frag_offset = src_fragments.distance(src.ptr) + offset_val
-
-        # These loads need to be row-major for L1 cache performance
-        @parameter
-        for i in range(M):
-
-            @parameter
-            for j in range(N):
-                alias dst_idx = Layout.col_major(M, N)([i, j])
-                alias src_static_idx = src_fragments.layout([i, j])
-                var src_idx = Int32(src_frag_offset) + src_static_idx
-                dst[dst_idx, 0] = rebind[dst.element_type](
-                    buffer_load[src.dtype, simd_width](
-                        descriptor,
-                        src_idx,
-                    )
-                )
-
-    if offset:
-        offset_helper(offset.value())
-    else:
-        offset_helper(
-            UInt((Int(src.ptr) - Int(src_base.ptr)) // size_of[src.dtype]())
-        )
+    _copy_dram_to_local[
+        src_thread_layout, num_threads, thread_scope, block_dim_count
+    ](dst, src_tensor, buffer, UInt(src_iter.offset))
 
 
 @always_inline("nodebug")
@@ -7013,52 +7144,11 @@ fn copy_dram_to_local[
     - This function is particularly useful for prefetching data into registers
         before performing computations, reducing memory access latency.
     """
-    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    var src_tensor = src_iter[].vectorize[
-        dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
-    ]()
-    alias simd_width = src_tensor.element_layout.size()
-    _copy_local_to_dram_validate_args(src_tensor, dst)
+    var buffer = make_amd_buffer_resource(src_iter, Int(bounds))
 
-    alias num_busy_threads = src_thread_layout.size()
-    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
-
-    @parameter
-    if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
-            return
-
-    var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
-
-    var descriptor = get_amd_buffer_descriptor(src_iter, Int(bounds))
-    var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Int(
-        src_iter.offset
-    )
-    alias num_stores_per_thread = src_fragments.layout.size()
-
-    alias M = src_fragments.shape[0]()
-    alias N = src_fragments.shape[1]()
-
-    constrained[
-        src_fragments.layout.rank() == 2,
-        "src_fragments must be rank 2.",
-    ]()
-
-    constrained[
-        src_fragments.layout.all_dims_known(),
-        "src_fragments must have known layout.",
-    ]()
-
-    @parameter
-    for i in range(src_fragments.layout.size()):
-        alias src_static_idx = src_fragments.layout(i)
-        var src_idx = Int32(src_frag_offset) + src_static_idx
-        dst[i, 0] = rebind[dst.element_type](
-            buffer_load[src_tensor.dtype, simd_width](
-                descriptor,
-                src_idx,
-            )
-        )
+    _copy_dram_to_local[
+        src_thread_layout, num_threads, thread_scope, block_dim_count
+    ](dst, src_iter, buffer)
 
 
 @always_inline("nodebug")
@@ -7165,8 +7255,8 @@ fn copy_local_to_shared[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-    row_major: Bool = False
-    # row_major is used when using prefetching from dram to sram via registers for AMD GPUs
+    *,
+    row_major: Bool = False,
 ](
     dst: LayoutTensor[*_, address_space = _GPUAddressSpace.SHARED, **_],
     src: LayoutTensor[*_, address_space = _GPUAddressSpace.LOCAL, **_],
@@ -7518,7 +7608,6 @@ struct LayoutTensorIter[
     var ptr: UnsafePointer[
         Scalar[dtype],
         address_space=address_space,
-        alignment2=alignment,
         mut=mut,
         origin=origin,
     ]
@@ -7575,7 +7664,6 @@ struct LayoutTensorIter[
         ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
-            alignment2=alignment,
             mut=mut,
             origin=origin,
         ],
@@ -7622,7 +7710,6 @@ struct LayoutTensorIter[
         ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
-            alignment2=alignment,
             mut=mut,
             origin=origin,
         ],
@@ -7991,8 +8078,8 @@ struct LayoutTensorIter[
     fn bitcast[
         new_type: DType,
         *,
-        address_space: AddressSpace = Self.address_space,
-        alignment: Int = Self.alignment,
+        target_address_space: AddressSpace = Self.address_space,
+        target_alignment: Int = Self.alignment,
     ](self) -> Self.BitcasType[
         new_type, address_space=address_space, alignment=alignment
     ]:
@@ -8005,9 +8092,9 @@ struct LayoutTensorIter[
 
         Parameters:
             new_type: The target data type to cast to.
-            address_space: The memory address space for the new
+            target_address_space: The memory address space for the new
                 iterator (defaults to current).
-            alignment: Memory alignment requirement for the new
+            target_alignment: Memory alignment requirement for the new
                 iterator (defaults to current).
 
         Returns:
@@ -8016,9 +8103,9 @@ struct LayoutTensorIter[
         return Self.BitcasType[
             new_type, address_space=address_space, alignment=alignment
         ](
-            self.ptr.bitcast[Scalar[new_type]]()
-            .address_space_cast[address_space]()
-            .static_alignment_cast[alignment](),
+            self.ptr.bitcast[Scalar[new_type]]().address_space_cast[
+                address_space
+            ](),
             Int(self.bound),
             self.runtime_layout,
             Int(self.stride),

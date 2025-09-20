@@ -180,7 +180,7 @@ fn kernel_5[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](a_smem.static_alignment_cast[128]())
+    ](a_smem)
 
     var b_smem_tile = LayoutTensor[
         b_type,
@@ -188,7 +188,7 @@ fn kernel_5[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](b_smem.static_alignment_cast[128]())
+    ](b_smem)
 
     alias accum_type = get_accum_type[a_type]()
 

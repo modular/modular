@@ -18,11 +18,9 @@ from .manager import (
     KVCacheInputsSequence,
     KVCacheInputSymbols,
     KVCacheManager,
-    PaddedKVCacheInputs,
     RaggedKVCacheInputs,
 )
 from .paged_cache import (
-    BlockCopyType,
     FetchPagedKVCacheCollection,
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -41,7 +39,6 @@ from .registry import (
 from .utils import build_max_lengths_tensor
 
 __all__ = [
-    "BlockCopyType",
     "FetchPagedKVCacheCollection",
     "KVCacheAwareContext",
     "KVCacheInputSymbols",

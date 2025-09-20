@@ -47,19 +47,22 @@ def apply_logits_processors(
             These are applied in order after the individual context-level
             processors.
     """
-    if batch_logit_offsets and not batch_logit_offsets.device.is_host:
-        batch_logit_offsets = batch_logit_offsets.to(CPU())
+    batch_logit_offsets_cpu: Tensor | None = None
     for i, context in enumerate(context_batch):
         processors = context.sampling_params.logits_processors
         if processors is None:
             continue
+
+        if batch_logit_offsets_cpu is None and batch_logit_offsets is not None:
+            batch_logit_offsets_cpu = batch_logit_offsets.to(CPU())
+
         for processor in processors:
             start_idx: int | None = None
             end_idx: int | None = None
 
-            if batch_logit_offsets is not None:
-                start_idx = batch_logit_offsets[i].item()
-                end_idx = batch_logit_offsets[i + 1].item()
+            if batch_logit_offsets_cpu is not None:
+                start_idx = batch_logit_offsets_cpu[i].item()
+                end_idx = batch_logit_offsets_cpu[i + 1].item()
             else:
                 start_idx = i
                 end_idx = i + 1

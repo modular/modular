@@ -14,6 +14,7 @@ modular_py_library(
     ),
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/lib/API/python/max/diagnostics",
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/serve",
         "//SDK/lib/API/python/max/serve/kvcache_agent",
@@ -49,11 +50,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/serve",
         # These all point to the symlinked version of the benchmark directory.
-        "//SDK/lib/API/python/max/benchmark:benchmark_config",
-        "//SDK/lib/API/python/max/benchmark:benchmark_datasets",
-        "//SDK/lib/API/python/max/benchmark:benchmark_serving",
-        "//SDK/lib/API/python/max/benchmark:metrics",
-        "//SDK/lib/API/python/max/benchmark:sample_workload_utils",
+        "//SDK/lib/API/python/max/benchmark:benchmark_serving_lib",
         requirement("aiohttp"),
         requirement("click"),
         requirement("datasets"),

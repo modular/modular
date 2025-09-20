@@ -56,19 +56,6 @@ struct Dim(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[I: Intable](out self, value: I):
-        """Creates a statically-known dimension.
-
-        Parameters:
-            I: The Intable type.
-
-        Args:
-            value: The static dimension value.
-        """
-        self._value_or_missing = Int(value)
-
-    @always_inline("nodebug")
-    @implicit
     fn __init__[I: Indexer](out self, value: I):
         """Creates a statically-known dimension.
 
@@ -79,15 +66,6 @@ struct Dim(
             value: The static dimension value.
         """
         self = Dim(index(value))
-
-    @always_inline("builtin")
-    fn __init__(out self, value: __mlir_type.index):
-        """Creates a statically-known dimension.
-
-        Args:
-            value: The static dimension value.
-        """
-        self._value_or_missing = Int(mlir_value=value)
 
     @always_inline("builtin")
     @implicit
@@ -324,16 +302,16 @@ struct DimList(Representable, Sized, Stringable, Writable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[Intable: Intable](out self, value: Intable):
+    fn __init__[T: Indexer](out self, value: T):
         """Creates a dimension list from the given list of values.
 
         Parameters:
-            Intable: A type able to be converted to an `Int`.
+            T: A type able to be converted to an index integer.
 
         Args:
             value: The initial dim values list.
         """
-        self.value = VariadicList[Dim](Int(value))
+        self.value = VariadicList[Dim](Int(index(value)))
 
     @always_inline("nodebug")
     fn __init__[I: Indexer & Copyable & Movable](out self, values: (I,)):

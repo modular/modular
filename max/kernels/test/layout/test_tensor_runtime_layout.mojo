@@ -778,9 +778,9 @@ fn test_split():
         layout_int_type = DType.int32,
         linear_idx_type = DType.int32,
     ](ptr, dynamic_layout_Ux8)
-    var tensor_Ux8_split0 = tensor_Ux8.split[1, alignment=3](3, 0)
-    var tensor_Ux8_split1 = tensor_Ux8.split[1, alignment=3](3, 1)
-    var tensor_Ux8_split2 = tensor_Ux8.split[1, alignment=3](3, 2)
+    var tensor_Ux8_split0 = tensor_Ux8.split[1, split_alignment=3](3, 0)
+    var tensor_Ux8_split1 = tensor_Ux8.split[1, split_alignment=3](3, 1)
+    var tensor_Ux8_split2 = tensor_Ux8.split[1, split_alignment=3](3, 2)
 
     # CHECK: ((-1, -1):(8, 1))
     print(tensor_Ux8_split0.layout)
@@ -808,8 +808,8 @@ fn test_split():
 
     alias layout_8x2 = Layout(IntTuple(8, 2), IntTuple(2, 1))
     var tensor_8x2 = LayoutTensor[DType.float32, layout_8x2](ptr)
-    var tensor_8x2_split1 = tensor_8x2.split[0, alignment=3](3, 1)
-    var tensor_8x2_split2 = tensor_8x2.split[0, alignment=3](3, 2)
+    var tensor_8x2_split1 = tensor_8x2.split[0, split_alignment=3](3, 1)
+    var tensor_8x2_split2 = tensor_8x2.split[0, split_alignment=3](3, 2)
 
     # CHECK: ((-1, 2):(2, 1))
     print(tensor_8x2_split1.layout)

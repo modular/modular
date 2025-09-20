@@ -15,12 +15,22 @@ from .context import (
     TextAndVisionContext,
     TextContext,
     TTSContext,
-    get_request_payload_from_pipeline_task,
+)
+from .context_validators import (
+    validate_aspect_ratio_args,
+    validate_image_shape_5d,
+    validate_initial_prompt_has_image,
+    validate_only_one_image,
+    validate_requires_vision_context,
 )
 
 __all__ = [
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",
-    "get_request_payload_from_pipeline_task",
+    "validate_aspect_ratio_args",
+    "validate_image_shape_5d",
+    "validate_initial_prompt_has_image",
+    "validate_only_one_image",
+    "validate_requires_vision_context",
 ]

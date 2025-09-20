@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# start-python-compare-example
 from python import Python
 from python import PythonObject
 
@@ -33,3 +34,4 @@ def main():
     print("Python float type:", py_float_type)
     print("value1 type:", Python.type(value1))
     print("Is value1 a Python float:", Python.type(value1) is py_float_type)
+    # end-python-compare-example

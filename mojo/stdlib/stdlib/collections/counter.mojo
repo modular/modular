@@ -27,7 +27,7 @@ from utils import Variant
 
 @fieldwise_init
 struct Counter[V: KeyElement, H: Hasher = default_hasher](
-    Boolable, Copyable, Defaultable, Movable, Sized
+    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
 ):
     """A container for counting hashable items.
 
@@ -49,6 +49,10 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         V: The value type to be counted. Currently must be KeyElement.
         H: The type of the hasher in the dict.
     """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _DictKeyIter[V, Int, H, iterable_origin]
 
     # Fields
     var _data: Dict[V, Int, H]
@@ -98,9 +102,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in items:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    fn __copyinit__(out self, other: Self):
-        self._data = other._data.copy()
-
     @staticmethod
     fn fromkeys(keys: List[V, *_], value: Int) -> Self:
         """Create a new Counter from a list of keys and a default value.
@@ -145,13 +146,15 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._data[value.copy()] = count
 
-    fn __iter__(self) -> _DictKeyIter[V, Int, H, __origin_of(self._data)]:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over the keyword dict's keys as immutable references.
 
         Returns:
             An iterator of immutable references to the Counter values.
         """
-        return self._data.__iter__()
+        return rebind[Self.IteratorType[__origin_of(self)]](
+            self._data.__iter__()
+        )
 
     fn __contains__(self, key: V) -> Bool:
         """Check if a given key is in the dictionary or not.
@@ -634,15 +637,6 @@ struct CountTuple[V: KeyElement](Copyable, Movable):
         """
         self._value = value.copy()
         self._count = Int(count)
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of the tuple.
-
-        Args:
-            existing: The tuple to copy.
-        """
-        self._value = existing._value.copy()
-        self._count = existing._count
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders

@@ -22,6 +22,7 @@ import queue
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from pathlib import Path
@@ -36,8 +37,7 @@ from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
 from max.interfaces import (
     AudioGenerationRequest,
-    AudioGeneratorContext,
-    InputContext,
+    GenerationStatus,
     LoRAOperation,
     LoRARequest,
     LoRAStatus,
@@ -50,17 +50,17 @@ from max.interfaces import (
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
 )
+from max.pipelines.core.exceptions import InputError
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
+from max.serve.parser import LlamaToolParser, parse_json_from_text
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
-from max.serve.router.json_utils import parse_json_from_text
 from max.serve.schemas.openai import (
     ChatCompletionMessageToolCall,
-    ChatCompletionMessageToolCalls,
     ChatCompletionResponseMessage,
     ChatCompletionStreamOptions,
     ChatCompletionStreamResponseDelta,
@@ -132,8 +132,24 @@ def record_request_end(
     METRICS.output_tokens(n_tokens)
 
 
+def get_finish_reason_from_status(
+    status: GenerationStatus, allow_none: bool = True
+) -> Optional[Literal["stop", "length"]]:
+    if status == GenerationStatus.END_OF_SEQUENCE:
+        return "stop"
+    elif status == GenerationStatus.MAXIMUM_LENGTH:
+        return "length"
+    else:
+        if not allow_none:
+            raise ValueError(
+                f"status: {status} has no associated finish_reason"
+            )
+
+        return None
+
+
 class OpenAIResponseGenerator(ABC, Generic[_T]):
-    def __init__(self, pipeline: TokenGeneratorPipeline[InputContext]) -> None:
+    def __init__(self, pipeline: TokenGeneratorPipeline) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAIResponseGenerator"
         )
@@ -152,15 +168,11 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
 
 async def get_pipeline(
     request: Request, model_name: str
-) -> (
-    TokenGeneratorPipeline[InputContext]
-    | AudioGeneratorPipeline[AudioGeneratorContext]
-):
+) -> TokenGeneratorPipeline | AudioGeneratorPipeline:
     app_state: State = request.app.state
-    pipeline: (
-        TokenGeneratorPipeline[InputContext]
-        | AudioGeneratorPipeline[AudioGeneratorContext]
-    ) = app_state.pipeline
+    pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
+        app_state.pipeline
+    )
 
     models = [pipeline.model_name]
 
@@ -169,6 +181,9 @@ async def get_pipeline(
             request.state.request_id, LoRARequest(LoRAOperation.LIST)
         )
         models += lora_response.message
+
+    if not model_name:
+        model_name = pipeline.model_name
 
     if model_name not in models:
         raise ValueError(
@@ -181,16 +196,19 @@ async def get_pipeline(
     return pipeline
 
 
+@dataclass
 class OpenAIChatResponseGenerator(
     OpenAIResponseGenerator[CreateChatCompletionResponse]
 ):
     def __init__(
         self,
-        pipeline: TokenGeneratorPipeline[InputContext],
+        pipeline: TokenGeneratorPipeline,
         stream_options: ChatCompletionStreamOptions | None = None,
+        parser: LlamaToolParser = field(default_factory=LlamaToolParser),
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
+        self.parser = parser
 
     async def stream(self, request: TextGenerationRequest):
         self.logger.debug("Streaming: Start: %s", request)
@@ -214,19 +232,35 @@ class OpenAIChatResponseGenerator(
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
-                choices = [
-                    Choice3(
-                        index=0,
-                        delta=ChatCompletionStreamResponseDelta(
-                            content=token.decoded_token,
-                            function_call=None,
-                            role="assistant",
-                            refusal=None,
-                        ),
-                        logprobs=None,
-                        finish_reason=None,
-                    )
-                ]
+                if token.decoded_token is not None:
+                    choices = [
+                        Choice3(
+                            index=0,
+                            delta=ChatCompletionStreamResponseDelta(
+                                content=token.decoded_token,
+                                function_call=None,
+                                role="assistant",
+                                refusal=None,
+                            ),
+                            logprobs=None,
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=True
+                            ),
+                        )
+                    ]
+                else:
+                    # If we do not have a decoded_token, we should guarantee we have a finish_reason.
+                    choices = [
+                        Choice3(
+                            index=0,
+                            delta=ChatCompletionStreamResponseDelta(
+                                content="",
+                            ),
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=False
+                            ),
+                        )
+                    ]
 
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
@@ -272,8 +306,20 @@ class OpenAIChatResponseGenerator(
         except Exception as e:
             # Note that for SSE, the server will have already responded with a
             # 200 when establishing the connection.
-            status_code = 400 if isinstance(e, ValueError) else 500
-            logger.exception("Exception in request %s", request.request_id)
+            if isinstance(e, InputError):
+                status_code = 400
+                logger.warning(
+                    "Input validation error in request %s: %s",
+                    request.request_id,
+                    str(e),
+                )
+            elif isinstance(e, ValueError):
+                status_code = 400
+                logger.exception("Exception in request %s", request.request_id)
+            else:
+                status_code = 500
+                logger.exception("Exception in request %s", request.request_id)
+
             error_response = ErrorResponse(
                 error=Error(
                     code=str(status_code), message=str(e), param="", type=""
@@ -308,7 +354,8 @@ class OpenAIChatResponseGenerator(
             n_tokens = len(completed_outputs)
 
             response_message = "".join(
-                output.decoded_token for output in completed_outputs
+                output.decoded_token if output.decoded_token is not None else ""
+                for output in completed_outputs
             )
 
             stop_sequence = [
@@ -316,44 +363,38 @@ class OpenAIChatResponseGenerator(
                 for token in completed_outputs
                 if token.stop_sequence is not None
             ]
+            finish_reason: Optional[str]
             if len(stop_sequence) > 0:
                 idx = response_message.find(stop_sequence[0])
                 response_message = response_message[:idx]
+                finish_reason = "stop"
+            else:
+                finish_reason = get_finish_reason_from_status(
+                    completed_outputs[-1].status, allow_none=False
+                )
 
             response_choices: list[Choice1] = []
-            if tool_use:
-                # Try to parse and handle tool calls if tool_use is enabled
-                tool_calls_resp = self._parse_resp_to_json(response_message)
-
-                if tool_calls_resp:
-                    tool_calls: list[ChatCompletionMessageToolCall] = []
-                    for tool_data in tool_calls_resp:
-                        self._handle_tool_calls_response(tool_data, tool_calls)
-
-                    response_choices.append(
-                        Choice1(
-                            index=0,
-                            message=ChatCompletionResponseMessage(
-                                content="",
-                                role="assistant",
-                                tool_calls=ChatCompletionMessageToolCalls(
-                                    root=tool_calls
-                                ),
-                                function_call=None,
-                                refusal=None,
-                            ),
-                            finish_reason="tool_calls",
-                            logprobs=Logprobs2(content=[], refusal=[]),
-                        )
+            if tool_use and request.response_format is None:
+                try:
+                    response_choices = self.parser(response_message)
+                except Exception as e:
+                    # If parser fails, handle as traditional text
+                    logging.warning(
+                        f"Parsing for tool use failed, handling as general text response. Original error: {e}"
                     )
-                else:
-                    # Handle as regular text response if JSON cannot be parsed
                     self._handle_text_response(
-                        response_message, response_choices
+                        response_message,
+                        response_choices,
+                        finish_reason=finish_reason,
                     )
+
             else:
-                # Handle as regular text response if tool_use is disabled
-                self._handle_text_response(response_message, response_choices)
+                # Handle as regular text response if JSON cannot be parsed
+                self._handle_text_response(
+                    response_message,
+                    response_choices,
+                    finish_reason=finish_reason,
+                )
 
             usage = None
             if n_tokens > 0:
@@ -394,7 +435,10 @@ class OpenAIChatResponseGenerator(
         return json_objects
 
     def _handle_text_response(
-        self, response_message: str, response_choices: list[Choice1]
+        self,
+        response_message: str,
+        response_choices: list[Choice1],
+        finish_reason: Optional[str],
     ) -> None:
         """Handle regular text response by appending to response_choices."""
         response_choices.append(
@@ -407,7 +451,7 @@ class OpenAIChatResponseGenerator(
                     function_call=None,
                     refusal="",
                 ),
-                finish_reason="stop",
+                finish_reason=finish_reason,
                 logprobs=Logprobs2(content=[], refusal=[]),
             )
         )
@@ -433,7 +477,7 @@ class OpenAIChatResponseGenerator(
 
 
 class OpenAIEmbeddingsResponseGenerator:
-    def __init__(self, pipeline: TokenGeneratorPipeline[InputContext]) -> None:
+    def __init__(self, pipeline: TokenGeneratorPipeline) -> None:
         self.pipeline = pipeline
 
     async def encode(
@@ -479,9 +523,7 @@ class OpenAIEmbeddingsResponseGenerator:
 
 
 class OpenAISpeechResponseGenerator:
-    def __init__(
-        self, pipeline: AudioGeneratorPipeline[AudioGeneratorContext]
-    ) -> None:
+    def __init__(self, pipeline: AudioGeneratorPipeline) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAISpeechResponseGenerator"
         )
@@ -687,8 +729,7 @@ async def openai_create_chat_completion(
             request_json
         )
         pipeline: (
-            TokenGeneratorPipeline[InputContext]
-            | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -782,6 +823,11 @@ async def openai_create_chat_completion(
     except (TypeError, ValidationError) as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.exception("ValueError in request %s", request_id)
         # NOTE(SI-722): These errors need to return more helpful details,
@@ -861,8 +907,7 @@ async def openai_create_embeddings(
             request_json = await request.json()
         embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
         pipeline: (
-            TokenGeneratorPipeline[InputContext]
-            | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, embeddings_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -905,6 +950,11 @@ async def openai_create_embeddings(
     except (TypeError, ValidationError) as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.exception("ValueError in request %s", request_id)
         # NOTE(SI-722): These errors need to return more helpful details,
@@ -972,11 +1022,22 @@ class OpenAICompletionResponseGenerator(
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
-                choices = [
-                    CompletionResponseStreamChoice(
-                        index=0, text=token.decoded_token, logprobs=log_probs
-                    )
-                ]
+                if token.decoded_token is not None:
+                    choices = [
+                        CompletionResponseStreamChoice(
+                            index=0,
+                            text=token.decoded_token,
+                            logprobs=log_probs,
+                            finish_reason=None,
+                        )
+                    ]
+                else:
+                    choices = [
+                        CompletionResponseStreamChoice(
+                            index=0, text="", finish_reason=None
+                        )
+                    ]
+
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
                 response = CompletionStreamResponse(
@@ -1004,6 +1065,17 @@ class OpenAICompletionResponseGenerator(
                 status_code=status_code,
                 content={"detail": "Too Many Requests"},
                 headers={"Retry-After": "30"},
+            )
+        except InputError as e:
+            status_code = 400
+            logger.warning(
+                "Input validation error in request %s: %s",
+                request.request_id,
+                str(e),
+            )
+            yield JSONResponse(
+                status_code=status_code,
+                content={"detail": "Input validation error", "message": str(e)},
             )
         except ValueError as e:
             status_code = 500
@@ -1041,13 +1113,18 @@ class OpenAICompletionResponseGenerator(
 
                 log_probs = _process_log_probabilities(req_outputs)
                 response_message = "".join(
-                    output.decoded_token for output in req_outputs
+                    output.decoded_token
+                    if output.decoded_token is not None
+                    else ""
+                    for output in req_outputs
                 )
                 response_choices.append(
                     Choice(
                         index=i,
                         text=response_message,
-                        finish_reason="stop",
+                        finish_reason=get_finish_reason_from_status(
+                            req_outputs[-1].status
+                        ),
                         logprobs=log_probs,
                     )
                 )
@@ -1157,8 +1234,7 @@ async def openai_create_completion(
             ) / 1e6
 
         pipeline: (
-            TokenGeneratorPipeline[InputContext]
-            | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -1250,7 +1326,7 @@ async def health() -> Response:
 
 @router.get("/models", response_model=None)
 async def openai_get_models(request: Request) -> ListModelsResponse:
-    pipeline: TokenGeneratorPipeline[InputContext] = request.app.state.pipeline
+    pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     model_list = [
         Model(id=pipeline.model_name, object="model", created=None, owned_by="")
     ]
@@ -1269,7 +1345,7 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 
 @router.get("/models/{model_id}", response_model=None)
 async def openai_get_model(model_id: str, request: Request) -> Model:
-    pipeline: TokenGeneratorPipeline[InputContext] = request.app.state.pipeline
+    pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     pipeline_model = Model(
         id=pipeline.model_name, object="model", created=None, owned_by=""
     )
@@ -1300,8 +1376,7 @@ async def create_streaming_audio_speech(
             request_json
         )
         pipeline: (
-            TokenGeneratorPipeline[InputContext]
-            | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
         sampling_params = SamplingParams(
@@ -1330,6 +1405,11 @@ async def create_streaming_audio_speech(
     except (TypeError, ValidationError) as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.exception("ValueError in request %s", request_id)
         # NOTE(SI-722): These errors need to return more helpful details,

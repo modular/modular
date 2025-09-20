@@ -409,6 +409,7 @@ fn naive_blockwise_scaled_fp8_matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
+    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -450,29 +451,36 @@ fn naive_blockwise_scaled_fp8_matmul[
     var b_scales_dim0 = b_scales.dim(0)
     var b_scales_dim1 = b_scales.dim(1)
 
-    # NOTE: a_scales_dim1 is padded to be a multiple of 16 bytes so a_scales_dim1 == M dose not always hold
-    if K % a_scales_dim0 != 0:
-        raise Error("K must be divisible by a_scales.dim(0)")
+    # these checks are only applicable when A_SCALES_SIZE and B_SCALES_SIZE are not provided
+    @parameter
+    if not scales_granularity_mnk:
+        if K % a_scales_dim0 != 0:
+            raise Error(
+                "K must be divisible by a_scales.dim(0) if A_SCALES_SIZE is not"
+                " provided"
+            )
 
-    if transpose_b and (K % b_scales_dim1 != 0 or N % b_scales_dim0 != 0):
-        raise Error(
-            "K must be divisible by b_scales.dim(1) and N must be divisible by"
-            " b_scales.dim(0)"
-        )
+        if transpose_b and (K % b_scales_dim1 != 0 or N % b_scales_dim0 != 0):
+            raise Error(
+                "K must be divisible by b_scales.dim(1) and N must be divisible"
+                " by b_scales.dim(0) if B_SCALES_SIZE is not provided"
+            )
 
-    if not transpose_b and (K % b_scales_dim0 != 0 or N % b_scales_dim1 != 0):
-        raise Error(
-            "K must be divisible by b_scales.dim(0) and N must be divisible by"
-            " b_scales.dim(1)"
-        )
+        if not transpose_b and (
+            K % b_scales_dim0 != 0 or N % b_scales_dim1 != 0
+        ):
+            raise Error(
+                "K must be divisible by b_scales.dim(0) and N must be divisible"
+                " by b_scales.dim(1) if B_SCALES_SIZE is not provided"
+            )
 
     logger.info("Executing Naive Blockwise Scaled FP8 GEMM")
-    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]")
+    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]", sep="")
     logger.info(
-        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]"
+        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]", sep=""
     )
     logger.info(
-        "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]"
+        "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]", sep=""
     )
 
     alias kernel = naive_blockwise_scaled_fp8_matmul_kernel[
@@ -487,9 +495,10 @@ fn naive_blockwise_scaled_fp8_matmul[
         __type_of(c).layout,
         __type_of(a_scales).layout,
         __type_of(b_scales).layout,
-        BLOCK_DIM,
-        transpose_b,
-        elementwise_lambda_fn,
+        BLOCK_DIM=BLOCK_DIM,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        scales_granularity_mnk=scales_granularity_mnk,
     ]
 
     ctx.enqueue_function_checked[kernel, kernel](
@@ -518,6 +527,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
@@ -525,6 +535,23 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
     b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
 ):
+    # Note: This is a naive kernel that supports a generalized blockwise scaled
+    # fp8 matmul.
+    # Currently, it supports two modes:
+    # 1. [1 x SCALE_SIZE_K] x [SCALE_SIZE_K x SCALE_SIZE_N] blockwise scaling if
+    #    scales_granularity_mnk is not provided. In this mode, the kernel will infer
+    #    the scale sizes from the input and scale tensor shapes. The input shapes
+    #    must be divisible by the scale sizes otherwise it will raise an error.
+    # 2. [SCALE_SIZE_M x SCALE_SIZE_K] x [SCALE_SIZE_K x SCALE_SIZE_N] blockwise scaling if
+    #    scales_granularity_mnk is provided. In this mode, the kernel will use the
+    #    provided scale sizes to compute the scaled matmul.
+    #
+    # Assumptions:
+    # 1. a should be always in K-major format
+    # 2. b should be in K-major format if transpose_b is True otherwise it is in N-major format
+    # 3. a_scales should be always in M-major format
+    # 4. b_scales should be in K-major format if transpose_b is True otherwise it is in N-major format
+
     constrained[
         accum_type == DType.float32,
         "Only float32 is supported for accumulation for scaled matmul",
@@ -540,20 +567,37 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     if x >= UInt(M) or y >= UInt(N):
         return
 
-    var a_scale_0 = a_scales.dim(0)
-    var a_scale_1 = a_scales.dim(1)
-    var b_scale_0 = b_scales.dim(0)
-    var b_scale_1 = b_scales.dim(1)
-    var MAT_A_ROWS_SCALE_SIZE = K // a_scale_0
-    # we hard code this to 1 for now because we pad the M dimension needs to be a multiple of 16 bytes
-    # and (M // a_scale_1) will not give us the correct scale factor.
-    var MAT_A_COLS_SCALE_SIZE = 1
-    var MAT_B_ROWS_SCALE_SIZE = (
-        N // b_scale_0 if transpose_b else K // b_scale_0
-    )
-    var MAT_B_COLS_SCALE_SIZE = (
-        K // b_scale_1 if transpose_b else N // b_scale_1
-    )
+    var MAT_A_ROWS_SCALE_SIZE: UInt
+    var MAT_A_COLS_SCALE_SIZE: UInt
+    var MAT_B_ROWS_SCALE_SIZE: UInt
+    var MAT_B_COLS_SCALE_SIZE: UInt
+
+    @parameter
+    if scales_granularity_mnk:
+        alias scales_granularity = scales_granularity_mnk.value()
+        MAT_A_ROWS_SCALE_SIZE = UInt(scales_granularity[2])
+        MAT_A_COLS_SCALE_SIZE = UInt(scales_granularity[0])
+        MAT_B_ROWS_SCALE_SIZE = UInt(
+            scales_granularity[1]
+        ) if transpose_b else UInt(scales_granularity[2])
+        MAT_B_COLS_SCALE_SIZE = UInt(
+            scales_granularity[2]
+        ) if transpose_b else UInt(scales_granularity[1])
+
+    else:
+        var a_scale_0 = a_scales.dim(0)
+        # var a_scale_1 = a_scales.dim(1)
+        var b_scale_0 = b_scales.dim(0)
+        var b_scale_1 = b_scales.dim(1)
+        MAT_A_ROWS_SCALE_SIZE = UInt(K // a_scale_0)
+        # MAT_A_COLS_SCALE_SIZE = UInt(M // a_scale_1)
+        MAT_A_COLS_SCALE_SIZE = 1
+        MAT_B_ROWS_SCALE_SIZE = UInt(N // b_scale_0) if transpose_b else UInt(
+            K // b_scale_0
+        )
+        MAT_B_COLS_SCALE_SIZE = UInt(K // b_scale_1) if transpose_b else UInt(
+            N // b_scale_1
+        )
 
     var accum = Scalar[accum_type](0)
     for k in range(K):

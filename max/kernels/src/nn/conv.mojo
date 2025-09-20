@@ -31,7 +31,7 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.dimlist import Dim, DimList
-from gpu._cudnn.cnn_infer import (
+from _cudnn.cnn_infer import (
     cudnnConvolutionForward,
     cudnnConvolutionMode_t,
     cudnnConvolutionStruct,
@@ -42,7 +42,7 @@ from gpu._cudnn.cnn_infer import (
     cudnnSetConvolutionMathType,
     cudnnGetConvolutionForwardWorkspaceSize,
 )
-from gpu._cudnn.infer import (
+from _cudnn.infer import (
     cudnnContext,
     cudnnConvolutionFwdAlgo_t,
     cudnnCreate,
@@ -392,7 +392,7 @@ struct ConvDirectNHWC[
     var conv_shape: ConvShape[input_rank - 2]
 
     # Support partition in 4 dims: (n, c, f, ho_or_howo). If the input is
-    # padded, the output spacial dims are merged into one as howo. If not
+    # padded, the output spatial dims are merged into one as howo. If not
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 

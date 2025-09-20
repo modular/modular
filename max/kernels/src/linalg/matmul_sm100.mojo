@@ -170,10 +170,10 @@ fn load_AB[
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -277,10 +277,10 @@ fn consumer_main_loop[
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -389,7 +389,7 @@ fn elementwise_helper[
     ],
 ):
     # Here we start keeping track of the index / indices this thread is
-    # responsbile for in shared memory. This is represented with shared_memory_row
+    # responsible for in shared memory. This is represented with shared_memory_row
     # and shared_memory_column and the children of these values shared_memory_row_upper_half
     # shared_memory_row_lower_half. We also need to update the global memory column c_col by
     # stageN since we are sliding through the overall compute block.
@@ -501,18 +501,18 @@ fn elementwise_helper[
             )
 
         else:
-            # cant cast to uint64 as it's not supported yet
+            # can't cast to uint64 as it's not supported yet
             # this will cost us slightly in performance
             alias fast_div = FastDiv[DType.uint32](shared_n)
 
             shared_upper_row = (
-                Scalar[DType.index](offset_upper).cast[fast_div.uint_type]()
+                Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
             shared_upper_col = offset_upper % shared_n
 
             shared_lower_row = (
-                Scalar[DType.index](offset_lower).cast[fast_div.uint_type]()
+                Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
             shared_lower_col = offset_lower % shared_n
@@ -578,10 +578,10 @@ fn multi_stage_store_C[
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
@@ -775,10 +775,10 @@ fn store_C[
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
@@ -1096,7 +1096,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     alias b_tma_rows = b_desc_layout.shape[0].value()
     alias c_smem_layout = Layout.row_major(BM, MMA_N)
 
-    # keep the physical SMEM buffer BM × MMA_N
+    # keep the physical SMEM buffer BM x MMA_N
     alias a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
@@ -1120,11 +1120,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (
-        (b_smem_base + b_smem_size)
-        .bitcast[Scalar[c_type]]()
-        .static_alignment_cast[128]()
-    )
+    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -1133,7 +1129,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base.static_alignment_cast[128](),
+        a_smem_base,
         a_smem_size,
     )
 
@@ -1144,7 +1140,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base.static_alignment_cast[128](),
+        b_smem_base,
         b_smem_size,
     )
 
@@ -1497,11 +1493,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
 fn blackwell_matmul_tma_umma_warp_specialized[
     c_type: DType,
-    c_shape: DimList,
+    c_layout: Layout,
     a_type: DType,
-    a_shape: DimList,
+    a_layout: Layout,
     b_type: DType,
-    b_shape: DimList,
+    b_layout: Layout,
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
@@ -1512,16 +1508,13 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     block_swizzle_size: Int = 0,
     rasterize_order: RasterOrder = RasterOrder.AlongM,
+    num_pipeline_stages: Optional[UInt] = None,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c_device: LayoutTensor[c_type, c_layout, *_, **_],
+    a_device: LayoutTensor[a_type, a_layout, *_, **_],
+    b_device: LayoutTensor[b_type, b_layout, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
-
     constrained[
         transpose_b,
         "Only support transposed B",
@@ -1535,6 +1528,18 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     alias BN = MMA_N // cta_group
     alias BK = config.block_tile_shape[2]
 
+    # constraint for bfloat16 matmul
+    constrained[
+        (a_type != DType.bfloat16) or (MMA_M != 128) or (MMA_N % 32 == 0),
+        "if MMA_M is 128, then MMA_N must be a multiple of 32",
+    ]()
+
+    # constraint for fp8 matmul
+    constrained[
+        (a_type != DType.float8_e4m3fn) or (MMA_N % 64 == 0),
+        "MMA_N must be a multiple of 64 for fp8 matmul",
+    ]()
+
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
 
@@ -1546,7 +1551,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
 
     a_tma_op = create_tma_tile[
         a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
-    ](ctx, a)
+    ](ctx, a_device)
 
     b_tma_op = create_tma_tile[
         b_type,
@@ -1556,7 +1561,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
-    ](ctx, b)
+    ](ctx, b_device)
 
     # If MMA_M is 256, the warps read the entire MMA_N.
     # That MMA_N to be multiple of 32 for me to use large N dim on C buf write out
@@ -1574,7 +1579,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         2,
         c_tma_tile_shape,
         swizzle_mode=c_swizzle,
-    ](ctx, c)
+    ](ctx, c_device)
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -1631,9 +1636,21 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages = smem_leftover // producer_consumer_smem_per_stage
+    alias max_pipeline_stages: UInt = smem_leftover // producer_consumer_smem_per_stage
 
-    alias producer_consumer_smem = producer_consumer_smem_per_stage * max_pipeline_stages
+    constrained[
+        max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
+    ]()
+
+    @parameter
+    if num_pipeline_stages:
+        constrained[
+            num_pipeline_stages.value() <= max_pipeline_stages,
+            "Pipeline stage must be less than or equal to max pipeline stages",
+        ]()
+
+    alias pipeline_stage = num_pipeline_stages.value() if num_pipeline_stages else max_pipeline_stages
+    alias producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stage
 
     alias smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
@@ -1658,10 +1675,10 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages = UInt(max_pipeline_stages),
+        num_pipeline_stages = UInt(pipeline_stage),
         num_clc_pipeline_stages=num_clc_pipeline_stages,
         num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
-        n = c.shape[1](),
+        n = c_device.shape[1](),
         num_output_stages = UInt(num_output_stages),
         output_tile_shape=output_tile_shape,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -1687,7 +1704,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         c_tma_op,
         cluster_dim,
         K // BK,
-        c.dim[0](),
+        c_device.dim[0](),
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
@@ -1746,9 +1763,7 @@ fn matmul_sm100_fallback_kernel[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment2=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -1789,11 +1804,7 @@ fn matmul_sm100_fallback_kernel[
     var b_smem_tile = b_smem_tile_t(b_smem)
 
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
-    var ptr_tmem_addr = (
-        (b_smem + b_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -1806,12 +1817,8 @@ fn matmul_sm100_fallback_kernel[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()

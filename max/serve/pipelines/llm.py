@@ -20,54 +20,53 @@ import signal
 from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Callable
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    AudioGenerationOutput,
     AudioGenerationRequest,
-    AudioGeneratorContext,
-    AudioGeneratorOutput,
+    EmbeddingsGenerationOutput,
     GenerationStatus,
-    InputContext,
     LogProbabilities,
     PipelineTokenizer,
+    TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
+from max.serve.process_control import ProcessMonitor
 from max.serve.queue.lora_queue import LoRAQueue
-from max.serve.scheduler.queues import EngineQueue
+from max.serve.scheduler.queues import EngineQueue, SchedulerZmqConfigs
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
-
-ContextType = TypeVar("ContextType", bound=InputContext)
 
 logger = logging.getLogger("max.serve")
 
 
 @dataclass(frozen=True)
 class TokenGeneratorOutput:
-    decoded_token: str
+    status: GenerationStatus
+    decoded_token: str | None = None
     token_log_probabilities: list[float] | None = None
     top_log_probabilities: list[dict[str, float]] | None = None
     prompt_token_count: int | None = None
     stop_sequence: str | None = None
 
 
-@dataclass(frozen=True)
-class EmbeddingsGeneratorOutput:
-    embeddings: npt.NDArray[np.floating[Any]]
-
-
-class TokenGeneratorPipeline(Generic[ContextType]):
+class TokenGeneratorPipeline:
     """Base class for LLM text generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer[ContextType, int, TextGenerationRequest],
-        engine_queue: EngineQueue[ContextType, Any],
+        tokenizer: PipelineTokenizer[
+            TextAndVisionContext | TextContext, int, TextGenerationRequest
+        ],
+        worker_monitor: ProcessMonitor,
+        scheduler_zmq_configs: SchedulerZmqConfigs,
         lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
@@ -78,10 +77,14 @@ class TokenGeneratorPipeline(Generic[ContextType]):
 
         self.model_name = model_name
         self.tokenizer = tokenizer
-        self.engine_queue = engine_queue
         self.lora_queue = lora_queue
 
         self._background_tasks: set[asyncio.Task[object]] = set()
+
+        self.engine_queue = EngineQueue[Any, Any](
+            worker_monitor=worker_monitor,
+            scheduler_zmq_configs=scheduler_zmq_configs,
+        )
 
     async def _collect_log_probs(
         self,
@@ -130,8 +133,16 @@ class TokenGeneratorPipeline(Generic[ContextType]):
                 stop_detector = StopDetector(stop=request.sampling_params.stop)
 
                 async for response in self.engine_queue.stream(
-                    request.request_id, context
+                    context.request_id, context
                 ):
+                    assert isinstance(response, TextGenerationOutput)
+
+                    if len(response.tokens) == 0:
+                        output = TokenGeneratorOutput(
+                            status=response.final_status
+                        )
+                        yield output
+
                     for i, token in enumerate(response.tokens):
                         # We intentionally do not use `with Trace(...)` to minimize
                         # nesting in code.
@@ -179,6 +190,7 @@ class TokenGeneratorPipeline(Generic[ContextType]):
                             top_log_probabilities=top_log_probabilities,
                             prompt_token_count=context.current_length,
                             stop_sequence=stop_sequence_match,
+                            status=response.final_status,
                         )
 
                         tracer = Tracer("metrics_report_ttft_or_itl")
@@ -206,7 +218,7 @@ class TokenGeneratorPipeline(Generic[ContextType]):
 
     async def encode(
         self, request: TextGenerationRequest
-    ) -> EmbeddingsGeneratorOutput:
+    ) -> EmbeddingsGenerationOutput:
         """Generates embedded outputs for the provided request."""
         total_sw = StopWatch()
         self.logger.debug(
@@ -223,9 +235,9 @@ class TokenGeneratorPipeline(Generic[ContextType]):
                 async for response in self.engine_queue.stream(
                     request.request_id, context
                 ):
-                    return EmbeddingsGeneratorOutput(
-                        embeddings=response.embeddings
-                    )
+                    assert isinstance(response, EmbeddingsGenerationOutput)
+                    return response
+
                 raise RuntimeError(
                     f"No embeddings were generated for request {request.request_id}"
                 )
@@ -237,8 +249,8 @@ class TokenGeneratorPipeline(Generic[ContextType]):
                     total_sw.elapsed_ms,
                 )
 
-    async def __aenter__(self) -> TokenGeneratorPipeline[ContextType]:
-        self.logger.info("%s: Starting workers:", self.model_name)
+    async def __aenter__(self) -> TokenGeneratorPipeline:
+        self.logger.debug("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
         if not self.engine_queue.is_worker_healthy():
             raise RuntimeError("Worker process not healthy not starting worker")
@@ -254,7 +266,7 @@ class TokenGeneratorPipeline(Generic[ContextType]):
                 "Worker process not healthy after running background task"
             )
 
-        self.logger.info(
+        self.logger.debug(
             "%s: Started workers: %d tasks",
             self.model_name,
             len(self._background_tasks),
@@ -277,7 +289,7 @@ class TokenGeneratorPipeline(Generic[ContextType]):
         task = asyncio.create_task(fn())
         task.add_done_callback(partial(self.log_task_done, task_name=task_name))
         self._background_tasks.add(task)
-        self.logger.info(
+        self.logger.debug(
             "%s: Task Added: %s, %s, %d total",
             self.model_name,
             task_name,
@@ -308,16 +320,17 @@ class TokenGeneratorPipeline(Generic[ContextType]):
             os.kill(os.getpid(), signal.SIGTERM)
 
 
-class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
+class AudioGeneratorPipeline:
     """Base class for LLM audio generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
         tokenizer: PipelineTokenizer[
-            AudioGeneratorContext, object, AudioGenerationRequest
+            TTSContext, object, AudioGenerationRequest
         ],
-        engine_queue: EngineQueue[AudioGeneratorContext, Any],
+        worker_monitor: ProcessMonitor,
+        scheduler_zmq_configs: SchedulerZmqConfigs,
         lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
@@ -327,14 +340,17 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         self.model_name = model_name
         self.tokenizer = tokenizer
-        self.engine_queue = engine_queue
         self.lora_queue = lora_queue
 
         self._background_tasks: set[asyncio.Task[object]] = set()
+        self.engine_queue = EngineQueue[TTSContext, AudioGenerationOutput](
+            worker_monitor=worker_monitor,
+            scheduler_zmq_configs=scheduler_zmq_configs,
+        )
 
     async def next_chunk(
         self, request: AudioGenerationRequest
-    ) -> AsyncGenerator[AudioGeneratorOutput, None]:
+    ) -> AsyncGenerator[AudioGenerationOutput, None]:
         """Generates and streams audio for the provided request."""
         total_sw = StopWatch()
         self.logger.debug(
@@ -362,9 +378,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
     async def generate_full_audio(
         self, request: AudioGenerationRequest
-    ) -> AudioGeneratorOutput:
+    ) -> AudioGenerationOutput:
         """Generates complete audio for the provided request."""
-        audio_chunks: list[AudioGeneratorOutput] = []
+        audio_chunks: list[AudioGenerationOutput] = []
         np_chunks: list[npt.NDArray[np.floating[Any]]] = []
         async for chunk in self.next_chunk(request):
             if chunk.audio_data.size == 0 or chunk.audio_data.size == 0:
@@ -377,7 +393,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         import numpy as np
 
         if len(audio_chunks) == 0:
-            return AudioGeneratorOutput(
+            return AudioGenerationOutput(
                 final_status=GenerationStatus.END_OF_SEQUENCE
             )
 
@@ -390,14 +406,14 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         last_chunk = audio_chunks[-1]
         assert last_chunk.is_done
 
-        return AudioGeneratorOutput(
+        return AudioGenerationOutput(
             audio_data=combined_audio,
             metadata=last_chunk.metadata,
             final_status=GenerationStatus.END_OF_SEQUENCE,
         )
 
     async def __aenter__(self):
-        self.logger.info("%s: Starting workers:", self.model_name)
+        self.logger.debug("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
         if not self.engine_queue.is_worker_healthy():
             raise RuntimeError("Worker process not healthy not starting worker")
@@ -413,7 +429,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
                 "Worker process not healthy after running background task"
             )
 
-        self.logger.info(
+        self.logger.debug(
             "%s: Started workers: %d tasks",
             self.model_name,
             len(self._background_tasks),
@@ -436,7 +452,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         task = asyncio.create_task(fn())
         task.add_done_callback(partial(self.log_task_done, task_name=task_name))
         self._background_tasks.add(task)
-        self.logger.info(
+        self.logger.debug(
             "%s: Task Added: %s, %s, %d total",
             self.model_name,
             task_name,

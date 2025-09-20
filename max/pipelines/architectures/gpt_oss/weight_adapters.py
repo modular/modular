@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
 
-# Maps from Safetensor to MAX weight names.
 GPT_OSS_SAFETENSOR_MAP: dict[str, str] = {
     "model.embed_tokens.": "language_model.embed_tokens.",
     "model.norm.": "language_model.norm.",
@@ -23,11 +22,6 @@ GPT_OSS_SAFETENSOR_MAP: dict[str, str] = {
     "model.layers.": "language_model.layers.",
     # MoE weight mappings
     ".mlp.router": ".mlp.gate.gate_score",
-    ".mlp.experts.gate_up_proj": ".mlp.experts.gate_up_proj",
-    ".mlp.experts.down_proj": ".mlp.experts.down_proj",
-    ".mlp.experts.gate_up_proj_bias": ".mlp.experts.gate_up_proj_bias",
-    ".mlp.experts.down_proj_bias": ".mlp.experts.down_proj_bias",
-    ".self_attn.sinks": ".self_attn.sinks",
 }
 
 

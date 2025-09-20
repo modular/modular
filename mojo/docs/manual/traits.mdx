@@ -597,38 +597,6 @@ String: Dog(Rex, 5)
 Representation: Dog(name='Rex', age=5)
 ```
 
-### Special lifecycle traits: `Copyable`, `Movable`, and `ExplicitlyCopyable`
-
-The three traits [`Copyable`](/mojo/stdlib/builtin/value/Copyable/),
-[`Movable`](/mojo/stdlib/builtin/value/Movable/), and
-[`ExplicitlyCopyable`](/mojo/stdlib/builtin/value/ExplicitlyCopyable/) are
-special traits in that the Mojo compiler can supply default implementations for
-the required methods if the struct doesn't define them itself.
-
-The `Copyable` trait describes a type that can be implicitly copied, using a
-[copy constructor](/mojo/manual/lifecycle/life#copy-constructor).
-
-The `Movable` trait defines a type that can be moved using a
-[move constructor](/mojo/manual/lifecycle/life#copy-constructor).
-
-The `ExplicitlyCopyable` trait defines a type that can be explicitly copied by
-calling its `copy()` method. If the type is already `Copyable`, this trait
-provides a default implementation for `copy()`. If the type is **not**
-`Copyable`, you need to implement the `copy()` method yourself. For more
-information, see
-[Explicitly copyable types](/mojo/manual/lifecycle/life#explicitly-copyable-types).
-
-:::note
-
-If your type contains any fields that aren't copyable, Mojo will not generate
-the copy constructor because it cannot copy those fields. In this case, you
-need to define a custom copy constructor if you want the type to be copyable.
-
-Further, if any of the fields are neither copyable nor movable, Mojo won't
-generate a move constructor for that type.
-
-:::
-
 ### The `AnyType` trait
 
 When building a generic container type, one challenge is knowing how to dispose
@@ -673,7 +641,7 @@ generic container. A single `List` can only hold a single type of data.
 The list elments must conform to the `Copyable` and `Movable` traits:
 
 ```mojo
-struct List[T: Copyable & Movable, hint_trivial_type: Bool = False]:
+struct List[T: Copyable & Movable]:
 ```
 
 For example, you can create a list of integer values like this:

@@ -202,20 +202,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         ]()
         self.data = data
 
-    @doc_private
-    @always_inline
-    fn __init__(out self, value: __mlir_type.index):
-        """Constructs a sized 1 static int tuple of given the element value.
-
-        Args:
-            value: The initial value.
-        """
-        constrained[size == 1]()
-        constrained[
-            element_type.is_integral(), "Element type must be of integral type."
-        ]()
-        self = Int(mlir_value=value)
-
     @always_inline
     @implicit
     fn __init__(out self, elems: (Int, Int)):

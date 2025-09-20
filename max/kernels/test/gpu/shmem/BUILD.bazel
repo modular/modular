@@ -3,6 +3,9 @@ load("//bazel:api.bzl", "lit_tests")
 lit_tests(
     name = "test",
     srcs = glob(["**/*.mojo"]),
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
     gpu_constraints = select({
         "//:h100_gpu": ["//:has_multi_gpu"],
         "//:b200_gpu": ["//:has_multi_gpu"],

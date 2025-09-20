@@ -19,7 +19,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Generic, TypeVar, cast, overload
+from typing import Any, Generic, TypeVar, overload
 
 from max.driver import Device, Tensor
 from max.dtype import DType
@@ -93,19 +93,6 @@ class KVCacheInputs:
 
 
 @dataclass
-class PaddedKVCacheInputs(KVCacheInputs):
-    """
-    ``PaddedKVCacheInputs`` is a class that holds the inputs for
-    KV cache when used together with padded tensors.
-    """
-
-    k_cache: Tensor
-    v_cache: Tensor
-    start_pos: Tensor
-    null_op: Tensor
-
-
-@dataclass
 class RaggedKVCacheInputs(KVCacheInputs):
     """
     ``RaggedKVCacheInputs`` is a class that holds the inputs for
@@ -162,19 +149,6 @@ class KVCacheInputSymbols:
         return list(self)[index]
 
 
-@dataclass
-class ClaimedSlot:
-    """A class that represents a claimed sequence.
-
-    It is used to track the sequence ID and the replica index that claimed it.
-    replica refers to the data parallelism replica of the cache that claimed
-    the slot.
-    """
-
-    seq_id: int
-    replica_idx: int
-
-
 T = TypeVar("T", bound=KVCacheAwareContext)
 
 
@@ -192,7 +166,6 @@ class KVCacheManager(ABC, Generic[T]):
         num_layers: The number of layers.
         devices: The devices to use for the KV cache manager.
         session: The session to use for the KV cache manager.
-        is_ragged: Whether the KV cache manager is using ragged tensors.
 
     Attributes:
         params: The parameters for the KV cache manager.
@@ -209,7 +182,6 @@ class KVCacheManager(ABC, Generic[T]):
         num_layers: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        is_ragged: bool = False,
     ) -> None:
         self.params = params
         self.max_batch_size = max_batch_size
@@ -224,8 +196,6 @@ class KVCacheManager(ABC, Generic[T]):
 
         # Mappings between request IDs and sequence IDs
         self._request_to_seq_id: dict[RequestID, int] = {}
-
-        self.is_ragged = is_ragged
 
     @classmethod
     @abstractmethod
@@ -328,32 +298,6 @@ class KVCacheManager(ABC, Generic[T]):
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: list[RaggedKVCacheInputs] | list[PaddedKVCacheInputs],
-        prev_model_inputs: Any,
-    ) -> list[RaggedKVCacheInputs] | list[PaddedKVCacheInputs]:
-        """
-        Prepare the inputs for a multistep execution, generally by incrementing
-        the cache lengths. This should not require a device synchronization,
-        as this would defeat the purpose of multistep execution.
-
-        This should also not update the cache lengths in our manager, this batch is
-        still considered in-progress.
-        """
-        if self.is_ragged:
-            return self._increment_cache_lengths_ragged(
-                kv_cache_inputs=cast(
-                    list[RaggedKVCacheInputs], kv_cache_inputs
-                ),
-                prev_model_inputs=prev_model_inputs,
-            )
-
-        return self._increment_cache_lengths_padded(
-            kv_cache_inputs=cast(list[PaddedKVCacheInputs], kv_cache_inputs),
-            prev_model_inputs=prev_model_inputs,
-        )
-
-    def _increment_cache_lengths_ragged(
-        self,
         kv_cache_inputs: list[RaggedKVCacheInputs],
         prev_model_inputs: Any,
     ) -> list[RaggedKVCacheInputs]:
@@ -409,64 +353,7 @@ class KVCacheManager(ABC, Generic[T]):
             )
         return kv_cache_inputs
 
-    def _increment_cache_lengths_padded(
-        self,
-        kv_cache_inputs: list[PaddedKVCacheInputs],
-        prev_model_inputs: Any,
-    ) -> list[PaddedKVCacheInputs]:
-        """
-        Prepare the inputs for a multistep execution, generally by incrementing
-        the cache lengths. This should not require a device synchronization,
-        as this would defeat the purpose of multistep execution.
-
-        This should also not update the cache lengths in our manager, this batch is
-        still considered in-progress.
-        """
-        assert len(kv_cache_inputs) == 1
-        curr_kv_cache_inputs = kv_cache_inputs[0]
-
-        new_start_pos = self.increment_cache_lengths_model(
-            curr_kv_cache_inputs.start_pos, prev_model_inputs.tokens
-        )[0]
-        assert isinstance(new_start_pos, Tensor)
-        return [
-            PaddedKVCacheInputs(
-                k_cache=curr_kv_cache_inputs.k_cache,
-                v_cache=curr_kv_cache_inputs.v_cache,
-                start_pos=new_start_pos,
-                null_op=new_start_pos,
-            )
-        ]
-
     def _create_increment_cache_lengths_graph(self) -> Graph:
-        """Constructs a graph to increment the cache_lengths argument during multi-step inference.
-
-        It's imperative that this operation occurs entirely on GPU,
-        otherwise we'll synchronize across devices and incur a latency penalty.
-        """
-        if self.is_ragged:
-            return self._create_ragged_increment_cache_lengths_graph()
-
-        return self._create_padded_increment_cache_lengths_graph()
-
-    def _create_padded_increment_cache_lengths_graph(self) -> Graph:
-        start_pos_type = TensorType(
-            DType.int64, shape=[], device=DeviceRef.CPU()
-        )
-        tokens_type = TensorType(
-            DType.int64, shape=["batch_size", "seq_len"], device=DeviceRef.CPU()
-        )
-        with Graph(
-            "update_start_pos", input_types=[start_pos_type, tokens_type]
-        ) as graph:
-            start_pos, tokens = graph.inputs
-            assert isinstance(start_pos, TensorValue)
-            assert isinstance(tokens, TensorValue)
-            graph.output(start_pos + tokens.shape[1])
-
-        return graph
-
-    def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
         input_symbols = self.input_symbols()
         cache_lengths_types = [
             input_symbols[i][1] for i in range(len(self.devices))

@@ -16,18 +16,18 @@ bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "31.1")
-bazel_dep(name = "rules_cc", version = "0.2.4")
-bazel_dep(name = "rules_foreign_cc", version = "0.13.0")
+bazel_dep(name = "rules_cc", version = "0.2.8")
 bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
 bazel_dep(name = "rules_pycross", version = "0.8.0")
 bazel_dep(name = "rules_python", version = "1.5.1")
-bazel_dep(name = "rules_shell", version = "0.4.1")
+bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 # TODO: Remove when transitives bump to this version or above
+bazel_dep(name = "rules_foreign_cc", version = "0.13.0")  # NOTE: Avoid direct usage
 bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
 bazel_dep(name = "rules_apple", version = "3.22.0")
 bazel_dep(name = "rules_nodejs", version = "6.5.0")
@@ -39,14 +39,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 # TODO: Remove when >0.6.0 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-A1MAbMLCldUNaZGpz6/BphT5Bo6lKRbvjBOp0VF2wAM=",
-    patch_strip = 1,
-    patches = [
-        "//bazel/public-patches:rules_mojo_version.patch",
-    ],
-    strip_prefix = "rules_mojo-df228391385e0ea0179d45846ffdecfc68964011",
+    integrity = "sha256-xcPoc14IGuJQQ8veOW9Ik2bGr1gMAjlvnB3lj3WQSro=",
+    strip_prefix = "rules_mojo-a60e4217fd0e13747bdd83bf11873e90229f932c",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/df228391385e0ea0179d45846ffdecfc68964011.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/a60e4217fd0e13747bdd83bf11873e90229f932c.tar.gz",
     ],
 )
 
@@ -74,6 +70,8 @@ single_version_override(
         # TODO: Should we submit this upstream or force our deps to directly
         # depend on the things that provide their pyi files?
         "//bazel/public-patches:rules_mypy_pyi_files.patch",
+        # https://github.com/bazel-contrib/rules_mypy/pull/118
+        "//bazel/public-patches:rules_mypy_pyinfo.patch",
     ],
 )
 
@@ -86,19 +84,13 @@ single_version_override(
     ],
 )
 
+# TODO: Remove once >0.8.0 is out
 archive_override(
     module_name = "rules_pycross",
-    integrity = "sha256-DnwyjQfpS9MRtk5Uh8UbPHvbXnbs38ciht55/pJRFZE=",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/jvolkman/rules_pycross/pull/176
-        "//bazel/public-patches:rules_pycross_watch.patch",
-        # https://github.com/jvolkman/rules_pycross/pull/181
-        "//bazel/public-patches:rules_pycross_shebang.patch",
-    ],
-    strip_prefix = "rules_pycross-b4707803848b06ae264247bcba15ddf3ef4008e2",
+    integrity = "sha256-80I/HQ37qIGF7o632GMRKV7PK4/wpEvBGQyXJsnKkPo=",
+    strip_prefix = "rules_pycross-1d8bdc0e0a48ce338c0de8122c952af841d40d2d",
     urls = [
-        "https://github.com/jvolkman/rules_pycross/archive/b4707803848b06ae264247bcba15ddf3ef4008e2.tar.gz",
+        "https://github.com/jvolkman/rules_pycross/archive/1d8bdc0e0a48ce338c0de8122c952af841d40d2d.tar.gz",
     ],
 )
 
@@ -108,17 +100,6 @@ single_version_override(
     patches = [
         # https://github.com/aspect-build/rules_js/pull/2330
         "//bazel/public-patches:aspect_rules_js_toolchains.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_foreign_cc",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazel-contrib/rules_foreign_cc/pull/1361
-        "//bazel/public-patches:rules_foreign_cc_sysroot.patch",
-        # TODO: Remove next bump https://github.com/bazel-contrib/rules_foreign_cc/commit/7be022f9f14260c4b43c235a8dd75ac94c5be330
-        "//bazel/public-patches:rules_foreign_cc_bazel_out.patch",
     ],
 )
 
@@ -170,6 +151,8 @@ single_version_override(
         "//bazel/public-patches:grpc-no-macos-x86.patch",
         # TODO: Drop when logspew is fixed
         "//bazel/public-patches:grpc-warnings.patch",
+        # https://github.com/grpc/grpc/pull/40687
+        "//bazel/public-patches:grpc-rules-python.patch",
     ],
     version = "1.73.1",
 )
@@ -368,4 +351,22 @@ archive_override(
     urls = [
         "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/5/e9253b716f52780329d4bd926f2c6552379b61ae67436670ae8a939e1e4c6f57/sysroot-jammy-x86_64.tar.xz",
     ],
+)
+
+http_archive(
+    name = "clang-linux-x86_64",
+    sha256 = "4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/20.1.8/4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651/llvm-linux-x86_64.tar.xz",
+)
+
+http_archive(
+    name = "clang-linux-aarch64",
+    sha256 = "5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/20.1.8/5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189/llvm-linux-aarch64.tar.xz",
+)
+
+http_archive(
+    name = "clang-macos",
+    sha256 = "a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
 )

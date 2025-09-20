@@ -63,12 +63,17 @@ trait ConvertibleFromPython(Copyable, Movable):
         ...
 
 
-struct _PyIter(ImplicitlyCopyable):
+struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
     """A Python iterator."""
 
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    alias Element = PythonObject
 
     var iterator: PythonObject
     """The iterator object that stores location."""
@@ -108,6 +113,9 @@ struct _PyIter(ImplicitlyCopyable):
         var curr_item = self.next_item
         self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
         return PythonObject(from_owned=curr_item)
+
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
 
 
 @register_passable
@@ -269,10 +277,10 @@ struct PythonObject(
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
-            var val = c_size_t(mlir_value=value.cast[DType.index]()._mlir_value)
+            var val = c_size_t(mlir_value=value.cast[DType.int]()._mlir_value)
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
-            var val = c_ssize_t(value.cast[DType.index]()._mlir_value)
+            var val = c_ssize_t(value.cast[DType.int]()._mlir_value)
             self = Self(from_owned=cpy.PyLong_FromSsize_t(val))
         else:
             var val = c_double(value.cast[DType.float64]())

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import socket
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -23,11 +24,7 @@ from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import (
-    PipelinesFactory,
-    PipelineTask,
-    PipelineTokenizer,
-)
+from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
@@ -41,6 +38,7 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
+from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from uvicorn import Config
@@ -52,6 +50,18 @@ ROUTES = {
 }
 
 logger = logging.getLogger("max.serve")
+
+
+def validate_port_is_free(port: int):
+    # check if port is already in use
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("", port))
+            return port
+        except OSError as e:
+            raise ValueError(
+                f"The network port {port} is already in use"
+            ) from e
 
 
 @dataclass(frozen=True)
@@ -89,16 +99,19 @@ async def lifespan(
             metric_client = await exit_stack.enter_async_context(
                 start_telemetry_consumer(settings)
             )
-
             METRICS.configure(client=metric_client)
+
             # start model worker
-            engine_queue = await exit_stack.enter_async_context(
+            scheduler_zmq_configs = SchedulerZmqConfigs(
+                serving_settings.pipeline_task
+            )
+            worker_monitor = await exit_stack.enter_async_context(
                 start_model_worker(
                     serving_settings.model_factory,
                     serving_settings.pipeline_config,
                     settings,
                     metric_client,
-                    serving_settings.pipeline_task,
+                    scheduler_zmq_configs=scheduler_zmq_configs,
                 )
             )
 
@@ -114,7 +127,7 @@ async def lifespan(
             METRICS.pipeline_load(
                 serving_settings.pipeline_config.model_config.model_name
             )
-            pipeline: TokenGeneratorPipeline[Any] | AudioGeneratorPipeline[Any]
+            pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
             if serving_settings.pipeline_task in (
                 PipelineTask.TEXT_GENERATION,
                 PipelineTask.EMBEDDINGS_GENERATION,
@@ -122,8 +135,9 @@ async def lifespan(
                 pipeline = TokenGeneratorPipeline(
                     model_name=serving_settings.pipeline_config.model_config.model_name,
                     tokenizer=serving_settings.tokenizer,
-                    engine_queue=engine_queue,
                     lora_queue=lora_queue,
+                    scheduler_zmq_configs=scheduler_zmq_configs,
+                    worker_monitor=worker_monitor,
                 )
             elif (
                 serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
@@ -131,8 +145,9 @@ async def lifespan(
                 pipeline = AudioGeneratorPipeline(
                     model_name=serving_settings.pipeline_config.model_config.model_name,
                     tokenizer=serving_settings.tokenizer,
-                    engine_queue=engine_queue,
                     lora_queue=lora_queue,
+                    scheduler_zmq_configs=scheduler_zmq_configs,
+                    worker_monitor=worker_monitor,
                 )
             else:
                 raise ValueError(
@@ -143,7 +158,9 @@ async def lifespan(
 
             await exit_stack.enter_async_context(pipeline)
             logger.info(
-                f"\n\n**********\nServer ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)\n**********\n"
+                f"\n\n{'*' * 80}\n\n"
+                f"{f'🚀 Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)'.center(80)}\n\n"
+                f"{'*' * 80}\n"
             )
             yield
     # TODO: Will we ever get here? KeyboardInterrupt is handled in the serve.py entrypoint.
@@ -184,8 +201,6 @@ def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
-    logger.info(f"Settings: {settings}")
-
     app = FastAPI(
         title="MAX Serve",
         lifespan=partial(

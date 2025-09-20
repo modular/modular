@@ -18,17 +18,20 @@ import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Union
 
-from max.interfaces import Pipeline, TextGenerationInputs, TextGenerationOutput
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.nn.kv_cache import MultiPagedKVCacheManager, PagedKVCacheManager
-from max.pipelines.core.context import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.core.context import TextContext
+from max.pipelines.lib import LoRAManager, PipelineConfig
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 
 logger = logging.getLogger("max.serve")
-ContextType = Union[TextContext, TextAndVisionContext]
 
 
 @dataclass
@@ -102,26 +105,26 @@ class BatchType(Enum):
     TG = "TG"
 
 
+@dataclass
 class SchedulerOutput:
     def __init__(
         self,
+        inputs: TextGenerationInputs[TextContext],
         batch_type: BatchType = BatchType.TG,
-        num_steps: int = 1,
-        batch_inputs: dict[str, ContextType] | None = None,
         input_tokens: int | None = None,
         cached_tokens: int | None = None,
     ) -> None:
-        if batch_inputs is None:
-            batch_inputs = {}
+        self.inputs = inputs
         self.batch_type = batch_type
-        self.num_steps = num_steps
-        self.batch_inputs = batch_inputs
-        self.batch_size = len(batch_inputs)
         self.input_tokens = (
             input_tokens if input_tokens is not None else self.batch_size
         )
         self.cached_tokens = cached_tokens if cached_tokens is not None else 0
         self.num_terminated = 0
+
+    @property
+    def batch_size(self) -> int:
+        return len(self.inputs.batch)
 
     @property
     def cache_hit_rate(self) -> float:
@@ -136,9 +139,8 @@ class SchedulerOutput:
     def __repr__(self) -> str:
         return (
             f"SchedulerOutput("
+            f"inputs: {self.inputs}"
             f"batch_type={self.batch_type.value}, "
-            f"batch_size={self.batch_size}, "
-            f"num_steps={self.num_steps}, "
             f"input_tokens={self.input_tokens}, "
             f"cache_hit_rate={self.cache_hit_rate:.2%})"
         )
@@ -149,17 +151,21 @@ class TextBatchConstructor:
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: Pipeline[
-            TextGenerationInputs[ContextType],
+            TextGenerationInputs[TextContext],
             TextGenerationOutput,
         ],
-        paged_cache: PagedKVCacheManager[ContextType] | None = None,
+        paged_cache: PagedKVCacheManager[TextContext] | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.paged_cache = paged_cache
 
-        self.ce_reqs: OrderedDict[str, ContextType] = OrderedDict()
-        self.tg_reqs: OrderedDict[str, ContextType] = OrderedDict()
+        self._lora_manager: LoRAManager | None = LoRAManager.get_lora_manager(
+            pipeline
+        )
+
+        self.ce_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
+        self.tg_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
 
         self.total_preemption_count = 0
         self.last_preemption_logging_time: float = 0.0
@@ -167,7 +173,7 @@ class TextBatchConstructor:
     @traced
     def _maybe_chunk_prefill_request(
         self,
-        ctx: ContextType,
+        ctx: TextContext,
         tot_input_tokens: int,
     ) -> int:
         """Chunks a prefill request if it exceeds the target tokens per batch."""
@@ -195,7 +201,7 @@ class TextBatchConstructor:
         return token_num_diff
 
     @traced
-    def _return_to_request_queue(self, ctx: ContextType) -> None:
+    def _return_to_request_queue(self, ctx: TextContext) -> None:
         """Resets a request and returns it to the request queue"""
         req_id = ctx.request_id
         self.pipeline.release(req_id)
@@ -204,7 +210,7 @@ class TextBatchConstructor:
         self.ce_reqs.move_to_end(req_id, last=False)
 
     @traced
-    def _preempt_request(self, ctx: ContextType) -> None:
+    def _preempt_request(self, ctx: TextContext) -> None:
         """Preempts the most recently received request from active batch"""
         self._return_to_request_queue(ctx)
         # Limit logging about preemptions to at most once per second
@@ -247,8 +253,10 @@ class TextBatchConstructor:
         if self.paged_cache is None:
             return SchedulerOutput(
                 batch_type=BatchType.TG,
-                batch_inputs=dict(self.tg_reqs),
-                num_steps=self.scheduler_config.max_forward_steps_tg,
+                inputs=TextGenerationInputs(
+                    batches=[dict(self.tg_reqs)],
+                    num_steps=self.scheduler_config.max_forward_steps_tg,
+                ),
             )
 
         num_steps = self.scheduler_config.max_forward_steps_tg
@@ -259,6 +267,7 @@ class TextBatchConstructor:
         candidate_reqs = deque(self.tg_reqs.values())
         first_req_ctx = candidate_reqs[0]
         self.tg_reqs.clear()
+
         while len(candidate_reqs) > 0:
             # Get the oldest request
             ctx = candidate_reqs.popleft()
@@ -267,6 +276,17 @@ class TextBatchConstructor:
             # of the pipeline model.
             num_available_steps = ctx.compute_num_available_steps(max_seq_len)
             num_steps = min(num_steps, num_available_steps)
+
+            # Verify LoRA is active for TG requests
+            # LoRA requests should have been activated during CE
+            if (
+                self._lora_manager
+                and self._lora_manager.is_lora(ctx.model_name)
+                and not self._lora_manager.is_active_lora(ctx.model_name)
+            ):
+                # TODO E2EOPT-584
+                self._preempt_lora_request(ctx)
+                continue
 
             scheduled = False
             while not scheduled:
@@ -342,8 +362,9 @@ class TextBatchConstructor:
 
             return SchedulerOutput(
                 batch_type=BatchType.TG,
-                batch_inputs=dict(self.tg_reqs),
-                num_steps=num_steps,
+                inputs=TextGenerationInputs(
+                    batches=[dict(self.tg_reqs)], num_steps=num_steps
+                ),
             )
 
         # We have utterly failed to construct a TG batch.
@@ -363,13 +384,13 @@ class TextBatchConstructor:
     def _try_create_ce_batch(self) -> SchedulerOutput:
         """Try to create a context encoding batch"""
 
-        ce_batch: dict[str, ContextType] = {}
+        ce_batch: dict[str, TextContext] = {}
         tot_input_tokens = 0
         tot_cached_tokens = 0
 
         if self.scheduler_config.enable_in_flight_batching and self.tg_reqs:
             tg_batch = self._create_tg_batch()
-            ce_batch = tg_batch.batch_inputs
+            ce_batch = tg_batch.inputs.batch
             tot_input_tokens = tg_batch.input_tokens
             for ctx in ce_batch.values():
                 # active length should be 1 for TG requests
@@ -377,6 +398,18 @@ class TextBatchConstructor:
 
         max_batch_size_tg = self.scheduler_config.max_batch_size_tg
         max_batch_size_ce = self.scheduler_config.max_batch_size_ce
+
+        if self._lora_manager:
+            # Track which LoRAs are currently active from running (TG) requests
+            active_loras = set()
+
+            # Count LoRAs from TG requests (these are "running" and must be maintained)
+            for _, ctx in self.tg_reqs.items():
+                if self._lora_manager.is_lora(ctx.model_name):
+                    active_loras.add(ctx.model_name)
+
+            deferred_lora_requests = {}
+
         while (
             self.ce_reqs
             and len(ce_batch) < max_batch_size_ce
@@ -385,6 +418,13 @@ class TextBatchConstructor:
             < self.scheduler_config.target_tokens_per_batch_ce
         ):
             req_id, ctx = self.ce_reqs.popitem(last=False)
+
+            # Check LoRA budget before resource allocation
+            if self._lora_manager and not self._can_allocate_lora_request(
+                ctx, active_loras
+            ):
+                deferred_lora_requests[req_id] = ctx
+                continue
 
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
@@ -410,6 +450,14 @@ class TextBatchConstructor:
                     self._return_to_request_queue(ctx)
                     break
 
+            # activate the LoRA
+            if self._lora_manager and self._lora_manager.is_lora(
+                ctx.model_name
+            ):
+                # Always call activate_adapter to refresh LRU position
+                self._lora_manager.activate_adapter(ctx.model_name)
+                active_loras.add(ctx.model_name)
+
             # Chunk the request if it exceeds the token budget
             tokens_trimmed = self._maybe_chunk_prefill_request(
                 ctx, tot_input_tokens
@@ -422,9 +470,15 @@ class TextBatchConstructor:
             tot_cached_tokens += orig_prompt_length - input_tokens
             ce_batch[req_id] = ctx
 
+        if self._lora_manager:
+            # Return requests back to the queue
+            for req_id, ctx in deferred_lora_requests.items():
+                self.ce_reqs[req_id] = ctx
+                self.ce_reqs.move_to_end(req_id, last=False)
+
         return SchedulerOutput(
             batch_type=BatchType.CE,
-            batch_inputs=ce_batch,
+            inputs=TextGenerationInputs(batches=[ce_batch], num_steps=1),
             input_tokens=tot_input_tokens,
             cached_tokens=tot_cached_tokens,
         )
@@ -438,7 +492,43 @@ class TextBatchConstructor:
 
         # if there are no active requests, we can't create a TG batch
         if not self.tg_reqs:
-            return SchedulerOutput()
+            return SchedulerOutput(
+                inputs=TextGenerationInputs(batches=[], num_steps=1)
+            )
 
         tg_batch = self._create_tg_batch()
         return tg_batch
+
+    def _can_allocate_lora_request(
+        self, ctx: TextContext, active_loras: set[str]
+    ) -> bool:
+        # This should only be called when _lora_manager exists
+        assert self._lora_manager is not None
+
+        # Non-LoRA requests can always be allocated
+        if not self._lora_manager.is_lora(ctx.model_name):
+            return True
+
+        # LoRA requests can be allocated if:
+        # - Already in active set for this batch
+        # - Already active on GPU
+        # - There's room for more LoRAs
+        return (
+            ctx.model_name in active_loras
+            or self._lora_manager.is_active_lora(ctx.model_name)
+            or len(active_loras) + 1 <= self._lora_manager.max_num_loras
+        )
+
+    @traced
+    def _preempt_lora_request(self, ctx: TextContext) -> None:
+        """Preempts the most recently received request from active batch"""
+        self._return_to_request_queue(ctx)
+        # Limit logging about preemptions to at most once per second
+        current_time = time.monotonic()
+        self.total_preemption_count += 1
+        METRICS.preemption()
+        if current_time - self.last_preemption_logging_time > 1:
+            self.last_preemption_logging_time = current_time
+            logger.info(
+                f"Preempted a request due to max-num-lora limit exceeded. This can affect the end-to-end performance. Consider increasing max-num-lora. Total preemption count: {self.total_preemption_count}."
+            )

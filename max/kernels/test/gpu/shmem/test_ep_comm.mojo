@@ -16,7 +16,7 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from io.io import _printf
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
@@ -26,11 +26,16 @@ from testing import assert_equal
 from pathlib import Path
 from os.path import dirname
 from random import randint, randn, seed
-from sys import argv, size_of
+from sys import align_of, argv, simd_width_of, size_of
 from sys.param_env import env_get_string
 from utils import IndexList
 
-from shmem.ep_comm import dispatch_kernel, dispatch_cb_kernel
+from shmem.ep_comm import (
+    EP_DATA_READY_FLAG,
+    EPMsgConfig,
+    dispatch_kernel,
+    dispatch_cb_kernel,
+)
 
 import time
 
@@ -61,6 +66,27 @@ fn welford_update(
     m2 += delta * delta2
 
 
+fn legalize_topk_ids[
+    n_experts: Int, top_k: Int
+](topk_ids: UnsafePointer[Int32], n_tokens: Int):
+    for tok_id in range(n_tokens):
+        var topk_ids_for_token = topk_ids + tok_id * top_k
+
+        # The top-k ids for a token should be unique. If not, we will assign a
+        # random id to the duplicate id.
+        fn is_duplicate() -> Int:
+            for i in range(top_k):
+                for j in range(i + 1, top_k):
+                    if topk_ids_for_token[i] == topk_ids_for_token[j]:
+                        return i
+            return -1
+
+        var duplicate_idx = is_duplicate()
+        while duplicate_idx != -1:
+            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            duplicate_idx = is_duplicate()
+
+
 fn test_dispatch[
     input_type: DType,
     hidden_size: Int,
@@ -69,7 +95,15 @@ fn test_dispatch[
     n_ranks: Int,
     n_tokens_per_rank: Int,
 ](ctx: DeviceContext, my_rank: Int) raises:
-    alias msg_bytes = size_of[input_type]() * hidden_size + 4 * size_of[Int32]()
+    alias gpu_target = get_gpu_target()
+    alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
+    alias gpu_alignment = align_of[
+        SIMD[DType.uint8, gpu_simd_width], target=gpu_target
+    ]()
+    alias msg_config = EPMsgConfig(
+        input_type, hidden_size, top_k, gpu_alignment
+    )
+    alias msg_bytes = msg_config.msg_size()
     alias n_local_experts = n_experts // n_ranks
 
     if my_rank == 0:
@@ -133,7 +167,7 @@ fn test_dispatch[
     alias row_offsets_layout = Layout.row_major(n_local_experts + 1)
     alias expert_ids_layout = Layout.row_major(n_local_experts)
     alias src_token_info_layout = Layout.row_major(
-        2, n_tokens_per_rank * n_ranks * n_local_experts
+        n_tokens_per_rank * n_ranks * n_local_experts, 2
     )
 
     var topk_ids_tensor = LayoutTensor[DType.int32, topk_ids_layout](
@@ -173,7 +207,7 @@ fn test_dispatch[
     ](
         device_src_token_info_buf,
         RuntimeLayout[src_token_info_layout].row_major(
-            IndexList[2](2, n_tokens_per_rank * n_ranks * n_local_experts)
+            IndexList[2](n_tokens_per_rank * n_ranks * n_local_experts, 2)
         ),
     )
 
@@ -204,6 +238,7 @@ fn test_dispatch[
         src_token_info_layout,
         hw_info.sm_count,
         1,
+        top_k,
         n_experts,
         n_ranks,
         msg_bytes,
@@ -259,17 +294,33 @@ fn test_dispatch[
         run_dispatch(ctx)
         run_dispatch_cb(ctx)
 
+    @always_inline
+    @parameter
+    fn clean_up(ctx: DeviceContext) raises:
+        ctx.enqueue_memset(atomic_counter, Int32(0))
+
     for i in range(num_iters):
         # Initialize the topk ids and input tokens using fixed seed,
         # so that we can reproduce the results later on other ranks.
         seed(Int(my_rank) + i * n_ranks)
         randint(host_topk_ids, n_tokens_per_rank * top_k, 0, n_experts - 1)
 
+        # The topk ids for a token is the expert id it needs to be sent to.
+        # Since a token won't be sent to the same expert multiple times, we
+        # need to legalize the topk ids to make sure they are unique for
+        # each token.
+        legalize_topk_ids[n_experts, top_k](host_topk_ids, n_tokens_per_rank)
+
         seed(Int(my_rank) + i * n_ranks)
         randn(host_input_tokens, n_tokens_per_rank * hidden_size)
 
         ctx.enqueue_copy(device_topk_buf, host_topk_ids)
         ctx.enqueue_copy(device_input_buf, host_input_tokens)
+
+        # warm-up
+        shmem_barrier_all_on_stream(ctx.stream())
+        run_e2e(ctx)
+        clean_up(ctx)
 
         shmem_barrier_all_on_stream(ctx.stream())
 
@@ -286,11 +337,13 @@ fn test_dispatch[
         welford_update(
             dispatch_cb_stat_m, dispatch_cb_stat_m2, i + 1, new_value
         )
+        clean_up(ctx)
 
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
         new_value = ctx.execution_time[run_e2e](1) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
+        # this time we do the clean up after we verify the results
 
         if not is_benchmark():
             var host_output = UnsafePointer[Scalar[input_type]].alloc(
@@ -311,11 +364,14 @@ fn test_dispatch[
             )
             ctx.enqueue_copy(host_src_token_info, device_src_token_info_buf)
 
+            var host_atomic_counter = UnsafePointer[Int32].alloc(2 * n_experts)
+            ctx.enqueue_copy(host_atomic_counter, atomic_counter)
+
             ctx.synchronize()
 
             # Check the results
 
-            # Fisrt, reproduce the input tokens and topk ids
+            # First, reproduce the input tokens and topk ids
             var all_ranks_input_tokens = UnsafePointer[
                 Scalar[input_type]
             ].alloc(n_tokens_per_rank * n_ranks * hidden_size)
@@ -337,6 +393,10 @@ fn test_dispatch[
                     0,
                     n_experts - 1,
                 )
+                legalize_topk_ids[n_experts, top_k](
+                    all_ranks_topk_ids + rank * n_tokens_per_rank * top_k,
+                    n_tokens_per_rank,
+                )
 
             # Check if we have received the correct number of tokens
             var expert_start_idx = n_local_experts * my_rank
@@ -356,15 +416,22 @@ fn test_dispatch[
                 var curr_local_expert = host_expert_ids[expert_idx]
                 var curr_expert = n_local_experts * my_rank + curr_local_expert
 
+                var remote_rank = 0
+
                 for token_idx in range(
                     host_row_offsets[expert_idx],
                     host_row_offsets[expert_idx + 1],
                 ):
-                    var remote_loc = host_src_token_info[token_idx]
-                    var remote_rank = host_src_token_info[
-                        token_idx
-                        + n_tokens_per_rank * n_ranks * n_local_experts
-                    ]
+                    while (
+                        host_atomic_counter[
+                            2 * (curr_local_expert * n_ranks + remote_rank)
+                        ]
+                        <= token_idx + EP_DATA_READY_FLAG
+                    ):
+                        remote_rank += 1
+
+                    var remote_loc = host_src_token_info[2 * token_idx]
+                    var remote_topk_id = host_src_token_info[2 * token_idx + 1]
 
                     # check if curr_expert is in remote rank's topk_ids
                     var remote_rank_top_k_ids = (
@@ -372,15 +439,12 @@ fn test_dispatch[
                         + remote_rank * n_tokens_per_rank * top_k
                     )
 
-                    var found = False
-                    for i in range(top_k):
-                        if (
-                            remote_rank_top_k_ids[remote_loc * top_k + i]
-                            == curr_expert
-                        ):
-                            found = True
-                            break
-                    assert_equal(found, True)
+                    assert_equal(
+                        remote_rank_top_k_ids[
+                            remote_loc * top_k + remote_topk_id
+                        ],
+                        curr_expert,
+                    )
 
                     # check if the received token matches the remote rank's token
 
@@ -400,6 +464,7 @@ fn test_dispatch[
                             curr_token_val,
                             String(token_idx) + ", " + String(i),
                         )
+        clean_up(ctx)
 
     _printf[
         "Rank #%d:  Dispatch latency: %4.2fus ± %1.2fus  Dispatch_cb latency:"
@@ -420,7 +485,7 @@ fn test_dispatch[
 
 
 fn main() raises:
-    alias test_gpu_counts = (2,)
+    alias test_gpu_counts = (2, 4, 8)
 
     @parameter
     for gpu_idx in range(len(test_gpu_counts)):

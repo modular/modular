@@ -867,7 +867,7 @@ fn external_memory[
     address_space: _AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, address_space=address_space, alignment2=alignment]:
+]() -> UnsafePointer[dtype, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -893,13 +893,12 @@ fn external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[dtype, 0], address_space=address_space, alignment2=alignment
+        StaticTuple[dtype, 0], address_space=address_space
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
                 StaticTuple[dtype, 0],
                 address_space=address_space,
-                alignment2=alignment,
             ]._mlir_type,
             name = _get_kgen_string[name](),
             alignment = alignment._mlir_value,
@@ -1406,7 +1405,7 @@ fn _load_impl[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = align_of[Scalar[dtype]]() if is_gpu() else 1,
+    alignment: Int = align_of[Scalar[dtype]](),
 ](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 

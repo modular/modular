@@ -299,7 +299,7 @@ fn _dtype_to_nvshmem_type[
         return get_static_string[prefix, "int64", suffix, scope]()
     elif dtype is DType.uint64:
         return get_static_string[prefix, "uint64", suffix, scope]()
-    elif dtype is DType.index:
+    elif dtype is DType.int:
         return get_static_string[prefix, "size", suffix, scope]()
     else:
         return CompilationTarget.unsupported_target_error[

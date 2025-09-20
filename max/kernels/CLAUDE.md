@@ -45,7 +45,13 @@ This project uses Bazel for building. Commands should be run through the
 ### Running Mojo Files Directly
 
 ```bash
-# Run a Mojo file
+# Always include the setup script first if you haven't done so
+source utils/start-modular.sh
+
+# Run a mojo test in this directory
+mojo /path/to/file.mojo
+
+# Alternaitve ways include
 ./bazelw run //KGEN/tools/mojo -- /path/to/file.mojo
 
 # Or use the bmojo alias (after sourcing start-modular.sh)
@@ -158,7 +164,7 @@ mojo format ./
 Many benchmarks and tests use environment variables for configuration:
 
 - `env_get_int[]`: Get integer values
-- `env_get_bool[]`: Get boolean flags  
+- `env_get_bool[]`: Get boolean flags
 - `env_get_dtype[]`: Get data type specifications
 
 Example:

@@ -13,6 +13,7 @@
 
 from sys import align_of
 
+from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -59,7 +60,7 @@ fn cpasync_wgmma_kernel[
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     """Test k_major @ mn_major with cp.async to simulate the 2nd matmul in mha.
     """
@@ -252,7 +253,7 @@ def test_cpasync_wgmma[
         b_swizzle=b_swizzle,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),
@@ -263,9 +264,13 @@ def test_cpasync_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
+        rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+            a.device_buffer[update=False]()
+        ),
+        rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+            b.device_buffer[update=False]()
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

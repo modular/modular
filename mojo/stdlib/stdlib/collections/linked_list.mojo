@@ -66,6 +66,9 @@ struct Node[
         """
         return String.write(self.value)
 
+    fn _into_value(deinit self) -> ElementType:
+        return self.value^
+
     @no_inline
     fn write_to[
         ElementType: Copyable & Movable & Writable
@@ -88,9 +91,13 @@ struct _LinkedListIter[
     ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator, Movable):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
 
     alias Element = ElementType  # FIXME(MOCO-2068): shouldn't be needed.
 
@@ -103,7 +110,7 @@ struct _LinkedListIter[
         else:
             self.curr = self.src[]._tail
 
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     fn __has_next__(self) -> Bool:
@@ -127,7 +134,7 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: Copyable & Movable,
-](Boolable, Copyable, Defaultable, Movable, Sized):
+](Boolable, Copyable, Defaultable, Iterable, Movable, Sized):
     """A doubly-linked list implementation.
 
     Parameters:
@@ -140,6 +147,10 @@ struct LinkedList[
     """
 
     alias _NodePointer = UnsafePointer[Node[ElementType]]
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _LinkedListIter[ElementType, iterable_origin]
 
     var _head: Self._NodePointer
     """The first node in the list."""
@@ -204,19 +215,6 @@ struct LinkedList[
         while curr:
             self.append(curr[].value.copy())
             curr = curr[].next
-
-    fn __moveinit__(out self, deinit other: Self):
-        """Initialize this list by moving elements from another list.
-
-        Args:
-            other: The list to move elements from.
-
-        Notes:
-            Time Complexity: O(1).
-        """
-        self._head = other._head
-        self._tail = other._tail
-        self._size = other._size
 
     fn __del__(deinit self):
         """Clean up the list by freeing all nodes.
@@ -304,16 +302,15 @@ struct LinkedList[
         if not elem:
             raise "Pop on empty list."
 
-        # FIXME(MSTDL-1755): Should this copy be a move; are we leaking `value`?
-        var value = elem[].value.copy()
-        self._tail = elem[].prev
+        var node = elem.take_pointee()
+        self._tail = node.prev
         self._size -= 1
         if self._size == 0:
             self._head = Self._NodePointer()
         else:
             self._tail[].next = Self._NodePointer()
         elem.free()
-        return value^
+        return node^._into_value()
 
     fn pop[I: Indexer, //](mut self, var i: I) raises -> ElementType:
         """Remove the ith element of the list, counting from the tail if
@@ -335,7 +332,7 @@ struct LinkedList[
         var current = self._get_node_ptr(idx)
 
         if current:
-            var node = current[].copy()
+            var node = current.take_pointee()
             if node.prev:
                 node.prev[].next = node.next
             else:
@@ -345,15 +342,9 @@ struct LinkedList[
             else:
                 self._tail = node.prev
 
-            var data = node.value^
-
-            # Aside from T, destructor is trivial
-            __mlir_op.`lit.ownership.mark_destroyed`(
-                __get_mvalue_as_litref(node)
-            )
             current.free()
             self._size -= 1
-            return data^
+            return node^._into_value()
 
         raise Error("Invalid index for pop: ", idx)
 
@@ -369,16 +360,15 @@ struct LinkedList[
         var elem = self._tail
         if not elem:
             return Optional[ElementType]()
-        # FIXME(MSTDL-1755): Should this copy be a move; are we leaking `value`?
-        var value = elem[].value.copy()
-        self._tail = elem[].prev
+        var node = elem.take_pointee()
+        self._tail = node.prev
         self._size -= 1
         if self._size == 0:
             self._head = Self._NodePointer()
         else:
             self._tail[].next = Self._NodePointer()
         elem.free()
-        return value^
+        return node^._into_value()
 
     fn maybe_pop[I: Indexer, //](mut self, var i: I) -> Optional[ElementType]:
         """Remove the ith element of the list, counting from the tail if
@@ -401,7 +391,7 @@ struct LinkedList[
         if not current:
             return Optional[ElementType]()
         else:
-            var node = current[].copy()
+            var node = current.take_pointee()
             if node.prev:
                 node.prev[].next = node.next
             else:
@@ -411,15 +401,9 @@ struct LinkedList[
             else:
                 self._tail = node.prev
 
-            var data = node.value^
-
-            # Aside from T, destructor is trivial
-            __mlir_op.`lit.ownership.mark_destroyed`(
-                __get_mvalue_as_litref(node)
-            )
             current.free()
             self._size -= 1
-            return Optional[ElementType](data^)
+            return Optional[ElementType](node^._into_value())
 
     fn clear(mut self):
         """Removes all elements from the list.
@@ -691,22 +675,6 @@ struct LinkedList[
         debug_assert(len(self) > 0, "unable to get item from empty list")
         return self._get_node_ptr(idx)[].value
 
-    fn __setitem__[I: Indexer](mut self, idx: I, var value: ElementType):
-        """Set the element at the specified index.
-
-        Parameters:
-            I: The type of index to use.
-
-        Args:
-            idx: The index of the element to set.
-            value: The new value to set.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
-        debug_assert(len(self) > 0, "unable to set item from empty list")
-        self._get_node_ptr(idx)[].value = value^
-
     fn __len__(self) -> Int:
         """Get the number of elements in the list.
 
@@ -718,7 +686,7 @@ struct LinkedList[
         """
         return self._size
 
-    fn __iter__(self) -> _LinkedListIter[ElementType, __origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
         Returns:

@@ -243,13 +243,13 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = Int(DType.index.bit_width())
+    alias BITWIDTH = Int(DType.int.bit_width())
     """The bit width of the integer type."""
 
-    alias MAX = Int(Scalar[DType.index].MAX)
+    alias MAX = Int(Scalar[DType.int].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = Int(Scalar[DType.index].MIN)
+    alias MIN = Int(Scalar[DType.int].MIN)
     """Returns the minimum value of type."""
 
     alias device_type: AnyTrivialRegType = Self
@@ -296,8 +296,7 @@ struct Int(
 
     @doc_private
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, mlir_value: __mlir_type.index):
+    fn __init__(out self, *, mlir_value: __mlir_type.index):
         """Construct Int from the given index value.
 
         Args:
@@ -582,7 +581,7 @@ struct Int(
         """
         return Float64(self) / Float64(rhs)
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __floordiv__(self, rhs: Int) -> Int:
         """Return the division of `self` and `rhs` rounded down to the nearest
         integer.
@@ -600,7 +599,7 @@ struct Int(
         var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), div - 1, div)
         return select(rhs == 0, 0, res)
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __mod__(self, rhs: Int) -> Int:
         """Return the remainder of self divided by rhs.
 

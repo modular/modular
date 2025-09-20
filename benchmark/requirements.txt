@@ -5,9 +5,11 @@ huggingface_hub
 msgspec
 numpy
 protobuf
+psutil
+taskgroup
 tqdm
 transformers
-nvitop
+typing-extensions
 Jinja2
 Pillow
 

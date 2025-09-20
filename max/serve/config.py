@@ -18,14 +18,14 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 from __future__ import annotations
 
 import logging
-import socket
 from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Union
 
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
-from pydantic import Field, ValidationInfo, field_validator
+from max.support.human_readable_formatter import to_human_readable_bytes
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger("max.serve")
@@ -107,25 +107,6 @@ class Settings(BaseSettings):
         description="Port to use", default=8000, alias="MAX_SERVE_PORT"
     )
 
-    @field_validator("port", mode="after")
-    @classmethod
-    def validate_port(cls, port: int, info: ValidationInfo):
-        # In offline inference mode, port is not used and always valid.
-        # Safely get the values with defaults since these fields might not be validated yet
-        offline_inference = info.data.get("offline_inference", False)
-        headless = info.data.get("headless", False)
-
-        if offline_inference or headless:
-            return port
-
-        # check if port is already in use
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            try:
-                sock.bind(("", port))
-                return port
-            except OSError as e:
-                raise ValueError(f"port {port} is already in use") from e
-
     metrics_port: int = Field(
         description="Port to use for the metrics endpoint",
         default=8001,
@@ -140,7 +121,7 @@ class Settings(BaseSettings):
     )
     max_local_image_bytes: int = Field(
         description="Maximum size in bytes for local image files accessed via file:// URIs",
-        default=20_000_000,  # 20MB
+        default=20 * 1024 * 1024,  # 20MiB
         alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
     )
 
@@ -205,7 +186,7 @@ class Settings(BaseSettings):
     )
 
     metric_recording: MetricRecordingMethod = Field(
-        default=MetricRecordingMethod.ASYNCIO,
+        default=MetricRecordingMethod.PROCESS,
         description="How metrics should be recorded?",
         alias="MAX_SERVE_METRIC_RECORDING_METHOD",
     )
@@ -255,24 +236,6 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_TRANSACTION_RECORDING_INCLUDE_RESPONSES",
     )
 
-    request_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description="Expose Request ZMQ Socket for communication between the API and Model Worker(s)",
-        alias="MAX_SERVE_REQUEST_ZMQ_ENDPOINT",
-    )
-
-    response_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description="Expose Response ZMQ Socket for communication between the API and Model Worker(s)",
-        alias="MAX_SERVE_RESPONSE_ZMQ_ENDPOINT",
-    )
-
-    cancel_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description="Expose Cancel ZMQ Socket for communication between the API and Model Worker(s)",
-        alias="MAX_SERVE_CANCEL_ZMQ_ENDPOINT",
-    )
-
     kv_cache_events_zmq_endpoint: str = Field(
         default_factory=generate_zmq_ipc_path,
         description="Expose KV Cache Events ZMQ Socket for communication between the KV Cache Agent and MAX Serve",
@@ -291,6 +254,85 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_LOG_PREFIX",
     )
 
+    def log_server_info(self) -> None:
+        """Log comprehensive server configuration information.
 
-def api_prefix(settings: Settings, api_type: APIType):
-    return "/" + str(api_type) if len(settings.api_types) > 1 else ""
+        Displays all server settings in a consistent visual format similar to
+        pipeline configuration logging.
+        """
+        # Build API types string
+        api_types_str = ", ".join(api_type.value for api_type in self.api_types)
+
+        # Build operation mode string
+        mode_flags = []
+        if self.offline_inference:
+            mode_flags.append("offline_inference")
+        if self.headless:
+            mode_flags.append("headless")
+        mode_str = ", ".join(mode_flags) if mode_flags else "standard"
+
+        # Build allowed roots string
+        allowed_roots_str = (
+            ", ".join(self.allowed_image_roots)
+            if self.allowed_image_roots
+            else "None"
+        )
+
+        # Log Server Configuration
+        logger.info("")
+        logger.info("Server Config")
+        logger.info("=" * 60)
+        logger.info(f"    host                   : {self.host}")
+        logger.info(f"    port                   : {self.port}")
+        logger.info(f"    metrics_port           : {self.metrics_port}")
+        logger.info(f"    api_types              : {api_types_str}")
+        logger.info(f"    operation_mode         : {mode_str}")
+        logger.info("")
+
+        # File System Configuration
+        logger.info("File System Config")
+        logger.info("=" * 60)
+        logger.info(f"    allowed_image_roots    : {allowed_roots_str}")
+        logger.info(
+            f"    max_local_image_bytes  : {to_human_readable_bytes(self.max_local_image_bytes)}"
+        )
+        logger.info("")
+
+        # Metrics and Telemetry Configuration
+        logger.info("Metrics and Telemetry Config")
+        logger.info("=" * 60)
+        logger.info(
+            f"    metric_recording       : {self.metric_recording.value}"
+        )
+        logger.info(
+            f"    metric_level           : {self.metric_level.name} ({self.metric_level.value})"
+        )
+        logger.info(
+            f"    detailed_buffer_factor : {self.detailed_metric_buffer_factor}"
+        )
+        logger.info(f"    disable_telemetry      : {self.disable_telemetry}")
+
+        # Transaction recording (part of telemetry)
+        if self.transaction_recording_file:
+            logger.info(
+                f"    transaction_recording  : {self.transaction_recording_file}"
+            )
+            logger.info(
+                f"    include_responses      : {self.transaction_recording_include_responses}"
+            )
+        else:
+            logger.info("    transaction_recording  : None")
+        logger.info("")
+
+        # Model Worker Configuration
+        logger.info("Model Worker Config")
+        logger.info("=" * 60)
+        logger.info(f"    use_heartbeat          : {self.use_heartbeat}")
+        logger.info(f"    timeout                : {self.mw_timeout_s:.1f}s")
+        logger.info(
+            f"    health_fail_timeout    : {self.mw_health_fail_s:.1f}s"
+        )
+        logger.info(
+            f"    telemetry_spawn_timeout: {self.telemetry_worker_spawn_timeout:.1f}s"
+        )
+        logger.info("")

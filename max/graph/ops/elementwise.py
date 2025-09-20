@@ -21,6 +21,7 @@ from .. import dtype_promotion
 from ..graph import Graph
 from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
+from .cast import cast
 
 # ===----------------------------------------------------------------------=== #
 # Utilities
@@ -104,35 +105,44 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-div = _elementwise_binary(rmo.div)
-"""
-Divides two symbolic tensors.
 
-Creates a new op node to compute the division of two symbol tensor values
-and adds it to the graph, returning the symbolic result.
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted according
-        to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to the
-        same shape according to broadcasting rules` before the operation.
+def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+    """
+    Divides two symbolic tensors using true division (Python operator `/`).
 
-Args:
-    lhs: The symbol to use as left side of the division.
-    rhs: The symbol to use as right side of the division.
-    location: An optional location for a more specific error message.
+    For integer operands, this performs true division by promoting to float,
+    matching Python's `/` operator behavior. For floating-point operands,
+    this performs standard floating-point division.
 
-Returns:
-    A symbolic tensor value representing the output of the division.
-    The result will have:
-    - the same dtype as the type-promotion of the two input dtypes
-    - the same shape as the broadcast of the two input shapes.
+    Creates a new op node to compute the division of two symbol tensor values
+    and adds it to the graph, returning the symbolic result.
 
-Raises:
-    Error: If the input values' shapes are not compatible for broadcasting.
-    Error: If one of the input values has an unsupported dtype.
-    Error: If the two symbols are parts of different graphs.
-"""
+    Args:
+        lhs: The symbol to use as left side of the division.
+        rhs: The symbol to use as right side of the division.
+
+    Returns:
+        A symbolic tensor value representing the output of the division. The
+          result will have:
+            - floating-point dtype for integer operands, promoted dtype for mixed types
+            - the same shape as the broadcast of the two input shapes.
+
+    Raises:
+        Error: If the input values' shapes are not compatible for broadcasting.
+        Error: If one of the input values has an unsupported dtype.
+        Error: If the two symbols are parts of different graphs.
+    """
+    lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
+
+    if lhs.dtype.is_integral() and rhs.dtype.is_integral():
+        float_dtype = DType.float64  # Use double precision for accuracy
+        lhs = cast(lhs, float_dtype)
+        rhs = cast(rhs, float_dtype)
+
+    return Graph.current._add_op(rmo.div, lhs, rhs)[0].tensor
+
+
 max = _elementwise_binary(rmo.max)
 """
 Computes the elementwise maximum of two symbolic tensors.

@@ -50,3 +50,6 @@ def main():
 
     var v = SIMD[DType.float16, 4](42)
     print(rsqrt(v))
+
+    _ = small_vec
+    _ = bigger_vec2

@@ -21,12 +21,12 @@ from nn.conv import (
 from .conv_utils import elementwise_simd_epilogue_type
 
 from gpu.host import DeviceContext
-from gpu._cudnn.cnn_infer import (
+from _cudnn.cnn_infer import (
     cudnnConvolutionMode_t,
     cudnnSetConvolution2dDescriptor,
     cudnnConvolutionBackwardData,
 )
-from gpu._cudnn.infer import (
+from _cudnn.infer import (
     cudnnConvolutionBwdDataAlgo_t,
     cudnnDataType_t,
     cudnnSetFilter4dDescriptor,
@@ -438,7 +438,7 @@ struct ConvTransposedPacked[
     var conv_shape: ConvShape[input_layout.rank() - 2]
 
     # Support partition in 4 dims: (n, c, f, ho_or_howo). If the input is
-    # padded, the output spacial dims are merged into one as howo. If not
+    # padded, the output spatial dims are merged into one as howo. If not
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
@@ -485,8 +485,8 @@ struct ConvTransposedPacked[
         alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
             input_layout.rank() - 2,
-            output_layout.shape[output_layout.rank() - 2],  # WO
-            output_layout.shape[output_layout.rank() - 1],  # F
+            Int(output_layout.shape[output_layout.rank() - 2]),  # WO
+            Int(output_layout.shape[output_layout.rank() - 1]),  # F
             conv_attr,
             simd_size,
         ]()

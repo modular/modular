@@ -27,10 +27,7 @@ from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     process_vision_info,
 )
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import (
-    TextAndVisionTokenizer,
-    max_tokens_to_generate,
-)
+from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
@@ -375,10 +372,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )  # We ignore video_inputs for image-only use case
         else:
             # Fall back to using the loaded images
-            logger.info(
-                "Loading images from request.images rather than messages, not using process_vision_info"
-            )
             if request.images:
+                logger.info(
+                    "Loading images from request.images rather than messages, not using process_vision_info"
+                )
                 image_inputs = [
                     fetch_image({"image": image_data})
                     for image_data in request.images
@@ -531,5 +528,6 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            sampling_params=request.sampling_params,
         )
         return context

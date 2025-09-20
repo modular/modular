@@ -166,10 +166,21 @@ class EchoTokenGenerator(
                 prompt_tokens = context.prompt_tokens
 
                 # Check if we have more tokens to echo and haven't reached max length
-                if (
-                    echo_idx < len(prompt_tokens)
-                    and context.current_length < context.max_length
-                ):
+                if echo_idx >= len(prompt_tokens):
+                    responses[
+                        request_id
+                    ].final_status = GenerationStatus.END_OF_SEQUENCE
+                    if request_id in self._echo_indices:
+                        del self._echo_indices[request_id]
+                    break
+                elif context.current_length >= context.max_length:
+                    responses[
+                        request_id
+                    ].final_status = GenerationStatus.MAXIMUM_LENGTH
+                    if request_id in self._echo_indices:
+                        del self._echo_indices[request_id]
+                    break
+                else:
                     # Echo the next token in the original order
                     next_token_id = int(prompt_tokens[echo_idx])
 
@@ -181,16 +192,6 @@ class EchoTokenGenerator(
 
                     # Move to the next token
                     self._echo_indices[request_id] += 1
-
-                else:
-                    # Finished echoing all tokens or reached max length
-                    responses[
-                        request_id
-                    ].final_status = GenerationStatus.MAXIMUM_LENGTH
-                    # Clean up the echo index
-                    if request_id in self._echo_indices:
-                        del self._echo_indices[request_id]
-                    break  # No more tokens to process for this request
 
         return responses
 

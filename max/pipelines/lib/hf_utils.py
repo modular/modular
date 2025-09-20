@@ -606,13 +606,6 @@ class HuggingFaceRepo:
     def file_exists(self, filename: str) -> bool:
         return huggingface_hub.file_exists(self.repo_id, filename)
 
-    def download(self, filename: str, force_download: bool = False) -> Path:
-        return Path(
-            huggingface_hub.hf_hub_download(
-                self.repo_id, filename, force_download=force_download
-            )
-        )
-
     @property
     def formats_available(self) -> list[WeightsFormat]:
         return list(self.weight_files.keys())

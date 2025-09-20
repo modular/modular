@@ -18,7 +18,7 @@ from algorithm import parallelize
 from memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](ImplicitlyCopyable, Movable, Stringable):
+struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -56,7 +56,7 @@ struct Grid[rows: Int, cols: Int](ImplicitlyCopyable, Movable, Stringable):
         grid = Self()
         random.randint(grid.data, grid.num_cells, 0, 1)
 
-        return grid
+        return grid^
 
     # ===-------------------------------------------------------------------===#
     # Indexing
@@ -119,4 +119,4 @@ struct Grid[rows: Int, cols: Int](ImplicitlyCopyable, Movable, Stringable):
         # Parallelize the evolution of rows across available CPU cores
         parallelize[worker](rows)
 
-        return next_generation
+        return next_generation^

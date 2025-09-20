@@ -16,6 +16,7 @@ _MOJO_COMPILE_OPTS = {
 
 _DISABLED_ASSERTIONS = [
     "test_parallelize.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+    "test_sorting_network.mojo",
 ]
 
 [
@@ -43,6 +44,7 @@ _DISABLED_ASSERTIONS = [
             "--debug-level",
             "full",
         ],
+        enable_assertions = src not in _DISABLED_ASSERTIONS,
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

@@ -51,15 +51,15 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from linalg.matmul_sm90 import (
+from .matmul_sm90 import (
     _get_c_smem_layout,
     cluster_size,
     consumer_main_loop,
     warp_specialized_gemm_output,
 )
-from linalg.matmul_dispatch_sm90 import _find_largest_bn_for_sm90_matmul
-from linalg.matmul_loadop_sm90 import async_load_AB
-from linalg.vendor_blas import matmul as vendor_matmul
+from .matmul_dispatch.sm90 import _find_largest_bn_for_sm90_matmul
+from .matmul_loadop_sm90 import async_load_AB
+from .vendor_blas import matmul as vendor_matmul
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -470,7 +470,7 @@ fn grouped_matmul_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=True,
-    ](a_smem.static_alignment_cast[128](), a_smem_size)
+    ](a_smem, a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
         b_type,
@@ -478,7 +478,7 @@ fn grouped_matmul_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=True,
-    ](b_smem.static_alignment_cast[128](), b_smem_size)
+    ](b_smem, b_smem_size)
 
     var c_smem_tile = LayoutTensor[
         c_type,
@@ -486,7 +486,7 @@ fn grouped_matmul_kernel[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](c_smem.static_alignment_cast[128]())
+    ](c_smem)
 
     var a_mbars_ptr = smem_pool.bitcast[Int64]()
     var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
@@ -751,9 +751,7 @@ fn grouped_matmul_kernel_sm100[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment2=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -807,11 +805,7 @@ fn grouped_matmul_kernel_sm100[
     var b_smem_tile = b_smem_tile_t(b_smem)
 
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
-    var ptr_tmem_addr = (
-        (b_smem + b_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -824,12 +818,8 @@ fn grouped_matmul_kernel_sm100[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -1220,50 +1210,49 @@ fn grouped_matmul_vendor[
         a_type == b_type, "A and B must have the same dtype for vendor BLAS"
     ]()
     # Push the device context to ensure correct CUDA context
-    with ctx.push_context() as cur_ctx:
-        for i in range(num_active_experts):
-            var expert_id = expert_ids[i]
+    for i in range(num_active_experts):
+        var expert_id = expert_ids[i]
 
-            var token_start = a_offsets[i]
-            var token_end = a_offsets[i + 1]
-            var num_tokens = token_end - token_start
+        var token_start = a_offsets[i]
+        var token_end = a_offsets[i + 1]
+        var num_tokens = token_end - token_start
 
-            # Skip if no tokens for this expert
-            if num_tokens <= 0:
-                continue
+        # Skip if no tokens for this expert
+        if num_tokens <= 0:
+            continue
 
-            # Handle experts with expert_id = -1 by writing zeros
-            if expert_id < 0:
-                # Create output slice and zero it out
-                var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
-                    c.data + token_start * c.dim[1](),
-                    DimList(num_tokens, c.dim[1]()),
-                )
-                var buff = DeviceBuffer(
-                    ctx, c_slice.data, c_slice.num_elements(), owning=False
-                )
-                ctx.enqueue_memset(buff, 0)
-                continue
-
-            # Create views into the tensors for this expert
-            var a_slice = NDBuffer[a_type, 2, MutableAnyOrigin](
-                a.data + token_start * a.dim[1](),
-                DimList(num_tokens, a.dim[1]()),
-            )
-            var b_slice = NDBuffer[b_type, 2, MutableAnyOrigin](
-                b.data + expert_id * b.dim[1]() * b.dim[2](),
-                DimList(b.dim[1](), b.dim[2]()),
-            )
+        # Handle experts with expert_id = -1 by writing zeros
+        if expert_id < 0:
+            # Create output slice and zero it out
             var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
                 c.data + token_start * c.dim[1](),
                 DimList(num_tokens, c.dim[1]()),
             )
-
-            vendor_matmul[use_tf32](
-                ctx,
-                c_slice,
-                a_slice,
-                b_slice,
-                c_row_major=True,
-                transpose_b=transpose_b,
+            var buff = DeviceBuffer(
+                ctx, c_slice.data, c_slice.num_elements(), owning=False
             )
+            ctx.enqueue_memset(buff, 0)
+            continue
+
+        # Create views into the tensors for this expert
+        var a_slice = NDBuffer[a_type, 2, MutableAnyOrigin](
+            a.data + token_start * a.dim[1](),
+            DimList(num_tokens, a.dim[1]()),
+        )
+        var b_slice = NDBuffer[b_type, 2, MutableAnyOrigin](
+            b.data + expert_id * b.dim[1]() * b.dim[2](),
+            DimList(b.dim[1](), b.dim[2]()),
+        )
+        var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
+            c.data + token_start * c.dim[1](),
+            DimList(num_tokens, c.dim[1]()),
+        )
+
+        vendor_matmul[use_tf32](
+            ctx,
+            c_slice,
+            a_slice,
+            b_slice,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )

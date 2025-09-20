@@ -19,7 +19,6 @@ import json
 import logging
 import os
 import re
-import threading
 from collections import OrderedDict
 from collections.abc import Sequence
 from pathlib import Path
@@ -35,6 +34,11 @@ from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.graph.weights.weights import _cast_to_dtype
 from max.interfaces import InputContext, LoRAStatus, LoRAType
+from max.interfaces.pipeline import (
+    Pipeline,
+    PipelineInputsType,
+    PipelineOutputType,
+)
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
 from max.pipelines.lib.config import LoRAConfig
@@ -256,6 +260,9 @@ class LoRAModel:
         self.rank: int = self._adapter_config["r"]
         self.target_modules: list[str] = self._adapter_config["target_modules"]
 
+        # Validate that target modules are supported
+        self._validate_target_modules()
+
     def get(self, key: str) -> WeightData | None:
         """
         Gets the WeightData from the key. If key doesn't exist in model, then None is returned.
@@ -294,6 +301,41 @@ class LoRAModel:
     def adapter_config(self) -> dict[str, Any]:
         """A dictionary containing metadata/configuration for the LoRA adapter."""
         return self._adapter_config
+
+    def _validate_target_modules(self) -> None:
+        """
+        Validates that all target modules in the LoRA adapter are supported.
+
+        Currently supported target modules:
+        - Attention modules: q_proj, k_proj, v_proj, o_proj
+
+        Raises:
+            ValueError: If any target module is not supported.
+        """
+        supported_modules = {
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",  # Attention modules
+            # TODO E2EOPT-526
+            # "gate_proj",
+            # "up_proj",
+            # "down_proj",  # MLP modules
+        }
+
+        unsupported_modules = []
+        for module in self.target_modules:
+            if module not in supported_modules:
+                unsupported_modules.append(module)
+
+        if unsupported_modules:
+            supported_list = ", ".join(sorted(supported_modules))
+            unsupported_list = ", ".join(unsupported_modules)
+            msg = (
+                f"LoRA adapter contains unsupported target modules: {unsupported_list}. "
+                f"Currently supported modules are: {supported_list}."
+            )
+            raise ValueError(msg)
 
     def _normalize_lora_key(self, key: str) -> str:
         """
@@ -346,6 +388,15 @@ class LoRAModel:
 
         with open(config_path) as f:
             adapter_config = json.load(f)
+
+        # Check for bias configuration which is not currently supported
+        bias_config = adapter_config.get("bias", "none")
+        if bias_config != "none":
+            raise ValueError(
+                f"LoRA bias training is not currently supported. "
+                f"Found bias='{bias_config}' in LoRA adapter '{self.name}'. "
+                f"Please use a LoRA adapter with bias='none' or without bias configuration."
+            )
 
         if WeightsFormat.safetensors in weight_files:
             weights = load_weights(
@@ -446,13 +497,10 @@ class LoRAManager:
             max_size=self.max_num_loras
         )
 
-        self._lora_lock = threading.RLock()
-        self._request_processor: LoRARequestProcessor[Any] = (
-            LoRARequestProcessor(
-                self,
-                config.lora_request_endpoint,
-                config.lora_response_endpoint,
-            )
+        self._request_processor = LoRARequestProcessor(
+            self,
+            config.lora_request_endpoint,
+            config.lora_response_endpoint,
         )
 
         if config.lora_paths:
@@ -460,18 +508,26 @@ class LoRAManager:
 
         self._alias_buffers: dict[str, DLPackArray] = {}
 
+    def process_lora_requests(self) -> None:
+        """Check for new LoRA requests and processes them."""
+        self._request_processor.process_lora_requests()
+
     @property
     def loras(self) -> list[str]:
-        with self._lora_lock:
-            return list(self._loras.keys())
+        return list(self._loras.keys())
 
     def _model_name_to_id(self, name: str | None) -> int:
         """
         Maps the model name to its assigned slot id.
 
         Base model requests are ID == _NO_ACTIVE_LORA (-1)
+        Empty string or base model path maps to base model.
         """
-        if name and name in self._loras:
+        # Empty string, None, or base model path all map to base model
+        if not name or name == self.base_model_path:
+            return self._NO_ACTIVE_LORA
+
+        if name in self._loras:
             slot = self._active_loras.get_slot(name)
             if slot is not None:
                 return slot
@@ -482,22 +538,6 @@ class LoRAManager:
         Maps the model name to it's rank.
         """
         return self._loras[name].rank if name in self._loras else 0
-
-    def _model_names_to_ids(self, model_names: list[str | None]) -> list[int]:
-        """
-        Maps the list of model names to their assigned slots.
-        If a model isn't a valid loaded LoRA, we assume the base model is
-        selected and set id to max_num_loras.
-        """
-        return [self._model_name_to_id(name) for name in model_names]
-
-    def _model_names_to_ranks(self, model_names: list[str | None]) -> list[int]:
-        """
-        Maps the list of model names to their assigned ranks.
-        If a model isn't a valid loaded LoRA, we assume the base model is
-        selected and set rank to 0.
-        """
-        return [self._model_name_to_rank(name) for name in model_names]
 
     def get_lora_graph_inputs(
         self,
@@ -518,6 +558,8 @@ class LoRAManager:
 
         for ctx in context_batch:
             name = getattr(ctx, "model_name", None)
+            # Empty string, None, or base model path are all valid (use base model)
+            # Only raise error if a non-empty name that's not the base model and not a loaded LoRA
             if (
                 name
                 and name != self.base_model_path
@@ -618,42 +660,39 @@ class LoRAManager:
         Returns:
             LoRAStatus indicating the result of the load operation.
         """
-        with self._lora_lock:
-            try:
-                if "=" in path:
-                    name, path = path.split("=", 1)
+        try:
+            if "=" in path:
+                name, path = path.split("=", 1)
+            else:
+                name = path
+                path = path
+
+            # Check if name already exists first
+            if name in self._loras:
+                existing_lora = self._loras[name]
+                if existing_lora.path == path:
+                    return LoRAStatus.SUCCESS
                 else:
-                    name = path
-                    path = path
+                    return LoRAStatus.LOAD_NAME_EXISTS
 
-                # Check if name already exists first
-                if name in self._loras:
-                    existing_lora = self._loras[name]
-                    if existing_lora.path == path:
-                        return LoRAStatus.SUCCESS
-                    else:
-                        return LoRAStatus.LOAD_NAME_EXISTS
+            if (status := self._validate_lora_path(path)) != LoRAStatus.SUCCESS:
+                return status
 
-                if (
-                    status := self._validate_lora_path(path)
-                ) != LoRAStatus.SUCCESS:
-                    return status
-
-                try:
-                    lora = LoRAModel(
-                        name, path, self.base_dtype, self.max_lora_rank
-                    )
-                except ValueError as e:
-                    return LoRAStatus.LOAD_INVALID_ADAPTER
-
-                self._loras[lora.name] = lora
-                return LoRAStatus.SUCCESS
-
-            except Exception as e:
-                logger.exception(
-                    f"Unexpected error loading LoRA adapter from '{path}': {e}"
+            try:
+                lora = LoRAModel(
+                    name, path, self.base_dtype, self.max_lora_rank
                 )
-                return LoRAStatus.LOAD_ERROR
+            except ValueError as e:
+                return LoRAStatus.LOAD_INVALID_ADAPTER
+
+            self._loras[lora.name] = lora
+            return LoRAStatus.SUCCESS
+
+        except Exception as e:
+            logger.exception(
+                f"Unexpected error loading LoRA adapter from '{path}': {e}"
+            )
+            return LoRAStatus.LOAD_ERROR
 
     def unload_adapter(self, name: str) -> LoRAStatus:
         """
@@ -672,20 +711,19 @@ class LoRAManager:
         Returns:
             LoRAStatus indicating the result of the unload operation.
         """
-        with self._lora_lock:
-            try:
-                if name not in self._loras:
-                    return LoRAStatus.UNLOAD_NAME_NONEXISTENT
+        try:
+            if name not in self._loras:
+                return LoRAStatus.UNLOAD_NAME_NONEXISTENT
 
-                # Remove from registries
-                del self._loras[name]
-                # Remove from active cache (if present)
-                self._active_loras.remove(name)
+            # Remove from registries
+            del self._loras[name]
+            # Remove from active cache (if present)
+            self._active_loras.remove(name)
 
-                return LoRAStatus.SUCCESS
-            except Exception as e:
-                logger.exception(f"Error unloading LoRA adapter '{name}': {e}")
-                return LoRAStatus.UNLOAD_ERROR
+            return LoRAStatus.SUCCESS
+        except Exception as e:
+            logger.exception(f"Error unloading LoRA adapter '{name}': {e}")
+            return LoRAStatus.UNLOAD_ERROR
 
     def activate_adapter(self, name: str) -> None:
         """
@@ -707,28 +745,27 @@ class LoRAManager:
         Raises:
             KeyError: If the specified adapter does not exist in the registry.
         """
-        with self._lora_lock:
-            if name not in self._loras:
-                raise KeyError(f"LoRA adapter '{name}' not found in registry")
+        if name not in self._loras:
+            raise KeyError(f"LoRA adapter '{name}' not found in registry")
 
-            # Check if already active before putting
-            is_active = name in self._active_loras
-            # if it is active already, we still need to update the lru cache
-            self._active_loras.put(name, self._loras[name])
+        # Check if already active before putting
+        is_active = name in self._active_loras
+        # if it is active already, we still need to update the lru cache
+        self._active_loras.put(name, self._loras[name])
 
-            # Only update buffers if the LoRA wasn't already active
-            if not is_active:
-                # Get the current LoRA and its slot
-                (lora, slot) = self._active_loras.get(name)
+        # Only update buffers if the LoRA wasn't already active
+        if not is_active:
+            # Get the current LoRA and its slot
+            (lora, slot) = self._active_loras.get(name)
 
-                if lora is None or slot is None:
-                    raise RuntimeError(
-                        "LoRA or slot is None even after it has been added to cache..."
-                        " This shouldn't happen."
-                    )
+            if lora is None or slot is None:
+                raise RuntimeError(
+                    "LoRA or slot is None even after it has been added to cache..."
+                    " This shouldn't happen."
+                )
 
-                # Update alias buffers with the newly activated LoRA
-                self._update_alias_buffers_for_lora(lora, slot)
+            # Update alias buffers with the newly activated LoRA
+            self._update_alias_buffers_for_lora(lora, slot)
 
     def _update_alias_buffers_for_lora(
         self, lora: LoRAModel, slot: int
@@ -927,36 +964,41 @@ class LoRAManager:
 
     def sort_lora_batch(self, context_batch: dict[str, T]) -> dict[str, T]:
         """
-        Sorts the LoRA batch by name and activates any new LoRAs in the batch.
-
-
-        This method ensures that all LoRAs referenced in the batch are moved to
-        the active cache, implementing the LRU policy by evicting least recently
-        used LoRAs if necessary.
+        Sorts the LoRA batch by LRU cache id.
 
         Args:
             batch: The context batch to sort
         """
-        # First, activate any LoRAs referenced in the batch that aren't already active
-        with self._lora_lock:
-            for context in context_batch.values():
-                model_name = getattr(context, "model_name", None)
-                if (
-                    model_name
-                    and model_name != self.base_model_path
-                    and model_name in self._loras
-                ):
-                    self.activate_adapter(model_name)
+        batch_by_model_ids = {
+            req_id: ctx
+            for req_id, ctx in sorted(
+                context_batch.items(),
+                key=lambda item: self._model_name_to_id(
+                    getattr(item[1], "model_name", None)
+                ),
+                reverse=True,
+            )
+        }
 
-            batch_by_model_ids = {
-                req_id: ctx
-                for req_id, ctx in sorted(
-                    context_batch.items(),
-                    key=lambda item: self._model_name_to_id(
-                        getattr(item[1], "model_name", None)
-                    ),
-                    reverse=True,
-                )
-            }
+        return batch_by_model_ids
 
-            return batch_by_model_ids
+    def is_lora(self, name: str) -> bool:
+        """Checks to see if name is a lora"""
+        return name in self._loras
+
+    def is_active_lora(self, name: str) -> bool:
+        """Checks to see if name is an active lora"""
+        return name in self._active_loras
+
+    @staticmethod
+    def get_lora_manager(
+        pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
+    ) -> LoRAManager | None:
+        manager: LoRAManager | None = None
+
+        if hasattr(pipeline, "_pipeline_model"):
+            manager = pipeline._pipeline_model._lora_manager
+        elif hasattr(pipeline, "pipeline_model"):
+            manager = pipeline.pipeline_model._lora_manager
+
+        return manager

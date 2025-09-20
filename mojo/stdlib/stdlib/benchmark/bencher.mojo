@@ -1172,11 +1172,9 @@ struct Bench(Stringable, Writable):
                         abort(String(e))
                 else:
                     try:
-                        # FIXME(MOCO-2394):
-                        #   This intermediate ref is needed to avoid the
-                        #   compiler unnecessarily inserting an implicit copy.
-                        ref entry = metrics[name]
-                        entry.max_width = max(width, metrics[name].max_width)
+                        metrics[name].max_width = max(
+                            width, metrics[name].max_width
+                        )
                         metrics[name].rates[i] = rate
                     except e:
                         abort(String(e))

@@ -217,8 +217,20 @@ def test_iter():
     sum = 0
     for e in {1, 2, 3}:
         sum += e
-
     assert_equal(sum, 6)
+
+    var my_set = {4, 5, 6}
+    var it = enumerate(my_set)
+    var elem = next(it)
+    assert_equal(elem[0], 0)
+    assert_equal(elem[1], 4)
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 5)
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 6)
+    assert_equal(it.__has_next__(), False)
 
 
 def test_add():

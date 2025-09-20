@@ -41,8 +41,8 @@ Supported Data Types:
 
 Supported Matrix Shapes:
 ----------------------
-- NVIDIA: 16×8×8, 16×8×4, 16×8×16, 8×8×4, 16×8×32
-- AMD: 16×16×4, 16×16×16, 32×32×8
+- NVIDIA: 16x8x8, 16x8x4, 16x8x16, 8x8x4, 16x8x32
+- AMD: 16x16x4, 16x16x16, 32x32x8
 """
 
 from collections import OptionalReg
@@ -156,18 +156,18 @@ struct TensorCore[
         out_type: The data type for output/accumulation operations.
         in_type: The data type for input matrix elements.
         shape: The shape parameters for the matrix operation in the form [M, N, K]
-               where M×N is the output shape and K is the inner dimension.
+               where MxN is the output shape and K is the inner dimension.
         transpose_b: Whether to transpose the B matrix before multiplication. Defaults to False.
 
     Note:
         Different shapes and data types are supported depending on the GPU hardware.
         For NVIDIA GPUs:
-          - float32: 16×8×8 or 16×8×4
-          - half-precision: 16×8×16
-          - float8: 16×8×32
+          - float32: 16x8x8 or 16x8x4
+          - half-precision: 16x8x16
+          - float8: 16x8x32
         For AMD GPUs:
-          - float32: 16×16×4
-          - half-precision: 16×16×16 or 32×32×8
+          - float32: 16x16x4
+          - half-precision: 16x16x16 or 32x32x8
     """
 
     # Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
@@ -1036,8 +1036,8 @@ struct TensorCore[
                         Layout.col_major(4, 8)
                     ](lane_id())
                     fragments[i, 0] = rebind[frag_type](
-                        rebind[SIMD[warp_tile.dtype, 4]](frags[0]).join(
-                            rebind[SIMD[warp_tile.dtype, 4]](frags[1])
+                        rebind[SIMD[warp_tile.dtype, 4]](frags[0, 0]).join(
+                            rebind[SIMD[warp_tile.dtype, 4]](frags[0, 1])
                         ),
                     )
 
@@ -1339,7 +1339,7 @@ fn get_mma_shape[
 
     Returns:
         An `IndexList[3]` containing the MMA dimensions in the format `[M, N, K]`,
-        where `M×N` is the output matrix size and `K` is the reduction dimension.
+        where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
 
     @parameter
@@ -1414,3 +1414,115 @@ fn get_fragment_size[mma_shape: IndexList[3]]() -> IndexList[3]:
         mma_shape[1] * mma_shape[2] // WARP_SIZE,
         mma_shape[0] * mma_shape[1] // WARP_SIZE,
     )
+
+
+@fieldwise_init
+struct TiledTensorCore[
+    out_type: DType,
+    in_type: DType,
+    shape: IndexList[3],
+    group_size: Int,
+    transpose_b: Bool = False,
+]:
+    """TiledTensorCore provides a wrapper around TensorCore to support multiple MMAs along the K dimension.
+
+    Enables larger K dimension operations by decomposing them into multiple smaller MMA operations.
+    Currently only being used for AMD GPUs to enable 16x16x32 operations using two 16x16x16 MMAs.
+
+    Parameters:
+        out_type: The data type for output/accumulation operations.
+        in_type: The data type for input matrix elements.
+        shape: The shape parameters for individual MMA operations [M, N, K].
+        group_size: Number of MMA operations along the K dimension.
+        transpose_b: Whether to transpose the b matrix. Defaults to False.
+    """
+
+    alias mma_op = TensorCore[out_type, in_type, shape, transpose_b]()
+
+    @staticmethod
+    @always_inline
+    fn mma[
+        swap_a_b: Bool = False
+    ](
+        a_reg_tile: LayoutTensor,
+        b_reg_tile: LayoutTensor,
+        c_reg_tile: LayoutTensor,
+    ):
+        """Perform multiple matrix multiply-accumulate operations along the K dimension.
+
+        Executes group_size MMA operations, processing slices of the K dimension
+        and accumulating results in c_reg_tile.
+
+        Parameters:
+            swap_a_b: Whether to swap a and b operands. Defaults to False.
+
+        Args:
+            a_reg_tile: Input matrix a fragments [num_m_mmas, group_size * a_frag_size].
+            b_reg_tile: Input matrix b fragments [num_n_mmas, group_size * b_frag_size].
+            c_reg_tile: Accumulation matrix c fragments, modified in-place.
+        """
+        alias num_m_mmas = a_reg_tile.shape[0]()
+        alias num_n_mmas = b_reg_tile.shape[0]()
+
+        alias a_frag_size = Self.mma_op.a_reg_type.size
+        alias b_frag_size = Self.mma_op.b_reg_type.size
+        alias c_frag_size = Self.mma_op.c_reg_type.size
+
+        constrained[group_size > 0, "group_size must be greater than 0"]()
+
+        constrained[
+            c_reg_tile.shape[1]() == c_frag_size,
+            "c_reg_tile.shape[1]() must be equal to c_frag_size",
+        ]()
+        constrained[
+            a_reg_tile.shape[1]() == group_size * a_frag_size,
+            "a_reg_tile.shape[1]() must be equal to group_size * a_frag_size",
+        ]()
+        constrained[
+            b_reg_tile.shape[1]() == group_size * b_frag_size,
+            "b_reg_tile.shape[1]() must be equal to group_size * b_frag_size",
+        ]()
+
+        alias c_linear_map = Layout.row_major(
+            num_n_mmas, num_m_mmas
+        ) if swap_a_b else Layout.col_major(num_m_mmas, num_n_mmas)
+
+        @parameter
+        fn _inner_loop(
+            a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
+        ):
+            alias num_m_mmas = a_frag.shape[0]()
+            alias num_n_mmas = b_frag.shape[0]()
+
+            constrained[
+                c_frag.shape[0]() == num_m_mmas * num_n_mmas,
+                "Fragments size mismatch. Expected c_frag shape[0] to be"
+                " num_m_mmas * num_n_mmas = "
+                + String(num_m_mmas * num_n_mmas)
+                + ", got "
+                + String(c_frag.shape[0]()),
+            ]()
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+
+                @parameter
+                for n_mma in range(num_n_mmas):
+                    alias c_idx = c_linear_map(IntTuple(m_mma, n_mma))
+                    mma(
+                        c_frag[c_idx, 0],
+                        a_frag[m_mma, 0],
+                        b_frag[n_mma, 0],
+                        c_frag[c_idx, 0],
+                    )
+
+        # FIXME: this might be more efficient using an iterator
+        @parameter
+        for k in range(group_size):
+            var a_reg_k = a_reg_tile.tile[num_m_mmas, a_frag_size](0, k)
+            var b_reg_k = b_reg_tile.tile[num_n_mmas, b_frag_size](0, k)
+            _inner_loop(
+                b_reg_k.vectorize[1, b_frag_size](),
+                a_reg_k.vectorize[1, a_frag_size](),
+                c_reg_tile.vectorize[1, c_frag_size](),
+            )

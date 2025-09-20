@@ -202,7 +202,8 @@ def test_to_bits():
 def test_from_to_bits_roundtrip():
     alias dtypes = [
         DType.bool,
-        DType.index,
+        DType.int,
+        DType.uint,
         DType.uint8,
         DType.int8,
         DType.uint16,
@@ -244,7 +245,8 @@ def test_from_to_bits_roundtrip():
 
 
 def test_simd_variadic():
-    assert_equal(String(SIMD[DType.index, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
+    assert_equal(String(SIMD[DType.int, 4](52, 12, -43, 5)), "[52, 12, -43, 5]")
+    assert_equal(String(SIMD[DType.uint, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
 
 
 def test_convert_simd_to_string():
@@ -254,8 +256,11 @@ def test_convert_simd_to_string():
     var b: SIMD[DType.float64, 4] = 6
     assert_equal(String(b), "[6.0, 6.0, 6.0, 6.0]")
 
-    var c: SIMD[DType.index, 8] = 7
-    assert_equal(String(c), "[7, 7, 7, 7, 7, 7, 7, 7]")
+    var c: SIMD[DType.int, 8] = -7
+    assert_equal(String(c), "[-7, -7, -7, -7, -7, -7, -7, -7]")
+
+    var d: SIMD[DType.uint, 8] = 8
+    assert_equal(String(d), "[8, 8, 8, 8, 8, 8, 8, 8]")
 
     # TODO: uncomment when https://github.com/modular/modular/issues/2353 is fixed
     # assert_equal(String(UInt32(-1)), "4294967295")
@@ -344,7 +349,7 @@ def test_issue_1625():
 
 
 def test_issue_20421():
-    var a = UnsafePointer[UInt8, alignment2=64].alloc(count=16 * 64)
+    var a = UnsafePointer[UInt8].alloc(count=16 * 64, alignment=64)
     for i in range(16 * 64):
         a[i] = i & 255
     var av16 = (
@@ -432,7 +437,8 @@ def test_truthy():
         DType.float16,
         DType.float32,
         DType.float64,
-        DType.index,
+        DType.int,
+        DType.uint,
     )
 
     @parameter
@@ -1141,29 +1147,29 @@ def test_insert():
     assert_equal(Int32(3).insert(Int32(4)), 4)
 
     assert_equal(
-        SIMD[DType.index, 4](0, 1, 2, 3).insert(SIMD[DType.index, 2](9, 6)),
-        SIMD[DType.index, 4](9, 6, 2, 3),
+        SIMD[DType.int, 4](0, 1, 2, 3).insert(SIMD[DType.int, 2](9, 6)),
+        SIMD[DType.int, 4](9, 6, 2, 3),
     )
 
     assert_equal(
-        SIMD[DType.index, 4](0, 1, 2, 3).insert[offset=1](
-            SIMD[DType.index, 2](9, 6)
+        SIMD[DType.int, 4](0, 1, 2, 3).insert[offset=1](
+            SIMD[DType.int, 2](9, 6)
         ),
-        SIMD[DType.index, 4](0, 9, 6, 3),
+        SIMD[DType.int, 4](0, 9, 6, 3),
     )
 
     assert_equal(
-        SIMD[DType.index, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=4](
-            SIMD[DType.index, 4](9, 6, 3, 7)
+        SIMD[DType.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=4](
+            SIMD[DType.uint, 4](9, 6, 3, 7)
         ),
-        SIMD[DType.index, 8](0, 1, 2, 3, 9, 6, 3, 7),
+        SIMD[DType.uint, 8](0, 1, 2, 3, 9, 6, 3, 7),
     )
 
     assert_equal(
-        SIMD[DType.index, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=3](
-            SIMD[DType.index, 4](9, 6, 3, 7)
+        SIMD[DType.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=3](
+            SIMD[DType.uint, 4](9, 6, 3, 7)
         ),
-        SIMD[DType.index, 8](0, 1, 2, 9, 6, 3, 7, 8),
+        SIMD[DType.uint, 8](0, 1, 2, 9, 6, 3, 7, 8),
     )
 
 
@@ -1184,12 +1190,17 @@ def test_join():
 def test_interleave():
     assert_equal(
         String(Int32(0).interleave(Int32(1))),
-        String(SIMD[DType.index, 2](0, 1)),
+        String(SIMD[DType.int32, 2](0, 1)),
     )
 
     assert_equal(
-        SIMD[DType.index, 2](0, 2).interleave(SIMD[DType.index, 2](1, 3)),
-        SIMD[DType.index, 4](0, 1, 2, 3),
+        SIMD[DType.int, 2](0, -2).interleave(SIMD[DType.int, 2](1, -3)),
+        SIMD[DType.int, 4](0, 1, -2, -3),
+    )
+
+    assert_equal(
+        SIMD[DType.uint, 2](0, 2).interleave(SIMD[DType.uint, 2](1, 3)),
+        SIMD[DType.uint, 4](0, 1, 2, 3),
     )
 
 
@@ -1198,10 +1209,13 @@ def test_deinterleave():
     assert_equal(tup2[0], Float32(1))
     assert_equal(tup2[1], Float32(2))
 
-    var tup4 = SIMD[DType.index, 4](0, 1, 2, 3).deinterleave()
+    var tup4 = SIMD[DType.int, 4](0, 1, -2, -3).deinterleave()
+    assert_equal(tup4[0], __type_of(tup4[0])(0, -2))
+    assert_equal(tup4[1], __type_of(tup4[0])(1, -3))
 
-    assert_equal(tup4[0], __type_of(tup4[0])(0, 2))
-    assert_equal(tup4[1], __type_of(tup4[0])(1, 3))
+    var tup8 = SIMD[DType.uint, 8](0, 1, 2, 3, 4, 5, 6, 7).deinterleave()
+    assert_equal(tup8[0], __type_of(tup8[0])(0, 2, 4, 6))
+    assert_equal(tup8[1], __type_of(tup8[0])(1, 3, 5, 7))
 
 
 def test_extract():
@@ -1211,23 +1225,23 @@ def test_extract():
     assert_equal(s2, 99)
 
     assert_equal(
-        SIMD[DType.index, 4](99, 1, 2, 4).slice[4](),
-        SIMD[DType.index, 4](99, 1, 2, 4),
+        SIMD[DType.int, 4](99, 1, 2, 4).slice[4](),
+        SIMD[DType.int, 4](99, 1, 2, 4),
     )
 
     assert_equal(
-        SIMD[DType.index, 4](99, 1, 2, 4).slice[2, offset=0](),
-        SIMD[DType.index, 2](99, 1),
+        SIMD[DType.int, 4](99, 1, 2, 4).slice[2, offset=0](),
+        SIMD[DType.int, 2](99, 1),
     )
 
     assert_equal(
-        SIMD[DType.index, 4](99, 1, 2, 4).slice[2, offset=2](),
-        SIMD[DType.index, 2](2, 4),
+        SIMD[DType.uint, 4](99, 1, 2, 4).slice[2, offset=2](),
+        SIMD[DType.uint, 2](2, 4),
     )
 
     assert_equal(
-        SIMD[DType.index, 4](99, 1, 2, 4).slice[2, offset=1](),
-        SIMD[DType.index, 2](1, 2),
+        SIMD[DType.uint, 4](99, 1, 2, 4).slice[2, offset=1](),
+        SIMD[DType.uint, 2](1, 2),
     )
 
 
@@ -1238,7 +1252,8 @@ def test_limits():
         var min_value = Scalar[dtype].MIN
         assert_equal(max_value + 1, min_value)
 
-    test_integral_overflow[DType.index]()
+    test_integral_overflow[DType.int]()
+    test_integral_overflow[DType.uint]()
     test_integral_overflow[DType.int8]()
     test_integral_overflow[DType.uint8]()
     test_integral_overflow[DType.int16]()
@@ -1562,7 +1577,8 @@ def test_reduce():
     test_dtype[DType.float16]()
     test_dtype[DType.float32]()
     test_dtype[DType.float64]()
-    test_dtype[DType.index]()
+    test_dtype[DType.int]()
+    test_dtype[DType.uint]()
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
@@ -1804,9 +1820,13 @@ def test_modf():
 
 
 def test_split():
-    var tup = SIMD[DType.index, 8](1, 2, 3, 4, 5, 6, 7, 8).split()
-    assert_equal(tup[0], __type_of(tup[0])(1, 2, 3, 4))
-    assert_equal(tup[1], __type_of(tup[1])(5, 6, 7, 8))
+    var tup4 = SIMD[DType.int, 4](1, 2, -3, -4).split()
+    assert_equal(tup4[0], __type_of(tup4[0])(1, 2))
+    assert_equal(tup4[1], __type_of(tup4[1])(-3, -4))
+
+    var tup8 = SIMD[DType.uint, 8](1, 2, 3, 4, 5, 6, 7, 8).split()
+    assert_equal(tup8[0], __type_of(tup8[0])(1, 2, 3, 4))
+    assert_equal(tup8[1], __type_of(tup8[1])(5, 6, 7, 8))
 
 
 def test_contains():
@@ -1832,7 +1852,8 @@ def test_comparison():
         DType.float16,
         DType.float32,
         DType.float64,
-        DType.index,
+        DType.int,
+        DType.uint,
     )
 
     @parameter
@@ -2463,15 +2484,20 @@ def test_int_literal_init():
     assert_equal(Int64(-9223372036854775808), Int64(9223372036854775808))
     assert_equal(Int64(-9223372036854775809), Int64(9223372036854775807))
 
-    alias Index = Scalar[DType.index]
+    alias Index = Scalar[DType.int]
+    alias UIndex = Scalar[DType.uint]
 
     @parameter
     if is_64bit():
         assert_equal(Index(-9223372036854775808), Index(9223372036854775808))
         assert_equal(Index(-9223372036854775809), Index(9223372036854775807))
+        assert_equal(UIndex(0), UIndex(18446744073709551616))
+        assert_equal(UIndex(-1), UIndex(18446744073709551615))
     else:
         assert_equal(Index(-2147483648), Index(2147483648))
         assert_equal(Index(-2147483649), Index(2147483647))
+        assert_equal(UIndex(0), UIndex(4294967296))
+        assert_equal(UIndex(-1), UIndex(4294967295))
 
 
 def test_bool_init():

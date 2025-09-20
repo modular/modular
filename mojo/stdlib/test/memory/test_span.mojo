@@ -217,15 +217,6 @@ def test_span_coerce():
     takes_span(a)
 
 
-# We don't actually need to call this test
-# but we want to make sure it compiles
-def test_conditional_conformance():
-    var l = [1, 2, 3]
-    var s = Span[Int, alignment=2](l)
-    s.fill(0)
-    _ = s == s
-
-
 def test_swap_elements():
     var l = [1, 2, 3, 4, 5]
     var s = Span(l)
@@ -348,6 +339,16 @@ def test_count_func():
     assert_equal(1, data[:3].count[func=is_2]())
 
 
+def test_unsafe_subspan():
+    var data = Span(List[Int](0, 1, 2, 3, 4))
+
+    var subspan1 = data.unsafe_subspan(offset=0, length=4)
+    assert_equal(List(subspan1), [0, 1, 2, 3])
+
+    var subspan2 = data.unsafe_subspan(offset=1, length=3)
+    assert_equal(List(subspan2), [1, 2, 3])
+
+
 def main():
     test_span_list_int()
     test_span_list_str()
@@ -368,3 +369,4 @@ def main():
     test_reverse()
     test_apply()
     test_count_func()
+    test_unsafe_subspan()

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -20,25 +21,145 @@ import random
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Optional
+from enum import Enum
+from io import BytesIO
+from pathlib import Path
+from typing import Literal, TypedDict
 
 import msgspec
 import numpy as np
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 from PIL import Image
-from sample_workload_utils import (
-    CODE_DEBUG_TEMPLATE,
-    ChatSession,
-    CodeDebugLine,
-    ObfuscatedConversationsLine,
-    SampledRequest,
-    build_chat_message,
-    encode_image,
-)
-from transformers import PreTrainedTokenizerBase
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+
+
+class OpenAIImageURL(TypedDict):
+    url: str
+
+
+class OpenAIImage(TypedDict):
+    type: Literal["image_url"]
+    image_url: OpenAIImageURL
+
+
+@dataclass
+class SampledRequest:
+    prompt_formatted: str
+    prompt_len: int
+    output_len: int | None
+    encoded_img: OpenAIImage | None
+
+
+MessageSource = Literal["user", "assistant"]
+
+
+@dataclass
+class ChatMessage:
+    source: MessageSource
+    content: str
+    num_tokens: int
+
+
+@dataclass
+class ChatSession:
+    id: int | None
+    messages: Sequence[ChatMessage]
+
+
+# -----------------------------------------------------------------------------
+# Longcontext Dataset (code_debug)
+# -----------------------------------------------------------------------------
+
+CODE_DEBUG_TEMPLATE = """\
+There is ONLY ONE function in the large project that is deliberately made to \
+include an obvious error. Please find the function that contains the most \
+obvious errors. I will give you four options to narrow your scope. You can \
+inspect the options and think. Eventually, tell me the answer using one \
+single letter (A, B, C, or D).
+
+{context}
+
+Which function has deliberate error?
+A. {OPTION_A}
+B. {OPTION_B}
+C. {OPTION_C}
+D. {OPTION_D}
+
+You should first find the functions in the options. Repeat their content, \
+inspect through code, and at last give me your answer for the function that \
+has the deliberate and obvious error in A, B, C, or D.\
+"""
+
+
+class CodeDebugLine(msgspec.Struct):
+    id: int
+    context: str
+    input: str
+    answer: Sequence[str]
+    options: Sequence[str]
+
+
+class ObfuscatedConversationsLine(msgspec.Struct):
+    timestamp: str
+    conversation_id: str
+    messages: str
+
+
+def encode_image(img: Image.Image) -> OpenAIImage:
+    """
+    Convert the given PIL.Image.Image to JPEG and encode in base64.
+    Returns an openai API image_url content entry with the encoded string.
+    """
+    img_buffer = BytesIO()
+    # Drop alpha channel and convert to jpeg
+    img.convert("RGB").save(img_buffer, format="JPEG")
+    # Encode in base64 and convert to str
+    img_base64 = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
+    # return openai-api dict
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
+    }
+
+
+# -----------------------------------------------------------------------------
+# Multi-turn chat
+# -----------------------------------------------------------------------------
+
+
+def estimate_num_tokens(tokenizer: PreTrainedTokenizerBase, text: str) -> int:
+    return len(tokenizer(text, add_special_tokens=False).input_ids)
+
+
+def build_chat_message(
+    source: MessageSource,
+    prompt: str,
+    tokenizer: PreTrainedTokenizerBase,
+    num_tokens: int | None = None,
+) -> ChatMessage:
+    return ChatMessage(
+        source,
+        prompt,
+        num_tokens or estimate_num_tokens(tokenizer, prompt),
+    )
+
 
 logger = logging.getLogger("benchmark_datasets")
+
+LOCALLY_PACKAGED_DATASETS_DIR = Path(__file__).parent.resolve() / "datasets"
+
+
+class DatasetMode(str, Enum):
+    """Enumeration of supported dataset loading modes.
+
+    This enum defines the different ways datasets can be loaded:
+    - LOCAL: Load from a local file path (from environment variable or --dataset-path)
+    - HUGGINGFACE: Load from HuggingFace Hub (default behavior)
+    """
+
+    LOCAL = "local"
+    HUGGINGFACE = "huggingface"
 
 
 @dataclass
@@ -74,7 +195,7 @@ Adding New Datasets:
     To register a new dataset:
 
     1. Implement a new BenchmarkDataset subclass with required methods:
-       - _fetch_dataset_from_hf() for HuggingFace Hub integration
+       - fetch() for both local and HuggingFace Hub integration
        - sample_requests() for generating benchmark requests
 
     2. Add an entry to this registry:
@@ -90,9 +211,7 @@ Notes:
     - Some datasets may support multiturn technically but set it to False due
       to domain-specific constraints or intended usage patterns
 """
-# TODO: Add BenchmarkDataset modes for HF, local path only, and local path with HF.
-# These modes are hacked around to account for these dataset states via the
-# _fetch_dataset_from_hf() method.
+
 DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
     "arxiv-summarization": DatasetRegistryEntry(
         class_name="ArxivSummarizationBenchmarkDataset",
@@ -129,7 +248,6 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
 }
 
 
-# TODO: Enforce a sample_requests @abstractmethod interface.
 class BenchmarkDataset(ABC):
     """Abstract base class for benchmark datasets.
 
@@ -139,17 +257,17 @@ class BenchmarkDataset(ABC):
     provides a standardized interface for sampling requests.
 
     Attributes:
-        dataset_name (Optional[str]): Name of the dataset to fetch from HuggingFace Hub.
+        dataset_name (str | None): Name of the dataset to fetch from HuggingFace Hub.
             If provided without dataset_path, the dataset will be automatically
             downloaded during initialization.
-        dataset_path (Optional[str]): Local path to the dataset file. Takes precedence
+        dataset_path (str | None): Local path to the dataset file. Takes precedence
             over dataset_name if both are provided. This allows for local datasets
             to be used for benchmarking without having to query / download from HuggingFace Hub.
         has_multiturn_chat_support (bool): Whether this dataset supports multiturn
             chat scenarios.
 
     Usage:
-        Subclasses must implement _fetch_dataset_from_hf() to specify how to download
+        Subclasses must implement fetch() to specify how to download
         and sample their specific datasets. Subclasses must also implement sample_requests()
         to specify how to sample requests from the dataset.
 
@@ -170,25 +288,25 @@ class BenchmarkDataset(ABC):
         )
 
     Subclass Requirements:
-        - Must implement _fetch_dataset_from_hf(dataset_name: str) -> None
+        - Must implement fetch() -> None to handle both local and HuggingFace dataset loading
         - Must implement sample_requests(**kwargs) -> list[SampledRequest]
-        - Should raise ValueError for unsupported dataset names
-        - May raise NotImplementedError if HuggingFace fetching is not supported
+        - Should raise ValueError for unsupported dataset names or invalid configurations
+        - May raise NotImplementedError if the requested mode is not supported
         - Should handle only dataset types relevant to their domain
 
     Raises:
         ValueError: If neither dataset_name nor dataset_path is provided during initialization
     """
 
-    dataset_name: Optional[str] = None
-    dataset_path: Optional[str] = None
+    dataset_name: str | None = None
+    dataset_path: str | None = None
     has_multiturn_chat_support: bool = False
 
     @classmethod
     def from_flags(
         cls,
-        dataset_name: Optional[str] = None,
-        dataset_path: Optional[str] = None,
+        dataset_name: str | None = None,
+        dataset_path: str | None = None,
     ) -> BenchmarkDataset:
         """Factory method to create the appropriate dataset subclass based on dataset name.
 
@@ -197,9 +315,9 @@ class BenchmarkDataset(ABC):
         the need for callers to know which specific subclass to instantiate.
 
         Args:
-            dataset_name (Optional[str]): Name of the dataset. Used to determine
+            dataset_name (str | None): Name of the dataset. Used to determine
                 which subclass to instantiate. If None, dataset_path must be provided.
-            dataset_path (Optional[str]): Local path to the dataset file. If provided,
+            dataset_path (str | None): Local path to the dataset file. If provided,
                 takes precedence over automatic fetching.
 
         Returns:
@@ -210,16 +328,18 @@ class BenchmarkDataset(ABC):
                 and dataset_path are None
 
         Example:
-            # Creates ShareGPTBenchmarkDataset instance
+            # Creates ShareGPTBenchmarkDataset instance from HuggingFace
             dataset = BenchmarkDataset.from_flags(dataset_name="sharegpt")
-
-            # Creates CodeDebugBenchmarkDataset instance
-            dataset = BenchmarkDataset.from_flags(dataset_name="code_debug")
 
             # Creates appropriate subclass with local file
             dataset = BenchmarkDataset.from_flags(
                 dataset_name="sharegpt",
-                dataset_path="/local/file.json"
+                dataset_path="/local/file.json",
+            )
+
+            # Creates dataset using environment variable for local path
+            dataset = BenchmarkDataset.from_flags(
+                dataset_name="sharegpt",
             )
         """
         if not dataset_name and not dataset_path:
@@ -228,7 +348,6 @@ class BenchmarkDataset(ABC):
             )
         elif dataset_path is not None and not os.path.exists(dataset_path):
             raise ValueError(f"Dataset path {dataset_path} does not exist")
-
         # If we have a dataset_path but no dataset_name, we can't determine the subclass
         if not dataset_name:
             raise ValueError(
@@ -245,10 +364,8 @@ class BenchmarkDataset(ABC):
         instance.has_multiturn_chat_support = DATASET_REGISTRY[
             dataset_name
         ].has_multiturn_chat_support
-        # TODO(PAQ-1075): This is a temporary interface limitation that's worth revisiting.
-        # We should also add support for non-HF datasets here via a new API.
-        if instance.dataset_name and instance.dataset_path is None:
-            instance._fetch_dataset_from_hf(instance.dataset_name)
+
+        instance.fetch()
 
         return instance
 
@@ -311,30 +428,91 @@ class BenchmarkDataset(ABC):
         )
 
     @abstractmethod
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        """Fetch dataset from HuggingFace Hub and set dataset_path.
+    def fetch(self) -> None:
+        """Fetch dataset based on the current dataset_mode and set dataset_path.
 
-        Args:
-            dataset_name: Name of the dataset to fetch
+        This method handles both local and HuggingFace dataset loading:
+        - For LOCAL mode: Uses dataset_path (from constructor or environment variable)
+        - For HUGGINGFACE mode: Downloads dataset from HuggingFace Hub
 
         Raises:
-            ValueError: If the dataset is unknown or not supported
+            ValueError: If the dataset is unknown, not supported, or if both modes are specified
+            NotImplementedError: If the dataset doesn't support the requested mode
+        """
+        pass
+
+    @abstractmethod
+    def sample_requests(
+        self,
+        num_requests: int,
+        tokenizer: PreTrainedTokenizerBase,
+        output_lengths: Sequence[int] | None = None,
+        shuffle: bool = True,
+        **kwargs,
+    ) -> Sequence[SampledRequest]:
+        """Sample requests from the dataset.
+
+        This is the standardized interface that all dataset implementations must follow.
+        Additional dataset-specific parameters can be passed via **kwargs.
+
+        Args:
+            num_requests: Number of requests to sample
+            tokenizer: Tokenizer for computing token lengths
+            output_lengths: Optional sequence of output lengths for each request.
+                If None, uses the actual completion lengths from the dataset.
+                If provided, must have length equal to num_requests.
+            shuffle: Whether to shuffle the dataset before sampling. Default is True.
+            **kwargs: Additional dataset-specific parameters
+
+        Returns:
+            Sequence of SampledRequest objects
+
+        Raises:
+            ValueError: If the dataset cannot be loaded or parameters are invalid
+            NotImplementedError: If required parameters are missing for this dataset type
         """
         pass
 
 
-class CodeDebugBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        if dataset_name == "code_debug":
-            self.dataset_path = hf_hub_download(
-                repo_id="xinrongzhang2022/InfiniteBench",
-                filename="code_debug.jsonl",
-                repo_type="dataset",
-            )
-        else:
+class LocalBenchmarkDataset(BenchmarkDataset):
+    """Abstract base class for local benchmark datasets.
+
+    This class provides a common interface for working with local benchmark datasets.
+    It handles automatic dataset fetching and provides a standardized interface for sampling requests.
+    """
+
+    dataset_mode: DatasetMode = DatasetMode.LOCAL
+
+    def fetch(self) -> None:
+        # For local mode, dataset_path should already be set and validated
+        if self.dataset_path is None:
+            raise ValueError("For LOCAL mode, dataset_path must be provided")
+        if not os.path.exists(self.dataset_path):
             raise ValueError(
-                f"Unknown dataset for CodeDebugBenchmarkDataset: {dataset_name}"
+                f"Local dataset path {self.dataset_path} does not exist"
             )
+
+
+class HuggingFaceBenchmarkDataset(BenchmarkDataset):
+    """Abstract base class for HuggingFace benchmark datasets.
+
+    This class provides a common interface for working with HuggingFace benchmark datasets.
+    It handles automatic dataset fetching and provides a standardized interface for sampling requests.
+    """
+
+    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+
+    def fetch(self) -> None:
+        pass
+
+
+class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
+    def fetch(self) -> None:
+        self.dataset_path = hf_hub_download(
+            repo_id="xinrongzhang2022/InfiniteBench",
+            filename="code_debug.jsonl",
+            repo_type="dataset",
+        )
 
     def gen_twoturn_longcontext_requests(
         self,
@@ -373,6 +551,7 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
         tokenizer: PreTrainedTokenizerBase,
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
+        **kwargs,
     ) -> Sequence[SampledRequest]:
         """
         The Long-Context dataset workload is based on InfiniteBench Code.debug
@@ -434,7 +613,12 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
                 )
                 continue
             filtered_dataset.append(
-                SampledRequest(prompt, prompt_len, output_len, None)
+                SampledRequest(
+                    prompt_formatted=prompt,
+                    prompt_len=prompt_len,
+                    output_len=output_len,
+                    encoded_img=None,
+                )
             )
 
         if __debug__:
@@ -470,25 +654,21 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
         ]
 
 
-class ShareGPTBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        if dataset_name == "sharegpt":
-            self.dataset_path = hf_hub_download(
-                repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
-                filename="ShareGPT_V3_unfiltered_cleaned_split.json",
-                repo_type="dataset",
-            )
-        else:
-            raise ValueError(
-                f"Unknown dataset for ShareGPTBenchmarkDataset: {dataset_name}"
-            )
+class ShareGPTBenchmarkDataset(HuggingFaceBenchmarkDataset):
+    def fetch(self) -> None:
+        self.dataset_path = hf_hub_download(
+            repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
+            filename="ShareGPT_V3_unfiltered_cleaned_split.json",
+            repo_type="dataset",
+        )
 
     def sample_requests(
         self,
         num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
-        output_lengths: Sequence[int] | None,
-        shuffle: bool,
+        output_lengths: Sequence[int] | None = None,
+        shuffle: bool = True,
+        **kwargs,
     ) -> Sequence[SampledRequest]:
         """Sample requests from ShareGPT dataset."""
         assert self.dataset_path is not None, (
@@ -545,22 +725,24 @@ class ShareGPTBenchmarkDataset(BenchmarkDataset):
             if output_lengths is None and output_len < 4:
                 continue
             filtered_dataset.append(
-                SampledRequest(prompt, prompt_len, output_len, None)
+                SampledRequest(
+                    prompt_formatted=prompt,
+                    prompt_len=prompt_len,
+                    output_len=output_len,
+                    encoded_img=None,
+                )
             )
 
         return filtered_dataset
 
 
-class RandomBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Random datasets are typically generated synthetically, not fetched from HF
-        if dataset_name == "random":
-            # No pre-fetching needed - dataset is loaded directly in sample_requests
-            pass
-        else:
-            raise ValueError(
-                f"Unknown dataset for RandomBenchmarkDataset: {dataset_name}"
-            )
+class RandomBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch Random dataset.
+
+        Random datasets are generated synthetically and don't require file fetching.
+        """
+        pass
 
     def gen_multiturn_random_requests(
         self,
@@ -578,29 +760,29 @@ class RandomBenchmarkDataset(BenchmarkDataset):
         first_turn_ratio: float = 1.0,
     ) -> Sequence[ChatSession]:
         first_turns = self.sample_requests(
-            int(input_len * first_turn_ratio),
-            output_len,
-            num_chat_sessions,
-            coefficient_of_variation,
-            tokenizer,
-            sys_prompt_ratio,
-            max_num_unique_sys_prompt,
-            distribution_type,
-            min_input_len,
-            min_output_len,
+            num_requests=num_chat_sessions,
+            tokenizer=tokenizer,
+            input_len=int(input_len * first_turn_ratio),
+            output_len=output_len,
+            coefficient_of_variation=coefficient_of_variation,
+            sys_prompt_ratio=sys_prompt_ratio,
+            max_num_unique_sys_prompt=max_num_unique_sys_prompt,
+            distribution_type=distribution_type,
+            min_input_len=min_input_len,
+            min_output_len=min_output_len,
         )
 
         follow_up_turns = self.sample_requests(
-            input_len,
-            output_len,
-            num_chat_sessions * (num_turns - 1),
-            coefficient_of_variation,
-            tokenizer,
-            0,
-            1,
-            distribution_type,
-            min_input_len,
-            min_output_len,
+            num_requests=num_chat_sessions * (num_turns - 1),
+            tokenizer=tokenizer,
+            input_len=input_len,
+            output_len=output_len,
+            coefficient_of_variation=coefficient_of_variation,
+            sys_prompt_ratio=0,
+            max_num_unique_sys_prompt=1,
+            distribution_type=distribution_type,
+            min_input_len=min_input_len,
+            min_output_len=min_output_len,
         )
 
         sessions: list[ChatSession] = []
@@ -639,18 +821,35 @@ class RandomBenchmarkDataset(BenchmarkDataset):
 
     def sample_requests(
         self,
-        input_len: int,
-        output_len: int,
-        num_prompts: int,
-        coefficient_of_variation: str,
+        num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
-        sys_prompt_ratio: float,
-        max_num_unique_sys_prompt: int,
-        distribution_type: str,  # TODO: Make distribution_type an enum
-        min_input_len: int = 4,
-        min_output_len: int = 1,
-        image_size: str = "",
+        output_lengths: Sequence[int] | None = None,
+        shuffle: bool = True,
+        **kwargs,
     ) -> Sequence[SampledRequest]:
+        # Extract required parameters from kwargs
+        input_len = kwargs.get("input_len")
+        output_len = kwargs.get("output_len")
+        coefficient_of_variation = kwargs.get("coefficient_of_variation")
+        sys_prompt_ratio = kwargs.get("sys_prompt_ratio", 0.0)
+        max_num_unique_sys_prompt = kwargs.get("max_num_unique_sys_prompt", 1)
+        distribution_type = kwargs.get("distribution_type", "uniform")
+        min_input_len = kwargs.get("min_input_len", 4)
+        min_output_len = kwargs.get("min_output_len", 1)
+        image_size = kwargs.get("image_size", "")
+
+        # Validate required parameters
+        if input_len is None:
+            raise ValueError("input_len is required for RandomBenchmarkDataset")
+        if output_len is None:
+            raise ValueError(
+                "output_len is required for RandomBenchmarkDataset"
+            )
+        if coefficient_of_variation is None:
+            raise ValueError(
+                "coefficient_of_variation is required for RandomBenchmarkDataset"
+            )
+
         logger.info(f"Random samples in {distribution_type} distribution")
 
         if len(coefficient_of_variation.split(",")) == 2:
@@ -675,14 +874,14 @@ class RandomBenchmarkDataset(BenchmarkDataset):
 
         if distribution_type == "normal":
             input_lens = np.random.normal(
-                loc=input_len, scale=input_scale, size=num_prompts
+                loc=input_len, scale=input_scale, size=num_requests
             ).tolist()
             input_lens = np.round(input_lens).astype(int).tolist()
             input_lens = [
                 max(input_len, min_input_len) for input_len in input_lens
             ]
             output_lens = np.random.normal(
-                loc=output_len, scale=output_scale, size=num_prompts
+                loc=output_len, scale=output_scale, size=num_requests
             ).tolist()
             output_lens = np.round(output_lens).astype(int).tolist()
             output_lens = [
@@ -694,12 +893,12 @@ class RandomBenchmarkDataset(BenchmarkDataset):
             input_lens = np.random.randint(
                 max(int(input_scale), min_input_len),
                 input_len + 1,
-                size=num_prompts,
+                size=num_requests,
             )
             output_lens = np.random.randint(
                 max(int(output_scale), min_output_len),
                 output_len + 1,
-                size=num_prompts,
+                size=num_requests,
             )
         else:
             raise ValueError(
@@ -715,7 +914,7 @@ class RandomBenchmarkDataset(BenchmarkDataset):
             sys_prompts.append(sys_prompt.tolist())
 
         input_requests = []
-        for i in range(num_prompts):
+        for i in range(num_requests):
             sys_prompt_id = np.random.randint(0, max_num_unique_sys_prompt)
             user_prompt_offset = np.random.randint(0, vocab_size)
             user_prompt_len = input_lens[i] - sys_prompt_len
@@ -756,7 +955,10 @@ class RandomBenchmarkDataset(BenchmarkDataset):
             )
             input_requests.append(
                 SampledRequest(
-                    prompt, input_len_actual, int(output_lens[i]), image
+                    prompt_formatted=prompt,
+                    prompt_len=input_len_actual,
+                    output_len=int(output_lens[i]),
+                    encoded_img=image,
                 )
             )
 
@@ -788,23 +990,43 @@ class RandomBenchmarkDataset(BenchmarkDataset):
         return Image.fromarray(array)
 
 
-class SonnetBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Sonnet dataset typically uses local files, not HuggingFace
-        raise NotImplementedError(
-            "SonnetBenchmarkDataset does not support fetching from HuggingFace Hub. "
-            "Sonnet datasets are typically provided as local files."
-        )
+class SonnetBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch Sonnet dataset from local file."""
+        # Set default dataset path if not provided
+        if self.dataset_path is None:
+            self.dataset_path = str(
+                LOCALLY_PACKAGED_DATASETS_DIR / "sonnet_4x.txt"
+            )
+
+        # Call parent fetch method to validate path exists
+        super().fetch()
 
     def sample_requests(
         self,
         num_requests: int,
-        input_len: int,
-        output_lengths: Sequence[int] | None,
-        prefix_len: int,
-        apply_chat_template: bool,
         tokenizer: PreTrainedTokenizerBase,
+        output_lengths: Sequence[int] | None = None,
+        shuffle: bool = True,
+        **kwargs,
     ) -> Sequence[SampledRequest]:
+        # Extract required parameters from kwargs
+        input_len = kwargs.get("input_len")
+        prefix_len = kwargs.get("prefix_len")
+        apply_chat_template = kwargs.get("apply_chat_template")
+
+        # Validate required parameters
+        if input_len is None:
+            raise ValueError("input_len is required for SonnetBenchmarkDataset")
+        if prefix_len is None:
+            raise ValueError(
+                "prefix_len is required for SonnetBenchmarkDataset"
+            )
+        if apply_chat_template is None:
+            raise ValueError(
+                "apply_chat_template is required for SonnetBenchmarkDataset"
+            )
+
         assert input_len > prefix_len, (
             "input_len must be greater than prefix_len."
         )
@@ -812,6 +1034,7 @@ class SonnetBenchmarkDataset(BenchmarkDataset):
         assert self.dataset_path is not None, (
             "dataset_path must be provided for SonnetBenchmarkDataset"
         )
+
         # Load the dataset.
         with open(self.dataset_path) as f:
             poem_lines = f.readlines()
@@ -877,26 +1100,36 @@ class SonnetBenchmarkDataset(BenchmarkDataset):
             prompt_out = prompt_formatted if apply_chat_template else prompt
             output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
-                SampledRequest(prompt_out, prompt_len, output_len, None)
+                SampledRequest(
+                    prompt_formatted=prompt_out,
+                    prompt_len=prompt_len,
+                    output_len=output_len,
+                    encoded_img=None,
+                )
             )
 
         return sampled_requests
 
 
-class AxolotlBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Axolotl dataset typically uses local files, not HuggingFace
-        raise NotImplementedError(
-            "AxolotlBenchmarkDataset does not support fetching from HuggingFace Hub. "
-            "Axolotl datasets are typically provided as local files."
-        )
+class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch Axolotl dataset from local file."""
+        # Set default dataset path if not provided
+        if self.dataset_path is None:
+            self.dataset_path = str(
+                LOCALLY_PACKAGED_DATASETS_DIR / "axolotl_dummy.json"
+            )
+
+        # Call parent fetch method to validate path exists
+        super().fetch()
 
     def sample_requests(
         self,
         num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
-        output_lengths: Sequence[int] | None,
+        output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
+        **kwargs,
     ) -> Sequence[SampledRequest]:
         """Sample requests from an Axolotl-formatted dataset.
         The dataset should be in the following JSON format:
@@ -959,27 +1192,31 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
             prompt_len = len(tokenizer(prompt).input_ids)
             output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
-                SampledRequest(prompt, prompt_len, output_len, None)
+                SampledRequest(
+                    prompt_formatted=prompt,
+                    prompt_len=prompt_len,
+                    output_len=output_len,
+                    encoded_img=None,
+                )
             )
         return sampled_requests
 
 
-class VisionArenaBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Vision arena loads dataset directly in sample_requests, not as a separate fetch step
-        if dataset_name == "vision-arena":
-            # No pre-fetching needed - dataset is loaded directly in sample_requests
-            pass
-        else:
-            raise ValueError(
-                f"Unknown dataset for VisionArenaBenchmarkDataset: {dataset_name}"
-            )
+class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch VisionArena dataset based on the current dataset_mode.
+
+        VisionArena datasets are loaded directly in sample_requests, not as a separate fetch step.
+        """
+        pass
 
     def sample_requests(
         self,
         num_requests: int,
-        output_lengths: Sequence[int] | None,
         tokenizer: PreTrainedTokenizerBase,
+        output_lengths: Sequence[int] | None = None,
+        shuffle: bool = True,
+        **kwargs,
     ) -> Sequence[SampledRequest]:
         dataset = load_dataset(
             "lmarena-ai/vision-arena-bench-v0.1", split="train"
@@ -996,30 +1233,42 @@ class VisionArenaBenchmarkDataset(BenchmarkDataset):
             prompt_len = len(tokenizer(prompt).input_ids)
             output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
-                SampledRequest(prompt, prompt_len, output_len, encoded_img)
+                SampledRequest(
+                    prompt_formatted=prompt,
+                    prompt_len=prompt_len,
+                    output_len=output_len,
+                    encoded_img=encoded_img,
+                )
             )
         return sampled_requests
 
 
-class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Arxiv summarization loads dataset directly in sample_requests, not as a separate fetch step
-        if dataset_name == "arxiv-summarization":
-            # No pre-fetching needed - dataset is loaded directly in sample_requests
-            pass
-        else:
-            raise ValueError(
-                f"Unknown dataset for ArxivSummarizationBenchmarkDataset: {dataset_name}"
-            )
+class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch ArxivSummarization dataset based on the current dataset_mode.
+
+        ArxivSummarization datasets are loaded directly in sample_requests, not as a separate fetch step.
+        """
+        pass
 
     def sample_requests(
         self,
         num_requests: int,
-        input_len: int,
-        max_output_len: int | None,
-        shuffle: bool,
         tokenizer: PreTrainedTokenizerBase,
+        output_lengths: Sequence[int] | None = None,
+        shuffle: bool = True,
+        **kwargs,
     ) -> Sequence[SampledRequest]:
+        # Extract required parameters from kwargs
+        input_len = kwargs.get("input_len")
+        max_output_len = kwargs.get("max_output_len")
+
+        # Validate required parameters
+        if input_len is None:
+            raise ValueError(
+                "input_len is required for ArxivSummarizationBenchmarkDataset"
+            )
+
         """Sample requests from the arxiv-summarization dataset.
 
         Args:
@@ -1106,30 +1355,39 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
                 continue
 
             sampled_requests.append(
-                SampledRequest(prompt_formatted, prompt_len, output_len, None)
+                SampledRequest(
+                    prompt_formatted=prompt_formatted,
+                    prompt_len=prompt_len,
+                    output_len=output_len,
+                    encoded_img=None,
+                )
             )
 
         return sampled_requests
 
 
-class ObfuscatedConversationsBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        if dataset_name == "obfuscated-conversations":
-            # No pre-fetching needed - dataset is loaded directly in sample_requests
-            pass
-        else:
-            raise ValueError(
-                f"Unknown dataset for ObfuscatedConversationsBenchmarkDataset: {dataset_name}"
-            )
-
+class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
     def sample_requests(
         self,
         num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
-        output_lengths: Sequence[int],
-        seed: int,
-        shuffle: bool = False,
+        output_lengths: Sequence[int] | None = None,
+        shuffle: bool = True,
+        **kwargs,
     ) -> Sequence[SampledRequest]:
+        # Extract required parameters from kwargs
+        seed = kwargs.get("seed")
+        if seed is None:
+            raise ValueError(
+                "seed is required for ObfuscatedConversationsBenchmarkDataset"
+            )
+
+        # Validate required parameters
+        if output_lengths is None:
+            raise ValueError(
+                "output_lengths is required for ObfuscatedConversationsBenchmarkDataset"
+            )
+
         assert self.dataset_path is not None, (
             "dataset_path must be provided for ObfuscatedConversationsBenchmarkDataset"
         )

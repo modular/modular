@@ -45,9 +45,9 @@ fn generate_alibi_bias[
     width: Int,
     num_heads: Int,
 ](
-    head_idx: SIMD[DType.index, width],
-    q_idx: SIMD[DType.index, width],
-    k_idx: SIMD[DType.index, width],
+    head_idx: SIMD[DType.int, width],
+    q_idx: SIMD[DType.int, width],
+    k_idx: SIMD[DType.int, width],
     max_prompt_len: Int = 0,
 ) -> SIMD[dtype, width]:
     var scale: SIMD[dtype, width]
@@ -70,7 +70,7 @@ fn generate_alibi_bias[
                 )
             )
     var bias = (
-        -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[dtype]()
+        -(max_prompt_len - 1 - k_idx - iota[DType.int, width]()).cast[dtype]()
         * scale
     )
     return bias

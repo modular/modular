@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from logger import Level, Logger
+from builtin._location import _SourceLocation
 
 
 # CHECK-LABEL: Test logging at trace level
@@ -67,8 +68,28 @@ fn test_log_with_location():
 
     alias log = Logger[Level.TRACE](prefix="", source_location=True)
 
-    # CHECK: test_logger.mojo:71:14] hello
+    # CHECK: test_logger.mojo:72:14] hello
     log.trace("hello")
+
+
+# CHECK-LABEL: Test logging with custom location
+fn test_log_with_custom_location():
+    print("=== Test logging with custom location")
+
+    alias log = Logger[Level.TRACE](prefix="", source_location=True)
+
+    # CHECK: somefile.mojo:42:999] hello
+    log.trace("hello", location=_SourceLocation(42, 999, "somefile.mojo"))
+
+
+# CHECK-LABEL: Test logging with sep/end
+fn test_log_with_sep_end():
+    print("=== Test logging with sep/end")
+
+    var log = Logger[Level.TRACE]()
+
+    # CHECK: hello mojo world!!!
+    log.trace("hello", "world", sep=" mojo ", end="!!!\n")
 
 
 def main():
@@ -77,3 +98,5 @@ def main():
     test_log_noset()
     test_log_with_prefix()
     test_log_with_location()
+    test_log_with_custom_location()
+    test_log_with_sep_end()

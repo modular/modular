@@ -250,7 +250,7 @@ fn b2b_gemm[
     )
 
     # Each pipeline stage has its own buffer.
-    # We re-use `b_smem` for both `B` and `C`
+    # We reuse `b_smem` for both `B` and `C`
     var b_smem = (a_smem + a_smem_size).bitcast[Scalar[in_type]]()
     alias b_smem_size = num_pipeline_stages * BK * BN
     alias BD_0 = BN if transpose_b else BK
@@ -605,7 +605,7 @@ fn multistage_b2b_gemm[
             UInt(size(Layout(A.layout.shape[1])))
         )
         print("smem_use =", smem_use)
-        ctx.enqueue_function[b2b_fn](
+        ctx.enqueue_function_checked[b2b_fn, b2b_fn](
             D,
             A,
             B,

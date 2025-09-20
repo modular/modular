@@ -31,6 +31,7 @@ from max.serve.api_server import (
     ServingTokenGeneratorSettings,
     fastapi_app,
     fastapi_config,
+    validate_port_is_free,
 )
 from max.serve.config import Settings
 from uvicorn import Server
@@ -64,9 +65,6 @@ def sigint_handler(sig: int, frame: Any) -> None:
 def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_config: PipelineConfig,
-    profile: bool = False,
-    failure_percentage: Optional[int] = None,
-    port: Optional[int] = None,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
     global _server_instance
@@ -85,9 +83,6 @@ def serve_api_server_and_model_worker(
         assert isinstance(pipeline_config, AudioGenerationConfig)
         override_architecture = pipeline_config.audio_decoder
 
-    logger.info(
-        f"Starting server using {pipeline_config.model_config.model_path}"
-    )
     # Load tokenizer and pipeline from PIPELINE_REGISTRY.
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,
@@ -105,6 +100,7 @@ def serve_api_server_and_model_worker(
     # Initialize and serve webserver.
     app = fastapi_app(settings, pipeline_settings)
     config = fastapi_config(app=app, server_settings=settings)
+    validate_port_is_free(settings.port)
 
     # Set up signal handler for Ctrl+C graceful shutdown
     signal.signal(signal.SIGTERM, sigterm_handler)

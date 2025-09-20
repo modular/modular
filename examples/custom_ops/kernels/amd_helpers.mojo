@@ -17,7 +17,6 @@ from gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from gpu.memory import AddressSpace
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu import lane_id
-from gpu.intrinsics import buffer_store
 from utils.index import IndexList
 from sys import align_of
 from layout import Layout
@@ -28,7 +27,8 @@ from layout.layout_tensor import (
     ThreadScope,
 )
 from layout.swizzle import Swizzle
-from layout._utils import TensorCoreKGroup, get_amd_buffer_descriptor
+from layout.tensor_core import TiledTensorCore
+from layout._utils import make_amd_buffer_resource
 from layout.element import Element
 from memory import UnsafePointer, Pointer
 from gpu import global_idx, thread_idx, block_dim, block_idx, barrier
@@ -137,7 +137,7 @@ fn copy_local_to_dram_32_32_8[
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
-    var descriptor = get_amd_buffer_descriptor(dst_base)
+    var buffer = make_amd_buffer_resource(dst_base)
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
     alias num_stores_per_thread = dst_fragments.layout.size()
 
@@ -172,8 +172,7 @@ fn copy_local_to_dram_32_32_8[
 
             @parameter
             if element_stride == 1:
-                buffer_store(
-                    descriptor,
+                buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
@@ -183,8 +182,7 @@ fn copy_local_to_dram_32_32_8[
                 for i in range(dst_fragments.element_layout.size()):
                     alias element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
-                    buffer_store(
-                        descriptor,
+                    buffer.store(
                         Int32(dst_idx + element_offset),
                         src,
                     )
@@ -205,7 +203,7 @@ struct AMD_MMA[
     WK: Int,
 ]:
     alias type_alignment = align_of[SIMD[in_type, Self.simd_width]]()
-    alias tensor_core_mma = TensorCoreKGroup[
+    alias tensor_core_mma = TiledTensorCore[
         out_type,
         in_type,
         shape,

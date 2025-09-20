@@ -137,7 +137,7 @@ struct PackMatrixRows[
         ],
         local_off_set: IndexList[2],
     ):
-        """Helper function: transpose packs a [simd_size, simd_size] subtile of
+        """Helper function: transpose packs a [simd_size, simd_size] sub-tile of
         matrix, with bound checking and zero-filling. Bound checking can be
         statically skipped, based on the parameters.
            Args:
@@ -147,7 +147,7 @@ struct PackMatrixRows[
                    skpped if true.
                transpose_buffer(NDBuffer): pre-allocated work space to hold
                    transposed temporary data.
-               local_offset(IndexList): offset of the subtile to work on
+               local_offset(IndexList): offset of the sub-tile to work on
                    within the whole tile of data to pack.
         """
         # Calculate the remaining bound from the local offset.
@@ -780,7 +780,7 @@ fn _pack_b_ndbuffer_impl[
             @parameter
             if not transposed:
                 var perm = NDBuffer[
-                    DType.index, 1, MutableAnyOrigin, 2
+                    DType.int, 1, MutableAnyOrigin, 2
                 ].stack_allocation()
                 perm[0] = 1
                 perm[1] = 0

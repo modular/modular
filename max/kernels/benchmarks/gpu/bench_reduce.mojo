@@ -50,8 +50,8 @@ fn run_reduce[
     var out_size = product(shape, rank - 1)
 
     alias align = align_of_simd[dtype, simd_target = get_gpu_target()]()
-    var expected_vals = UnsafePointer[Scalar[dtype], alignment2=align].alloc(
-        out_size
+    var expected_vals = UnsafePointer[Scalar[dtype]].alloc(
+        out_size, alignment=align
     )
 
     var in_host = UnsafePointer[Scalar[dtype]].alloc(in_size)

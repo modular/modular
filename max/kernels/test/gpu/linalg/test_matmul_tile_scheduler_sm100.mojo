@@ -109,6 +109,7 @@ fn test_kernel[
         cluster_shape = Index[dtype = DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
+        block_swizzle_size=8,
     ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
 
     # thread blocks start with their original cta coordinates
@@ -149,6 +150,9 @@ fn test_kernel[
         var required_clc_query = True
 
         while work_info.is_valid():
+            if elect_one_sync():
+                if work_info.m == 0:
+                    print("work_info:", work_info)
             if required_clc_query:
                 var index = clc_throttle_consumer_state.index()
                 var phase = clc_throttle_consumer_state.phase()
@@ -204,20 +208,37 @@ fn test_kernel[
 
 
 fn test_tile_scheduler(ctx: DeviceContext) raises:
-    alias cluster_shape = StaticTuple[Int32, 3](2, 2, 1)
-    alias grid_dim = (16, 8, 1)
+    alias cluster_shape = StaticTuple[Int32, 3](2, 1, 1)
+    alias grid_dim = (88, 16, 1)
 
     alias cluster_dim = StaticTuple[Int32, 3](
-        grid_dim[0] // cluster_shape[0],
-        grid_dim[1] // cluster_shape[1],
+        Int(grid_dim[0] // cluster_shape[0]),
+        Int(grid_dim[1] // cluster_shape[1]),
         cluster_shape[2],
     )
     alias kernel = test_kernel[2, cluster_shape]
+    # CHECK-DAG: work_info: (0, 4, 0, True)
+    # CHECK-DAG: work_info: (0, 3, 0, True)
+    # CHECK-DAG: work_info: (0, 1, 0, True)
+    # CHECK-DAG: work_info: (0, 0, 0, True)
+    # CHECK-DAG: work_info: (0, 2, 0, True)
+    # CHECK-DAG: work_info: (0, 9, 0, True)
+    # CHECK-DAG: work_info: (0, 7, 0, True)
+    # CHECK-DAG: work_info: (0, 8, 0, True)
+    # CHECK-DAG: work_info: (0, 10, 0, True)
+    # CHECK-DAG: work_info: (0, 6, 0, True)
+    # CHECK-DAG: work_info: (0, 5, 0, True)
+    # CHECK-DAG: work_info: (0, 14, 0, True)
+    # CHECK-DAG: work_info: (0, 15, 0, True)
+    # CHECK-DAG: work_info: (0, 13, 0, True)
+    # CHECK-DAG: work_info: (0, 11, 0, True)
+    # CHECK-DAG: work_info: (0, 12, 0, True)
     ctx.enqueue_function_checked[kernel, kernel](
         cluster_dim,
         grid_dim=grid_dim,
         block_dim=(256),
     )
+    ctx.synchronize()
 
 
 def main():

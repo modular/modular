@@ -17,11 +17,9 @@ from __future__ import annotations
 
 import logging
 import queue
-import threading
-import time
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING
 
-import msgspec
+from max.interfaces import RequestID
 from max.interfaces.lora import (
     LoRAOperation,
     LoRARequest,
@@ -35,10 +33,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("max.serve")
 
-ReqId = TypeVar("ReqId")
 
-
-class LoRARequestProcessor(Generic[ReqId]):
+class LoRARequestProcessor:
     """
     Processes LoRA requests by delegating operations to a LoRAManager.
 
@@ -60,47 +56,27 @@ class LoRARequestProcessor(Generic[ReqId]):
         """
         self.manager = manager
 
-        self._request_socket = ZmqPullSocket[tuple[ReqId, LoRARequest]](
+        self._request_socket = ZmqPullSocket[tuple[RequestID, LoRARequest]](
             endpoint=zmq_request_endpoint,
-            deserialize=msgspec.msgpack.Decoder(
-                type=tuple[ReqId, LoRARequest]
-            ).decode,
+            payload_type=tuple[RequestID, LoRARequest],
         )
 
-        self._response_socket = ZmqPushSocket[tuple[ReqId, LoRAResponse]](
+        self._response_socket = ZmqPushSocket[tuple[RequestID, LoRAResponse]](
             endpoint=zmq_response_endpoint,
-            serialize=msgspec.msgpack.Encoder().encode,
+            payload_type=tuple[RequestID, LoRAResponse],
         )
 
-        self._zmq_thread = threading.Thread(
-            target=self._process_zmq_requests,
-            daemon=True,
-            name="LoRARequestProcessor",
-        )
-        self._zmq_running = True
-        self._zmq_thread.start()
-
-    def _process_zmq_requests(self):
-        """Process ZMQ requests in background thread."""
-        logger.info("LoRA request handler thread started.")
-        while self._zmq_running:
+    def process_lora_requests(self):
+        """Check for new LoRA requests and processes them."""
+        while True:
             try:
-                try:
-                    req_id, request = self._request_socket.get_nowait()
+                req_id, request = self._request_socket.get_nowait()
+                response = self._handle_lora_request(request)
+                self._response_socket.put_nowait((req_id, response))
+            except queue.Empty:
+                break
 
-                    response = self._handle_zmq_request(request)
-
-                    self._response_socket.put_nowait((req_id, response))
-
-                except queue.Empty:
-                    time.sleep(0.01)
-
-            except Exception as e:
-                logger.exception(f"Error processing LoRA request: {e}")
-
-        logger.info("LoRA ZMQ handler thread stopped")
-
-    def _handle_zmq_request(self, request: LoRARequest) -> LoRAResponse:
+    def _handle_lora_request(self, request: LoRARequest) -> LoRAResponse:
         """
         Handle a single LoRA request with thread-safe access.
 
@@ -182,13 +158,3 @@ class LoRARequestProcessor(Generic[ReqId]):
         """Handle LoRA list request."""
         loras = self.manager.loras
         return LoRAResponse(LoRAStatus.SUCCESS, loras)
-
-    def __del__(self):
-        """Cleanup when the object is destroyed."""
-        if self._zmq_running:
-            self._zmq_running = False
-            if self._zmq_thread.is_alive():
-                self._zmq_thread.join(timeout=5)
-
-            self._request_socket.close()
-            self._response_socket.close()

@@ -102,11 +102,25 @@ struct DType(
     )
     """Represents a boolean data type."""
 
+    # TODO(MSTDL-1851): Remove
+    @deprecated("Use `DType.int` instead.")
     alias index = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
     )
     """Represents an integral type whose bitwidth is the maximum integral value
     on the system."""
+
+    alias int = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
+    )
+    """Represents an integral type whose bitwidth is the maximum integral value
+    on the system."""
+
+    alias uint = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<uindex> : !kgen.dtype`
+    )
+    """Represents an unsigned integral type whose bitwidth is the maximum
+    unsigned integral value on the system."""
 
     alias _uint1 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui1> : !kgen.dtype`
@@ -293,8 +307,12 @@ struct DType(
             return Self._from_str(str.removeprefix("DType."))
         elif str == "bool":
             return DType.bool
-        elif str == "index":
-            return DType.index
+        elif str == "index":  # TODO(MSTDL-1851): Remove
+            return DType.int
+        elif str == "int":
+            return DType.int
+        elif str == "uint":
+            return DType.uint
 
         elif str == "uint8":
             return DType.uint8
@@ -367,8 +385,10 @@ struct DType(
 
         if self is DType.bool:
             return writer.write("bool")
-        elif self is DType.index:
-            return writer.write("index")
+        elif self is DType.int:
+            return writer.write("int")
+        elif self is DType.uint:
+            return writer.write("uint")
 
         elif self is DType.uint8:
             return writer.write("uint8")
@@ -525,7 +545,11 @@ struct DType(
         Returns:
             Returns True if the input type parameter is unsigned.
         """
-        return self._is_non_index_integral() and not self._match(_mIsSigned)
+        return (
+            self is DType.uint
+            or self._is_non_index_integral()
+            and not self._match(_mIsSigned)
+        )
 
     @always_inline("nodebug")
     fn is_signed(self) -> Bool:
@@ -554,7 +578,7 @@ struct DType(
         Returns:
             Returns True if the input type parameter is an integer.
         """
-        return self is DType.index or self._is_non_index_integral()
+        return self in (DType.int, DType.uint) or self._is_non_index_integral()
 
     @always_inline("nodebug")
     fn is_floating_point(self) -> Bool:
@@ -634,8 +658,10 @@ struct DType(
 
         elif self is DType.bool:
             return size_of[DType.bool]()
-        elif self is DType.index:
-            return size_of[DType.index]()
+        elif self is DType.int:
+            return size_of[DType.int]()
+        elif self is DType.uint:
+            return size_of[DType.uint]()
 
         elif self is DType.float8_e3m4:
             return size_of[DType.float8_e3m4]()
@@ -761,139 +787,6 @@ struct DType(
             return DType.max_exponent[dtype]() - 1
 
     # ===-------------------------------------------------------------------===#
-    # dispatch_integral
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn dispatch_integral[
-        func: fn[dtype: DType] () capturing [_] -> None
-    ](self) raises:
-        """Dispatches an integral function corresponding to the current DType.
-
-        Constraints:
-            DType must be integral.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-        """
-
-        # fmt: off
-        alias dtypes = [
-            DType.index,
-            DType.uint8, DType.int8,
-            DType.uint16, DType.int16,
-            DType.uint32, DType.int32,
-            DType.uint64, DType.int64,
-            DType.uint128, DType.int128,
-            DType.uint256, DType.int256,
-        ]
-        # fmt: on
-
-        @parameter
-        for dtype in dtypes:
-            if self is dtype:
-                return func[dtype]()
-        raise Error("only integral types are supported")
-
-    # ===-------------------------------------------------------------------===#
-    # dispatch_floating
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn dispatch_floating[
-        func: fn[dtype: DType] () capturing [_] -> None
-    ](self) raises:
-        """Dispatches a floating-point function corresponding to the current DType.
-
-        Constraints:
-            DType must be floating-point or integral.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-        """
-        if self is DType.float16:
-            func[DType.float16]()
-        # TODO(#15473): Enable after extending LLVM support
-        # elif self is DType.bfloat16:
-        #     func[DType.bfloat16]()
-        elif self is DType.float32:
-            func[DType.float32]()
-        elif self is DType.float64:
-            func[DType.float64]()
-        else:
-            raise Error(
-                "only floating point types with bitwidth in [16, 32, 64] are"
-                " supported"
-            )
-
-    @always_inline
-    fn _dispatch_bitwidth[
-        func: fn[dtype: DType] () capturing [_] -> None,
-    ](self) raises:
-        """Dispatches a function corresponding to the current DType's bitwidth.
-        This should only be used if func only depends on the bitwidth of the dtype,
-        and not other properties of the dtype.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-        """
-        var bitwidth = self.bit_width()
-        if bitwidth == 8:
-            func[DType.uint8]()
-        elif bitwidth == 16:
-            func[DType.uint16]()
-        elif bitwidth == 32:
-            func[DType.uint32]()
-        elif bitwidth == 64:
-            func[DType.uint64]()
-        else:
-            raise Error(
-                "bitwidth_dispatch only supports types with bitwidth [8, 16,"
-                " 32, 64]"
-            )
-
-    @always_inline
-    fn _dispatch_custom[
-        func: fn[dtype: DType] () capturing [_] -> None, *dtypes: DType
-    ](self) raises:
-        """Dispatches a function corresponding to current DType if it matches
-        any type in the dtypes parameter.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-            dtypes: A list of DTypes on which to do dispatch.
-        """
-
-        @parameter
-        for dtype in VariadicList(dtypes):
-            if self is dtype:
-                return func[dtype]()
-
-        raise Error(
-            "dispatch_custom: dynamic_type does not match any dtype parameters"
-        )
-
-    # ===-------------------------------------------------------------------===#
-    # dispatch_arithmetic
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn dispatch_arithmetic[
-        func: fn[dtype: DType] () capturing [_] -> None
-    ](self) raises:
-        """Dispatches a function corresponding to the current DType.
-
-        Parameters:
-            func: A parametrized on dtype function to dispatch.
-        """
-        if self.is_floating_point():
-            self.dispatch_floating[func]()
-        elif self.is_integral():
-            self.dispatch_integral[func]()
-        else:
-            raise Error("only arithmetic types are supported")
-
-    # ===-------------------------------------------------------------------===#
     # __mlir_type
     # ===-------------------------------------------------------------------===#
 
@@ -908,7 +801,7 @@ struct DType(
         if self is DType.bool:
             return __mlir_attr.i1
 
-        if self is DType.index:
+        if self is DType.int:
             return __mlir_attr.index
 
         if self is DType.uint8:
@@ -979,8 +872,10 @@ struct DType(
         @parameter
         if _type_is_eq[T, SIMD[DType.bool, size]]():
             return DType.bool
-        elif _type_is_eq[T, SIMD[DType.index, size]]():
-            return DType.index
+        elif _type_is_eq[T, SIMD[DType.int, size]]():
+            return DType.int
+        elif _type_is_eq[T, SIMD[DType.uint, size]]():
+            return DType.uint
 
         elif _type_is_eq[T, SIMD[DType.uint8, size]]():
             return DType.uint8
@@ -1193,9 +1088,7 @@ fn _index_printf_format() -> StaticString:
 @always_inline
 fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     @parameter
-    if dtype is DType.bool:
-        return _index_printf_format()
-    elif dtype is DType.index:
+    if dtype in (DType.bool, DType.int, DType.uint):
         return _index_printf_format()
 
     elif dtype is DType.uint8:

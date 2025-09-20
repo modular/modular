@@ -52,7 +52,7 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
         return -1
 
 
-# Compile time Tensor informations
+# Compile time Tensor information
 @register_passable("trivial")
 struct StaticTensorSpec[
     dtype: DType,

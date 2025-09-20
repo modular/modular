@@ -370,22 +370,6 @@ struct HostBuffer[dtype: DType](
         self._host_ptr = existing._host_ptr
         self._handle = existing._handle
 
-    fn __moveinit__(out self, deinit existing: Self):
-        """Initializes this buffer by taking ownership of an existing buffer.
-
-        This move constructor transfers ownership of the device buffer from the existing
-        instance to the new instance without incrementing the reference count.
-
-        Args:
-            existing: The buffer to move from, which will no longer be valid after this call.
-        """
-        constrained[
-            not is_gpu(),
-            "HostBuffer is not supported on GPUs",
-        ]()
-        self._host_ptr = existing._host_ptr
-        self._handle = existing._handle
-
     fn __del__(deinit self):
         """Releases resources associated with this host buffer.
 
@@ -967,22 +951,6 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
 
-    fn __moveinit__(out self, deinit existing: Self):
-        """Initializes this buffer by taking ownership of an existing buffer.
-
-        This move constructor transfers ownership of the device buffer from the existing
-        instance to the new instance without incrementing the reference count.
-
-        Args:
-            existing: The buffer to move from, which will no longer be valid after this call.
-        """
-        constrained[
-            not is_gpu(),
-            "DeviceBuffer is not supported on GPUs",
-        ]()
-        self._device_ptr = existing._device_ptr
-        self._handle = existing._handle
-
     @always_inline
     fn __del__(deinit self):
         """Releases resources associated with this device buffer.
@@ -1464,15 +1432,6 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
         self._handle = existing._handle
 
     @doc_private
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves an existing stream into this one.
-
-        Args:
-            existing: The stream to move from.
-        """
-        self._handle = existing._handle
-
-    @doc_private
     @always_inline
     fn __del__(deinit self):
         """Releases resources associated with this stream."""
@@ -1841,15 +1800,6 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
         )
         self._handle = existing._handle
 
-    @doc_private
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves an existing event into this one.
-
-        Args:
-            existing: The event to move from.
-        """
-        self._handle = existing._handle
-
     fn __del__(deinit self):
         """Releases resources associated with this event."""
         # void AsyncRT_DeviceEvent_release(const DeviceEvent *event)
@@ -1964,16 +1914,6 @@ struct DeviceFunction[
             NoneType,
             _DeviceFunctionPtr,
         ](existing._handle)
-        self._handle = existing._handle
-        self._func_impl = existing._func_impl
-        self._context = existing._context
-
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves an existing DeviceFunction into this one.
-
-        Args:
-            existing: The DeviceFunction to move from.
-        """
         self._handle = existing._handle
         self._func_impl = existing._func_impl
         self._context = existing._context
@@ -2705,7 +2645,9 @@ struct DeviceFunction[
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)
                 dense_args_addrs[translated_arg_idx] = first_word_addr
-                dense_args_sizes[i] = UInt(size_of[actual_arg_type]())
+                dense_args_sizes[i] = UInt(
+                    size_of[actual_arg_type.device_type]()
+                )
                 translated_arg_idx += 1
 
         if cluster_dim:
@@ -2914,14 +2856,6 @@ struct DeviceExternalFunction:
             NoneType,
             _DeviceFunctionPtr,
         ](existing._handle)
-        self._handle = existing._handle
-
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves an existing device function into this one.
-
-        Args:
-            existing: The device function to move from.
-        """
         self._handle = existing._handle
 
     fn __del__(deinit self):

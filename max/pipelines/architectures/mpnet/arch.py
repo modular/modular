@@ -39,5 +39,5 @@ mpnet_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
-    prefix_caching_supported=False,
+    required_arguments={"enable_prefix_caching": False},
 )

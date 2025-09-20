@@ -15,6 +15,7 @@
 * `MoveCounter`
 * `CopyCounter`
 * `MoveCopyCounter`
+* `TriviallyCopyableMoveCounter`
 * `DelCounter`
 * `CopyCountedStruct`
 * `MoveOnly`
@@ -53,14 +54,6 @@ struct MoveOnly[T: Movable](Movable):
             i: The test data payload.
         """
         self.data = i^
-
-    fn __moveinit__(out self, deinit other: Self):
-        """Move construct a MoveOnly from an existing variable.
-
-        Args:
-            other: The other instance that we copying the payload from.
-        """
-        self.data = other.data^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -130,22 +123,27 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter(ImplicitlyCopyable, Movable, Writable):
+struct CopyCounter[
+    T: ImplicitlyCopyable & Movable & Writable & Defaultable = NoneType
+](ImplicitlyCopyable, Movable, Writable):
     """Counts the number of copies performed on a value."""
 
+    var value: T
     var copy_count: Int
 
     fn __init__(out self):
+        self = Self(T())
+
+    fn __init__(out self, s: T):
+        self.value = s
         self.copy_count = 0
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.copy_count = existing.copy_count
-
     fn __copyinit__(out self, existing: Self):
+        self.value = existing.value
         self.copy_count = existing.copy_count + 1
 
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write("CopyCounter(", self.copy_count, ")")
+        writer.write("CopyCounter(", self.value, " ", self.copy_count, ")")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -153,7 +151,9 @@ struct CopyCounter(ImplicitlyCopyable, Movable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveCounter[T: Copyable & Movable](ImplicitlyCopyable, Movable):
+# TODO: This type should not be Copyable, but has to be to satisfy
+#       Copyable & Movable at the moment.
+struct MoveCounter[T: Copyable & Movable](Copyable, Movable):
     """Counts the number of moves performed on a value."""
 
     var value: T
@@ -169,12 +169,6 @@ struct MoveCounter[T: Copyable & Movable](ImplicitlyCopyable, Movable):
     fn __moveinit__(out self, deinit existing: Self):
         self.value = existing.value^
         self.move_count = existing.move_count + 1
-
-    # TODO: This type should not be Copyable, but has to be to satisfy
-    #       Copyable & Movable at the moment.
-    fn __copyinit__(out self, existing: Self):
-        self.value = existing.value.copy()
-        self.move_count = existing.move_count
 
 
 # ===----------------------------------------------------------------------=== #
@@ -197,6 +191,29 @@ struct MoveCopyCounter(ImplicitlyCopyable, Movable):
     fn __moveinit__(out self, deinit other: Self):
         self.copied = other.copied
         self.moved = other.moved + 1
+
+
+# ===----------------------------------------------------------------------=== #
+# TriviallyCopyableMoveCounter
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct TriviallyCopyableMoveCounter(Copyable, Movable):
+    """Type used for testing that collections still perform moves and not copies
+    when a type has a custom __moveinit__() but is also trivially copyable.
+
+    Types with this property are rare in practice, but its still important to
+    get the modeling right. If a type author wants their type to be moved
+    with a memcpy, they should mark it as such."""
+
+    var move_count: Int
+
+    # Copying this type is trivial, it doesn't care to track copies.
+    alias __copyinit__is_trivial = True
+
+    fn __moveinit__(out self, deinit existing: Self):
+        self.move_count = existing.move_count + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -241,9 +258,11 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 
 
 @fieldwise_init
-struct DelCounter[counter_origin: ImmutableOrigin](
-    ImplicitlyCopyable, Movable, Writable
-):
+struct DelCounter[
+    counter_origin: ImmutableOrigin, *, trivial_del: Bool = False
+](ImplicitlyCopyable, Movable, Writable):
+    alias __del__is_trivial = trivial_del
+
     var counter: UnsafePointer[Int, mut=False, origin=counter_origin]
 
     fn __del__(deinit self):

@@ -10,11 +10,667 @@ This is a list of changes to the Mojo language, standard library, and tools.
 To check your current version, run `mojo --version`. To install or update
 Mojo, see the [install guide](/mojo/manual/install).
 
-## v25.6 nightly
+## v0.25.7 nightly
 
 This version is still a work in progress.
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
+
+## v0.25.6 (2025-09-22)
+
+:::caution Version scheme change!
+
+This release is technically a version _downgrade_ because we've added a
+`0.` at the beginning: This version is `0.25.6`. This is necessary because
+we started publishing `mojo` packages on pypi.org and it's important that
+we don't publish a package greater than `1.0` yet.
+
+Temporarily, this means you need to add `<1.0.0` to the `mojo` version
+if you want a nightly build. For example:
+
+```sh
+pixi add "mojo<1.0.0"
+```
+
+If you want stable builds, this still works as expected:
+
+```sh
+pixi add "mojo=0.25.6"
+```
+
+We'll eventually pull down older packages such as the `25.5.xxx`
+nightly builds so there won't be anything greater than `1.0`.
+
+:::
+
+### ✨ Highlights {#25-6-highlights}
+
+- You can now **`pip install mojo`**!
+
+  Although we still love the environment reliability of [Pixi](/pixi),
+  installing Mojo with `pip` or `uv` further enhances our interoperability
+  with the Python ecosystem, making it easier to [extend your Python code with
+  Mojo](/mojo/manual/python/mojo-from-python). For more information, see the
+  [Mojo install guide](/mojo/manual/install).
+
+- New [Mojo vision](/mojo/vision) doc explains our motivations and design
+decisions for the Mojo language.
+
+- New [Mojo roadmap](/mojo/roadmap) provides a high-level roadmap for the
+language across multiple phases.
+
+- The way copying is modeled in Mojo has been overhauled. The `Copyable` trait
+  has been updated to represent a type that can be _explicitly_ copied (using a
+  `copy()` method), and a new `ImplicitlyCopyable` "marker" trait can be used to
+  _opt-in_ to making a type implicitly copyable as well. **This swaps the
+  default behavior from being implicitly copyable to being only explicitly
+  copyable.** Several standard library traits, types, and functions now require
+  now require explicit `Copyable` instead of `ImplicitlyCopyable`. See
+  [Standard library changes](#25-6-standard-library-changes) for more
+  information.
+
+- Uncaught exceptions or segmentation faults in Mojo programs can now
+  generate stack traces. This is currently only for CPU-based code. To generate
+  a fully symbolicated stack trace, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+  environment variable, use `mojo build` with debug info enabled, e.g.
+  `-debug-level=line-tables`, and then run the resulting binary.
+
+- Mojo now has support for default trait methods, allowing traits to provide
+  reusable behavior without requiring every conforming struct to re-implement
+  it. Default methods are automatically inherited by conforming structs unless
+  explicitly overridden. See
+  [Language enhancements](#25-6-language-enhancements) more information.
+
+- Methods on structs may now declare their `self` argument with a `deinit`
+  argument convention. This argument convention is used for methods like
+  `__del__()` and `__moveinit__()` to indicate that they tear down the
+  corresponding value without needing its destructor to be run again. Beyond
+  these two methods, this convention can be used to declare "named" destructors,
+  which are methods that consume and destroy the value without themselves
+  running the values destructor. See
+  [Language enhancements](#25-6-language-enhancements) more information.
+
+### Language enhancements {#25-6-language-enhancements}
+
+- Mojo now has support for default trait methods, allowing traits to provide
+  reusable behavior without requiring every conforming struct to re-implement
+  it. Default methods are automatically inherited by conforming structs unless
+  explicitly overridden. For example:
+
+  ```mojo
+  # Any struct conforming to EqualityComparable now only needs to define one of
+  # __ne__ ~or~ __eq__ and will get a definition of the other with no
+  # additional code!
+
+  # For instance:
+  trait EqualityComparable:
+      fn __eq__(self, other: Self) -> Bool:
+          ...
+
+      fn __ne__(self, other: Self) -> Bool:
+          return not self == other
+
+  @value
+  struct Point(EqualityComparable):
+      var x: Int
+      var y: Int
+
+      fn __eq__(self, other: Self) -> Bool:
+          # Since __eq__ is implemented we now get __ne__ defined for free!
+          return self.x == other.x and self.y == other.y
+
+      # Defaulted methods can also be overriden if we want different behavior.
+      # fn __ne__(self, other: Self) -> Bool:
+      #     return self.x != other.x or self.y != other.y
+  ```
+
+  Currently a trait method is considered to be non-defaulted if the first thing
+  in it's body is either a '...' or a 'pass' i.e.
+
+  ```mojo
+
+  trait Foo:
+    # Either of the following are non-defaulted
+    # fn foo(self):
+    #   ...
+    #
+    # fn foo(self):
+    #   pass
+
+    # While this is not:
+    fn foo(self):
+      print("Foo.foo")
+  ```
+
+  Note that in the future only '...' will mark a trait method as not defaulted.
+
+- Methods on structs may now declare their `self` argument with a `deinit`
+  argument convention. This argument convention is used for methods like
+  `__del__()` and `__moveinit__()` to indicate that they tear down the
+  corresponding value without needing its destructor to be run again. Beyond
+  these two methods, this convention can be used to declare "named" destructors,
+  which are methods that consume and destroy the value without themselves
+  running the values destructor. For example, the standard `VariadicPack` type
+  has these methods:
+
+  ```mojo
+  struct VariadicPack[...]:
+      # implicit destructor
+      fn __del__(deinit self): ...
+      # move constructor
+      fn __moveinit__(out self, deinit existing: Self): ...
+      # custom explicit destructor that destroys "self" by transferring all of
+      # the stored elements.
+      fn consume_elements[
+        elt_handler: fn (idx: Int, var elt: element_type) capturing
+    ](deinit self): ...
+  ```
+
+  This argument convention is a fairly narrow power-user feature that is
+  important to clarify the destruction model and make linear types fit into the
+  model better.  A linear types are just types where all of the destructors are
+  explicit - it has no `__del__()`.
+
+- Uncaught exceptions or segmentation faults in Mojo programs can now
+  generate stack traces. This is currently only for CPU-based code. To generate
+  a fully symbolicated stack trace, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+  environment variable, use `mojo build` with debug info enabled, e.g.
+  `-debug-level=line-tables`, and then run the resulting binary.
+
+- Mojo now allows the use of keywords in function names (after `def` and `fn`)
+  and in attribute references after a `.`. This notably allows the use of the
+  `match()` method in regex libraries even though Mojo takes this as a hard
+  keyword.  Uses in other locations can still use backticks:
+
+  ```mojo
+  struct MatchExample:
+      fn match(self): # This is ok now.
+          pass
+
+  fn test_match(a: MatchExample):
+      a.match() # This is ok now.
+      a.`match`() # This is still valid.
+  ```
+
+- When generating error messages for complex types involving parameter calls,
+  the Mojo compiler now prints functions parameter values correctly, eliminating
+  a large class of `T != T` errors that happen with GPU layouts.
+
+### Language changes {#25-6-language-changes}
+
+- The `__del__()` and `__moveinit__()` methods should now take their `self` and
+  `existing` arguments as `deinit` instead of either `owned`.
+
+- The Mojo compiler now warns about use of the deprecated `owned` keyword,
+  please move to `var` or `deinit` as the warning indicates.
+
+- The `__disable_del` keyword and statement has been removed, use `deinit`
+  methods instead.
+
+- The previously deprecated `@value` decorator has been removed.
+
+- Accesses to associated aliases and methods within a trait now require
+  qualified references (prepended with `Self.`), making it consistent with how
+  accesses to member aliases and methods in a struct require `self.`.
+
+- The Mojo compiler now raises error on implicitly materialization of a
+  non-`ImplicitlyCopyable` object, please either mark the type to be
+  `ImplicitlyCopyable` or using `materialize[value: T]()` to explicitly
+  materialize the parameter into a dynamic value.
+
+### Standard library changes {#25-6-standard-library-changes}
+
+#### Trait and type system changes
+
+- `Iterable`'s `origin` parameter is now named `iterable_origin`
+  and its `mut` param is now named `iterator_mut` to avoid naming collisions.
+
+- There is now a `map()` iterator.
+
+- `zip()`, `map()`, and `enumerate()` are now builtins.
+
+- The way copying is modeled in Mojo has been overhauled.
+
+  Previously, Mojo had two traits for modeling copyability:
+
+  - `Copyable` denoted a type that could be copied implicitly
+  - `ExplicitlyCopyable` denoted a type that could only be copied with an
+    explicit call to a `.copy()` method.
+
+  The vast majority of types defaulted to implementing `Copyable` (and therefore
+  were implicitly copyable), and `ExplicitlyCopyable` was partially phased in
+  but had significant usage limitations.
+
+  Now, the new `Copyable` trait instead represents a type that can be
+  _explicitly_ copied (using `.copy()`), and a new `ImplicitlyCopyable` "marker"
+  trait can be used to _opt-in_ to making a type implicitly copyable as well.
+  This swaps the default behavior from being implicitly copyable to being only
+  explicitly copyable.
+
+  The new `ImplicitlyCopyable` trait inherits from `Copyable`, and requires
+  no additional methods. `ImplicitlyCopyable` is known specially to the
+  compiler. (`ImplicitlyCopyable` types may also be copied explicitly using
+  `.copy()`.)
+
+  This makes it possible for non-implicitly-copyable types to be used with all
+  standard library functionality, resolving a long-standing issue with Mojo
+  effectively forcing implicit copyability upon all types.
+  This will enable Mojo programs to be more efficient and readable, with fewer
+  performance and correctness issues caused by accidental implicit copies.
+
+  With this change, types that conform to `Copyable` are no longer implicitly
+  copyable:
+
+  ```mojo
+  @fieldwise_init
+  struct Person(Copyable):
+      var name: String
+
+  fn main():
+      var p = Person("Connor")
+      var p2 = p           # ERROR: not implicitly copyable
+      var p3 = p.copy()    # OK: may be copied explicitly
+  ```
+
+  To enable a type to be implicitly copyable, declare a conformance to the
+  `ImplicitlyCopyable` marker trait:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(ImplicitlyCopyable):
+      var x: Float32
+      var y: Float32
+
+  fn main():
+      var p = Point(5, 10)
+      var p2 = p           # OK: may be implicitly copied
+      var p3 = p.copy()    # OK: may be explicitly copied
+  ```
+
+  An additional nuance is that `ImplicitlyCopyable` may only be synthesized for
+  types whose fields are all themselves `ImplicitlyCopyable` (and not merely
+  `Copyable`). If you need to make a type with any non-`ImplicitlyCopyable`
+  fields support implicit copying, you can declare the conformance to
+  `ImplicitlyCopyable`, but write the `__copyinit__()` definition manually:
+
+  ```mojo
+  struct Container(ImplicitlyCopyable):
+      var x: SomeCopyableType
+      var y: SomeImplicitlyCopyableType
+
+      fn __copyinit__(out self, existing: Self):
+          self.x = existing.x.copy()   # Copy field explicitly
+          self.y = existing.y
+  ```
+
+  - The following standard library types and functions now require only
+    explicit `Copyable` for their element and argument types, enabling their use
+    with types that are not implicitly copyable:
+    `List`, `Span`, `InlineArray`, `Optional`, `Variant`, `Tuple`, `Dict`,
+    `Set`, `Counter`, `LinkedList`, `Deque`, `reversed()`.
+
+    Additionally, the following traits now require explicit `Copyable` instead
+    of `ImplicitlyCopyable`:
+    `KeyElement`, `IntervalElement`, `ConvertibleFromPython`
+
+  - The following Mojo standard library types are no longer implicitly copyable:
+    `List`, `Dict`, `DictEntry`, `OwnedKwargsDict`, `Set`, `LinkedList`, `Node`
+    `Counter`, `CountTuple`, `BitSet`, `UnsafeMaybeUninitialized`, `DLHandle`,
+    `BenchConfig`, `BenchmarkInfo`, `Report`, `PythonTypeBuilder`.
+
+    To create a copy of one of these types, call the `.copy()` method
+    explicitly:
+
+    ```mojo
+    var l = List[Int](1, 2, 3)
+
+    # ERROR: Implicit copying of `List` is no longer supported:
+    # var l2 = l
+
+    # Instead, perform an explicit copy:
+    var l2 = l.copy()
+    ```
+
+    Alternatively, to transfer ownership,
+    [use the `^` transfer sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-):
+
+    ```mojo
+    var l = List[Int](1, 2, 3)
+    var l2 = l^
+    # `l` is no longer accessible.
+    ```
+
+  - Because `List` and `Dict` are so widely used, this release stages this in by
+    making implicit copies of these types a warning instead of an error.  This
+    will become a hard error in the next release of Mojo.
+
+  - User types that define a custom `.copy()` method must be updated to move
+    that logic to `__copyinit__()`. The `.copy()` method is now provided by a
+    default trait implementation on `Copyable` that should not be overridden:
+
+    ```mojo
+    trait Copyable:
+        fn __copyinit__(out self, existing: Self, /):
+            ...
+
+        fn copy(self) -> Self:
+            return Self.__copyinit__(self)
+    ```
+
+  - The `UnsafePointer.init_pointee_explicit_copy()` method has been removed.
+    Please use `UnsafePointer.init_pointee_copy()` instead.
+
+  - `UnsafePointer.move_pointee_into()` has been deprecated.
+    Please use `UnsafePointer.init_pointee_move_from()`.
+
+    `src.move_pointee_into(dst)` used a reversed argument order from intuitive
+    `LHS = RHS` semantics for assignment, effectively `RHS -> LHS`. The new
+    function fixes this readability issue (`dst.init_pointee_move_from(src)`),
+    and additionally follows the `init_pointee_*()` naming convention of the
+    other existing methods for initializer a pointer memory location.
+
+- A new `Some` utility is introduced to reduce the syntactic load of declaring
+  function arguments of a type that implements a given trait or trait
+  composition. For example, instead of writing
+
+  ```mojo
+  fn foo[T: Intable, //](x: T) -> Int:
+      return x.__int__()
+  ```
+
+  one can now write:
+
+  ```mojo
+  fn foo(x: Some[Intable]) -> Int:
+      return x.__int__()
+  ```
+
+#### SIMD and Math Changes
+
+- The comparison operators (e.g. `__eq__()` and `__le__()`) of the `SIMD` type
+  now return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD`
+  now has explicit elementwise comparisons that return boolean masks, e.g.
+  `eq()` and `le()`.
+  - This allows `SIMD` to conform to the `EqualityComparable` trait, enabling
+    the use of `SIMD` vectors in sets, as keys to dictionaries, generic search
+    algorithms, etc. Moreover, `Scalar` now conforms to the `Comparable` trait,
+    i.e. `SIMD` conforms to `Comparable` when the size is 1.
+  - As a consequence, `SIMD.__bool__()` no longer needs to be restricted to
+    scalars, and instead performs an `any` reduction on the elements of vectors.
+
+- Non-scalar `SIMD` constructors no longer allow implicit splatting of `Bool`
+  values. This could lead to subtle bugs that cannot be caught at compile time,
+  for example:
+
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return v == 42  # this silently reduced to a single bool, and then splat
+  ```
+
+  Similarly to `InlineArray`, an explicit constructor with the `fill`
+  keyword-only argument can be used to express the same logic more safely:
+
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return SIMD[DType.bool, w](fill=(v == 42))  # highlights the splat logic
+
+  fn bar(Scalar[_]) -> Scalar[DType.bool]:
+    # still works, since implicit splatting to a scalar is never ambiguous
+    return v == 42
+  ```
+
+- Several types that wrap MLIR types have been changed to further
+  encapsulate their behavior, hiding this low-level behavior from non-advanced
+  users.
+
+  - Types that can be constructed from raw MLIR values now require the use
+    of an `mlir_value` keyword-only argument initializer.
+    Affected types include: `SIMD`, `UInt`.
+
+  - Types with raw MLIR type fields have had their `value` fields renamed to
+    `_mlir_value`.
+    Affected types include: `Bool`, `DType`.
+
+- The `SIMD.from_bits()` factory method is now a constructor, use
+  `SIMD(from_bits=...)` instead.
+
+- `DType.index` is deprecated in favor of the new `DType.int`. Moreover, a new
+  `DType.uint` is added, modeling unsigned integers with widths that match the
+  machine word length.
+
+#### Path and File System Changes
+
+- Added `Path(...).parts()` method to the `Path` type, for example instead of
+  writing:
+
+  ```mojo
+  var path = Path("path/to/file")
+  var parts = path.path.split(DIR_SEPARATOR)
+  ```
+
+  you can now write:
+
+  ```mojo
+  var path = Path("path/to/file")
+  var parts = path.parts()
+  ```
+
+- Added `Path(..).name()` method to the `Path` type, which returns the name of
+  the file or directory.
+
+- Added `os.path.realpath()` to resolve symbolic links to an absolute path and
+  remove relative path components (`.`, `..`, etc.). Behaves the same as the
+  Python equivalent function.
+
+#### Collections and Data Structures
+
+- `Span` is now `Representable` if its elements implement trait
+  `Representable`.
+
+- Add `repr()` support for `List`, `Deque`, `Dict`, `LinkedList`, `Optional`,
+  `Set`.
+
+- `InlineArray` now automatically detects whether its element types are
+  trivially destructible to not invoke the destructors in its `__del__()`
+  function.  This improves performance for trivially destructible types
+  (such as `Int` and friends).
+
+- Similar to above, `List` now automatically does optimizations based on
+  whether the element types are trivial (copyable, destructible, etc). There
+  is no longer a `hint_trivial_type` parameter as this is done automatically
+  now.
+
+- `String.splitlines()` now returns a `List[StringSlice]` instead of a
+  `List[String]`. This avoids unnecessary intermediate allocations.
+
+- `StringSlice.from_utf8()` factory method is now a constructor, use
+  `StringSlice(from_utf8=...)` instead.
+
+- `Span` now implements a generic `.count()` method which can be passed a
+  function that returns a boolean `SIMD` vector. The function counts how many
+  times it returns `True` evaluating it in a vectorized manner. This works for
+  any `Span[Scalar[D]]` e.g. `Span[Byte]`.
+
+- `Iterator` now has a defaulted `.bounds()` trait method. This returns the
+  lower and upper bounds of the remaining length of the iterator. This can be
+  used for preallocation when building or extending collections from iterators.
+
+- Add `take_items()` draining iterator to `Dict`.
+
+- `sort()`, `LinkedList.pop()`, `LinkedList.maybe_pop()` and `Dict.popitem()`
+  no longer copy elements, improving performance.
+
+#### Memory Management and Pointers
+
+- Removed `alignment` and `static_alignment_cast` from `UnsafePointer`.
+
+- Added `alignment` parameter to `UnsafePointer.alloc()`.
+
+- `UnsafePointer.alloc()` and `_malloc()` now take `alignment` as an argument
+  instead of a parameter.
+
+- Removed `alignment` parameter from `Span`, similar to `UnsafePointer` above.
+
+#### Atomic Operations
+
+- Added `os.atomic.fence()` for creating atomic memory fences.
+
+  ```mojo
+    from os.atomic import Atomic, Consistency, fence
+
+    fn decrease_ref_count(ref_count: Atomic[DType.uint64]):
+      if atomic.fetch_sub[ordering = Consistency.MONOTONIC](1) == 1:
+        fence[Consistency.ACQUIRE]()
+        # ...
+  ```
+
+- Add a memory ordering parameter to `Atomic.load()`.
+
+#### Runtime and System Changes
+
+- The `index()` free function now returns an `Int`, instead of a raw MLIR
+  `__mlir_type.index` value.
+
+- There is now an `iter` module which exposes the `next()`, `iter()`,
+  `zip()`, and `enumerate()` methods.
+
+- `Optional` and `OptionalReg` can now be composed with `Bool` in
+  expressions, both at comptime and runtime:
+
+  ```mojo
+  alias value = Optional[Int](42)
+
+  @parameter
+  if CompilationTarget.is_macos() and value:
+      print("is macos and value is:", value.value())
+  ```
+
+- Added `sys.info.platform_map()` for specifying types that can have different
+  values depending on the platform:
+
+  ```mojo
+  from sys.info import platform_map
+
+  alias EDEADLK = platform_map["EDEADLK", linux = 35, macos = 11]()
+  ```
+
+- Deprecated the following functions with `flatcase` names in `sys.info`:
+  - `alignof()`
+  - `bitwidthof()`
+  - `simdbitwidth()`
+  - `simdbytewidth()`
+  - `simdwidthof()`
+  - `sizeof()`
+
+  in favor of `snake_case` counterparts, respectively:
+  - `align_of()`
+  - `bit_width_of()`
+  - `simd_bit_width()`
+  - `simd_byte_width()`
+  - `simd_width_of()`
+  - `size_of()`
+
+- The `compile.reflection.get_type_name()` utility now has limited capability to
+  print parametric types, e.g. `SIMD[DType.float32, 4]` instead of just `SIMD`.
+  If the parameter is not printable, an `<unprintable>` placeholder is printed
+  instead. A new `qualified_builtins` flag also allows users to control the
+  verbosity for the most common (but not all) builtin types.
+
+#### GPU Support
+
+- Added support for AMD RX 6900 XT consumer-grade GPU.
+
+- Added support for AMD RDNA3.5 consumer-grade GPUs in the `gfx1150`,
+`gfx1151`, and `gfx1152` architectures. Representative configurations have been
+added for AMD Radeon 860M, 880M, and 8060S GPUs.
+
+- Added support for NVIDIA GTX 1080 Ti consumer-grade GPUs.
+
+- Added support for NVIDIA Tesla P100 datacenter GPUs.
+
+- Updated `layout_tensor()` copy related functions to support 2D and 3D
+  threadblock dimensions.
+
+### Kernels changes {#25-6-kernels-changes}
+
+- A fast matmul for SM100 is available in Mojo. Please check it out in
+  `matmul_sm100.mojo`.
+
+- Moved `mojo/stdlib/stdlib/gpu/comm/` to `max/kernels/src/comm/`
+
+### Tooling changes {#25-6-tooling-changes}
+
+- `mojo test` now ignores folders with a leading `.` in the name. This will
+  exclude hidden folders on Unix systems.
+
+- `mojo doc --validate-doc-strings` now emits a warning when an `fn` function is
+  declared to raise an error (`raises`) and it has no [`Raises`
+  docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors).
+  However, because Mojo automatically treats all `def` functions as [raising
+  functions](/mojo/manual/functions#raising-and-non-raising-functions), we do
+  not enforce `Raises` docs for `def` functions (to avoid noisy false
+  positives).
+
+- Nightly `mojo` Python wheels are now available. To install everything needed
+  for Mojo development in a Python virtual environment, you can use:
+
+  ```sh
+  pip install --pre mojo \
+   --index-url https://dl.modular.com/public/nightly/python/simple/
+  ```
+
+  For more information, see the [Mojo install guide](/mojo/manual/install).
+
+- In preparation for a future Mojo 1.0, the `mojo` and `mojo-compiler` packages
+  now have a `0.` prefixed to the version. Until the previous nightly packages
+  and 25.5 on Conda have been removed or yanked, we recommend specifying
+  `<1.0.0` as the version for these packages.
+
+### ❌ Removed {#25-6-removed}
+
+- The Mojo MLIR C bindings has been removed. This was a private package that was
+ used for early experimentation.
+
+### 🛠️ Fixed {#25-6-fixed}
+
+- Fixed <https://github.com/modular/modular/issues/4695> - `Dict.__getitem__()`
+  always returns immutable references.
+- Fixed <https://github.com/modular/modular/issues/4705> - Wrong mutability
+  inferred for `__getitem__()` if `[]` operator is used and `__setitem__()` is
+  present.
+- Fixed <https://github.com/modular/modular/issues/5190>
+- Fixed <https://github.com/modular/modular/issues/5139> - Crash on malformed
+  initializer.
+- Fixed <https://github.com/modular/modular/issues/5183> - `Log1p()` not working
+  on GPUs.
+- Fixed <https://github.com/modular/modular/issues/5105> - Outdated `CLAUDE.md`
+  docs.
+- Fixed <https://github.com/modular/modular/issues/5239> - Contextual type not
+  detected inside an inline if-else.
+- Fixed <https://github.com/modular/modular/issues/5305> - Parser Segfaults on
+  `LayoutTensor[layout]` with no `layout` in scope.
+- Error messages involving types using implicit parameters from
+  auto-parameterized types now include context information to solve a class of
+  incorrect "T != T" error messages common in kernel code.
+- Parameter inference failures now refer to parameters by their user-provided
+  name, rather than complaining about a mysterious "parameter #4".
+- Fixed <https://github.com/modular/modular/issues/5260> - undefined reference
+  to `clock_gettime_nsec_np' when building with -O0
+- Fixed <https://github.com/modular/modular/issues/5307> - Bad error message
+  when getting GPU info for unsupported GPU.
+
+### Special thanks {#25-6-special-thanks}
+
+Special thanks to our community contributors:
+[@ThomasMader](https://github.com/ThomasMader),
+[@christoph-schlumpf](https://github.com/christoph-schlumpf),
+[@gabrieldemarmiesse](https://github.com/gabrieldemarmiesse),
+[@gryznar](https://github.com/gryznar),
+[@josiahls](https://github.com/josiahls),
+[@martinvuyk](https://github.com/martinvuyk),
+[@msaelices](https://github.com/msaelices),
+[@mzaks](https://github.com/mzaks),
+[@rd4com](https://github.com/rd4com).
 
 ## v25.5 (2025-08-05)
 
@@ -1154,7 +1810,7 @@ String types in Mojo got several significant improvements:
   [`Pointer(to=...)`](/mojo/stdlib/memory/pointer/Pointer#__init__) and
   [`UnsafePointer(to=...)`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer#__init__)
   constructors instead. Conceptually, this is saying "please initialize a
-  `Pointer` (a reference, if you will) to *some other address in memory*. In the
+  `Pointer` (a reference, if you will) to _some other address in memory_. In the
   future, these `address_of()` functions will be removed.
 
 ### Tooling changes {#25-3-tooling-changes}
@@ -1952,7 +2608,7 @@ Special thanks to our community contributors:
   [`top_k.mojo`](https://github.com/modular/modular/blob/main/examples/custom_ops/kernels/top_k.mojo).
 
 - The [`layout` package](/mojo/kernels/layout/) includes APIs for working with
-  *layouts*, which describe the organization of a tensor (for example, row-major
+  _layouts_, which describe the organization of a tensor (for example, row-major
   or column-major layout), and the
   [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) type, which
   represents a tensor with a specified layout. The `layout` package can be used
@@ -4215,7 +4871,7 @@ Big themes for this release:
   `__refitem__()` to exist.  `__refitem__()` has thus been removed and replaced
   with `__getitem__()` that returns a reference.
 
-- Mojo added support for *infer-only parameters*. Infer-only parameters must
+- Mojo added support for _infer-only parameters_. Infer-only parameters must
   appear at the beginning of the parameter list and cannot be explicitly
   specified by the user. They are declared to the left of a `//` marker, much
   like positional-only parameters. This allows programmers to define functions
@@ -5083,7 +5739,7 @@ Special thanks to our community contributors:
   This prints "`In /path/to/some_file.mojo on line 193: always fails`".
   Note that `__call_location()` only works in `@always_inline` or
   `@always_inline("nodebug")` functions. It gives incorrect results if placed in
-  an `@always_inline` function that's called *from* an
+  an `@always_inline` function that's called _from_ an
   `@always_inline("nodebug")` function.
 
   This feature is still evolving and for the time being you need to explicitly
@@ -6518,7 +7174,7 @@ experience without dedicated sugar.
   specifying `-D MOJO_ENABLE_ASSERTIONS` when invoking `mojo` to
   compile your source file(s).  In the case that an assertion is fired,
   the assertion message will be printed along with the stack trace
-  before the program exits.  By default, assertions are *not enabled*
+  before the program exits.  By default, assertions are _not enabled_
   in the standard library right now for performance reasons.
 
 - The Mojo Language Server now implements the References request. IDEs use
@@ -6627,7 +7283,7 @@ experience without dedicated sugar.
   immutable array slices.
 
   While this is a major step forward for the lifetimes system in Mojo, it is
-  still *very* early and awkward to use.  Notably, there is no syntactic sugar
+  still _very_ early and awkward to use.  Notably, there is no syntactic sugar
   for using references, such as automatic dereferencing. Several aspects of it
   need to be more baked. It is getting exercised by variadic memory arguments,
   which is why they are starting to behave better now.
@@ -6950,8 +7606,8 @@ experience without dedicated sugar.
 
 - Traits have arrived!
 
-  You can now define a *trait*, which consists of a required set of method
-  prototypes. A struct can *conform to* the trait by implementing these methods.
+  You can now define a _trait_, which consists of a required set of method
+  prototypes. A struct can _conform to_ the trait by implementing these methods.
   This lets you write generic functions that work on any structs that conform to
   a given trait.
 
@@ -7069,7 +7725,7 @@ experience without dedicated sugar.
 ### ⭐️ New
 
 - The [Mojo Manual](/mojo/manual/) is an all-new, complete Mojo user guide.
-  It doesn't include *everything* about Mojo yet, but it includes a lot,
+  It doesn't include _everything_ about Mojo yet, but it includes a lot,
   and more than the original programming
   manual (now deprecated).
 
@@ -7092,7 +7748,7 @@ experience without dedicated sugar.
   ```
 
   In the first signature for `eat()`, the `b` parameter isn't bound, so it's
-  *implicitly* added as an input parameter on the function.
+  _implicitly_ added as an input parameter on the function.
 
   In the second signature for `eat()`, the author has explicitly defined an
   input parameter (`_b`), which is bound to the second parameter on the argument
@@ -7337,8 +7993,8 @@ the previous "read to EOF" behavior when size is negative.
 
 - There is an issue affecting Jupyter notebooks that use autotuning and traits.
   This issue only manifests on macOS, and the same code runs without issue
-  outside of the notebooks. This issue affects the *Matrix multiplication in
-  Mojo* notebook.
+  outside of the notebooks. This issue affects the _Matrix multiplication in
+  Mojo_ notebook.
 
 ## v0.5.0 (2023-11-2)
 
@@ -7353,7 +8009,7 @@ the previous "read to EOF" behavior when size is negative.
   function that allows you to concatenate two `SIMD` values together and produce
   a new `SIMD` value.
 
-- Mojo now supports compile-time *keyword parameters*, in addition to existing
+- Mojo now supports compile-time _keyword parameters_, in addition to existing
   support for [keyword
   arguments](/mojo/manual/parameters/#optional-parameters-and-keyword-parameters).
   For example:
@@ -7692,7 +8348,7 @@ the previous "read to EOF" behavior when size is negative.
       return self^
   ```
 
-  Here Mojo *cannot* invoke a noop `__exit__` method because the context
+  Here Mojo _cannot_ invoke a noop `__exit__` method because the context
   manager is consumed by the `__enter__` method.  This can be used for types
   (like file descriptors) that are traditionally used with `with` statements,
   even though Mojo's guaranteed early destruction doesn't require that.
@@ -8961,7 +9617,7 @@ busy this week.
   is currently unsupported).
 
   These should be generally reliable for both memory-only and register-passable
-  types, with the caveat that closures are known to *not* capture values
+  types, with the caveat that closures are known to _not_ capture values
   correctly.  Be very careful with interesting types in the vicinity of a
   closure!
 

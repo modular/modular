@@ -160,7 +160,13 @@ class DistributedDeepseekV2(DistributedTransformer):
                 num_experts=config.n_routed_experts,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
-                gate_cls=DeepSeekV2MoEGate,
+                gate_cls=functools.partial(
+                    DeepSeekV2MoEGate,
+                    topk_method=config.topk_method,
+                    n_group=config.n_group,
+                    topk_group=config.topk_group,
+                    routed_scaling_factor=config.routed_scaling_factor,
+                ),
                 has_shared_experts=True,
                 shared_experts_dim=config.n_shared_experts
                 * config.moe_intermediate_size,

@@ -228,7 +228,7 @@ struct TiledMatmul[
         last_k_tile: Bool,
     ):
         """
-        Helper function: Pack a subtile of B and iterate through all the rows
+        Helper function: Pack a sub-tile of B and iterate through all the rows
             of C.
 
         Parameters:
@@ -589,15 +589,11 @@ fn _matmul_cpu_impl[
         alias alignment = align_of[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = UnsafePointer[
-            Scalar[a.type],
-            alignment2=alignment,
-        ]()
+        var a_packed_ptr = UnsafePointer[Scalar[a.type]]()
         if use_i8mm:
-            a_packed_ptr = UnsafePointer[
-                Scalar[a.type],
-                alignment2=alignment,
-            ].alloc(mh * kh)
+            a_packed_ptr = UnsafePointer[Scalar[a.type]].alloc(
+                mh * kh, alignment=alignment
+            )
         var a_packed = NDBuffer[a.type, 2, _, a.shape](
             a_packed_ptr, DimList(mh, kh)
         )

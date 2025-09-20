@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, assert_false
 
 
 fn test_zip2() raises:
@@ -96,9 +96,60 @@ fn test_zip_unequal_lengths() raises:
     assert_true(not it.__has_next__())
 
 
+@fieldwise_init
+struct TestIter(ImplicitlyCopyable, Iterable, Iterator, Movable):
+    alias Element = Int
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+
+    var lower: Int
+    var upper: Optional[Int]
+
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self.copy()
+
+    fn __has_next__(self) -> Bool:
+        return True
+
+    fn __next__(mut self) -> Self.Element:
+        return 42
+
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return (self.lower, self.upper)
+
+
+fn test_zip_bounds() raises:
+    # same size bounds
+    var zipA = zip(TestIter(2, {2}), TestIter(2, {2}))
+    assert_equal(zipA.bounds()[0], 2)
+    assert_equal(zipA.bounds()[1].value(), 2)
+
+    # different size bounds
+    var zipB = zip(TestIter(3, {3}), TestIter(2, {2}), TestIter(1, {1}))
+    assert_equal(zipB.bounds()[0], 1)
+    assert_equal(zipB.bounds()[1].value(), 1)
+
+    # `None` upper get replaced with discrete upper bound
+    var zipC = zip(TestIter(0, None), TestIter(2, {3}))
+    assert_equal(zipC.bounds()[0], 0)
+    assert_equal(zipC.bounds()[1].value(), 3)
+
+    # Preserves `None` upper if all are none
+    var zipD = zip(
+        TestIter(1, {None}),
+        TestIter(2, {None}),
+        TestIter(3, {None}),
+        TestIter(4, {None}),
+    )
+    assert_equal(zipD.bounds()[0], 1)
+    assert_false(Bool(zipD.bounds()[1]))
+
+
 fn main() raises:
     test_zip2()
     test_zip3()
     test_zip4()
     test_zip_destructure()
     test_zip_unequal_lengths()
+    test_zip_bounds()

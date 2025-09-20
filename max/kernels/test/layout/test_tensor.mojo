@@ -116,7 +116,7 @@ fn test_basic_tensor_ops() raises:
     print("----1d-tensor-tiles----")
     var tensor_8 = LayoutTensor[
         DType.float32, Layout(8), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor_8)
     # CHECK: ----tile[ 0 ]----
     # CHECK: 0.0
@@ -333,7 +333,7 @@ fn test_copy_to_tile_major_layout():
     print("== test_copy_to_tile_major_layout")
     var mat_4x4_row_major = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 4), IntTuple(4, 1)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(mat_4x4_row_major)
 
     # CHECK: (((2, 2), (2, 2)):((1, 8), (2, 4)))
@@ -353,7 +353,7 @@ fn test_copy_to_tile_major_layout():
     )
     var mat_4x4_tiled_2x2 = LayoutTensor[
         DType.float32, tiled_major_layout, MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     print_layout(tiled_major_layout)
 
     mat_4x4_tiled_2x2.copy_from(mat_4x4_row_major)
@@ -392,7 +392,7 @@ fn test_distribute_tiled_layout():
     print("== test_distribute_tiled_layout")
     var tensor = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 8), IntTuple(8, 1)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor)
     alias threads_2x4_layout = Layout(
         IntTuple(2, IntTuple(2, 2)), IntTuple(1, IntTuple(2, 4))
@@ -433,7 +433,7 @@ fn test_distribute_with_tile_size():
 
     var tensor0 = LayoutTensor[
         DType.float32, Layout(IntTuple(16, 8), IntTuple(8, 1)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor0)
 
     # Thread layout:
@@ -507,7 +507,7 @@ fn test_distribute_with_tile_size():
         print(tile)
     var tensor8x1 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 1)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor8x1)
 
     # +-------------+
@@ -554,7 +554,7 @@ fn test_vectorize_reads():
     print("== test_vectorize_reads")
     var tensor = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 8), IntTuple(1, 8)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor)
     var tensor_8_2_vec = tensor.vectorize[1, 4]()
     # CHECK: ((8, 2):(1, 32))
@@ -599,7 +599,7 @@ fn test_vectorize_writes():
             Layout(IntTuple(4, 4), IntTuple(1, 4)),
             MutableAnyOrigin,
         ]
-        .stack_allocation[alignment=16]()
+        .stack_allocation[stack_alignment=16]()
         .fill(0)
     )
 
@@ -628,7 +628,7 @@ fn test_slice():
     print("==test_slice")
     var tensor = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 4), IntTuple(1, 4)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor)
     # CHECK: row_slice_sub_column
     # CHECK: 0.0 1.0
@@ -671,7 +671,7 @@ fn test_copy_vectorized():
     print("== test_copy_vectorized")
     var tensor_8_8 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor_8_8)
     var vec_8_1 = tensor_8_8.vectorize[1, 4]()
     # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
@@ -689,7 +689,9 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutableAnyOrigin,
         ]
-        .stack_allocation[alignment = align_of[SIMD[DType.float32, 4]]()]()
+        .stack_allocation[
+            stack_alignment = align_of[SIMD[DType.float32, 4]]()
+        ]()
         .vectorize[1, 4]()
         .fill(0)
     )
@@ -735,7 +737,9 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutableAnyOrigin,
         ]
-        .stack_allocation[alignment = align_of[SIMD[DType.float32, 4]]()]()
+        .stack_allocation[
+            stack_alignment = align_of[SIMD[DType.float32, 4]]()
+        ]()
         .vectorize[4, 4]()
         .fill(0)
     )
@@ -751,7 +755,7 @@ fn test_distribute_vectorized():
     print("== test_distribute_vectorized")
     var tensor_8_8 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor_8_8)
 
     var tensor_8_2xv4 = tensor_8_8.vectorize[1, 4]()
@@ -832,7 +836,7 @@ fn test_distribute_vectorized():
 fn test_distribute_axis_projection():
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 4), IntTuple(4, 1)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor_4x4)
 
     # CHECK: th_id 0
@@ -949,7 +953,7 @@ fn test_distribute_axis_projection():
 fn test_split():
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 4), IntTuple(4, 1)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
     arange(tensor_4x4)
 
     var tiles_axis0 = tensor_4x4.split[2]()
@@ -988,7 +992,7 @@ fn test_split():
 #    print("== test_copy_subtiles_scalars")
 #    var tensor_13x7 = LayoutTensor[
 #        DType.float32, Layout.row_major(13, 7)
-#    ].stack_allocation[alignment=16]()
+#    ].stack_allocation[stack_alignment=16]()
 #    arange(tensor_13x7)
 #    print(tensor_13x7)
 #
@@ -1083,7 +1087,7 @@ fn test_split():
 #            print("----tile-data[", tile_m, ",", tile_n, "]----")
 #            var tile_4x2_cache = LayoutTensor[
 #                DType.float32, Layout.row_major(tile_m_size, tile_n_size)
-#            ].stack_allocation[alignment=16]().fill(0)
+#            ].stack_allocation[stack_alignment=16]().fill(0)
 #            tile_4x2_cache.copy_from[
 #                dst_coords_bound = rebind[
 #                    IndexList[tile_4x2_cache.layout.rank()]
@@ -1097,7 +1101,7 @@ fn test_split():
 #    print("== test_copy_distributed_subtiles_scalars")
 #    var tensor_13x7 = LayoutTensor[
 #        DType.float32, Layout.row_major(13, 7)
-#    ].stack_allocation[alignment=16]()
+#    ].stack_allocation[stack_alignment=16]()
 #    arange(tensor_13x7)
 #
 #    alias tile_m_size = 4
@@ -1248,7 +1252,7 @@ fn test_split():
 #            )
 #            var tile_4x4_cache = LayoutTensor[
 #                DType.float32, Layout.row_major(tile_m_size, tile_n_size)
-#            ].stack_allocation[alignment=16]().fill(0)
+#            ].stack_allocation[stack_alignment=16]().fill(0)
 #            tile_4x4_cache.copy_from[
 #                dst_coords_bound = rebind[
 #                    IndexList[tile_4x4_cache.layout.rank()]
@@ -1263,7 +1267,7 @@ fn test_split():
 #                )
 #                var tile_2x2_cache = LayoutTensor[
 #                    DType.float32, Layout.row_major(2, 2)
-#                ].stack_allocation[alignment=16]().fill(0)
+#                ].stack_allocation[stack_alignment=16]().fill(0)
 #                tile_2x2_cache.copy_from[
 #                    dst_coords_bound = rebind[
 #                        IndexList[tile_2x2_cache.layout.rank()]
@@ -1278,7 +1282,7 @@ fn test_copy_subtiles_scalars_back():
 
     var tensor_13x7 = (
         LayoutTensor[DType.float32, Layout.row_major(13, 7), MutableAnyOrigin]
-        .stack_allocation[alignment=16]()
+        .stack_allocation[stack_alignment=16]()
         .fill(-1)
     )
 
@@ -1409,7 +1413,7 @@ fn test_copy_subtiles_scalars_back():
                 DType.float32,
                 Layout.row_major(tile_m_size, tile_n_size),
                 MutableAnyOrigin,
-            ].stack_allocation[alignment=16]()
+            ].stack_allocation[stack_alignment=16]()
             arange(tile_4x4_cache)
             tensor_4x4.copy_from(tile_4x4_cache)
             print(tensor_13x7)
@@ -1421,7 +1425,7 @@ fn test_slice_with_offsets():
 
     var tensor_4x3x2_row_major = LayoutTensor[
         DType.float32, Layout.row_major(4, 3, 2), MutableAnyOrigin
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
 
     for i in range(4 * 3 * 2):
         tensor_4x3x2_row_major.ptr[i] = i

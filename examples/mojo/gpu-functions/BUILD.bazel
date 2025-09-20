@@ -73,9 +73,6 @@ modular_run_binary_test(
 mojo_binary(
     name = "vector_addition_metal",
     srcs = ["vector_addition_metal.mojo"],
-    env = {
-        "MOJO_ENABLE_HAS_GPU_FOR_APPLE": "1",
-    },
     target_compatible_with = ["//:apple_gpu"],
     deps = [
         "@mojo//:layout",

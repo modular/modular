@@ -175,6 +175,7 @@ class TextTokenizer(
         enable_llama_whitespace_fix: bool = False,
         pipeline_config: PipelineConfig | None = None,
         chat_template: str | None = None,
+        context_validators: list[Callable[[TextContext], None]] | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -195,7 +196,7 @@ class TextTokenizer(
                 "- The model is not fully supported by the transformers python package\n"
                 "- Required configuration files are missing\n"
                 "- The model path is incorrect\n"
-                "- '--trust_remote_code=True' is needed but not set\n"
+                "- '--trust-remote-code' is needed but not set\n"
             )
             raise ValueError(msg) from e
 
@@ -229,6 +230,10 @@ class TextTokenizer(
 
         # cache tokenizer eos token ids
         self._default_eos_token_ids = set([self.eos])
+
+        self._context_validators = (
+            context_validators if context_validators else []
+        )
 
         if pipeline_config:
             huggingface_config = pipeline_config.model_config.huggingface_config
@@ -467,6 +472,10 @@ class TextTokenizer(
             model_name=request.model_name,
             target_endpoint=request.target_endpoint,
         )
+
+        for validator in self._context_validators:
+            validator(context)
+
         return context
 
     @property
@@ -527,6 +536,9 @@ class TextAndVisionTokenizer(
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
+        pipeline_config: PipelineConfig | None = None,
+        context_validators: list[Callable[[TextAndVisionContext], None]]
+        | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -553,6 +565,10 @@ class TextAndVisionTokenizer(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
         self._default_eos_token_ids = set([self.eos])
+
+        self._context_validators = (
+            context_validators if context_validators else []
+        )
 
     def _wrap_str_message_content(
         self, messages: list[TextGenerationRequestMessage]
@@ -651,6 +667,7 @@ class TextAndVisionTokenizer(
             if request.images
             else None
         )
+
         # LlamaVision & InternVL returns a python list
         processed_inputs = self.processor(
             text=prompt,
@@ -735,6 +752,10 @@ class TextAndVisionTokenizer(
             json_schema=json_schema,
             sampling_params=request.sampling_params,
         )
+
+        for validator in self._context_validators:
+            validator(context)
+
         return context
 
 

@@ -124,11 +124,11 @@ struct ComptimeInt[val: Int](MixedTupleLike):
 
 
 @register_passable("trivial")
-struct RuntimeInt[dtype: DType = DType.index](MixedTupleLike):
+struct RuntimeInt[dtype: DType = DType.int](MixedTupleLike):
     """Runtime index value with configurable precision.
 
     Parameters:
-        dtype: The data type for the runtime integer value. Defaults to `DType.index`.
+        dtype: The data type for the runtime integer value. Defaults to `DType.int`.
     """
 
     var val: Scalar[dtype]
@@ -205,7 +205,7 @@ fn to_mixed_int_tuple[
     return rebind[MixedTuple[*T._get_variadic_pack()]](value)
 
 
-fn Idx(value: Int) -> RuntimeInt[DType.index]:
+fn Idx(value: Int) -> RuntimeInt[DType.int]:
     """Helper to create runtime indices.
 
     Args:
@@ -216,7 +216,7 @@ fn Idx(value: Int) -> RuntimeInt[DType.index]:
 
     Usage: Idx(5) creates a RuntimeInt with value 5.
     """
-    return RuntimeInt[DType.index](value)
+    return RuntimeInt[DType.int](value)
 
 
 fn Idx[value: Int]() -> ComptimeInt[value]:
@@ -357,7 +357,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         var storage_ptr = UnsafePointer(to=self.storage).address
 
         # Get pointer to the element
-        var elt_ptr = __mlir_op.`kgen.pack.gep`[index = idx._mlir_value](
+        var elt_ptr = __mlir_op.`kgen.pack.gep`[index = idx.__index__()](
             storage_ptr
         )
         # Return as reference, propagating mutability
@@ -548,7 +548,7 @@ fn crd2idx[
     Index: MixedTupleLike,
     Shape: MixedTupleLike,
     Stride: MixedTupleLike,
-    out_type: DType = DType.index,
+    out_type: DType = DType.int,
 ](crd: Index, shape: Shape, stride: Stride) -> Scalar[out_type]:
     """Calculate the index from a coordinate tuple."""
     alias shape_len = Shape.__len__()

@@ -23,13 +23,13 @@ fn test_ndbuffer_indexing():
     alias total_buffer_size: Int = 2 * 3 * 4 * 5 * 6
 
     # Create a buffer for indexing test:
-    var _data = InlineArray[Scalar[DType.index], total_buffer_size](
+    var _data = InlineArray[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
 
     # Fill data with increasing order, so that the value of each element in
     #  the test buffer is equal to it's linear index.:
-    var fillBufferView = NDBuffer[DType.index, 1, _, total_buffer_size](_data)
+    var fillBufferView = NDBuffer[DType.int, 1, _, total_buffer_size](_data)
 
     for fillIdx in range(total_buffer_size):
         fillBufferView[fillIdx] = fillIdx
@@ -38,7 +38,7 @@ fn test_ndbuffer_indexing():
     # Test 1DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView1D = NDBuffer[DType.index, 1, _, DimList(6)](_data)
+    var bufferView1D = NDBuffer[DType.int, 1, _, DimList(6)](_data)
 
     # Try to access element[5]
     # CHECK: 5
@@ -48,7 +48,7 @@ fn test_ndbuffer_indexing():
     # Test 2DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView2D = NDBuffer[DType.index, 2, _, DimList(5, 6)](_data)
+    var bufferView2D = NDBuffer[DType.int, 2, _, DimList(5, 6)](_data)
 
     # Try to access element[4,5]
     # Result should be 4*6+5 = 29
@@ -59,7 +59,7 @@ fn test_ndbuffer_indexing():
     # Test 3DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView3D = NDBuffer[DType.index, 3, _, DimList(4, 5, 6)](_data)
+    var bufferView3D = NDBuffer[DType.int, 3, _, DimList(4, 5, 6)](_data)
 
     # Try to access element[3,4,5]
     # Result should be 3*(5*6)+4*6+5 = 119
@@ -70,7 +70,7 @@ fn test_ndbuffer_indexing():
     # Test 4DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView4D = NDBuffer[DType.index, 4, _, DimList(3, 4, 5, 6)](_data)
+    var bufferView4D = NDBuffer[DType.int, 4, _, DimList(3, 4, 5, 6)](_data)
 
     # Try to access element[2,3,4,5]
     # Result should be 2*4*5*6+3*5*6+4*6+5 = 359
@@ -81,9 +81,7 @@ fn test_ndbuffer_indexing():
     # Test 5DBuffer:
     # ===------------------------------------------------------------------=== #
 
-    var bufferView5D = NDBuffer[DType.index, 5, _, DimList(2, 3, 4, 5, 6)](
-        _data
-    )
+    var bufferView5D = NDBuffer[DType.int, 5, _, DimList(2, 3, 4, 5, 6)](_data)
 
     # Try to access element[1,2,3,4,5]
     # Result should be 1*3*4*5*6+2*4*5*6+3*5*6+4*6+5 = 719

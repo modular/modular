@@ -362,10 +362,6 @@ struct Device(Writable):
         self.idx = idx
         self.device = device
 
-    fn __copyinit__(out self, existing: Self):
-        self.idx = existing.idx
-        self.device = existing.device
-
     fn get_driver_version(self) raises -> DriverVersion:
         """Returns NVIDIA driver version."""
         alias max_length = 16
@@ -398,7 +394,7 @@ struct Device(Writable):
     fn max_graphics_clock(self) raises -> Int:
         return self._max_clock(ClockType.GRAPHICS)
 
-    fn mem_clocks(self) raises -> List[Int, hint_trivial_type=True]:
+    fn mem_clocks(self) raises -> List[Int]:
         var num_clocks = UInt32()
 
         var result = _get_dylib_function[
@@ -425,15 +421,13 @@ struct Device(Writable):
             ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
 
-        var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
+        var res = List[Int](capacity=len(clocks))
         for clock in clocks:
             res.append(Int(clock))
 
         return res^
 
-    fn graphics_clocks(
-        self, memory_clock_mhz: Int
-    ) raises -> List[Int, hint_trivial_type=True]:
+    fn graphics_clocks(self, memory_clock_mhz: Int) raises -> List[Int]:
         var num_clocks = UInt32()
 
         var result = _get_dylib_function[
@@ -452,7 +446,7 @@ struct Device(Writable):
         )
 
         if result == Result.SUCCESS:
-            return List[Int, hint_trivial_type=True]()
+            return List[Int]()
 
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
@@ -476,7 +470,7 @@ struct Device(Writable):
             )
         )
 
-        var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
+        var res = List[Int](capacity=len(clocks))
         for clock in clocks:
             res.append(Int(clock))
 

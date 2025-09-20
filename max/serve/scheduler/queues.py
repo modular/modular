@@ -19,22 +19,83 @@ import logging
 import os
 import queue
 from collections.abc import AsyncGenerator, Generator
-from typing import Generic
+from typing import Any, Generic, Union
 
 from max.interfaces import (
+    BaseContext,
     BaseContextType,
-    MAXPullQueue,
-    MAXPushQueue,
+    PipelineOutput,
     PipelineOutputType,
+    PipelineTask,
     RequestID,
     SchedulerResult,
 )
+from max.interfaces.queue import MAXPullQueue, MAXPushQueue
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.serve.process_control import ProcessMonitor
+from max.serve.queue.zmq_queue import ZmqConfig
 from max.serve.scheduler.base import sleep_with_backoff
 
 logger = logging.getLogger("max.serve")
 
-"""The sentinel used to indicate a queue is finished."""
+
+def _get_request_type_from_pipeline_task(
+    pipeline_task: PipelineTask,
+) -> type[tuple[RequestID, BaseContext]]:
+    if pipeline_task in [
+        PipelineTask.TEXT_GENERATION,
+        PipelineTask.EMBEDDINGS_GENERATION,
+    ]:
+        return tuple[RequestID, Union[TextContext, TextAndVisionContext]]
+    elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
+        return tuple[RequestID, TTSContext]
+    else:
+        raise ValueError(
+            f"no request payload for pipeline task ({pipeline_task})"
+        )
+
+
+class SchedulerZmqConfigs:
+    def __init__(
+        self,
+        pipeline_task: PipelineTask,
+    ) -> None:
+        request_type = _get_request_type_from_pipeline_task(pipeline_task)
+        response_type = pipeline_task.output_type
+
+        self.request_queue_config = ZmqConfig[tuple[RequestID, BaseContext]](
+            request_type
+        )
+        self.response_queue_config = ZmqConfig[
+            dict[RequestID, SchedulerResult[PipelineOutput]]
+        ](response_type)
+        self.cancel_queue_config = ZmqConfig[list[RequestID]](list[RequestID])
+
+    def api_worker_queues(
+        self,
+    ) -> tuple[
+        MAXPushQueue[tuple[RequestID, Any]],
+        MAXPullQueue[dict[RequestID, SchedulerResult[Any]]],
+        MAXPushQueue[list[RequestID]],
+    ]:
+        return (
+            self.request_queue_config.push(),
+            self.response_queue_config.pull(),
+            self.cancel_queue_config.push(),
+        )
+
+    def model_worker_queues(
+        self,
+    ) -> tuple[
+        MAXPullQueue[tuple[RequestID, Any]],
+        MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
+        MAXPullQueue[list[RequestID]],
+    ]:
+        return (
+            self.request_queue_config.pull(),
+            self.response_queue_config.push(),
+            self.cancel_queue_config.pull(),
+        )
 
 
 class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
@@ -48,16 +109,12 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
     def __init__(
         self,
         worker_monitor: ProcessMonitor,
-        request_queue: MAXPushQueue[tuple[RequestID, BaseContextType]],
-        response_queue: MAXPullQueue[
-            dict[RequestID, SchedulerResult[PipelineOutputType]]
-        ],
-        cancel_queue: MAXPushQueue[list[RequestID]],
+        scheduler_zmq_configs: SchedulerZmqConfigs,
     ) -> None:
         # Create Queues
-        self.request_queue = request_queue
-        self.response_queue = response_queue
-        self.cancel_queue = cancel_queue
+        self.request_queue, self.response_queue, self.cancel_queue = (
+            scheduler_zmq_configs.api_worker_queues()
+        )
 
         self.pending_out_queues: dict[
             RequestID, asyncio.Queue[SchedulerResult[PipelineOutputType]]

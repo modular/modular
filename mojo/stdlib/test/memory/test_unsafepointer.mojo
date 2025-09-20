@@ -59,19 +59,19 @@ def test_unsafepointer_move_pointee_move_count():
     assert_equal(1, ptr[].move_count)
 
     var ptr_2 = UnsafePointer[MoveCounter[Int]].alloc(1)
-    ptr.move_pointee_into(ptr_2)
+    ptr_2.init_pointee_move_from(ptr)
 
     assert_equal(2, ptr_2[].move_count)
 
 
-def test_unsafepointer_init_pointee_explicit_copy():
+def test_unsafepointer_init_pointee_copy():
     var ptr = UnsafePointer[ExplicitCopyOnly].alloc(1)
 
     var orig = ExplicitCopyOnly(5)
     assert_equal(orig.copy_count, 0)
 
     # Test initialize pointee from `Copyable` type
-    ptr.init_pointee_explicit_copy(orig)
+    ptr.init_pointee_copy(orig)
 
     assert_equal(ptr[].value, 5)
     assert_equal(ptr[].copy_count, 1)
@@ -121,10 +121,6 @@ def test_bitcast():
     assert_equal(Int(ptr), Int(ptr.bitcast[Int]()))
 
     assert_equal(Int(ptr), Int(aliased_ptr))
-
-    assert_equal(
-        ptr.bitcast[ptr.type]().static_alignment_cast[33]().alignment2, 33
-    )
 
     _ = local
 
@@ -179,19 +175,19 @@ def test_unsafepointer_address_space():
 
 def test_unsafepointer_aligned_alloc():
     alias alignment_1 = 32
-    var ptr = UnsafePointer[UInt8, alignment2=alignment_1].alloc(1)
+    var ptr = UnsafePointer[UInt8].alloc(1, alignment=alignment_1)
     var ptr_uint64 = UInt64(Int(ptr))
     ptr.free()
     assert_equal(ptr_uint64 % alignment_1, 0)
 
     alias alignment_2 = 64
-    var ptr_2 = UnsafePointer[UInt8, alignment2=alignment_2].alloc(1)
+    var ptr_2 = UnsafePointer[UInt8].alloc(1, alignment=alignment_2)
     var ptr_uint64_2 = UInt64(Int(ptr_2))
     ptr_2.free()
     assert_equal(ptr_uint64_2 % alignment_2, 0)
 
     alias alignment_3 = 128
-    var ptr_3 = UnsafePointer[UInt8, alignment2=alignment_3].alloc(1)
+    var ptr_3 = UnsafePointer[UInt8].alloc(1, alignment=alignment_3)
     var ptr_uint64_3 = UInt64(Int(ptr_3))
     ptr_3.free()
     assert_equal(ptr_uint64_3 % alignment_3, 0)
@@ -241,7 +237,7 @@ def test_unsafepointer_alloc_origin():
 
 
 # NOTE: Tests fails due to a `UnsafePointer` size
-# and alignment constraint failing to be satisfied.
+# constraint failing to be satisfied.
 #
 # def test_unsafepointer_zero_size():
 #     alias T = SIMD[DType.int32, 0]
@@ -298,11 +294,11 @@ def test_bool():
 
 
 def test_alignment():
-    var ptr = UnsafePointer[Int64, alignment2=64].alloc(8)
+    var ptr = UnsafePointer[Int64].alloc(8, alignment=64)
     assert_equal(Int(ptr) % 64, 0)
     ptr.free()
 
-    var ptr_2 = UnsafePointer[UInt8, alignment2=32].alloc(32)
+    var ptr_2 = UnsafePointer[UInt8].alloc(32, alignment=32)
     assert_equal(Int(ptr_2) % 32, 0)
     ptr_2.free()
 
@@ -384,7 +380,7 @@ def main():
 
     test_unsafepointer_of_move_only_type()
     test_unsafepointer_move_pointee_move_count()
-    test_unsafepointer_init_pointee_explicit_copy()
+    test_unsafepointer_init_pointee_copy()
 
     test_explicit_copy_of_pointer_address()
     test_bitcast()

@@ -166,7 +166,8 @@ def test_max_finite():
     assert_true(overflow_int[DType.uint32]())
     assert_true(overflow_int[DType.int64]())
     assert_true(overflow_int[DType.uint64]())
-    assert_true(overflow_int[DType.index]())
+    assert_true(overflow_int[DType.int]())
+    assert_true(overflow_int[DType.uint]())
 
     assert_true(overflow_fp[DType.float32]())
     assert_true(overflow_fp[DType.float64]())
@@ -197,9 +198,11 @@ def test_max_finite():
 
     @parameter
     if is_64bit():
-        assert_equal(max_finite[DType.index](), 9223372036854775807)
+        assert_equal(max_finite[DType.int](), 9223372036854775807)
+        assert_equal(max_finite[DType.uint](), 18446744073709551615)
     else:
-        assert_equal(max_finite[DType.index](), 2147483647)
+        assert_equal(max_finite[DType.int](), 2147483647)
+        assert_equal(max_finite[DType.uint](), 4294967295)
 
 
 fn underflow_int[dtype: DType]() -> Bool:
@@ -231,7 +234,8 @@ def test_min_finite():
     assert_true(underflow_int[DType.uint32]())
     assert_true(underflow_int[DType.int64]())
     assert_true(underflow_int[DType.uint64]())
-    assert_true(underflow_int[DType.index]())
+    assert_true(underflow_int[DType.int]())
+    assert_true(underflow_int[DType.uint]())
 
     assert_true(underflow_fp[DType.float32]())
     assert_true(underflow_fp[DType.float64]())
@@ -251,9 +255,11 @@ def test_min_finite():
 
     @parameter
     if is_64bit():
-        assert_equal(min_finite[DType.index](), -9223372036854775808)
+        assert_equal(min_finite[DType.int](), -9223372036854775808)
+        assert_equal(min_finite[DType.uint](), 0)
     else:
-        assert_equal(min_finite[DType.index](), -2147483648)
+        assert_equal(min_finite[DType.int](), -2147483648)
+        assert_equal(min_finite[DType.uint](), 0)
 
 
 def test_max_or_inf():

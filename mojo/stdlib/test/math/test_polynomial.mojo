@@ -16,6 +16,13 @@ from math.polynomial import _horner_evaluate, polynomial_evaluate
 from testing import assert_equal
 
 
+def test_polynomial_evaluate_degree1():
+    # This is a degenerate case where the number of coefficients is 1, so we
+    # just return the coefficient.
+    alias coeffs = List[Float64](42)
+    assert_equal(_horner_evaluate[coeffs](9999.0), 42.0)
+
+
 def test_polynomial_evaluate_degree3():
     # Evaluate 1000 + x + x^2
     alias coeffs = List[Float64](1000.0, 1.0, 1.0)
@@ -50,6 +57,7 @@ def test_polynomial_evaluate_degree10():
 
 
 def main():
+    test_polynomial_evaluate_degree1()
     test_polynomial_evaluate_degree3()
     test_polynomial_evaluate_degree4()
     test_polynomial_evaluate_degree10()

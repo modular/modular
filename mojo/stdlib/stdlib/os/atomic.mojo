@@ -249,16 +249,45 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         self.value = value
 
-    # TODO: Unfortunate this is mut, but this is using fetch_add to load the
-    # value. There is probably a better way to do this.
-    @always_inline
-    fn load(mut self) -> Scalar[dtype]:
+    @staticmethod
+    @always_inline("nodebug")
+    fn load[
+        *,
+        ordering: Consistency = Consistency.SEQUENTIAL,
+    ](ptr: UnsafePointer[Scalar[dtype], mut=False, **_]) -> Scalar[dtype]:
         """Loads the current value from the atomic.
+
+        Parameters:
+            ordering: The memory ordering of the load.
+
+        Args:
+            ptr: A pointer to the atomic value.
 
         Returns:
             The current value of the atomic.
         """
-        return self.fetch_add(0)
+
+        if is_compile_time():
+            return ptr[]
+
+        return __mlir_op.`pop.load`[
+            ordering = ordering.__mlir_attr(),
+            syncscope = _get_kgen_string[scope](),
+        ](ptr.address)
+
+    @always_inline
+    fn load[
+        *, ordering: Consistency = Consistency.SEQUENTIAL
+    ](self) -> Scalar[dtype]:
+        """Loads the current value from the atomic.
+
+        Parameters:
+            ordering: The memory ordering of the load.
+
+        Returns:
+            The current value of the atomic.
+        """
+        return Self.load[ordering=ordering](UnsafePointer(to=self.value))
 
     @staticmethod
     @always_inline("nodebug")

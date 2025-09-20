@@ -6,8 +6,10 @@ GPUs into 3 tiers:
 
 We provide full support and testing for the following data center GPUs:
 
+- NVIDIA B200 (Blackwell)
 - NVIDIA H100 and H200 (Hopper)
 - NVIDIA A100 and A10 (Ampere)
+- AMD Instinct MI355X (CDNA4)
 - AMD Instinct MI300X and MI325X (CDNA3)
 
 #### Tier 2: Confirmed compatibility
@@ -22,9 +24,10 @@ don't maintain tests for them:
 #### Tier 3: Limited compatibility
 
 We've either confirmed or received reports that the following GPUs work for GPU
-programming with Mojo and can execute basic graphs with MAX APIs. However,
-these GPUs currently can't run some GenAI models for various reasons:
+programming with Mojo. Some can also execute basic graphs with MAX APIs.
+However, none of these currently run major GenAI models with MAX:
 
+- Apple Silicon GPUs (M1 - M4)
 - NVIDIA Tesla P100 (Pascal)
 - NVIDIA RTX 20XX series (Turing)
 - NVIDIA T4 (Turing)

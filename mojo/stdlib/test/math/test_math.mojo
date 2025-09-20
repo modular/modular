@@ -269,7 +269,7 @@ def test_sqrt():
     assert_equal(sqrt(10**16), 10**8)
     assert_equal(sqrt(Int.MAX), 3037000499)
 
-    var i = SIMD[DType.index, 4](0, 1, 2, 3)
+    var i = SIMD[DType.int, 4](0, 1, 2, 3)
     assert_equal(sqrt(i**2), i)
 
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)

@@ -125,12 +125,6 @@ class MAXModelConfig(MAXModelConfigBase):
     use_subgraphs: bool = True
     """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
 
-    tensor_parallel_degree: int = 1
-    """Number of tensor-parallel replicas."""
-
-    pipeline_parallel_degree: int = 1
-    """Number of pipeline stages."""
-
     data_parallel_degree: int = 1
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
@@ -199,18 +193,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 "--quantization-encoding must be provided when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is enabled"
             )
 
-        # validate that the pipeline and tensor parallel degrees are set.
-        if self.pipeline_parallel_degree < 1:
-            raise ValueError("pipeline_parallel_degree must be greater than 0")
-        if self.tensor_parallel_degree < 1:
-            raise ValueError("tensor_parallel_degree must be greater than 0")
-        if self.pipeline_parallel_degree * self.tensor_parallel_degree > len(
-            self.device_specs
-        ):
-            raise ValueError(
-                "pipeline_parallel_degree * tensor_parallel_degree must be less than or equal to the number of devices"
-            )
-
         # Validate that the device_specs provided are available
         if not devices_exist(self.device_specs):
             available_devices = scan_available_devices()
@@ -227,7 +209,7 @@ class MAXModelConfig(MAXModelConfigBase):
         if len(self.weight_path) == 0:
             if self.model_path == "":
                 raise ValueError(
-                    "model-path must be provided and must be a valid Hugging Face repository"
+                    "model must be provided and must be a valid Hugging Face repository"
                 )
             elif not os.path.exists(os.path.expanduser(self.model_path)):
                 # Check if the model_path is a valid HuggingFace repository
@@ -372,20 +354,6 @@ class MAXModelConfig(MAXModelConfigBase):
             )
         return self._huggingface_config
 
-    def validate_prefix_caching_supported(
-        self, prefix_caching_supported: bool
-    ) -> None:
-        """Validates that the model architecture supports prefix caching.
-        Falls back to false by disabling it if the model architecture does not support it."""
-        if (
-            not prefix_caching_supported
-            and self._kv_cache_config.enable_prefix_caching
-        ):
-            logger.warning(
-                "Architecture does not support prefix caching, overriding enable_prefix_caching=False"
-            )
-            self._kv_cache_config.enable_prefix_caching = False
-
     def validate_multi_gpu_supported(self, multi_gpu_supported: bool) -> None:
         """Validates that the model architecture supports multi-GPU inference.
 
@@ -430,6 +398,19 @@ class MAXModelConfig(MAXModelConfigBase):
     def validate_and_resolve_rope_type(self, arch_rope_type: RopeType) -> None:
         if self.rope_type is None:
             self.rope_type = arch_rope_type
+
+    def validate_lora_compatibility(self) -> None:
+        """
+        Validates that LoRA configuration is compatible with model settings.
+
+        Raises:
+            ValueError: If LoRA is enabled but incompatible with current model configuration.
+        """
+        if self._kv_cache_config.enable_prefix_caching:
+            raise ValueError(
+                "LoRA is not compatible with prefix caching. "
+                "Please disable prefix caching by using the --no-enable-prefix-caching flag."
+            )
 
     def validate_and_resolve_with_resolved_quantization_encoding(
         self,
@@ -891,8 +872,6 @@ class MAXModelConfig(MAXModelConfigBase):
             "vision_config_overrides": "Model-specific vision configuration overrides. For example, for InternVL: {'max_dynamic_patch': 24}.",
             "rope_type": "Force using a specific rope type: 'none' | 'normal' | 'neox'. Only matters for GGUF weights.",
             "use_subgraphs": "Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true.",
-            "tensor_parallel_degree": "Number of tensor-parallel replicas (default: 1).",
-            "pipeline_parallel_degree": "Number of pipeline stages (default: 1).",
         }
 
         config_help = KVCacheConfig.help()

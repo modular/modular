@@ -28,7 +28,6 @@ from gpu import (
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
-from gpu.intrinsics import buffer_store
 from gpu.memory import AddressSpace
 from gpu.sync import (
     AMDScheduleBarrierMask,
@@ -37,7 +36,8 @@ from gpu.sync import (
 from memory import AddressSpace as BaseAddressSpace
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import blocked_product
-from layout._utils import get_amd_buffer_descriptor, idx2crd, TensorCoreKGroup
+from layout._utils import idx2crd, make_amd_buffer_resource
+from layout.tensor_core import TiledTensorCore
 from layout.element import Element
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -81,7 +81,7 @@ fn copy_local_to_dram2[
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
-    var descriptor = get_amd_buffer_descriptor(dst_base)
+    var buffer = make_amd_buffer_resource(dst_base)
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
     alias num_stores_per_thread = dst_fragments.layout.size()
 
@@ -116,8 +116,7 @@ fn copy_local_to_dram2[
 
             @parameter
             if element_stride == 1:
-                buffer_store(
-                    descriptor,
+                buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
@@ -127,8 +126,7 @@ fn copy_local_to_dram2[
                 for i in range(dst_fragments.element_layout.size()):
                     alias element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
-                    buffer_store(
-                        descriptor,
+                    buffer.store(
                         Int32(dst_idx + element_offset),
                         src,
                     )
@@ -173,20 +171,20 @@ struct KBuffer[
 
     # Shared memory layout
     # Layout construction for standard memory access:
-    # - base_layout: Layout.row_major(BN, simd_width) -> BN×simd_width tiles
+    # - base_layout: Layout.row_major(BN, simd_width) -> BNxsimd_width tiles
     # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
     # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
     #
-    # Resulting shape: BN×(simd_width × num_repeats) = BN×BK tensor
-    # Where BK = simd_width × num_repeats, typically simd_width=8, num_repeats=BK/8
+    # Resulting shape: BNx(simd_width x num_repeats) = BNxBK tensor
+    # Where BK = simd_width x num_repeats, typically simd_width=8, num_repeats=BK/8
     #
-    # This creates num_repeats blocks of BN×simd_width arranged horizontally:
+    # This creates num_repeats blocks of BNxsimd_width arranged horizontally:
     # Within each simd_width-column block, elements are consecutive (stride 1)
-    # Between blocks: stride = BN × simd_width
+    # Between blocks: stride = BN x simd_width
     #
     # ASCII diagram for BN=128, simd_width=8, BK=32 (showing first 2 of 4 blocks):
     # ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-    # │        Block 0 (128×8)                     │        Block 1 (128×8)                     │     ... 2 more blocks           │
+    # │        Block 0 (128x8)                     │        Block 1 (128x8)                     │     ... 2 more blocks           │
     # ├────────────────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────┤
     # │   0    1    2    3    4    5    6    7     │ 1024 1025 1026 1027 1028 1029 1030 1031    │ (Block 2: 2048-3071)            │
     # │   8    9   10   11   12   13   14   15     │ 1032 1033 1034 1035 1036 1037 1038 1039    │ (Block 3: 3072-4095)            │
@@ -195,7 +193,7 @@ struct KBuffer[
     # │ ...                                        │  ...                                       │                                 │
     # │1016 1017 1018 1019 1020 1021 1022 1023     │ 2040 2041 2042 2043 2044 2045 2046 2047    │                                 │
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-    # stride between blocks = BN × simd_width = 128 × 8 = 1024
+    # stride between blocks = BN x simd_width = 128 x 8 = 1024
 
     alias base_layout = Layout.row_major(BN, Self.simd_width)
     alias tiler_layout = Layout.row_major(1, Self.num_repeats)
@@ -340,11 +338,11 @@ struct KBuffer[
         var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
             wtile_coord0, wtile_coord1
         )
-        alias tensor_core_mma = TensorCoreKGroup[
+        alias tensor_core_mma = TiledTensorCore[
             accum_type,
             mma_input_type,
             mma_shape,
-            k_group_size=k_group_size,
+            group_size=k_group_size,
             transpose_b=transpose_b,
         ]()
         tensor_core_mma.mma_op.load_b[swizzle=swizzle](
@@ -379,20 +377,20 @@ struct VBuffer[
     alias num_repeats = BK // Self.simd_width
 
     # V Buffer shared memory layout
-    # - base_layout: Layout.row_major(depth + padding, simd_width) -> (depth+padding)×simd_width tiles
+    # - base_layout: Layout.row_major(depth + padding, simd_width) -> (depth+padding)xsimd_width tiles
     # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
     # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout with padding
     #
-    # Resulting shape: (depth + padding)×(simd_width × num_repeats) = (depth + depth//8)×BK tensor
-    # Where padding = depth//8 helps avoid bank conflicts, BK = simd_width × num_repeats
+    # Resulting shape: (depth + padding)x(simd_width x num_repeats) = (depth + depth//8)xBK tensor
+    # Where padding = depth//8 helps avoid bank conflicts, BK = simd_width x num_repeats
     #
-    # This creates num_repeats blocks of (depth+padding)×simd_width arranged horizontally:
+    # This creates num_repeats blocks of (depth+padding)xsimd_width arranged horizontally:
     # Within each simd_width-column block, elements are consecutive (stride 1)
-    # Between blocks: stride = (depth + padding) × simd_width
+    # Between blocks: stride = (depth + padding) x simd_width
     #
     # ASCII diagram for depth=128, padding=16, simd_width=8, BK=32 (showing first 2 of 4 blocks):
     # ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-    # │        Block 0 (144×8)                     │        Block 1 (144×8)                     │     ... 2 more blocks           │
+    # │        Block 0 (144x8)                     │        Block 1 (144x8)                     │     ... 2 more blocks           │
     # ├────────────────────────────────────────────┼────────────────────────────────────────────┼─────────────────────────────────┤
     # │   0    1    2    3    4    5    6    7     │ 1152 1153 1154 1155 1156 1157 1158 1159    │ (Block 2: 2304-3455)            │
     # │   8    9   10   11   12   13   14   15     │ 1160 1161 1162 1163 1164 1165 1166 1167    │ (Block 3: 3456-4607)            │
@@ -401,7 +399,7 @@ struct VBuffer[
     # │ ...                                        │  ...                                       │                                 │
     # │1144 1145 1146 1147 1148 1149 1150 1151     │ 2296 2297 2298 2299 2300 2301 2302 2303    │                                 │
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-    # stride between blocks = (depth + padding) × simd_width = 144 × 8 = 1152
+    # stride between blocks = (depth + padding) x simd_width = 144 x 8 = 1152
 
     alias base_layout = Layout.row_major(
         Self.pad[depth](),
@@ -1038,18 +1036,13 @@ struct SharedMemoryManager[
     ) -> UnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
-        alignment2 = Self.alignment,
     ]:
         return self.k_v_smem.bitcast[Scalar[dtype]]()
 
     @always_inline
     fn get_p_ptr(
         self,
-    ) -> UnsafePointer[
-        Scalar[dtype],
-        address_space = AddressSpace.SHARED,
-        alignment2 = Self.alignment,
-    ]:
+    ) -> UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED,]:
         return self.p_smem.bitcast[Scalar[dtype]]()
 
     @always_inline
@@ -1213,7 +1206,6 @@ struct GlobalMemoryManager[
             ptr.origin,
             masked=True,
             address_space = ptr.address_space,
-            alignment = ptr.alignment2,
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout
@@ -1290,7 +1282,7 @@ fn mha_single_batch_amd[
         tb[accum_type]()
         .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
         .local()
-        .alloc()
+        .alloc()  # ALIGN-TODO: align?
         .fill(0)
     )
 
@@ -1332,9 +1324,10 @@ fn mha_single_batch_amd[
             Bool(sink_weights),
             "expect sink_weights to be non-null when sink=true",
         )
-        rowmax = rowmax.fill(
-            sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+        var sink_weight = (
+            sink_weights.value()[Int(q_head_idx)].cast[accum_type]() * log2e
         )
+        rowmax = rowmax.fill(sink_weight)
         rowsum = rowsum.fill(1)
     else:
         rowmax = rowmax.fill(min_or_neg_inf[accum_type]())
@@ -1428,11 +1421,11 @@ fn mha_single_batch_amd[
             smem_manager.get_kv_ptr[k_tile.dtype](),
         )
 
-        alias tensor_core_mma = TensorCoreKGroup[
+        alias tensor_core_mma = TiledTensorCore[
             accum_type,
             q_type,
             mma_shape,
-            k_group_size=k_group_size,
+            group_size=k_group_size,
             transpose_b=True,
         ]()
 
@@ -1645,11 +1638,11 @@ fn mma[
         b_smem_iter.layout.stride[0].value() // simd_width,
     ) if token_gen else Layout.row_major(num_threads // 4, 4)
 
-    alias tensor_core_mma = TensorCoreKGroup[
+    alias tensor_core_mma = TiledTensorCore[
         accum_type,
         mma_input_type,
         IndexList[3](MMA_M, MMA_N, MMA_K),
-        k_group_size=k_group_size,
+        group_size=k_group_size,
         transpose_b=transpose_b,
     ]()
 
@@ -1868,9 +1861,10 @@ fn mha_decoding_single_batch_amd[
             Bool(sink_weights),
             "expect sink_weights to be non-null when sink=true",
         )
-        rowmax = rowmax.fill(
-            sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+        var sink_weight = (
+            sink_weights.value()[Int(q_head_idx)].cast[accum_type]() * log2e
         )
+        rowmax = rowmax.fill(sink_weight)
         rowsum = rowsum.fill(1)
     else:
         rowmax = rowmax.fill(min_or_neg_inf[accum_type]())

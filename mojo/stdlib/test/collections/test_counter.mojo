@@ -139,6 +139,13 @@ def test_iter():
 
     assert_equal(keys, "ab")
 
+    var keys_list = ["a", "b"]
+    var keys_count = 0
+    for i, e in enumerate(c):
+        assert_equal(i, keys_count)
+        assert_equal(e, keys_list[i])
+        keys_count += 1
+
 
 def test_iter_keys():
     var c = Counter[String]()

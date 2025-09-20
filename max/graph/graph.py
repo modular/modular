@@ -33,6 +33,7 @@ from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
+from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
 
 # TODO(GEX-1846): Get rid of this include.
@@ -518,13 +519,13 @@ class Graph:
         """
         return self._always_ready_chain
 
-    @contextlib.contextmanager
     @staticmethod
+    @contextlib.contextmanager
     def _async_region():
         """Create a region of the graph with tasks guaranteed to execute
         independently.
 
-        Overrides the implicit chaining of the graph to allow for asyncronous
+        Overrides the implicit chaining of the graph to allow for asynchronous
         execution of operations which might mutate state.
 
         Returns:
@@ -862,7 +863,9 @@ class Graph:
             function_type
         )
 
-        self._add_op(mo.output, mlir_values)
+        self._add_op_generated(
+            _mo.OutputOp, mlir_values, _kgen.ParameterExprArrayAttr([])
+        )
 
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.

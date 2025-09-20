@@ -128,16 +128,6 @@ struct Interval[T: IntervalElement](
         self.start = existing.start.copy()
         self.end = existing.end.copy()
 
-    fn __moveinit__(out self, deinit existing: Self, /):
-        """Create a new instance of the interval by moving the values
-        from an existing one.
-
-        Args:
-            existing: The interval to move values from.
-        """
-        self.start = existing.start^
-        self.end = existing.end^
-
     fn overlaps(self, other: Self) -> Bool:
         """Returns whether this interval overlaps with another interval.
 
@@ -430,21 +420,6 @@ struct _IntervalNode[
         self.parent = existing.parent
         self._is_red = existing._is_red
 
-    fn __moveinit__(out self, deinit existing: Self, /):
-        """Create a new instance of the interval node by moving the values
-        from an existing one.
-
-        Args:
-            existing: The interval node to move values from.
-        """
-        self.interval = existing.interval^
-        self.data = existing.data^
-        self.max_end = existing.max_end^
-        self.left = existing.left
-        self.right = existing.right
-        self.parent = existing.parent
-        self._is_red = existing._is_red
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes this interval node to a writer in the format
@@ -534,6 +509,18 @@ struct IntervalTree[
         """Initializes an empty IntervalTree."""
         self._root = {}
         self._len = 0
+
+    fn __del__(deinit self):
+        Self._del_helper(self._root)
+
+    @staticmethod
+    fn _del_helper(node: UnsafePointer[_IntervalNode[T, U]]):
+        if node[].left:
+            Self._del_helper(node[].left)
+        if node[].right:
+            Self._del_helper(node[].right)
+        node.destroy_pointee()
+        node.free()
 
     fn _left_rotate(
         mut self, rotation_node: UnsafePointer[_IntervalNode[T, U]]

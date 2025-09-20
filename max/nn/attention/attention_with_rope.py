@@ -1211,6 +1211,10 @@ class AttentionWithRopeNoOpaque(Module):
         # TODO:
         # - this should just be inside of `RotaryEmbedding`
         # - should this be fused automatically? That class has an implementation.
+        x_q = x_q.reshape((-1, self.n_heads, self.kv_params.head_dim))
+        x_k = x_k.reshape(
+            (-1, self.kv_params.n_kv_heads, self.kv_params.head_dim)
+        )
         xq_rope = rope_no_opaque(
             x_q, input_row_offsets, kv_collection.cache_lengths, freqs_cis
         )
@@ -1223,7 +1227,14 @@ class AttentionWithRopeNoOpaque(Module):
         # - we could also fuse this into a single kernel, not sure if that's useful.
         # - the graph compiler would fuse this output store in the output of the rope kernel above.
         store_k_cache(kv_collection, xk_rope, input_row_offsets, layer_idx)
-        store_v_cache(kv_collection, x_v, input_row_offsets, layer_idx)
+        store_v_cache(
+            kv_collection,
+            x_v.reshape(
+                (-1, self.kv_params.n_kv_heads, self.kv_params.head_dim)
+            ),
+            input_row_offsets,
+            layer_idx,
+        )
 
         # Calculate Flash Attention.
         attn_out = flash_attention_ragged_no_opaque(

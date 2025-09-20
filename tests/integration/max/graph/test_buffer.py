@@ -48,11 +48,6 @@ def torch_multiply(x: torch.Tensor) -> torch.Tensor:
     return torch.mul(x, x)
 
 
-def torch_add_relu(x: torch.Tensor) -> torch.Tensor:
-    relu = torch.nn.ReLU()
-    return relu(torch.add(x, 100))
-
-
 def zeros(shape: Shape, dtype: DType) -> np.ndarray:
     return np.zeros([int(d) for d in shape]).astype(dtype.to_numpy())
 

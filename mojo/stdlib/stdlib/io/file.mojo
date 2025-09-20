@@ -126,15 +126,6 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         self.handle = OpaquePointer()
 
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves constructor for the file handle.
-
-        Args:
-          existing: The existing file handle.
-        """
-        self.handle = existing.handle
-        # Destructor is already disabled on existing.
-
     fn read(self, size: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
         size is left as the default of -1, it will read to the end of the file.

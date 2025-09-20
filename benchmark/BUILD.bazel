@@ -1,5 +1,29 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
 
+modular_py_library(
+    name = "benchmark_serving_lib",
+    srcs = glob(["*.py"]),
+    data = [
+        ":benchmark_config_yaml_files",
+    ] + glob(["datasets/**/*"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/diagnostics",
+        requirement("aiohttp"),
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("jinja2"),
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("psutil"),
+        requirement("pyyaml"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
+
 modular_py_binary(
     name = "benchmark_serving",
     srcs = ["benchmark_serving.py"],
@@ -7,29 +31,16 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":benchmark_config",
+        ":benchmark_cpu_metrics",
         ":benchmark_datasets",
         ":metrics",
-        ":sample_workload_utils",
+        "//SDK/lib/API/python/max/diagnostics",
         requirement("aiohttp"),
         requirement("datasets"),
         requirement("huggingface-hub"),
         requirement("numpy"),
-        requirement("nvitop"),
         requirement("jinja2"),
         requirement("tqdm"),
-        requirement("transformers"),
-    ],
-)
-
-# TODO: Move / refactor this to interfaces/
-modular_py_library(
-    name = "sample_workload_utils",
-    srcs = ["sample_workload_utils.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("msgspec"),
-        requirement("pillow"),
         requirement("transformers"),
     ],
 )
@@ -53,16 +64,27 @@ modular_py_library(
     deps = [
         ":benchmark_datasets",
         "//SDK/lib/API/python/max/pipelines/lib",
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_library(
+    name = "benchmark_cpu_metrics",
+    srcs = ["benchmark_cpu_metrics.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("psutil"),
     ],
 )
 
 modular_py_library(
     name = "benchmark_datasets",
     srcs = ["benchmark_datasets.py"],
+    data = glob(["datasets/**/*"]),
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        ":sample_workload_utils",
         requirement("datasets"),
         requirement("huggingface-hub"),
         requirement("numpy"),
@@ -72,6 +94,7 @@ modular_py_library(
     ],
 )
 
+# TODO: This is maybe redundant since we already have yaml_files?
 pkg_files(
     name = "benchmark_config_yaml_files",
     srcs = glob(["*.yaml"]),

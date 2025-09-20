@@ -16,6 +16,7 @@ import logging
 import queue
 import time
 import uuid
+from collections import OrderedDict
 
 from max.interfaces import (
     MAXPullQueue,
@@ -32,8 +33,9 @@ from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
+    XferReqData,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
@@ -47,10 +49,9 @@ from .text_batch_constructor import (
     TokenGenerationSchedulerConfig,
 )
 from .utils import (
-    OrderedDict,
     SchedulerLogger,
     SchedulerOutput,
-    maybe_restore_chunked_request,
+    add_newly_encoded_reqs_to_tg_batch,
     release_terminated_requests,
 )
 
@@ -61,15 +62,13 @@ class DecodeScheduler(Scheduler):
     def __init__(
         self,
         pipeline: Pipeline[
-            TextGenerationInputs[TextContext | TextAndVisionContext],
+            TextGenerationInputs[TextContext],
             TextGenerationOutput,
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: PagedKVCacheManager[TextContext | TextAndVisionContext],
+        paged_manager: PagedKVCacheManager[TextContext],
         *,
-        request_queue: MAXPullQueue[
-            tuple[RequestID, TextContext | TextAndVisionContext]
-        ],
+        request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
@@ -88,13 +87,10 @@ class DecodeScheduler(Scheduler):
 
         self.dispatcher = dispatcher
 
-        self.prefill_responses: dict[str, PrefillResponse] = {}
-
         # Initialize Scheduler state.
-        self.pending_reqs: OrderedDict[
-            RequestID, TextContext | TextAndVisionContext
-        ] = OrderedDict()
-        self.pending_prefill_requests: set[RequestID] = set()
+        self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
+        self.prefill_reqs: dict[RequestID, TextContext] = {}
+        self.inflight_transfers: dict[RequestID, XferReqData] = {}
 
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
@@ -122,27 +118,24 @@ class DecodeScheduler(Scheduler):
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
         """Handles a prefill response from the dispatcher."""
+        # Update the context with the generated token
+        request_id = message.id
+        context = self.prefill_reqs[request_id]
+        context.update(message.generated_token_id)
+
         # Send singular token to the API process
-        context = message.context
-        assert not context.needs_ce, (
-            f"Invalid Context: Expected needs_ce to be False. Found: {context}"
-        )
-        assert context.start_idx > 0, (
-            f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
-        )
         output = context.to_generation_output()
         self.response_queue.put_nowait(
-            {message.id: SchedulerResult.create(output)}
+            {request_id: SchedulerResult.create(output)}
         )
 
-        # Add to prefill responses afterwards to avoid race condition
-        self.prefill_responses[message.transfer_metadata.xfer_name] = message
+        self.inflight_transfers[request_id] = message.transfer_metadata
 
     @traced
     def send_prefill_request(
         self,
         request_id: RequestID,
-        data: TextContext | TextAndVisionContext,
+        data: TextContext,
         dst_idxs: list[int],
     ) -> None:
         """Pushes a request to the prefill socket.
@@ -187,10 +180,7 @@ class DecodeScheduler(Scheduler):
 
         while (
             self.pending_reqs
-            and (
-                len(self.batch_constructor.tg_reqs)
-                + len(self.pending_prefill_requests)
-            )
+            and (len(self.batch_constructor.tg_reqs) + len(self.prefill_reqs))
             < self.scheduler_config.max_batch_size_tg
             and (
                 self.paged_manager is None
@@ -216,7 +206,7 @@ class DecodeScheduler(Scheduler):
 
             # Send to the Prefill Node
             dst_idxs = self.paged_manager.block_manager.get_req_blocks(req_id)
-            self.pending_prefill_requests.add(req_id)
+            self.prefill_reqs[req_id] = context
             self.send_prefill_request(req_id, context, dst_idxs)
 
     def _handle_cancelled_requests(self):
@@ -233,9 +223,9 @@ class DecodeScheduler(Scheduler):
                         )
 
                     # If it is pending prefill, remove the pending request.
-                    elif request_id in self.pending_prefill_requests:
+                    elif request_id in self.prefill_reqs:
                         # Remove from pending requests.
-                        self.pending_prefill_requests.remove(request_id)
+                        del self.prefill_reqs[request_id]
 
                         # Send a cancel request to the prefill node
                         self.dispatcher.send_request_nowait(request_id)
@@ -260,29 +250,27 @@ class DecodeScheduler(Scheduler):
         required memory. If prefetch fails, handles preemption by returning newer requests to the decode queue.
         """
 
-        transfer_names = list(self.prefill_responses.keys())
-        for transfer_name in transfer_names:
-            prefill_response = self.prefill_responses[transfer_name]
-            transfer_metadata = prefill_response.transfer_metadata
+        request_ids = list(self.inflight_transfers.keys())
+        for request_id in request_ids:
+            transfer_metadata = self.inflight_transfers[request_id]
 
             # Transfer is not complete, skip.
             if not self.transfer_engine.is_complete(transfer_metadata):
                 continue
 
             # Cleanup the transfer.
-            del self.prefill_responses[transfer_name]
+            del self.inflight_transfers[request_id]
             self.transfer_engine.cleanup_transfer(transfer_metadata)
 
-            # When cancelled, the request is removed from prefill_requests
+            # When cancelled, the request is removed from prefill_reqs
             # therefore the request should only be added to the active_batch
-            # if it is still in prefill_requests.
-            if prefill_response.id not in self.pending_prefill_requests:
+            # if it is still in prefill_reqs.
+            if request_id not in self.prefill_reqs:
                 continue
 
             # Remove from pending prefill requests and add to TG requests.
-            self.pending_prefill_requests.remove(prefill_response.id)
-            context = prefill_response.context
-            self.batch_constructor.tg_reqs[prefill_response.id] = context
+            context = self.prefill_reqs.pop(request_id)
+            self.batch_constructor.tg_reqs[request_id] = context
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()
@@ -295,20 +283,12 @@ class DecodeScheduler(Scheduler):
             sch_output: The scheduler output containing the batch of requests to schedule.
         """
         assert sch_output.batch_size > 0
-        batch = sch_output.batch_inputs
-        responses = self.pipeline.execute(
-            TextGenerationInputs([batch], num_steps=sch_output.num_steps)
-        )
+        responses = self.pipeline.execute(sch_output.inputs)
 
-        # Even though this is CE specific, it is possible for decode_scheduler
-        # to execute CE if a request is preempted. We do not send such a preempted
-        # request back to prefill. Instead the decode worker just runs CE on the
-        # preempted request.
-        self.batch_constructor.tg_reqs |= batch
-        maybe_restore_chunked_request(
-            batch,
+        add_newly_encoded_reqs_to_tg_batch(
+            sch_output.inputs.batch,
             responses,
-            self.batch_constructor.ce_reqs,
+            self.batch_constructor,
         )
 
         # remove terminated requests from the batch
@@ -379,8 +359,7 @@ class DecodeScheduler(Scheduler):
             paged_cache=self.paged_manager,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
-            num_pending_reqs=len(self.pending_reqs)
-            + len(self.pending_prefill_requests),
+            num_pending_reqs=len(self.pending_reqs) + len(self.prefill_reqs),
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
@@ -389,13 +368,11 @@ class DecodeScheduler(Scheduler):
 
 def load_decode_scheduler(
     pipeline: Pipeline[
-        TextGenerationInputs[TextContext | TextAndVisionContext],
+        TextGenerationInputs[TextContext],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[
-        tuple[RequestID, TextContext | TextAndVisionContext]
-    ],
+    request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],

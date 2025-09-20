@@ -1,11 +1,15 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
+load("@rules_cc//cc:cc_binary.bzl", _cc_binary = "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", _cc_library = "cc_library")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_multi_py_version_test.bzl", _modular_multi_py_version_test = "modular_multi_py_version_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_library.bzl", _modular_py_library = "modular_py_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_py_test.bzl", _modular_py_test = "modular_py_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_venv.bzl", _modular_py_venv = "modular_py_venv")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_run_binary_test.bzl", _modular_run_binary_test = "modular_run_binary_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_binary.bzl", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
@@ -15,6 +19,8 @@ load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: 
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
+modular_cc_binary = _cc_binary
+modular_cc_library = _cc_library
 modular_py_venv = _modular_py_venv
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test
@@ -46,6 +52,7 @@ def _is_internal_reference(dep):
         "//GenericML",
         "//KGEN/",
         "//Kernels/",
+        "//SDK/integration-test:",
         "//SDK/integration-test/pipelines/python",
         "//SDK:max",
     )) or "base_max_config_yaml_files" in dep or "benchmark_config_yaml_files" in dep
@@ -63,8 +70,12 @@ def _rewrite_deps(deps):
     """Rewrite dependencies to use the open-source package names, or to come from the wheel."""
     new_deps = []
     for dep in deps:
-        if dep.startswith("//SDK/lib/API/python/max/benchmark:"):
+        if dep.startswith("//SDK/lib/API/python/tests/graph"):
+            replaced_dep = dep.replace("//SDK/lib/API/python/tests/graph", "//tests/max/graph")
+            new_deps.append(replaced_dep)
+        elif dep.startswith("//SDK/lib/API/python/max/benchmark:"):
             replaced_dep = dep.replace("//SDK/lib/API/python/max/benchmark:", "//benchmark:")
+            new_deps.append(replaced_dep)
         elif dep.startswith("//SDK/lib/API/python/"):
             replaced_dep = dep.replace("//SDK/lib/API/python/", "//")
             if replaced_dep in _DEPS_FROM_WHEEL:
@@ -77,6 +88,15 @@ def _rewrite_deps(deps):
         else:
             new_deps.append(dep)
     return new_deps
+
+def _rewrite_trivial_env(env):
+    if type(env) != type({}):
+        return env
+    new_env = {}
+    for k, v in env.items():
+        if v.startswith("SDK/lib/API/python/tests/graph"):
+            new_env[k] = v.replace("SDK/lib/API/python/tests/graph", "tests/max/graph")
+    return new_env
 
 def modular_py_library(
         data = [],
@@ -115,6 +135,35 @@ def modular_py_binary(
         data = data,
         env = env,
         deps = _rewrite_deps(deps),
+        **kwargs
+    )
+
+# buildifier: disable=function-docstring
+def modular_py_test(
+        name,
+        deps = [],
+        data = [],
+        env = {},
+        **kwargs):
+    data = _rewrite_deps(data)
+    deps = _rewrite_deps(deps)
+    if _has_internal_reference(deps) or _has_internal_reference(data):
+        return
+
+    _modular_py_test(
+        name = name,
+        data = data,
+        env = _rewrite_trivial_env(env),
+        deps = deps,
+        **kwargs
+    )
+
+# buildifier: disable=function-docstring
+def modular_multi_py_version_test(deps = [], data = [], env = {}, **kwargs):
+    _modular_multi_py_version_test(
+        deps = _rewrite_deps(deps),
+        data = _rewrite_deps(data),
+        env = _rewrite_trivial_env(env),
         **kwargs
     )
 
@@ -162,7 +211,6 @@ def lit_tests(tools = [], data = [], **kwargs):
 def _noop(**_kwargs):
     pass
 
-modular_py_test = _noop
 mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop

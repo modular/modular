@@ -174,9 +174,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     alias a_scales_smem_layout = Layout.row_major(1, BM)
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment2=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -230,23 +228,15 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     var b_smem_tile = b_smem_tile_t(b_smem)
     var a_scales_smem_tile = a_scales_smem_tile_t(a_scales_smem)
 
-    var ptr_tmem_addr = (
-        (a_scales_smem + a_scales_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (a_scales_smem + a_scales_size).bitcast[UInt32]()
 
     alias a_expected_bytes = a_size * size_of[a_type]()
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias a_scales_expected_bytes = a_scales_size * size_of[accum_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -520,8 +510,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     ]()
 
     constrained[
-        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
-        "Only support bfloat16 and float8_e4m3fn",
+        a_type == b_type and a_type is DType.float8_e4m3fn,
+        "Only support float8_e4m3fn for A and B",
     ]()
 
     alias num_experts = b_layout.shape[0].value()
@@ -566,7 +556,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     logger.info("Max tokens per expert: ", max_num_tokens_per_expert)
     logger.info("Number of active experts: ", num_active_experts)
     logger.info(
-        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]"
+        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]", sep=""
     )
     logger.info(
         "B Scales Shape: [",
@@ -576,6 +566,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         ", ",
         b_scales.dim(2),
         "]",
+        sep="",
     )
 
     # LayoutTensors are already in the right format for TMA operations

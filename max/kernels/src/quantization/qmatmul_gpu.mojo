@@ -203,7 +203,9 @@ fn multistage_mma_q[
                 ](
                     b_smem_tile.vectorize[1, simd_b_size](),
                     b_iter[]
-                    .bitcast[b_type, address_space = AddressSpace.GENERIC]()
+                    .bitcast[
+                        b_type, target_address_space = AddressSpace.GENERIC
+                    ]()
                     .vectorize[1, simd_b_size](),
                 )
 
@@ -225,7 +227,7 @@ fn multistage_mma_q[
                             scales_iter[]
                             .bitcast[
                                 scales_type,
-                                address_space = AddressSpace.GENERIC,
+                                target_address_space = AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, async_copy_scales_veclen]()
                             .distribute[async_copy_scales_layout](
@@ -409,7 +411,8 @@ fn multistage_mma_q[
                             b_smem_prefetch_tile.vectorize[1, simd_b_size](),
                             b_iter[]
                             .bitcast[
-                                b_type, address_space = AddressSpace.GENERIC
+                                b_type,
+                                target_address_space = AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, simd_b_size](),
                         )
@@ -433,7 +436,7 @@ fn multistage_mma_q[
                                     scales_iter[]
                                     .bitcast[
                                         scales_type,
-                                        address_space = AddressSpace.GENERIC,
+                                        target_address_space = AddressSpace.GENERIC,
                                     ]()
                                     .vectorize[1, async_copy_scales_veclen]()
                                     .distribute[async_copy_scales_layout](
@@ -537,10 +540,11 @@ fn multistage_qgemm_kernel[
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
+    alias alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[a_type, simd_size]](),
+        alignment=alignment,
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
 
@@ -548,7 +552,7 @@ fn multistage_qgemm_kernel[
         a_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = a_smem.alignment2,
+        alignment=alignment,
         circular=True,
     ](
         a_smem + warp_k_part_id * a_smem_size,
@@ -1038,7 +1042,7 @@ fn repack_Q4_0_for_sm8x[
         copy_dram_to_sram[thread_layout = Layout.row_major(128, 1)](
             qb_smem.vectorize[1, 4](),
             q_gmem_iter[]
-            .bitcast[DType.uint8, address_space = AddressSpace.GENERIC]()
+            .bitcast[DType.uint8, target_address_space = AddressSpace.GENERIC]()
             .vectorize[1, 4](),
         )
         q_gmem_iter._incr()

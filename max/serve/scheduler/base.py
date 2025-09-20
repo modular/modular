@@ -76,5 +76,5 @@ class PrefillResponse(
     """
 
     id: RequestID
-    context: Union[TextContext, TextAndVisionContext]
+    generated_token_id: int
     transfer_metadata: XferReqData

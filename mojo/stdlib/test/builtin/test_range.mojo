@@ -11,7 +11,73 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, assert_false
+
+
+def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
+    var iter = range_iter^
+    for i in range(len):
+        var lower, upper = iter.bounds()
+        assert_equal(len - i, lower)
+        assert_equal(len - i, upper.value())
+        _ = iter.__next__()
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
+
+
+def test_range_int_bounds():
+    _test_range_iter_bounds(range(0), 0)
+    _test_range_iter_bounds(range(10), 10)
+    _test_range_iter_bounds(range(0, 10), 10)
+    _test_range_iter_bounds(range(5, 10), 5)
+    _test_range_iter_bounds(range(10, 0, -1), 10)
+    _test_range_iter_bounds(range(0, 10, 2), 5)
+    _test_range_iter_bounds(range(0, 11, 2), 6)
+    _test_range_iter_bounds(range(38, -13, -23), 3)
+
+
+def test_range_uint_bounds():
+    _test_range_iter_bounds(range(UInt(0)), 0)
+    _test_range_iter_bounds(range(UInt(10)), 10)
+    _test_range_iter_bounds(range(UInt(0), UInt(10)), 10)
+    _test_range_iter_bounds(range(UInt(5), UInt(10)), 5)
+    _test_range_iter_bounds(range(UInt(0), UInt(10), UInt(2)), 5)
+    _test_range_iter_bounds(range(UInt(0), UInt(11), UInt(2)), 6)
+
+
+def test_range_scalar_bounds[dtype: DType]():
+    alias scalar = Scalar[dtype]
+
+    _test_range_iter_bounds(range(scalar(0)), 0)
+    _test_range_iter_bounds(range(scalar(10)), 10)
+    _test_range_iter_bounds(range(scalar(0), scalar(10)), 10)
+    _test_range_iter_bounds(range(scalar(5), scalar(10)), 5)
+    _test_range_iter_bounds(range(scalar(0), scalar(10), scalar(2)), 5)
+    _test_range_iter_bounds(range(scalar(0), scalar(11), scalar(2)), 6)
+
+    @parameter
+    if dtype.is_signed():
+        _test_range_iter_bounds(range(scalar(10), scalar(0), scalar(-1)), 10)
+        _test_range_iter_bounds(range(scalar(38), scalar(-13), scalar(-23)), 3)
+
+
+def test_larger_than_int_max_bounds():
+    def test[I: Iterator](iter: I):
+        var lower, upper = iter.bounds()
+        assert_equal(lower, Int.MAX)
+        assert_false(upper)
+
+    # UInt
+    test(range(UInt.MAX))
+    test(range(UInt(1), UInt.MAX))
+    test(range(UInt(1), UInt.MAX, UInt(1)))
+
+    # UInt64
+    test(range(UInt64.MAX))
+    test(range(UInt64(1), UInt64.MAX))
+    test(range(UInt64(1), UInt64.MAX, UInt64(1)))
 
 
 def test_range_len():
@@ -71,6 +137,25 @@ def test_range_len_uint():
     assert_equal(
         range(UInt(10), UInt(0), UInt(1)).__len__(), 0, "len(range(10, 0, 1))"
     )
+
+
+def test_range_len_scalar[dtype: DType]():
+    alias scalar = Scalar[dtype]
+
+    # empty
+    assert_equal(range(scalar(0), scalar(0), scalar(1)).__len__(), 0)
+    assert_equal(range(scalar(10), scalar(10), scalar(1)).__len__(), 0)
+
+    # start = 0
+    assert_equal(range(scalar(10)).__len__(), 10)
+
+    # start < end
+    assert_equal(range(scalar(0), scalar(10)).__len__(), 10)
+    assert_equal(range(scalar(5), scalar(10)).__len__(), 5)
+    assert_equal(range(scalar(0), scalar(10), scalar(2)).__len__(), 5)
+
+    # start > end
+    assert_equal(range(scalar(10), scalar(0), scalar(1)).__len__(), 0)
 
 
 def test_range_getitem():
@@ -261,6 +346,27 @@ def main():
     test_range_len_uint()
     test_range_len_uint_maxuint()
     test_range_len_uint_empty()
+
+    test_range_int_bounds()
+    test_range_uint_bounds()
+    test_larger_than_int_max_bounds()
+
+    alias dtypes = [
+        DType.int8,
+        DType.int16,
+        DType.int32,
+        DType.int64,
+        DType.uint8,
+        DType.uint16,
+        DType.uint32,
+        DType.uint64,
+    ]
+
+    @parameter
+    for dtype in dtypes:
+        test_range_len_scalar[dtype]()
+        test_range_scalar_bounds[dtype]()
+
     test_range_getitem()
     test_range_getitem_uint()
     test_range_reversed()

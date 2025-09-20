@@ -21,6 +21,8 @@ from sys import (
     simd_width_of,
     size_of,
 )
+from sys.info import _accelerator_arch
+
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -52,11 +54,14 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
-from .dispatch_table_a100_gpu import create_matmul_configs_ampere
+from .matmul_dispatch.sm80 import create_matmul_configs_ampere
 from .gemv import gemv_gpu
 from .matmul_vendor import matmul as matmul_vendor
-from .matmul_dispatch_sm90 import matmul_dispatch_sm90
-from .matmul_dispatch_sm100 import matmul_dispatch_sm100
+from .matmul_dispatch.sm90 import matmul_dispatch_sm90
+from .matmul_dispatch.sm100 import (
+    matmul_dispatch_sm100,
+    matmul_sm100_entrypoint,
+)
 from .matmul_sm100 import matmul_sm100_fallback
 from .utils import (
     GemmShape,
@@ -340,6 +345,76 @@ fn _matmul_sm100[
 
 
 @always_inline
+fn _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
+    @parameter
+    if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
+
+        @parameter
+        if dtype.is_half_float():
+            return Index(16, 16, 32)
+
+    return get_mma_shape[dtype, DType.float32]()
+
+
+@always_inline
+fn _amdgpu_matmul_config_from_block_shape[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool,
+    K: Int,
+    pdl_level: PDLLevel = PDLLevel(),
+](block_m: Int, block_n: Int) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+]:
+    alias max_num_warps: UInt = 4
+
+    var block_k = _bk_base[a_type, True]()
+    var num_warps: UInt = 1
+    var num_warp_k_partitions: UInt = 1
+
+    if block_m <= 32 and block_n <= 32:
+        # Attempt to increase the number of warp_k partitions to improve processor
+        # utilization. A single warp needs to read two block_k buffers, so double
+        # that in order to expand the number of warp_k partitions.
+        var test_k = 2 * (block_k * 2)
+        while num_warps < max_num_warps and (K % test_k) == 0:
+            num_warp_k_partitions *= 2
+            num_warps *= 2
+            test_k *= 2
+    else:
+        # Improve shared memory utilization by expanding block_k, but only if K is
+        # a multiple of that expanded block_k size.
+        if (K % (block_k * 2)) == 0:
+            var smem_a = block_m * block_k * size_of[a_type]()
+            var smem_b = block_n * block_k * size_of[b_type]()
+            if smem_a + smem_b <= 32 * 1024:
+                block_k *= 2
+
+    var block_tile_shape = Index(block_m, block_n, block_k)
+    var warp_tile_shape = block_tile_shape
+
+    # Warp partition block_m and block_n.
+    for i in reversed(range(2)):
+        if (
+            block_tile_shape[i] >= 32
+            and block_tile_shape[i] % 32 == 0
+            and num_warps < max_num_warps
+        ):
+            warp_tile_shape[i] = block_tile_shape[i] // 2
+            num_warps *= 2
+
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=block_tile_shape,
+        warp_tile_shape=warp_tile_shape,
+        mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
+        num_pipeline_stages=1,
+        num_warp_k_partitions=num_warp_k_partitions,
+        pdl_level=pdl_level,
+    )
+
+
+@always_inline
 fn _matmul_gpu[
     c_type: DType,
     a_type: DType,
@@ -370,11 +445,15 @@ fn _matmul_gpu[
 
     var logger = Logger()
     logger.info("---- MATMUL GPU execution started ----")
-    logger.info("MxNxK: ", m, "x", n, "x", k)
+    logger.info("MxNxK: ", m, "x", n, "x", k, sep="")
     logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
     logger.info("Device: ", ctx.name())
     logger.info(
-        "Transpose B: ", transpose_b, " Use Tensor Core: ", use_tensor_core
+        "Transpose B: ",
+        transpose_b,
+        " Use Tensor Core: ",
+        use_tensor_core,
+        sep="",
     )
 
     alias matmul_supported_format_nvidia = (
@@ -466,19 +545,12 @@ fn _matmul_gpu[
     @parameter
     if (
         ctx.default_device_info is B200
-        and use_experimental_kernels
         and transpose_b
-        and (
-            a_type in bf16_or_fp16
-            and b_type in bf16_or_fp16
-            and c_type in bf16_or_fp16_fp32
-        )
+        and (a_type == b_type == DType.bfloat16)
+        and c_type == DType.bfloat16
     ):
-        var status = matmul_dispatch_sm100[
-            c_type,
-            a_type,
-            b_type,
-            transpose_b,
+        var status = matmul_sm100_entrypoint[
+            transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
@@ -506,7 +578,7 @@ fn _matmul_gpu[
             a_type,
             b_type,
             transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
+            elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
@@ -577,18 +649,6 @@ fn _matmul_gpu[
 
                 @always_inline
                 @parameter
-                fn mma_shape_helper() -> IndexList[3]:
-                    @parameter
-                    if transpose_b and ctx.default_device_info is MI355X:
-
-                        @parameter
-                        if a_type.is_half_float():
-                            return Index(16, 16, 32)
-
-                    return get_mma_shape[a_type, DType.float32]()
-
-                @always_inline
-                @parameter
                 fn kernel_helper[
                     block_m: Int,
                     block_n: Int,
@@ -605,7 +665,7 @@ fn _matmul_gpu[
                         warp_tile_shape=Index(
                             block_m // 2, block_n // 2, _bk_base[a_type, True]()
                         ),
-                        mma_shape=mma_shape_helper(),
+                        mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=UInt(num_pipeline_stages),
                         num_k_partitions=UInt(num_k_partitions),
                         pdl_level=pdl_level,
@@ -631,7 +691,7 @@ fn _matmul_gpu[
                 ):
                     alias sm_count = Int(ctx.default_device_info.sm_count)
 
-                    alias block_sizes = [
+                    alias block_sizes_alias = [
                         16,
                         32,
                         64,
@@ -642,8 +702,9 @@ fn _matmul_gpu[
                         224,
                         256,
                     ]
-                    alias len_block_sizes = len(block_sizes)
+                    alias len_block_sizes = len(block_sizes_alias)
 
+                    var block_sizes = materialize[block_sizes_alias]()
                     var emit_config = InlineArray[
                         Bool, len_block_sizes * len_block_sizes
                     ](fill=False)
@@ -655,11 +716,10 @@ fn _matmul_gpu[
                         var best_idx = 0
                         var idx = 0
 
-                        var block_sizes_dyn = materialize[block_sizes]()
-                        for block_m in block_sizes_dyn:
+                        for block_m in block_sizes:
                             var m_blocks = ceildiv(m, block_m)
 
-                            for block_n in block_sizes_dyn:
+                            for block_n in block_sizes:
                                 var n_blocks = ceildiv(static_N, block_n)
 
                                 var total_blocks = m_blocks * n_blocks
@@ -689,289 +749,52 @@ fn _matmul_gpu[
                         MatmulConfig[a_type, b_type, c_type, transpose_b]
                     ]()
 
-                    var block_sizes_dyn = materialize[block_sizes]()
                     for idx in range(len(emit_config)):
                         if not emit_config[idx]:
                             continue
 
                         var idx_m, idx_n = divmod(idx, len_block_sizes)
 
-                        var block_m = block_sizes_dyn[idx_m]
-                        var block_n = block_sizes_dyn[idx_n]
-                        var block_k = _bk_base[a_type, True]()
-
-                        alias max_num_warps: UInt = 4
-
-                        var num_warps: UInt = 1
-                        var num_warp_k_partitions: UInt = 1
-
-                        if block_m <= 32 and block_n <= 32:
-                            # Attempt to increase the number of warp_k partitions to improve
-                            # processor utilization.
-                            var test_k = block_k * 2
-                            while (
-                                num_warps < max_num_warps
-                                and (static_K % test_k) == 0
-                            ):
-                                num_warp_k_partitions *= 2
-                                num_warps *= 2
-                                test_k *= 2
-                        else:
-                            # Improve shared memory utilization by expanding block_k.
-                            var smem_a = block_m * block_k * size_of[a_type]()
-                            var smem_b = block_n * block_k * size_of[b_type]()
-                            if smem_a + smem_b <= 32 * 1024:
-                                block_k *= 2
-
-                        block_tile_shape = Index(block_m, block_n, block_k)
-                        warp_tile_shape = block_tile_shape
-
-                        # Warp partition block_m and block_n.
-                        for i in reversed(range(2)):
-                            if (
-                                block_tile_shape[i] >= 32
-                                and block_tile_shape[i] % 32 == 0
-                                and num_warps < max_num_warps
-                            ):
-                                warp_tile_shape[i] = block_tile_shape[i] // 2
-                                num_warps *= 2
-
-                        config = MatmulConfig[
-                            a_type, b_type, c_type, transpose_b
-                        ](
-                            block_tile_shape=block_tile_shape,
-                            warp_tile_shape=warp_tile_shape,
-                            mma_shape=mma_shape_helper(),
-                            num_pipeline_stages=1,
-                            num_warp_k_partitions=num_warp_k_partitions,
-                            pdl_level=pdl_level,
-                        )
+                        var config = _amdgpu_matmul_config_from_block_shape[
+                            c_type,
+                            a_type,
+                            b_type,
+                            transpose_b,
+                            static_K,
+                            pdl_level,
+                        ](block_sizes[idx_m], block_sizes[idx_n])
 
                         config_list.append(config)
 
                     return config_list^
 
+                alias sm_count = Int(ctx.default_device_info.sm_count)
+                alias config_list = build_config_list()
+
+                var best_idx = 0
+                var best_score = Int.MAX
+
                 @parameter
-                if ctx.default_device_info is MI355X:
-                    alias sm_count = Int(ctx.default_device_info.sm_count)
-                    alias config_list = build_config_list()
+                for i in range(len(config_list)):
+                    alias config = config_list[i]
+                    alias block_m = config.block_tile_shape[0]
+                    alias block_n = config.block_tile_shape[1]
+                    alias n_blocks = ceildiv(static_N, block_n)
 
-                    var best_idx = 0
-                    var best_score = Int.MAX
+                    var m_blocks = ceildiv(m, block_m)
+                    var total_blocks = m_blocks * n_blocks
+                    var batch, extra = divmod(total_blocks - 1, sm_count)
+                    var score = batch * sm_count + (sm_count - extra - 1)
 
-                    @parameter
-                    for i in range(len(config_list)):
-                        alias config = config_list[i]
-                        alias block_m = config.block_tile_shape[0]
-                        alias block_n = config.block_tile_shape[1]
-                        alias n_blocks = ceildiv(static_N, block_n)
+                    if score < best_score:
+                        best_idx = i
+                        best_score = score
 
-                        var m_blocks = ceildiv(m, block_m)
-                        var total_blocks = m_blocks * n_blocks
-                        var batch, extra = divmod(total_blocks - 1, sm_count)
-                        var score = batch * sm_count + (sm_count - extra - 1)
-
-                        if score < best_score:
-                            best_idx = i
-                            best_score = score
-
-                    @parameter
-                    for i in range(len(config_list)):
-                        if best_idx == i:
-                            return _multistage_gemm[config_list[i]]()
-
-                # mistral-small-24b auto-tuned shapes
                 @parameter
-                if static_N == 5120 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[192, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 256]()
-                    elif m >= 512:
-                        return kernel_helper[96, 64]()
-                    elif m >= 500:
-                        return kernel_helper[128, 160, num_k_partitions=2]()
-                    elif m >= 256:
-                        return kernel_helper[128, 160, num_k_partitions=4]()
-                elif static_N == 6144 and static_K == 5120:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[192, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 192]()
-                    elif m >= 512:
-                        return kernel_helper[192, 128, num_k_partitions=2]()
-                    elif m >= 500:
-                        return kernel_helper[96, 128]()
-                    elif m >= 256:
-                        return kernel_helper[128, 192, num_k_partitions=4]()
-                elif static_N == 65536 and static_K == 5120:
-                    if m > 384:
-                        return kernel_helper[256, 256]()
-                    elif m > 256:
-                        return kernel_helper[192, 256]()
-                    elif m > 192:
-                        return kernel_helper[256, 256]()
-                    elif m > 128:
-                        return kernel_helper[192, 256]()
-                    elif m > 64:
-                        return kernel_helper[128, 256]()
-                elif static_N == 5120 and static_K == 32768:
-                    if m >= 8192:
-                        return kernel_helper[192, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 160, num_k_partitions=4]()
-                    elif m >= 500:
-                        return kernel_helper[192, 224, num_k_partitions=4]()
-                    elif m >= 256:
-                        return kernel_helper[128, 96, num_k_partitions=8]()
+                for i in range(len(config_list)):
+                    if best_idx == i:
+                        return _multistage_gemm[config_list[i]]()
 
-                # gemma-3-12b auto-tuned shapes
-                @parameter
-                if static_N == 3840 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[192, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 192]()
-                    elif m >= 512:
-                        return kernel_helper[96, 160, num_k_partitions=2]()
-                    elif m >= 500:
-                        return kernel_helper[96, 160, num_k_partitions=2]()
-                    elif m >= 256:
-                        return kernel_helper[128, 128, num_k_partitions=4]()
-                elif static_N == 3840 and static_K == 15360:
-                    if m >= 8192:
-                        return kernel_helper[256, 224]()
-                    elif m >= 7000:
-                        return kernel_helper[224, 224]()
-                    elif m >= 3500:
-                        return kernel_helper[224, 224]()
-                    elif m >= 512:
-                        return kernel_helper[96, 160, num_k_partitions=4]()
-                    elif m >= 500:
-                        return kernel_helper[96, 160, num_k_partitions=4]()
-                    elif m >= 256:
-                        return kernel_helper[128, 224, num_k_partitions=8]()
-                elif static_N == 8192 and static_K == 3840:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 256]()
-                    elif m >= 512:
-                        return kernel_helper[128, 128, num_k_partitions=2]()
-                    elif m >= 500:
-                        return kernel_helper[128, 128, num_k_partitions=2]()
-                    elif m >= 256:
-                        return kernel_helper[64, 64]()
-                elif static_N == 30720 and static_K == 3840:
-                    if m >= 8192:
-                        return kernel_helper[256, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 256]()
-                    elif m >= 500:
-                        return kernel_helper[256, 224]()
-                    elif m >= 256:
-                        return kernel_helper[128, 224]()
-                elif static_N == 262208 and static_K == 3840:
-                    return kernel_helper[256, 256]()
-
-                # llama3 auto-tuned shapes
-                @parameter
-                if static_N == 4096 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 224]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 256]()
-                    elif m >= 512:
-                        return kernel_helper[64, 64]()
-                    elif m >= 500:
-                        return kernel_helper[64, 64]()
-                    elif m >= 256:
-                        return kernel_helper[128, 128, num_k_partitions=4]()
-                elif static_N == 4096 and static_K == 14336:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[192, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 224, num_k_partitions=8]()
-                    elif m >= 500:
-                        return kernel_helper[256, 224, num_k_partitions=8]()
-                    elif m >= 256:
-                        return kernel_helper[128, 224, num_k_partitions=8]()
-                elif static_N == 6144 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[192, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 192]()
-                    elif m >= 512:
-                        return kernel_helper[192, 128, num_k_partitions=2]()
-                    elif m >= 500:
-                        return kernel_helper[96, 128]()
-                    elif m >= 256:
-                        return kernel_helper[128, 192, num_k_partitions=4]()
-                elif static_N == 28672 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[256, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[224, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 192]()
-                    elif m >= 500:
-                        return kernel_helper[256, 192]()
-                    elif m >= 256:
-                        return kernel_helper[128, 96]()
-
-                # Default tune based on llama3
-                @parameter
-                if static_N >= 28672 and static_K >= 2048:
-                    if m >= 1024:
-                        return kernel_helper[224, 256]()
-                    elif m >= 128:
-                        return kernel_helper[128, 128]()
-                    else:
-                        return kernel_helper[64, 64]()
-                elif static_N >= 2048 and static_K >= 2048:
-                    if m >= 4096:
-                        return kernel_helper[224, 256]()
-                    elif m >= 1024:
-                        return kernel_helper[128, 128]()
-                    elif m >= 512:
-                        return kernel_helper[128, 128, num_k_partitions=2]()
-                    elif static_K == 14336:
-                        if m >= 128:
-                            return kernel_helper[64, 64, num_k_partitions=4]()
-                        elif m >= 64:
-                            return kernel_helper[64, 64, num_k_partitions=8]()
-                        else:
-                            return kernel_helper[32, 64, num_k_partitions=4]()
-                    elif m >= 64:
-                        return kernel_helper[64, 64]()
-                    else:
-                        return kernel_helper[32, 64, num_k_partitions=4]()
                 return kernel_helper[128, 128]()
 
             else:
@@ -1155,7 +978,7 @@ fn multistage_gemm[
 
     var logger = Logger()
     logger.info("------ Dispatching to Multistage GEMM ------")
-    logger.info(String(config))
+    logger.info(config)
 
     var tensor_c = from_ndbuffer_row_major(c)
     var tensor_a = from_ndbuffer_row_major(a)
@@ -1245,8 +1068,8 @@ fn multistage_gemm[
 
     var logger = Logger()
     logger.info("------ Dispatching to Multistage GEMM ------")
-    logger.info(String(config))
-    logger.info("K partitions: ", runtime_config.num_k_partitions)
+    logger.info(config)
+    logger.info("K partitions:", runtime_config.num_k_partitions)
 
     var tensor_c = from_ndbuffer_row_major(c)
     var tensor_a = from_ndbuffer_row_major(a)

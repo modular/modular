@@ -267,7 +267,7 @@ fn gemv_split_k[
     """GEMV with tiling in K dimension.
     Assuming the B (weight) matrix is transposed i.e. row major N x K, this kernel
     implements a vector (1 x K) times a matrix (N x K).
-    The impl can actually handle M > 1 but it's only optimal fro tiny M. We use
+    The impl can actually handle M > 1 but it's only optimal for tiny M. We use
     it for M = 1 only.
     """
     # tile_m represents how many rows each thread will process of the output activation matrix
@@ -554,7 +554,7 @@ fn gemv_gpu_dispatch[
             else:
                 # runtime transpose since layout_tensor.transpose requires static shape
                 alias b_alignment = b.alignment2
-                var aligned_b = b.data.static_alignment_cast[b_alignment]()
+                var aligned_b = b.data
 
                 alias has_K = a.shape.has_value[1]()
                 alias static_K = a.shape.get[1]() if has_K else UNKNOWN_VALUE
@@ -578,7 +578,7 @@ fn gemv_gpu_dispatch[
                     b.type,
                     b_layout_template,
                     MutableAnyOrigin,
-                    alignment = aligned_b.alignment2,
+                    alignment=b_alignment,
                     address_space = aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
@@ -772,6 +772,7 @@ fn log_shape[
         "_" if has_mode_2 else "",
         mode_2,
         ")",
+        sep="",
     )
 
 

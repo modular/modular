@@ -16,15 +16,15 @@ from __future__ import annotations
 from max.driver import Tensor
 from max.graph.weights import WeightData, Weights
 
-# Maps from InternVL checkpoint names to DistributedLlama3 weight names.
+# Maps from InternVL checkpoint names to InternVLLanguageModel weight names.
 INTERNVL_LANGUAGE_MODEL_MAPPING = {
     # Strip the "language_model.model." prefix from most weights
     # InternVL checkpoint: "language_model.model.layers.0.input_layernorm.weight"
-    # DistributedLlama3 expects: "layers.0.input_layernorm.weight"
+    # InternVLLanguageModel expects: "layers.0.input_layernorm.weight"
     "language_model.model.": "",
     # Handle the output layer separately
     # InternVL checkpoint: "language_model.lm_head.weight"
-    # DistributedLlama3 expects: "lm_head.weight"
+    # InternVLLanguageModel expects: "lm_head.weight"
     "language_model.lm_head.": "lm_head.",
 }
 
@@ -49,16 +49,16 @@ INTERNVL_VISION_MODEL_MAPPING = {
 def convert_internvl_language_model_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
-    """Convert InternVL language model weights for DistributedLlama3.
+    """Convert InternVL language model weights for InternVLLanguageModel.
 
     InternVL checkpoints have language model weights prefixed with
-    `language_model.`, but DistributedLlama3 expects the standard Llama3
-    naming without this prefix.
+    `language_model.`, but InternVLLanguageModel expects the standard
+    Qwen2/Llama3 naming without this prefix.
 
     This adapter:
     1. Filters to only include language model weights (those with
        `language_model.` prefix).
-    2. Strips the `language_model.model.` prefix to match DistributedLlama3
+    2. Strips the `language_model.model.` prefix to match InternVLLanguageModel
        expectations.
     3. Excludes vision model and multimodal projection weights.
 
@@ -68,7 +68,7 @@ def convert_internvl_language_model_state_dict(
         pipeline_config: The pipeline configuration.
 
     Returns:
-        The filtered and mapped weights for DistributedLlama3.
+        The filtered and mapped weights for InternVLLanguageModel.
     """
     llm_state_dict: dict[str, WeightData] = {}
 

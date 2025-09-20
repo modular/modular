@@ -657,12 +657,15 @@ fn _get_register_constraint[dtype: DType]() -> StaticString:
 
 
 fn _get_pointer_constraint() -> StaticString:
-    return _get_register_constraint[DType.index]()
+    return _get_register_constraint[DType.int]()
 
 
 @always_inline
 fn store_release[
-    dtype: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
+    dtype: DType, //,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
 ](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with release memory ordering semantics.
 
@@ -673,6 +676,7 @@ fn store_release[
         dtype: The data type to store.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
+        alignment: The alignment of the data.
 
     Args:
         ptr: Pointer to the memory location to store to.
@@ -705,7 +709,7 @@ fn store_release[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment = ptr.alignment2._mlir_value,
+            alignment = alignment._mlir_value,
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     else:
@@ -716,7 +720,11 @@ fn store_release[
 
 @always_inline
 fn load_acquire[
-    dtype: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
 ](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
@@ -727,6 +735,7 @@ fn load_acquire[
         dtype: The data type to load.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
+        alignment: The alignment of the pointer.
 
     Args:
         ptr: Pointer to the memory location to load from.
@@ -761,7 +770,7 @@ fn load_acquire[
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
         return __mlir_op.`pop.load`[
-            alignment = ptr.alignment2._mlir_value,
+            alignment = alignment._mlir_value,
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     else:
@@ -849,81 +858,210 @@ fn load_volatile[
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
 
-alias _buffer_resource = SIMD[DType.uint32, 4]
-"""128-bit descriptor for a buffer resource on AMD GPUs. Used for
-buffer_load/buffer_store instructions."""
+@register_passable("trivial")
+struct AMDBufferResource:
+    var desc: SIMD[DType.uint32, 4]
+    """128-bit descriptor for a buffer resource on AMD GPUs. Used for
+    buffer_load/buffer_store instructions."""
 
+    @always_inline("nodebug")
+    fn __init__[
+        dtype: DType
+    ](
+        out self,
+        gds_ptr: UnsafePointer[Scalar[dtype], **_],
+        num_records: Int = Int(UInt32.MAX),
+    ):
+        constrained[
+            is_amd_gpu(),
+            (
+                "The AMDBufferResource struct is only applicable on AMDGPU"
+                " hardware."
+            ),
+        ]()
 
-@always_inline
-fn make_buffer_resource[
-    dtype: DType
-](
-    gds_ptr: UnsafePointer[Scalar[dtype], **_],
-    num_records: Int = Int(UInt32.MAX),
-) -> _buffer_resource:
-    """Creates a 128-bit buffer resource descriptor for AMD GPU buffer operations.
+        self.desc = SIMD[DType.uint32, 4](0)
+        var address = bitcast[DType.uint32, 2](
+            SIMD[DType.uint64, 1](Int(gds_ptr))
+        )
+        self.desc[0] = address[0]
+        # assuming 0 stride currently
+        self.desc[1] = address[1]
+        self.desc[2] = size_of[dtype]() * num_records
+        # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
+        self.desc[3] = 0x00020000
 
-    This function constructs a 128-bit buffer resource descriptor used by AMD GPUs
-    for buffer load/store operations. The descriptor contains information about
-    the memory location, size, and access properties needed by the hardware to
-    perform memory operations.
+    @always_inline("nodebug")
+    fn __init__(out self):
+        constrained[
+            is_amd_gpu(),
+            (
+                "The AMDBufferResource struct is only applicable on AMDGPU"
+                " hardware."
+            ),
+        ]()
+        self.desc = 0
 
-    Parameters:
-        dtype: The data type of elements in the buffer.
+    @always_inline("nodebug")
+    fn get_base_ptr(self) -> Int:
+        return Int(
+            bitcast[DType.int64, 1](
+                SIMD[DType.uint32, 2](self.desc[0], self.desc[1])
+            )
+        )
 
-    Args:
-        gds_ptr: Global memory base address pointer to the start of the buffer.
-        num_records: Maximum number of records that can be accessed through this
-            resource descriptor. Reads with offsets beyond this value return 0.
-            Defaults to UInt32.MAX for maximum possible range.
+    @always_inline("nodebug")
+    fn load[
+        dtype: DType,
+        width: Int,
+        *,
+        cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    ](
+        self,
+        vector_offset: Int32,
+        *,
+        scalar_offset: Int32 = 0,
+    ) -> SIMD[
+        dtype, width
+    ]:
+        constrained[
+            is_amd_gpu(),
+            "The buffer_load function is only applicable on AMDGPU hardware.",
+        ]()
 
-    Returns:
-        A 128-bit buffer resource descriptor as a SIMD[DType.uint32, 4].
+        alias bytes = size_of[dtype]() * width
+        alias aux = _cache_operation_to_amd_aux[cache_policy]()
 
-    Notes:
+        var vector_offset_bytes = vector_offset * size_of[dtype]()
+        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
 
-        - Only supported on AMD GPUs.
-        - The descriptor follows AMD's hardware-specific format:
-          - Bits 0-63: Base address
-          - Bits 64-95: Number of records (size)
-          - Bits 96-127: Flags controlling access properties
-        - Used with buffer_load and buffer_store operations.
-        - Performance-critical for optimized memory access patterns on AMD GPUs.
+        var load_val = llvm_intrinsic[
+            "llvm.amdgcn.raw.buffer.load",
+            SIMD[
+                _get_buffer_intrinsic_simd_dtype[bytes](),
+                _get_buffer_intrinsic_simd_width[bytes](),
+            ],
+            has_side_effect=False,
+        ](self.desc, vector_offset_bytes, scalar_offset_bytes, aux)
 
-    Example:
+        return bitcast[dtype, width](load_val)
 
-        ```mojo
-        from gpu.intrinsics import make_buffer_resource
+    @always_inline("nodebug")
+    fn load_to_lds[
+        dtype: DType,
+        *,
+        width: Int = 1,
+        cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    ](
+        self,
+        vector_offset: Int32,
+        shared_ptr: UnsafePointer[
+            Scalar[dtype], address_space = AddressSpace.SHARED
+        ],
+        *,
+        scalar_offset: Int32 = 0,
+    ):
+        """Loads data from global memory and stores to shared memory.
 
-        var ptr = UnsafePointer[Scalar[DType.float32]].alloc(1024)
-        var resource = make_buffer_resource[DType.float32](ptr, 1024)
-        # Use resource with buffer_load/buffer_store operations
-        ```
-    """
+        Copies from global memory to shared memory (aka LDS) bypassing storing to
+        register.
 
-    constrained[
-        is_amd_gpu(),
-        (
-            "The make_buffer_resource function is only applicable on AMDGPU"
-            " hardware."
-        ),
-    ]()
+        Parameters:
+            dtype: The dtype of the data to be loaded.
+            width: The SIMD vector width.
+            cache_policy: Cache operation policy controlling cache behavior at all levels.
 
-    # https://discourse.llvm.org/t/representing-buffer-descriptors-in-the-amdgpu-target-call-for-suggestions/68798/1
-    # llvm.amdgcn.make.buffer.rsrc intrinsic, which takes the pointer, which becomes the base of the resource,
-    # the 16-bit stride (and swzizzle control) field stored in bits 63:48 of a V#,
-    # the 32-bit NumRecords/extent field (bits 95:64),
-    # and the 32-bit flags field (bits 127:96).
+        Args:
+            vector_offset: Vector memory offset in elements (per thread).
+            shared_ptr: Shared memory address.
+            scalar_offset: Scalar memory offset in elements (shared across wave).
+        """
+        constrained[
+            is_amd_gpu(),
+            (
+                "The buffer_load_lds function is only applicable on AMDGPU"
+                " hardware."
+            ),
+        ]()
 
-    var resource_constant = SIMD[DType.uint32, 4](0)
-    var address = bitcast[DType.uint32, 2](SIMD[DType.uint64, 1](Int(gds_ptr)))
-    resource_constant[0] = address[0]
-    # assuming 0 stride currently
-    resource_constant[1] = address[1]
-    resource_constant[2] = size_of[dtype]() * num_records
-    # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
-    resource_constant[3] = 0x00020000
-    return resource_constant
+        alias bytes = size_of[dtype]() * width
+        alias aux = _cache_operation_to_amd_aux[cache_policy]()
+
+        var vector_offset_bytes = vector_offset * size_of[dtype]()
+        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+
+        llvm_intrinsic[
+            "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
+        ](
+            self.desc,
+            shared_ptr,
+            Int32(bytes),
+            vector_offset_bytes,
+            scalar_offset_bytes,
+            Int32(0),
+            aux,
+        )
+
+    @always_inline("nodebug")
+    fn store[
+        dtype: DType,
+        width: Int,
+        *,
+        cache_policy: CacheOperation = CacheOperation.ALWAYS,
+    ](
+        self,
+        vector_offset: Int32,
+        val: SIMD[dtype, width],
+        *,
+        scalar_offset: Int32 = 0,
+    ):
+        """Stores a register variable to global memory with cache operation control.
+
+        Writes to global memory from a register with high-level cache control.
+
+        Parameters:
+            dtype: The data type.
+            width: The SIMD vector width.
+            cache_policy: Cache operation policy controlling cache behavior at all levels.
+
+        Args:
+            vector_offset: Vector memory offset in elements (per thread).
+            val: Value to write.
+            scalar_offset: Scalar memory offset in elements (shared across wave).
+
+        Note:
+            - Only supported on AMD GPUs.
+            - Provides high-level cache control via CacheOperation enum values.
+            - Maps directly to llvm.amdgcn.raw.buffer.store intrinsics.
+            - Cache control bits:
+            - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
+            - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
+        """
+        constrained[
+            is_amd_gpu(),
+            "The buffer_store function is only applicable on AMDGPU hardware.",
+        ]()
+
+        alias bytes = width * size_of[dtype]()
+        alias aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
+
+        var vector_offset_bytes = vector_offset * size_of[dtype]()
+        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+
+        var store_val = bitcast[
+            _get_buffer_intrinsic_simd_dtype[bytes](),
+            _get_buffer_intrinsic_simd_width[bytes](),
+        ](val)
+
+        llvm_intrinsic[
+            "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
+        ](
+            store_val,
+            self.desc,
+            vector_offset_bytes,
+            scalar_offset_bytes,
+            aux,
+        )
 
 
 @parameter
@@ -971,181 +1109,6 @@ fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
 @parameter
 fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
     return bytes // size_of[DType.uint32]() if bytes >= 4 else 1
-
-
-@always_inline
-fn buffer_load[
-    dtype: DType,
-    width: Int,
-    *,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    src_resource: _buffer_resource,
-    vector_offset: Int32,
-    *,
-    scalar_offset: Int32 = 0,
-) -> SIMD[dtype, width]:
-    """Loads data from global memory into a SIMD register with cache operation control.
-
-    This function provides a hardware-accelerated global memory load operation
-    that maps directly to the AMDGPU buffer_load instruction. It efficiently
-    transfers data from global memory to registers with high-level cache control.
-
-    Parameters:
-        dtype: The data type to load.
-        width: The SIMD vector width for vectorized loads.
-        cache_policy: Cache operation policy controlling cache behavior at all levels.
-
-    Args:
-        src_resource: Buffer resource descriptor created by make_buffer_resource().
-        vector_offset: Vector memory offset in elements (per thread).
-        scalar_offset: Scalar memory offset in elements (shared across wave).
-
-    Returns:
-        SIMD vector containing the loaded data.
-
-    Note:
-        - Only supported on AMD GPUs.
-        - Provides high-level cache control via CacheOperation enum values.
-        - Supports widths that map to 1, 2, 4, 8, or 16 byte loads.
-        - Maps directly to llvm.amdgcn.raw.buffer.load intrinsics.
-        - Cache control bits:
-          - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
-          - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
-    """
-    constrained[
-        is_amd_gpu(),
-        "The buffer_load function is only applicable on AMDGPU hardware.",
-    ]()
-
-    alias bytes = size_of[dtype]() * width
-    alias aux = _cache_operation_to_amd_aux[cache_policy]()
-
-    var vector_offset_bytes = vector_offset * size_of[dtype]()
-    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
-
-    var load_val = llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.load",
-        SIMD[
-            _get_buffer_intrinsic_simd_dtype[bytes](),
-            _get_buffer_intrinsic_simd_width[bytes](),
-        ],
-        has_side_effect=False,
-    ](src_resource, vector_offset_bytes, scalar_offset_bytes, aux)
-
-    return bitcast[dtype, width](load_val)
-
-
-@always_inline
-fn buffer_load_lds[
-    dtype: DType,
-    *,
-    width: Int = 1,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    src_resource: _buffer_resource,
-    vector_offset: Int32,
-    shared_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
-    ],
-    *,
-    scalar_offset: Int32 = 0,
-):
-    """Loads data from global memory and stores to shared memory.
-
-    Copies from global memory to shared memory (aka LDS) bypassing storing to
-    register.
-
-    Parameters:
-        dtype: The dtype of the data to be loaded.
-        width: The SIMD vector width.
-        cache_policy: Cache operation policy controlling cache behavior at all levels.
-
-    Args:
-        src_resource: Buffer resource descriptor from make_buffer_resource.
-        vector_offset: Vector memory offset in elements (per thread).
-        shared_ptr: Shared memory address.
-        scalar_offset: Scalar memory offset in elements (shared across wave).
-    """
-    constrained[
-        is_amd_gpu(),
-        "The buffer_load_lds function is only applicable on AMDGPU hardware.",
-    ]()
-
-    alias bytes = size_of[dtype]() * width
-    alias aux = _cache_operation_to_amd_aux[cache_policy]()
-
-    var vector_offset_bytes = vector_offset * size_of[dtype]()
-    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
-
-    llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
-    ](
-        src_resource,
-        shared_ptr,
-        Int32(bytes),
-        vector_offset_bytes,
-        scalar_offset_bytes,
-        Int32(0),
-        aux,
-    )
-
-
-@always_inline
-fn buffer_store[
-    dtype: DType,
-    width: Int,
-    *,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    dst_resource: _buffer_resource,
-    vector_offset: Int32,
-    val: SIMD[dtype, width],
-    *,
-    scalar_offset: Int32 = 0,
-):
-    """Stores a register variable to global memory with cache operation control.
-
-    Writes to global memory from a register with high-level cache control.
-
-    Parameters:
-        dtype: The data type.
-        width: The SIMD vector width.
-        cache_policy: Cache operation policy controlling cache behavior at all levels.
-
-    Args:
-        dst_resource: Buffer resource descriptor.
-        vector_offset: Vector memory offset in elements (per thread).
-        val: Value to write.
-        scalar_offset: Scalar memory offset in elements (shared across wave).
-
-    Note:
-        - Only supported on AMD GPUs.
-        - Provides high-level cache control via CacheOperation enum values.
-        - Maps directly to llvm.amdgcn.raw.buffer.store intrinsics.
-        - Cache control bits:
-          - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
-          - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
-    """
-    constrained[
-        is_amd_gpu(),
-        "The buffer_store function is only applicable on AMDGPU hardware.",
-    ]()
-
-    alias bytes = width * size_of[dtype]()
-    alias aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
-
-    var vector_offset_bytes = vector_offset * size_of[dtype]()
-    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
-
-    var store_val = bitcast[
-        _get_buffer_intrinsic_simd_dtype[bytes](),
-        _get_buffer_intrinsic_simd_width[bytes](),
-    ](val)
-
-    llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
-    ](store_val, dst_resource, vector_offset_bytes, scalar_offset_bytes, aux)
 
 
 # ===-----------------------------------------------------------------------===#

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from linalg.matmul_dispatch_sm90 import llama_8b_fp8_table, llama_405b_fp8_table
+from linalg.matmul_dispatch.sm90 import llama_8b_fp8_table, llama_405b_fp8_table
 
 
 fn main() raises:

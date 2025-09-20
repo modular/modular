@@ -36,7 +36,7 @@ from layout.tensor_core import TensorCore
 from math import ceildiv
 from runtime.asyncrt import DeviceContextPtr
 from sys.info import (
-    has_nvidia_gpu_accelerator,
+    has_accelerator,
     has_amd_gpu_accelerator,
     simd_width_of,
 )
@@ -990,7 +990,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
             elif algorithm == "tensor_core":
 
                 @parameter
-                if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                if has_accelerator():
                     alias BM = 64
                     alias BN = 64
                     alias BK = OPTIMIZED_BLOCK_SIZE

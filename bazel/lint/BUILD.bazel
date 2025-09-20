@@ -50,6 +50,21 @@ js_binary(
     entry_point = ":entry_point",
 )
 
+directory_path(
+    name = "datadog_ci_entry_point",
+    directory = ":node_modules/@datadog/datadog-ci/dir",
+    path = "dist/cli.js",
+)
+
+js_binary(
+    name = "datadog-ci",
+    data = [
+        ":node_modules/@datadog/datadog-ci",
+    ],
+    entry_point = ":datadog_ci_entry_point",
+    visibility = ["//visibility:public"],
+)
+
 sh_binary(
     name = "markdownlint-wrapper",
     srcs = ["markdownlint-wrapper.sh"],

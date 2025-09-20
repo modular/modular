@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import exp2
 from os import abort
 from random import rand, randn
-from sys import argv, simd_width_of
+from sys import argv, simd_width_of, align_of
 
 import benchmark
 from algorithm.functional import elementwise
@@ -82,7 +82,7 @@ fn multistage_gemm_simple[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c,
         a,
         b,

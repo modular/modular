@@ -22,7 +22,7 @@ def test_is_negative():
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
     )
     alias widths = (1, 2, 4, 8)
 
@@ -47,7 +47,7 @@ def test_splat():
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
         DType.uint8,
         DType.uint16,
         DType.uint32,
@@ -73,7 +73,7 @@ def test_compare():
         DType.int16,
         DType.int32,
         DType.int64,
-        DType.index,
+        DType.int,
     )
     alias widths = (1, 2, 4, 8)
 

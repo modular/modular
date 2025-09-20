@@ -25,26 +25,30 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Callable
 
 import uvloop
-from max.interfaces import (
-    BaseContext,
-    PipelinesFactory,
-    PipelineTask,
-    RequestID,
-)
-from max.pipelines.core import get_request_payload_from_pipeline_task
-from max.pipelines.lib import PipelineConfig
+from max.interfaces import Pipeline, PipelinesFactory
+from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
+from max.serve.exceptions import detect_and_wrap_cuda_oom
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
-from max.serve.scheduler import create_zmq_push_pull_queues, load_scheduler
+from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress, sleep_with_backoff
-from max.serve.scheduler.queues import EngineQueue
+from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
 logger = logging.getLogger("max.serve")
+
+
+def get_pipeline_model(
+    pipeline: Pipeline[Any, Any],
+) -> PipelineModel[Any] | None:
+    if pipeline.__class__.__name__ == "AudioGeneratorPipeline":
+        return pipeline.speech_lm_pipeline._pipeline_model  # type: ignore
+    else:
+        return getattr(pipeline, "_pipeline_model", None)
 
 
 def _set_pdeathsig(pdeathsig: int) -> None:
@@ -100,6 +104,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
+        scheduler_zmq_configs: SchedulerZmqConfigs,
     ) -> None:
         """Runs a model worker process.
 
@@ -130,7 +135,16 @@ class ModelWorker:
                 pipeline,
                 pipeline_config,
                 settings,
+                scheduler_zmq_configs,
             )
+
+            # Maybe retrieve LoRA manager.
+            lora_manager = None
+            pipeline_model = get_pipeline_model(pipeline)
+            if pipeline_config.lora_config:
+                assert pipeline_model is not None
+                lora_manager = pipeline_model.lora_manager
+                assert lora_manager is not None
 
             # Mark the start of the process, and run the scheduler.
             pc.set_started()
@@ -140,6 +154,9 @@ class ModelWorker:
             while not pc.is_canceled():
                 pc.beat()
                 try:
+                    # Checks for new LoRA requests and processes them.
+                    if lora_manager is not None:
+                        lora_manager.process_lora_requests()
                     # This method must terminate in a reasonable amount of time
                     # so that the ProcessMonitor heartbeat is periodically run.
                     progress = scheduler.run_iteration()
@@ -149,8 +166,14 @@ class ModelWorker:
                     else:
                         count_no_progress = 0
                 except Exception as e:
-                    logger.exception("An error occurred during scheduling")
-                    raise e
+                    wrapped_error = detect_and_wrap_cuda_oom(e)
+                    if wrapped_error is not e:
+                        # It was a CUDA OOM error, raise the wrapped version with helpful message
+                        raise wrapped_error from e
+                    else:
+                        # Not OOM, handle normally
+                        logger.exception("An error occurred during scheduling")
+                        raise e
 
         logger.debug("Stopped model worker!")
 
@@ -164,6 +187,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
+        scheduler_zmq_configs: SchedulerZmqConfigs,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -187,6 +211,7 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
+                    scheduler_zmq_configs,
                 )
             )
         except KeyboardInterrupt:
@@ -203,8 +228,8 @@ async def start_model_worker(
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
-    pipeline_task: PipelineTask,
-) -> AsyncGenerator[EngineQueue[BaseContext, Any], None]:
+    scheduler_zmq_configs: SchedulerZmqConfigs,
+) -> AsyncGenerator[ProcessMonitor, None]:
     """Starts a model worker and associated process.
 
     Args:
@@ -212,7 +237,6 @@ async def start_model_worker(
         pipeline_config: The config for the pipeline
         settings: Global server settings
         metric_client: Metric client for recording metrics
-        pipeline_task: The task for the pipeline
 
     Returns:
         AsyncIterator[Worker]: Iterator to model worker.
@@ -227,28 +251,6 @@ async def start_model_worker(
         mp_context, "model-worker", health_fail_s=settings.mw_health_fail_s
     )
 
-    # Create Queues
-    request_push_queue, _ = create_zmq_push_pull_queues(
-        endpoint=settings.request_zmq_endpoint,
-        payload_type=get_request_payload_from_pipeline_task(pipeline_task),
-        use_pickle=False,
-        lazy=True,
-    )
-
-    _, response_pull_queue = create_zmq_push_pull_queues(
-        endpoint=settings.response_zmq_endpoint,
-        payload_type=pipeline_task.output_type,
-        use_pickle=False,
-        lazy=True,
-    )
-
-    cancel_push_queue, _ = create_zmq_push_pull_queues(
-        endpoint=settings.cancel_zmq_endpoint,
-        payload_type=list[RequestID],
-        use_pickle=False,
-        lazy=True,
-    )
-
     logger.debug("Starting worker: %s", worker_name)
     worker = mp_context.Process(
         name=worker_name,
@@ -260,6 +262,7 @@ async def start_model_worker(
             pipeline_config,
             settings,
             metric_client.cross_process_factory(settings),
+            scheduler_zmq_configs,
         ),
     )
     worker.start()
@@ -270,13 +273,6 @@ async def start_model_worker(
         max_time_s=settings.mw_timeout_s,
         unhealthy_poll_s=200e-3,
         use_heartbeat=settings.use_heartbeat,
-    )
-
-    engine_queue: EngineQueue[BaseContext, Any] = EngineQueue[BaseContext, Any](
-        worker_monitor=monitor,
-        request_queue=request_push_queue,
-        response_queue=response_pull_queue,
-        cancel_queue=cancel_push_queue,
     )
 
     # before progressing, observe the worker process to be healthy or dead
@@ -334,7 +330,7 @@ async def start_model_worker(
             worker_task = asyncio.create_task(monitor.shutdown_if_unhealthy())
         else:
             worker_task = asyncio.create_task(monitor.shutdown_if_dead())
-        yield engine_queue
+        yield monitor
     finally:
         worker_task.cancel()
         await monitor.shutdown()

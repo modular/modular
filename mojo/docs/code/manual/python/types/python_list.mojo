@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# start-python-list-example
 from python import Python
 
 
@@ -21,3 +22,4 @@ def main():
     py_list.append(5)
     py_list[0] = "aardvark"
     print(py_list)
+    # end-python-list-example

@@ -35,7 +35,7 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
-from max.serve.kvcache_agent.dispatcher_v2 import ClientIdentity
+from max.serve.queue.zmq_queue import ClientIdentity
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
 from max.serve.scheduler.text_batch_constructor import (
@@ -45,7 +45,7 @@ from max.serve.scheduler.text_batch_constructor import (
 )
 
 from .base import SchedulerProgress
-from .utils import SchedulerLogger, maybe_restore_chunked_request
+from .utils import SchedulerLogger, add_newly_encoded_reqs_to_tg_batch
 
 logger = logging.getLogger("max.serve")
 
@@ -54,11 +54,11 @@ class PrefillScheduler(Scheduler):
     def __init__(
         self,
         pipeline: Pipeline[
-            TextGenerationInputs[TextContext | TextAndVisionContext],
+            TextGenerationInputs[TextContext],
             TextGenerationOutput,
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_cache: PagedKVCacheManager[TextContext | TextAndVisionContext],
+        paged_cache: PagedKVCacheManager[TextContext],
         dispatcher: PrefillDispatcherServerV2,
     ) -> None:
         self.pipeline = pipeline
@@ -156,18 +156,18 @@ class PrefillScheduler(Scheduler):
         """
         # Execute the Batch
         assert sch_output.batch_size > 0
-        batch = sch_output.batch_inputs
-        inputs = TextGenerationInputs(batches=[batch], num_steps=1)
+        batches = sch_output.inputs.batches
+        inputs = TextGenerationInputs(batches=batches, num_steps=1)
         responses = self.pipeline.execute(inputs)
 
-        maybe_restore_chunked_request(
-            batch,
+        add_newly_encoded_reqs_to_tg_batch(
+            inputs.batch,
             responses,
-            self.batch_constructor.ce_reqs,
+            self.batch_constructor,
         )
 
-        # Send completed requests to decode queue.
-        for req_id, context in batch.items():
+        # Send fully encoded requests to decode queue.
+        for req_id, context in self.batch_constructor.tg_reqs.items():
             identity, transfer_engine_name, dst_idxs = (
                 self.request_id_to_reply_context.pop(req_id)
             )
@@ -187,9 +187,6 @@ class PrefillScheduler(Scheduler):
                 context.request_id,
             )
             assert len(src_idxs) == len(dst_idxs)
-
-            # Bump this back, so the token is returned.
-            context._completion_start_idx -= 1
 
             # Transfer only the blocks that are not already on decode node.
             num_already_cached_blocks = dst_idxs.count(-1)
@@ -218,11 +215,14 @@ class PrefillScheduler(Scheduler):
             self.dispatcher.send_reply_nowait(
                 PrefillResponse(
                     id=req_id,
-                    context=context,
+                    generated_token_id=context.last_generated_token,
                     transfer_metadata=xfer_data,
                 ),
                 identity,
             )
+
+        # Remove all TG requests from the batch constructor.
+        self.batch_constructor.tg_reqs.clear()
 
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes prefill requests.
@@ -285,7 +285,7 @@ class PrefillScheduler(Scheduler):
 
 def load_prefill_scheduler(
     pipeline: Pipeline[
-        TextGenerationInputs[TextContext | TextAndVisionContext],
+        TextGenerationInputs[TextContext],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,

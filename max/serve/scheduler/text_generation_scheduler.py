@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Union
 
 from max.interfaces import (
     MAXPullQueue,
@@ -28,7 +27,7 @@ from max.interfaces import (
     drain_queue,
 )
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer
@@ -42,7 +41,7 @@ from .text_batch_constructor import (
 )
 from .utils import (
     SchedulerLogger,
-    maybe_restore_chunked_request,
+    add_newly_encoded_reqs_to_tg_batch,
     release_cancelled_requests,
     release_terminated_requests,
 )
@@ -55,13 +54,11 @@ class TokenGenerationScheduler(Scheduler):
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: Pipeline[
-            TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+            TextGenerationInputs[TextContext],
             TextGenerationOutput,
         ],
         *,
-        request_queue: MAXPullQueue[
-            tuple[RequestID, Union[TextContext, TextAndVisionContext]]
-        ],
+        request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
@@ -137,32 +134,28 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, sch_output: SchedulerOutput) -> None:
         assert sch_output.batch_size > 0
-        batch_to_execute = sch_output.batch_inputs
 
         # TODO(E2EOPT-399): Add proper data parallelism support. Currently
         # this naively splits the batch onto different devices.
         batches = split_by_replica_idx(
-            batch_to_execute,
+            sch_output.inputs.batch,
             self.scheduler_config.data_parallel_degree,
             self.batch_constructor.paged_cache,
         )
 
+        sch_output.inputs.batches = batches
+
         # execute the batch
-        responses = self.pipeline.execute(
-            TextGenerationInputs(
-                batches=batches, num_steps=sch_output.num_steps
+        responses = self.pipeline.execute(sch_output.inputs)
+
+        # Process each batch (usually just one unless using data parallelism)
+        for executed_batch in sch_output.inputs.batches:
+            # If there is a chunked request, we put it back into the request queue
+            add_newly_encoded_reqs_to_tg_batch(
+                executed_batch,
+                responses,
+                self.batch_constructor,
             )
-        )
-
-        # If there is a chunked request, we put it back into the request queue
-        maybe_restore_chunked_request(
-            batch_to_execute,
-            responses,
-            self.batch_constructor.ce_reqs,
-        )
-
-        # add the encoded requests to the continuous batch
-        self.batch_constructor.tg_reqs |= batch_to_execute
 
         # remove terminated requests from the batch
         release_terminated_requests(
@@ -184,13 +177,11 @@ class TokenGenerationScheduler(Scheduler):
 
 def load_text_generation_scheduler(
     pipeline: Pipeline[
-        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationInputs[TextContext],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[
-        tuple[RequestID, Union[TextContext, TextAndVisionContext]]
-    ],
+    request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],

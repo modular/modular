@@ -40,8 +40,7 @@ from utils import Variant
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
 struct _NoneType(ImplicitlyCopyable, Movable):
-    fn __copyinit__(out self, other: Self):
-        pass
+    pass
 
 
 # ===-----------------------------------------------------------------------===#

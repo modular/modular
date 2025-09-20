@@ -27,8 +27,11 @@ from gpu.host._tracing import _start_range as _start_gpu_range
 from gpu.host._tracing import Color
 from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
+import logger.logger as logger
 
 from utils import IndexList, Variant
+
+alias log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
 
 
 fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
@@ -289,10 +292,10 @@ fn _is_gpu_profiler_detailed_enabled[
 @always_inline
 fn _is_op_logging_enabled[level: TraceLevel]() -> Bool:
     @parameter
-    if not is_defined["MODULAR_ENABLE_OP_LOGGING"]():
+    if logger.DEFAULT_LEVEL == logger.Level.NOTSET:
         return False
 
-    return level == TraceLevel.OP
+    return level <= TraceLevel.OP
 
 
 @always_inline
@@ -318,11 +321,6 @@ fn _validate_single_tracing_enabled() -> Bool:
 
     # Check GPU profiling
     if _gpu_is_enabled():
-        enabled_count += 1
-
-    # Check op logging
-    @parameter
-    if is_defined["MODULAR_ENABLE_OP_LOGGING"]():
         enabled_count += 1
 
     return enabled_count <= 1
@@ -577,6 +575,14 @@ struct Trace[
         """
 
         @parameter
+        if _is_op_logging_enabled[level]():
+            # Since Mojo does not support module-level globals yet, we need to
+            # put this atomic counter variable in C++ code.
+            self.event_id = external_call["KGEN_CompilerRT_GetNextOpId", Int]()
+            self._emit_op_log("LAUNCH")
+            return
+
+        @parameter
         if _is_gpu_profiler_enabled[category, level]():
 
             @parameter
@@ -602,14 +608,6 @@ struct Trace[
                         color=self.color,
                     )
                 )
-            return
-
-        @parameter
-        if _is_op_logging_enabled[level]():
-            # Since Mojo does not support module-level globals yet, we need to
-            # put this atomic counter variable in C++ code.
-            self.event_id = external_call["KGEN_CompilerRT_GetNextOpId", Int]()
-            self._emit_op_log("LAUNCH")
             return
 
         @parameter
@@ -675,13 +673,13 @@ struct Trace[
         """
 
         @parameter
-        if _is_gpu_profiler_enabled[category, level]():
-            _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+        if _is_op_logging_enabled[level]():
+            self._emit_op_log("COMPLETE")
             return
 
         @parameter
-        if _is_op_logging_enabled[level]():
-            self._emit_op_log("COMPLETE")
+        if _is_gpu_profiler_enabled[category, level]():
+            _end_gpu_range(gpu_tracing.RangeID(self.event_id))
             return
 
         @parameter
@@ -764,17 +762,15 @@ struct Trace[
         var detail = self.detail
         if self.int_payload:
             detail += String(":", self.int_payload.value())
-        print(
-            "[OP] ",
+        log.info(
             op_name,
             " ",
             self.name(),
             " [id=",
-            String(self.event_id),
+            self.event_id,
             "] ",
             detail,
             sep="",
-            file=stderr,
         )
 
 

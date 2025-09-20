@@ -22,10 +22,11 @@ from collections.abc import Generator
 from typing import Any
 
 from max.interfaces import (
-    AudioGenerator,
-    AudioGeneratorOutput,
+    AudioGenerationInputs,
+    AudioGenerationOutput,
     MAXPullQueue,
     MAXPushQueue,
+    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
@@ -206,11 +207,14 @@ class AudioGenerationScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: AudioGenerationSchedulerConfig,
-        pipeline: AudioGenerator[TTSContext],
+        pipeline: Pipeline[
+            AudioGenerationInputs[TTSContext],
+            AudioGenerationOutput,
+        ],
         *,
         request_queue: MAXPullQueue[tuple[RequestID, TTSContext]],
         response_queue: MAXPushQueue[
-            dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
+            dict[RequestID, SchedulerResult[AudioGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager[TTSContext],
@@ -237,6 +241,8 @@ class AudioGenerationScheduler(Scheduler):
         self.batch_info_logger = SchedulerLogger(
             path=MAX_SERVE_TTS_BATCH_INFO_FILENAME
         )
+
+        self._prev_num_steps = 0
 
     def _retrieve_pending_requests(self) -> None:
         self.pending_reqs.extend(drain_queue(self.request_queue))
@@ -293,7 +299,14 @@ class AudioGenerationScheduler(Scheduler):
 
         # execute the batch
         with Tracer(f"_schedule({batch})"):
-            responses = self.pipeline.next_chunk(batch.reqs)
+            responses = self.pipeline.execute(
+                AudioGenerationInputs[TTSContext](batch=batch.reqs)
+            )
+
+            for response in responses.values():
+                if response.steps_executed:
+                    self._prev_num_steps = response.steps_executed
+                    break
 
         # add the encoded requests to the continuous batch
         self.decode_reqs.update(batch.reqs)
@@ -372,7 +385,7 @@ class AudioGenerationScheduler(Scheduler):
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
-        num_steps = self.pipeline.prev_num_steps
+        num_steps = self._prev_num_steps
         assert num_steps is not None and num_steps > 0
         self.batch_info_logger.log(
             batch,

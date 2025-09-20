@@ -254,6 +254,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
+            scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         ](
             c_buffer,
             a_buffer,

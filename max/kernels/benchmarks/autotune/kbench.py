@@ -121,7 +121,9 @@ def flatten(value: int | object | Iterable) -> list[Any]:
 
 
 # TODO: remove and replace directly with subprocess.run
-def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
+def _run_cmdline(
+    cmd: list[str], dryrun: bool = False, timeout: int | None = None
+) -> ProcessOutput:
     """Execute a shell command with error handling."""
     try:
         if dryrun:
@@ -130,7 +132,22 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
 
         # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
         env = os.environ.copy()
-        output = subprocess.run(cmd, check=False, capture_output=True, env=env)
+        if timeout is None:
+            output = subprocess.run(
+                cmd, check=False, capture_output=True, env=env
+            )
+        else:
+            try:
+                output = subprocess.run(
+                    cmd,
+                    check=False,
+                    capture_output=True,
+                    env=env,
+                    timeout=timeout,
+                )
+            except Exception as e:
+                return ProcessOutput(None, str(e), os.EX_OSERR)
+
         return ProcessOutput(
             output.stdout.decode("utf-8"),
             output.stderr.decode("utf-8"),
@@ -323,6 +340,7 @@ class SpecInstance:
         dryrun: bool = False,
         exec_prefix: list[str] = [],  # noqa: B006
         exec_suffix: list[str] = [],  # noqa: B006
+        timeout_secs: int | None = None,
     ) -> ProcessOutput:
         vars = self._get_vars
         cmd = []
@@ -333,7 +351,7 @@ class SpecInstance:
         if exec_suffix:
             cmd.extend(exec_suffix)
             logging.debug(f"exec-suffix: {exec_suffix}")
-        out = _run_cmdline(cmd, dryrun)
+        out = _run_cmdline(cmd, dryrun, timeout=timeout_secs)
         return out
 
     def to_obj(self) -> dict[str, Any]:
@@ -973,6 +991,7 @@ class Scheduler:
         profile,  # noqa: ANN001
         exec_prefix,  # noqa: ANN001
         exec_suffix,  # noqa: ANN001
+        timeout_secs: int | None = None,
     ) -> None:
         """Execute all the items in the scheduler"""
 
@@ -1003,6 +1022,7 @@ class Scheduler:
                 dryrun=build_item.dryrun,
                 exec_prefix=exec_prefix_item,
                 exec_suffix=exec_suffix_item,
+                timeout_secs=timeout_secs,
             )
             build_item.exec_output = exec_output
             build_item.exec_benchmark_time = time() - t_start
@@ -1235,6 +1255,7 @@ def run(
     verbose=False,  # noqa: ANN001
     output_dir=None,  # noqa: ANN001
     num_cpu=1,  # noqa: ANN001
+    timeout_secs: int | None = None,
 ) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -1314,6 +1335,8 @@ def run(
             # - could not find executable in the unique list of scheduled build items
             unique_build_paths = scheduler.build_all()
             scheduler.close_pool()
+            obj_cache.dump()
+
             t_build_total = time() - t_start_total
 
             if mode in [KBENCH_MODE.RUN, KBENCH_MODE.TUNE]:
@@ -1348,6 +1371,7 @@ def run(
                             profile=profile,
                             exec_prefix=exec_prefix,
                             exec_suffix=exec_suffix,
+                            timeout_secs=timeout_secs,
                         )
 
                         scheduler.progress.update(exec_progress, advance=1)
@@ -1467,6 +1491,16 @@ def set_build_opts(
     return build_opts
 
 
+def _validate_partition(partition: str) -> list[int]:
+    assert ":" in partition
+    partition_idx, num_partitions = [int(x) for x in partition.split(":")]
+    assert num_partitions > 0
+    assert 0 <= partition_idx < num_partitions, (
+        "Condition: 0 <= partition_idx < num_partitions"
+    )
+    return [partition_idx, num_partitions]
+
+
 help_str = "Benchmarking toolkit for Mojo kernels"
 
 
@@ -1531,7 +1565,18 @@ help_str = "Benchmarking toolkit for Mojo kernels"
 @click.option(
     "--target-accelerator",
     default=None,
-    help="Specify the mojo target accelerator.",
+    help="""\b
+    Specify the mojo target accelerator.
+    Allowed values for this option:
+    'cuda', 
+    'amdgpu:gfx942', 'amdgpu:gfx950',
+    'nvidia:sm_80', 'nvidia:sm_86',
+    'nvidia:sm_87', 'nvidia:sm_89',
+    'nvidia:sm_90', 'nvidia:sm_90a', 
+    'nvidia:sm_100', 'nvidia:sm_100a',
+    'nvidia:sm_120', 'nvidia:sm_120a', 
+    'nvidia:sm_94'
+    """,
 )
 @click.option(
     "--disable-warnings",
@@ -1599,6 +1644,23 @@ help_str = "Benchmarking toolkit for Mojo kernels"
     help="Any suffix options (treated as str and directly passed after binary.)",
     multiple=False,
 )
+@click.option(
+    "--timeout-secs",
+    default=None,
+    help="Timeout seconds for executing each binary. (default=None)",
+    multiple=False,
+    type=click.INT,
+)
+@click.option(
+    "--partition",
+    default="0:1",
+    help="Formatted as fraction 'm:n', divide the shapes "
+    "into n partitions and limit the space to m'th partition "
+    "(default='0:1' running everything). Note that it has no "
+    "effect on parameter set and is only applied to shapes.",
+    multiple=False,
+    type=click.STRING,
+)
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
     files,  # noqa: ANN001
@@ -1624,6 +1686,8 @@ def cli(
     profile,  # noqa: ANN001
     exec_prefix,  # noqa: ANN001
     exec_suffix,  # noqa: ANN001
+    timeout_secs: int,
+    partition: str,
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -1633,6 +1697,9 @@ def cli(
     mode = KBENCH_MODE.RUN
 
     assert (build == False) or (tune == False)
+
+    partition_idx, num_partitions = _validate_partition(partition)
+
     if build:
         mode = KBENCH_MODE.BUILD
     elif tune:
@@ -1655,7 +1722,7 @@ def cli(
         check_gpu_clock()
 
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
-    shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
+    shape_list = list(Spec.load_yaml_list(shapes) if shapes else Spec())
     shape_path_list = (
         [Path(sh.hash(with_variables=True)) for sh in shape_list]
         if shapes
@@ -1681,11 +1748,16 @@ def cli(
     exec_prefix = exec_prefix.split(" ") if exec_prefix else []
 
     files = FileGlobArg(files) if files else []
-    for i, shape in enumerate(shape_list):
+
+    shapes_per_partition = math.ceil(len(shape_list) / num_partitions)
+    shape_idx_lb = partition_idx * shapes_per_partition
+    shape_idx_ub = min(shape_idx_lb + shapes_per_partition, len(shape_list))
+
+    for i in range(shape_idx_lb, shape_idx_ub):
         run(
             yaml_path_list=files,
             obj_cache=obj_cache,
-            shape=shape,
+            shape=shape_list[i],
             output_path=shape_path_list[i],
             mode=mode,
             param_list=param,
@@ -1698,6 +1770,7 @@ def cli(
             verbose=verbose,
             output_dir=output_dir,
             num_cpu=num_cpu,
+            timeout_secs=timeout_secs,
         )
         if obj_cache.is_active:
             obj_cache.dump()

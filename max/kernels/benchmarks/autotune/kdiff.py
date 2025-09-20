@@ -98,7 +98,7 @@ def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):  # noqa: 
     while True:
         ref_branch_yaml = check_argo_workflow_exists(branch_sha)
         if not ref_branch_yaml:
-            print(f"could'nt find, check back in {timeout_secs} seconds")
+            print(f"couldn't find, check back in {timeout_secs} seconds")
             sleep(timeout_secs)
         else:
             break

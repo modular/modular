@@ -1438,17 +1438,18 @@ fn mha_single_batch[
     var warp_x = warp_id % num_warps_n
 
     # The entire query block (BM x depth) is tiled in shared memory.
+    alias alignment = align_of[SIMD[q_type, simd_size]]()
     alias q_smem_size = config.q_smem_size()
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[q_type, simd_size]](),
+        alignment=alignment,
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment2,
+        alignment=alignment,
     ](
         rebind[
             __type_of(
@@ -1457,7 +1458,7 @@ fn mha_single_batch[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment2,
+                    alignment=alignment,
                 ]().ptr
             )
         ](q_smem),
@@ -1534,7 +1535,7 @@ fn mha_single_batch[
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation[alignment=p_frag_align]()
+    ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -1543,7 +1544,7 @@ fn mha_single_batch[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation[alignment=p_frag_align]()
+        .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0)
     )
 
@@ -1563,14 +1564,15 @@ fn mha_single_batch[
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
             )
+            var sink_logit_log2 = (
+                sink_weights.value()[Int(head_idx)].cast[accum_type]() * log2e
+            )
             rowmax.store(
                 i,
-                SIMD[accum_type, 2](
-                    sink_weights.value()[Int(head_idx)].cast[accum_type]()
-                ),
+                SIMD[accum_type, 2](sink_logit_log2),
             )
             # exp(sink_val-sink_val) = exp(0) = 1
-            rowsum.store(i, SIMD[accum_type, 2](SIMD[accum_type, 2](1)))
+            rowsum.store(i, SIMD[accum_type, 2](1))
         else:
             rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
             rowsum.store(i, SIMD[accum_type, 2](0))
@@ -2151,17 +2153,18 @@ fn mha_single_batch_pipelined[
     var warp_x = warp_id % num_warps_n
 
     # The entire query block (BM x depth) is tiled in shared memory.
+    alias alignment = align_of[SIMD[q_type, simd_size]]()
     alias q_smem_size = config.q_smem_size()
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[q_type, simd_size]](),
+        alignment=alignment,
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment2,
+        alignment=alignment,
     ](
         rebind[
             __type_of(
@@ -2170,7 +2173,7 @@ fn mha_single_batch_pipelined[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment2,
+                    alignment=alignment,
                 ]().ptr
             )
         ](q_smem),
@@ -2238,7 +2241,7 @@ fn mha_single_batch_pipelined[
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation[alignment=p_frag_align]()
+    ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -2247,7 +2250,7 @@ fn mha_single_batch_pipelined[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation[alignment=p_frag_align]()
+        .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0)
     )
 
@@ -2267,11 +2270,12 @@ fn mha_single_batch_pipelined[
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
             )
+            var sink_logit_log2 = (
+                sink_weights.value()[Int(head_idx)].cast[accum_type]() * log2e
+            )
             rowmax.store(
                 i,
-                SIMD[accum_type, p_frag_simdwidth](
-                    sink_weights.value()[Int(head_idx)].cast[accum_type]()
-                ),
+                SIMD[accum_type, p_frag_simdwidth](sink_logit_log2),
             )
             # exp(sink_val-sink_val) = exp(0) = 1
             rowsum.store(i, SIMD[accum_type, p_frag_simdwidth](1))
@@ -3145,17 +3149,18 @@ fn mha_decoding_single_batch[
     var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
+    alias alignment = align_of[SIMD[q_type, simd_size]]()
     alias q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[q_type, simd_size]](),
+        alignment=alignment,
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment2,
+        alignment=alignment,
     ](
         rebind[
             __type_of(
@@ -3164,7 +3169,7 @@ fn mha_decoding_single_batch[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment2,
+                    alignment=alignment,
                 ]().ptr
             )
         ](q_smem),
@@ -3210,7 +3215,7 @@ fn mha_decoding_single_batch[
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation[alignment=p_frag_align]()
+    ].stack_allocation[stack_alignment=p_frag_align]()
 
     # Note that
     # num_warps_n * num_n_mmas == BN // WN * num_n_mmas
@@ -3225,7 +3230,7 @@ fn mha_decoding_single_batch[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation[alignment=p_frag_align]()
+        .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0.0)
     )
 
@@ -3244,9 +3249,11 @@ fn mha_decoding_single_batch[
                 "expect sink_weights to be non-null when sink=true",
             )
             if thread_idx.x < UInt(4 * group):
-                rowmax[i] = sink_weights.value()[Int(q_head_idx)].cast[
-                    accum_type
-                ]()
+                var sink_logit_log2 = (
+                    sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+                    * log2e
+                )
+                rowmax[i] = sink_logit_log2
                 if partition_idx == 0 and thread_idx.x % 4 == 0:
                     rowsum[i] = 1.0
                 else:
@@ -3653,11 +3660,10 @@ fn mha_decoding_single_batch[
     # Apply softmax denumerator.
     @parameter
     for m_mma in range(num_m_mmas):
-        var rowsum_inv = Scalar[accum_type](1.0)
 
         @parameter
         if m_mma * MMA_M < group:
-            rowsum_inv = recip(rowsum[2 * m_mma])
+            var rowsum_inv = Scalar[accum_type](recip(rowsum[2 * m_mma]))
 
             @parameter
             for n_mma in range(num_n_mmas):
@@ -3666,7 +3672,7 @@ fn mha_decoding_single_batch[
 
         @parameter
         if m_mma * MMA_M + MMA_M // 2 < group:
-            rowsum_inv = recip(rowsum[2 * m_mma + 1])
+            var rowsum_inv = Scalar[accum_type](recip(rowsum[2 * m_mma + 1]))
 
             @parameter
             for n_mma in range(num_n_mmas):
@@ -3818,17 +3824,18 @@ fn mha_decoding_single_batch_pipelined[
     warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
+    alias alignment = align_of[SIMD[q_type, simd_size]]()
     alias q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[q_type, simd_size]](),
+        alignment=alignment,
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment2,
+        alignment=alignment,
     ](
         rebind[
             __type_of(
@@ -3837,7 +3844,7 @@ fn mha_decoding_single_batch_pipelined[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment2,
+                    alignment=alignment,
                 ]().ptr
             )
         ](q_smem),
@@ -3875,7 +3882,7 @@ fn mha_decoding_single_batch_pipelined[
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation[alignment=p_frag_align]()
+    ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -3884,7 +3891,7 @@ fn mha_decoding_single_batch_pipelined[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation[alignment=p_frag_align]()
+        .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0.0)
     )
 
@@ -3909,9 +3916,11 @@ fn mha_decoding_single_batch_pipelined[
                 "expect sink_weights to be non-null when sink=true",
             )
             if thread_idx.x < UInt(4 * group):
-                rowmax[i] = sink_weights.value()[Int(q_head_idx)].cast[
-                    accum_type
-                ]()
+                var sink_logit_log2 = (
+                    sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+                    * log2e
+                )
+                rowmax[i] = sink_logit_log2
                 if partition_idx == 0 and thread_idx.x % 4 == 0:
                     rowsum[i] = 1.0
                 else:
@@ -4834,27 +4843,21 @@ fn _naive_attention_with_transpose[
     )
 
     # BSHD -> BHSD
-    var q_perm = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, 4
-    ].stack_allocation()
+    var q_perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 4].stack_allocation()
     q_perm[0] = 0
     q_perm[1] = 2
     q_perm[2] = 1
     q_perm[3] = 3
 
     # BSHD -> BHDS
-    var k_perm = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, 4
-    ].stack_allocation()
+    var k_perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 4].stack_allocation()
     k_perm[0] = 0
     k_perm[1] = 2
     k_perm[2] = 3
     k_perm[3] = 1
 
     # BHSD -> BSHD
-    var o_perm = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, 4
-    ].stack_allocation()
+    var o_perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 4].stack_allocation()
     o_perm[0] = 0
     o_perm[1] = 2
     o_perm[2] = 1

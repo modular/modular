@@ -37,7 +37,7 @@ pip install modular
 ```
 
 ```sh
-max serve --model-path=modularai/Llama-3.1-8B-Instruct-GGUF
+max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
 ```
 
 Then start sending the Llama 3 model inference requests using [our
@@ -63,7 +63,7 @@ docker run --gpus=1 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -p 8000:8000 \
     docker.modular.com/modular/max-nvidia-full:latest \
-    --model-path modularai/Llama-3.1-8B-Instruct-GGUF
+    --model modularai/Llama-3.1-8B-Instruct-GGUF
 ```
 
 For more information, see our [MAX container

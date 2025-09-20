@@ -24,9 +24,9 @@ from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
 from linalg.accumulate import _Accumulator
 from linalg.matmul import elementwise_epilogue_type
-from linalg.neon_intrinsics import _neon_dotprod_lane
+from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
 from linalg.utils import partition_work
-from linalg.vnni_intrinsics import (
+from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
@@ -400,15 +400,10 @@ fn _pack_block_Q4_K[
     block_n: Int,
     src_origin: MutableOrigin,
     dst_origin: MutableOrigin,
-    alignment: Int,
 ](
-    var src_ptr: UnsafePointer[
-        _block_Q4_K, origin=src_origin, alignment2=alignment
-    ],
+    var src_ptr: UnsafePointer[_block_Q4_K, origin=src_origin],
     stride: Int,
-    mut dst_ptr: UnsafePointer[
-        _block_Q4_K_packed[block_n], origin=dst_origin, alignment2=alignment
-    ],
+    mut dst_ptr: UnsafePointer[_block_Q4_K_packed[block_n], origin=dst_origin],
 ):
     alias group_size = _block_Q4_K.group_size
     alias group_count = _block_Q4_K.group_count
@@ -526,15 +521,10 @@ fn _pack_block_Q6_K[
     block_n: Int,
     src_origin: MutableOrigin,
     dst_origin: MutableOrigin,
-    alignment: Int,
 ](
-    var src_ptr: UnsafePointer[
-        _block_Q6_K, origin=src_origin, alignment2=alignment
-    ],
+    var src_ptr: UnsafePointer[_block_Q6_K, origin=src_origin],
     stride: Int,
-    mut dst_ptr: UnsafePointer[
-        _block_Q6_K_packed[block_n], origin=dst_origin, alignment2=alignment
-    ],
+    mut dst_ptr: UnsafePointer[_block_Q6_K_packed[block_n], origin=dst_origin],
 ):
     alias group_count = _block_Q6_K.group_count
 
@@ -1159,7 +1149,11 @@ fn _matmul_Q4_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .origin_cast[True, MutableAnyOrigin]()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1195,7 +1189,7 @@ fn _matmul_Q4_K_columns[
     @__copy_capture(b_tile_ptr, b_q_scales_and_mins_buf, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits
+        var b_q_bits_ptr = b_q_bits.origin_cast[True, MutableAnyOrigin]()
 
         @parameter
         fn matmul_group_unpacked(
@@ -1401,7 +1395,11 @@ fn _matmul_Q6_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr = b_tile_ptr[].q_bits.bits.unsafe_ptr()
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .origin_cast[True, MutableAnyOrigin]()
+        )
 
         @parameter
         fn matmul_group_packed(
@@ -1429,7 +1427,7 @@ fn _matmul_Q6_K_columns[
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     fn process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits
+        var b_q_bits_ptr = b_q_bits.origin_cast[True, MutableAnyOrigin]()
 
         @parameter
         fn matmul_group_unpacked(

@@ -11,12 +11,12 @@ modular_py_library(
     ],
     imports = ["../../.."],
     deps = [
+        requirement("grpcio"),  # NOTE: Order matters for PYTHONPATH nonsense
         ":kvcache_agent_service_v1_grpc_py",
         ":kvcache_agent_service_v1_py",
         "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/serve:process_control",
         "//SDK/lib/API/python/max/serve/queue",
-        requirement("grpcio"),
         requirement("pyzmq"),
         requirement("msgspec"),
     ],

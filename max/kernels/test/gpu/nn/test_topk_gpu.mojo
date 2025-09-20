@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, iota
 from random import random_float64
-
+from gpu import WARP_SIZE
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -55,7 +55,7 @@ fn test_case_batched[
     fill_fn: fn[rank: Int, dtype: DType] (
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
-    out_idx_type: DType = DType.index,
+    out_idx_type: DType = DType.int,
     rank: Int = 2,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     # Fetch arguments
@@ -88,9 +88,9 @@ fn test_case_batched[
         DimList(batch_size, out_idx_len), ctx=ctx
     )
 
-    var num_blocks_per_input_: Int = ceildiv(
-        N, block_size
-    ) if not num_blocks_per_input else num_blocks_per_input.value()
+    var block_dim_stage1 = ceildiv(min(1024, N), WARP_SIZE) * WARP_SIZE
+    # TODO: Note: This overrides test_case.num_blocks_per_input
+    var num_blocks_per_input_: Int = ceildiv(N, block_dim_stage1)
     var device_local_topk_vals = DeviceNDBuffer[dtype, rank](
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
@@ -295,7 +295,7 @@ fn test_case_multi_rank[
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     rank: Int,
-    out_idx_type: DType = DType.index,
+    out_idx_type: DType = DType.int,
 ](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, *_]) raises:
     # Fetch arguments
     var input_shape = test_case.input_shape
@@ -853,6 +853,24 @@ fn main() raises:
         )
         print_test_case(test_case20)
         test_case_batched[dtype, fill_constant](ctx, test_case20)
+
+        alias test_case_21 = TestCase[_sampling=False](
+            N=llama3_vocab_size,
+            K=75,
+            block_size=1024,
+            batch_size=2,
+        )
+        print_test_case(test_case_21)
+        test_case_batched[DType.float32, fill_random](ctx, test_case_21)
+
+        alias test_case_22 = TestCase[_sampling=False](
+            N=50,
+            K=25,
+            block_size=1024,
+            batch_size=1,
+        )
+        print_test_case(test_case_22)
+        test_case_batched[DType.float32, fill_random](ctx, test_case_22)
 
         # Run minimum top-k tests
         test_min_topk[dtype](ctx)

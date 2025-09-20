@@ -6,7 +6,10 @@ load("//bazel:api.bzl", "mojo_test")
         size = "large",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = [
+            "//:amd_gpu",
+            "//:nvidia_gpu",
+        ],  # FIXME: PRDT-506
         deps = [
             "@mojo//:stdlib",
         ],

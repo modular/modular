@@ -206,16 +206,11 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
         Returns:
             The current amount of references to the pointee.
         """
-        # TODO: this should use `load[MONOTONIC]()` once load supports memory
-        # orderings.
-        #
         # MONOTONIC is okay here - reading refcount simply needs to be atomic.
         # No synchronization is needed as this is not attempting to free the
         # shared data and it is not possible for the data to be freed until
         # this ArcPointer is destroyed.
-        return self._inner[].refcount.fetch_sub[
-            ordering = Consistency.MONOTONIC
-        ](0)
+        return self._inner[].refcount.load[ordering = Consistency.MONOTONIC]()
 
     fn steal_data(deinit self) -> UnsafePointer[T]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.

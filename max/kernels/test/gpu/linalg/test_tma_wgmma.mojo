@@ -14,6 +14,7 @@
 from math import ceildiv
 from sys import size_of
 
+from buffer import NDBuffer
 from gpu import barrier
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
@@ -358,9 +359,13 @@ def test_tma_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
+        rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+            a.device_buffer[update=False]()
+        ),
+        rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+            b.device_buffer[update=False]()
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

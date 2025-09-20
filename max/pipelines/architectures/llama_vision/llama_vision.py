@@ -44,7 +44,6 @@ from max.nn.kv_cache import (
     KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
-    PaddedKVCacheInputs,
     PagedKVCacheManager,
     RaggedKVCacheInputs,
     build_max_lengths_tensor,
@@ -187,7 +186,6 @@ class MultimodalKVCacheManager(KVCacheManager[InputContext]):
             text_num_layers,
             devices,
             session,
-            is_ragged=True,
         )
 
     @classmethod
@@ -426,9 +424,9 @@ class MultimodalKVCacheManager(KVCacheManager[InputContext]):
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: list[RaggedKVCacheInputs] | list[PaddedKVCacheInputs],
+        kv_cache_inputs: list[RaggedKVCacheInputs],
         prev_model_inputs: Iterable[Any],
-    ) -> list[RaggedKVCacheInputs] | list[PaddedKVCacheInputs]:
+    ) -> list[RaggedKVCacheInputs]:
         """Updates the cache lengths for multistep execution.
 
         This increments the text and vision KV cache lengths separately using

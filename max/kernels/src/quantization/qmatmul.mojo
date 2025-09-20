@@ -19,9 +19,13 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
 from linalg.matmul import elementwise_epilogue_type
-from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
+from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work
-from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
+from linalg.arch.cpu.vnni_intrinsics import (
+    dot_i8_to_i32_saturated_x86,
+    pmaddubs,
+    pmaddw,
+)
 from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 
@@ -1210,16 +1214,14 @@ fn _matmul_qint4[
     alias alignment = align_of[SIMD[DType.float32, simd_width]]()
 
     var M = a.dim[0]()
-    var N = b.dim[0]()
     var K = a.dim[1]()
     var k_groups = K // group_size
 
     alias aq_type = kernel.aq_type()
 
-    var a_quant_base_ptr = UnsafePointer[
-        Scalar[aq_type],
-        alignment2=alignment,
-    ].alloc(M * K)
+    var a_quant_base_ptr = UnsafePointer[Scalar[aq_type]].alloc(
+        M * K, alignment=alignment
+    )
     var a_scale_base_ptr = UnsafePointer[Float32].alloc(M * k_groups)
 
     var a_quant = NDBuffer[aq_type, 2](a_quant_base_ptr, Index(M, K))

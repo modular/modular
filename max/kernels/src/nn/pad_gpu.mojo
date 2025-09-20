@@ -46,7 +46,7 @@ fn _fill_strides_indexlist[
     rank: Int,
 ](
     input_shape: IndexList[rank],
-    strides: LayoutTensor[mut=True, DType.index, Layout(rank)],
+    strides: LayoutTensor[mut=True, DType.int, Layout(rank)],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -202,8 +202,8 @@ fn _pad_constant_axis[
     input: UnsafePointer[Scalar[dtype]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
     ctx: DeviceContext,
 ) raises:
@@ -245,8 +245,8 @@ fn _pad_constant_impl[
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     ctx: DeviceContext,
 ) raises:
     """
@@ -338,8 +338,8 @@ fn pad_constant[
         input: UnsafePointer[Scalar[dtype]],
         paddings: UnsafePointer[Scalar[padding_type]],
         output_shape: IndexList[rank],
-        output_strides: UnsafePointer[Scalar[DType.index]],
-        input_strides: UnsafePointer[Scalar[DType.index]],
+        output_strides: UnsafePointer[Scalar[DType.int]],
+        input_strides: UnsafePointer[Scalar[DType.int]],
         ctx: DeviceContext,
     ) raises:
         return _pad_constant_impl[rank, dtype](
@@ -354,10 +354,10 @@ fn pad_constant[
         )
 
     var input_strides_buf = LayoutTensor[
-        DType.index, Layout(rank), MutableAnyOrigin
+        DType.int, Layout(rank), MutableAnyOrigin
     ].stack_allocation()
     var output_strides_buf = LayoutTensor[
-        DType.index, Layout(rank), MutableAnyOrigin
+        DType.int, Layout(rank), MutableAnyOrigin
     ].stack_allocation()
     _fill_strides_indexlist[rank](input_shape, input_strides_buf)
     _fill_strides_indexlist[rank](output_shape, output_strides_buf)
@@ -377,7 +377,7 @@ fn get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: LayoutTensor[DType.index, Layout(2 * rank)],
+    paddings: LayoutTensor[DType.int, Layout(2 * rank)],
 ) -> IndexList[rank]:
     var output_shape = IndexList[rank]()
     for i in range(rank):

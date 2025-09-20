@@ -57,7 +57,7 @@ struct _DictEntryIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable, Iterable, Iterator, Movable):
     """Iterator over immutable DictEntry references.
 
     Parameters:
@@ -69,6 +69,9 @@ struct _DictEntryIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias Element = DictEntry[K, V, H]
 
     var index: Int
@@ -82,7 +85,7 @@ struct _DictEntryIter[
         self.seen = seen
         self.src = Pointer(to=dict)
 
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -90,7 +93,11 @@ struct _DictEntryIter[
         return self.seen < len(self.src[])
 
     @always_inline
-    fn __next__(
+    fn __next__(mut self) -> Self.Element:
+        return self.__next_ref__().copy()
+
+    @always_inline
+    fn __next_ref__(
         mut self,
     ) -> ref [self.src[]._entries[0].value()] Self.Element:
         while True:
@@ -106,6 +113,63 @@ struct _DictEntryIter[
                 self.seen += 1
                 return opt_entry_ref.value()
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self.src[]) - self.seen
+        return (len, {len})
+
+
+@fieldwise_init
+struct _TakeDictEntryIter[
+    K: KeyElement, V: Copyable & Movable, H: Hasher, origin: Origin[True]
+](Copyable, Iterable, Iterator, Movable):
+    """Iterator over mutable DictEntry references that moves entries out of the dictionary.
+
+    Parameters:
+        K: The key type of the elements in the dictionary.
+        V: The value type of the elements in the dictionary.
+        H: The type of the hasher in the dictionary.
+        origin: The mutable origin of the Dict
+    """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    alias Element = DictEntry[K, V, H]
+
+    var index: Int
+    var src: Pointer[Dict[K, V, H], origin]
+
+    fn __init__(out self, ref [origin]dict: Dict[K, V, H]):
+        self.index = 0
+        self.src = Pointer(to=dict)
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return len(self.src[]) > 0
+
+    @always_inline
+    fn __next__(
+        mut self,
+    ) -> Self.Element:
+        while True:
+            ref opt_entry_ref = self.src[]._entries[self.index]
+            self.index += 1
+
+            if opt_entry_ref:
+                ref key = opt_entry_ref.unsafe_value().key
+                var hash = hash[HasherType=H](key)
+                var (found, slot, index) = self.src[]._find_index(hash, key)
+                debug_assert(found, "entry should exist")
+
+                # Safety: We just checked the validity of the entry with the
+                # given key/hash.
+                return self.src[]._unsafe_take_entry(slot, index)
+
 
 @fieldwise_init
 struct _DictKeyIter[
@@ -115,7 +179,7 @@ struct _DictKeyIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](Copyable, ImplicitlyCopyable, Iterable, Iterator, Movable):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -127,25 +191,35 @@ struct _DictKeyIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias dict_entry_iter = _DictEntryIter[K, V, H, origin, forward]
     alias Element = K
 
     var iter: Self.dict_entry_iter
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.iter.__has_next__()
 
-    fn __next_ref__(mut self) -> ref [self.iter.__next__().key] Self.Element:
-        return self.iter.__next__().key
+    @always_inline
+    fn __next_ref__(
+        mut self,
+    ) -> ref [self.iter.__next_ref__().key] Self.Element:
+        return self.iter.__next_ref__().key
 
     @always_inline
     fn __next__(mut self) -> Self.Element:
         return self.__next_ref__().copy()
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self.iter.bounds()
 
 
 @fieldwise_init
@@ -156,7 +230,7 @@ struct _DictValueIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator, Movable):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 
@@ -169,10 +243,13 @@ struct _DictValueIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     var iter: _DictEntryIter[K, V, H, origin, forward]
     alias Element = V
 
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     fn __reversed__(self) -> _DictValueIter[K, V, H, origin, False]:
@@ -188,16 +265,20 @@ struct _DictValueIter[
         return self.iter.__has_next__()
 
     fn __next_ref__(mut self) -> ref [origin] Self.Element:
-        ref entry_ref = self.iter.__next__()
+        ref entry_ref = self.iter.__next_ref__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
         return UnsafePointer(to=entry_ref.value).origin_cast[
-            target_origin=origin
+            target_origin = MutableOrigin.cast_from[origin]
         ]()[]
 
     @always_inline
     fn __next__(mut self) -> Self.Element:
         return self.__next_ref__().copy()
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self.iter.bounds()
 
 
 @fieldwise_init
@@ -230,16 +311,6 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
         self.hash = hash[HasherType=H](key)
         self.key = key^
         self.value = value^
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of the given entry.
-
-        Args:
-            existing: The entry to copy.
-        """
-        self.hash = existing.hash
-        self.key = existing.key.copy()
-        self.value = existing.value.copy()
 
     fn reap_value(deinit self) -> V:
         """Take the value from an owned entry.
@@ -311,9 +382,6 @@ struct _DictIndex(Movable):
             memcpy(new_data, data, reserved)
         return index^
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.data = existing.data
-
     fn get_index(self, reserved: Int, slot: UInt64) -> Int:
         if reserved <= 128:
             var data = self.data.bitcast[Int8]()
@@ -347,7 +415,7 @@ struct _DictIndex(Movable):
 
 
 struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
-    Boolable, Copyable, Defaultable, Movable, Sized
+    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
 ):
     """A container that stores key-value pairs.
 
@@ -577,6 +645,9 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _DictKeyIter[K, V, H, iterable_origin]
     alias EMPTY = _EMPTY
     alias REMOVED = _REMOVED
     alias _initial_reservation = 8
@@ -746,7 +817,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         return self._find_index(hash[HasherType=H](key), key)[0]
 
-    fn __iter__(ref self) -> _DictKeyIter[K, V, H, __origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
 
         Returns:
@@ -963,12 +1034,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         var hash = hash[HasherType=H](key)
         var found, slot, index = self._find_index(hash, key)
         if found:
-            self._set_index(slot, Self.REMOVED)
-            ref entry = self._entries[index]
-            debug_assert(entry.__bool__(), "entry in index must be full")
-            var entry_value = entry.unsafe_take()
-            entry = None
-            self._len -= 1
+            var entry_value = self._unsafe_take_entry(slot, index)
             return entry_value^.reap_value()
         raise Error("KeyError")
 
@@ -988,17 +1054,12 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             KeyError.
         """
 
-        var key = Optional[K](None)
-        var val = Optional[V](None)
-
-        for item in reversed(self.items()):
-            key = Optional(item.key.copy())
-            val = Optional(item.value.copy())
-            break
-
-        if key:
-            _ = self.pop(key.value())
-            return DictEntry[K, V, H](key.take(), val.take())
+        for ref entry in reversed(self._entries):
+            if entry:
+                var (_, slot, index) = self._find_index(
+                    entry.unsafe_value().hash, entry.unsafe_value().key
+                )
+                return self._unsafe_take_entry(slot, index)
 
         raise "KeyError: popitem(): dictionary is empty"
 
@@ -1040,6 +1101,30 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             access the key and value as attributes.
         """
         return _DictEntryIter(0, 0, self)
+
+    fn take_items(mut self) -> _TakeDictEntryIter[K, V, H, __origin_of(self)]:
+        """Iterate over the dict's entries and move them out of the dictionary
+        effectively draining the dictionary.
+
+        Returns:
+            An iterator of mutable references to the dictionary entries that
+            moves them out of the dictionary.
+
+        Examples:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+
+        for entry in my_dict.take_items():
+            print(entry.key, entry.value)
+
+        print(len(my_dict))
+        # prints 0
+        ```
+        """
+        return _TakeDictEntryIter(self)
 
     fn update(mut self, other: Self, /):
         """Update the dictionary with the key/value pairs from other,
@@ -1084,6 +1169,16 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             self._len += 1
             self._n_entries += 1
         return entry.unsafe_value().value
+
+    fn _unsafe_take_entry(
+        mut self, slot: UInt64, index: Int
+    ) -> DictEntry[K, V, H]:
+        self._set_index(slot, Self.REMOVED)
+        ref entry = self._entries[index]
+        debug_assert(entry.__bool__(), "entry in index must be full")
+        var entry_value = entry.unsafe_take()
+        self._len -= 1
+        return entry_value^
 
     @staticmethod
     @always_inline
@@ -1195,7 +1290,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
 
 
 struct OwnedKwargsDict[V: Copyable & Movable](
-    Copyable, Defaultable, Movable, Sized
+    Copyable, Defaultable, Iterable, Movable, Sized
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 
@@ -1209,6 +1304,11 @@ struct OwnedKwargsDict[V: Copyable & Movable](
 
     # Fields
     alias key_type = String
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _DictKeyIter[
+        Self.key_type, V, default_comp_time_hasher, iterable_origin
+    ]
 
     var _dict: Dict[Self.key_type, V, default_comp_time_hasher]
 
@@ -1220,28 +1320,14 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, V, default_comp_time_hasher]()
 
-    fn __copyinit__(out self, existing: Self):
-        """Copy an existing keyword dictionary.
-
-        Args:
-            existing: The existing keyword dictionary.
-        """
-        self._dict = existing._dict.copy()
-
-    fn __moveinit__(out self, deinit existing: Self):
-        """Move data of an existing keyword dictionary into a new one.
-
-        Args:
-            existing: The existing keyword dictionary.
-        """
-        self._dict = existing._dict^
-
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__(self, key: Self.key_type) raises -> V:
+    fn __getitem__(
+        ref self, key: Self.key_type
+    ) raises -> ref [self._dict[key]] Self.V:
         """Retrieve a value out of the keyword dictionary.
 
         Args:
@@ -1253,17 +1339,17 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         Raises:
             "KeyError" if the key isn't present.
         """
-        return self._dict[key].copy()
+        return self._dict[key]
 
     @always_inline
-    fn __setitem__(mut self, key: Self.key_type, value: V):
+    fn __setitem__(mut self, key: Self.key_type, var value: V):
         """Set a value in the keyword dictionary by key.
 
         Args:
             key: The key to associate with the specified value.
             value: The data to store in the dictionary.
         """
-        self._dict[key] = value.copy()
+        self._dict[key] = value^
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -1341,15 +1427,13 @@ struct OwnedKwargsDict[V: Copyable & Movable](
 
     fn __iter__(
         ref self,
-    ) -> _DictKeyIter[
-        Self.key_type, V, default_comp_time_hasher, __origin_of(self._dict)
-    ]:
+    ) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over the keyword dict's keys as immutable references.
 
         Returns:
             An iterator of immutable references to the dictionary keys.
         """
-        return self._dict.keys()
+        return rebind[Self.IteratorType[__origin_of(self)]](self._dict.keys())
 
     fn keys(
         ref self,

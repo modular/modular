@@ -24,9 +24,16 @@ from max.dtype import DType
 from max.mlir import BoolAttr, DictAttr, IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
 
+from ...driver import Device
 from ..graph import Graph
 from ..type import DeviceRef, Type, _ChainType
-from ..value import BufferValue, Value, _OpaqueValue
+from ..value import (
+    BufferValue,
+    TensorValue,
+    Value,
+    _is_strong_tensor_value_like,
+    _OpaqueValue,
+)
 
 
 def _parameter_attribute(
@@ -52,7 +59,7 @@ def _parameter_attribute(
 
 def custom(
     name: str,
-    device: DeviceRef,
+    device: Device | DeviceRef,
     values: Sequence[Value[Any]],
     out_types: Sequence[Type[Any]],
     parameters: Mapping[str, bool | int | str | DType] | None = None,
@@ -77,6 +84,7 @@ def custom(
     """
     graph = Graph.current
     symbol_attr = StringAttr.get(name, graph._context)
+    device = DeviceRef.from_device(device)
 
     if any(isinstance(val, (BufferValue, _OpaqueValue)) for val in values):
         msg = (
@@ -84,6 +92,10 @@ def custom(
             "updates should use ops.inplace_custom instead"
         )
         raise TypeError(msg)
+
+    values = [
+        TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
+    ]
 
     results, custom_op = graph._add_op_get_op_with_results(
         mo.custom, [t.to_mlir() for t in out_types], values, symbol=symbol_attr
@@ -148,6 +160,10 @@ def inplace_custom(
 
     graph = Graph.current
     current_chain = graph._current_chain
+
+    values = [
+        TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
+    ]
 
     (*results, out_chain), custom_op = graph._add_op_get_op_with_results(
         mo.custom,

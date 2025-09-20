@@ -16,40 +16,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 from max._core_mojo import block_hasher
 from max.profiler import traced
-
-
-class BlockHashType(NamedTuple):
-    """Hash value of a block. This is computed by hashing the hash_value of the
-    parent block with the token ids of the current block.
-
-    We keep a tuple of token IDs and extra keys to reduce the likelihood of
-    hash collisions when the hash value is the same. But please note that
-    hash collisions can still theoretically occur, albeit with an extremely
-    low probability.
-
-    Additional values needed to uniquely identify a block can be added here in
-    the future, eg: model name or multimodal image ids.
-    """
-
-    # Hashed value returned by hash()
-    value: int
-
-    # The hash of the parent block.
-    parent_hash_value: int
-
-    # The token ids of the block.
-    token_ids: tuple[int, ...]
-
-    def __repr__(self) -> str:
-        token_ids_str = ", ".join(str(x) for x in self.token_ids[:5])
-        return f"BlockHashType({self.value}, [{token_ids_str}, ...])"
-
 
 # Note that we use 'None' as a string here instead of None because
 # as of Python 3.12, hash(None) returns a constant predictable value.
@@ -59,8 +31,6 @@ class BlockHashType(NamedTuple):
 # behavior of None prior to Python 3.12.
 DEFAULT_PARENT_HASH = hash("None")
 
-ROOT_BLOCK_HASH = BlockHashType(DEFAULT_PARENT_HASH, -1, ())
-
 ENABLE_MOJO_BLOCK_HASHER = True
 
 
@@ -68,14 +38,14 @@ ENABLE_MOJO_BLOCK_HASHER = True
 def _hash_block_tokens_mojo(
     block_token_ids: npt.NDArray[np.integer[Any]],
     parent_hash: int | None = None,
-) -> BlockHashType:
+) -> int:
     """Hash the tokens of a block using the Mojo implementation."""
     block_size = len(block_token_ids)
     if parent_hash is None:
         parent_hash = DEFAULT_PARENT_HASH
     hash_vals = block_hasher(block_token_ids, block_size, parent_hash)
     assert len(hash_vals) == 1
-    return BlockHashType(hash_vals[0], parent_hash, tuple(block_token_ids))
+    return hash_vals[0]
 
 
 @traced
@@ -83,7 +53,7 @@ def _hash_request_tokens_mojo(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
     parent_hash: int | None = None,
-) -> list[BlockHashType]:
+) -> list[int]:
     """Hash the tokens of a request using the Mojo implementation."""
     if parent_hash is None:
         parent_hash = DEFAULT_PARENT_HASH
@@ -91,23 +61,14 @@ def _hash_request_tokens_mojo(
     hash_vals = block_hasher(token_ids, block_size, parent_hash)
     assert len(hash_vals) == len(token_ids) // block_size
 
-    prev_hash = parent_hash
-    ret = []
-    for i, hash_val in enumerate(hash_vals):
-        start = i * block_size
-        end = start + block_size
-        block_token_ids = token_ids[start:end]
-        ret.append(BlockHashType(hash_val, prev_hash, tuple(block_token_ids)))
-        prev_hash = hash_val
-
-    return ret
+    return hash_vals
 
 
 @traced
 def hash_block_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     parent_hash: int | None = None,
-) -> BlockHashType:
+) -> int:
     """Compute the hash value of a block."""
 
     if ENABLE_MOJO_BLOCK_HASHER:
@@ -119,7 +80,7 @@ def hash_block_tokens(
     token_ids_tuple = tuple(token_ids)
     tuple_to_hash = (token_ids_tuple, parent_hash)
     hash_value = hash(tuple_to_hash)
-    return BlockHashType(hash_value, parent_hash, token_ids_tuple)
+    return hash_value
 
 
 @traced
@@ -127,7 +88,7 @@ def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
     parent_hash: int | None = None,
-) -> list[BlockHashType]:
+) -> list[int]:
     """Hash the tokens of a request."""
 
     if ENABLE_MOJO_BLOCK_HASHER:
@@ -142,7 +103,7 @@ def hash_request_tokens(
             break
         block_hash = hash_block_tokens(block_token_ids, parent_hash)
         ret.append(block_hash)
-        parent_hash = block_hash.value
+        parent_hash = block_hash
     return ret
 
 
@@ -156,7 +117,7 @@ class KVCacheBlock:
     ref_cnt: int = 0
     # The hash of the block composed of (block hash, tuple of token IDs).
     # It is only available when the block is full.
-    block_hash: BlockHashType | None = None
+    block_hash: int | None = None
 
     # Used to construct a doubly linked list for free blocks.
     # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
@@ -266,17 +227,3 @@ class FreeKVCacheBlockQueue:
         block.next_free_block = None
         self.num_free_blocks += 1
         self.free_blocks.add(block.bid)
-
-    @traced
-    def get_all_free_blocks(self) -> list[KVCacheBlock]:
-        """Get all free blocks in the free list. Mainly used for testing.
-
-        Returns:
-            A list of free blocks.
-        """
-        ret = []
-        curr_block = self.free_list_head
-        while curr_block is not None:
-            ret.append(curr_block)
-            curr_block = curr_block.next_free_block
-        return ret

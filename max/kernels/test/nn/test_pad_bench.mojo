@@ -83,8 +83,8 @@ fn pad_constant_dispatch[
             ],
             paddings: UnsafePointer[Scalar[paddings_type]],
             output_shape: IndexList[output_layout.rank()],
-            output_strides: UnsafePointer[Scalar[DType.index]],
-            input_strides: UnsafePointer[Scalar[DType.index]],
+            output_strides: UnsafePointer[Scalar[DType.int]],
+            input_strides: UnsafePointer[Scalar[DType.int]],
         ):
             return _pad_constant_impl_rec[
                 output_layout.rank(), dtype, paddings_type
@@ -124,8 +124,8 @@ fn _pad_constant_impl_rec[
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     output_offset: Int,
     input_offset: Int,
     pad_with_constant: Bool,
@@ -256,8 +256,8 @@ fn pad_reflect_dispatch[
             ],
             paddings: UnsafePointer[Scalar[paddings_type]],
             output_shape: IndexList[output_layout.rank()],
-            output_strides: UnsafePointer[Scalar[DType.index]],
-            input_strides: UnsafePointer[Scalar[DType.index]],
+            output_strides: UnsafePointer[Scalar[DType.int]],
+            input_strides: UnsafePointer[Scalar[DType.int]],
         ):
             return _pad_reflect_impl_rec[
                 output_layout.rank(), dtype, paddings_type
@@ -348,8 +348,8 @@ fn _pad_reflect_impl_rec[
     input: UnsafePointer[Scalar[dtype]],
     paddings: UnsafePointer[Scalar[paddings_type]],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     output_offset: Int,
     input_offset: Int,
 ):
@@ -524,17 +524,17 @@ fn test_pad_constant_nd[
     alias out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)
-    var input = LayoutTensor[DType.index, Layout.row_major[rank]()](
+    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input = LayoutTensor[DType.int, Layout.row_major[rank]()](
         input_ptr,
         RuntimeLayout[Layout.row_major[rank]()].row_major(in_shape),
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
+    var paddings_stack = InlineArray[Scalar[DType.int], 2 * rank](
         uninitialized=True
     )
-    var paddings = LayoutTensor[DType.index, Layout.row_major(2 * rank)](
+    var paddings = LayoutTensor[DType.int, Layout.row_major(2 * rank)](
         paddings_stack
     )
 
@@ -544,9 +544,9 @@ fn test_pad_constant_nd[
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
+    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(out_shape),
         address_space = AddressSpace.GENERIC, **_,
     ](
@@ -557,7 +557,7 @@ fn test_pad_constant_nd[
     )
 
     # constant padding value = 7
-    var constant = Scalar[DType.index](7)
+    var constant = Scalar[DType.int](7)
 
     # pad
     pad_constant_dispatch[recursive=recursive](
@@ -565,8 +565,8 @@ fn test_pad_constant_nd[
     )
 
     if verify:
-        var output_rec_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-        var output_rec = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+        var output_rec_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+        var output_rec = LayoutTensor[DType.int, Layout.row_major(out_shape)](
             output_rec_ptr,
             RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
         ).fill(0)
@@ -619,17 +619,17 @@ fn test_pad_reflect_nd[
     alias out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)
-    var input = LayoutTensor[DType.index, Layout.row_major[rank]()](
+    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input = LayoutTensor[DType.int, Layout.row_major[rank]()](
         input_ptr,
         RuntimeLayout[Layout.row_major[rank]()].row_major(in_shape),
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
+    var paddings_stack = InlineArray[Scalar[DType.int], 2 * rank](
         uninitialized=True
     )
-    var paddings = LayoutTensor[DType.index, Layout.row_major(2 * rank)](
+    var paddings = LayoutTensor[DType.int, Layout.row_major(2 * rank)](
         paddings_stack
     )
 
@@ -639,8 +639,8 @@ fn test_pad_reflect_nd[
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-    var output = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+    var output = LayoutTensor[DType.int, Layout.row_major(out_shape)](
         output_ptr,
         RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
     ).fill(0)
@@ -649,8 +649,8 @@ fn test_pad_reflect_nd[
     pad_reflect_dispatch[recursive=recursive](output, input, paddings.ptr)
 
     if verify:
-        var output_rec_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-        var output_rec = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+        var output_rec_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+        var output_rec = LayoutTensor[DType.int, Layout.row_major(out_shape)](
             output_rec_ptr,
             RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
         ).fill(0)

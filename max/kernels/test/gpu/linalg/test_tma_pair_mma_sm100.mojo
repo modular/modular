@@ -119,7 +119,7 @@ fn tma_umma_kernel_pair_cta[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](a_smem.static_alignment_cast[128]())
+    ](a_smem)
 
     var b_smem_tile = LayoutTensor[
         b_type,
@@ -127,7 +127,7 @@ fn tma_umma_kernel_pair_cta[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](b_smem.static_alignment_cast[128]())
+    ](b_smem)
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -486,18 +486,18 @@ def test_tma_umma_pair_cta[
 
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b_col_major.device_buffer[update=True](),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b_col_major.device_tensor[update=True](),
             c_row_major=True,
             transpose_b=True,
         )
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b.device_buffer[update=False](),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b.device_tensor[update=False](),
             c_row_major=True,
             transpose_b=transpose_b,
         )

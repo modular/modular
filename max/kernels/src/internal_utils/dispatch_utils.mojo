@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.sort import _quicksort, _SortWrapper
+from builtin.sort import _quicksort
 from os import abort
 
 
@@ -118,10 +118,8 @@ struct Table[type: TuningConfig](Stringable):
                 result.append(value)
 
         @parameter
-        fn _cmp(
-            lsh: _SortWrapper[ret_type], rhs: _SortWrapper[ret_type]
-        ) -> Bool:
-            return lsh.data < rhs.data
+        fn _cmp(lsh: ret_type, rhs: ret_type) -> Bool:
+            return lsh < rhs
 
         _quicksort[_cmp](result)
         return result^

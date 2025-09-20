@@ -283,8 +283,8 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 
     # Initialize the Atomic refcount into the header.
     __get_address_as_uninit_lvalue(
-        ptr.bitcast[Atomic[DType.index]]().address
-    ) = Atomic[DType.index](1)
+        ptr.bitcast[Atomic[DType.int]]().address
+    ) = Atomic[DType.int](1)
 
     # Offset the pointer to after the refcount.
     var returned_path_ptr = libc_realpath(

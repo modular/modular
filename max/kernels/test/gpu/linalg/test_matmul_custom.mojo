@@ -88,17 +88,16 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     @always_inline
     @parameter
     fn run_func_bf16() raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
-                c_tensor_bf16.layout,
-                a_tensor_bf16.layout,
-                b_tensor_bf16.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            c_tensor_bf16.layout,
+            a_tensor_bf16.layout,
+            b_tensor_bf16.layout,
+            BLOCK_DIM,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor_bf16,
             a_tensor_bf16,
             b_tensor_bf16,
@@ -136,17 +135,16 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     @always_inline
     @parameter
     fn run_func_fp32() raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                c_tensor_fp32.layout,
-                a_tensor_fp32.layout,
-                b_tensor_fp32.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            c_tensor_fp32.layout,
+            a_tensor_fp32.layout,
+            b_tensor_fp32.layout,
+            BLOCK_DIM,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor_fp32,
             a_tensor_fp32,
             b_tensor_fp32,
@@ -277,17 +275,16 @@ fn run_matmul[
     @always_inline
     @parameter
     fn run_func_naive() raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                dtype,
-                dtype,
-                dtype,
-                c_tensor.layout,
-                a_tensor.layout,
-                b_tensor.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            dtype,
+            dtype,
+            dtype,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -431,17 +428,17 @@ fn run_matmul_split_k[
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            dtype,
-            dtype,
-            dtype,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
-            BLOCK_DIM,
-        ]
-    ](
+    alias kernel = matmul_kernel_naive[
+        dtype,
+        dtype,
+        dtype,
+        c_tensor.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -573,18 +570,17 @@ fn run_matmul_transpose[
     @always_inline
     @parameter
     fn run_func_naive() raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                dtype,
-                dtype,
-                dtype,
-                c_tensor.layout,
-                a_tensor.layout,
-                b_tensor.layout,
-                BLOCK_DIM,
-                transpose_b,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            dtype,
+            dtype,
+            dtype,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+            transpose_b,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,

@@ -103,7 +103,7 @@ def test_compare_exchange[dtype: DType]():
 
 def test_comptime_atomic():
     fn comptime_fn() -> Int:
-        var atom = Atomic[DType.index](3)
+        var atom = Atomic[DType.int](3)
         atom += 4
         atom -= 4
         return Int(atom.load())

@@ -18,17 +18,15 @@ import logging
 import os
 import sys
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import click
 from click import shell_completion
-from max.entrypoints.cli.entrypoint import configure_cli_logging
-from max.entrypoints.workers import start_workers
-from max.interfaces import SamplingParams
-from max.serve.config import Settings
-from max.serve.telemetry.common import configure_logging
 from typing_extensions import ParamSpec
+
+# Please keep all max imports inside their respective functions.
+# This is best practive to keep the CLI invocation fast
+
 
 logger = logging.getLogger("max.entrypoints")
 
@@ -56,25 +54,27 @@ class WithLazyPipelineOptions(click.Command):
         return pipeline_config_options(callback)
 
     def _ensure_options_loaded(self) -> None:
-        if not self._options_loaded:
-            # Lazily load and apply pipeline_config_options decorator
+        if self._options_loaded:
+            return
 
-            # In Click, each command has a callback function that's executed when the command runs.
-            # The callback contains the actual implementation of the command.
-            # Here, we're applying the pipeline_config_options decorator to add CLI parameters
-            # to our callback function dynamically, rather than statically at import time.
-            assert self.callback is not None
-            self.callback = self._add_options(self.callback)
-            self._options_loaded = True
+        # Lazily load and apply pipeline_config_options decorator
 
-            # When Click decorators (like @click.option) are applied to a function,
-            # they attach Parameter objects to the function via a __click_params__ attribute.
-            # We need to extract these parameters and add them to the command's params list
-            # so Click knows about them for argument parsing, help text generation, etc.
-            # Create a copy to avoid modifying the original list
-            self.params = self.params.copy()
-            for param in getattr(self.callback, "__click_params__", []):
-                self.params.append(param)
+        # In Click, each command has a callback function that's executed when the command runs.
+        # The callback contains the actual implementation of the command.
+        # Here, we're applying the pipeline_config_options decorator to add CLI parameters
+        # to our callback function dynamically, rather than statically at import time.
+        assert self.callback is not None
+        self.callback = self._add_options(self.callback)
+        self._options_loaded = True
+
+        # When Click decorators (like @click.option) are applied to a function,
+        # they attach Parameter objects to the function via a __click_params__ attribute.
+        # We need to extract these parameters and add them to the command's params list
+        # so Click knows about them for argument parsing, help text generation, etc.
+        # Create a copy to avoid modifying the original list
+        self.params = self.params.copy()
+        for param in getattr(self.callback, "__click_params__", []):
+            self.params.append(param)
 
     def get_help(self, ctx: click.Context) -> str:
         self._ensure_options_loaded()
@@ -142,6 +142,8 @@ class ModelGroup(click.Group):
     help="Set logging level explicitly (ignored if --verbose or --quiet is used).",
 )
 def main(log_level: str = "INFO") -> None:
+    from max.entrypoints.cli.entrypoint import configure_cli_logging
+
     # Configure logging first, before any other initialization
     configure_cli_logging(level=log_level)
     configure_telemetry()
@@ -164,11 +166,6 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         help=(
             "Whether to enable pyinstrument profiling on the serving endpoint."
         ),
-    )
-    @click.option(
-        "--served-model-name",
-        type=str,
-        help="Model name used in HTTP API. If unspecified, the model name is equal to --model-path",
     )
     @click.option(
         "--sim-failure",
@@ -232,8 +229,24 @@ def cli_serve(
     """
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags
-    from max.interfaces import PipelineTask
+    from max.entrypoints.workers import start_workers
+    from max.interfaces import PipelineTask, SamplingParams
     from max.pipelines import AudioGenerationConfig, PipelineConfig
+    from max.serve.config import Settings
+    from max.serve.telemetry.common import configure_logging
+
+    # Initialize Settings for API Server
+    setting_kwargs: dict[str, Any] = {}
+    if port is not None:
+        setting_kwargs["MAX_SERVE_PORT"] = port
+
+    if log_prefix is not None:
+        setting_kwargs["MAX_SERVE_LOG_PREFIX"] = log_prefix
+
+    if headless is not None:
+        setting_kwargs["MAX_SERVE_HEADLESS"] = headless
+
+    settings = Settings(**setting_kwargs)
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
@@ -247,30 +260,21 @@ def cli_serve(
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
+        # Log Pipeline Related Info
         pipeline_config.log_pipeline_info()
 
         # Log Default Sampling Configuration
         sampling_params = SamplingParams()
         sampling_params.log_sampling_info()
+
+        # Log API Server Related Info
+        settings.log_server_info()
     else:
         pipeline_config.log_basic_config()
 
     failure_percentage = None
     if sim_failure > 0:
         failure_percentage = sim_failure
-
-    # Initialize Settings
-    setting_kwargs: dict[str, Any] = {}
-    if port is not None:
-        setting_kwargs["MAX_SERVE_PORT"] = port
-
-    if log_prefix is not None:
-        setting_kwargs["MAX_SERVE_LOG_PREFIX"] = log_prefix
-
-    if headless is not None:
-        setting_kwargs["MAX_SERVE_HEADLESS"] = headless
-
-    settings = Settings(**setting_kwargs)
 
     # Configure Logging Globally
     configure_logging(settings)
@@ -284,9 +288,6 @@ def cli_serve(
         serve_api_server_and_model_worker(
             settings=settings,
             pipeline_config=pipeline_config,
-            profile=profile_serve,
-            failure_percentage=failure_percentage,
-            port=port,
             pipeline_task=PipelineTask(task),
         )
 
@@ -461,21 +462,14 @@ def cli_benchmark(args: Sequence[str]) -> None:
     # and bypass Click's argument processing
     # args = ctx.params.get("args", [])
 
-    from benchmark_serving import main as benchmark_main
-    from benchmark_serving import parse_args as benchmark_parse_args
-
-    # Default to serving_config.yaml in the benchmark directory for now.
-    # Based on how we're packaging our benchmark/ in max, this should be the correct path.
-    config_file_path = (
-        Path(__file__).parent.parent / "benchmark" / "serving_config.yaml"
+    from max.benchmark.benchmark_serving import main as benchmark_main
+    from max.benchmark.benchmark_serving import (
+        parse_args as benchmark_parse_args,
     )
 
-    logger.debug("Using config file path: %s", config_file_path)
     logger.debug("Running benchmark subcommand with args: %s", args)
     try:
-        argparse_namespace = benchmark_parse_args(
-            config_file_path=config_file_path, args=args
-        )
+        argparse_namespace = benchmark_parse_args(args=args)
 
         # Run the benchmark
         click.echo("Starting benchmark...")

@@ -579,18 +579,6 @@ struct PythonTypeBuilder(Copyable, Movable):
         self._slots = {}
         self.methods = []
 
-    fn __copyinit__(out self, existing: Self):
-        """Copy an existing type builder.
-
-        Args:
-            existing: The existing type builder.
-        """
-        self.type_name = existing.type_name
-        self._type_id = existing._type_id
-        self.basicsize = existing.basicsize
-        self._slots = existing._slots.copy()
-        self.methods = existing.methods.copy()
-
     @staticmethod
     fn bind[T: Representable](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# start-python-tuple-example
 from python import Python
 
 
@@ -19,3 +20,4 @@ def main():
     n = py_tuple[2]
     print("n =", n)
     print("Number of cats:", py_tuple.count("cat"))
+    # end-python-tuple-example

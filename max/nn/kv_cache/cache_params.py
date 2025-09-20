@@ -42,39 +42,18 @@ class KVCacheParams:
     page_size: Optional[int] = None
     n_devices: int = 1
 
-    pipeline_parallel_degree: int = 1
-    total_num_layers: Optional[int] = None  # Total layers in the model
-
     data_parallel_degree: int = 1
 
     # Computed fields (set in __post_init__)
     n_kv_heads_per_device: int = 0  # Will be computed
-    n_layers_per_stage: Optional[int] = None  # Will be computed
 
     def __post_init__(self):
-        # Pipeline parallel mode: shard by layers, keep all heads per stage
-        if self.pipeline_parallel_degree > 1:
-            if self.total_num_layers is None:
-                raise ValueError(
-                    "total_num_layers must be specified for pipeline parallel mode"
-                )
-            # Each stage keeps all heads but handles only a subset of layers
+        if self.data_parallel_degree > 1:
             self.n_kv_heads_per_device = self.n_kv_heads
-            self.n_layers_per_stage = max(
-                self.total_num_layers // self.pipeline_parallel_degree, 1
-            )
-        elif self.data_parallel_degree > 1:
-            self.n_kv_heads_per_device = self.n_kv_heads
-            self.n_layers_per_stage = (
-                self.total_num_layers if self.total_num_layers else None
-            )
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
             self.n_kv_heads_per_device = max(
                 self.n_kv_heads // self.n_devices, 1
-            )
-            self.n_layers_per_stage = (
-                self.total_num_layers if self.total_num_layers else None
             )
 
         # Validate inputs

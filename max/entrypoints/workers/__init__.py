@@ -24,6 +24,7 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
+from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import METRICS
 
 logger = logging.getLogger("max.entrypoints")
@@ -84,7 +85,7 @@ def start_workers(
         logger.info("Starting MAX Workers...")
 
         # Load the Tokenizer and Pipeline Factory
-        tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+        _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
             task=pipeline_task,
         )
@@ -105,14 +106,18 @@ def start_workers(
                         pipeline_config,
                         settings,
                         metric_client,
-                        pipeline_task,
+                        scheduler_zmq_configs=SchedulerZmqConfigs(
+                            pipeline_task
+                        ),
                     )
                 )
 
                 METRICS.pipeline_load(pipeline_config.model_config.model_path)
 
                 logger.info(
-                    "\n\n**********\nHeadless server ready (Press CTRL+C to quit)\n**********\n"
+                    f"\n\n{'*' * 80}\n\n"
+                    f"{'🚀 Headless server ready (Press CTRL+C to quit)'.center(80)}\n\n"
+                    f"{'*' * 80}\n"
                 )
 
                 # Wait for shutdown signal instead of infinite loop

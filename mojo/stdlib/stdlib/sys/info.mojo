@@ -662,7 +662,7 @@ fn is_gpu() -> Bool:
     Returns:
         True if the triple target is GPU and False otherwise.
     """
-    return is_nvidia_gpu() or is_amd_gpu()
+    return is_nvidia_gpu() or is_amd_gpu() or is_apple_gpu()
 
 
 @always_inline("nodebug")
@@ -723,7 +723,7 @@ fn is_32bit[target: _TargetType = _current_target()]() -> Bool:
     Returns:
         True if the maximum integral value is 32 bit, False otherwise.
     """
-    return size_of[DType.index, target]() == size_of[DType.int32, target]()
+    return size_of[DType.int, target]() == size_of[DType.int32, target]()
 
 
 @always_inline("nodebug")
@@ -736,7 +736,7 @@ fn is_64bit[target: _TargetType = _current_target()]() -> Bool:
     Returns:
         True if the maximum integral value is 64 bit, False otherwise.
     """
-    return size_of[DType.index, target]() == size_of[DType.int64, target]()
+    return size_of[DType.int, target]() == size_of[DType.int64, target]()
 
 
 @always_inline("nodebug")

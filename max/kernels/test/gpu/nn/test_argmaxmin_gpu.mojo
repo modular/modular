@@ -157,7 +157,7 @@ def main():
 
     with DeviceContext() as ctx:  # argmax tests
         # index
-        test_argmaxmin_gpu_helper[DType.index, fill_random](ctx)
+        test_argmaxmin_gpu_helper[DType.int, fill_random](ctx)
 
         # int64
         test_argmaxmin_gpu_helper[DType.int64, fill_random](ctx)

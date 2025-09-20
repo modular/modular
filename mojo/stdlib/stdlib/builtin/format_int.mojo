@@ -76,7 +76,7 @@ fn bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
     Returns:
         The binary string representation of num.
     """
-    return bin(Scalar[DType.index](Int(num)), prefix=prefix)
+    return bin(Scalar[DType.int](Int(num)), prefix=prefix)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -120,7 +120,7 @@ fn hex[T: Intable, //](value: T, /, *, prefix: StaticString = "0x") -> String:
     Returns:
         A string containing the hex representation of the given integer.
     """
-    return hex(Scalar[DType.index](Int(value)), prefix=prefix)
+    return hex(Scalar[DType.int](Int(value)), prefix=prefix)
 
 
 fn hex(value: Scalar[DType.bool], /, *, prefix: StaticString = "0x") -> String:
@@ -182,7 +182,7 @@ fn oct[T: Intable, //](value: T, /, *, prefix: StaticString = "0o") -> String:
     Returns:
         A string containing the octal representation of the given integer.
     """
-    return oct(Scalar[DType.index](Int(value)), prefix=prefix)
+    return oct(Scalar[DType.int](Int(value)), prefix=prefix)
 
 
 fn oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:

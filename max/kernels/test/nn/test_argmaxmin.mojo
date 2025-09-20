@@ -25,8 +25,8 @@ fn test_argn() raises:
 
     var vector_stack = InlineArray[Int32, size](uninitialized=True)
     var vector = LayoutTensor[DType.int32, Layout.row_major(size)](vector_stack)
-    var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
-    var output = LayoutTensor[DType.index, Layout.row_major(1)](output_stack)
+    var output_stack = InlineArray[Scalar[DType.int], 1](uninitialized=True)
+    var output = LayoutTensor[DType.int, Layout.row_major(1)](output_stack)
 
     for i in range(size):
         vector[i] = i
@@ -39,7 +39,7 @@ fn test_argn() raises:
             ),
         ),
         0,
-        LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+        LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
             output_stack,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 IndexList[1](1)
@@ -58,7 +58,7 @@ fn test_argn() raises:
             ),
         ),
         0,
-        LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+        LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
             output_stack,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 IndexList[1](1)
@@ -88,11 +88,11 @@ fn test_argn_2() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     ](
         output_stack,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
@@ -142,11 +142,11 @@ fn test_argn_2_test_2() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -195,11 +195,11 @@ fn test_argn_2_neg_axis() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -248,11 +248,11 @@ fn test_argn_test_zeros() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -295,11 +295,11 @@ fn test_argn_test_identity() raises:
             IndexList[2](batch_size, size)
         ),
     )
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -358,11 +358,11 @@ fn test_argn_3d_identity() raises:
         0
     )
 
-    var output_stack = InlineArray[Scalar[DType.index], batch_size * seq_len](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size * seq_len](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
     ](
         output_stack,
@@ -420,11 +420,11 @@ fn test_argn_less_than_simd() raises:
         0
     )
 
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     ](
         output_stack,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
@@ -476,8 +476,8 @@ fn test_argn_simd_index_order() raises:
             IndexList[1](size)
         ),
     ).fill(0)
-    var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
-    var output = LayoutTensor[DType.index, Layout.row_major(UNKNOWN_VALUE)](
+    var output_stack = InlineArray[Scalar[DType.int], 1](uninitialized=True)
+    var output = LayoutTensor[DType.int, Layout.row_major(UNKNOWN_VALUE)](
         output_stack,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](1)
@@ -520,11 +520,11 @@ fn test_argn_parallelize() raises:
         0
     )
 
-    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+    var output_stack = InlineArray[Scalar[DType.int], batch_size](
         uninitialized=True
     )
     var output = LayoutTensor[
-        DType.index, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        DType.int, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     ](
         output_stack,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(

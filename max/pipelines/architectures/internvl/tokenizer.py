@@ -16,10 +16,11 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
 from PIL import Image
 from transformers import (
@@ -537,6 +538,8 @@ class InternVLTokenizer(TextAndVisionTokenizer):
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         pipeline_config: PipelineConfig | None = None,
+        context_validators: list[Callable[[TextAndVisionContext], None]]
+        | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -579,3 +582,7 @@ class InternVLTokenizer(TextAndVisionTokenizer):
 
         # Initialize default EOS token IDs (required by parent class new_context method)
         self._default_eos_token_ids = set([self.eos])
+
+        self._context_validators = (
+            context_validators if context_validators else []
+        )

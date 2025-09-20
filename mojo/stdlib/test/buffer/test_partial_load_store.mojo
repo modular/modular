@@ -23,18 +23,16 @@ fn test_partial_load_store():
     # The total amount of data to allocate
     alias total_buffer_size: Int = 32
 
-    var read_data = InlineArray[Scalar[DType.index], total_buffer_size](
+    var read_data = InlineArray[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
-    var write_data = InlineArray[Scalar[DType.index], total_buffer_size](
+    var write_data = InlineArray[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
 
-    var read_buffer = NDBuffer[DType.index, 1, _, total_buffer_size](read_data)
+    var read_buffer = NDBuffer[DType.int, 1, _, total_buffer_size](read_data)
 
-    var write_buffer = NDBuffer[DType.index, 1, _, total_buffer_size](
-        write_data
-    )
+    var write_buffer = NDBuffer[DType.int, 1, _, total_buffer_size](write_data)
 
     for idx in range(total_buffer_size):
         # Fill read_buffer with 0->15
@@ -64,9 +62,9 @@ fn test_partial_load_store():
     print(partial_store_data)
 
     # Test NDBuffer partial load store
-    var read_nd_buffer = NDBuffer[DType.index, 2, _, DimList(8, 4)](read_data)
+    var read_nd_buffer = NDBuffer[DType.int, 2, _, DimList(8, 4)](read_data)
 
-    var write_nd_buffer = NDBuffer[DType.index, 2, _, DimList(8, 4)](write_data)
+    var write_nd_buffer = NDBuffer[DType.int, 2, _, DimList(8, 4)](write_data)
 
     # Test partial load:
     var nd_partial_load_data = partial_simd_load[4](

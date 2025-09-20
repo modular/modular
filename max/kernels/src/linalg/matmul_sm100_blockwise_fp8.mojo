@@ -160,9 +160,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     alias a_scales_smem_layout_3D = smem_layout_3D[a_scales_smem_layout]
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment2=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -245,23 +243,15 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     var b_smem_tile_3D_view = b_smem_tile_t_3D(b_smem)
     var a_scales_smem_tile_3D_view = a_scales_smem_tile_t_3D(a_scales_smem)
 
-    var ptr_tmem_addr = (
-        (a_scales_smem + a_scales_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (a_scales_smem + a_scales_size).bitcast[UInt32]()
 
     alias a_expected_bytes = a_size * size_of[a_type]()
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias a_scales_expected_bytes = a_scales_size * size_of[a_scales_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     var elect_one_thread = thread_idx.x == 0
 
@@ -529,7 +519,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
-    # NOTE: This wrapper is nessecary because batched blockwise scaling has a wrapper kernel
+    # NOTE: This wrapper is necessary because batched blockwise scaling has a wrapper kernel
     # for allocating matrices across the z index that kernel calls the function
     # `matmul_sm100_blockwise_scaled_fp8_1d2d_kernel` as well. That function requires the decroators
     # to not be present on the function so we moved it to this wrapper.
@@ -709,20 +699,17 @@ fn matmul_sm100_blockwise_scaled_fp8[
         "Executing Basic 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
         " 128)"
     )
-    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]")
+    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]", sep="")
     logger.info(
         "A Scales Shape: [",
         a_scales_3D.dim(1),
         ", ",
         a_scales_3D.dim(2),
         "]",
+        sep="",
     )
     logger.info(
-        "B Scales Shape: [",
-        b_scales.dim(0),
-        ", ",
-        b_scales.dim(1),
-        "]",
+        "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]", sep=""
     )
 
     var a_tma_op = create_tma_tile[

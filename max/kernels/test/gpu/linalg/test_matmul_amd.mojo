@@ -21,7 +21,10 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul_gpu import (
+    _matmul_gpu,
+    _amdgpu_matmul_config_from_block_shape,
+)
 from linalg.utils_gpu import MatmulConfig
 from testing import assert_equal
 
@@ -277,6 +280,56 @@ def test_warp_k_partitions(ctx: DeviceContext):
     test_warp_k_partitions[DType.bfloat16, DType.bfloat16](
         dynamic(16), static[2048](), static[2048]()
     )
+
+
+def test_matmul_config_from_block_shape(ctx: DeviceContext):
+    # This test takes too long to execute for CI, but is maintained here as a useful
+    # unit test for verifying changes to parts of the matmul dispatcher.
+    print("=== test_matmul_config_from_block_shape")
+
+    alias in_type = DType.bfloat16
+    alias out_type = DType.float32
+    alias transpose_b = True
+
+    # The test is intended to cover partial and complete blocks.
+    var m = static[1012]()
+    var n = static[1016]()
+
+    alias block_sizes = [16, 32, 64, 96, 128, 160, 192, 224, 256]
+
+    @parameter
+    for block_m in block_sizes:
+
+        @parameter
+        for block_n in block_sizes:
+
+            @parameter
+            def test_block_shape[block_m: Int, block_n: Int, k: Int]():
+                alias config = _amdgpu_matmul_config_from_block_shape[
+                    out_type, in_type, in_type, transpose_b, k
+                ](block_m, block_n)
+                print(
+                    block_m,
+                    block_n,
+                    config.block_tile_shape,
+                    config.warp_tile_shape,
+                    config.num_warp_k_partitions,
+                )
+                test[config](ctx, m, n, static[k]())
+
+            @parameter
+            if block_m <= 32 and block_n <= 32:
+                # Exercise the warp_k partitioning where the number of partitions
+                # depends on breaking K into even chunks.
+                @parameter
+                for k in [256, 384, 512, 768, 1024]:
+                    test_block_shape[block_m, block_n, k]()
+            else:
+                # Exercise the logic where block_k is increased, but only if K is
+                # multiple of the increased block size.
+                @parameter
+                for k in [320, 768]:
+                    test_block_shape[block_m, block_n, k]()
 
 
 def main():

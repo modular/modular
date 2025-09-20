@@ -22,9 +22,25 @@ from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.llama3.model_config import (
+    Llama3Config as Qwen2Config,
+)
+from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
+
+
+def _select_llm_config_class(
+    hf_llm_cfg: AutoConfig,
+) -> type[Qwen2Config | Qwen3Config]:
+    """Choose the correct config class based on parameters in the HuggingFace
+    config. Qwen2 is a wrapper around Llama3 and doesn't have its own config, so
+    we alias Llama3Config as Qwen2Config for clarity."""
+    mt = getattr(hf_llm_cfg, "model_type", None)
+    archs = getattr(hf_llm_cfg, "architectures", None) or []
+    if mt == "qwen3" or "Qwen3ForCausalLM" in archs:
+        return Qwen3Config
+    return Qwen2Config
 
 
 @dataclass
@@ -131,8 +147,8 @@ class InternVLConfigBase:
     """Vision encoder configuration."""
 
     # Composed language model configuration.
-    llm_config: Llama3Config
-    """Language model configuration using Llama3 architecture."""
+    llm_config: Qwen2Config | Qwen3Config
+    """Language model configuration (Qwen2 or Qwen3)."""
 
 
 @dataclass
@@ -152,12 +168,13 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
+        # Delegate to the selected decoder family for language model parameters.
+        llm_hf_cfg = getattr(
             huggingface_config, "llm_config", huggingface_config
         )
-        return Llama3Config.get_kv_params(
-            huggingface_config=llm_config,
+        ConfigCls = _select_llm_config_class(llm_hf_cfg)
+        return ConfigCls.get_kv_params(
+            huggingface_config=llm_hf_cfg,
             n_devices=n_devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
@@ -165,24 +182,26 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
+        # Delegate to the selected decoder family for language model parameters.
+        llm_hf_cfg = getattr(
             huggingface_config, "llm_config", huggingface_config
         )
-        return Llama3Config.get_num_layers(llm_config)
+        ConfigCls = _select_llm_config_class(llm_hf_cfg)
+        return ConfigCls.get_num_layers(llm_hf_cfg)
 
     @staticmethod
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculate maximum sequence length for InternVL."""
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
+        # Delegate to the selected decoder family for language model parameters.
+        llm_hf_cfg = getattr(
             huggingface_config, "llm_config", huggingface_config
         )
-        return Llama3Config.calculate_max_seq_len(
+        ConfigCls = _select_llm_config_class(llm_hf_cfg)
+        return ConfigCls.calculate_max_seq_len(
             pipeline_config=pipeline_config,
-            huggingface_config=llm_config,
+            huggingface_config=llm_hf_cfg,
         )
 
     @staticmethod
@@ -223,22 +242,39 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
             hf_vision_config, dtype, vision_state_dict
         )
 
-        # Create Llama3Config for the language model (with Qwen2 attention_bias=True)
+        # Select decoder family (Qwen2/Qwen3) from HF llm_config
         hf_llm_config = getattr(
             huggingface_config, "llm_config", huggingface_config
         )
-        llm_config = Llama3Config.generate(
-            pipeline_config=pipeline_config,
-            huggingface_config=huggingface_config.llm_config,
-            state_dict=llm_state_dict,
-            dtype=dtype,
-            n_devices=n_devices,
-            cache_dtype=cache_dtype,
-            kv_cache_config=kv_cache_config,
-            return_logits=return_logits,
-            norm_method=norm_method,
-            attention_bias=True,  # InternVL uses Qwen2 which has attention_bias=True
-        )
+        ConfigCls = _select_llm_config_class(hf_llm_config)
+
+        if ConfigCls is Qwen3Config:
+            llm_config = Qwen3Config.generate(
+                pipeline_config=pipeline_config,
+                huggingface_config=hf_llm_config,
+                state_dict=llm_state_dict,
+                dtype=dtype,
+                n_devices=n_devices,
+                cache_dtype=cache_dtype,
+                kv_cache_config=kv_cache_config,
+                return_logits=return_logits,
+                norm_method=norm_method,
+                attention_bias=False,  # Qwen3 removes QKV biases
+            )
+        elif ConfigCls is Qwen2Config:
+            # Qwen2 semantics (delegates to Llama3-style config under the hood)
+            llm_config = Qwen2Config.generate(
+                pipeline_config=pipeline_config,
+                huggingface_config=hf_llm_config,
+                state_dict=llm_state_dict,
+                dtype=dtype,
+                n_devices=n_devices,
+                cache_dtype=cache_dtype,
+                kv_cache_config=kv_cache_config,
+                return_logits=return_logits,
+                norm_method=norm_method,
+                attention_bias=True,  # Qwen2 uses attention bias
+            )  # type: ignore
 
         return InternVLConfig(
             devices=[

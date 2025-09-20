@@ -81,22 +81,23 @@ def set_seed(seed: TensorValue | int = 0) -> None:
 
 def gaussian(
     like: TensorType,
-    mean: TensorValueLike = 0.0,
-    std: TensorValueLike = 1.0,
+    mean: TensorValueLike = 0,
+    std: TensorValueLike = 1,
 ) -> TensorValue:
     assert_scalar(mean)
     assert_scalar(std)
     # Check whether we have a seed before we add other constants to the graph.
     seed = _next_seed()
+    scalar_dtype = DType.float32 if like.device.is_cpu() else DType.bfloat16
     return Graph.current._add_op_generated(
         rmo.MoRandomNormalOp,
         result=like,
         shape=TensorValue(like.shape),
         mean=dtype_promotion._promote_to_strong(
-            mean, DType.float32, DeviceRef.CPU()
+            mean, scalar_dtype, DeviceRef.CPU()
         ),
         variance=dtype_promotion._promote_to_strong(
-            std, DType.float32, DeviceRef.CPU()
+            std, scalar_dtype, DeviceRef.CPU()
         ),
         seed=seed,
         output_param_decls=kgen.ParamDeclArrayAttr([]),

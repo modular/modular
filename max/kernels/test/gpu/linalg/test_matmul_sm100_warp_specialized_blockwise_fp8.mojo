@@ -78,13 +78,6 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         raise Error("TMA expects M to be divisible by 16 bytes")
 
     if not benchmark:
-        if N % BLOCK_SCALE_K != 0:
-            raise Error("N must be divisible by BLOCK_SCALE_K")
-
-    if K % BLOCK_SCALE_K != 0:
-        raise Error("K must be divisible by BLOCK_SCALE_K")
-
-    if not benchmark:
         print(
             String(
                 "in/out dtypes=(",
@@ -275,6 +268,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
+            scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         ](
             c_device_ref.tensor,
             a_device.tensor,
@@ -364,16 +358,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             for mma_m_scale in range(1, 3):
 
                 @parameter
-                for mma_n_scale in range(1, 17):
-                    # from 16*1 till 16*16 which is 256
-                    # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
-                    @parameter
-                    if mma_m_scale == 1 and mma_n_scale % 2 != 0:
-                        continue
-                    # TODO: support the increments of 8 for float 8 dtype at a later point
-                    # currently it works with increments of BN = 32
-                    if mma_n_scale % 4 != 0:
-                        continue
+                for mma_n_scale in range(4, 17, 4):
                     alias block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )
@@ -426,17 +411,7 @@ def main():
         for mma_m_scale in range(1, 3):
 
             @parameter
-            for mma_n_scale in range(1, 17):
-                # from 16*1 till 16*16 which is 256
-                # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
-                @parameter
-                if mma_m_scale == 1 and mma_n_scale % 2 != 0:
-                    continue
-                # TODO: support the increments of 8 for float 8 dtype at a later point
-                # currently it works with increments of BN = 32
-                if mma_n_scale % 4 != 0:
-                    continue
-
+            for mma_n_scale in range(4, 17, 4):
                 alias block_tile_shape = Index(
                     64 * mma_m_scale, 8 * mma_n_scale, BK
                 )
@@ -449,6 +424,38 @@ def main():
                     block_tile_shape,
                     "umma_shape",
                     umma_shape,
+                )
+
+                _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+                    in_dtype,
+                    in_dtype,
+                    out_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                ](
+                    ctx,
+                    dynamic(1000),
+                    static[576](),
+                    static[7168](),
+                )
+
+                _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+                    in_dtype,
+                    in_dtype,
+                    out_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                ](
+                    ctx,
+                    dynamic(1000),
+                    static[576](),
+                    static[256 + 64](),
                 )
 
                 _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[

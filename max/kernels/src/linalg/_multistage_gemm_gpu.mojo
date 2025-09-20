@@ -770,17 +770,18 @@ fn multistage_gemm_kernel[
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
+    alias alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[a_type, simd_size]](),
+        alignment=alignment,
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
     var a_smem_iter = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
         address_space = a_smem.address_space,
-        alignment = a_smem.alignment2,
+        alignment=alignment,
         circular=True,
     ](
         a_smem + warp_k_part_id * a_smem_size,
@@ -833,7 +834,7 @@ fn multistage_gemm_kernel[
         tb[accum_type]()
         .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
         .local()
-        .alloc()
+        .alloc()  # ALIGN-TODO: pass alignment here?
         .fill(0)
     )
 
@@ -1096,10 +1097,10 @@ fn multistage_gemm_split_k_kernel[
 
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
-    var a_part = a.split[axis=1, alignment=BK](
+    var a_part = a.split[axis=1, split_alignment=BK](
         Int(num_partitions), Int(block_idx.z)
     )
-    var b_part = b.split[axis= 1 if transpose_b else 0, alignment=BK](
+    var b_part = b.split[axis= 1 if transpose_b else 0, split_alignment=BK](
         Int(num_partitions), Int(block_idx.z)
     )
 

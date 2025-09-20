@@ -12,6 +12,12 @@ build --enable_platform_specific_config=true
 # Show more output files when you build multiple targets
 common --show_result=10
 
+# https://github.com/bazelbuild/bazel/pull/27030
+common --experimental_objc_fastbuild_options=
+
+# Don't inherit magic copts for objc_library rules
+common --incompatible_avoid_hardcoded_objc_compilation_flags
+
 # https://github.com/aspect-build/tools_telemetry
 common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
 
@@ -65,6 +71,11 @@ build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
 # Disable cc_library's underlying shared library because of circular dependency linking issues
 build --dynamic_mode=off
 build --features=-supports_dynamic_linker
+
+# Make sure we use llvm-ar on macOS for exec config too
+common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos
+# Always use llvm-ar which works fine for macOS
+common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 
 # Disable layering check for third parties since we don't care about their
 # layers, and we're not using this ourselves yet.
@@ -170,6 +181,7 @@ build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
 build:ci --config=ci-no-config
 # Set CI builds to lower priority than local builds, some CI builds override this
 build:ci --remote_execution_priority=20
+test:ci --remote_download_outputs=minimal
 
 build:ci-gpu-common --config=ci
 build:ci-gpu-common --test_tag_filters=gpu,-lint-test
@@ -210,7 +222,5 @@ build:ci-remote-mi300 --config=remote-mi300
 build:ci-remote-mi300 --build_metadata=TAGS=mi300
 build:ci-remote-mi300 --test_keep_going=false
 
-test:ci-test --config=ci-no-config
-test:ci-test --remote_download_outputs=minimal
-
-test:ci-gpu-common --config=ci-test
+# TODO: Remove once transitives are fixed
+common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo

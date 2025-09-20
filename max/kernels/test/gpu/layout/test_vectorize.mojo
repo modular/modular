@@ -22,7 +22,7 @@ fn test_vectorize_2() raises:
         DType.float32,
         Layout(IntTuple(IntTuple(16, 32), 4), IntTuple(IntTuple(32, 1), 512)),
         MutableAnyOrigin,
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
 
     var n = product(tensor.layout.shape)
     for i in range(n):
@@ -47,7 +47,7 @@ fn test_vectorize_2() raises:
         DType.float32,
         Layout(IntTuple(16, 32, 4), IntTuple(32, 1, 512)),
         MutableAnyOrigin,
-    ].stack_allocation[alignment=16]()
+    ].stack_allocation[stack_alignment=16]()
 
     n = product(three_dim_tensor.layout.shape)
     for i in range(n):
@@ -74,7 +74,7 @@ fn test_vectorize_2() raises:
         DType.float32,
         layout,
         MutableAnyOrigin,
-    ].stack_allocation[alignment=8]()
+    ].stack_allocation[stack_alignment=8]()
 
     n = product(tensor2.layout.shape)
     for i in range(n):
@@ -97,7 +97,7 @@ fn test_vectorize_2() raises:
     alias layout_unknown = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), IntTuple(UNKNOWN_VALUE, 1)
     )
-    var heap = UnsafePointer[Int32, alignment2=8].alloc(64)
+    var heap = UnsafePointer[Int32].alloc(64, alignment=8)
     var tensor4 = LayoutTensor[
         DType.int32,
         layout_unknown,

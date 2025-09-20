@@ -283,6 +283,19 @@ fn test_iter() raises:
                 ),
             )
 
+    # test Iterator APIs
+    var it = enumerate(list_obj.__iter__())
+    var val = next(it)
+    assert_equal_pyobj(val[0], 0)
+    assert_equal_pyobj(val[1], "apple")
+    val = next(it)
+    assert_equal_pyobj(val[0], 1)
+    assert_equal_pyobj(val[1], "orange")
+    val = next(it)
+    assert_equal_pyobj(val[0], 2)
+    assert_equal_pyobj(val[1], "banana")
+    assert_equal(it.__has_next__(), False)
+
 
 fn test_setitem() raises:
     var ll: PythonObject = [1, 2, 3, "food"]

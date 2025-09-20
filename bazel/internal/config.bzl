@@ -1,13 +1,30 @@
 """Private bazel configuration used internally by rules and macros."""
 
+load("@module_versions//:config.bzl", "DEFAULT_PYTHON_VERSION", "DEFAULT_PYTHON_VERSION_UNDERBAR")
 load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
-load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")  # buildifier: disable=bzl-visibility
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY")
 
 GPU_TEST_ENV = {
     "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS)",
     "GPU_ENV_DO_NOT_USE": "$(GPU_CACHE_ENV)",
     "LSAN_OPTIONS": "suppressions=$(execpath //bazel/internal:lsan-suppressions.txt)",
 }
+
+def python_version_name(name, python_version):
+    if python_version in (DEFAULT_PYTHON_VERSION_UNDERBAR, DEFAULT_PYTHON_VERSION):
+        return name
+    return "{}_{}".format(name, python_version)
+
+def python_version_tags(python_version):
+    tags = ["python-binding-library"]
+    if python_version != DEFAULT_PYTHON_VERSION_UNDERBAR:
+        tags.extend([
+            "no-clang-tidy",
+            "no-compile-commands",
+            "no-mypy",
+            ALLOW_UNUSED_TAG,  # TODO: Remove when we use non-default version targets in tests
+        ])
+    return tags
 
 def _get_all_constraints(constraints):
     """Extract all possible constraints from the target's 'target_compatible_with'.

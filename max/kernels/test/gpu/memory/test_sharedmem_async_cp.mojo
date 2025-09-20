@@ -22,7 +22,7 @@ fn copy_via_shared(
     src: UnsafePointer[Float32],
     dst: UnsafePointer[Float32],
 ):
-    var thId = Int(thread_idx.x)
+    var thread_id = Int(thread_idx.x)
     var mem_buff: UnsafePointer[
         Float32, address_space = AddressSpace.SHARED
     ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
@@ -31,8 +31,8 @@ fn copy_via_shared(
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
-        src_global.offset(thId),
-        mem_buff.offset(thId),
+        src_global.offset(thread_id),
+        mem_buff.offset(thread_id),
     )
 
     var m_barrier = stack_allocation[
@@ -46,7 +46,7 @@ fn copy_via_shared(
         time.sleep(100 * 1e-6)
         not_wait = sync.mbarrier_test_wait(m_barrier, state)
 
-    dst[thId] = mem_buff[thId]
+    dst[thread_id] = mem_buff[thread_id]
 
 
 # CHECK-LABEL: run_copy_via_shared

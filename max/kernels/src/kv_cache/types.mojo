@@ -864,24 +864,6 @@ struct PagedKVCacheCollection[
             _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
         )
 
-    fn __copyinit__(out self, other: Self):
-        self.blocks = other.blocks
-        self.cache_lengths = other.cache_lengths
-        self.lookup_table = other.lookup_table
-        self.max_seq_length = other.max_seq_length
-        self.max_cache_length = other.max_cache_length
-        self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
-        self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
-
-    fn __moveinit__(out self, deinit other: Self):
-        self.blocks = other.blocks
-        self.cache_lengths = other.cache_lengths
-        self.lookup_table = other.lookup_table
-        self.max_seq_length = other.max_seq_length
-        self.max_cache_length = other.max_cache_length
-        self.kv_cache_dynamic_shape = other.kv_cache_dynamic_shape
-        self.kv_cache_dynamic_strides = other.kv_cache_dynamic_strides
-
     @always_inline
     fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
         return self._get_cache[0](layer_idx)

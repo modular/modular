@@ -530,11 +530,9 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
 
         @parameter
-        if dtype.bit_width() > DType.index.bit_width():
-            alias dt = _unsigned_integral_type_of[DType.index]()
-            self = bitcast[dt](Scalar[DType.index](value.__int__())).cast[
-                dtype
-            ]()
+        if dtype.bit_width() > DType.int.bit_width():
+            alias dt = _unsigned_integral_type_of[DType.int]()
+            self = bitcast[dt](Scalar[DType.int](value.__int__())).cast[dtype]()
         else:
             self = Self(value.__int__())
 
@@ -1042,7 +1040,7 @@ struct SIMD[dtype: DType, size: Int](
             specified exponent value.
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
-        return _pow(self, SIMD[DType.index, size](exp))
+        return _pow(self, SIMD[DType.int, size](exp))
 
     # TODO(#22771): remove this overload.
     @always_inline("nodebug")
@@ -1849,9 +1847,7 @@ struct SIMD[dtype: DType, size: Int](
             # a large unsigned
             return self.cast[_uint_type_of_width[int_width]()]().__int__()
         else:
-            return Int(
-                self._refine[new_size=1]().cast[DType.index]()._mlir_value
-            )
+            return Int(self._refine[new_size=1]().cast[DType.int]()._mlir_value)
 
     @always_inline("nodebug")
     fn __index__(self) -> __mlir_type.index:

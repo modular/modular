@@ -186,15 +186,6 @@ struct AddressSpace(
         """
         return self._value
 
-    @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
-        """Convert to index.
-
-        Returns:
-            The corresponding __mlir_type.index value.
-        """
-        return self._value._mlir_value
-
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
         """Checks if the two address spaces are equal.

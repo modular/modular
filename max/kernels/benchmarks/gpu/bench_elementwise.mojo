@@ -26,8 +26,8 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
+from gpu.host.info import B200
 from internal_utils import arg_parse, parse_shape
 
 from utils import IndexList
@@ -120,7 +120,12 @@ fn run_elementwise[
     name: StaticString,
     ctx: DeviceContext,
 ) raises:
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    # Blackwell support 32B ld/st, see KERN-2037
+    alias pack_size = 32 // size_of[
+        dtype
+    ]() if ctx.default_device_info is B200 else simd_width_of[
+        dtype, target = get_gpu_target()
+    ]()
     alias align = align_of[
         SIMD[dtype, pack_size], target = get_gpu_target()
     ]() if use_aligned_memory else 1
@@ -134,11 +139,11 @@ fn run_elementwise[
         // size_of[dtype]()
     )
 
-    var in_host_ptr = UnsafePointer[Scalar[dtype], alignment2=align].alloc(
-        N_cache
+    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        N_cache, alignment=align
     )
-    var out_host_ptr = UnsafePointer[Scalar[dtype], alignment2=align].alloc(
-        N_cache
+    var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        N_cache, alignment=align
     )
 
     var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)
@@ -237,7 +242,8 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
 
     @parameter
     for i in range(len(x)):
-        t[i] = x[i]
+        alias xi = x[i]
+        t[i] = xi
     return t
 
 

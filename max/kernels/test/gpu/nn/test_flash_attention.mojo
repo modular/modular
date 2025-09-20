@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from random import rand, seed
+from math import exp
+from random import rand, seed, random_float64
 from sys import argv, has_amd_gpu_accelerator
 
 from buffer import NDBuffer
@@ -368,7 +369,8 @@ fn test[
 
 fn test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     var depths = [64, 128]
-    if info is H100 or info is B200:
+
+    if info is materialize[H100]() or info is materialize[B200]():
         depths.append(80)
     return depths^
 
@@ -508,6 +510,8 @@ fn test_decoding[
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
         ](1, 11, ctx, use_index_input=use_index_input)
+
+        @parameter
         if (
             not is_sm8(ctx.default_device_info)
             or num_partitions
@@ -676,10 +680,151 @@ fn test_cross_attention[batch_size: Int](ctx: DeviceContext) raises:
     ](119, 200, ctx)
 
 
+fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
+    alias batch_size = 1
+    alias num_heads = 2
+    alias kv_heads = num_heads
+    alias seq_len = 8
+    alias num_keys = 64
+    alias depth = 128
+    alias qkv_type = DType.bfloat16  # fast path on A100/H100
+    alias mask_type = DType.float32
+    alias scale = Float32(0.0)  # force QK logits to exactly 0
+
+    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * seq_len * num_heads * depth
+    )
+    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * num_keys * kv_heads * depth
+    )
+    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * num_keys * kv_heads * depth
+    )
+    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(
+        batch_size * seq_len * num_keys
+    )
+    var out_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * seq_len * num_heads * depth
+    )
+    var sinks_ptr = UnsafePointer[Scalar[qkv_type]].alloc(num_heads)
+
+    # Q,K don't matter when scale=0, but set deterministically
+    for i in range(batch_size * seq_len * num_heads * depth):
+        q_ptr[i] = Float32(0.123).cast[qkv_type]()
+    for i in range(batch_size * num_keys * kv_heads * depth):
+        k_ptr[i] = Float32(-0.456).cast[qkv_type]()
+
+    # V = 1 so the attention output equals total probability mass assigned to
+    # the real keys
+    for i in range(batch_size * num_keys * kv_heads * depth):
+        v_ptr[i] = Float32(1.0).cast[qkv_type]()
+
+    # No masking
+    for i in range(batch_size * seq_len * num_keys):
+        mask_ptr[i] = 0.0
+
+    # Two different sinks for the two heads
+    var sink_h0 = Float32(5.0)  # large positive
+    var sink_h1 = Float32(3.0)  # moderately positive
+    sinks_ptr[0] = sink_h0.cast[qkv_type]()
+    sinks_ptr[1] = sink_h1.cast[qkv_type]()
+
+    var q_host = NDBuffer[qkv_type, 4](
+        q_ptr, Index(batch_size, seq_len, num_heads, depth)
+    )
+    var k_host = NDBuffer[qkv_type, 4](
+        k_ptr, Index(batch_size, num_keys, kv_heads, depth)
+    )
+    var v_host = NDBuffer[qkv_type, 4](
+        v_ptr, Index(batch_size, num_keys, kv_heads, depth)
+    )
+    var m3_host = NDBuffer[mask_type, 3](
+        mask_ptr, Index(batch_size, seq_len, num_keys)
+    )
+    var out_host = NDBuffer[qkv_type, 4](
+        out_ptr, Index(batch_size, seq_len, num_heads, depth)
+    )
+    var sinks_host = NDBuffer[qkv_type, 1](sinks_ptr, Index(num_heads))
+
+    var q_dev = ctx.enqueue_create_buffer[qkv_type](q_host.size())
+    var k_dev = ctx.enqueue_create_buffer[qkv_type](k_host.size())
+    var v_dev = ctx.enqueue_create_buffer[qkv_type](v_host.size())
+    var m_dev = ctx.enqueue_create_buffer[mask_type](m3_host.size())
+    var out_dev = ctx.enqueue_create_buffer[qkv_type](out_host.size())
+    var sinks_dev = ctx.enqueue_create_buffer[qkv_type](sinks_host.size())
+
+    ctx.enqueue_copy(q_dev, q_ptr)
+    ctx.enqueue_copy(k_dev, k_ptr)
+    ctx.enqueue_copy(v_dev, v_ptr)
+    ctx.enqueue_copy(m_dev, mask_ptr)
+    ctx.enqueue_copy(sinks_dev, sinks_ptr)
+
+    var q_device = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
+    ](q_dev.unsafe_ptr(), Index(batch_size, seq_len, num_heads, depth))
+    var k_device = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), kv_heads, depth)
+    ](k_dev.unsafe_ptr(), Index(batch_size, num_keys, kv_heads, depth))
+    var v_device = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), kv_heads, depth)
+    ](v_dev.unsafe_ptr(), Index(batch_size, num_keys, kv_heads, depth))
+    var mask3d = NDBuffer[mask_type, 3, _, DimList.create_unknown[3]()](
+        m_dev.unsafe_ptr(), Index(batch_size, seq_len, num_keys)
+    )
+    var out_device = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
+    ](out_dev.unsafe_ptr(), Index(batch_size, seq_len, num_heads, depth))
+    var sinks_device = NDBuffer[qkv_type, 1, _, DimList.create_unknown[1]()](
+        sinks_dev.unsafe_ptr(), Index(num_heads)
+    )
+
+    @always_inline
+    fn launch(ctx: DeviceContext) raises:
+        flash_attention[sink=True](
+            out_device,
+            q_device,
+            k_device,
+            v_device,
+            MaterializedMask(mask3d),
+            IdentityScoreMod(),
+            scale,  # 0.0 -> all QK logits are exactly zero
+            ctx,
+            None,
+            sink_weights=sinks_device,
+        )
+
+    launch(ctx)
+    ctx.synchronize()
+    ctx.enqueue_copy(out_ptr, out_dev)
+
+    fn expected_mass(sink: Float32) -> Float32:
+        return Float32(num_keys) / (Float32(num_keys) + exp(sink))
+
+    var want0 = expected_mass(sink_h0)
+    var want1 = expected_mass(sink_h1)
+
+    # Every element of the output vector for a given head should equal that mass
+    # (since V=1)
+    for s in range(seq_len):
+        for d in range(depth):
+            var got0 = out_host[0, s, 0, d].cast[DType.float32]()
+            var got1 = out_host[0, s, 1, d].cast[DType.float32]()
+            assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
+            assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
+
+    q_ptr.free()
+    k_ptr.free()
+    v_ptr.free()
+    mask_ptr.free()
+    out_ptr.free()
+    sinks_ptr.free()
+
+
 def main():
     with DeviceContext() as ctx:
         test_context_encoding(ctx)
         test_cross_attention[1](ctx)
+        test_flash_attention_sink_kernel(ctx)
 
         # KERN-1726: Disable warp split-k because it fails with mha_decoding_single_batch
         # specifically for num_keys = 523.

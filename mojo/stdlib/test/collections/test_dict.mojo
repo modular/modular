@@ -185,6 +185,21 @@ def test_key_error():
         _ = dict.pop("a")
 
 
+def _test_iter_bounds[
+    I: Iterator, //
+](var dict_iter: I, dict_len: Int,):
+    var iter = dict_iter^
+    for i in range(dict_len):
+        var lower, upper = iter.bounds()
+        assert_equal(dict_len - i, lower)
+        assert_equal(dict_len - i, upper.value())
+        _ = iter.__next__()
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
+
+
 def test_iter():
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
@@ -195,6 +210,10 @@ def test_iter():
         keys += key
 
     assert_equal(keys, "ab")
+    _test_iter_bounds(dict.__iter__(), len(dict))
+
+    var empty_dict: Dict[String, Int] = {}
+    assert_equal(iter(empty_dict).__has_next__(), False)
 
 
 def test_iter_keys():
@@ -207,6 +226,7 @@ def test_iter_keys():
         keys += key
 
     assert_equal(keys, "ab")
+    _test_iter_bounds(dict.keys(), len(dict))
 
 
 def test_iter_values():
@@ -219,6 +239,7 @@ def test_iter_values():
         sum += value
 
     assert_equal(sum, 3)
+    _test_iter_bounds(dict.values(), len(dict))
 
 
 def test_iter_values_mut():
@@ -232,6 +253,7 @@ def test_iter_values_mut():
     assert_equal(2, dict["a"])
     assert_equal(3, dict["b"])
     assert_equal(2, len(dict))
+    _test_iter_bounds(dict.values(), len(dict))
 
 
 def test_iter_items():
@@ -247,6 +269,39 @@ def test_iter_items():
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)
+
+    # TODO: _DictItemIter does not conform to `Iterator` yet
+    # _test_iter_bounds(dict.values(), len(dict))
+
+
+def test_iter_take_items():
+    var dict: Dict[Int, String] = {0: "a", 1: "b", 2: "c"}
+
+    var values = String()
+    var keys = 0
+
+    for entry in dict.take_items():
+        keys += entry.key
+        values += entry.value
+
+    assert_equal(values, "abc")
+    assert_equal(keys, 3)
+    assert_equal(len(dict), 0)
+    assert_false(dict.take_items().__has_next__())
+
+    for i in range(3):
+        with assert_raises(contains="KeyError"):
+            _ = dict[i]
+
+
+def test_iter_take_items_empty():
+    var dict: Dict[Int, String] = {}
+
+    var count = 0
+    for _ in dict.take_items():
+        count += 1
+    assert_equal(len(dict), 0)
+    assert_equal(count, 0)
 
 
 def test_dict_contains():
@@ -416,9 +471,6 @@ def test_dict_update_empty_new():
 struct DummyKey(KeyElement):
     var value: Int
 
-    fn __copyinit__(out self, other: Self):
-        self.value = other.value
-
     fn __hash__[H: Hasher](self, mut hasher: H):
         return hasher.update(self.value)
 
@@ -487,6 +539,8 @@ def test_dict():
     test["test_mojo_issue_1729", test_mojo_issue_1729]()
     test["test dict or", test_dict_or]()
     test["test dict popitem", test_dict_popitem]()
+    test["test_iter_take_items", test_iter_take_items]()
+    test["test_iter_take_items_empty", test_iter_take_items_empty]()
 
 
 def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
@@ -552,12 +606,15 @@ def test_dict_popitem():
     dict["a"] = 1
     dict["b"] = 2
 
+    assert_equal(len(dict), 2)
     var item = dict.popitem()
     assert_equal(item.key, "b")
     assert_equal(item.value, 2)
+    assert_equal(len(dict), 1)
     item = dict.popitem()
     assert_equal(item.key, "a")
     assert_equal(item.value, 1)
+    assert_equal(len(dict), 0)
     with assert_raises(contains="KeyError"):
         _ = dict.popitem()
 
@@ -678,6 +735,24 @@ def test_dict_repr_wrap():
     )
 
 
+def test_popitem_no_copies():
+    var dict: Dict[String, CopyCounter] = {}
+    dict["a"] = CopyCounter()
+    dict["b"] = CopyCounter()
+
+    assert_equal(len(dict), 2)
+    var item = dict.popitem()
+    assert_equal(item.key, "b")
+    assert_equal(item.value.copy_count, 0)
+    assert_equal(len(dict), 1)
+    item = dict.popitem()
+    assert_equal(item.key, "a")
+    assert_equal(item.value.copy_count, 0)
+    assert_equal(len(dict), 0)
+    with assert_raises(contains="KeyError"):
+        _ = dict.popitem()
+
+
 def main():
     test_dict()
     test_dict_literals()
@@ -695,3 +770,4 @@ def main():
     test_compile_time_dict()
     test_dict_comprehension()
     test_dict_repr_wrap()
+    test_popitem_no_copies()

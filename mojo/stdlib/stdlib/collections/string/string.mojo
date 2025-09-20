@@ -174,7 +174,7 @@ struct String(
     alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
-    alias REF_COUNT_SIZE = size_of[Atomic[DType.index]]()
+    alias REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -632,20 +632,18 @@ struct String(
     # out-of-line strings, which is stored before the UTF-8 data.
 
     @always_inline("nodebug")
-    fn _refcount(self) -> ref [self._ptr_or_data.origin] Atomic[DType.index]:
+    fn _refcount(self) -> ref [self._ptr_or_data.origin] Atomic[DType.int]:
         # The header is stored before the string data.
         return (self._ptr_or_data - Self.REF_COUNT_SIZE).bitcast[
-            Atomic[DType.index]
+            Atomic[DType.int]
         ]()[]
 
     @always_inline("nodebug")
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            # TODO: use `load[MONOTONIC]` once load supports memory orderings.
             return (
-                self._refcount().fetch_sub[ordering = Consistency.MONOTONIC](0)
-                == 1
+                self._refcount().load[ordering = Consistency.MONOTONIC]() == 1
             )
         else:
             return False
@@ -665,7 +663,7 @@ struct String(
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
-            var refcount = ptr.bitcast[Atomic[DType.index]]()
+            var refcount = ptr.bitcast[Atomic[DType.int]]()
             if refcount[].fetch_sub[ordering = Consistency.RELEASE](1) == 1:
                 fence[Consistency.ACQUIRE]()
                 ptr.free()
@@ -677,8 +675,8 @@ struct String(
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
-            ptr.bitcast[Atomic[DType.index]]().address
-        ) = Atomic[DType.index](1)
+            ptr.bitcast[Atomic[DType.int]]().address
+        ) = Atomic[DType.int](1)
 
         # Return a pointer to right after the header, which is where the string
         # data will be stored.

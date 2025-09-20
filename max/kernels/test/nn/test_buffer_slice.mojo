@@ -71,30 +71,30 @@ def test_slice[
     print("In shape:", in_tensor.runtime_layout.shape.value.canonicalize())
     print("In strides:", in_tensor.runtime_layout.stride.value.canonicalize())
 
-    var start_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+    var start_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var start_tensor = LayoutTensor[DType.index, Layout.row_major[1]()](
+    var start_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
         start_tensor_mem.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)
         ),
     )
 
-    var end_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+    var end_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var end_tensor = LayoutTensor[DType.index, Layout.row_major[1]()](
+    var end_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
         end_tensor_mem.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)
         ),
     )
 
-    var step_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+    var step_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var step_tensor = LayoutTensor[DType.index, Layout.row_major[1]()](
+    var step_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
         step_tensor_mem.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)

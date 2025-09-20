@@ -47,7 +47,6 @@ from layout.layout import blocked_product
 
 
 from layout.swizzle import Swizzle
-from layout._utils import TensorCoreKGroup
 
 from math import ceildiv
 from memory import UnsafePointer
@@ -113,16 +112,16 @@ struct TensorCoreMMA[algorithm: StaticString]:
             # Only transpose the B matrix if we are validating the results,
             # otherwise we can pretend the matrix is already transposed
             if algorithm == "mma_tile_buffers" and perform_validation:
-                # Create transposed layout tensor using the transposed dimensions N×K
+                # Create transposed layout tensor using the transposed dimensions NxK
                 # Allocate device memory for transposed matrix
                 var b_transposed_buffer = gpu_ctx.enqueue_create_buffer[
                     DType.float16
                 ](N * K)
                 var b_transposed_ptr = b_transposed_buffer.unsafe_ptr()
 
-                # Copy with transpose: element at (i,j) in original K×N goes to (j,i) in transposed N×K
-                for i in range(K):  # rows of original K×N matrix
-                    for j in range(N):  # cols of original K×N matrix
+                # Copy with transpose: element at (i,j) in original KxN goes to (j,i) in transposed NxK
+                for i in range(K):  # rows of original KxN matrix
+                    for j in range(N):  # cols of original KxN matrix
                         b_transposed_ptr[j * K + i] = b_layout.ptr[i * N + j]
 
                 b_ptr_to_use = b_transposed_ptr
@@ -632,10 +631,10 @@ fn basic_shared_mem[
     # Iterate over tiles of A and B in the K dimension
     for k_i in range(ceildiv(K, BK)):
         # Use separate optimized thread layouts for A and B tiles
-        # A_sram_tile: 64×8, so use 32×8 thread layout (256 threads total)
-        # B_sram_tile: 8×64, so use 8×32 thread layout (256 threads total)
-        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)  # 32×8
-        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)  # 8×32
+        # A_sram_tile: 64x8, so use 32x8 thread layout (256 threads total)
+        # B_sram_tile: 8x64, so use 8x32 thread layout (256 threads total)
+        alias load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)  # 32x8
+        alias load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)  # 8x32
 
         # Get the tiles of A and B for the current iteration
         A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
@@ -1165,7 +1164,7 @@ fn double_buffer[
 
             # Start loading next iteration's data into alternate buffers
             # This happens in parallel with computation below
-            # Vectorize to create 4-byte elements (2 × f16 = 4 bytes)
+            # Vectorize to create 4-byte elements (2 x f16 = 4 bytes)
             var A_dram_vectorized = A_dram_tile_next.vectorize[
                 1, 2
             ]()  # 2 f16s per element
@@ -1364,20 +1363,20 @@ fn mma_tile_buffers[
     fn get_smem_layout[block_rows: Int]() -> Layout:
         # Shared memory layout
         #
-        # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rows×k_tile_size tiles
+        # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rowsxk_tile_size tiles
         # - tiler_layout: Layout.row_major(1, num_repeats) -> repeat tiles num_repeats times horizontally
         # - smem_layout: blocked_product(base_layout, tiler_layout) -> tiled blocked layout
         #
-        # Resulting shape: block_rows×(k_tile_size × num_repeats) = block_rows×BK tensor
-        # Where BK = k_tile_size × num_repeats, k_tile_size = MMA_K × k_group_size
+        # Resulting shape: block_rowsx(k_tile_size x num_repeats) = block_rowsxBK tensor
+        # Where BK = k_tile_size x num_repeats, k_tile_size = MMA_K x k_group_size
         #
-        # This creates num_repeats blocks of block_rows×k_tile_size arranged horizontally:
+        # This creates num_repeats blocks of block_rowsxk_tile_size arranged horizontally:
         # Within each k_tile_size-column block, elements are consecutive (stride 1)
-        # Between blocks: stride = block_rows × k_tile_size
+        # Between blocks: stride = block_rows x k_tile_size
         #
         # ASCII diagram for block_rows=64, k_tile_size=32, BK=64 (showing first 2 of 2 blocks):
         # ┌─────────────────────────────────────────────────────────────────────────┐
-        # │         Block 0 (64×32)             │         Block 1 (64×32)           │
+        # │         Block 0 (64x32)             │         Block 1 (64x32)           │
         # ├─────────────────────────────────────┼───────────────────────────────────┤
         # │   0    1    2  ...   30   31        │ 2048 2049 2050 ... 2078 2079      │
         # │  32   33   34  ...   62   63        │ 2080 2081 2082 ... 2110 2111      │
@@ -1386,7 +1385,7 @@ fn mma_tile_buffers[
         # │ ...                                 │  ...                              │
         # │2016 2017 2018  ... 2046 2047        │ 4064 4065 4066 ... 4094 4095      │
         # └─────────────────────────────────────────────────────────────────────────┘
-        # stride between blocks = block_rows × k_tile_size = 64 × 32 = 2048
+        # stride between blocks = block_rows x k_tile_size = 64 x 32 = 2048
 
         alias base_layout = Layout.row_major(block_rows, k_tile_size)
         alias num_repeats = BK // k_tile_size

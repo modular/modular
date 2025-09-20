@@ -335,7 +335,7 @@ struct MHAPosition[
 
     @always_inline
     fn get_start_and_end_for_partitions[
-        partition_t: MHAPartitionScheme, //, BN: Int
+        partition_t: MHAPartitionScheme, //,
     ](self, partition: partition_t) -> Tuple[UInt32, UInt32]:
         @parameter
         if partition_t.do_partition:
@@ -719,22 +719,22 @@ fn produce[
         is_k_major=False,
     ],
     q_smem: UnsafePointer[
-        Scalar[qkv_type], address_space = AddressSpace.SHARED, alignment2=128
+        Scalar[qkv_type], address_space = AddressSpace.SHARED
     ],
     kv_smem: UnsafePointer[
-        Scalar[qkv_type], address_space = AddressSpace.SHARED, alignment2=128
+        Scalar[qkv_type], address_space = AddressSpace.SHARED
     ],
     produced_mbar_kv: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumed_mbar_kv: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     produced_mbar_q: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumed_mbar_q: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     kv_lut: KVLUTType,
     initial_position: MHAPosition[
@@ -891,7 +891,7 @@ fn produce[
 
     @parameter
     if PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions[BN=BN](partition)
+        startend = position.get_start_and_end_for_partitions(partition)
         start = startend[0]
         end = startend[1]
         if start >= end:
@@ -913,7 +913,7 @@ fn produce[
 
     @parameter
     if not PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions[BN=BN](partition)
+        startend = position.get_start_and_end_for_partitions(partition)
         start = startend[0]
         end = startend[1]
     var kv_tile_start_row: UInt32 = start
@@ -983,9 +983,9 @@ fn produce[
                         ),
                     )
                 kv_col = kv_lut.col_idx(position.kv_head_idx())
-                start, new_end = position.get_start_and_end_for_partitions[
-                    BN=BN
-                ](partition)
+                start, new_end = position.get_start_and_end_for_partitions(
+                    partition
+                )
                 kv_tile_start_row = start
                 end = new_end
             else:
@@ -1026,9 +1026,7 @@ fn output_reg_to_smem[
     local_warp_group_idx: UInt32,
     warp_x: UInt32,
     warp_y: UInt32,
-    q_smem: UnsafePointer[
-        Scalar[kv_type], address_space = AddressSpace.SHARED, alignment2=128
-    ],
+    q_smem: UnsafePointer[Scalar[kv_type], address_space = AddressSpace.SHARED],
     output_reg_tile: LayoutTensor[
         accum_type,
         reg_layout,

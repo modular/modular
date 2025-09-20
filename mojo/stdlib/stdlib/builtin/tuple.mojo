@@ -128,8 +128,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer(to=existing[i]).move_pointee_into(
-                UnsafePointer(to=self[i])
+            UnsafePointer(to=self[i]).init_pointee_move_from(
+                UnsafePointer(to=existing[i])
             )
         # Note: The destructor on `existing` is auto-disabled in a moveinit.
 
@@ -169,7 +169,7 @@ struct Tuple[*element_types: Copyable & Movable](
         var storage_kgen_ptr = UnsafePointer(to=self.storage).address
 
         # KGenPointer to the element.
-        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[index = idx._mlir_value](
+        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[index = idx.__index__()](
             storage_kgen_ptr
         )
         # Use an immortal mut reference, which converts to self's origin.

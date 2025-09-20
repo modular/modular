@@ -125,9 +125,9 @@ def test_kernel_1[
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel](
-                c.device_tensor(),
-                a.device_tensor(),
-                b.device_tensor(),
+                c.device_tensor[update=False](),
+                a.device_tensor[update=False](),
+                b.device_tensor[update=False](),
                 grid_dim=(ceildiv(N, BLOCKSIZE), ceildiv(M, BLOCKSIZE)),
                 block_dim=(BLOCKSIZE, BLOCKSIZE),
             )
@@ -147,9 +147,9 @@ def test_kernel_1[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),  # returns an NDBuffer[dtype, 2, MutableAnyOrigin]
-            a.device_buffer(),
-            b_vendor.device_buffer(),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b_vendor.device_tensor(),
             c_row_major=True,
             transpose_b=transpose_b,
         )

@@ -13,17 +13,27 @@
 
 
 @fieldwise_init
-struct MyPet(Copyable, Movable):
+struct MyPet(ImplicitlyCopyable, Movable):
     var name: String
     var age: Int
 
 
+@fieldwise_init
+struct Pair(ImplicitlyCopyable, Movable):
+    var first: Int
+    var second: Int
+
+
 def main():
     pet = MyPet("Fido", 3)
-    pet2 = pet.copy()
+    pet2 = pet
     print(pet2.name)
     print(pet2.age)
     pet3 = pet.copy()
     print(pet3.name)
     pet4 = pet^
     print(pet4.name)
+
+    pair = Pair(3, 4)
+    pair_copy = pair
+    print(pair.first, pair_copy.second)
