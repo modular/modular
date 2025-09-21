@@ -172,8 +172,11 @@ def create_paged_scheduler(
 class FakeTokenGeneratorPipeline(
     Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput]
 ):
-    def __init__(self, kv_manager: PagedKVCacheManager) -> None:
+    def __init__(
+        self, kv_manager: PagedKVCacheManager, start_token_id: int = 42
+    ) -> None:
         self.kv_manager = kv_manager
+        self.token_id = start_token_id
 
     def execute(
         self, inputs: TextGenerationInputs[TextContext]
@@ -200,7 +203,8 @@ class FakeTokenGeneratorPipeline(
         responses = {}
         for req_id, context in inputs.batch.items():
             for _ in range(num_steps):
-                context.update(new_token=rand(1)[0])
+                context.update(new_token=self.token_id)
+                self.token_id += 1
 
                 if context.current_length == context.max_length:
                     context.status = GenerationStatus.MAXIMUM_LENGTH
