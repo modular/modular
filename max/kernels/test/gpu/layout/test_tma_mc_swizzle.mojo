@@ -141,7 +141,7 @@ def test_tma_multicast_swizzle[
         arange(dst.tensor(), 0)
 
     var tma_tensor = create_tma_tile[
-        dtype, 2, subcluster_tile_shape, swizzle_mode=swizzle_mode
+        subcluster_tile_shape, swizzle_mode=swizzle_mode
     ](ctx, src.device_tensor())
 
     # print test info

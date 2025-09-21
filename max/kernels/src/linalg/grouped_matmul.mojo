@@ -267,12 +267,9 @@ fn grouped_matmul_sm90[
 
     # Create TMA op for the entire A tensor including all tokens.
     a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[
-        a_type,
-        2,
-        Index(BM, BK),
-        swizzle_mode=a_swizzle,
-    ](ctx, a_tensor)
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a_tensor
+    )
 
     # Flattne B tensor into a 2D tensor for easier TMA support.
     b_tensor = LayoutTensor[
@@ -281,21 +278,15 @@ fn grouped_matmul_sm90[
         MutableAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
-    b_tma_op = create_tma_tile[
-        b_type,
-        2,
-        Index(BN, BK),
-        swizzle_mode=b_swizzle,
-    ](ctx, b_tensor)
+    b_tma_op = create_tma_tile[Index(BN, BK), swizzle_mode=b_swizzle](
+        ctx, b_tensor
+    )
 
     # Create a dummy TMA op for C, we don't support TMA store for output.
     c_tensor = from_ndbuffer_row_major(c)
-    c_tma_op = create_tma_tile[
-        c_type,
-        2,
-        Index(BM, BK),
-        swizzle_mode=c_swizzle,
-    ](ctx, c_tensor)
+    c_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=c_swizzle](
+        ctx, c_tensor
+    )
 
     alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
@@ -1049,9 +1040,9 @@ fn grouped_matmul_sm100[
     alias c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
     a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
-    ](ctx, a_tensor)
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a_tensor
+    )
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
@@ -1059,8 +1050,6 @@ fn grouped_matmul_sm100[
         address_space = AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,

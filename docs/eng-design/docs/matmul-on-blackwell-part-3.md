@@ -101,12 +101,12 @@ begin by declaring the TMA ops on the host side:
 
 ```mojo
 a_tma_op = create_tma_tile[
-    a_type, 2, (BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+    (BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
 ](ctx, a)
 
 b_tma_op = create_tma_tile[
-    b_type, 2, (BN // cluster_shape[0], BK), swizzle_mode=b_swizzle
-](ctx, a)
+    (BN // cluster_shape[0], BK), swizzle_mode=b_swizzle
+](ctx, b)
 ```
 
 Since each CTA will slice the shared memory tiles for A and B and broadcast
@@ -114,7 +114,7 @@ them to corresponding peer CTAs, we divide the TMA tile by the cluster
 dimension. In the GPU kernel, we launch the multicast load using:
 
 ```mojo
- 
+
 if elect_one_thread:
    ....
    a_tma_op.async_multicast_load(
@@ -217,7 +217,7 @@ if elect_one_cta:
         alias idx = IntTuple(0, MMA_K * j)
         alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
         alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
-  
+
           mma[cta_group](
               adesc + a_offset,
               bdesc + b_offset,

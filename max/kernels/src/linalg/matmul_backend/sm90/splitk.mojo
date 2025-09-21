@@ -654,16 +654,12 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     a_tma_op = create_tma_tile[
-        a_type,
-        2,
         Index(BM // CLUSTER_N, BK) if config.partitioned_multicast else Index(
             BM, BK
         ),
         swizzle_mode=a_swizzle,
     ](ctx, a)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
             BN, BK
         ),
@@ -671,8 +667,6 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     ](ctx, b)
 
     c_tma_op = create_tma_tile[
-        c_type,
-        2,
         c_smem_tile,
         swizzle_mode=c_swizzle,
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),

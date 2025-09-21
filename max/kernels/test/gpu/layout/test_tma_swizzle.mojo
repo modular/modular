@@ -100,8 +100,6 @@ def test_tma_swizzle[
         arange(dst.tensor[update=False](), 0)
 
     var tma_tensor = create_tma_tile[
-        dtype,
-        2,
         tile_shape,
         swizzle_mode=swizzle_mode,
         is_k_major=is_k_major,

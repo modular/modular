@@ -570,9 +570,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # LayoutTensors are already in the right format for TMA operations
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
-    ](ctx, a)
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
 
     b_2d = LayoutTensor[
         b_type,
@@ -581,8 +579,6 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         address_space = b.address_space,
     ](b.ptr)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b_2d)

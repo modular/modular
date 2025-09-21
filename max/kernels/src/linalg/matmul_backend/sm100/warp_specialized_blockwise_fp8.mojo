@@ -1303,12 +1303,10 @@ fn sm100_warp_specialized_blockwise_fp8[
     var K = a.dim(1)
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -1329,12 +1327,9 @@ fn sm100_warp_specialized_blockwise_fp8[
     alias split_tile_shape = Index(64, width)
     alias c_tma_tile_shape = output_tile_shape if MMA_M == 256 else split_tile_shape
     alias c_swizzle = TensorMapSwizzle.SWIZZLE_64B if width == 32 else TensorMapSwizzle.SWIZZLE_32B
-    var c_tma_op = create_tma_tile[
-        c_type,
-        2,
-        c_tma_tile_shape,
-        swizzle_mode=c_swizzle,
-    ](ctx, c)
+    var c_tma_op = create_tma_tile[c_tma_tile_shape, swizzle_mode=c_swizzle](
+        ctx, c
+    )
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024

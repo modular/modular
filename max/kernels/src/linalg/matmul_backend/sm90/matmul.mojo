@@ -2237,8 +2237,6 @@ fn warp_specialize_gemm_with_multicasting[
     @parameter
     if use_tma_store:
         c_tma_op = create_tma_tile[
-            c_type,
-            2,
             c_smem_tile,
             swizzle_mode=c_swizzle,
             __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
@@ -2273,8 +2271,6 @@ fn warp_specialize_gemm_with_multicasting[
     @parameter
     if k_align == 16:
         var a_tma_op = create_tma_tile[
-            a_type,
-            2,
             Index(
                 BM // CLUSTER_N, BK
             ) if config.partitioned_multicast else Index(BM, BK),
@@ -2282,8 +2278,6 @@ fn warp_specialize_gemm_with_multicasting[
         ](ctx, a)
 
         var b_tma_op = create_tma_tile[
-            b_type,
-            2,
             Index(
                 BN // CLUSTER_M, BK
             ) if config.partitioned_multicast else Index(BN, BK),

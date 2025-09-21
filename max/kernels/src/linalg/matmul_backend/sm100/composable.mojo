@@ -184,15 +184,11 @@ struct TMALoadOp[
         ctx: DeviceContext,
     ) -> Self.args_type:
         var a_tma_op = create_tma_tile[
-            a_type,
-            2,
             Index(block_tile_shape[0] // cluster_shape[0], block_tile_shape[2]),
             swizzle_mode=a_swizzle,
         ](ctx, a)
 
         var b_tma_op = create_tma_tile[
-            b_type,
-            2,
             Index(block_tile_shape[1] // cluster_shape[1], block_tile_shape[2]),
             swizzle_mode=b_swizzle,
         ](ctx, b)

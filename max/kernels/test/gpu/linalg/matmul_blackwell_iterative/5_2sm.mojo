@@ -512,12 +512,10 @@ fn blackwell_kernel_5[
     alias MMA_K = umma_shape[2]
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], 64), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], 64), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), 64
         ) if transpose_b else Index(64, BN // (cluster_shape[0] // cta_group)),

@@ -142,8 +142,6 @@ def test_tma_3d_load_row_major[
     arange(src.tensor(), 1)
 
     tma_tensor = create_tma_tile[
-        dtype,
-        3,
         Index(cta_tile_dim0, cta_tile_dim1, cta_tile_dim2),
         swizzle_mode=swizzle_mode,
         __tile_layout=cta_tile_layout,

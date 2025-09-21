@@ -1550,12 +1550,10 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     var K = a_device.dim[1]()
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a_device)
 
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -1574,12 +1572,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     alias split_tile_shape = Index(64, width)
     alias c_tma_tile_shape = output_tile_shape if MMA_M == 256 else split_tile_shape
     alias c_swizzle = TensorMapSwizzle.SWIZZLE_64B if width == 32 else TensorMapSwizzle.SWIZZLE_32B
-    var c_tma_op = create_tma_tile[
-        c_type,
-        2,
-        c_tma_tile_shape,
-        swizzle_mode=c_swizzle,
-    ](ctx, c_device)
+    var c_tma_op = create_tma_tile[c_tma_tile_shape, swizzle_mode=c_swizzle](
+        ctx, c_device
+    )
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -2019,12 +2014,8 @@ fn matmul_sm100_fallback[
     alias BK = block_tile_shape[2]
 
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
-    ](ctx, a)
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,

@@ -20,7 +20,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 import linalg.matmul_backend.vendor.blas as vendor_blas
-from linalg.matmul_backend.matmul_sm100 import (
+from linalg.matmul_backend.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
 

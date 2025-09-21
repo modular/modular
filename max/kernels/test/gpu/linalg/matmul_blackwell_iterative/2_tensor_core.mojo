@@ -394,12 +394,8 @@ fn kernel_2[
     # hard coded 64 for BK
 
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, 64), swizzle_mode=a_swizzle
-    ](ctx, a)
+    a_tma_op = create_tma_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, 64) if transpose_b else Index(64, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,

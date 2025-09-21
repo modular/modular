@@ -811,12 +811,10 @@ fn blackwell_kernel_7[
     alias MMA_K = umma_shape[2]
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -826,12 +824,9 @@ fn blackwell_kernel_7[
 
     alias output_tile_shape = Index(BM, 32)
     alias c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-    var c_tma_op = create_tma_tile[
-        c_type,
-        2,
-        output_tile_shape,
-        swizzle_mode=c_swizzle,
-    ](ctx, c)
+    var c_tma_op = create_tma_tile[output_tile_shape, swizzle_mode=c_swizzle](
+        ctx, c
+    )
 
     # Configure shared memory usage
     # Total size = capacity - 1KB_reserved_by_L1

@@ -438,12 +438,8 @@ fn blackwell_kernel_4[
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, 64), swizzle_mode=a_swizzle
-    ](ctx, a)
+    a_tma_op = create_tma_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, 64) if transpose_b else Index(64, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,

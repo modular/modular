@@ -1406,7 +1406,7 @@ def create_tma_tile[
 @always_inline
 def create_tma_tile[
     dtype: DType,
-    rank: Int,
+    rank: Int, //,
     tile_shape: IndexList[rank],
     /,
     is_k_major: Bool = True,

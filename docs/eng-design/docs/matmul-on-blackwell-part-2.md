@@ -43,7 +43,7 @@ slower than other kinds of memory. Therefore the craft of optimizing matmul is
 how to avoid or hide the memory loads and stores by leveraging the [memory
 hierarchy](https://en.wikipedia.org/wiki/Memory_hierarchy) available on the
 GPU. The following figure visually explains the latencies of different
-operations we will be using over the course of this series.  
+operations we will be using over the course of this series.
 
 ![Latency comparison, based on the visualization in [Intro to GPUs](https://www.vrushankdes.ai/diffusion-policy-inference-optimization/part-i---intro-to-gpus)](./img/matmul-on-blackwell-part-2/image02-LatencyComp2.gif)
 ///caption
@@ -172,13 +172,9 @@ provided [APIs](https://docs.modular.com/mojo/kernels/layout/tma_async/):
 ```mojo
 # Rank 2 matrix
 # A/B tiles in shared memory have shapes BMxBK and BNxBK, respectively
-a_tma_op = create_tma_tile[
-    a_type, 2, Index(BM, BK)
-](ctx, a_global_mem_address)
+a_tma_op = create_tma_tile[Index(BM, BK)](ctx, a_global_mem_address)
 
-b_tma_op = create_tma_tile[
-    b_type, 2, Index(BN, BK),
-](ctx, b_global_mem_address) 
+b_tma_op = create_tma_tile[Index(BN, BK)](ctx, b_global_mem_address)
 ```
 
 Below is how we use the TMA object within the kernel:
@@ -196,7 +192,7 @@ for i in range(num_iters):
             tma_mbar[0],  # barrier to guard the copy is finished
             (i * BK, block_idx.y * BM),  # tile's coordinate in the input.
         )
-        
+
         b_tma_op.async_copy(
             b_smem_tile,
             tma_mbar[0],
@@ -374,8 +370,8 @@ used by the ALU from the ones required by the Tensor Cores.
 This is how we make use of `tcgen05.mma` and tensor memory in our code:
 
 ```mojo
-for i in range(num_iters):  
-  load_tiles_ab()  #section 1 
+for i in range(num_iters):
+  load_tiles_ab()  #section 1
   if elect_one_thread:
       @parameter
       for j in range(num_k_mmas):
@@ -383,7 +379,7 @@ for i in range(num_iters):
           alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
           alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
 
-          # Use c_scale=0 for the first mma to initialize results and use 
+          # Use c_scale=0 for the first mma to initialize results and use
           # c_scale=1 subsequently to accumulate resutls.
           var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
           mma(
@@ -688,7 +684,7 @@ barrier, and TMEM allocation.
 ```mojo
 var a_smem = external_memory[Scalar[a_type],
               address_space = AddressSpace.SHARED]())
-# Offset BMxBK for A tile            
+# Offset BMxBK for A tile
 var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 # Offset BNxBK for B tile
 var tma_mbar = (b_smem + b_size).bitcast[Int64]()
@@ -880,7 +876,7 @@ changes necessary is telling TMA and `tcgen05.mma` which swizzle mode to adopt:
 ```mojo
 alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
 alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    
+
 #for the tma, used on writing in data from global memory
 alias a_smem_layout = tile_layout_k_major[
     a_type, BM, BK, swizzle_mode=a_swizzle
@@ -957,8 +953,8 @@ to TMA store.
 ```mojo
 # Launch one TMA store per thread
 if elect_one_warp and thread_idx.x < BN // TMA_BN:
-  # memory fence to ensure previous shared memory access 
-  # is seen by TMA instruction 
+  # memory fence to ensure previous shared memory access
+  # is seen by TMA instruction
     fence_async_view_proxy()
     c_tma_tile = ...  # setup the tile for tma
     # c_tma_op is created similarly like a_tma_op for loading data
@@ -969,7 +965,7 @@ if elect_one_warp and thread_idx.x < BN // TMA_BN:
     # Commit TMA store
     c_tma_op.commit_group()
     # wait for the store to complete
-    c_tma_op.wait_group[0]() 
+    c_tma_op.wait_group[0]()
 ```
 
 After issuing the TMA store, we first commit the stores using `commit_group()`
@@ -1056,7 +1052,7 @@ format required by `tcgen05.mma`.The most important details are`LBO` and `SBO`:
 In kernel 2 i.e. without swizzling, printing this out for `A` shows:
 
 ```mojo
-aSBO=128 
+aSBO=128
 aLBO=1024
 ```
 
