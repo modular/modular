@@ -42,8 +42,8 @@ from layout.tma_async import (
     create_tma_tile,
     _tma_desc_tile_layout,
 )
-import .vendor
-from ..mmaop_sm100 import MmaOpSM100_SS
+import ..vendor
+from ...mmaop_sm100 import MmaOpSM100_SS
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type

@@ -38,7 +38,7 @@ from utils.index import Index
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import IntTuple, Layout, LayoutTensor
 from gpu.host.info import H100, B200
-from .matmul_backend.matmul_sm100_warp_specialized_blockwise_fp8 import (
+from .matmul_backend.sm100.warp_specialized_blockwise_fp8 import (
     sm100_warp_specialized_blockwise_fp8,
 )
 

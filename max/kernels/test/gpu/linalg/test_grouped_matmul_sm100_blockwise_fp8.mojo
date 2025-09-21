@@ -18,7 +18,9 @@ from buffer.buffer import NDBuffer
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8,
 )
-from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
+from linalg.matmul_backend.sm100.blockwise_fp8 import (
+    matmul_sm100_blockwise_scaled_fp8,
+)
 from sys import size_of
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major

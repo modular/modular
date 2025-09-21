@@ -41,7 +41,7 @@ from utils.static_tuple import StaticTuple
 from layout.runtime_layout import RuntimeTuple, RuntimeLayout, UNKNOWN_VALUE
 from .utils import elementwise_epilogue_type
 from buffer.buffer import NDBuffer
-from .matmul_backend.matmul_sm100_blockwise_fp8 import (
+from .matmul_backend.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
 

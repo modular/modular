@@ -52,7 +52,7 @@ from .utils import (
     partition_work,
     use_i8mm_fn,
 )
-from .matmul_backend.matmul_sm100_blockwise_fp8 import (
+from .matmul_backend.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
 from .matmul_backend._multistage_gemm_gpu import multistage_gemm_kernel

@@ -23,7 +23,7 @@ from internal_utils import (
     random,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_backend.matmul_sm100 import (
+from linalg.matmul_backend.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
 from linalg.utils_gpu import MatmulConfig

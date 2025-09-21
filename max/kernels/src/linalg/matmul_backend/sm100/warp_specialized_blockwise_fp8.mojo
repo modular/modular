@@ -72,16 +72,16 @@ from layout.tma_async import (
     create_tma_tile,
     PipelineState,
 )
-from ..mmaop_sm100 import MmaOpSM100_SS
-from .matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
+from ...mmaop_sm100 import MmaOpSM100_SS
+from .tile_scheduler import TileScheduler, WorkInfo
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from ..utils import elementwise_epilogue_type
-from ..utils_gpu import MatmulConfig
+from ...utils import elementwise_epilogue_type
+from ...utils_gpu import MatmulConfig
 from bit import next_power_of_two, prev_power_of_two
-from .matmul_sm100 import consumer_main_loop, stsm_helper, WarpRole
+from .matmul import consumer_main_loop, stsm_helper, WarpRole
 
 
 @always_inline

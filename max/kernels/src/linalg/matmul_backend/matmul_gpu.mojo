@@ -58,11 +58,8 @@ from ..matmul_dispatch.sm80 import create_matmul_configs_ampere
 from ..gemv import gemv_gpu
 from .vendor.matmul import matmul as matmul_vendor
 from .sm90.dispatch import matmul_dispatch_sm90
-from ..matmul_dispatch.sm100 import (
-    matmul_dispatch_sm100,
-    matmul_sm100_entrypoint,
-)
-from .matmul_sm100 import matmul_sm100_fallback
+from .sm100.dispatch import matmul_sm100_entrypoint
+from .sm100.matmul import matmul_sm100_fallback
 from ..utils import (
     GemmShape,
     elementwise_compute_lambda_type,
