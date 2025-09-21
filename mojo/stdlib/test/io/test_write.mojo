@@ -21,6 +21,8 @@ from io.write import (
     _hex_digits_to_hex_chars,
 )
 
+from test_utils import TestSuite
+
 
 @fieldwise_init
 struct Point(Stringable, Writable):
@@ -158,16 +160,20 @@ def test_closure_capturing(mut writer: Some[Writer & Writable]):
 
 
 def main():
-    test_writer_of_string()
-    test_string_write_seq()
-    test_stringable_based_on_format()
+    var suite = TestSuite()
 
-    test_write_int_padded()
+    suite.test[test_writer_of_string]()
+    suite.test[test_string_write_seq]()
+    suite.test[test_stringable_based_on_format]()
+    suite.test[test_write_int_padded]()
+    suite.test[test_hex_digits_to_hex_chars]()
+    suite.test[test_write_hex]()
+    suite.test[test_closure_non_capturing]()
 
-    test_hex_digits_to_hex_chars()
-    test_write_hex()
+    def run_test_closure_capturing():
+        var writer = String()
+        test_closure_capturing(writer)
 
-    test_closure_non_capturing()
+    suite.test[run_test_closure_capturing]()
 
-    var writer = String()
-    test_closure_capturing(writer)
+    suite^.run()

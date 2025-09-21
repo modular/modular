@@ -17,6 +17,7 @@ from gpu.host import *
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from testing import *
+from test_utils import TestSuite
 
 
 def test_compile_llvm():
@@ -93,7 +94,11 @@ def test_data_layout_asm():
 
 
 def main():
-    test_compile_llvm()
-    test_data_layout_llvm["llvm"]()
-    test_data_layout_llvm["llvm-opt"]()
-    test_data_layout_asm()
+    var suite = TestSuite()
+
+    suite.test[test_compile_llvm]()
+    suite.test[test_data_layout_llvm["llvm"]]()
+    suite.test[test_data_layout_llvm["llvm-opt"]]()
+    suite.test[test_data_layout_asm]()
+
+    suite^.run()

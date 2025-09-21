@@ -16,6 +16,7 @@ from hashlib._ahash import AHasher
 from pathlib import Path
 
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 struct DummyHasher(Hasher):
@@ -171,10 +172,14 @@ def test_hash_hashable_with_hasher_types():
 
 
 def main():
-    test_hasher()
-    test_hash_with_hasher()
-    test_complex_hasher()
-    test_complex_hash_with_hasher()
-    test_update_with_bytes()
-    test_with_ahasher()
-    test_hash_hashable_with_hasher_types()
+    var suite = TestSuite()
+
+    suite.test[test_hasher]()
+    suite.test[test_hash_with_hasher]()
+    suite.test[test_complex_hasher]()
+    suite.test[test_complex_hash_with_hasher]()
+    suite.test[test_update_with_bytes]()
+    suite.test[test_with_ahasher]()
+    suite.test[test_hash_hashable_with_hasher_types]()
+
+    suite^.run()

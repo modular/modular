@@ -13,7 +13,7 @@
 
 from collections.dict import OwnedKwargsDict
 
-from test_utils import CopyCounter
+from test_utils import CopyCounter, TestSuite
 from hashlib import Hasher, default_comp_time_hasher
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
@@ -754,20 +754,24 @@ def test_popitem_no_copies():
 
 
 def main():
-    test_dict()
-    test_dict_literals()
-    test_dict_fromkeys()
-    test_dict_fromkeys_optional()
-    test_dict_string_representation_string_int()
-    test_dict_string_representation_int_int()
-    test_owned_kwargs_dict()
-    test_bool_conversion()
-    test_find_get()
-    test_pop_string_values()
-    test_clear()
-    test_init_initial_capacity()
-    test_dict_setdefault()
-    test_compile_time_dict()
-    test_dict_comprehension()
-    test_dict_repr_wrap()
-    test_popitem_no_copies()
+    var suite = TestSuite()
+
+    suite.test[test_dict]()
+    suite.test[test_dict_literals]()
+    suite.test[test_dict_fromkeys]()
+    suite.test[test_dict_fromkeys_optional]()
+    suite.test[test_dict_string_representation_string_int]()
+    suite.test[test_dict_string_representation_int_int]()
+    suite.test[test_owned_kwargs_dict]()
+    suite.test[test_bool_conversion]()
+    suite.test[test_find_get]()
+    suite.test[test_pop_string_values]()
+    suite.test[test_clear]()
+    suite.test[test_init_initial_capacity]()
+    suite.test[test_dict_setdefault]()
+    suite.test[test_compile_time_dict]()
+    suite.test[test_dict_comprehension]()
+    suite.test[test_dict_repr_wrap]()
+    suite.test[test_popitem_no_copies]()
+
+    suite^.run()

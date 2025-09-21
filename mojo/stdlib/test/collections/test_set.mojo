@@ -15,6 +15,7 @@ from collections import Set
 
 from testing import assert_equal as AE
 from testing import assert_false, assert_raises, assert_true
+from test_utils import TestSuite
 
 
 fn assert_equal[T: EqualityComparable](lhs: T, rhs: T) raises:
@@ -544,30 +545,34 @@ def test_set_repr_wrap():
 
 
 def main():
-    test["test_set_construction", test_set_construction]()
-    test["test_set_move", test_set_move]()
-    test_set_move()
-    test["test_len", test_len]()
-    test["test_in", test_in]()
-    test["test_equal", test_equal]()
-    test["test_bool", test_bool]()
-    test["test_intersection", test_intersection]()
-    test["test_union", test_union]()
-    test["test_subtract", test_subtract]()
-    test["test_difference_update", test_difference_update]()
-    test["test_iter", test_iter]()
-    test["test_add", test_add]()
-    test["test_remove", test_remove]()
-    test["test_pop_insertion_order", test_pop_insertion_order]()
-    test["test_issubset", test_issubset]()
-    test["test_disjoint", test_disjoint]()
-    test["test_issuperset", test_issuperset]()
-    test["test_greaterthan", test_greaterthan]()
-    test["test_lessthan", test_lessthan]()
-    test["test_symmetric_difference", test_symmetric_difference]()
-    test["test_symmetric_difference_update", test_symmetric_difference_update]()
-    test["test_discard", test_discard]()
-    test["test_clear", test_clear]()
-    test["test_set_str", test_set_str]()
-    test["test_set_comprehension", test_set_comprehension]()
-    test["test_set_repr_wrapper", test_set_repr_wrap]()
+    var suite = TestSuite()
+
+    suite.test[test_set_construction]()
+    suite.test[test_set_move]()
+    suite.test[test_set_move]()
+    suite.test[test_len]()
+    suite.test[test_in]()
+    suite.test[test_equal]()
+    suite.test[test_bool]()
+    suite.test[test_intersection]()
+    suite.test[test_union]()
+    suite.test[test_subtract]()
+    suite.test[test_difference_update]()
+    suite.test[test_iter]()
+    suite.test[test_add]()
+    suite.test[test_remove]()
+    suite.test[test_pop_insertion_order]()
+    suite.test[test_issubset]()
+    suite.test[test_disjoint]()
+    suite.test[test_issuperset]()
+    suite.test[test_greaterthan]()
+    suite.test[test_lessthan]()
+    suite.test[test_symmetric_difference]()
+    suite.test[test_symmetric_difference_update]()
+    suite.test[test_discard]()
+    suite.test[test_clear]()
+    suite.test[test_set_str]()
+    suite.test[test_set_comprehension]()
+    suite.test[test_set_repr_wrap]()
+
+    suite^.run()

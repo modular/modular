@@ -29,6 +29,7 @@ from test_utils import (
     words_pl,
     words_ru,
     dif_bits,
+    TestSuite,
 )
 
 
@@ -217,8 +218,12 @@ def test_hash_simd_values():
 
 
 def main():
-    test_hash_byte_array()
-    test_avalanche()
-    test_trailing_zeros()
-    test_fill_factor()
-    test_hash_simd_values()
+    var suite = TestSuite()
+
+    suite.test[test_hash_byte_array]()
+    suite.test[test_avalanche]()
+    suite.test[test_trailing_zeros]()
+    suite.test[test_fill_factor]()
+    suite.test[test_hash_simd_values]()
+
+    suite^.run()

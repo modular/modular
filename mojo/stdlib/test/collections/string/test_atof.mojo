@@ -14,6 +14,7 @@
 from math import inf, isinf, isnan
 
 from testing import assert_equal, assert_raises, assert_true
+from test_utils import TestSuite
 
 
 def test_basic_parsing():
@@ -152,11 +153,15 @@ def test_atof_generate_cases():
 
 
 def main():
-    test_basic_parsing()
-    test_scientific_notation()
-    test_nan_and_inf()
-    test_leading_decimal()
-    test_trailing_f()
-    test_large_exponents()
-    test_error_cases()
-    test_atof_generate_cases()
+    var suite = TestSuite()
+
+    suite.test[test_basic_parsing]()
+    suite.test[test_scientific_notation]()
+    suite.test[test_nan_and_inf]()
+    suite.test[test_leading_decimal]()
+    suite.test[test_trailing_f]()
+    suite.test[test_large_exponents]()
+    suite.test[test_error_cases]()
+    suite.test[test_atof_generate_cases]()
+
+    suite^.run()
