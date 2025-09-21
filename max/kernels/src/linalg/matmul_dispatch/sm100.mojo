@@ -39,7 +39,7 @@ from sys import align_of, simd_width_of
 from algorithm import elementwise
 from gpu.host import get_gpu_target
 from ..matmul_backend.matmul_gpu import matmul_kernel_naive
-from ..matmul_backend.matmul_vendor import matmul as matmul_vendor
+from ..matmul_backend.vendor.matmul import matmul as matmul_vendor
 
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1

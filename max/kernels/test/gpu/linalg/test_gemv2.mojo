@@ -15,7 +15,7 @@
 
 from random import random_si64
 
-import linalg.vendor_blas
+import linalg.matmul_backend.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext

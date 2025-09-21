@@ -46,7 +46,7 @@ from gpu.cluster import (
     cluster_sync,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
+import linalg.matmul_backend.vendor.blas as vendor_blas
 from linalg.mmaop_sm100 import MmaOpSM100_SS
 
 from utils.index import Index, IndexList

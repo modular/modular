@@ -16,7 +16,7 @@
 from collections.optional import OptionalReg
 from random import random_si64
 
-import linalg.vendor_blas
+import linalg.matmul_backend.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer

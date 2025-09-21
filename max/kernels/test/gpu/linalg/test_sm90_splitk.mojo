@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-import linalg.vendor_blas
+import linalg.matmul_backend.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import (
@@ -25,7 +25,7 @@ from internal_utils import (
 )
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_backend.matmul_sm90_splitk import (
+from linalg.matmul_backend.sm90.splitk import (
     warp_specialize_gemm_with_multicasting_splitk,
 )
 from linalg.matmul_backend.matmul_tile_scheduler import (

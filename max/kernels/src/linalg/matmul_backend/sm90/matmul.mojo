@@ -72,7 +72,7 @@ from layout.tma_async import (
     create_tma_tile,
     create_tma_tile_template,
 )
-from .matmul_tile_scheduler import MatmulSchedule, TileScheduler
+from ..matmul_tile_scheduler import MatmulSchedule, TileScheduler
 from memory import bitcast, stack_allocation
 from memory.pointer import _GPUAddressSpace
 from stdlib.bit import log2_floor
@@ -81,14 +81,14 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from ..utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ..utils_gpu import (
+from ...utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ...utils_gpu import (
     MatmulConfig,
     block_swizzle,
     get_hilbert_lut_with_cache,
 )
 
-from .matmul_loadop_sm90 import async_load_AB
+from .loadop import async_load_AB
 from logger import Logger
 
 from gpu.host.device_context import DeviceBuffer

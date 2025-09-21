@@ -15,7 +15,7 @@
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from linalg.bmm import _batched_matmul_gpu
-from linalg import vendor_blas
+import linalg.matmul_backend.vendor.blas as vendor_blas
 from utils import Index, IndexList
 from internal_utils._utils import ValOrDim, dynamic, static
 from algorithm.functional import elementwise

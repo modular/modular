@@ -10,13 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides the Vendor backend implementations for matmuls.
 
-from linalg.matmul_backend.sm90.dispatch import (
-    llama_8b_fp8_table,
-    llama_405b_fp8_table,
-)
+This backend is used for testing and evaluation.
+"""
 
-
-fn main() raises:
-    constrained[llama_8b_fp8_table.check()]()
-    constrained[llama_405b_fp8_table.check()]()
+from .matmul import matmul

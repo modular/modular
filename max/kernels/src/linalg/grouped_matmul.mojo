@@ -51,15 +51,15 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from .matmul_backend.matmul_sm90 import (
+from .matmul_backend.sm90.matmul import (
     _get_c_smem_layout,
     cluster_size,
     consumer_main_loop,
     warp_specialized_gemm_output,
 )
-from .matmul_dispatch.sm90 import _find_largest_bn_for_sm90_matmul
-from .matmul_backend.matmul_loadop_sm90 import async_load_AB
-from .vendor_blas import matmul as vendor_matmul
+from .matmul_backend.sm90.dispatch import _find_largest_bn_for_sm90_matmul
+from .matmul_backend.sm90.loadop import async_load_AB
+from .matmul_backend.vendor.blas import matmul as vendor_matmul
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type

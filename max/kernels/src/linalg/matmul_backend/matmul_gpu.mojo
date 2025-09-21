@@ -56,8 +56,8 @@ from ._multistage_gemm_gpu import (
 )
 from ..matmul_dispatch.sm80 import create_matmul_configs_ampere
 from ..gemv import gemv_gpu
-from .matmul_vendor import matmul as matmul_vendor
-from ..matmul_dispatch.sm90 import matmul_dispatch_sm90
+from .vendor.matmul import matmul as matmul_vendor
+from .sm90.dispatch import matmul_dispatch_sm90
 from ..matmul_dispatch.sm100 import (
     matmul_dispatch_sm100,
     matmul_sm100_entrypoint,

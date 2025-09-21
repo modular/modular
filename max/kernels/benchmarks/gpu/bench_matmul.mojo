@@ -20,7 +20,7 @@ from sys import (
     size_of,
 )
 
-import linalg.vendor_blas
+import linalg.matmul_backend.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext

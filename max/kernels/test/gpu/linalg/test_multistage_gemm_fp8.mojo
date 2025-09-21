@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import linalg.vendor_blas
+import linalg.matmul_backend.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu import grid_dim
 from gpu.host import DeviceContext, FuncAttribute

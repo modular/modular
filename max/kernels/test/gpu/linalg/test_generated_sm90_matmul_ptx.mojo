@@ -36,7 +36,7 @@ from linalg.utils_gpu import (
 )
 from layout.tma_async import _tma_desc_tile_layout
 
-from linalg.matmul_backend.matmul_sm90 import (
+from linalg.matmul_backend.sm90.matmul import (
     _is_valid_grid_shape,
     _get_grid_shape,
     _get_c_smem_layout,

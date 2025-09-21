@@ -14,7 +14,7 @@
 from math import ceildiv
 from random import random_float64
 
-import linalg.vendor_blas
+import linalg.matmul_backend.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from gpu import block_dim
 from gpu.host import DeviceContext

@@ -55,25 +55,25 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from .matmul_tile_scheduler_splitk import SplitKTileScheduler
-from .matmul_tile_scheduler import RasterOrder
+from ..matmul_tile_scheduler_splitk import SplitKTileScheduler
+from ..matmul_tile_scheduler import RasterOrder
 from memory import bitcast, stack_allocation
 from stdlib.bit import log2_floor
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
-from ..utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ..utils_gpu import MatmulConfig
+from ...utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ...utils_gpu import MatmulConfig
 
-from .matmul_sm90 import (
+from .matmul import (
     consumer_main_loop,
     warp_specialized_gemm_output,
     cluster_size,
+    _get_c_smem_layout,
 )
-from .matmul_loadop_sm90 import async_load_AB
+from .loadop import async_load_AB
 from gpu.globals import WARPGROUP_SIZE
-from .matmul_sm90 import _get_c_smem_layout
 
 
 fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
