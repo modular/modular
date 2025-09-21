@@ -899,7 +899,7 @@ fn test_implicit_copy_errors():
     var y = x^
 
     var l1 = List[Int]()
-    # expected-warning @below {{'List' is no longer implicitly copyable, because it is O(n) expensive; this warning will be an error in the next release of Mojo}}
+    # expected-error @below {{value of type 'List[Int]' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
     # expected-note @below {{consider transferring the value with '^'}}
     # expected-note @below {{you can copy it explicitly with '.copy()'}}
     var l2 = l1
