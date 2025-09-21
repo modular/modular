@@ -28,12 +28,12 @@ from buffer.buffer import NDBuffer
 from utils import IndexList
 from utils.index import Index
 
-from ..bmm import _reshape_nd_buffer_with_batch_to_3d
-from ..bmm import (
+from ...bmm import _reshape_nd_buffer_with_batch_to_3d
+from ...bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
-from ..packing import pack_b_ndbuffer
-from ..utils import (
+from ...packing import pack_b_ndbuffer
+from ...utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 

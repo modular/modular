@@ -28,7 +28,7 @@ from buffer.dimlist import Dim, DimList
 from collections import OptionalReg
 from kv_cache.types import KVCacheT
 from linalg.accumulate import _Accumulator
-from linalg.matmul_backend.apple_accelerate import (
+from linalg.matmul_backend.cpu.apple_accelerate import (
     _cblas_f32,
     use_apple_accelerate_lib,
 )

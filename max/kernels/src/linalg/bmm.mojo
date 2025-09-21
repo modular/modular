@@ -34,11 +34,11 @@ from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from .matmul_backend.apple_accelerate import (
+from .matmul_backend.cpu.apple_accelerate import (
     apple_batched_matmul,
     use_apple_accelerate_lib,
 )
-from .matmul import _submatmul_sequential_sync
+from .matmul_backend.cpu.impl import _submatmul_sequential_sync
 from .matmul_backend.matmul_gpu import _matmul_gpu
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
