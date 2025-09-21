@@ -63,7 +63,7 @@ from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_builder import static
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from linalg._multistage_gemm_gpu import multistage_mma
+from linalg.matmul_backend._multistage_gemm_gpu import multistage_mma
 from memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.mha_mask import MHAMask, TileMaskStatus

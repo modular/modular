@@ -76,15 +76,15 @@ from layout.tma_async import (
     create_tma_tile,
     PipelineState,
 )
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from linalg.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
-from linalg.matmul_tile_scheduler import RasterOrder
+from ..mmaop_sm100 import MmaOpSM100_SS
+from ..matmul_backend.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
+from ..matmul_backend.matmul_tile_scheduler import RasterOrder
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from .utils import elementwise_epilogue_type, elementwise_compute_lambda_type
-from .utils_gpu import MatmulConfig
+from ..utils import elementwise_epilogue_type, elementwise_compute_lambda_type
+from ..utils_gpu import MatmulConfig
 from utils.fast_div import FastDiv
 from bit import next_power_of_two, prev_power_of_two
 

@@ -25,10 +25,12 @@ from internal_utils import (
 )
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_sm90_splitk import (
+from linalg.matmul_backend.matmul_sm90_splitk import (
     warp_specialize_gemm_with_multicasting_splitk,
 )
-from linalg.matmul_tile_scheduler import RasterOrder
+from linalg.matmul_backend.matmul_tile_scheduler import (
+    RasterOrder,
+)
 from linalg.utils_gpu import MatmulConfig
 
 from utils.index import Index, IndexList

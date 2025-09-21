@@ -14,7 +14,9 @@
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
 from buffer.dimlist import DimList
-from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
+from linalg.matmul_backend.matmul_sm100_blockwise_fp8 import (
+    matmul_sm100_blockwise_scaled_fp8,
+)
 from sys import size_of
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major

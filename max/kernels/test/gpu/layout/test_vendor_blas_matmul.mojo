@@ -24,7 +24,7 @@ from internal_utils import (
     random,
     zero,
 )
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul_backend.matmul_gpu import matmul_kernel_naive
 from linalg.vendor_blas import matmul
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 

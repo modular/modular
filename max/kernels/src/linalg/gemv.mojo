@@ -46,7 +46,7 @@ from io.write import Writable, Writer
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from .matmul_gpu import matmul_kernel_naive
+from .matmul_backend.matmul_gpu import matmul_kernel_naive
 from .utils import GemmShape, elementwise_epilogue_type
 
 # layout imports

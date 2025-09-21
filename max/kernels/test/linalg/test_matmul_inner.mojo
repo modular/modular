@@ -18,10 +18,10 @@ from sys.info import CompilationTarget
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import GemmShape, KernelConfig
-from linalg.matmul_default import Inner_matmul_default
-from linalg.matmul_i8mm import Inner_matmul_i8mm
-from linalg.matmul_neon import Inner_matmul_neon
-from linalg.matmul_vnni import Inner_matmul_vnni
+from linalg.matmul_backend.matmul_default import Inner_matmul_default
+from linalg.matmul_backend.matmul_i8mm import Inner_matmul_i8mm
+from linalg.matmul_backend.matmul_neon import Inner_matmul_neon
+from linalg.matmul_backend.matmul_vnni import Inner_matmul_vnni
 from linalg.utils import (
     InnerKernelID,
     get_kernel_config,

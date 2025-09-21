@@ -16,7 +16,7 @@ from random import rand
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
-from linalg.matmul_gpu import split_k_reduce
+from linalg.matmul_backend.matmul_gpu import split_k_reduce
 from testing import assert_almost_equal
 
 from utils import IndexList

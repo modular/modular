@@ -20,7 +20,9 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from linalg import vendor_blas
-from linalg.matmul_sm100 import blackwell_matmul_tma_umma_warp_specialized
+from linalg.matmul_backend.matmul_sm100 import (
+    blackwell_matmul_tma_umma_warp_specialized,
+)
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type

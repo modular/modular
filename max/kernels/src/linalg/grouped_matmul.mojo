@@ -51,14 +51,14 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from .matmul_sm90 import (
+from .matmul_backend.matmul_sm90 import (
     _get_c_smem_layout,
     cluster_size,
     consumer_main_loop,
     warp_specialized_gemm_output,
 )
 from .matmul_dispatch.sm90 import _find_largest_bn_for_sm90_matmul
-from .matmul_loadop_sm90 import async_load_AB
+from .matmul_backend.matmul_loadop_sm90 import async_load_AB
 from .vendor_blas import matmul as vendor_matmul
 
 from utils.index import Index, IndexList
@@ -70,7 +70,7 @@ from .utils_gpu import MatmulConfig, block_swizzle
 
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from linalg.mmaop_sm100 import MmaOpSM100_SS
+from .mmaop_sm100 import MmaOpSM100_SS
 from utils.fast_div import FastDiv
 
 # ===----------------------------------------------------------------------=== #

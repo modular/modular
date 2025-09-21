@@ -64,7 +64,7 @@ def test_matmul[
     var b_ptr = UnsafePointer[Scalar[b_type],].alloc(k * n, alignment=alignment)
     var b = NDBuffer[b_type, 2, _, b_shape](b_ptr, Index(k, n))
 
-    var padded_n_k = IndexList[2]()
+    var padded_n_k: IndexList[2]
     if kernel_type_m != 0:
         padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,

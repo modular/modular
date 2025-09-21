@@ -34,7 +34,7 @@ from internal_utils._utils import (
     static,
     init_vector_launch,
 )
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul_backend.matmul_gpu import _matmul_gpu
 
 from utils import IndexList
 

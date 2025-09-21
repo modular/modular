@@ -55,16 +55,16 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from linalg.matmul_tile_scheduler_splitk import SplitKTileScheduler
-from linalg.matmul_tile_scheduler import RasterOrder
+from .matmul_tile_scheduler_splitk import SplitKTileScheduler
+from .matmul_tile_scheduler import RasterOrder
 from memory import bitcast, stack_allocation
 from stdlib.bit import log2_floor
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
-from .utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from .utils_gpu import MatmulConfig
+from ..utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ..utils_gpu import MatmulConfig
 
 from .matmul_sm90 import (
     consumer_main_loop,

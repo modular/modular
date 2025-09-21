@@ -24,7 +24,7 @@ from internal_utils import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
-from linalg._multistage_gemm_gpu import multistage_gemm_kernel
+from linalg.matmul_backend._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import (
     MatmulKernels,
 )

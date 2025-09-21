@@ -37,13 +37,13 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from linalg.mmaop_sm100 import MmaOpSM100_SS
+from ..mmaop_sm100 import MmaOpSM100_SS
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 from layout.runtime_layout import RuntimeLayout
-from .utils import elementwise_epilogue_type
+from ..utils import elementwise_epilogue_type
 
 alias smem_layout_3D[layout: Layout] = Layout(
     IntTuple(

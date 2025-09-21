@@ -11,7 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from linalg.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
+from linalg.matmul_backend.matmul_tile_scheduler_sm100 import (
+    TileScheduler,
+    WorkInfo,
+)
 from utils.static_tuple import StaticTuple
 from utils.index import Index, IndexList
 from gpu.host import DeviceContext

@@ -19,7 +19,11 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import A100
 from linalg.bmm import _batched_matmul_gpu
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
+from linalg.matmul_backend.matmul_gpu import (
+    _matmul_gpu,
+    matmul_kernel_naive,
+    multistage_gemm,
+)
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
 from testing import assert_almost_equal
 

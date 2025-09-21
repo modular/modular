@@ -15,8 +15,8 @@ from gpu.host.info import H100
 import linalg.vendor_blas
 from gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
-from linalg.matmul_sm90_testbed import test_matmul_sm90
-from linalg.matmul_tile_scheduler import MatmulSchedule
+from linalg.matmul_backend.matmul_sm90_testbed import test_matmul_sm90
+from linalg.matmul_backend.matmul_tile_scheduler import MatmulSchedule
 from utils.index import Index
 
 # NOTE: This test originally tested hilbert_swizzle=True functionality,

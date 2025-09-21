@@ -34,9 +34,12 @@ from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib
+from .matmul_backend.apple_accelerate import (
+    apple_batched_matmul,
+    use_apple_accelerate_lib,
+)
 from .matmul import _submatmul_sequential_sync
-from .matmul_gpu import _matmul_gpu
+from .matmul_backend.matmul_gpu import _matmul_gpu
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
     GemmShape,
@@ -49,11 +52,11 @@ from .utils import (
     partition_work,
     use_i8mm_fn,
 )
-from linalg.matmul_sm100_blockwise_fp8 import (
+from .matmul_backend.matmul_sm100_blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
-from ._multistage_gemm_gpu import multistage_gemm_kernel
-from .matmul_amd import gemm_kernel_amd
+from .matmul_backend._multistage_gemm_gpu import multistage_gemm_kernel
+from .matmul_backend.matmul_amd import gemm_kernel_amd
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout, IntTuple
 from buffer import Dim
 from .utils_gpu import (

@@ -26,8 +26,8 @@ import gpu.block
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
-from linalg.matmul import matmul
-from linalg.utils_gpu import MatmulConfig
+from .matmul import matmul
+from .utils_gpu import MatmulConfig
 from runtime.tracing import trace_arg
 from utils.numerics import get_accum_type
 from utils.index import IndexList
@@ -38,7 +38,7 @@ from utils.index import Index
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import IntTuple, Layout, LayoutTensor
 from gpu.host.info import H100, B200
-from linalg.matmul_sm100_warp_specialized_blockwise_fp8 import (
+from .matmul_backend.matmul_sm100_warp_specialized_blockwise_fp8 import (
     sm100_warp_specialized_blockwise_fp8,
 )
 

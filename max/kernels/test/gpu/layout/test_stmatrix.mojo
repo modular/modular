@@ -19,7 +19,7 @@ from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma, st_matrix
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul_backend.matmul_gpu import matmul_kernel_naive
 from memory import stack_allocation
 from testing import assert_almost_equal
 

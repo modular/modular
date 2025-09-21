@@ -26,13 +26,17 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 
-from .apple_accelerate import apple_gemv, apple_matmul, use_apple_accelerate_lib
+from .matmul_backend.apple_accelerate import (
+    apple_gemv,
+    apple_matmul,
+    use_apple_accelerate_lib,
+)
 from .gemv import gemv
-from .matmul_default import Inner_matmul_default
-from .matmul_gpu import _matmul_gpu
-from .matmul_i8mm import Inner_matmul_i8mm
-from .matmul_neon import Inner_matmul_neon
-from .matmul_vnni import Inner_matmul_vnni
+from .matmul_backend.matmul_default import Inner_matmul_default
+from .matmul_backend.matmul_gpu import _matmul_gpu
+from .matmul_backend.matmul_i8mm import Inner_matmul_i8mm
+from .matmul_backend.matmul_neon import Inner_matmul_neon
+from .matmul_backend.matmul_vnni import Inner_matmul_vnni
 from .packing import BTileGenerator
 from .utils import (
     GemmShape,

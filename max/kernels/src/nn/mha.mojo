@@ -68,7 +68,7 @@ from layout.swizzle import make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_builder import static
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from linalg._multistage_gemm_gpu import multistage_mma
+from linalg.matmul_backend._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
 from linalg.transpose import transpose
 from memory import stack_allocation

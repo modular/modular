@@ -17,7 +17,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import Semaphore, block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul_backend.matmul_gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 
 from utils import Index, IndexList

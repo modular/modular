@@ -63,8 +63,8 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 from .matmul_amd import gemm_kernel_amd
-from .utils import apply_epilogue, elementwise_epilogue_type
-from .utils_gpu import MatmulConfig, block_swizzle
+from ..utils import apply_epilogue, elementwise_epilogue_type
+from ..utils_gpu import MatmulConfig, block_swizzle
 
 
 @always_inline

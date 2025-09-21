@@ -74,7 +74,10 @@ from layout.tma_async import (
 
 from linalg import vendor_blas
 from linalg.mmaop_sm100 import MmaOpSM100_SS
-from linalg.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
+from linalg.matmul_backend.matmul_tile_scheduler_sm100 import (
+    TileScheduler,
+    WorkInfo,
+)
 
 
 from utils.index import Index, IndexList

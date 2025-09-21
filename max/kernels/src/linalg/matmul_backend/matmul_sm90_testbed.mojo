@@ -14,8 +14,8 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import align_of
-import linalg.vendor_blas
-from linalg.vendor_blas import Backend
+import ..vendor_blas
+from ..vendor_blas import Backend
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import (
@@ -28,12 +28,12 @@ from internal_utils import (
 )
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
-from linalg.matmul_tile_scheduler import MatmulSchedule
-from linalg.utils_gpu import MatmulConfig
+from .matmul_sm90 import warp_specialize_gemm_with_multicasting
+from .matmul_tile_scheduler import MatmulSchedule
+from ..utils_gpu import MatmulConfig
 
 from utils.index import Index, IndexList
-from linalg.utils import (
+from ..utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )

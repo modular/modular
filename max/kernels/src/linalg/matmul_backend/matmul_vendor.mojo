@@ -23,9 +23,9 @@ from gpu.host.info import B200
 
 from utils import Index, IndexList
 
-from .utils import elementwise_epilogue_type
-from .utils_gpu import MatmulConfig
-from .vendor_blas import matmul as vendor_matmul
+from ..utils import elementwise_epilogue_type
+from ..utils_gpu import MatmulConfig
+from ..vendor_blas import matmul as vendor_matmul
 
 
 fn matmul[

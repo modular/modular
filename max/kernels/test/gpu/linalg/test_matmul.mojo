@@ -35,7 +35,7 @@ from internal_utils import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg import vendor_blas
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul_backend.matmul_gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance
 from testing import assert_almost_equal

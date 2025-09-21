@@ -30,7 +30,7 @@ from layout.layout_tensor import (
 )
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul_backend.matmul_gpu import matmul_kernel_naive
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
 
