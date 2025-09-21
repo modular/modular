@@ -307,7 +307,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
             def test_block_shape[block_m: Int, block_n: Int, k: Int]():
                 alias config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
-                ](block_m, block_n)
+                ](Index(block_m, block_n))
                 print(
                     block_m,
                     block_n,

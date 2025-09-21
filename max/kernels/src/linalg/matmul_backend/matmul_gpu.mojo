@@ -361,11 +361,13 @@ fn _amdgpu_matmul_config_from_block_shape[
     transpose_b: Bool,
     K: Int,
     pdl_level: PDLLevel = PDLLevel(),
-](block_m: Int, block_n: Int) -> MatmulConfig[
+](block_shape: IndexList[2]) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
     alias max_num_warps: UInt = 4
 
+    var block_m = block_shape[0]
+    var block_n = block_shape[1]
     var block_k = _bk_base[a_type, True]()
     var num_warps: UInt = 1
     var num_warp_k_partitions: UInt = 1
@@ -683,9 +685,7 @@ fn _matmul_gpu[
                     ]()
 
                 @parameter
-                fn build_config_list() -> (
-                    List[MatmulConfig[a_type, b_type, c_type, transpose_b]]
-                ):
+                fn build_block_shape_list() -> List[IndexList[2]]:
                     alias sm_count = Int(ctx.default_device_info.sm_count)
 
                     alias block_sizes_alias = [
@@ -702,7 +702,7 @@ fn _matmul_gpu[
                     alias len_block_sizes = len(block_sizes_alias)
 
                     var block_sizes = materialize[block_sizes_alias]()
-                    var emit_config = InlineArray[
+                    var emit_block_shape = InlineArray[
                         Bool, len_block_sizes * len_block_sizes
                     ](fill=False)
 
@@ -728,54 +728,46 @@ fn _matmul_gpu[
                                 )
 
                                 if score < best_score or (
-                                    score == best_score and emit_config[idx]
+                                    score == best_score
+                                    and emit_block_shape[idx]
                                 ):
                                     best_score = score
                                     best_idx = idx
 
                                 idx += 1
 
-                        emit_config[best_idx] = True
+                        emit_block_shape[best_idx] = True
 
                     for m in range(16, 1024, 16):
                         process_m(m)
                     for m in range(1024, 8192, 32):
                         process_m(m)
 
-                    var config_list = List[
-                        MatmulConfig[a_type, b_type, c_type, transpose_b]
-                    ]()
+                    var block_shape_list = List[IndexList[2]]()
 
-                    for idx in range(len(emit_config)):
-                        if not emit_config[idx]:
+                    for idx in range(len(emit_block_shape)):
+                        if not emit_block_shape[idx]:
                             continue
 
                         var idx_m, idx_n = divmod(idx, len_block_sizes)
 
-                        var config = _amdgpu_matmul_config_from_block_shape[
-                            c_type,
-                            a_type,
-                            b_type,
-                            transpose_b,
-                            static_K,
-                            pdl_level,
-                        ](block_sizes[idx_m], block_sizes[idx_n])
+                        block_shape_list.append(
+                            Index(block_sizes[idx_m], block_sizes[idx_n])
+                        )
 
-                        config_list.append(config)
-
-                    return config_list^
+                    return block_shape_list^
 
                 alias sm_count = Int(ctx.default_device_info.sm_count)
-                alias config_list = build_config_list()
+                alias block_shape_list = build_block_shape_list()
 
                 var best_idx = 0
                 var best_score = Int.MAX
 
                 @parameter
-                for i in range(len(config_list)):
-                    alias config = config_list[i]
-                    alias block_m = config.block_tile_shape[0]
-                    alias block_n = config.block_tile_shape[1]
+                for i in range(len(block_shape_list)):
+                    alias block_shape = block_shape_list[i]
+                    alias block_m = block_shape[0]
+                    alias block_n = block_shape[1]
                     alias n_blocks = ceildiv(static_N, block_n)
 
                     var m_blocks = ceildiv(m, block_m)
@@ -788,9 +780,17 @@ fn _matmul_gpu[
                         best_score = score
 
                 @parameter
-                for i in range(len(config_list)):
+                for i in range(len(block_shape_list)):
                     if best_idx == i:
-                        return _multistage_gemm[config_list[i]]()
+                        alias config = _amdgpu_matmul_config_from_block_shape[
+                            c_type,
+                            a_type,
+                            b_type,
+                            transpose_b,
+                            static_K,
+                            pdl_level,
+                        ](block_shape_list[i])
+                        return _multistage_gemm[config]()
 
                 return kernel_helper[128, 128]()
 
