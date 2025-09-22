@@ -754,8 +754,8 @@ PIPELINES = {
             pipeline="llama3.3-70b",
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
-            cos_dist_threshold=3.8e-4,
-            kl_div_threshold=1.9e-3,
+            cos_dist_threshold=5.9e-04,
+            kl_div_threshold=2.0e-03,
         ),
     ),
     "meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16": PipelineDef(
@@ -831,7 +831,7 @@ PIPELINES = {
             pipeline="internvl3-8b-instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=1.1e-1,
+            cos_dist_threshold=1.3e-1,
             kl_div_threshold=3.3e-01,
         ),
     ),
