@@ -725,6 +725,7 @@ class MemSymbolTripleAttr(max._core.Attribute):
         copy: SymbolConstantAttr,
         move: SymbolConstantAttr,
         del_: SymbolConstantAttr,
+        is_move: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
     @property
     def copy(self) -> SymbolConstantAttr: ...
@@ -732,6 +733,8 @@ class MemSymbolTripleAttr(max._core.Attribute):
     def move(self) -> SymbolConstantAttr: ...
     @property
     def del_(self) -> SymbolConstantAttr: ...
+    @property
+    def is_move(self) -> max._core.dialects.builtin.UnitAttr: ...
 
 class PackAttr(max._core.Attribute):
     """
