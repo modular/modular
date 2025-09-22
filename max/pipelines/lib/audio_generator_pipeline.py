@@ -76,6 +76,6 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]  # noqa: B009
         return next_chunk(inputs.batch)
 
-    def release(self, request_id: str) -> None:
+    def release(self, request_id: RequestID) -> None:
         release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]  # noqa: B009
         release(request_id)
