@@ -1181,6 +1181,81 @@ bool RefPackAttr::isConstant() const {
 }
 
 //===----------------------------------------------------------------------===//
+// SugarAttr
+//===----------------------------------------------------------------------===//
+
+SugarAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
+                         TypedAttr original) {
+  auto canonical = getCanonicalAttr(original);
+  return SugarAttr::get(sugared.getContext(), kind, sugared, original,
+                        canonical, sugared.getType());
+}
+
+static Attribute getLocalCanonical(Attribute attr) {
+  // SugarAttr maintains its canonical form directly so we don't need to walk.
+  if (auto sugar = dyn_cast<SugarAttr>(attr))
+    return sugar.getCanonical();
+  return {};
+}
+static Type getLocalCanonical(Type type) {
+  // Struct type has a canonical type cache to cut recursive walks.
+  if (auto structType = dyn_cast<LIT::StructType>(type)) {
+    if (auto can = structType.getCanonical())
+      return can;
+    return structType;
+  }
+
+  return {};
+}
+
+namespace {
+class Canonicalizer : public ParameterReplacer<Canonicalizer> {
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  doReplace(T value, size_t depth) {
+    // If this type has a canonical cache pointer, use it.
+    if (auto can = getLocalCanonical(value))
+      return can;
+
+    // Otherwise, recursively walk and rebuild the attribute with
+    // canonicalized subelements.
+    SmallVector<Attribute, 16> newAttrs;
+    SmallVector<Type, 16> newTypes;
+    bool changed = false;
+    auto walkFn = [&](auto value, SmallVectorImpl<decltype(value)> &values) {
+      auto newValue = this->replaceImpl(value, depth);
+      changed |= newValue != value;
+      values.push_back(newValue);
+    };
+    value.walkImmediateSubElements(
+        [&](Attribute attr) { walkFn(attr, newAttrs); },
+        [&](Type type) { walkFn(type, newTypes); });
+    if (!changed)
+      return value;
+    return value.replaceImmediateSubElements(newAttrs, newTypes);
+  }
+
+  friend class ParameterReplacer<Canonicalizer>;
+};
+}; // end anonymous namespace
+
+/// Given an attribute or type, return the "canonical" version of the attribute
+/// with all type sugar removed.
+TypedAttr LIT::getCanonicalAttr(TypedAttr src) {
+  // If this is locally and obviously canonical, then just return it.
+  if (auto local = getLocalCanonical(src))
+    return cast<TypedAttr>(local);
+  return Canonicalizer().replace(src);
+}
+
+Type LIT::getCanonicalType(Type src) {
+  // If this is locally and obviously canonical, then just return it.
+  if (auto local = getLocalCanonical(src))
+    return local;
+  return Canonicalizer().replace(src);
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

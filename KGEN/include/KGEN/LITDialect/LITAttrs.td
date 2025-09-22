@@ -854,7 +854,7 @@ def UnresolvedAliasValueAttr
 // StructAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
+def LIT_StructAttr : LITTypedAttr<"LITStruct", "struct", [
     DeclareAttrInterfaceMethods<ParameterAttrInterface>,
     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "A constant struct value";
@@ -894,8 +894,7 @@ def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
-    TypedAttrInterface,
+def LIT_StructExtractAttr : LITTypedAttr<"StructExtract", "struct.extract", [
     DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
   ]> {
   let summary = "Extract an element from a struct value";
@@ -943,8 +942,7 @@ def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
 // RefPackAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_RefPackAttr : LITAttr<"RefPack", "ref.pack", [
-    TypedAttrInterface,
+def LIT_RefPackAttr : LITTypedAttr<"RefPack", "ref.pack", [
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "heterogeneous list of constant elements";
   let description = [{
@@ -992,5 +990,32 @@ def LIT_TypeConventionAttr : EnumAttr<LITDialect, LIT_TypeConvention,
 
 def LIT_VarDeclKindAttr : EnumAttr<LITDialect, LIT_VarDeclKind,
     "var.decl.kind">;
+
+//===----------------------------------------------------------------------===//
+// SugarAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_SugarAttr : LITTypedAttr<"Sugar", "sugar"> {
+  let summary = "Syntax sugar for some other attribute.";
+  let description = [{
+    The `#lit.sugar` attribute represents a syntax sugar overlaid on some other
+    value e.g. an alias or expanded builtin function call. It maintains the
+    original unexpanded attribute value as well as the "one level expanded" and
+    fully expanded "canonical" version of the attribute.
+  }];
+
+  let parameters = (ins
+    "SugarKind":$sugarKind, "TypedAttr":$sugared, "TypedAttr":$original,
+    "TypedAttr":$canonical, AttributeSelfTypeParameter<"">:$type
+  );
+
+  let assemblyFormat = "$sugarKind `,` $sugared `,` $original `,` $canonical";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "SugarKind":$sugarKind,
+                                    "TypedAttr":$sugared,
+                                    "TypedAttr":$original)>,
+  ];
+}
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD

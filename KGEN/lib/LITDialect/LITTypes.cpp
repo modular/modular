@@ -240,7 +240,26 @@ LogicalResult LIT::StructType::printValue(AsmPrinter &p,
 LIT::StructType LIT::StructType::get(SymbolRefAttr name,
                                      ArrayRef<TypedAttr> paramValues,
                                      TypeSignatureType signature) {
-  return get(name.getContext(), SymbolAttr::get(name), paramValues, signature);
+  auto nameSym = SymbolAttr::get(name);
+
+  auto canSignature = cast<TypeSignatureType>(getCanonicalType(signature));
+  bool anyDifferent = canSignature != signature;
+
+  SmallVector<TypedAttr> canParams;
+  canParams.reserve(paramValues.size());
+  for (auto param : paramValues) {
+    canParams.push_back(getCanonicalAttr(param));
+    anyDifferent |= canParams.back() != param;
+  }
+
+  // This is canonical if all the parameters and signature are canonical. The
+  // SymbolRefAttr is always canonical.
+  StructType canonical;
+  if (anyDifferent)
+    canonical = get(name.getContext(), nameSym, canParams, canSignature,
+                    /*canonical*/ {});
+
+  return get(name.getContext(), nameSym, paramValues, signature, canonical);
 }
 
 LIT::StructType LIT::StructType::get(SymbolRefAttr name,
