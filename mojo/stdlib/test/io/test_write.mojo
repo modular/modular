@@ -113,7 +113,7 @@ def test_hex_digits_to_hex_chars():
 
 
 def test_write_hex():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
+    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     alias S = StringSlice[__origin_of(items)]
     ptr = items.unsafe_ptr()
     _write_hex[8](ptr, ord("🔥"))

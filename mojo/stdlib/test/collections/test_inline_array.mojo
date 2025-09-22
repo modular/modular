@@ -315,6 +315,7 @@ def test_move():
     # Double check that the destructor is called when the array is destroyed
     assert_equal(len(del_counter_ptr[]), 1)
     _ = del_recorder
+    _ = del_counter
 
 
 def main():
