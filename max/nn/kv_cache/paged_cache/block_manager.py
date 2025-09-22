@@ -38,10 +38,7 @@ from max.support.math import ceildiv
 
 from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
-from .block_utils import (
-    KVCacheBlock,
-    hash_request_tokens,
-)
+from .block_utils import KVCacheBlock, hash_request_tokens
 
 logger = logging.getLogger("max.pipelines")
 
@@ -109,8 +106,8 @@ class BlockManager:
         # Mapping from request ID to blocks to track the blocks allocated
         # for each request, so that we can free the blocks when the request
         # is finished.
-        self.current_blocks_per_request: dict[RequestID, list[KVCacheBlock]] = (
-            defaultdict(list)
+        self.req_to_blocks: dict[RequestID, list[KVCacheBlock]] = defaultdict(
+            list
         )
 
         # Mapping from request ID to kv block hashes.
@@ -122,10 +119,6 @@ class BlockManager:
         # committed into the prefix cache). This replaces reliance on
         # the context's committed_idx.
         self.req_to_committed_idx: dict[RequestID, int] = defaultdict(int)
-
-        # Cache hit rate metrics.
-        self.prompt_tokens = 0
-        self.cached_prompt_tokens = 0
 
         # Tracks recently committed device blocks to offload to host.
         self.recently_committed_device_blocks: list[KVCacheBlock] = []
@@ -186,19 +179,13 @@ class BlockManager:
         Full blocks are directly reused and appended to the request's blocks.
         Partial blocks can be reused via COW. The blocks/tokens to copy to and
         from are returned as a tuple.
-
-        This also updates the cache hit rate metrics.
         """
         self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching or ctx.active_length == 1:
             return
 
-        req_blocks = self.current_blocks_per_request[ctx.request_id]
-
-        # Update cache hit rate metrics.
-        orig_prompt_len = ctx.active_length
-        self.prompt_tokens += orig_prompt_len - 1
+        req_blocks = self.req_to_blocks[ctx.request_id]
 
         # Compute block hashes. These hashes are used by the subsequent methods.
         self.compute_hashes_for_request(ctx)
@@ -225,10 +212,6 @@ class BlockManager:
             # Check that the cached_idx has increased.
             assert ctx.start_idx > orig_start_idx
             orig_start_idx = ctx.start_idx
-
-        # Update cache hit rate metrics.
-        new_prompt_len = ctx.active_length
-        self.cached_prompt_tokens += orig_prompt_len - new_prompt_len
 
     @traced
     def _get_full_blocks_from_device_prefix_cache(
@@ -347,7 +330,7 @@ class BlockManager:
             ctx: Request InputContext.
         """
 
-        req_blocks = self.current_blocks_per_request[ctx.request_id]
+        req_blocks = self.req_to_blocks[ctx.request_id]
         req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = (
             self.req_to_committed_idx[ctx.request_id] // self.block_size
@@ -385,7 +368,7 @@ class BlockManager:
     def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""
 
-        blocks = self.current_blocks_per_request[request_id]
+        blocks = self.req_to_blocks[request_id]
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_prefix_caching:
             # Free blocks in reverse order so that the tail blocks are
@@ -395,7 +378,7 @@ class BlockManager:
         for block in ordered_blocks:
             self.device_block_pool.free_block(block)
 
-        self.current_blocks_per_request[request_id] = []
+        self.req_to_blocks[request_id] = []
         self.req_to_hashes[request_id] = []
 
         # Committed idx is only used with the prefix cache
@@ -423,7 +406,7 @@ class BlockManager:
             AssertionError: If the current blocks cannot accommodate the completed tokens.
         """
         # Determine number of new blocks to allocate.
-        current_blocks = self.current_blocks_per_request[ctx.request_id]
+        current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
         current_seq_len = ctx.current_length + num_steps - 1
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
@@ -432,9 +415,8 @@ class BlockManager:
 
         # Check that the number of completed tokens is less than or equal to the number of tokens we can
         # currently store in the reserved blocks.
-        num_completed_tokens = ctx.current_length - ctx.active_length
-        assert num_completed_tokens <= (num_current_blocks * self.block_size), (
-            f"the current blocks reserved, have space for {num_current_blocks * self.block_size} tokens, but {num_completed_tokens} are already completed. This should never happen."
+        assert ctx.start_idx <= (num_current_blocks * self.block_size), (
+            f"Expected at least {ceildiv(ctx.start_idx, self.block_size)} blocks to store KV for {ctx.start_idx} tokens, but only {num_current_blocks} are assigned. This should never happen."
         )
 
         # Check that we have enough free blocks to allocate the new blocks.
@@ -492,16 +474,9 @@ class BlockManager:
         new_block, _ = self.device_block_pool.alloc_block()
         return new_block
 
-    @property
-    def cache_hit_rate(self) -> float:
-        """Get the percentage of prompt tokens that were retrieved from the cache."""
-        if self.prompt_tokens == 0:
-            return 0
-        return self.cached_prompt_tokens / self.prompt_tokens
-
     def release_uncommitted_blocks(self, ctx: TextGenerationContext) -> None:
         """Release the uncommitted blocks for the request."""
-        req_blocks = self.current_blocks_per_request[ctx.request_id]
+        req_blocks = self.req_to_blocks[ctx.request_id]
         num_committed_blocks = (
             self.req_to_committed_idx[ctx.request_id] // self.block_size
         )
@@ -517,9 +492,7 @@ class BlockManager:
     @traced
     def get_req_blocks(self, request_id: RequestID) -> list[int]:
         """Get the block ids for a request."""
-        return [
-            block.bid for block in self.current_blocks_per_request[request_id]
-        ]
+        return [block.bid for block in self.req_to_blocks[request_id]]
 
     @traced
     def assert_runtime_invariants(self, ctx: TextGenerationContext) -> None:
@@ -531,7 +504,7 @@ class BlockManager:
 
         # Get the active block ids
         active_block_ids = []
-        for blocks in self.current_blocks_per_request.values():
+        for blocks in self.req_to_blocks.values():
             for block in blocks:
                 active_block_ids.append(block.bid)
                 # Check that all active blocks have a ref_cnt > 0
@@ -542,7 +515,7 @@ class BlockManager:
 
         # Get the request hashes and blocks
         req_hashes = self.req_to_hashes[ctx.request_id]
-        req_blocks = self.current_blocks_per_request[ctx.request_id]
+        req_blocks = self.req_to_blocks[ctx.request_id]
 
         # Check that the number of committed blocks for request is correct
         num_committed_blocks = (

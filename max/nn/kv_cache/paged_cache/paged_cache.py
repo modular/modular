@@ -486,20 +486,14 @@ class PagedKVCacheManager:
             params.head_dim,
         ]
 
-    def _get_num_req_slots(self, request_id: RequestID) -> int:
-        """Get the number of KV slots available for a request."""
-        return (
-            len(self.block_manager.current_blocks_per_request[request_id])
-            * self.page_size
-        )
-
     @traced
     def _does_req_need_more_blocks(
         self, ctx: TextGenerationContext, num_steps: int
     ) -> bool:
         """Determines if a request needs additional blocks."""
         seq_len = ctx.current_length + num_steps - 1
-        return seq_len > self._get_num_req_slots(ctx.request_id)
+        num_blocks = len(self.block_manager.req_to_blocks[ctx.request_id])
+        return seq_len > num_blocks * self.page_size
 
     @traced
     def maybe_reserve(
@@ -743,13 +737,6 @@ class PagedKVCacheManager:
     def free_blocks_pct(self) -> float:
         """Get the percentage of blocks that are free."""
         pct = self.num_free_blocks / self.total_num_pages
-        assert 0 <= pct <= 1
-        return pct
-
-    @property
-    def cache_hit_rate(self) -> float:
-        """Get the percentage of prompt tokens that were retrieved from the cache."""
-        pct = self.block_manager.cache_hit_rate
         assert 0 <= pct <= 1
         return pct
 
