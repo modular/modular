@@ -18,7 +18,7 @@ from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
-from linalg.matmul_backend.matmul_gpu import matmul_kernel_naive
+from linalg.matmul.gpu import matmul_kernel_naive
 from testing import assert_false
 from layout import Layout, UNKNOWN_VALUE, LayoutTensor
 from layout.runtime_layout import RuntimeLayout

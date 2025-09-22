@@ -49,7 +49,7 @@ from layout.layout_tensor import (
     copy_dram_to_sram,
 )
 from layout.tensor_builder import LayoutTensorBuild as tb
-from linalg.matmul_backend.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import (
     MatmulKernels,
 )

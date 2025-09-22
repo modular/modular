@@ -31,7 +31,7 @@ from layout.tensor_core_async import (
 )
 from gpu.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from testing import assert_almost_equal
 from layout._fillers import random
 from utils.index import Index, IndexList

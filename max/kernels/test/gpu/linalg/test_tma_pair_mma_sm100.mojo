@@ -35,7 +35,7 @@ from gpu.cluster import (
     cluster_sync,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

@@ -19,7 +19,7 @@ from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from linalg.matmul_backend.cpu import matmul as _matmul_cpu
+from linalg.matmul.cpu import matmul as _matmul_cpu
 from linalg.matmul import matmul
 from linalg.packing import (
     _pack_b_ndbuffer_impl,

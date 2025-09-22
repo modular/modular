@@ -42,7 +42,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     PipelineState,
 )
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from math import ceildiv
 from random import rand
 from sys import size_of, argv

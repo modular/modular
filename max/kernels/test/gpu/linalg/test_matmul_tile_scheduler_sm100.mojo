@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from linalg.matmul_backend.sm100.tile_scheduler import (
+from linalg.matmul.gpu.sm100.tile_scheduler import (
     TileScheduler,
     WorkInfo,
 )

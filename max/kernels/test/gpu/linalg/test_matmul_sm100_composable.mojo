@@ -33,9 +33,9 @@ from layout.tensor_core_async import (
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-import linalg.matmul_backend.vendor.blas as vendor_blas
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from linalg.matmul_backend.sm100.composable import matmul_sm100
+import linalg.matmul.vendor.blas as vendor_blas
+from linalg.arch.sm100 import MmaOpSM100_SS
+from linalg.matmul.gpu.sm100.composable import matmul_sm100
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type

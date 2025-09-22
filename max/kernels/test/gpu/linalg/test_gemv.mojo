@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
-from linalg.matmul_backend.matmul_gpu import matmul_kernel
+from linalg.matmul.gpu import matmul_kernel
 
 from utils import IndexList
 from utils.index import Index

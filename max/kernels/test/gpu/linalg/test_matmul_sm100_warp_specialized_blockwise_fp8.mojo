@@ -19,8 +19,8 @@ from buffer.dimlist import DimList
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-import linalg.matmul_backend.vendor.blas as vendor_blas
-from linalg.matmul_backend.sm100.warp_specialized_blockwise_fp8 import (
+import linalg.matmul.vendor.blas as vendor_blas
+from linalg.matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
     sm100_warp_specialized_blockwise_fp8,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul

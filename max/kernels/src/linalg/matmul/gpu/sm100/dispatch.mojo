@@ -23,23 +23,23 @@ from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200
 from utils.index import Index
 from logger import Logger
-from ...utils import (
+from ....utils import (
     GemmShape,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from ...utils_gpu import MatmulConfig, MatmulKernels
+from ....utils_gpu import MatmulConfig, MatmulKernels
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
     matmul_sm100_fallback,
 )
-from ..matmul_tile_scheduler import RasterOrder
+from ..tile_scheduler import RasterOrder
 from utils.index import Index, IndexList
 from sys import align_of, simd_width_of
 from algorithm import elementwise
 from gpu.host import get_gpu_target
-from ..matmul_gpu import matmul_kernel_naive
-from ..vendor.matmul import matmul as matmul_vendor
+from ...gpu import matmul_kernel_naive
+from ...vendor.matmul import matmul as matmul_vendor
 
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1

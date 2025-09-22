@@ -33,7 +33,7 @@ from layout.tensor_core_async import (
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from .mmaop_sm100 import MmaOpSM100_SS
+from .arch.sm100 import MmaOpSM100_SS
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -41,7 +41,7 @@ from utils.static_tuple import StaticTuple
 from layout.runtime_layout import RuntimeTuple, RuntimeLayout, UNKNOWN_VALUE
 from .utils import elementwise_epilogue_type
 from buffer.buffer import NDBuffer
-from .matmul_backend.sm100.blockwise_fp8 import (
+from .matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
 

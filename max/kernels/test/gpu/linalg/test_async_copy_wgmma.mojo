@@ -37,7 +37,7 @@ from layout.tensor_core_async import (
     wgmma_c_layout,
     warpgroup_fence,
 )
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

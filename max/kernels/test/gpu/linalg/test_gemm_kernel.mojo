@@ -25,7 +25,7 @@ from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout.layout_tensor import copy_sram_to_local
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
-from linalg.matmul_backend.matmul_gpu import matmul_kernel_naive
+from linalg.matmul.gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 

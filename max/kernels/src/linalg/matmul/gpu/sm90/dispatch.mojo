@@ -18,12 +18,12 @@ from buffer.buffer import NDBuffer
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
 from gpu.host.info import H100
-from ..matmul_tile_scheduler import MatmulSchedule, RasterOrder
+from ..tile_scheduler import MatmulSchedule, RasterOrder
 
 from utils.index import Index
 from logger import Logger
-from ...utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ...utils_gpu import MatmulConfig
+from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils_gpu import MatmulConfig
 from .matmul import warp_specialize_gemm_with_multicasting
 from .splitk import warp_specialize_gemm_with_multicasting_splitk
 

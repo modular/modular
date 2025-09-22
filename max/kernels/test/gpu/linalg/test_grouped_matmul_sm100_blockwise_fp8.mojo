@@ -18,13 +18,13 @@ from buffer.buffer import NDBuffer
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8,
 )
-from linalg.matmul_backend.sm100.blockwise_fp8 import (
+from linalg.matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8,
 )
 from sys import size_of
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from utils.index import Index, IndexList
 from linalg.fp8_quantization import (

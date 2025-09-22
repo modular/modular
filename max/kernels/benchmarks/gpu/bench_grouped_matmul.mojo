@@ -21,7 +21,7 @@ from sys import (
     simd_width_of,
 )
 
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext, get_gpu_target

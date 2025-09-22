@@ -14,11 +14,11 @@
 from math import ceildiv
 from random import random_float64
 
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from gpu import block_dim
 from gpu.host import DeviceContext
-from linalg.matmul_backend.matmul_gpu import matmul_kernel_naive
+from linalg.matmul.gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 

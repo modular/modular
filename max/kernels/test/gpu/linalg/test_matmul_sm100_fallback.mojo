@@ -14,11 +14,11 @@
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
 from buffer.dimlist import DimList
-from linalg.matmul_backend.sm100.matmul import matmul_sm100_fallback
+from linalg.matmul.gpu.sm100.matmul import matmul_sm100_fallback
 from sys import size_of
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from utils.index import Index, IndexList
 

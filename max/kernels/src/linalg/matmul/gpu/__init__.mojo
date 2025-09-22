@@ -49,23 +49,23 @@ from memory import bitcast, stack_allocation
 from utils import Index, IndexList
 from utils.numerics import get_accum_type
 
-from .matmul_amd import gemm_kernel_amd
+from .amd import gemm_kernel_amd
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
-from ..matmul_dispatch.sm80 import create_matmul_configs_ampere
-from ..gemv import gemv_gpu
-from .vendor.matmul import matmul as matmul_vendor
+from .sm80.dispatch import create_matmul_configs_ampere
+from ...gemv import gemv_gpu
+from ..vendor.matmul import matmul as matmul_vendor
 from .sm90.dispatch import matmul_dispatch_sm90
 from .sm100.dispatch import matmul_sm100_entrypoint
 from .sm100.matmul import matmul_sm100_fallback
-from ..utils import (
+from ...utils import (
     GemmShape,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from ..utils_gpu import (
+from ...utils_gpu import (
     MatmulConfig,
     MatmulKernels,
     _bk_base,

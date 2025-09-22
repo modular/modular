@@ -33,7 +33,7 @@ from layout.tensor_core_async import (
     warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal

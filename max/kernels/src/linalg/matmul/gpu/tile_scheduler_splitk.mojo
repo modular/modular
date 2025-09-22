@@ -23,7 +23,7 @@ from gpu.memory import AddressSpace
 from sys import size_of
 from os.atomic import Atomic
 from stdlib.bit import log2_floor
-from ..matmul_backend.matmul_tile_scheduler import RasterOrder, WorkInfo
+from .tile_scheduler import RasterOrder, WorkInfo
 
 
 @always_inline("nodebug")

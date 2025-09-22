@@ -28,7 +28,7 @@ from sys import _RegisterPackType
 from utils.fast_div import FastDiv
 from utils.static_tuple import StaticTuple
 
-from ..matmul_tile_scheduler import RasterOrder
+from ..tile_scheduler import RasterOrder
 
 from gpu.cluster import block_rank_in_cluster
 from gpu.id import warp_id

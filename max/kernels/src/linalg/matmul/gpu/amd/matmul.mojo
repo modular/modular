@@ -43,11 +43,11 @@ from memory import stack_allocation
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from ._multistage_gemm_gpu import warp_split_k_reduction
-from ..utils import elementwise_epilogue_type
-from ..utils_gpu import MatmulConfig
+from .._multistage_gemm_gpu import warp_split_k_reduction
+from ....utils import elementwise_epilogue_type
+from ....utils_gpu import MatmulConfig
 
-from ..structuring import (
+from ....structuring import (
     ScatterGatherAmd,
     IteratorScatterGatherAmd,
     SMemTileType,

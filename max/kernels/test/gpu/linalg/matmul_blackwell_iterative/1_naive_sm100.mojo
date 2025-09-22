@@ -20,7 +20,7 @@ from gpu.id import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 
 from utils.index import IndexList
 

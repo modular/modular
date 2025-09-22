@@ -18,7 +18,7 @@ from utils.fast_div import FastDiv
 
 from utils.index import Index, IndexList
 
-from ..utils_gpu import block_swizzle
+from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init

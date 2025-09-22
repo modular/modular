@@ -72,9 +72,9 @@ from layout.tma_async import (
     PipelineState,
 )
 
-import linalg.matmul_backend.vendor.blas as vendor_blas
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from linalg.matmul_backend.sm100.tile_scheduler import (
+import linalg.matmul.vendor.blas as vendor_blas
+from linalg.arch.sm100 import MmaOpSM100_SS
+from linalg.matmul.gpu.sm100.tile_scheduler import (
     TileScheduler,
     WorkInfo,
 )

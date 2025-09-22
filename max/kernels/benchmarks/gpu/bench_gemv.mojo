@@ -18,7 +18,7 @@ from buffer import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, arg_parse
 from internal_utils._utils import static, ValOrDim, dynamic
-from linalg.matmul_backend.matmul_gpu import _matmul_gpu, matmul_kernel_naive
+from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 from sys import env_get_int, env_get_string
 
 from utils import IndexList

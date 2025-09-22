@@ -10,4 +10,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides the backend implementation for matmuls."""
+"""Provides the Nvidia Blackwell backend implementations for matmuls."""

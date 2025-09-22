@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides the backend implementation for matmuls."""
+
+
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_up, ceildiv
@@ -26,10 +29,10 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 
-from .gemv import gemv
-import .matmul_backend.cpu
-from .matmul_backend.matmul_gpu import _matmul_gpu
-from .utils import (
+from ..gemv import gemv
+import .cpu
+from .gpu import _matmul_gpu
+from ..utils import (
     GemmShape,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,

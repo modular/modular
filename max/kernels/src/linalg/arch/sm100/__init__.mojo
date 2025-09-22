@@ -10,4 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Dispatch table for matmul."""
+"""Provides Nvidia Blackwell architecture specific utility functions."""
+
+from .mma import MmaOpSM100_SS

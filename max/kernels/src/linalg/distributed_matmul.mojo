@@ -15,7 +15,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from comm.allreduce import MAX_GPUS, Signal, allreduce
 from gpu.host import DeviceContext
-from .matmul_backend.matmul_gpu import _matmul_gpu
+from .matmul.gpu import _matmul_gpu
 from utils import IndexList
 from gpu.grid_controls import PDLLevel, _SUPPORT_PDL_LAUNCH
 from internal_utils._utils import ValOrDim, dynamic, static

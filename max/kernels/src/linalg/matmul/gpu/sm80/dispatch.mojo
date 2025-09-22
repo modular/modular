@@ -13,9 +13,7 @@
 from hashlib import default_comp_time_hasher
 from utils import IndexList
 
-from ..utils_gpu import (
-    MatmulConfig,
-)
+from ....utils_gpu import MatmulConfig
 
 
 fn create_matmul_configs_ampere[

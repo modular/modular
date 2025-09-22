@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from sys import align_of, size_of
-import linalg.matmul_backend.vendor.blas as vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -23,7 +23,7 @@ from internal_utils import (
     random,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_backend.sm100.matmul import (
+from linalg.matmul.gpu.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
 from linalg.utils_gpu import MatmulConfig
