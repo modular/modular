@@ -110,7 +110,6 @@ __all__ = [
     "SchedulerResult",
     "SharedMemoryArray",
     "TextGenerationContextType",
-    "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
     "TextGenerationRequest",
