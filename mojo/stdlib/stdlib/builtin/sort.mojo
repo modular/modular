@@ -72,7 +72,8 @@ fn _quicksort_partition_right[
             right -= 1
         if left >= right:
             var pivot_pos = left - 1
-            span.unsafe_swap_elements(pivot_pos, 0)
+            if pivot_pos != 0:
+                span.unsafe_swap_elements(pivot_pos, 0)
             return pivot_pos
         span.unsafe_swap_elements(left, right)
         left += 1
@@ -375,7 +376,8 @@ fn _partition[
     var right = size - 2
 
     var pivot_index = size - 1
-    span.unsafe_swap_elements(pivot, pivot_index)
+    if pivot != pivot_index:
+        span.unsafe_swap_elements(pivot, pivot_index)
 
     while left < right:
         if cmp_fn(span.unsafe_get(left), span.unsafe_get(pivot_index)):
@@ -387,7 +389,8 @@ fn _partition[
 
     if cmp_fn(span.unsafe_get(right), span.unsafe_get(pivot_index)):
         right += 1
-    span.unsafe_swap_elements(pivot_index, right)
+    if pivot_index != right:
+        span.unsafe_swap_elements(pivot_index, right)
     return right
 
 
