@@ -2180,12 +2180,14 @@ ParseResult KGEN::parseMemSymbolParts(AsmParser &p,
       return failure();
     symbols.push_back(SymbolParts{callee, paramValues});
   } while (succeeded(p.parseOptionalComma()));
+  bool isMove =
+      succeeded(p.parseOptionalKeyword(MemSymbolTripleAttr::kIsMoveKeyword));
   switch (symbols.size()) {
   case 2:
-    parts = MemSymbolTripleParts{{}, symbols[0], symbols[1]};
+    parts = MemSymbolTripleParts{{}, symbols[0], symbols[1], isMove};
     break;
   case 3:
-    parts = MemSymbolTripleParts{symbols[0], symbols[1], symbols[2]};
+    parts = MemSymbolTripleParts{symbols[0], symbols[1], symbols[2], isMove};
     break;
   default:
     return p.emitError(p.getCurrentLocation(), "expected 2 or 3 symbols");

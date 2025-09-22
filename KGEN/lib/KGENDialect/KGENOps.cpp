@@ -1654,7 +1654,10 @@ assembleMemSymbolTripleAttr(MemSymbolTripleParts symbolTriple,
     del = makeSymbol(captureType, symbolTriple.del.callee,
                      symbolTriple.del.paramValues, {ArgConvention::OwnedMem},
                      /*isConstructor=*/false);
-  return MemSymbolTripleAttr::get(context, copy, move, del);
+  UnitAttr isMove;
+  if (symbolTriple.isMove)
+    isMove = UnitAttr::get(context);
+  return MemSymbolTripleAttr::get(context, copy, move, del, isMove);
 }
 
 static ParseResult parseClosureInitValue(

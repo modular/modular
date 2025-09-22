@@ -962,7 +962,7 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
     assert(ptr != captureToSymbol.end() && "capture must be in capture list");
     if (auto triple = dyn_cast<MemSymbolTripleAttr>(ptr->second)) {
       SymbolConstantAttr symbol = cast<SymbolConstantAttr>(
-          triple.getCopy() ? triple.getCopy() : triple.getMove());
+          triple.getIsMove() ? triple.getMove() : triple.getCopy());
       if (auto moveSymbol = triple.getMove())
         moveSymbols.push_back(cast<SymbolConstantAttr>(moveSymbol));
       else if (auto copySymbol = triple.getCopy())

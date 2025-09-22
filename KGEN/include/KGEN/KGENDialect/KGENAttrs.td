@@ -1566,12 +1566,17 @@ def KGEN_MemSymbolTripleAttr : KGENAttr<"MemSymbolTriple", "mem_symbol_triple"> 
     ```
   }];
 
-  let parameters = (ins OptionalParameter<"SymbolConstantAttr">:$copy,
+  let parameters = (ins "SymbolConstantAttr":$copy,
                         "SymbolConstantAttr":$move,
-                        "SymbolConstantAttr":$del);
+                        "SymbolConstantAttr":$del,
+                        OptionalParameter<"UnitAttr">:$isMove);
 
  let assemblyFormat = [{
-    `<` custom<MemSymbolTripleAttr>($copy, $move, $del) `>`
+    `<` custom<MemSymbolTripleAttr>($copy, $move, $del, $isMove) `>`
+  }];
+
+  let extraClassDeclaration = [{
+    static constexpr llvm::StringLiteral kIsMoveKeyword = "move";
   }];
 }
 

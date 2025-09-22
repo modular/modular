@@ -178,10 +178,10 @@ kgen.generator @closureSymbol(){
   a = #kgen.mem_symbol_triple<@bar_move<:type index, :type index>,
                               @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>,
   // CHECK: b = #kgen.mem_symbol_triple<@bar_copy<:type index, :type index>,
-  // CHECK-SAME: @bar_move<:type index, :type index>, @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>
+  // CHECK-SAME: @bar_move<:type index, :type index>, @bar_del<:type index, :type index> move : !kgen.pointer<struct<(index, index)>>>
   b = #kgen.mem_symbol_triple<@bar_copy<:type index, :type index>,
                               @bar_move<:type index, :type index>,
-                              @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>
+                              @bar_del<:type index, :type index> move : !kgen.pointer<struct<(index, index)>>>
 } : () -> ()
 
 "some.op"() {

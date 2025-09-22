@@ -374,7 +374,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
   // CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
   // CHECK-NEXT: kgen.return %none : !kgen.none
 kgen.generator @foo<C>(%arg0 : !kgen.pointer<struct<(index, pointer<index>)>>, %arg1 : !kgen.pointer<struct<(index, pointer<index>)>>) {
-  %3 = kgen.closure.init(%arg0[@move, @del], %arg1[@copy, @move, @del])<A>() -> index {
+  %3 = kgen.closure.init(%arg0[@move, @del move], %arg1[@copy, @move, @del])<A>() -> index {
 	%0 = kgen.param.constant = <mul(C, A)>
 	kgen.return %0 : index
   } : (!kgen.pointer<struct<(index, pointer<index>)>>, !kgen.pointer<struct<(index, pointer<index>)>>), !kgen.pointer<!kgen.closure<@foo, "fn" escaping>>
@@ -469,7 +469,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> !kgen.none {
 // CHECK-NEXT:  kgen.param.constant: none
 // CHECK-NEXT:  kgen.return
 kgen.generator @foo<C>(%arg0 : !kgen.pointer<struct<(index, pointer<index>)>>, %arg1 : !kgen.pointer<struct<(index, pointer<index>)>>) {
-  %3 = kgen.closure.init(%arg0[@move, @del], %arg1[@copy, @move, @del])<A>() -> index {
+  %3 = kgen.closure.init(%arg0[@move, @del move], %arg1[@copy, @move, @del])<A>() -> index {
 	  %0 = kgen.param.constant = <mul(C, A)>
 	  kgen.return %0 : index
   } : (!kgen.pointer<struct<(index, pointer<index>)>>, !kgen.pointer<struct<(index, pointer<index>)>>), !kgen.pointer<!kgen.closure<@foo, "fn" escaping>>
@@ -513,7 +513,7 @@ kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !
 }
 
 kgen.generator @foo<C, D>(%arg0 : !kgen.pointer<struct<(index, pointer<index>)>>, %arg1 : !kgen.pointer<struct<(index, pointer<index>)>>) {
-  %3 = kgen.closure.init(%arg0[@move, @del], %arg1[@copy, @move, @del])<A>() -> index {
+  %3 = kgen.closure.init(%arg0[@move, @del move], %arg1[@copy, @move, @del])<A>() -> index {
 	  %0 = kgen.param.constant = <mul(mul(C, A), D)>
 	  kgen.return %0 : index
   } : (!kgen.pointer<struct<(index, pointer<index>)>>, !kgen.pointer<struct<(index, pointer<index>)>>), !kgen.pointer<!kgen.closure<@foo, "fn" escaping>>

@@ -461,11 +461,13 @@ struct SymbolParts {
 
 struct MemSymbolTripleParts {
   MemSymbolTripleParts() : isTrivial(true) {}
-  MemSymbolTripleParts(SymbolParts copy, SymbolParts move, SymbolParts del)
-      : copy(copy), move(move), del(del), isTrivial(false) {}
+  MemSymbolTripleParts(SymbolParts copy, SymbolParts move, SymbolParts del,
+                       bool isMove)
+      : copy(copy), move(move), del(del), isMove(isMove), isTrivial(false) {}
   SymbolParts copy;
   SymbolParts move;
   SymbolParts del;
+  bool isMove;
   bool getIsTrivial() const { return isTrivial; }
 
 private:
