@@ -32,3 +32,23 @@ modular_py_test(
         "PYTHONPATH": "Init/integration-test/python",
     },
 )
+
+modular_py_test(
+    name = "test_signal_handler_python_gil",
+    srcs = ["test_signal_handler_python_gil.py"],
+    data = [
+        "test_script_gil.py",
+        ":init_bindings",
+    ],
+    env = {
+        "PYTHONPATH": "Init/integration-test/python",
+    },
+)
+
+test_suite(
+    name = "signal_handler_tests",
+    tests = [
+        ":test_signal_handler_python",
+        ":test_signal_handler_python_gil",
+    ],
+)

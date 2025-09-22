@@ -20,9 +20,9 @@ using namespace M;
 
 namespace {
 
-// Function pointer for Python stack trace printing
-// This can be set by nanobind-enabled code
-static void (*pythonStackTraceCallback)() = nullptr;
+// Flag to indicate if Python stack trace handling is available
+// This is set when faulthandler is properly registered for SIGUSR2
+static bool pythonStackTraceEnabled = false;
 
 struct SignalInfo {
   std::string info;
@@ -227,10 +227,16 @@ static void developmentSignalHandler(void *context) {
   llvm::sys::PrintStackTrace(llvm::errs());
   llvm::errs() << "\n";
 
-  // Print Python stack trace if available
-  if (pythonStackTraceCallback) {
+  // Store the original signal before potentially triggering SIGUSR2
+  int originalSignal = signalInformation().signal;
+
+  // Print Python stack trace if available using async-safe approach
+  if (pythonStackTraceEnabled) {
     llvm::errs() << "Python stack trace:\n";
-    pythonStackTraceCallback();
+    // Send SIGUSR2 to trigger faulthandler which is async signal safe
+    std::raise(SIGUSR2);
+    // Small delay to allow the faulthandler to execute
+    usleep(100000); // 100ms
     llvm::errs() << "\n";
   }
 
@@ -238,8 +244,8 @@ static void developmentSignalHandler(void *context) {
 
   llvm::errs() << "\n" << std::string(70, '=') << "\n";
 
-  // Exit with error code
-  std::exit(128 + signalInformation().signal);
+  // Exit with error code using the original signal, not SIGUSR2
+  std::exit(128 + originalSignal);
 }
 
 void M::Init::registerDevelopmentSignalHandler(llvm::StringRef programName) {
@@ -272,6 +278,8 @@ void M::Init::registerDevelopmentSignalHandler(llvm::StringRef programName) {
   });
 }
 
-void M::Init::registerPythonStackTraceCallback(void (*callback)()) {
-  pythonStackTraceCallback = callback;
+void M::Init::enablePythonStackTraceCallback() {
+  // Enable Python stack traces using async-safe faulthandler mechanism
+  // The actual faulthandler registration should be done from Python side
+  pythonStackTraceEnabled = true;
 }

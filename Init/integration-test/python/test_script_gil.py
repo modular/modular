@@ -11,12 +11,14 @@ import init_bindings
 
 
 def deep_function_3():
-    """Third level function that triggers the segfault."""
+    """Third level function that triggers the segfault with GIL held."""
     print(
-        "About to trigger SIGSEGV from Python context via C++", file=sys.stderr
+        "About to trigger SIGSEGV from C++ with GIL explicitly held",
+        file=sys.stderr,
     )
-    # Trigger a segfault from C++ (which was called from Python context)
-    init_bindings.trigger_segfault_from_cpp()
+    # Trigger a segfault from C++ while the GIL is explicitly held
+    # This tests the most dangerous scenario for signal handlers
+    init_bindings.trigger_segfault_with_gil_held()
 
 
 def deep_function_2():
@@ -31,7 +33,7 @@ def deep_function_1():
 
 def main():
     """Main function that sets up the signal handler and triggers the crash."""
-    print("Starting signal handler test", file=sys.stderr)
+    print("Starting GIL-held signal handler test", file=sys.stderr)
 
     # Register faulthandler for SIGUSR2 to enable async-safe Python stack traces
     # Note: chain=False so it doesn't interfere with our signal handling flow
@@ -41,10 +43,10 @@ def main():
     print("Python faulthandler registered for SIGUSR2", file=sys.stderr)
 
     # Initialize the C++ signal handler
-    init_bindings.initialize_signal_handler("test_python_signal_handler")
+    init_bindings.initialize_signal_handler("test_gil_signal_handler")
     print("Signal handler initialized", file=sys.stderr)
 
-    # Call the function chain that will trigger the signal
+    # Call the function chain that will trigger the signal while GIL is held
     deep_function_1()
 
 
