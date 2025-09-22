@@ -7,7 +7,10 @@
 
 from __future__ import annotations
 
+import faulthandler
 import os
+import signal
+import sys
 import threading
 from collections.abc import Iterable, Mapping
 from enum import Enum, IntEnum, auto
@@ -299,6 +302,16 @@ class InferenceSession:
                 custom_extensions
             )
         self._impl = _InferenceSession(config)
+
+        # Register async-safe Python stack trace handler
+        # This enables Python stack traces in crash reports without GIL deadlocks
+        try:
+            faulthandler.register(
+                signal.SIGUSR2, file=sys.stderr, all_threads=True, chain=False
+            )
+        except (OSError, RuntimeError):
+            # Ignore errors if SIGUSR2 is already registered or unavailable
+            pass
 
         if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
             self.set_mojo_log_level(env_val)
