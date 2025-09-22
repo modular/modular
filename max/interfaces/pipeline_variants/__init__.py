@@ -17,6 +17,7 @@ from .embeddings_generation import (
     EmbeddingsGenerationOutput,
 )
 from .text_generation import (
+    TextGenerationContext,
     TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -37,6 +38,7 @@ __all__ = [
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
+    "TextGenerationContext",
     "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
