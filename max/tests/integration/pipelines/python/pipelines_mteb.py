@@ -33,14 +33,15 @@ import numpy as np
 from max.entrypoints.cli import pipeline_config_options
 from max.interfaces import (
     EmbeddingsGenerationInputs,
-    EmbeddingsGenerationOutput,
-    Pipeline,
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
 )
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
-from max.pipelines.core import TextContext
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    EmbeddingsPipelineType,
+    PipelineConfig,
+)
 from transformers import AutoConfig
 
 
@@ -51,10 +52,7 @@ class EmbeddingModel:
         self,
         pipeline_config: PipelineConfig,
         tokenizer: PipelineTokenizer,
-        pipeline: Pipeline[
-            EmbeddingsGenerationInputs[TextContext],
-            EmbeddingsGenerationOutput,
-        ],
+        pipeline: EmbeddingsPipelineType,
         huggingface_config: AutoConfig,
     ) -> None:
         self.pipeline_config = pipeline_config
@@ -212,13 +210,7 @@ def main(
         )
 
         # Cast pipeline to the expected type for embeddings generation
-        embeddings_pipeline = cast(
-            Pipeline[
-                EmbeddingsGenerationInputs[TextContext],
-                EmbeddingsGenerationOutput,
-            ],
-            pipeline,
-        )
+        embeddings_pipeline = cast(EmbeddingsPipelineType, pipeline)
 
         huggingface_config = AutoConfig.from_pretrained(
             pipeline_config.model_config.model_path,
