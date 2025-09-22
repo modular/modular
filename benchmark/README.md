@@ -73,12 +73,14 @@ Then run the benchmark script, specifying the model and a dataset:
 
 ```bash
 python benchmark_serving.py \
-    --base-url https://company_url.xyz \
-    --endpoint /v1/completions \
-    --backend modular \
-    --model meta-llama/Meta-Llama-3.1-8B-Instruct \
-    --dataset-name sharegpt \
-    --num-prompts 500
+  --model google/gemma-3-27b-it \
+  --backend modular \
+  --endpoint /v1/chat/completions \
+  --dataset-name sonnet \
+  --num-prompts 500 \
+  --sonnet-input-len 512 \
+  --output-lengths 256 \
+  --sonnet-prefix-len 200
 ```
 
 To see all the available options, run:
@@ -87,7 +89,39 @@ To see all the available options, run:
 python benchmark_serving.py --help
 ```
 
-### Output
+For more information, see the [`max benchmark`
+documentation](/max/max-cli#max-benchmark).
+
+## Config files
+
+When you want to save your benchmark configurations, you can define them in a
+YAML file and pass it with the `--config-file` option.
+
+The YAML file supports all the same properties as the `benchmark_serving.py`
+arguments, except in the YAML file the properties **must use `snake_case`
+names** instead of hyphenated names—for example, `--num-prompts` becomes
+`num_prompts`. And all properties must be nested under a top level
+`benchmark_config` key. For example:
+
+```sh
+benchmark_config:
+  model: google/gemma-3-27b-it
+  backend: modular
+  endpoint: /v1/chat/completions
+  dataset_name: sonnet
+  ...
+```
+
+To help you reproduce our own benchmarks, we've made some of our config files
+available in the [`configs`](configs/) directory. For example, copy our
+[`gemma-3-27b-sonnet-decode-heavy-prefix200.yaml`](https://github.com/modular/modular/tree/main/benchmark/configs)
+file from GitHub, and you can benchmark Gemma3-27B with this command:
+
+```sh
+max benchmark --config-file gemma-3-27b-sonnet-decode-heavy-prefix200.yaml
+```
+
+## Output
 
 Results are printed to the terminal but you can also save a JSON-formatted
 file by adding the `--save-result` flag. It's saved to the local directory
