@@ -6753,8 +6753,7 @@ installation issues. Otherwise it is functionally identical to Mojo 24.1.
 
 - The Mojo SDK can now be installed on AWS Graviton instances.
 
-- A new version of the [Mojo
-  Playground](https://developer.modular.com/playground) is available. The new
+- A new version of the Mojo Playground is available. The new
   playground is a simple interactive editor for Mojo code, similar to the Rust
   Playground or Go Playground. The old JupyterLab based playground will remain
   online until March 20th.

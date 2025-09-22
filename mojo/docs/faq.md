@@ -264,8 +264,7 @@ any Python or Conda package manager. For details, see the
 
 ### Is the Mojo Playground still available?
 
-Not for long. The [Mojo Playground](https://developer.modular.com/playground)
-is deprecated and will be shut down with the v25.6 release.
+No. We shut it down with the v25.6 release.
 
 Here's the story: When we announced Mojo in May, 2023, Mojo wasn't
 available in an SDK; it was available only in web-hosted a JupyterLab
