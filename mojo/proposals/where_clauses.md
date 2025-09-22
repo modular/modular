@@ -3,20 +3,23 @@
 **March 25, 2025**
 Status: Proposed, agreement to explore but not committed, not implemented.
 
-This document explores adding “requires” clauses to Mojo, a major missing
+**Sept 17, 2025**
+Status: Updated, implementation has been scoped out and prioritized.
+
+This document explores adding “where” clauses to Mojo, a major missing
 feature that will allow more safety, expressivity, and APIs that work better
 for our users.
 
 ## Introduction
 
 Generic programming has always been a core part of the Mojo library design
-ecosystem, and it consists of three phases: 1) parse type, and 2) elaboration
+ecosystem, and it consists of three phases: 1) parse time, and 2) elaboration
 time (which evaluates “comptime parameter expressions”) and 3) runtime. We aim
 to move error detection earlier in this list by improving the type system, but
 we eschew complexity because we don’t want to turn into other systems that
 require (e.g.) a full constraint solver or interpreter built into the parser.
 
-All this said, Mojo has a weakness, which is the lack of `requires` clauses
+All this said, Mojo has a weakness, which is the lack of `where` clauses
 that allow constraining method availability (**at parser time**) based on
 static-ly known **parser-time** information. For example, we have methods like
 this on SIMD (and thus on core aliases like `Int8`):
@@ -54,7 +57,7 @@ reasons:
    based on conditional information.
 
 The reason the last one matters is that there can be many ways to solve a
-problem if you’re a library developers working with a closed set of overloads,
+problem if you’re a library developer working with a closed set of overloads,
 particularly if generic. Why does this matter? This allows **algorithm
 selection** at **overload-resolution time**. You can choose implementation
 based on type capabilities, or remove a candidate based on lack of capabilities
@@ -62,9 +65,9 @@ based on type capabilities, or remove a candidate based on lack of capabilities
 
 ```mojo
 fn thing[size: Int](value: YourType[size])
-  requires size.is_power_of_2(): ...
+  where size.is_power_of_2(): ...
 fn thing[size: Int](value: YourType[size])
-  requires not size.is_power_of_2(): ...
+  where not size.is_power_of_2(): ...
 ```
 
 Furthermore, we want to enable more generic and powerful libraries, which
@@ -92,25 +95,78 @@ remove many uses of `constrained` , directly improving QoI for each one.
 
 ## Concrete syntax design
 
-We propose extending the function grammar (and eventually struct type grammar)
-to support `requires` clauses after the result type and before the colon. This
-takes `requires` as a keyword (but likely a soft keyword would work if there is
-some reason to prefer that). I would like to be able to write something like
-this:
+We support `where` constraints in two places. Each serves different use cases.
+
+### Inline parameter declaration constraints
+
+Inline constraints are written next to parameter declarations. They are checked
+as each parameter is bound, and immediately become part of the in-scope
+assumptions that later parameter declarations can rely on them. This is
+especially useful when constraints on earlier parameters enable later
+parameters to take advantage of those assumptions.
+
+Example:
 
 ```mojo
-struct SIMD[dtype: DType, size: Int]
-  requires size.is_power_of_two(), "simd width must be power of 2"
-  requires dtype is not DType.invalid, "simd type cannot be DType.invalid"
-  
-    @implicit
-    fn __init__(out self, value: FloatLiteral)
-      requires dtype.is_floating_point():
-        <actual code>
+struct Matrix[
+  m: Int where m > 0,
+  n: Int where n > 0
+]:
+  ...
+
+fn solve_linear_system[
+  n: Int where n > 0,
+  a: Matrix[n, n],       # can assume n > 0 here
+  b: Vector[n],
+]() -> Vector[n]:
+  ...
 ```
 
-Both functions (fn/def) and structs (and eventually classes) can take one or
-more “requires” clauses that take a boolean expression and an optional string
+Another example that references earlier parameters from the argument list:
+
+```mojo
+fn matmul[
+  m: Int where m > 0,
+  n: Int where n > 0,
+  k: Int where k > 0,
+](a: Matrix[m, k], b: Matrix[k, n]) -> Matrix[m, n]:
+    ...
+```
+
+Inline constraints keep requirements next to their parameters, improving
+readability and enabling left-to-right dependencies among parameters. You can
+also use inline constraints on type parameters for structs:
+
+```mojo
+struct SIMD[
+  dtype: DType where dtype is not DType.invalid, "simd type cannot be DType.invalid",
+  size: Int where size.is_power_of_two(), "simd width must be power of 2",
+]:
+  ...
+```
+
+### Function-level trailing constraints
+
+A trailing `where` clause after the result type and before the colon attaches
+to the function type and is checked at overload resolution time. For the scope
+of this design, we limit support to statically evaluatable constraints. That
+means the trailing constraint is expressed in terms of parameter declarations,
+but may also reference runtime arguments as long as only static components of
+those arguments are accessed (e.g., member aliases and parameters). This is
+useful when the constraint is only needed by the function itself and no other
+parameter in the parameter signature depends on it.
+
+Example:
+
+```mojo
+struct SIMD[dtype: DType, size: Int]:
+  @implicit
+  fn __init__(out self, value: FloatLiteral)
+    requires dtype.is_floating_point():
+      <actual code>
+```
+
+In both forms, a constraint takes a boolean expression and an optional string
 message (printed when overload resolution fails to find any candidate).
 
 Why the optional string? I would like misuse of these conditions to be more
@@ -149,24 +205,35 @@ message if the only candidate fails the boolean predicate) at parser time
 **without interpreting the code** (because the Mojo parser has no interpreter).
 For the sake of this discussion, we only consider simple boolean expressions.
 
-This has three parts: 1) we need to understand method requirements, 2) we need
-to understand contextual invariants, 3) we need to *symbolicly* determine if
-the method requirements are a subset of the contextual invariants at overload
-resolution time, and 4) other minor things.
+This has four main parts: 1) enable inline parameter constraints, 2) collect
+function/method requirements, 3) propagate assumptions across declarations
+(contextual invariants), and 4) perform symbolic checking during overload
+resolution.
 
-### Part #1: Function/Method Requirements
+### Part #1: Inline Parameter Constraints
 
-Method requirements are pretty simple - the requirements for a function are the
-union (with an ‘and’) of the function requirements and the enclosing struct
-requirements:
+We extend parameter parsing and binding to accept and record `where` constraints
+on parameters. These constraints are evaluated at parameter binding time and are
+immediately added to the local invariant set so that subsequent parameters can
+assume them. We store these constraints alongside the parameter declaration
+(e.g., as a list of `TypedAttr` + `StringAttr`), and thread them into
+the current context used by later parameters and nested regions.
+
+### Part #2: Function/Method Constraints
+
+Method constraints are pretty simple - the constraints for a function are the
+union (with an ‘and’) of the function constraints and the enclosing struct
+constraints:
 
 ```mojo
-struct SomeThing[size: Int]
-  requires size.is_odd()
-  requires size != 233
-  
+struct SomeThing[
+  size: Int
+    where size.is_odd()
+    where size != 233,
+]:
+
   fn thing(self) -> Int
-     requires size.is_prime():
+     where size.is_prime():
 ```
 
 In this example, calling `SomeThing.thing` requires `Self.size` to satisfy the
@@ -186,28 +253,32 @@ a.is_prime()` canonicalizes to `a.is_prime()` because the trivially redundant
 subexpressions.
 
 How do we store this? Method and struct requirements should be stored as a new
-list of `TypedAttr` + `StringAttr` on both `lit.fn` and `lit.struct`
-declarations. This ensures they’re serialized to modules etc. This is parser
-time only behavior, so these do not need to be lowered to KGEN or later.
+list of `TypedAttr` + `StringAttr` on both function and struct declarations.
+This ensures they’re serialized to modules etc. This is parser time only
+behavior, so these do not need to be lowered to KGEN or later.
 
-### Part #2: Contextual Invariants
+### Part #3: Contextual Invariants
 
 Contextual invariants - something known true at the point in some code - is a
 question asked by overload set resolution at some point in the program.
 Consider an overly complicated example like:
 
 ```mojo
-struct S[a: Int, b: Int, c: Int, d: Int]
-  requires pred1(a):
-  
+struct S[
+  a: Int where pred1(a),
+  b: Int,
+  c: Int,
+  d: Int,
+]:
+
     fn some_method(self)
-       requires pred2(b):
-       
+       where pred2(b):
+
        @parameter
        if pred3(c):
-       
+
            fn nested()
-             requires pred4(d):
+             where pred4(d):
                 # Checking at this point.
                 some_callee(self)
 ```
@@ -219,7 +290,7 @@ this case, we know that the contextual invariant is `pred1(a) and pred2(b) and
 pred3(c) and pred4(d)` because of the invariants on the struct, functions, and
 parameter if.
 
-### Part #3: S*ymbolic* requirements resolution at overload resolution time
+### Part #4: *Symbolic* constraint checking at overload resolution time
 
 Finally, given we have these two bits of information, we can use it at overload
 resolution time. Overload resolution has to do a bunch of stuff (parameter
@@ -251,9 +322,10 @@ optional string that it corresponds to. For example, if we have something like
 `SIMD[f32, 17]` and the following definition:
 
 ```mojo
-struct SIMD[dtype: DType, size: Int]
-    requires size.is_power_of_two(), "simd width must be power of 2"
-    requires dtype is not DType.invalid, "simd type cannot be DType.invalid"
+struct SIMD[
+    dtype: DType where dtype is not DType.invalid, "simd type cannot be DType.invalid",
+    size: Int where size.is_power_of_two(), "simd width must be power of 2",
+]:
 ```
 
 The logical way for the compiler to check this is to build up a big conjunction
@@ -266,16 +338,6 @@ However, if the whole set fails, we want to print the right string error
 message of the first failing condition and the expression it corresponded to.
 This can be done by adding a new failure kind to `OverloadFitness` which error
 emission uses.
-
-### Part #4: Other minor things
-
-Some other required things that come to mind:
-
-Implement requirement resolution during parseType handling: The
-`ExprEmitter.emitType` logic will also need to do this check to make sure that
-a reference to `T[params]` without invoking a method checks the requirements on
-the struct. This would allow us to reject things like `var x: SIMD[F32, 17]`
-with “type isn’t a power of 2”.
 
 ## Logical extensions (not in scope for this proposal)
 
@@ -292,14 +354,14 @@ extensions. Things that come to mind, but which aren’t fully scoped out:
 ```mojo
 struct A[T: AnyType]:
     var elt : T
-    
+
     # existing
     fn constrained[T2: Copyable](self: A[T2]):
          var elt_copy = self.elt # invoke copyinit
-         
+
     # desired:
     fn constrained(self)
-      requires T instanceof Copyable:
+      where T instanceof Copyable:
          # need to know T is copyable even though declared AnyType
          var elt_copy = self.elt
 ```
@@ -311,9 +373,9 @@ struct A[T: AnyType]:
 
 2. Implement other special case attributes where we want to. For example, I’d
    love metatypes to be comparable and `Variant.__getitem__` ’s type list to be
-   something like `requires T in Ts` , which would be straightforward to
+   something like `where T in Ts` , which would be straightforward to
    implement once metatypes are comparable. We could also support things like
-   `requires T in [Float32, Float64]` when we fix up list literals.
+   `where T in [Float32, Float64]` when we fix up list literals.
 
 3. Remove the existing CTAD conditional conformance stuff. This would be
 wonderful, simplifying some fairly weird code.
@@ -333,13 +395,13 @@ annoying limitation. Consider the following:
 
 ```mojo
 struct X[A: Int]:
-   fn example(self) requires A.is_prime(): ...
-   
-   
+   fn example(self) where A.is_prime(): ...
+
+
 fn test(value: X[2]):
     # Error, cannot symbolically evaluate '2.is_prime()' to a constant.
     value.example()
-    
+
     @parameter
     if 2.is_prime(): # tell dumb mojo that 2 is prime.
        # This is ok.
@@ -397,7 +459,7 @@ The problem is that it really is the parser that needs to determine which
 concrete method is called, because this affects type checking. For example:
 
 ```mojo
-fn your_function(a: SIMD[F32, _]) -> Int requires a.size.is_prime(): ...
+fn your_function(a: SIMD[F32, _]) -> Int where a.size.is_prime(): ...
 fn your_function(a: SIMD[F32, _]) -> F32: ...
 ```
 
