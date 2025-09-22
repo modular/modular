@@ -99,7 +99,7 @@ class AudioGenerationMetadata(
     timestamp: Optional[str] = None
     final_chunk: Optional[bool] = None
     model_name: Optional[str] = None
-    request_id: Optional[str] = None
+    request_id: Optional[RequestID] = None
     tokens_generated: Optional[int] = None
     processing_time: Optional[float] = None
     echo: Optional[str] = None

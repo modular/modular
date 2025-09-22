@@ -202,7 +202,7 @@ class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
     final generation status, request ID, and optional log probabilities for each token.
     """
 
-    request_id: str
+    request_id: RequestID
     """The unique identifier for the generation request."""
 
     tokens: list[int]
