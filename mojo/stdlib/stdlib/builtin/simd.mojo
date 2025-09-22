@@ -2234,31 +2234,31 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     fn to_bits[
-        dtype: DType = _uint_type_of_width[dtype.bit_width()]()
-    ](self) -> SIMD[dtype, size]:
+        _dtype: DType = _uint_type_of_width[dtype.bit_width()]()
+    ](self) -> SIMD[_dtype, size]:
         """Bitcasts the SIMD vector to an integer SIMD vector.
 
         Parameters:
-            dtype: The integer type to cast to.
+            _dtype: The integer type to cast to.
 
         Returns:
             An integer representation of the floating-point value.
         """
         constrained[
-            dtype.is_unsigned(),
+            _dtype.is_unsigned(),
             "the target type must be unsigned integral",
         ]()
         constrained[
-            dtype.bit_width() >= Self.dtype.bit_width(),
+            _dtype.bit_width() >= dtype.bit_width(),
             "the target type must be at least as wide as the source type",
         ]()
 
         @parameter
-        if Self.dtype is DType.bool:
-            return self.cast[DType.uint8]().to_bits[dtype]()
+        if dtype is DType.bool:
+            return self.cast[DType.uint8]().to_bits[_dtype]()
         else:
-            alias uint = _unsigned_integral_type_of[Self.dtype]()
-            return bitcast[uint, size](self).cast[dtype]()
+            alias uint = _unsigned_integral_type_of[dtype]()
+            return bitcast[uint, size](self).cast[_dtype]()
 
     @always_inline
     fn _to_bits_signed(self) -> SIMD[_integral_type_of[dtype](), size]:
@@ -3024,17 +3024,17 @@ struct SIMD[dtype: DType, size: Int](
     # TODO (7748): always_inline required to WAR LLVM codegen bug
     @always_inline("nodebug")
     fn select[
-        dtype: DType
+        _dtype: DType
     ](
         self,
-        true_case: SIMD[dtype, size],
-        false_case: SIMD[dtype, size],
-    ) -> SIMD[dtype, size]:
+        true_case: SIMD[_dtype, size],
+        false_case: SIMD[_dtype, size],
+    ) -> SIMD[_dtype, size]:
         """Selects the values of the `true_case` or the `false_case` based on
         the current boolean values of the SIMD vector.
 
         Parameters:
-            dtype: The element type of the input and output SIMD vectors.
+            _dtype: The element type of the input and output SIMD vectors.
 
         Args:
             true_case: The values selected if the positional value is True.

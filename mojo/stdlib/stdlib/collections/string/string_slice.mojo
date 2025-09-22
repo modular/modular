@@ -658,12 +658,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @implicit
     fn __init__[
-        origin: ImmutableOrigin, //
-    ](out self: StringSlice[origin], ref [origin]value: String):
+        _origin: ImmutableOrigin, //
+    ](out self: StringSlice[_origin], ref [_origin]value: String):
         """Construct an immutable StringSlice.
 
         Parameters:
-            origin: The immutable origin.
+            _origin: The immutable origin.
 
         Args:
             value: The string value.
@@ -671,12 +671,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self = value.as_string_slice()
 
     fn __init__[
-        origin: MutableOrigin, //
-    ](out self: StringSlice[origin], ref [origin]value: String):
+        _origin: MutableOrigin, //
+    ](out self: StringSlice[_origin], ref [_origin]value: String):
         """Construct a mutable StringSlice.
 
         Parameters:
-            origin: The mutable origin.
+            _origin: The mutable origin.
 
         Args:
             value: The string value.

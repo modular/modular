@@ -43,18 +43,18 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     @always_inline("builtin")
     @implicit
     fn __init__(
-        value: IntLiteral[_],
+        _value: IntLiteral[_],
     ) -> FloatLiteral[
         __mlir_attr[
             `#pop<int_to_float_literal<`,
-            value.value,
+            _value.value,
             `>> : !pop.float_literal`,
         ]
     ]:
         """Convert an IntLiteral to a FloatLiteral value.
 
         Args:
-            value: The IntLiteral value.
+            _value: The IntLiteral value.
         """
         return {}
 

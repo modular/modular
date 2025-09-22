@@ -190,22 +190,22 @@ struct SplitKTileScheduler[
     @always_inline
     fn get_problem_blocks_shape(
         problem_shape: IndexList[3],
-        tile_shape: IndexList[3],
-        cluster_shape: IndexList[2],
+        dyn_tile_shape: IndexList[3],
+        dyn_cluster_shape: IndexList[2],
     ) -> IndexList[2]:
-        var num_blocks_m = (problem_shape[0] + tile_shape[0] - 1) // tile_shape[
-            0
-        ]
-        var num_blocks_n = (problem_shape[1] + tile_shape[1] - 1) // tile_shape[
-            1
-        ]
+        var num_blocks_m = (
+            problem_shape[0] + dyn_tile_shape[0] - 1
+        ) // dyn_tile_shape[0]
+        var num_blocks_n = (
+            problem_shape[1] + dyn_tile_shape[1] - 1
+        ) // dyn_tile_shape[1]
 
         var problem_blocks_m = (
-            (num_blocks_m + cluster_shape[0] - 1) // cluster_shape[0]
-        ) * cluster_shape[0]
+            (num_blocks_m + dyn_cluster_shape[0] - 1) // dyn_cluster_shape[0]
+        ) * dyn_cluster_shape[0]
         var problem_blocks_n = (
-            (num_blocks_n + cluster_shape[1] - 1) // cluster_shape[1]
-        ) * cluster_shape[1]
+            (num_blocks_n + dyn_cluster_shape[1] - 1) // dyn_cluster_shape[1]
+        ) * dyn_cluster_shape[1]
 
         return IndexList[2](
             problem_blocks_m,
@@ -355,31 +355,31 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     fn get_grid_shape(
-        cluster_shape: IndexList[3],
-        raster_order: RasterOrder = RasterOrder.AlongN,
+        dyn_cluster_shape: IndexList[3],
+        dyn_raster_order: RasterOrder = RasterOrder.AlongN,
     ) raises -> IndexList[3]:
         var launch_grid_shape = IndexList[3](1, 1, 1)
 
-        if raster_order == RasterOrder.AlongN:
-            launch_grid_shape[0] = cluster_shape[0]
+        if dyn_raster_order == RasterOrder.AlongN:
+            launch_grid_shape[0] = dyn_cluster_shape[0]
         else:
-            launch_grid_shape[1] = cluster_shape[1]
+            launch_grid_shape[1] = dyn_cluster_shape[1]
 
-        var cluster_size = cluster_shape[0] * cluster_shape[1]
+        var cluster_size = dyn_cluster_shape[0] * dyn_cluster_shape[1]
 
         if cluster_size == 1:
-            if raster_order == RasterOrder.AlongN:
+            if dyn_raster_order == RasterOrder.AlongN:
                 launch_grid_shape[1] = Int(H100.sm_count)
             else:
                 launch_grid_shape[0] = Int(H100.sm_count)
         else:
-            if raster_order == RasterOrder.AlongN:
+            if dyn_raster_order == RasterOrder.AlongN:
                 launch_grid_shape[1] = Int(H100.sm_count) // Int(
-                    cluster_shape[0]
+                    dyn_cluster_shape[0]
                 )
             else:
                 launch_grid_shape[0] = Int(H100.sm_count) // Int(
-                    cluster_shape[1]
+                    dyn_cluster_shape[1]
                 )
 
         return launch_grid_shape
@@ -388,43 +388,43 @@ struct SplitKTileScheduler[
     @always_inline
     fn get_num_tiles(
         problem_shape: IndexList[3],
-        tile_shape: IndexList[3],
-        cluster_shape: IndexList[2],
+        dyn_tile_shape: IndexList[3],
+        dyn_cluster_shape: IndexList[2],
     ) -> Int:
         var problem_blocks = Self.get_problem_blocks_shape(
-            problem_shape, tile_shape, cluster_shape
+            problem_shape, dyn_tile_shape, dyn_cluster_shape
         )
 
         var problem_blocks_m = align_up(
             UInt(problem_blocks[0]),
-            UInt(cluster_shape[0]),
+            UInt(dyn_cluster_shape[0]),
         )
         var problem_blocks_n = align_up(
             UInt(problem_blocks[1]),
-            UInt(cluster_shape[1]),
+            UInt(dyn_cluster_shape[1]),
         )
         return Int(problem_blocks_m * problem_blocks_n)
 
     @staticmethod
     @always_inline
     fn get_required_locks_buffer_size_bytes[
-        accum_type: DType, num_consumer: UInt32
+        accum_type: DType, dyn_num_consumer: UInt32
     ](
         problem_shape: IndexList[3],
-        tile_shape: IndexList[3],
-        cluster_shape: IndexList[2],
+        dyn_tile_shape: IndexList[3],
+        dyn_cluster_shape: IndexList[2],
     ) -> Int:
         var problem_blocks = Self.get_problem_blocks_shape(
-            problem_shape, tile_shape, cluster_shape
+            problem_shape, dyn_tile_shape, dyn_cluster_shape
         )
 
         var problem_blocks_m = align_up(
             UInt(problem_blocks[0]),
-            UInt(cluster_shape[0]),
+            UInt(dyn_cluster_shape[0]),
         )
         var problem_blocks_n = align_up(
             UInt(problem_blocks[1]),
-            UInt(cluster_shape[1]),
+            UInt(dyn_cluster_shape[1]),
         )
 
         constrained[
@@ -435,7 +435,7 @@ struct SplitKTileScheduler[
         var num_output_tiles = problem_blocks_m * problem_blocks_n
 
         var locks_workspace_bytes = (
-            num_output_tiles * size_of[Int32]() * num_consumer
+            num_output_tiles * size_of[Int32]() * dyn_num_consumer
         )
 
         return Int(locks_workspace_bytes)

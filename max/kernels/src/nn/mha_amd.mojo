@@ -316,8 +316,8 @@ struct KBuffer[
     fn load_from_shared[
         accum_type: DType,
         mma_input_type: DType,
-        mma_shape: IndexList[3],
-        k_group_size: Int,
+        _mma_shape: IndexList[3],
+        _k_group_size: Int,
         transpose_b: Bool,
         k_mma: Int,
     ](self):
@@ -333,8 +333,8 @@ struct KBuffer[
         alias tensor_core_mma = TiledTensorCore[
             accum_type,
             mma_input_type,
-            mma_shape,
-            group_size=k_group_size,
+            _mma_shape,
+            group_size=_k_group_size,
             transpose_b=transpose_b,
         ]()
         tensor_core_mma.mma_op.load_b[swizzle=swizzle](
@@ -1022,14 +1022,14 @@ struct SharedMemoryManager[
 
     @always_inline
     fn get_kv_ptr[
-        dtype: DType
+        _dtype: DType
     ](
         self,
     ) -> UnsafePointer[
-        Scalar[dtype],
+        Scalar[_dtype],
         address_space = AddressSpace.SHARED,
     ]:
-        return self.k_v_smem.bitcast[Scalar[dtype]]()
+        return self.k_v_smem.bitcast[Scalar[_dtype]]()
 
     @always_inline
     fn get_p_ptr(

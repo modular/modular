@@ -839,23 +839,23 @@ struct LayoutTensor[
         new_dtype: DType,
         /,
         target_address_space: AddressSpace = Self.address_space,
-        element_layout: Layout = Self.element_layout,
+        _element_layout: Layout = Self.element_layout,
     ](self) -> Self.BitcastType[
-        new_dtype, target_address_space, element_layout
+        new_dtype, target_address_space, _element_layout
     ]:
         """Bitcast the underlying pointer to a new data type.
 
         Parameters:
             new_dtype: The new data type it is casting to.
             target_address_space: The address space of the returned `LayoutTensor`.
-            element_layout: The element layout of the returned `LayoutTensor`.
+            _element_layout: The element layout of the returned `LayoutTensor`.
 
         Returns:
             A new `LayoutTensor` with the same memory location but with the
             specified data type, address space, and element layout.
         """
         return Self.BitcastType[
-            new_dtype, target_address_space, element_layout
+            new_dtype, target_address_space, _element_layout
         ](
             self.ptr.bitcast[Scalar[new_dtype]]().address_space_cast[
                 target_address_space
@@ -2033,8 +2033,8 @@ struct LayoutTensor[
             result in undefined behavior.
         """
 
-        alias alignment = align_of[SIMD[dtype, width]]()
-        return self.ptr.load[width=width, alignment=alignment](
+        alias _alignment = align_of[SIMD[dtype, width]]()
+        return self.ptr.load[width=width, alignment=_alignment](
             self._offset(m, n)
         )
 
@@ -2155,8 +2155,8 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
 
-        alias alignment = align_of[SIMD[dtype, width]]()
-        return self.ptr.store[alignment=alignment](self._offset(m, n), val)
+        alias _alignment = align_of[SIMD[dtype, width]]()
+        return self.ptr.store[alignment=_alignment](self._offset(m, n), val)
 
     @always_inline("nodebug")
     fn size(self) -> Int:
@@ -3867,11 +3867,13 @@ struct LayoutTensor[
 
     @always_inline
     fn _vectorize_2[
-        origin: ImmutableOrigin,  # FIXME: MOCO-1912
-        vector_shape: IntTuple[origin],
+        _origin: ImmutableOrigin,  # FIXME: MOCO-1912
+        vector_shape: IntTuple[_origin],
         check_rank: Bool = True,
         linear_vectorize: Bool = vector_shape.is_value(),
-    ](self) -> Self.ShapeVectorizedType[origin, vector_shape, linear_vectorize]:
+    ](self) -> Self.ShapeVectorizedType[
+        _origin, vector_shape, linear_vectorize
+    ]:
         """Experimental implementation of the generalized vectorize operation
         using IntTuple.
 
@@ -3879,7 +3881,7 @@ struct LayoutTensor[
         to specify the vector dimensions rather than variadic parameters.
 
         Parameters:
-            origin: The origin of the IntTuple.
+            _origin: The origin of the IntTuple.
             vector_shape: The dimensions of each vector unit as an IntTuple.
             check_rank: Whether to verify that vector_shape is congruent with
                 the tensor's shape. Defaults to True.
@@ -3899,7 +3901,7 @@ struct LayoutTensor[
         ]()
 
         alias vectorized_type = Self.ShapeVectorizedType[
-            origin, vector_shape, linear_vectorize
+            _origin, vector_shape, linear_vectorize
         ]
         runtime_shape = vectorized_type.RuntimeLayoutType.ShapeType()
         runtime_stride = vectorized_type.RuntimeLayoutType.StrideType()
@@ -3957,7 +3959,7 @@ struct LayoutTensor[
             )
 
             return Self.ShapeVectorizedType[
-                origin, vector_shape, linear_vectorize
+                _origin, vector_shape, linear_vectorize
             ](
                 self.ptr,
                 vectorized_type.RuntimeLayoutType(
@@ -4036,9 +4038,9 @@ struct LayoutTensor[
         """
 
         alias shape = IntTuple(vector_shape)
-        alias origin = __origin_of()  # FIXME: MOCO-1912
+        alias _origin = __origin_of()  # FIXME: MOCO-1912
         var ret = self._vectorize_2[
-            origin,
+            _origin,
             shape,
             check_rank=False,
             linear_vectorize=False,

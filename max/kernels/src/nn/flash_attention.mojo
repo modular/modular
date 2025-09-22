@@ -563,7 +563,7 @@ struct _FlashAttention[
 
     @staticmethod
     fn _online_softmax[
-        mask_fn: fn[simd_width: Int] (
+        _mask_fn: fn[simd_width: Int] (
             m: Int, n: Int, score_vec: SIMD[dtype, simd_width]
         ) capturing -> SIMD[dtype, simd_width],
     ](
@@ -594,7 +594,9 @@ struct _FlashAttention[
                 _dtype: DType, _simd_width: Int
             ](idx: Int) -> SIMD[_dtype, _simd_width]:
                 var val = qk_row_ptr.load[width=_simd_width](idx)
-                return mask_fn(m, idx, val * scale.cast[dtype]()).cast[_dtype]()
+                return _mask_fn(m, idx, val * scale.cast[dtype]()).cast[
+                    _dtype
+                ]()
 
             # Update the row with the scale and mask. Find the maximum value
             # of the row to bias the exponential function below for numeric

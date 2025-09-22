@@ -53,13 +53,13 @@ struct Node[
         self.next = next.value() if next else Self._NodePointer()
 
     fn __str__[
-        ElementType: Copyable & Movable & Writable
-    ](self: Node[ElementType]) -> String:
+        _ElementType: Copyable & Movable & Writable
+    ](self: Node[_ElementType]) -> String:
         """Convert this node's value to a string representation.
 
         Parameters:
-            ElementType: Used to conditionally enable this function if
-                `ElementType` is `Writable`.
+            _ElementType: Used to conditionally enable this function if
+                `_ElementType` is `Writable`.
 
         Returns:
             String representation of the node's value.
@@ -71,13 +71,13 @@ struct Node[
 
     @no_inline
     fn write_to[
-        ElementType: Copyable & Movable & Writable
-    ](self: Node[ElementType], mut writer: Some[Writer]):
+        _ElementType: Copyable & Movable & Writable
+    ](self: Node[_ElementType], mut writer: Some[Writer]):
         """Write this node's value to the given writer.
 
         Parameters:
-            ElementType: Used to conditionally enable this function if
-                `ElementType` is `Writable`.
+            _ElementType: Used to conditionally enable this function if
+                `_ElementType` is `Writable`.
 
         Args:
             writer: The writer to write the value to.
@@ -514,12 +514,12 @@ struct LinkedList[
         other._tail = Self._NodePointer()
 
     fn count[
-        ElementType: EqualityComparable & Copyable & Movable, //
-    ](self: LinkedList[ElementType], read elem: ElementType) -> UInt:
+        _ElementType: EqualityComparable & Copyable & Movable, //
+    ](self: LinkedList[_ElementType], read elem: _ElementType) -> UInt:
         """Count the occurrences of `elem` in the list.
 
         Parameters:
-            ElementType: The list element type, used to conditionally enable the
+            _ElementType: The list element type, used to conditionally enable the
                 function.
 
         Args:
@@ -542,12 +542,12 @@ struct LinkedList[
         return UInt(count)
 
     fn __contains__[
-        ElementType: EqualityComparable & Copyable & Movable, //
-    ](self: LinkedList[ElementType], value: ElementType) -> Bool:
+        _ElementType: EqualityComparable & Copyable & Movable, //
+    ](self: LinkedList[_ElementType], value: _ElementType) -> Bool:
         """Checks if the list contains `value`.
 
         Parameters:
-            ElementType: The list element type, used to conditionally enable the
+            _ElementType: The list element type, used to conditionally enable the
                 function.
 
         Args:
@@ -568,14 +568,15 @@ struct LinkedList[
         return False
 
     fn __eq__[
-        ElementType: EqualityComparable & Copyable & Movable, //
+        _ElementType: EqualityComparable & Copyable & Movable, //
     ](
-        read self: LinkedList[ElementType], read other: LinkedList[ElementType]
+        read self: LinkedList[_ElementType],
+        read other: LinkedList[_ElementType],
     ) -> Bool:
         """Checks if the two lists are equal.
 
         Parameters:
-            ElementType: The list element type, used to conditionally enable the
+            _ElementType: The list element type, used to conditionally enable the
                 function.
 
         Args:
@@ -603,12 +604,12 @@ struct LinkedList[
         return True
 
     fn __ne__[
-        ElementType: EqualityComparable & Copyable & Movable, //
-    ](self: LinkedList[ElementType], other: LinkedList[ElementType]) -> Bool:
+        _ElementType: EqualityComparable & Copyable & Movable, //
+    ](self: LinkedList[_ElementType], other: LinkedList[_ElementType]) -> Bool:
         """Checks if the two lists are not equal.
 
         Parameters:
-            ElementType: The list element type, used to conditionally enable the
+            _ElementType: The list element type, used to conditionally enable the
                 function.
 
         Args:
@@ -728,13 +729,13 @@ struct LinkedList[
         return len(self) != 0
 
     fn __str__[
-        ElementType: Copyable & Movable & Writable
-    ](self: LinkedList[ElementType]) -> String:
+        _ElementType: Copyable & Movable & Writable
+    ](self: LinkedList[_ElementType]) -> String:
         """Convert the list to its string representation.
 
         Parameters:
-            ElementType: Used to conditionally enable this function when
-                `ElementType` is `Writable`.
+            _ElementType: Used to conditionally enable this function when
+                `_ElementType` is `Writable`.
 
         Returns:
             String representation of the list.
@@ -747,13 +748,13 @@ struct LinkedList[
         return writer
 
     fn __repr__[
-        ElementType: Copyable & Movable & Writable
-    ](self: LinkedList[ElementType]) -> String:
+        _ElementType: Copyable & Movable & Writable
+    ](self: LinkedList[_ElementType]) -> String:
         """Convert the list to its string representation.
 
         Parameters:
-            ElementType: Used to conditionally enable this function when
-                `ElementType` is `Writable`.
+            _ElementType: Used to conditionally enable this function when
+                `_ElementType` is `Writable`.
 
         Returns:
             String representation of the list.
@@ -766,13 +767,13 @@ struct LinkedList[
         return writer
 
     fn write_to[
-        ElementType: Copyable & Movable & Writable
-    ](self: LinkedList[ElementType], mut writer: Some[Writer]):
+        _ElementType: Copyable & Movable & Writable
+    ](self: LinkedList[_ElementType], mut writer: Some[Writer]):
         """Write the list to the given writer.
 
         Parameters:
-            ElementType: Used to conditionally enable this function when
-                `ElementType` is `Writable`.
+            _ElementType: Used to conditionally enable this function when
+                `_ElementType` is `Writable`.
 
         Args:
             writer: The writer to write the list to.
@@ -784,9 +785,9 @@ struct LinkedList[
 
     @no_inline
     fn _write[
-        W: Writer, ElementType: Copyable & Movable & Writable
+        W: Writer, _ElementType: Copyable & Movable & Writable
     ](
-        self: LinkedList[ElementType],
+        self: LinkedList[_ElementType],
         mut writer: W,
         *,
         prefix: String = "[",

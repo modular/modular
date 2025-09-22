@@ -170,14 +170,14 @@ struct Optional[T: Copyable & Movable](
         return self is None
 
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable
-    ](self: Optional[T], rhs: Optional[T]) -> Bool:
+        _T: EqualityComparable & Copyable & Movable
+    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
         underlying value.
 
         Parameters:
-            T: The type of the elements in the list. Must implement the
+            _T: The type of the elements in the list. Must implement the
                 traits `Copyable`, `Movable` and `EqualityComparable`.
 
         Args:
@@ -204,14 +204,14 @@ struct Optional[T: Copyable & Movable](
         return self is not None
 
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
-    ](self: Optional[T], rhs: Optional[T]) -> Bool:
+        _T: EqualityComparable & Copyable & Movable, //
+    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
         """Return `False` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
         underlying value.
 
         Parameters:
-            T: The type of the elements in the list. Must implement the
+            _T: The type of the elements in the list. Must implement the
                 traits `Copyable`, `Movable` and `EqualityComparable`.
 
         Args:
@@ -406,15 +406,15 @@ struct Optional[T: Copyable & Movable](
     fn copied[
         mut: Bool,
         origin: Origin[mut], //,
-        T: Copyable & Movable,
-    ](self: Optional[Pointer[T, origin]]) -> Optional[T]:
+        _T: Copyable & Movable,
+    ](self: Optional[Pointer[_T, origin]]) -> Optional[_T]:
         """Converts an `Optional` containing a Pointer to an `Optional` of an
         owned value by copying.
 
         Parameters:
             mut: Mutability of the pointee origin.
             origin: Origin of the contained `Pointer`.
-            T: Type of the owned result value.
+            _T: Type of the owned result value.
 
         Returns:
             An `Optional` containing an owned copy of the pointee value.

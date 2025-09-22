@@ -733,12 +733,12 @@ struct NDBuffer[
         fn serialize[T: Writable](val: T):
             writer.write(val)
 
-        var shape = List[Int]()
+        var dyn_shape = List[Int]()
         for i in range(rank):
-            shape.append(self.dynamic_shape[i])
+            dyn_shape.append(self.dynamic_shape[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.data, shape
+            self.data, dyn_shape
         )
 
         writer.write(")")
@@ -855,12 +855,12 @@ struct NDBuffer[
         ]()
 
         var offset = 0
-        var shape = IndexList[rank]()
+        var dyn_shape = IndexList[rank]()
 
         @parameter
         for i in range(rank):
             alias tile_size_i = tile_sizes[i].get()
-            shape[i] = tile_size_i
+            dyn_shape[i] = tile_size_i
             var coord_i = tile_coords[i]
             offset += coord_i * tile_size_i * self.stride[i]()
 
@@ -880,7 +880,7 @@ struct NDBuffer[
             address_space=address_space,
         ](
             self.data.offset(offset),
-            dynamic_shape=shape,
+            dynamic_shape=dyn_shape,
             dynamic_stride=self.dynamic_stride,
         )
         return tile

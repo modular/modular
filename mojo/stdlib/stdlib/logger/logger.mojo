@@ -486,7 +486,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         abort()
 
     fn _write_out[
-        level: Level
+        _level: Level
     ](
         self,
         values: VariadicPack[element_trait=Writable],
@@ -501,7 +501,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         if self._prefix:
             buffer.write(self._prefix)
         else:
-            buffer.write(level, "::: ")
+            buffer.write(_level, "::: ")
 
         if self._source_location:
             buffer.write("[", location, "] ")

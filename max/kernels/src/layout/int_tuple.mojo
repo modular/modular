@@ -379,15 +379,15 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @staticmethod
     @always_inline("nodebug")
     fn elements_size[
-        origin: ImmutableOrigin
-    ](elements: VariadicListMem[IntTuple[origin]]) -> Int:
+        _origin: ImmutableOrigin
+    ](elements: VariadicListMem[IntTuple[_origin]]) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
         integer values and nested sub-tuples.
 
         Parameters:
-            origin: Origin of the elements in the `IntTuple`.
+            _origin: Origin of the elements in the `IntTuple`.
 
         Args:
             elements: List of `IntTuple` elements to measure.
@@ -404,15 +404,15 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @staticmethod
     @always_inline("nodebug")
     fn elements_size[
-        origin: ImmutableOrigin, n: Int
-    ](elements: InlineArray[Pointer[IntTuple, origin], n], idx: Int) -> Int:
+        _origin: ImmutableOrigin, n: Int
+    ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
         Computes the sum of sizes for all elements at the given index in an array
         of `IntTuple` pointers.
 
         Parameters:
-            origin: Origin tracking for memory safety.
+            _origin: Origin tracking for memory safety.
             n: Size of the inline array.
 
         Args:

@@ -440,13 +440,13 @@ struct Span[
 
     @always_inline
     fn copy_from[
-        origin: MutableOrigin, //
-    ](self: Span[T, origin], other: Span[T, _],):
+        _origin: MutableOrigin, //
+    ](self: Span[T, _origin], other: Span[T, _],):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
         Parameters:
-            origin: The inferred mutable origin of the data within the Span.
+            _origin: The inferred mutable origin of the data within the Span.
 
         Args:
             other: The `Span` to copy all elements from.
@@ -469,12 +469,12 @@ struct Span[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable, //,
-    ](self: Span[T, origin], rhs: Span[T, _],) -> Bool:
+        _T: EqualityComparable & Copyable & Movable, //,
+    ](self: Span[_T, origin], rhs: Span[_T, _],) -> Bool:
         """Verify if span is equal to another span.
 
         Parameters:
-            T: The type of the elements must implement the
+            _T: The type of the elements must implement the
               traits `EqualityComparable`, `Copyable` and `Movable`.
 
         Args:
@@ -498,12 +498,12 @@ struct Span[
 
     @always_inline
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
-    ](self: Span[T, origin], rhs: Span[T]) -> Bool:
+        _T: EqualityComparable & Copyable & Movable, //
+    ](self: Span[_T, origin], rhs: Span[_T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
-            T: The type of the elements in the span. Must implement the
+            _T: The type of the elements in the span. Must implement the
               traits `EqualityComparable`, `Copyable` and `Movable`.
 
         Args:
@@ -514,12 +514,12 @@ struct Span[
         """
         return not self == rhs
 
-    fn fill[origin: MutableOrigin, //](self: Span[T, origin], value: T):
+    fn fill[_origin: MutableOrigin, //](self: Span[T, _origin], value: T):
         """
         Fill the memory that a span references with a given value.
 
         Parameters:
-            origin: The inferred mutable origin of the data within the Span.
+            _origin: The inferred mutable origin of the data within the Span.
 
         Args:
             value: The value to assign to each element.
