@@ -435,6 +435,28 @@ class MatmulLike(Protocol):
     @property
     def tensor_result(self) -> max._core.Value[TensorType]: ...
 
+class MOMultiChainMutableOpInterface(Protocol):
+    """
+    Extension of MOMutableOpInterface for ops that may thread multiple chain
+    operands/results, for example per-device sequencing plus primary chain.
+    Implementers must treat the first element returned by the single in/out
+    chain MOMutableOpInterface methods as the primary/global chain.
+    """
+
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def out_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def in_chain_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def all_in_chains(self) -> list[max._core.Value[ChainType]]: ...
+    @property
+    def all_out_chains(self) -> list[max._core.Value[ChainType]]: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+
 class MOMutableOpInterface(Protocol):
     """
     Interface that all mutable ops under rmo/mo implement and any ops that
