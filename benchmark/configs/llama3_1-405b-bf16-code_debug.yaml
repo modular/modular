@@ -1,0 +1,21 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# max serve --model meta-llama/Llama-3.1-405B-Instruct
+# max benchmark --config-file llama3_1-405b-bf16-code_debug.yaml
+benchmark_config:
+  model: meta-llama/Llama-3.1-405B-Instruct
+  backend: modular
+  endpoint: /v1/chat/completions
+  dataset_name: code_debug
+  num_prompts: 8
