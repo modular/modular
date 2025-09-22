@@ -15,7 +15,7 @@
 
 from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
-from .embeddings_pipeline import EmbeddingsPipeline
+from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -42,6 +42,7 @@ from .pipeline import (
     ModelOutputs,
     PipelineModel,
     TextGenerationPipeline,
+    TextGenerationPipelineType,
     get_paged_manager,
     upper_bounded_default,
 )
@@ -69,7 +70,10 @@ __all__ = [
     "MEMORY_ESTIMATOR",
     "PIPELINE_REGISTRY",
     "AudioGenerationConfig",
+    "AudioGeneratorPipeline",
+    "AudioGeneratorPipelineType",
     "EmbeddingsPipeline",
+    "EmbeddingsPipelineType",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
@@ -96,6 +100,7 @@ __all__ = [
     "SupportedEncoding",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
+    "TextGenerationPipelineType",
     "TextTokenizer",
     "WeightPathParser",
     "convert_max_config_value",

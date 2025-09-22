@@ -30,10 +30,12 @@ if TYPE_CHECKING:
 
 from .pipeline import PipelineModel
 
+AudioGeneratorPipelineType = Pipeline[
+    AudioGenerationInputs[TTSContext], AudioGenerationOutput
+]
 
-class AudioGeneratorPipeline(
-    Pipeline[AudioGenerationInputs[TTSContext], AudioGenerationOutput]
-):
+
+class AudioGeneratorPipeline(AudioGeneratorPipelineType):
     """Converts text to speech.
 
     This pipeline passes all of the work through to the PipelineModel.

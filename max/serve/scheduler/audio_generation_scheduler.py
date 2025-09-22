@@ -26,7 +26,6 @@ from max.interfaces import (
     AudioGenerationOutput,
     MAXPullQueue,
     MAXPushQueue,
-    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
@@ -34,6 +33,9 @@ from max.interfaces import (
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
+from max.pipelines.lib.audio_generator_pipeline import (
+    AudioGeneratorPipelineType,
+)
 from max.profiler import Tracer
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -207,10 +209,7 @@ class AudioGenerationScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: AudioGenerationSchedulerConfig,
-        pipeline: Pipeline[
-            AudioGenerationInputs[TTSContext],
-            AudioGenerationOutput,
-        ],
+        pipeline: AudioGeneratorPipelineType,
         *,
         request_queue: MAXPullQueue[TTSContext],
         response_queue: MAXPushQueue[

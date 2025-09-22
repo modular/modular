@@ -60,7 +60,6 @@ from max.interfaces import (
     PipelineTokenizer,
     RequestID,
     RequestType,
-    TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
@@ -76,6 +75,7 @@ from max.nn.kv_cache import (
 from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, PreTrainedTokenizerFast
+from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -659,24 +659,27 @@ class GenerateMixin(
                     self.release(request_id)
 
 
+TextGenerationPipelineType: TypeAlias = Pipeline[
+    TextGenerationInputs[T], TextGenerationOutput
+]
+
+
 class TextGenerationPipeline(
-    Pipeline[
-        TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
-    ],
-    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
-    Generic[TextGenerationContextType],
+    TextGenerationPipelineType[T],
+    GenerateMixin[T, TextGenerationRequest],
+    Generic[T],
 ):
     """Generalized token generator pipeline."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[TextGenerationContextType]],
+        pipeline_model: type[PipelineModel[T]],
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
-            TextGenerationContextType,
+            T,
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
@@ -813,7 +816,7 @@ class TextGenerationPipeline(
     def tokenizer(
         self,
     ) -> PipelineTokenizer[
-        TextGenerationContextType,
+        T,
         npt.NDArray[np.integer[Any]],
         TextGenerationRequest,
     ]:
@@ -828,7 +831,7 @@ class TextGenerationPipeline(
     def calculate_num_steps(
         self,
         num_steps: int,
-        context: TextGenerationContextType,
+        context: T,
     ) -> int:
         max_seq_len = self._pipeline_model.max_seq_len
         num_available_steps = context.compute_num_available_steps(max_seq_len)
@@ -843,7 +846,7 @@ class TextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[list[TextGenerationContextType]],
+        batches: list[list[T]],
         num_steps: int,
     ) -> tuple[ModelInputs, int, npt.NDArray[np.int32] | None]:
         tracer: Tracer = Tracer("prepare_batch")
@@ -940,7 +943,7 @@ class TextGenerationPipeline(
         )
 
     @traced
-    def _maybe_sort_loras(self, batch: dict[str, TextGenerationContextType]):
+    def _maybe_sort_loras(self, batch: dict[str, T]):
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
         to be adjacent to each other.
@@ -983,7 +986,7 @@ class TextGenerationPipeline(
     @traced
     def execute(
         self,
-        inputs: TextGenerationInputs[TextGenerationContextType],
+        inputs: TextGenerationInputs[T],
     ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.

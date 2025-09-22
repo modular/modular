@@ -21,11 +21,9 @@ from collections import OrderedDict
 from max.interfaces import (
     MAXPullQueue,
     MAXPushQueue,
-    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
-    TextGenerationInputs,
     TextGenerationOutput,
 )
 from max.interfaces.queue import drain_queue
@@ -36,7 +34,7 @@ from max.nn.kv_cache import (
     XferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -61,10 +59,7 @@ logger = logging.getLogger("max.serve")
 class DecodeScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: Pipeline[
-            TextGenerationInputs[TextContext],
-            TextGenerationOutput,
-        ],
+        pipeline: TextGenerationPipelineType[TextContext],
         scheduler_config: TokenGenerationSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
@@ -371,10 +366,7 @@ class DecodeScheduler(Scheduler):
 
 
 def load_decode_scheduler(
-    pipeline: Pipeline[
-        TextGenerationInputs[TextContext],
-        TextGenerationOutput,
-    ],
+    pipeline: TextGenerationPipelineType[TextContext],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[

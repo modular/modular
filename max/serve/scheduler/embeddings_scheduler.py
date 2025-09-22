@@ -14,7 +14,6 @@
 import logging
 import queue
 from dataclasses import dataclass
-from typing import Generic
 
 from max.interfaces import (
     EmbeddingsGenerationContextType,
@@ -22,11 +21,11 @@ from max.interfaces import (
     EmbeddingsGenerationOutput,
     MAXPullQueue,
     MAXPushQueue,
-    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
 )
+from max.pipelines.lib import EmbeddingsPipelineType
 from max.profiler import traced
 
 from .base import SchedulerProgress
@@ -42,14 +41,11 @@ class EmbeddingsSchedulerConfig:
     max_batch_size: int
 
 
-class EmbeddingsScheduler(Scheduler, Generic[EmbeddingsGenerationContextType]):
+class EmbeddingsScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: EmbeddingsSchedulerConfig,
-        pipeline: Pipeline[
-            EmbeddingsGenerationInputs[EmbeddingsGenerationContextType],
-            EmbeddingsGenerationOutput,
-        ],
+        pipeline: EmbeddingsPipelineType,
         request_queue: MAXPullQueue[EmbeddingsGenerationContextType],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]

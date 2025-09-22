@@ -12,26 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Any, TypeVar, Union, cast
+from typing import TypeVar, cast
 
 from max.interfaces import (
-    AudioGenerationInputs,
-    AudioGenerationOutput,
+    EmbeddingsGenerationContextType,
     InputContext,
     MAXPullQueue,
-    MAXPushQueue,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
     RequestID,
     Scheduler,
-    SchedulerResult,
-    TextGenerationInputs,
-    TextGenerationOutput,
 )
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
-from max.pipelines.lib import PipelineConfig, PipelineRole
+from max.pipelines.core import TextContext
+from max.pipelines.lib import (
+    EmbeddingsPipelineType,
+    PipelineConfig,
+    PipelineRole,
+    TextGenerationPipelineType,
+)
+from max.pipelines.lib.audio_generator_pipeline import (
+    AudioGeneratorPipelineType,
+)
 from max.serve.config import Settings
 from max.serve.scheduler.queues import SchedulerZmqConfigs
 
@@ -74,10 +77,14 @@ def load_scheduler(
             if pipeline_config.max_batch_size is not None
             else 1
         )
-        return EmbeddingsScheduler[TextContext](
+        emb_pipeline = cast(EmbeddingsPipelineType, pipeline)
+        return EmbeddingsScheduler(
             scheduler_config=embeddings_scheduler_config,
-            pipeline=pipeline,  # type: ignore
-            request_queue=cast(MAXPullQueue[TextContext], request_queue),
+            pipeline=emb_pipeline,
+            request_queue=cast(
+                MAXPullQueue[EmbeddingsGenerationContextType],
+                request_queue,
+            ),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
         )
@@ -104,13 +111,7 @@ def load_scheduler(
             enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
             data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )
-        audio_pipeline = cast(
-            Pipeline[
-                AudioGenerationInputs[TTSContext],
-                AudioGenerationOutput,
-            ],
-            pipeline,
-        )
+        audio_pipeline = cast(AudioGeneratorPipelineType, pipeline)
 
         return AudioGenerationScheduler(
             scheduler_config=token_gen_config,
@@ -122,16 +123,9 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, Pipeline)
-        # At runtime, this should be a TextGenerationPipeline with the expected type parameters
-        text_gen_pipeline = cast(
-            Pipeline[
-                TextGenerationInputs[TextContext],
-                TextGenerationOutput,
-            ],
-            pipeline,
-        )
+        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
         return load_text_generation_scheduler(
-            text_gen_pipeline,
+            text_pipeline,
             pipeline_config,
             request_queue=cast(MAXPullQueue[TextContext], request_queue),
             response_queue=response_queue,
@@ -139,16 +133,9 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
         assert isinstance(pipeline, Pipeline)
-        # At runtime, this should be a TextGenerationPipeline with the expected type parameters
-        text_gen_pipeline = cast(
-            Pipeline[
-                TextGenerationInputs[TextContext],
-                TextGenerationOutput,
-            ],
-            pipeline,
-        )
+        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
         return load_decode_scheduler(
-            text_gen_pipeline,
+            text_pipeline,
             pipeline_config,
             request_queue=cast(MAXPullQueue[TextContext], request_queue),
             response_queue=response_queue,
@@ -157,17 +144,8 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
         assert isinstance(pipeline, Pipeline)
-        # At runtime, this should be a TextGenerationPipeline with the expected type parameters
-        text_gen_pipeline = cast(
-            Pipeline[
-                TextGenerationInputs[TextContext],
-                TextGenerationOutput,
-            ],
-            pipeline,
-        )
-        return load_prefill_scheduler(
-            text_gen_pipeline, pipeline_config, settings
-        )
+        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
+        return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:
         raise ValueError(
             f"No scheduler support for pipeline_role ({pipeline_config.pipeline_role})."

@@ -55,7 +55,7 @@ logger = logging.getLogger("max.pipelines")
 
 PipelineTypes = Union[
     TextGenerationPipeline[TextContext],
-    EmbeddingsPipeline[TextContext],
+    EmbeddingsPipeline,
     AudioGeneratorPipeline,
     SpeculativeDecodingTextGenerationPipeline,
     SpeechTokenGenerationPipeline,
@@ -66,7 +66,7 @@ def get_pipeline_for_task(
     task: PipelineTask, pipeline_config: PipelineConfig
 ) -> (
     type[TextGenerationPipeline[TextContext]]
-    | type[EmbeddingsPipeline[TextContext]]
+    | type[EmbeddingsPipeline]
     | type[SpeculativeDecodingTextGenerationPipeline]
     | type[AudioGeneratorPipeline]
     | type[SpeechTokenGenerationPipeline]
@@ -75,7 +75,7 @@ def get_pipeline_for_task(
         if pipeline_config.draft_model_config is not None:
             return SpeculativeDecodingTextGenerationPipeline
         else:
-            return TextGenerationPipeline
+            return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         return EmbeddingsPipeline
     elif task == PipelineTask.AUDIO_GENERATION:
