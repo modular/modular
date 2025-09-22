@@ -66,7 +66,7 @@ class DecodeScheduler(Scheduler):
             TextGenerationOutput,
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: PagedKVCacheManager[TextContext],
+        paged_manager: PagedKVCacheManager,
         *,
         request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
         response_queue: MAXPushQueue[

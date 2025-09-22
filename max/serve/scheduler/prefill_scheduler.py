@@ -58,7 +58,7 @@ class PrefillScheduler(Scheduler):
             TextGenerationOutput,
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_cache: PagedKVCacheManager[TextContext],
+        paged_cache: PagedKVCacheManager,
         dispatcher: PrefillDispatcherServerV2,
     ) -> None:
         self.pipeline = pipeline

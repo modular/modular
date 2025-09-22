@@ -304,7 +304,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager[TextAndVisionContext]:
+    ) -> PagedKVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
                 huggingface_config=self.huggingface_config,

@@ -111,7 +111,7 @@ class Llama3Inputs(ModelInputs):
         self.data_parallel_splits = data_parallel_splits
 
 
-class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
+class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     """Base Llama pipeline model implementation."""
 
     model: Model
@@ -330,7 +330,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int | None,
-    ) -> PagedKVCacheManager[TextContext]:
+    ) -> PagedKVCacheManager:
         # For pipeline parallel, use layers per stage instead of total layers
         num_layers_for_cache = Llama3Config.get_num_layers(
             huggingface_config=self.huggingface_config

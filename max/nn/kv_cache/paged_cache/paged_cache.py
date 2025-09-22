@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -36,7 +36,7 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
-from max.interfaces.request import RequestID
+from max.interfaces import RequestID, TextGenerationContext
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -45,15 +45,12 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
 from ..cache_params import KVCacheParams
-from ..context import KVCacheAwareContext
 from ..manager import KVCacheInputSymbols, RaggedKVCacheInputs
 from ..utils import build_max_lengths_tensor
 from .block_copy_engine import BlockCopyEngine, BlockCopyMetrics
 from .block_manager import BlockManager
 
 logger = logging.getLogger("max.pipelines")
-
-T = TypeVar("T", bound=KVCacheAwareContext)
 
 
 @dataclass
@@ -148,7 +145,7 @@ class FetchPagedKVCacheCollection:
         )
 
 
-class PagedKVCacheManager(Generic[T]):
+class PagedKVCacheManager:
     page_size: int
     """Number of tokens stored per block."""
 
@@ -164,7 +161,7 @@ class PagedKVCacheManager(Generic[T]):
     total_num_host_pages: int
     """Total number of blocks allocated on the host for swapping (if enabled)."""
 
-    block_manager: BlockManager[T]
+    block_manager: BlockManager
     """Manages allocation, eviction, and reuse of KV cache blocks."""
 
     enable_prefix_caching: bool
@@ -497,13 +494,17 @@ class PagedKVCacheManager(Generic[T]):
         )
 
     @traced
-    def _does_req_need_more_blocks(self, ctx: T, num_steps: int) -> bool:
+    def _does_req_need_more_blocks(
+        self, ctx: TextGenerationContext, num_steps: int
+    ) -> bool:
         """Determines if a request needs additional blocks."""
         seq_len = ctx.current_length + num_steps - 1
         return seq_len > self._get_num_req_slots(ctx.request_id)
 
     @traced
-    def maybe_reserve(self, data: T, num_steps: int = 1) -> bool:
+    def maybe_reserve(
+        self, data: TextGenerationContext, num_steps: int = 1
+    ) -> bool:
         """Prepares blocks for a request prior to a subsequent fetch call.
 
         This will reuse blocks from prefix cache and allocate new blocks for the
@@ -523,7 +524,7 @@ class PagedKVCacheManager(Generic[T]):
 
     @traced
     def fetch(
-        self, batch: Sequence[T], num_steps: int = 1
+        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> Sequence[RaggedKVCacheInputs]:
         """Reuses blocks from prefix cache and allocates new blocks for requests in batch.
 
@@ -703,7 +704,7 @@ class PagedKVCacheManager(Generic[T]):
         self.block_manager.release(request_id)
 
     @traced
-    def step(self, batch: Sequence[T]) -> None:
+    def step(self, batch: Sequence[TextGenerationContext]) -> None:
         """Commit new tokens into the prefix cache.
 
         This is a no-op if prefix caching is disabled.

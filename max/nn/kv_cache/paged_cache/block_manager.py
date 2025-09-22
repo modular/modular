@@ -28,16 +28,14 @@ import logging
 from collections import defaultdict
 from collections.abc import Iterable
 from enum import Enum
-from typing import Generic, TypeVar
 
-from max.interfaces.request import RequestID
+from max.interfaces import RequestID, TextGenerationContext
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
 )
 from max.support.math import ceildiv
 
-from ..context import KVCacheAwareContext
 from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
 from .block_utils import (
@@ -60,10 +58,7 @@ class SwappingStrategy(Enum):
     LAZY = "LAZY"
 
 
-T = TypeVar("T", bound=KVCacheAwareContext)
-
-
-class BlockManager(Generic[T]):
+class BlockManager:
     @traced
     def __init__(
         self,
@@ -139,7 +134,7 @@ class BlockManager(Generic[T]):
         self.enable_runtime_checks = enable_runtime_checks
 
     @traced
-    def step(self, ctx: T) -> None:
+    def step(self, ctx: TextGenerationContext) -> None:
         """Step the block manager by committing blocks into prefix cache."""
         self.assert_runtime_invariants(ctx)
 
@@ -158,7 +153,7 @@ class BlockManager(Generic[T]):
     @traced
     def compute_hashes_for_request(
         self,
-        ctx: T,
+        ctx: TextGenerationContext,
     ) -> None:
         """Compute the block hashes for the request."""
 
@@ -183,7 +178,9 @@ class BlockManager(Generic[T]):
         hashes.extend(new_hashes)
 
     @traced
-    def reuse_blocks_from_prefix_cache(self, ctx: T) -> None:
+    def reuse_blocks_from_prefix_cache(
+        self, ctx: TextGenerationContext
+    ) -> None:
         """Reuse blocks from prefix cache.
 
         Full blocks are directly reused and appended to the request's blocks.
@@ -299,7 +296,7 @@ class BlockManager(Generic[T]):
     @traced
     def get_full_blocks_from_prefix_cache(
         self,
-        ctx: T,
+        ctx: TextGenerationContext,
     ) -> list[KVCacheBlock]:
         """Get the computed (cached) blocks for the request.
         Note that the computed blocks must be full.
@@ -340,7 +337,7 @@ class BlockManager(Generic[T]):
     @traced
     def commit_to_prefix_cache(
         self,
-        ctx: T,
+        ctx: TextGenerationContext,
     ) -> None:
         """Commits all blocks whose hashes are known for prefix caching.
 
@@ -407,7 +404,9 @@ class BlockManager(Generic[T]):
             del self.req_to_committed_idx[request_id]
 
     @traced
-    def allocate_new_blocks(self, ctx: T, num_steps: int = 1) -> None:
+    def allocate_new_blocks(
+        self, ctx: TextGenerationContext, num_steps: int = 1
+    ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
         Calculates the number of additional blocks needed based on the current sequence
@@ -500,7 +499,7 @@ class BlockManager(Generic[T]):
             return 0
         return self.cached_prompt_tokens / self.prompt_tokens
 
-    def release_uncommitted_blocks(self, ctx: T) -> None:
+    def release_uncommitted_blocks(self, ctx: TextGenerationContext) -> None:
         """Release the uncommitted blocks for the request."""
         req_blocks = self.current_blocks_per_request[ctx.request_id]
         num_committed_blocks = (
@@ -523,7 +522,7 @@ class BlockManager(Generic[T]):
         ]
 
     @traced
-    def assert_runtime_invariants(self, ctx: T) -> None:
+    def assert_runtime_invariants(self, ctx: TextGenerationContext) -> None:
         """If runtime checks are enabled, assert that the runtime checks are
         correct.
         """

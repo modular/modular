@@ -93,7 +93,7 @@ class GptOssInputs(ModelInputs):
         self.return_n_logits = return_n_logits
 
 
-class GptOssModel(PipelineModel[TextContext], KVCacheMixin[TextContext]):
+class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
     """A GPT OSS pipeline model for text generation.
 
     This class integrates the GPT OSS architecture with the MAX Engine pipeline
@@ -556,7 +556,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin[TextContext]):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager[TextContext]:
+    ) -> PagedKVCacheManager:
         """Loads and initializes the KVCacheManager for the GPT OSS model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,

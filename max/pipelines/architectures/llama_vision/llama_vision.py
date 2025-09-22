@@ -87,7 +87,7 @@ class MultimodalKVCacheInputs(KVCacheInputs):
     vision_kv_cache_inputs: KVCacheInputs
 
 
-class MultimodalKVCacheManager(PagedKVCacheManager[InputContext]):
+class MultimodalKVCacheManager(PagedKVCacheManager):
     """A lightweight wrapper around text and vision KV managers.
 
     Note on runtime and graph build time return types:
@@ -102,10 +102,10 @@ class MultimodalKVCacheManager(PagedKVCacheManager[InputContext]):
       extensible KVCacheInput type.
     """
 
-    text_kv_manager: PagedKVCacheManager[InputContext]
+    text_kv_manager: PagedKVCacheManager
     """KV cache manager for text inputs."""
 
-    vision_kv_manager: PagedKVCacheManager[InputContext]
+    vision_kv_manager: PagedKVCacheManager
     """KV cache manager for image inputs."""
 
     def __init__(
@@ -1156,7 +1156,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager[InputContext]:
+    ) -> PagedKVCacheManager:
         """Loads KV cache management objects for Llama vision.
 
         Args:

@@ -66,7 +66,6 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.kv_cache import (
-    KVCacheAwareContext,
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
@@ -441,10 +440,10 @@ class PipelineModel(ABC, Generic[T]):
 
 
 @runtime_checkable
-class KVCacheMixin(Protocol[T]):
+class KVCacheMixin(Protocol):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager[T]:
+    ) -> PagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -495,7 +494,7 @@ class KVCacheMixin(Protocol[T]):
 
 def get_paged_manager(
     pipeline: Pipeline[Any, Any],
-) -> PagedKVCacheManager[Any] | None:
+) -> PagedKVCacheManager | None:
     if (
         hasattr(pipeline, "_pipeline_model")
         and hasattr(pipeline._pipeline_model, "kv_manager")
@@ -523,7 +522,7 @@ class BatchInfo:
 @runtime_checkable
 class _TextGenerationProtocol(Protocol, Generic[T, RequestType]):
     @property
-    def kv_managers(self) -> list[PagedKVCacheManager[T]]: ...
+    def kv_managers(self) -> list[PagedKVCacheManager]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...
@@ -606,7 +605,6 @@ class GenerateMixin(
             )
             batches = [{} for _ in range(data_parallel_degree)]
             for context in context_batch:
-                assert isinstance(context, KVCacheAwareContext)
                 replica_idx = kv_manager.get_or_recommend_replica(context)
                 kv_manager.external_claim_for_replica(
                     replica_idx, context.request_id
@@ -618,7 +616,6 @@ class GenerateMixin(
                 {context.request_id: context for context in context_batch}
             ]
             for context in context_batch:
-                assert isinstance(context, KVCacheAwareContext)
                 for kv_manager in self.kv_managers:
                     kv_manager.external_claim(context.request_id)
                 batches[0][context.request_id] = context
@@ -825,7 +822,7 @@ class TextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager[TextGenerationContextType]]:
+    ) -> list[PagedKVCacheManager]:
         return [self._pipeline_model.kv_manager]
 
     def calculate_num_steps(
@@ -904,7 +901,6 @@ class TextGenerationPipeline(
                             self._pipeline_model.kv_manager,
                             MultiPagedKVCacheManager,
                         )
-                        assert isinstance(context, KVCacheAwareContext)
                         self._pipeline_model.kv_manager.external_claim_for_replica(
                             replica_idx, context.request_id
                         )

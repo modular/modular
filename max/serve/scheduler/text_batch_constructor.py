@@ -154,7 +154,7 @@ class TextBatchConstructor:
             TextGenerationInputs[TextContext],
             TextGenerationOutput,
         ],
-        paged_cache: PagedKVCacheManager[TextContext] | None = None,
+        paged_cache: PagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

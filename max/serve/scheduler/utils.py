@@ -83,7 +83,7 @@ class SchedulerLogger:
         self,
         sch_config: TokenGenerationSchedulerConfig,
         sch_output: SchedulerOutput,
-        paged_cache: PagedKVCacheManager[TextContext] | None,
+        paged_cache: PagedKVCacheManager | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,

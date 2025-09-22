@@ -93,7 +93,7 @@ class Gemma3Inputs(ModelInputs):
         self.return_n_logits = return_n_logits
 
 
-class Gemma3Model(PipelineModel[TextContext], KVCacheMixin[TextContext]):
+class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     """A Gemma 3 pipeline model for text generation.
 
     This class integrates the Gemma 3 architecture with the MAX Engine pipeline
@@ -581,7 +581,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin[TextContext]):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager[TextContext]:
+    ) -> PagedKVCacheManager:
         """Loads and initializes the KVCacheManager for the Gemma 3 model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,

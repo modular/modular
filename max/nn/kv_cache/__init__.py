@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import KVCacheParams, KVCacheStrategy
-from .context import KVCacheAwareContext
 from .manager import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -39,7 +38,6 @@ from .utils import build_max_lengths_tensor
 
 __all__ = [
     "FetchPagedKVCacheCollection",
-    "KVCacheAwareContext",
     "KVCacheInputSymbols",
     "KVCacheInputs",
     "KVCacheInputsSequence",

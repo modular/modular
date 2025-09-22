@@ -22,10 +22,9 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.interfaces.request import RequestID
+from max.interfaces import RequestID, TextGenerationContext
 
 from ..cache_params import KVCacheParams
-from ..context import KVCacheAwareContext
 from ..data_parallelism_utils import split_input_row_offsets, split_into_groups
 from ..manager import RaggedKVCacheInputs
 from .block_copy_engine import BlockCopyMetrics
@@ -34,7 +33,7 @@ from .paged_cache import PagedCacheInputSymbols, PagedKVCacheManager
 logger = logging.getLogger("max.pipelines")
 
 
-class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
+class MultiPagedKVCacheManager(PagedKVCacheManager):
     """Enhanced PagedKVCacheManager with support for data parallelism.
 
     This class extends the existing PagedKVCacheManager to use MultiBlockManager,
@@ -102,9 +101,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
         self.devices = devices
         self.devices_per_replica = split_into_groups(devices, num_replicas)
 
-        self._replica_managers: list[
-            PagedKVCacheManager[KVCacheAwareContext]
-        ] = []
+        self._replica_managers: list[PagedKVCacheManager] = []
         for devices in self.devices_per_replica:
             self._replica_managers.append(
                 PagedKVCacheManager(
@@ -142,10 +139,10 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
             self._create_ragged_increment_cache_lengths_graph()
         )
 
-    def get_replica(self, context: KVCacheAwareContext) -> int:
+    def get_replica(self, context: TextGenerationContext) -> int:
         return self._request_to_replica_idx[context.request_id]
 
-    def get_or_recommend_replica(self, context: KVCacheAwareContext) -> int:
+    def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
         if context.request_id in self._request_to_replica_idx:
             return self._request_to_replica_idx[context.request_id]
 
@@ -157,7 +154,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
         return replica_idx
 
     def get_data_parallel_splits(
-        self, context_batch: Sequence[KVCacheAwareContext]
+        self, context_batch: Sequence[TextGenerationContext]
     ) -> Tensor:
         """Constructs splits for the data parallel execution.
 
@@ -181,7 +178,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
 
     def maybe_reserve(
         self,
-        data: KVCacheAwareContext,
+        data: TextGenerationContext,
         num_steps: int = 1,
     ) -> bool:
         assert data.request_id in self._request_to_replica_idx, (
@@ -194,7 +191,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
         )
 
     def fetch(
-        self, batch: Sequence[KVCacheAwareContext], num_steps: int = 1
+        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> list[RaggedKVCacheInputs]:
         """Fetch KV cache blocks for a batch of requests.
 
@@ -203,7 +200,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
             num_steps: Number of steps to fetch
         """
 
-        batch_by_replica: list[list[KVCacheAwareContext]] = [
+        batch_by_replica: list[list[TextGenerationContext]] = [
             [] for _ in range(len(self.devices_per_replica))
         ]
 
@@ -254,7 +251,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
         self._request_to_replica_idx[request_id] = replica_idx
         self._request_count_per_replica[replica_idx] += 1
 
-    def step(self, batch: Sequence[KVCacheAwareContext]) -> None:
+    def step(self, batch: Sequence[TextGenerationContext]) -> None:
         for ctx in batch:
             replica_idx = self._request_to_replica_idx[ctx.request_id]
             self._replica_managers[replica_idx].step([ctx])

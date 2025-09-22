@@ -217,7 +217,7 @@ class AudioGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[AudioGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: PagedKVCacheManager[TTSContext],
+        paged_manager: PagedKVCacheManager,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

@@ -12,31 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import TypeVar
-
-from max.interfaces.request import RequestID
+from max.interfaces import RequestID, TextGenerationContextType
 from max.nn.kv_cache import (
-    KVCacheAwareContext,
     MultiPagedKVCacheManager,
     PagedKVCacheManager,
 )
 
-T = TypeVar("T", bound=KVCacheAwareContext)
-BatchType = dict[RequestID, T]
+BatchType = dict[RequestID, TextGenerationContextType]
 
 
 def split_by_replica_idx(
-    batch: BatchType[T],
+    batch: BatchType[TextGenerationContextType],
     num_replicas: int,
-    paged_cache: PagedKVCacheManager[T] | None = None,
-) -> list[BatchType[T]]:
+    paged_cache: PagedKVCacheManager | None = None,
+) -> list[BatchType[TextGenerationContextType]]:
     """Splits a batch into a list of batches."""
     if num_replicas == 1:
         return [batch]
 
     assert isinstance(paged_cache, MultiPagedKVCacheManager)
 
-    batches: list[BatchType[T]] = [{} for _ in range(num_replicas)]
+    batches: list[BatchType[TextGenerationContextType]] = [
+        {} for _ in range(num_replicas)
+    ]
 
     # First pass: place requests that already have a replica idx
     for req_id, context in batch.items():

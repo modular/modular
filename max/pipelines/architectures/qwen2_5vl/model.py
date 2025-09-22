@@ -169,9 +169,7 @@ class Qwen2_5VLInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Qwen2_5VLModel(
-    PipelineModel[TextAndVisionContext], KVCacheMixin[TextAndVisionContext]
-):
+class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """A Qwen2.5VL pipeline model for multimodal text generation."""
 
     vision_model: Model
@@ -1138,7 +1136,7 @@ class Qwen2_5VLModel(
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager[TextAndVisionContext]:
+    ) -> PagedKVCacheManager:
         """Loads and initializes the PagedKVCacheManager for the Qwen2.5VL model."""
         return load_kv_manager(
             params=Qwen2_5VLConfig.get_kv_params(
