@@ -76,7 +76,7 @@ def create_paged_manager(
         * num_blocks
         * kv_params.dtype.size_in_bytes
     )
-    kv_manager = PagedKVCacheManager[TextContext](
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=512,
         max_seq_len=4096,

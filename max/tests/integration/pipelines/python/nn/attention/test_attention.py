@@ -25,7 +25,6 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     PagedKVCacheManager,
 )
-from max.pipelines import TextContext
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
 
@@ -74,7 +73,7 @@ def test_kv_cache_ragged_attention(
     )
 
     fetch_op: FetchPagedKVCacheCollection
-    kv_manager = PagedKVCacheManager[TextContext](
+    kv_manager = PagedKVCacheManager(
         kv_params,
         cache_memory=1024 * 1024 * 1024,
         page_size=128,

@@ -13,7 +13,6 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
-    KVCacheAwareContext,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheManager,
@@ -97,7 +96,7 @@ def test_print_kv_cache(dtype: DType) -> None:
         page_size=128,
     )
 
-    kv_manager = PagedKVCacheManager[KVCacheAwareContext](
+    kv_manager = PagedKVCacheManager(
         kv_params,
         max_batch_size=1,
         max_seq_len=1,

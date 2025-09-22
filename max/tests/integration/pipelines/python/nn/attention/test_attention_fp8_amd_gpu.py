@@ -27,7 +27,6 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
-from max.pipelines import TextContext
 from test_common.context_utils import create_text_context
 
 
@@ -88,7 +87,7 @@ def _create_kv_manager(
         cache_strategy=KVCacheStrategy.PAGED,
     )
 
-    manager = PagedKVCacheManager[TextContext](
+    manager = PagedKVCacheManager(
         params=kv_cache_params,
         cache_memory=1024 * 1024,
         max_batch_size=batch_size,
@@ -170,7 +169,7 @@ def _create_attention_state_dict(
 def _build_and_execute_attention_graph(
     attention: AttentionWithRope,
     rope: RotaryEmbedding,
-    kv_manager: PagedKVCacheManager[TextContext],
+    kv_manager: PagedKVCacheManager,
     kv_cache_params: KVCacheParams,
     batch_size: int,
     seq_len: int,
