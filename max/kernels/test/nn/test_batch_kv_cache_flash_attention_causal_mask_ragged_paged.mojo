@@ -191,28 +191,28 @@ def execute_ragged_flash_attention[
 
     # continuous execution
     flash_attention_kv_cache(
-        q_ragged.tensor,
-        input_row_offsets.tensor,
+        q_ragged.to_layout_tensor(),
+        input_row_offsets.to_layout_tensor(),
         # Assume self attention: Q and KV sequence lengths are equal.
-        input_row_offsets.tensor,
+        input_row_offsets.to_layout_tensor(),
         kv_collection_continuous.get_key_cache(layer_idx),
         kv_collection_continuous.get_value_cache(layer_idx),
         CausalMask(),
         isqrt(Float32(kv_params.head_size)),
-        ref_output.tensor,
+        ref_output.to_layout_tensor(),
     )
 
     # paged execution
     flash_attention_kv_cache(
-        q_ragged.tensor,
-        input_row_offsets.tensor,
+        q_ragged.to_layout_tensor(),
+        input_row_offsets.to_layout_tensor(),
         # Assume self attention: Q and KV sequence lengths are equal.
-        input_row_offsets.tensor,
+        input_row_offsets.to_layout_tensor(),
         kv_collection_paged.get_key_cache(layer_idx),
         kv_collection_paged.get_value_cache(layer_idx),
         CausalMask(),
         isqrt(Float32(kv_params.head_size)),
-        test_output.tensor,
+        test_output.to_layout_tensor(),
     )
 
     ref_out = ref_output.tensor

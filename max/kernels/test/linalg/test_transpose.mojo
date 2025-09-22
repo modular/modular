@@ -697,7 +697,7 @@ fn test_transpose_4x4():
     matrix[3, 2] = 14
     matrix[3, 3] = 15
 
-    transpose_inplace(matrix)
+    transpose_inplace[4, 4](matrix)
 
     # CHECK: 0
     print(matrix[0, 0])
@@ -766,7 +766,7 @@ fn test_transpose_8x8():
             var val = i * num_cols + j
             matrix[i, j] = val
 
-    transpose_inplace(matrix)
+    transpose_inplace[num_rows, num_cols](matrix)
 
     for i in range(num_rows):
         for j in range(num_cols):
@@ -795,7 +795,7 @@ fn test_transpose_16x16():
             var val = i * num_cols + j
             matrix[i, j] = val
 
-    transpose_inplace(matrix)
+    transpose_inplace[num_rows, num_cols](matrix)
 
     for i in range(num_rows):
         for j in range(num_cols):

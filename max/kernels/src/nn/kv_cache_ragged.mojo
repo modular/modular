@@ -27,7 +27,7 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout import IntTuple
+from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -2009,20 +2009,45 @@ fn _flash_attention_dispatch[
         fn call_flash_attention[sink: Bool]() raises:
             @parameter
             if is_cpu[target]():
+                alias q_layout = Layout.row_major[q.rank](q.shape)
+                alias output_layout = Layout.row_major[output.rank](
+                    output.shape
+                )
+                var sink_weights_lt: OptionalReg[
+                    LayoutTensor[
+                        dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ] = None
+                if sink_weights:
+                    var sw = sink_weights.value()
+                    sink_weights_lt = sink_weights_lt.T(
+                        sw.data,
+                        RuntimeLayout[
+                            Layout.row_major(UNKNOWN_VALUE)
+                        ].row_major(IndexList[1](len(sw))),
+                    )
                 return flash_attention_kv_cache_cpu(
-                    q,
-                    valid_length_managed_tensor_slice_to_ndbuffer(
-                        input_row_offsets
+                    LayoutTensor[q.type, q_layout](
+                        q.data,
+                        RuntimeLayout[q_layout].row_major(
+                            q.dynamic_shape.canonicalize()
+                        ),
                     ),
-                    valid_length_managed_tensor_slice_to_ndbuffer(
-                        input_row_offsets
-                    ),
+                    input_row_offsets.to_layout_tensor(),
+                    input_row_offsets.to_layout_tensor(),
                     k,
                     v,
                     mask,
                     scale,
-                    output,
-                    sink_weights,
+                    LayoutTensor[output.type, output_layout](
+                        output.data,
+                        RuntimeLayout[output_layout].row_major(
+                            output.dynamic_shape.canonicalize()
+                        ),
+                    ),
+                    sink_weights_lt,
                 )
             else:
                 alias use_score_mod = not _type_is_eq[
@@ -2554,19 +2579,51 @@ fn _cross_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         if is_cpu[target]():
+            alias q_layout = Layout.row_major[q.rank](q.shape)
+            alias output_layout = Layout.row_major[output.rank](output.shape)
+            var sink_weights_lt: OptionalReg[
+                LayoutTensor[
+                    dtype,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ]
+            ] = None
+            if sink_weights:
+                var sw = sink_weights.value()
+                sink_weights_lt = sink_weights_lt.T(
+                    sw.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(sw))
+                    ),
+                )
             return flash_attention_kv_cache_cpu(
-                q,
-                valid_length_managed_tensor_slice_to_ndbuffer(
-                    q_input_row_offsets
+                LayoutTensor[q.type, q_layout](
+                    q.data,
+                    RuntimeLayout[q_layout].row_major(
+                        q.dynamic_shape.canonicalize()
+                    ),
                 ),
+                q_input_row_offsets.to_layout_tensor(),
                 # Use KV offsets for cross attention.
-                kv_input_row_offsets,
+                LayoutTensor[
+                    kv_input_row_offsets.type, Layout.row_major(UNKNOWN_VALUE)
+                ](
+                    kv_input_row_offsets.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(kv_input_row_offsets))
+                    ),
+                ),
                 k,
                 v,
                 mask,
                 scale,
-                output,
-                sink_weights,
+                LayoutTensor[output.type, output_layout](
+                    output.data,
+                    RuntimeLayout[output_layout].row_major(
+                        output.dynamic_shape.canonicalize()
+                    ),
+                ),
+                sink_weights_lt,
             )
         else:
             alias use_score_mod = not _type_is_eq[

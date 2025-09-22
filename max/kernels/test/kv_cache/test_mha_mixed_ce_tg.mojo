@@ -180,27 +180,27 @@ def execute_ragged_flash_attention():
     # "true CE" execution
     print("true")
     flash_attention_kv_cache(
-        true_ce_q_ragged.tensor,
-        true_ce_row_offsets.tensor,
-        true_ce_row_offsets.tensor,
+        true_ce_q_ragged.to_layout_tensor(),
+        true_ce_row_offsets.to_layout_tensor(),
+        true_ce_row_offsets.to_layout_tensor(),
         true_ce_kv_collection.get_key_cache(layer_idx),
         true_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
         isqrt(Float32(kv_params.head_size)),
-        true_ce_output.tensor,
+        true_ce_output.to_layout_tensor(),
     )
 
     # "mixed CE" execution
     print("mixed")
     flash_attention_kv_cache(
-        mixed_ce_q_ragged.tensor,
-        mixed_ce_row_offsets.tensor,
-        mixed_ce_row_offsets.tensor,
+        mixed_ce_q_ragged.to_layout_tensor(),
+        mixed_ce_row_offsets.to_layout_tensor(),
+        mixed_ce_row_offsets.to_layout_tensor(),
         mixed_ce_kv_collection.get_key_cache(layer_idx),
         mixed_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
         isqrt(Float32(kv_params.head_size)),
-        mixed_ce_output.tensor,
+        mixed_ce_output.to_layout_tensor(),
     )
 
     true_ce_out = true_ce_output.tensor

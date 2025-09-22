@@ -65,6 +65,7 @@ from memory import memcpy
 from memory.pointer import _GPUAddressSpace
 
 from utils.numerics import max_finite
+from utils import IndexList
 
 alias INT_TUPLE_VALIDATION = False
 
@@ -2848,3 +2849,24 @@ fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
 
     # Re-nest the result according to original shape's structure
     return to_nest(shape, flat_result)
+
+
+fn to_index_list[rank: Int](t: IntTuple) -> IndexList[rank]:
+    """
+    Converts an IntTuple to a flattened IndexList with the same values.
+
+    Parameters:
+        rank: The rank of the resulting IndexList.
+
+    Args:
+        t: The `IntTuple` defining the values.
+
+    Returns:
+        An IndexList filled with the values of t.
+    """
+    var res = IndexList[rank]()
+    var flattened_t = t.flatten()
+    for i in range(len(t)):
+        res[i] = Int(flattened_t[i])
+
+    return res

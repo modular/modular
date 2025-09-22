@@ -5460,11 +5460,11 @@ struct NoMaskFlashAttentionCPU:
             return SIMD[dtype, width](0)
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
-            managed_tensor_slice_to_ndbuffer(q),
+            q.to_layout_tensor(),
             k.shape(),
             v.shape(),
             IndexList[0](),
-            managed_tensor_slice_to_ndbuffer(output),
+            output.to_layout_tensor(),
             scale.cast[DType.float32](),
         )
 
@@ -5537,13 +5537,13 @@ struct WithMaskFlashAttentionSplitKVCPU:
             v_cache_input_fn,
             mask_input_fn,
         ](
-            managed_tensor_slice_to_ndbuffer(q),
+            q.to_layout_tensor(),
             k.shape(),
             v.shape(),
             k_cache.shape(),
             v_cache.shape(),
             mask.shape(),
-            managed_tensor_slice_to_ndbuffer(output),
+            output.to_layout_tensor(),
             scale.cast[DType.float32](),
         )
 
@@ -5605,11 +5605,11 @@ struct WithMaskFlashAttentionCPU:
             )
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
-            managed_tensor_slice_to_ndbuffer(q),
+            q.to_layout_tensor(),
             k.shape(),
             v.shape(),
             mask.shape(),
-            managed_tensor_slice_to_ndbuffer(output),
+            output.to_layout_tensor(),
             scale.cast[DType.float32](),
         )
 

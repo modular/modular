@@ -523,8 +523,41 @@ fn _flash_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         if is_cpu[target]():
+            alias q_layout = Layout.row_major[q.rank](q.shape)
+            alias output_layout = Layout.row_major[output.rank](output.shape)
+            var sink_weights_lt: OptionalReg[
+                LayoutTensor[
+                    dtype,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ]
+            ] = None
+            if sink_weights:
+                var sw = sink_weights.value()
+                sink_weights_lt = sink_weights_lt.T(
+                    sw.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(sw))
+                    ),
+                )
             return flash_attention_kv_cache_cpu(
-                q, k, v, mask, scale, output, sink_weights
+                LayoutTensor[q.type, q_layout](
+                    q.data,
+                    RuntimeLayout[q_layout].row_major(
+                        q.dynamic_shape.canonicalize()
+                    ),
+                ),
+                k,
+                v,
+                mask,
+                scale,
+                LayoutTensor[output.type, output_layout](
+                    output.data,
+                    RuntimeLayout[output_layout].row_major(
+                        output.dynamic_shape.canonicalize()
+                    ),
+                ),
+                sink_weights_lt,
             )
         else:
             alias use_score_mod = not _type_is_eq[
@@ -577,8 +610,43 @@ fn _flash_attention_dispatch_materialized_mask[
         fn call_flash_attention[sink: Bool]() raises:
             @parameter
             if is_cpu[target]():
+                alias q_layout = Layout.row_major[q.rank](q.shape)
+                alias output_layout = Layout.row_major[output.rank](
+                    output.shape
+                )
+                var sink_weights_lt: OptionalReg[
+                    LayoutTensor[
+                        dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ] = None
+                if sink_weights:
+                    var sw = sink_weights.value()
+                    sink_weights_lt = sink_weights_lt.T(
+                        sw.data,
+                        RuntimeLayout[
+                            Layout.row_major(UNKNOWN_VALUE)
+                        ].row_major(IndexList[1](len(sw))),
+                    )
                 return flash_attention_kv_cache_cpu(
-                    q, k, v, mask, scale, output, sink_weights
+                    LayoutTensor[q.type, q_layout](
+                        q.data,
+                        RuntimeLayout[q_layout].row_major(
+                            q.dynamic_shape.canonicalize()
+                        ),
+                    ),
+                    k,
+                    v,
+                    mask,
+                    scale,
+                    LayoutTensor[output.type, output_layout](
+                        output.data,
+                        RuntimeLayout[output_layout].row_major(
+                            output.dynamic_shape.canonicalize()
+                        ),
+                    ),
+                    sink_weights_lt,
                 )
             else:
                 alias use_score_mod = not _type_is_eq[

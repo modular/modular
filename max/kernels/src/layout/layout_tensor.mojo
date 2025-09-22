@@ -984,6 +984,27 @@ struct LayoutTensor[
         return Self.stride[0]() * m + Self.stride[1]() * n
 
     @always_inline
+    fn _offset(self, coords: IndexList) -> Int:
+        """Calculate the memory offset for a row-major tensor element.
+
+        Computes the linear memory offset based on the tensor's stride
+        configuration.
+
+        Args:
+            coords: The coordinates for the index.
+
+        Returns:
+            The calculated memory offset as an integer.
+        """
+        return Int(
+            self.runtime_layout(
+                RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
+                    coords
+                )
+            )
+        )
+
+    @always_inline
     fn _elementwise_unary[
         func: fn (Self.element_type) capturing -> (Self.element_type),
     ](self) -> Self:
