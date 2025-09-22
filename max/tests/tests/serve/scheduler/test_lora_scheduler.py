@@ -375,7 +375,7 @@ def test_tg_pure_age_based_preemption() -> None:
         call_count[0] += 1
         return call_count[0] <= 1
 
-    paged_cache.prefetch = Mock(side_effect=prefetch_behavior)
+    paged_cache.maybe_reserve = Mock(side_effect=prefetch_behavior)
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size_tg=4,
