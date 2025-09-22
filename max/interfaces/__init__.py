@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
-from typing import Any, Callable, Union
+from typing import Any, Callable
 
 from .context import (
     BaseContext,
@@ -39,6 +39,7 @@ from .pipeline_variants import (
     EmbeddingsGenerationContextType,
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
+    TextGenerationContext,
     TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -109,6 +110,7 @@ __all__ = [
     "Scheduler",
     "SchedulerResult",
     "SharedMemoryArray",
+    "TextGenerationContext",
     "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",

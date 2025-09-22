@@ -7,10 +7,22 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Generic, Literal, Optional, TypedDict, TypeVar, Union
+from typing import (
+    Any,
+    Generic,
+    Literal,
+    Optional,
+    Protocol,
+    TypedDict,
+    TypeVar,
+    Union,
+    runtime_checkable,
+)
 
 import msgspec
-from max.interfaces.context import InputContext, SamplingParams
+import numpy as np
+import numpy.typing as npt
+from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
@@ -213,15 +225,419 @@ class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
         return self.final_status.is_done
 
 
-# NOTE: TextGenerationContextType only enforces the BaseContext protocol, which provides the minimal contract for context objects.
-# It is NOT sufficient for actual text generation functionality, as real text generation requires additional methods and properties
-# (such as token management, status updates, and sampling parameters) that are not guaranteed by BaseContext alone.
-# This is a temporary solution to allow for gradual migration of the codebase to the new context interface.
+@runtime_checkable
+class TextGenerationContext(BaseContext, Protocol):
+    """Protocol defining the interface for text generation contexts in token generation.
+
+    A ``TextGenerationContext`` represents model inputs for text generation pipelines, managing
+    the state of tokens throughout the generation process. It handles token arrays,
+    generation status, sampling parameters, and various indices that track different
+    stages of token processing.
+
+    The context maintains a token array with the following layout::
+
+        .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
+        . +--------------------+---------------+-----------------+----------------+
+        . |     completed      |  next_tokens  |                 |  preallocated  |
+        . +--------------------+---------------+-----------------+----------------+
+        .            start_idx ^    active_idx ^         end_idx ^
+
+    Token Array Regions:
+        - completed: Tokens that have already been processed and encoded.
+        - next_tokens: Tokens that will be processed in the next iteration.
+          This may be a subset of the full prompt due to chunked prefill.
+        - preallocated: Token slots that have been preallocated. The token array
+          resizes to multiples of ``CHUNK_SIZE`` to accommodate new tokens.
+
+    Key Indices:
+        - ``start_idx``: Marks the beginning of completed tokens
+        - ``active_idx``: Marks the start of next_tokens within the array
+        - ``end_idx``: Marks the end of all active tokens (one past the last token)
+    """
+
+    @property
+    def eos_token_ids(self) -> set[int]:
+        """The set of end-of-sequence token IDs that can terminate generation.
+
+        Returns:
+            A set of token IDs that, when generated, will signal the end of the
+            sequence and terminate the generation process.
+        """
+        ...
+
+    @property
+    def active_idx(self) -> int:
+        """The index marking the start of ``next_tokens`` within the token array.
+
+        This index separates completed tokens from tokens that will be processed
+        in the next iteration during chunked prefill or generation.
+
+        Returns:
+            The zero-based index where ``next_tokens`` begin in the token array.
+        """
+        ...
+
+    @property
+    def start_idx(self) -> int:
+        """The index marking the start of completed tokens in the token array.
+
+        Completed tokens are those that have already been processed and encoded
+        by the model in previous iterations.
+
+        Returns:
+            The zero-based index where completed tokens begin in the token array.
+        """
+        ...
+
+    @property
+    def end_idx(self) -> int:
+        """The index marking the end of all active tokens in the token array.
+
+        This is an exclusive end index (one past the last active token), following
+        Python's standard slicing conventions.
+
+        Returns:
+            The zero-based index one position past the last active token.
+        """
+        ...
+
+    @property
+    def current_length(self) -> int:
+        """The current total length of the sequence.
+
+        This includes both completed tokens and tokens currently being processed,
+        representing the total number of tokens in the active sequence.
+
+        Returns:
+            The total number of tokens including completed and active tokens.
+        """
+        ...
+
+    @property
+    def max_length(self) -> int | None:
+        """The maximum allowed length for this sequence.
+
+        When set, generation will stop when this length is reached, regardless
+        of other stopping criteria.
+
+        Returns:
+            The maximum sequence length limit, or ``None`` if no limit is set.
+        """
+        ...
+
+    @property
+    def active_length(self) -> int:
+        """The number of tokens being processed in the current iteration.
+
+        During context encoding (prompt processing), this equals the prompt size
+        or chunk size for chunked prefill. During token generation, this is
+        typically 1 (one new token per iteration).
+
+        Returns:
+            The number of tokens being processed in this iteration.
+        """
+        ...
+
+    @property
+    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """The tokens to be processed in the next model iteration.
+
+        This array contains the tokens that will be fed to the model in the
+        upcoming forward pass. The length should match ``active_length``.
+
+        Returns:
+            A 1D NumPy array of token IDs with length equal to ``active_length``.
+        """
+        ...
+
+    @property
+    def tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """The complete token array including preallocated slots.
+
+        This includes all tokens (completed, active, and preallocated empty slots).
+        For most use cases, prefer ``all_tokens`` to get only the active tokens.
+
+        Returns:
+            A 1D NumPy array containing all tokens including padding.
+        """
+        ...
+
+    def bump_token_indices(
+        self,
+        start_idx: int = 0,
+        active_idx: int = 0,
+        end_idx: int = 0,
+    ) -> None:
+        """Increment token indices by the specified amounts.
+
+        This method provides fine-grained control over token index management,
+        allowing incremental updates to track token processing progress.
+
+        Args:
+            start_idx: Amount to increment the ``start_idx`` by.
+            active_idx: Amount to increment the ``active_idx`` by.
+            end_idx: Amount to increment the ``end_idx`` by.
+        """
+        ...
+
+    def set_token_indices(
+        self,
+        start_idx: Optional[int] = None,
+        active_idx: Optional[int] = None,
+        end_idx: Optional[int] = None,
+    ) -> None:
+        """Set token indices to specific absolute values.
+
+        This method provides direct control over token index positioning,
+        allowing precise management of the token array state.
+
+        Args:
+            start_idx: New absolute value for ``start_idx``, if provided.
+            active_idx: New absolute value for ``active_idx``, if provided.
+            end_idx: New absolute value for ``end_idx``, if provided.
+        """
+        ...
+
+    def reset(self) -> None:
+        """Resets the context's state by combining all tokens into a new prompt.
+        This method is used when a request is evicted, meaning that the context
+        needed to be re-encoded in the following CE iteration."""
+        ...
+
+    def compute_num_available_steps(
+        self,
+        max_seq_len: int,
+    ) -> int:
+        """Compute the maximum number of generation steps available.
+
+        This method calculates how many tokens can be generated without
+        exceeding the specified maximum sequence length limit.
+
+        Args:
+            max_seq_len: The maximum allowed sequence length for this context.
+
+        Returns:
+            The number of generation steps that can be executed before reaching
+            the sequence length limit.
+        """
+        ...
+
+    @property
+    def min_tokens(self) -> int:
+        """The minimum number of new tokens that must be generated.
+
+        Generation will continue until at least this many new tokens have been
+        produced, even if other stopping criteria are met (e.g., EOS tokens).
+
+        Returns:
+            The minimum number of new tokens to generate.
+        """
+        ...
+
+    @property
+    def log_probabilities(self) -> int:
+        """The number of top tokens to return log probabilities for.
+
+        When greater than 0, the system returns log probabilities for the top N
+        most likely tokens at each generation step.
+
+        Returns:
+            The number of top tokens to include in log probability output.
+            Returns 0 if log probabilities are disabled.
+        """
+        ...
+
+    @property
+    def log_probabilities_echo(self) -> bool:
+        """Whether to include input tokens in the returned log probabilities.
+
+        When ``True``, log probabilities will be computed and returned for input
+        (prompt) tokens in addition to generated tokens.
+
+        Returns:
+            ``True`` if input tokens should be included in log probability output,
+            ``False`` otherwise.
+        """
+        ...
+
+    @property
+    def all_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """All active tokens in the context (prompt and generated).
+
+        This property returns only the meaningful tokens, excluding any
+        preallocated but unused slots in the token array.
+
+        Returns:
+            A 1D NumPy array containing all prompt and generated tokens.
+        """
+        return self.tokens[: self.end_idx]
+
+    @property
+    def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """The original prompt tokens for this context.
+
+        These are the input tokens that were provided to start the generation
+        process, before any tokens were generated by the model.
+
+        Returns:
+            A 1D NumPy array containing the original prompt token IDs.
+        """
+        ...
+
+    @property
+    def generated_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """All tokens generated by the model for this context.
+
+        This excludes the original prompt tokens and includes only tokens
+        that have been produced during the generation process.
+
+        Returns:
+            A 1D NumPy array containing generated token IDs.
+        """
+        ...
+
+    @property
+    def last_generated_token(self) -> int:
+        """The most recently generated token.
+
+        This property returns the token ID of the most recent token that was
+        generated by the model during the generation process. If no tokens
+        have been generated yet, this property will raise an error.
+
+        Returns:
+            The token ID of the most recently generated token.
+
+        Raises:
+            ValueError: If no tokens have been generated yet.
+        """
+        ...
+
+    def get_min_token_logit_mask(
+        self, num_steps: int
+    ) -> list[npt.NDArray[np.int32]]:
+        """Get token indices that should be masked in the output logits.
+
+        This method is primarily used to implement the ``min_tokens`` constraint,
+        where certain tokens (typically EOS tokens) are masked to prevent early
+        termination before the minimum token count is reached.
+
+        Args:
+            num_steps: The number of generation steps to compute masks for.
+
+        Returns:
+            A list of NumPy arrays, where each array contains token indices
+            that should be masked (set to negative infinity) in the logits
+            for the corresponding generation step.
+        """
+        ...
+
+    def update(
+        self,
+        new_token: int,
+        log_probabilities: Optional[LogProbabilities] = None,
+    ) -> None:
+        """Update the context with a newly generated token.
+
+        This method adds a generated token to the context, updating the token
+        array and associated metadata. It also stores log probability information
+        if provided.
+
+        Args:
+            new_token: The token ID to add to the generation sequence.
+            log_probabilities: Optional log probability data for the new token
+                and alternatives. Used for analysis and debugging.
+        """
+        ...
+
+    def jump_ahead(self, new_token: int) -> None:
+        """Jump ahead in generation by adding a token and updating indices.
+
+        This method is used in speculative decoding scenarios to quickly
+        advance the generation state when draft tokens are accepted.
+
+        Args:
+            new_token: The token ID to add when jumping ahead in the sequence.
+        """
+        ...
+
+    @property
+    def matcher(self) -> Optional[Any]:
+        """The grammar matcher for structured output generation, if configured.
+
+        The matcher enforces structural constraints (like JSON schema) during
+        generation to ensure valid formatted output.
+
+        Returns:
+            The grammar matcher instance, or ``None`` if no structured generation
+            is configured for this context.
+        """
+        ...
+
+    @property
+    def json_schema(self) -> Optional[str]:
+        """The JSON schema for constrained decoding, if configured.
+
+        When set, this schema constrains token generation to produce valid JSON
+        output that conforms to the specified structure.
+
+        Returns:
+            The JSON schema string, or ``None`` if no schema constraint is active.
+        """
+        ...
+
+    def set_matcher(self, matcher: Any) -> None:
+        """Set a grammar matcher for constrained decoding.
+
+        This method configures structured output generation by installing a
+        grammar matcher that enforces format constraints during token generation.
+
+        Args:
+            matcher: The grammar matcher instance to use for constraining output.
+                The specific type depends on the structured generation backend.
+        """
+        ...
+
+    @property
+    def needs_ce(self) -> bool:
+        """Returns whether this context needs context encoding (CE).
+
+        CE mode indicates that the context has additional prompt tokens to encode.
+
+        Returns:
+            bool: True if the context needs CE, False otherwise.
+        """
+        ...
+
+    @property
+    def sampling_params(self) -> SamplingParams:
+        """The sampling parameters configured for this generation request.
+
+        These parameters control how tokens are selected during generation,
+        including temperature, top-k/top-p filtering, and stopping criteria.
+
+        Returns:
+            The ``SamplingParams`` instance containing all sampling configuration
+            for this context.
+        """
+        ...
+
+    @property
+    def is_initial_prompt(self) -> bool:
+        """Whether this context contains only the initial prompt.
+
+        This property indicates if the context has not yet been updated with
+        any generated tokens and still contains only the original input.
+
+        Returns:
+            ``True`` if no tokens have been generated yet, ``False`` if generation
+            has begun and tokens have been added.
+        """
+        ...
 
 
 TextGenerationContextType = TypeVar(
     "TextGenerationContextType",
-    bound=InputContext,
+    bound=TextGenerationContext,
 )
 """Type variable for text generation context types, constrained to BaseContext.
 
