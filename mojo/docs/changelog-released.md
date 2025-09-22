@@ -47,6 +47,19 @@ installed unless explicitly specified.
   Mojo](/mojo/manual/python/mojo-from-python). For more information, see the
   [Mojo install guide](/mojo/manual/install).
 
+- We've released a new version of the Mojo extension for Visual Studio Code that
+  now works with **both** the stable and nightly Mojo releases. You can install
+  the Mojo extension from either the
+  [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+  or the [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+
+  The new extension replaces the old stable version, so if you have the stable
+  version installed, you can simply update it to receive the new version. If you
+  have the nightly version of the extension installed, you should uninstall it
+  and install the regular (non-nightly) version. See
+  [Add the VS Code extension](/mojo/manual/install#add-the-vs-code-extension)
+  for more information.
+
 - New [Mojo vision](/mojo/vision) doc explains our motivations and design
   decisions for the Mojo language.
 

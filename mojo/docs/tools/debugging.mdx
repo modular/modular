@@ -8,10 +8,28 @@ The Mojo extension for Visual Studio Code enables you to use VS Code's built-in
 debugger with Mojo code. This page describes the features available through the
 VS Code Mojo extension, as well as current limitations of the Mojo debugger.
 
-To get the Mojo debugger, [install `mojo`](/mojo/manual/install) (or [install
-`modular`](/max/packages)—it includes `mojo`) and install the [Mojo extension
-for Visual Studio
-Code](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo).
+You can install the Mojo extension from either the
+[Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+or the
+[Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+See
+[Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension) for
+more information.
+
+To use the Mojo extension, you must also
+[install the `mojo` package](/mojo/manual/install)—or, if you're developing for
+the MAX framework, [install the `modular` package](/max/packages), which
+includes the `mojo` package.
+
+:::note
+
+The Mojo extension relies on the Python extension for locating your Python
+environment. In some cases, this appears to default to your globally-installed
+environment, even when a virtual environment exists. If the Mojo extension
+cannot find your SDK installation, try invoking the "Python: Set Project
+Environment" command and selecting your virtual environment.
+
+:::
 
 For complete coverage of VS Code's debugging features, see
 [Debugging in Visual Studio Code](https://code.visualstudio.com/docs/editor/debugging).
