@@ -17,7 +17,6 @@ from .manager import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheInputSymbols,
-    KVCacheManager,
     RaggedKVCacheInputs,
 )
 from .paged_cache import (
@@ -44,7 +43,6 @@ __all__ = [
     "KVCacheInputSymbols",
     "KVCacheInputs",
     "KVCacheInputsSequence",
-    "KVCacheManager",
     "KVCacheParams",
     "KVCacheStrategy",
     "KVTransferEngine",

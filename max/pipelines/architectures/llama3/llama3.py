@@ -40,8 +40,8 @@ from max.nn import (
 )
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
-    KVCacheManager,
     KVCacheStrategy,
+    PagedKVCacheManager,
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib.lora import LoRAManager
@@ -303,7 +303,7 @@ class Llama3(Transformer):
 
     def input_types(
         self,
-        kv_manager: KVCacheManager[TextContext],
+        kv_manager: PagedKVCacheManager[TextContext],
         lora_manager: LoRAManager | None,
     ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.

@@ -29,8 +29,8 @@ from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
-    KVCacheManager,
     KVCacheParams,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -581,7 +581,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin[TextContext]):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager[TextContext]:
+    ) -> PagedKVCacheManager[TextContext]:
         """Loads and initializes the KVCacheManager for the Gemma 3 model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,

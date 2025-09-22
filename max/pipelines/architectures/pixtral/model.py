@@ -33,8 +33,8 @@ from max.graph.weights import (
 from max.nn import Module, ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -304,7 +304,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> KVCacheManager[TextAndVisionContext]:
+    ) -> PagedKVCacheManager[TextAndVisionContext]:
         return load_kv_manager(
             params=self.get_kv_params(
                 huggingface_config=self.huggingface_config,

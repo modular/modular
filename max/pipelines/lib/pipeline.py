@@ -69,7 +69,6 @@ from max.nn.kv_cache import (
     KVCacheAwareContext,
     KVCacheInputs,
     KVCacheInputsSequence,
-    KVCacheManager,
     KVCacheParams,
     MultiPagedKVCacheManager,
     PagedKVCacheManager,
@@ -445,7 +444,7 @@ class PipelineModel(ABC, Generic[T]):
 class KVCacheMixin(Protocol[T]):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager[T]:
+    ) -> PagedKVCacheManager[T]:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -524,7 +523,7 @@ class BatchInfo:
 @runtime_checkable
 class _TextGenerationProtocol(Protocol, Generic[T, RequestType]):
     @property
-    def kv_managers(self) -> list[KVCacheManager[T]]: ...
+    def kv_managers(self) -> list[PagedKVCacheManager[T]]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...
@@ -824,7 +823,9 @@ class TextGenerationPipeline(
         return self._tokenizer
 
     @property
-    def kv_managers(self) -> list[KVCacheManager[TextGenerationContextType]]:
+    def kv_managers(
+        self,
+    ) -> list[PagedKVCacheManager[TextGenerationContextType]]:
         return [self._pipeline_model.kv_manager]
 
     def calculate_num_steps(

@@ -29,8 +29,8 @@ from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
-    KVCacheManager,
     KVCacheParams,
+    PagedKVCacheManager,
     RaggedKVCacheInputs,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -559,7 +559,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin[TextContext]):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager[TextContext]:
+    ) -> PagedKVCacheManager[TextContext]:
         """Loads and initializes the KVCacheManager for the Llama 4 model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,

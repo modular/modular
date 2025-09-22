@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from functools import cached_property
 from typing import Any
 
 import numpy as np
@@ -28,7 +27,7 @@ from max.interfaces.request import RequestID
 from ..cache_params import KVCacheParams
 from ..context import KVCacheAwareContext
 from ..data_parallelism_utils import split_input_row_offsets, split_into_groups
-from ..manager import KVCacheManager, RaggedKVCacheInputs
+from ..manager import RaggedKVCacheInputs
 from .block_copy_engine import BlockCopyMetrics
 from .paged_cache import PagedCacheInputSymbols, PagedKVCacheManager
 
@@ -72,6 +71,11 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
             page_size: Page size in tokens
             enable_runtime_checks: Whether to enable runtime checks
         """
+        self.params = params
+        self.max_batch_size = max_batch_size
+        self.max_seq_len = max_seq_len
+        self.num_layers = num_layers
+
         if params.data_parallel_degree <= 1:
             raise ValueError(
                 "MultiPagedKVCacheManager requires data parallelism to be enabled"
@@ -85,17 +89,6 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
                 "Prefix caching is not supported in MultiPagedKVCacheManager"
             )
 
-        # Call parent's parent (KVCacheManager) to skip PagedKVCacheManager's init
-        KVCacheManager.__init__(
-            self,
-            params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            num_layers=num_layers,
-            devices=devices,
-            session=session,
-        )
-
         max_batch_size_per_replica = (
             max_batch_size // params.data_parallel_degree
         )
@@ -106,6 +99,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
         assert len(devices) % num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
+        self.devices = devices
         self.devices_per_replica = split_into_groups(devices, num_replicas)
 
         self._replica_managers: list[
@@ -139,6 +133,14 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
         # Track requests to replicas.
         self._request_to_replica_idx: dict[RequestID, int] = {}
         self._request_count_per_replica: list[int] = [0] * num_replicas
+
+        # Store session for model loading
+        self.session = session
+
+        # Initialize the ragged increment cache lengths model
+        self.increment_cache_lengths_model = session.load(
+            self._create_ragged_increment_cache_lengths_graph()
+        )
 
     def get_replica(self, context: KVCacheAwareContext) -> int:
         return self._request_to_replica_idx[context.request_id]
@@ -177,7 +179,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
 
         return Tensor.from_numpy(splits)
 
-    def prefetch(
+    def maybe_reserve(
         self,
         data: KVCacheAwareContext,
         num_steps: int = 1,
@@ -187,7 +189,9 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
             "replica before prefetching"
         )
         replica_idx = self._request_to_replica_idx[data.request_id]
-        return self._replica_managers[replica_idx].prefetch(data, num_steps)
+        return self._replica_managers[replica_idx].maybe_reserve(
+            data, num_steps
+        )
 
     def fetch(
         self, batch: Sequence[KVCacheAwareContext], num_steps: int = 1
@@ -278,13 +282,6 @@ class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
         """Reset the number of blocks copied for each type."""
         for manager in self._replica_managers:
             manager.reset_num_blocks_copied()
-
-    @cached_property
-    def increment_cache_lengths_model(self):
-        """Override to use the ragged increment cache lengths graph."""
-        return self.session.load(
-            self._create_ragged_increment_cache_lengths_graph()
-        )
 
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
         input_symbols = self.input_symbols()

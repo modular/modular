@@ -196,7 +196,7 @@ class DecodeScheduler(Scheduler):
 
             # Prefetch memory for Context Encoding eagerly, this only needs to be
             # for one step.
-            if not self.paged_manager.prefetch(context, 1):
+            if not self.paged_manager.maybe_reserve(context, 1):
                 # If we don't have enough space in the paged manager
                 # return this to the request queue.
                 self.pending_reqs[req_id] = context

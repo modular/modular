@@ -287,7 +287,7 @@ class AudioGenerationScheduler(Scheduler):
         ):
             req_id, req_data = self.pending_reqs.popleft()
             # Prefetch here for CE so that we query prefix cache
-            if not self.paged_manager.prefetch(req_data, num_steps=1):
+            if not self.paged_manager.maybe_reserve(req_data, num_steps=1):
                 raise RuntimeError("Ran out of KV cache")
             ce_batch[req_id] = req_data
             input_len += req_data.active_length

@@ -28,7 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn import Module
-from max.nn.kv_cache import KVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.pipelines.lib.lora import LoRAManager
 
@@ -76,7 +76,7 @@ class DataParallelLlama(Module):
     # Graph helpers.
     def input_types(
         self,
-        kv_manager: KVCacheManager[TextContext],
+        kv_manager: PagedKVCacheManager[TextContext],
         lora_manager: LoRAManager | None,
     ) -> tuple[TensorType | BufferType, ...]:
         """Creates input tensor types used for building the graph.
@@ -262,7 +262,7 @@ def _data_parallel_split(
 
 def create_graph(
     config: Llama3Config,
-    kv_manager: KVCacheManager[TextContext],
+    kv_manager: PagedKVCacheManager[TextContext],
     state_dict: dict[str, Any],
 ) -> tuple[Graph, dict[str, Any]]:
     model = DataParallelLlama(config)

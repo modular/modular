@@ -28,9 +28,9 @@ from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
     MultiPagedKVCacheManager,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -330,7 +330,8 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int | None,
-    ) -> KVCacheManager[TextContext]:
+    ) -> PagedKVCacheManager[TextContext]:
+        # For pipeline parallel, use layers per stage instead of total layers
         num_layers_for_cache = Llama3Config.get_num_layers(
             huggingface_config=self.huggingface_config
         )

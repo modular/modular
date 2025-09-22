@@ -303,7 +303,7 @@ class TextBatchConstructor:
                     num_steps = min(num_steps, num_available_steps)
 
                 # Attempt to schedule the request.
-                scheduled = self.paged_cache.prefetch(ctx, num_steps)
+                scheduled = self.paged_cache.maybe_reserve(ctx, num_steps)
 
                 # We were able to schedule this request
                 if scheduled:
@@ -443,7 +443,7 @@ class TextBatchConstructor:
 
             if self.paged_cache is not None:
                 # Attempt to schedule the request.
-                scheduled = self.paged_cache.prefetch(ctx, num_steps=1)
+                scheduled = self.paged_cache.maybe_reserve(ctx, num_steps=1)
 
                 # We were able to schedule this request
                 if not scheduled:
