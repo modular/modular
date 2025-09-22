@@ -16,9 +16,9 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.nn import RotaryEmbedding
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
-    KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines import KVCacheConfig
@@ -115,7 +115,7 @@ def generate_torch_outputs(
 
 
 def unflatten_kv_inputs(
-    kv_manager: KVCacheManager,
+    kv_manager: PagedKVCacheManager,
     kv_params: KVCacheParams,
     kv_inputs_flat: Sequence[TensorValue],
 ) -> list[tuple[TensorValue, ...]]:

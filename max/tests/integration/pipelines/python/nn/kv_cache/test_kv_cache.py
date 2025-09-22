@@ -68,7 +68,7 @@ async def test_kv_collection_constructor(
 
     kv_manager.external_claim(context.request_id)
     assert isinstance(kv_manager, PagedKVCacheManager)
-    kv_manager.prefetch(context, num_steps=1)
+    kv_manager.maybe_reserve(context, num_steps=1)
     kv_tuple_list = kv_manager.fetch(batch)
 
     # Set the cache lengths first by "stepping".
@@ -76,7 +76,7 @@ async def test_kv_collection_constructor(
     kv_manager.step(batch)
 
     # Construct a KV cache collection with the given cache length.
-    kv_manager.prefetch(context, num_steps=1)
+    kv_manager.maybe_reserve(context, num_steps=1)
     kv_tuple_list = kv_manager.fetch(batch)
     assert len(kv_tuple_list) == 1
     assert len(kv_tuple_list[0]) == 4

@@ -48,7 +48,7 @@ async def test_step() -> None:
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.prefetch(context, num_steps=1)
+        kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
@@ -158,7 +158,7 @@ async def test_fetch_paged() -> None:
         kv_manager.external_claim(context.request_id)
         contexts.append(context)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.prefetch(context, num_steps=1)
+        kv_manager.maybe_reserve(context, num_steps=1)
 
     # Fetch 3 of the 5 ids
     # Fetch 3 of the 5 contexts created above

@@ -478,7 +478,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
     for context in batch:
         kv_manager.external_claim(context.request_id)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.prefetch(context, num_steps=1)
+        kv_manager.maybe_reserve(context, num_steps=1)
 
     input_row_offsets = Tensor(
         DType.uint32,

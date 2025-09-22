@@ -114,7 +114,7 @@ def test_step() -> None:
         context = create_text_context(np.empty(prompt_len))
         replica_idx = kv_manager.get_or_recommend_replica(context)
         kv_manager.external_claim_for_replica(replica_idx, context.request_id)
-        kv_manager.prefetch(context, num_steps=1)
+        kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
@@ -157,7 +157,7 @@ def test_increment_cache_lengths() -> None:
     for prompt_len, replica_idx in zip(prompt_lens, replica_idxs):
         context = create_text_context(np.empty(prompt_len))
         kv_manager.external_claim_for_replica(replica_idx, context.request_id)
-        kv_manager.prefetch(context, num_steps=1)
+        kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
     kv_cache_inputs = kv_manager.fetch(batch)
