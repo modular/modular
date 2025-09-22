@@ -897,24 +897,6 @@ fn mgp_tensor_spec_create[
     return shape
 
 
-@register_internal("mgp.tensor_spec.equal.static")
-@no_inline
-fn mgp_tensor_spec_equal_static[
-    spec_rank: Int, *rawDims: Dim
-](spec: IndexList[spec_rank]) -> Bool:
-    var dims: VariadicList[Dim] = rawDims
-    var numDims = len(dims)
-    if spec_rank != numDims:
-        return False
-    for i in range(numDims):
-        var dim = dims[i]
-        var expectedDim = spec[i]
-        if dim and dim != -1 and dim != expectedDim:
-            return False
-
-    return True
-
-
 @register_internal("mgp.tensor_spec.get_dim")
 @no_inline
 fn mgp_tensor_spec_get_dim[
