@@ -23,11 +23,10 @@ namespace M::Init {
 /// signal handling infrastructure for stack traces and final cleanup.
 void registerDevelopmentSignalHandler(llvm::StringRef programName);
 
-/// Register a callback function for printing Python stack traces in signal
-/// handlers. This allows nanobind-enabled code to provide Python stack trace
-/// functionality without requiring the signal handler itself to depend on
-/// Python/nanobind.
-void registerPythonStackTraceCallback(void (*callback)());
+/// Enable Python stack traces in signal handlers using async-safe faulthandler.
+/// This configures the signal handler to use SIGUSR2 to trigger Python stack
+/// traces without GIL deadlock risks.
+void enablePythonStackTraceCallback();
 
 } // namespace M::Init
 
