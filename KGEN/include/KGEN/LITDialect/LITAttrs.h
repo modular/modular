@@ -35,6 +35,11 @@ class FnMetadataAttr;
 
 namespace M::KGEN::LIT {
 
+/// Given an attribute or type, return the "canonical" version of the attribute
+/// with all type sugar removed.
+TypedAttr getCanonicalAttr(TypedAttr src);
+Type getCanonicalType(Type type);
+
 /// Given a list of operations, create an array of bools (as a mask) indicating
 /// variadic parameters in their concatenated list of parameter declarations.
 /// The given operations must all implement DeclInterface.

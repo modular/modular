@@ -189,7 +189,9 @@ def LIT_StructType : LITType<"Struct", "struct", [
     "SymbolAttr":$value,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
     DefaultValuedParameter<"TypeSignatureType",
-                           "TypeSignatureType::get($_ctxt)">:$signature
+                           "TypeSignatureType::get($_ctxt)">:$signature,
+    // Canonical type or null if already canonical.
+    OptionalParameter<"StructType">:$canonical
   );
   let assemblyFormat = [{
     `<` custom<ParameterizedSymbol>($value, $paramValues) ``

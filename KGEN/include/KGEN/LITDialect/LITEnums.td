@@ -14,6 +14,19 @@
 include "mlir/IR/EnumAttr.td"
 
 //===----------------------------------------------------------------------===//
+// SugarKind
+//===----------------------------------------------------------------------===//
+
+def LIT_SugarKind : I32EnumAttr<"SugarKind",
+    "What kind of sugar a SugarAttr was formed from", [
+  /// This is an expansion of a call to an @always_inline("builtin") function.
+  I32EnumAttrCase<"AlwaysInlineBuiltin", 0, "aibuiltin">,
+]> {
+  let cppNamespace = "M::KGEN::LIT";
+  let genSpecializedAttr = 0;
+}
+
+//===----------------------------------------------------------------------===//
 // VariadicKind
 //===----------------------------------------------------------------------===//
 
