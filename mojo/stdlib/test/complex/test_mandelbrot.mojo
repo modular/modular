@@ -18,7 +18,10 @@
 
 from complex import ComplexFloat32, ComplexSIMD
 from testing import assert_equal
-from test_utils import TestSuite
+
+# NOTE: This is commented out because TestSuite is part of `test_utils` which
+# is not packaged with the stdlib.
+# from test_utils import TestSuite
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
@@ -56,8 +59,7 @@ def test_mandelbrot_iter():
 
 
 def main():
-    var suite = TestSuite()
-    suite.test[test_mandelbrot_iter]()
-    suite^.run()
+    test_mandelbrot_iter()
+
     # NOTE: We need to print this for the SDK self test.
     print("Mandelbrot passed")
