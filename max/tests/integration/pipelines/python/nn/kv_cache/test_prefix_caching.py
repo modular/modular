@@ -14,7 +14,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.interfaces import InputContext, RequestID
+from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -47,9 +47,34 @@ def get_cache_lengths_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[int]:
     return kv_tuple[1].to_numpy().tolist()
 
 
+class PagedKVCacheManagerWithCacheHitRate(PagedKVCacheManager):
+    prompt_tokens: int = 0
+    cached_prompt_tokens: int = 0
+
+    def maybe_reserve(
+        self, ctx: TextGenerationContext, num_steps: int = 1
+    ) -> bool:
+        needs_ce = ctx.active_length > 1
+        input_tokens_before = ctx.active_length if needs_ce else 0
+        self.prompt_tokens += input_tokens_before
+
+        x = super().maybe_reserve(ctx, num_steps=num_steps)
+
+        input_tokens_after = ctx.active_length if needs_ce else 0
+        cached_prompt_tokens = input_tokens_before - input_tokens_after
+        self.cached_prompt_tokens += cached_prompt_tokens
+        return x
+
+    @property
+    def cache_hit_rate(self) -> float:
+        if self.prompt_tokens == 0:
+            return 0.0
+        return self.cached_prompt_tokens / self.prompt_tokens
+
+
 def create_paged_manager(
     num_blocks: int, page_size: int = 1
-) -> PagedKVCacheManager:
+) -> PagedKVCacheManagerWithCacheHitRate:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
     NUM_KV_HEADS = 1
@@ -76,7 +101,7 @@ def create_paged_manager(
         * num_blocks
         * kv_params.dtype.size_in_bytes
     )
-    kv_manager = PagedKVCacheManager(
+    kv_manager = PagedKVCacheManagerWithCacheHitRate(
         params=kv_params,
         max_batch_size=512,
         max_seq_len=4096,
@@ -116,7 +141,7 @@ async def test_prefix_caching_basic() -> None:
 
     # Seq 1: Token gen 15 - 18
     toks = [15, 16, 17, 18, 19]
-    for i, tok in enumerate(toks[:-1]):  # noqa: B007
+    for i in range(len(toks) - 1):
         kv_tuple_list = kv_manager.fetch(batch)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
@@ -146,7 +171,7 @@ async def test_prefix_caching_basic() -> None:
 
     # Seq 2: Token gen 14 - 17
     toks = [14, 15, 99, 100, 101]
-    for i, tok in enumerate(toks[:-1]):  # noqa: B007
+    for i in range(len(toks) - 1):
         kv_tuple_list = kv_manager.fetch(batch)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
@@ -155,12 +180,12 @@ async def test_prefix_caching_basic() -> None:
         batch[0].update(toks[i + 1])
         kv_manager.step(batch)
 
-    # first and second ce have 4 + 3 tokens
-    assert kv_manager.block_manager.prompt_tokens == 7
+    # first and second ce have 5 + 4 tokens
+    assert kv_manager.prompt_tokens == 9
     # second ce gets cache hit on 3 tokens
-    assert kv_manager.block_manager.cached_prompt_tokens == 3
-    # cache hit rate is = 3 / 7
-    assert kv_manager.cache_hit_rate > 0.42
+    assert kv_manager.cached_prompt_tokens == 3
+    # cache hit rate is = 3 / 9
+    assert kv_manager.cache_hit_rate >= 0.333
 
 
 @pytest.mark.asyncio
@@ -197,7 +222,8 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
 
         kv_manager.release(context.request_id)
 
-    assert kv_manager.cache_hit_rate > 0.99
+    # cache hit rate is ~= 4 / 5 tokens
+    assert kv_manager.cache_hit_rate > 0.79
 
 
 @pytest.mark.asyncio
@@ -302,10 +328,7 @@ async def test_prefix_caching_with_random_prompts(
 
         kv_manager.release(context.request_id)
 
-    assert (
-        len(kv_manager.block_manager.device_block_pool.free_block_queue)
-        == kv_manager.total_num_pages
-    )
+    assert kv_manager.num_free_blocks == kv_manager.total_num_pages
 
 
 @pytest.mark.asyncio
@@ -621,7 +644,7 @@ async def test_prefix_caching_grouped_prefixes(
 def run_forward(
     model: FakeModel,
     kv_manager: PagedKVCacheManager,
-    ctx: InputContext,
+    ctx: TextContext,
     prompt: np.ndarray,
     next_tok: int,
     run_fetch: bool = True,
@@ -631,6 +654,8 @@ def run_forward(
     for tok in prompt:
         ctx.update(tok)
     ctx.set_token_indices(start_idx=orig_start_idx)
+    if orig_start_idx == 0:
+        ctx._prompt_len = len(prompt)
     batch = [ctx]
     request_ids_and_prompts = {ctx.request_id: prompt}
     orig_request_ids_and_prompts = request_ids_and_prompts.copy()
@@ -679,5 +704,5 @@ async def test_prefix_caching_chunked_prefill() -> None:
     blocks = kv_manager.get_req_blocks(ctx_2.request_id)
     assert 2 not in blocks
 
-    assert kv_manager.block_manager.cached_prompt_tokens == 6
+    assert kv_manager.cached_prompt_tokens == 6
     assert kv_manager.cache_hit_rate > 0.2
