@@ -41,14 +41,14 @@ logger = logging.getLogger("max.serve")
 
 def _get_request_type_from_pipeline_task(
     pipeline_task: PipelineTask,
-) -> type[tuple[RequestID, BaseContext]]:
+) -> Any:
     if pipeline_task in [
         PipelineTask.TEXT_GENERATION,
         PipelineTask.EMBEDDINGS_GENERATION,
     ]:
-        return tuple[RequestID, Union[TextContext, TextAndVisionContext]]
+        return Union[TextContext, TextAndVisionContext]
     elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
-        return tuple[RequestID, TTSContext]
+        return TTSContext
     else:
         raise ValueError(
             f"no request payload for pipeline task ({pipeline_task})"
@@ -63,9 +63,7 @@ class SchedulerZmqConfigs:
         request_type = _get_request_type_from_pipeline_task(pipeline_task)
         response_type = pipeline_task.output_type
 
-        self.request_queue_config = ZmqConfig[tuple[RequestID, BaseContext]](
-            request_type
-        )
+        self.request_queue_config = ZmqConfig[BaseContext](request_type)
         self.response_queue_config = ZmqConfig[
             dict[RequestID, SchedulerResult[PipelineOutput]]
         ](response_type)
@@ -74,7 +72,7 @@ class SchedulerZmqConfigs:
     def api_worker_queues(
         self,
     ) -> tuple[
-        MAXPushQueue[tuple[RequestID, Any]],
+        MAXPushQueue[Any],
         MAXPullQueue[dict[RequestID, SchedulerResult[Any]]],
         MAXPushQueue[list[RequestID]],
     ]:
@@ -87,7 +85,7 @@ class SchedulerZmqConfigs:
     def model_worker_queues(
         self,
     ) -> tuple[
-        MAXPullQueue[tuple[RequestID, Any]],
+        MAXPullQueue[Any],
         MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
         MAXPullQueue[list[RequestID]],
     ]:
@@ -168,7 +166,7 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
             # put_nowait will fail if the request_push_socket is unavailable
             # this will immediately trigger the finally block, resulting in
             # the request being purged, and returned without result.
-            self.request_queue.put_nowait((req_id, data))
+            self.request_queue.put_nowait(data)
             yield out_queue
         finally:
             del self.pending_out_queues[req_id]

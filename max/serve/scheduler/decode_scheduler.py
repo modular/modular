@@ -35,7 +35,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
     XferReqData,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
@@ -68,7 +68,7 @@ class DecodeScheduler(Scheduler):
         scheduler_config: TokenGenerationSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
-        request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
+        request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
@@ -176,7 +176,9 @@ class DecodeScheduler(Scheduler):
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        self.pending_reqs |= dict(drain_queue(self.request_queue))
+        new_contexts = drain_queue(self.request_queue)
+        for context in new_contexts:
+            self.pending_reqs[context.request_id] = context
 
         while (
             self.pending_reqs
@@ -188,7 +190,9 @@ class DecodeScheduler(Scheduler):
             )
         ):
             # Pop off request queue
-            req_id, context = self.pending_reqs.popitem(last=False)
+            context = next(iter(self.pending_reqs.values()))
+            req_id = context.request_id
+            del self.pending_reqs[req_id]
 
             # Claim the slot with the paged manager
             if not self.paged_manager.contains(req_id):
@@ -372,7 +376,7 @@ def load_decode_scheduler(
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
+    request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],

@@ -212,7 +212,7 @@ class AudioGenerationScheduler(Scheduler):
             AudioGenerationOutput,
         ],
         *,
-        request_queue: MAXPullQueue[tuple[RequestID, TTSContext]],
+        request_queue: MAXPullQueue[TTSContext],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[AudioGenerationOutput]]
         ],
@@ -227,7 +227,7 @@ class AudioGenerationScheduler(Scheduler):
         self.cancel_queue = cancel_queue
 
         # Initialize Scheduler state.
-        self.pending_reqs: deque[tuple[RequestID, TTSContext]] = deque()
+        self.pending_reqs: deque[TTSContext] = deque()
         self.decode_reqs: dict[RequestID, TTSContext] = {}
         self.paged_manager = paged_manager
 
@@ -285,7 +285,8 @@ class AudioGenerationScheduler(Scheduler):
             and (len(ce_batch) + len(self.decode_reqs) < max_queue_size_tg)
             and (input_len < max_input_len)
         ):
-            req_id, req_data = self.pending_reqs.popleft()
+            req_data = self.pending_reqs.popleft()
+            req_id = req_data.request_id
             # Prefetch here for CE so that we query prefix cache
             if not self.paged_manager.maybe_reserve(req_data, num_steps=1):
                 raise RuntimeError("Ran out of KV cache")

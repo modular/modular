@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Union
 
 from max.interfaces import (
     MAXPullQueue,
@@ -27,7 +28,7 @@ from max.interfaces import (
     drain_queue,
 )
 from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer
@@ -58,7 +59,7 @@ class TokenGenerationScheduler(Scheduler):
             TextGenerationOutput,
         ],
         *,
-        request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
+        request_queue: MAXPullQueue[Union[TextContext, TextAndVisionContext]],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
@@ -80,7 +81,9 @@ class TokenGenerationScheduler(Scheduler):
         self.scheduler_logger = SchedulerLogger()
 
     def _retrieve_pending_requests(self) -> None:
-        self.batch_constructor.ce_reqs |= dict(drain_queue(self.request_queue))
+        new_contexts = drain_queue(self.request_queue)
+        for context in new_contexts:
+            self.batch_constructor.ce_reqs[context.request_id] = context
 
     def run_iteration(self) -> SchedulerProgress:
         """The Scheduler routine that creates batches and schedules them on GPU
@@ -181,7 +184,7 @@ def load_text_generation_scheduler(
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
+    request_queue: MAXPullQueue[Union[TextContext, TextAndVisionContext]],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],

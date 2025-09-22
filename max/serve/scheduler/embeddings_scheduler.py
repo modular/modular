@@ -50,9 +50,7 @@ class EmbeddingsScheduler(Scheduler, Generic[EmbeddingsGenerationContextType]):
             EmbeddingsGenerationInputs[EmbeddingsGenerationContextType],
             EmbeddingsGenerationOutput,
         ],
-        request_queue: MAXPullQueue[
-            tuple[RequestID, EmbeddingsGenerationContextType]
-        ],
+        request_queue: MAXPullQueue[EmbeddingsGenerationContextType],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
         ],
@@ -73,7 +71,8 @@ class EmbeddingsScheduler(Scheduler, Generic[EmbeddingsGenerationContextType]):
         batch: dict[RequestID, EmbeddingsGenerationContextType] = {}
         try:
             while max_batch_size_to_create > 0:
-                req_id, data = self.request_queue.get_nowait()
+                data = self.request_queue.get_nowait()
+                req_id = data.request_id
                 batch[req_id] = data
                 max_batch_size_to_create -= 1
         except queue.Empty:

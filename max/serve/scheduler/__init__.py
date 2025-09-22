@@ -77,9 +77,7 @@ def load_scheduler(
         return EmbeddingsScheduler[TextContext](
             scheduler_config=embeddings_scheduler_config,
             pipeline=pipeline,  # type: ignore
-            request_queue=cast(
-                MAXPullQueue[tuple[RequestID, TextContext]], request_queue
-            ),
+            request_queue=cast(MAXPullQueue[TextContext], request_queue),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
         )
@@ -135,9 +133,7 @@ def load_scheduler(
         return load_text_generation_scheduler(
             text_gen_pipeline,
             pipeline_config,
-            request_queue=cast(
-                MAXPullQueue[tuple[RequestID, TextContext]], request_queue
-            ),
+            request_queue=cast(MAXPullQueue[TextContext], request_queue),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
         )
@@ -154,9 +150,7 @@ def load_scheduler(
         return load_decode_scheduler(
             text_gen_pipeline,
             pipeline_config,
-            request_queue=cast(
-                MAXPullQueue[tuple[RequestID, TextContext]], request_queue
-            ),
+            request_queue=cast(MAXPullQueue[TextContext], request_queue),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
             settings=settings,
