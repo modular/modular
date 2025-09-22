@@ -39,10 +39,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 # TODO: Remove when >0.6.0 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-xcPoc14IGuJQQ8veOW9Ik2bGr1gMAjlvnB3lj3WQSro=",
-    strip_prefix = "rules_mojo-a60e4217fd0e13747bdd83bf11873e90229f932c",
+    integrity = "sha256-NXc3Q17eU9Wmhj9DiES7C6yH5xGdycppm2d+aNfjtFU=",
+    strip_prefix = "rules_mojo-c0041197cba8ed4b106156d7357f53e1ef37dcf3",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/a60e4217fd0e13747bdd83bf11873e90229f932c.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/c0041197cba8ed4b106156d7357f53e1ef37dcf3.tar.gz",
     ],
 )
 
