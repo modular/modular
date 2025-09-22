@@ -119,6 +119,14 @@ must be defined by conforming structs. Associated aliases are useful for writing
 traits that describe generic types. For more information, see
 [Associated aliases for generics](#associated-aliases-for-generics).
 
+:::note
+
+Currently, Mojo treats a trait method as not implemented if the function body
+starts with `...` or `pass`. In the future only `...` will mark a trait method
+as not implemented.
+
+:::
+
 ### Adding traits to structs
 
 Next we need some structs that conform to the `Quackable` trait. Since the
