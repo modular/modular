@@ -549,7 +549,6 @@ def main():
 
     suite.test[test_set_construction]()
     suite.test[test_set_move]()
-    suite.test[test_set_move]()
     suite.test[test_len]()
     suite.test[test_in]()
     suite.test[test_equal]()
