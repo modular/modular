@@ -83,7 +83,7 @@ def create_di_scheduler(
     enable_kvcache_swapping_to_host: bool = False,
     device: Device = CPU(),
 ) -> tuple[DecodeScheduler, PrefillScheduler]:
-    def _create_paged_manager() -> PagedKVCacheManager[TextContext]:
+    def _create_paged_manager() -> PagedKVCacheManager:
         return create_paged_manager(
             num_blocks=num_blocks,
             max_batch_size=max_batch_size,

@@ -63,7 +63,7 @@ def create_paged_manager(
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
     device: Device = CPU(),
-) -> PagedKVCacheManager[TextContext]:
+) -> PagedKVCacheManager:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
     NUM_KV_HEADS = 1
@@ -99,7 +99,7 @@ def create_paged_manager(
 
     session = InferenceSession(devices=[device])
 
-    kv_manager = PagedKVCacheManager[TextContext](
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
