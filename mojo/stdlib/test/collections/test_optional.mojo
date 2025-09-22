@@ -14,6 +14,7 @@
 from collections import OptionalReg
 
 from testing import *
+from test_utils import TestSuite
 
 
 def test_basic():
@@ -194,16 +195,20 @@ def test_optional_repr_wrap():
 
 
 def main():
-    test_basic()
-    test_optional_reg_basic()
-    test_optional_is()
-    test_optional_isnot()
-    test_optional_reg_is()
-    test_optional_reg_isnot()
-    test_optional_take_mutates()
-    test_optional_explicit_copy()
-    test_optional_str_repr()
-    test_optional_equality()
-    test_optional_copied()
-    test_optional_unwrap()
-    test_optional_repr_wrap()
+    var suite = TestSuite()
+
+    suite.test[test_basic]()
+    suite.test[test_optional_reg_basic]()
+    suite.test[test_optional_is]()
+    suite.test[test_optional_isnot]()
+    suite.test[test_optional_reg_is]()
+    suite.test[test_optional_reg_isnot]()
+    suite.test[test_optional_take_mutates]()
+    suite.test[test_optional_explicit_copy]()
+    suite.test[test_optional_str_repr]()
+    suite.test[test_optional_equality]()
+    suite.test[test_optional_copied]()
+    suite.test[test_optional_unwrap]()
+    suite.test[test_optional_repr_wrap]()
+
+    suite^.run()

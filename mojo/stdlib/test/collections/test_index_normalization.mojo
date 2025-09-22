@@ -14,6 +14,7 @@
 from collections._index_normalization import normalize_index
 
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 def test_out_of_bounds_message():
@@ -107,5 +108,9 @@ def test_normalize_index():
 
 
 def main():
-    test_out_of_bounds_message()
-    test_normalize_index()
+    var suite = TestSuite()
+
+    suite.test[test_out_of_bounds_message]()
+    suite.test[test_normalize_index]()
+
+    suite^.run()

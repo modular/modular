@@ -27,5 +27,6 @@ mojo_test(
     ],
     deps = [
         "@mojo//:stdlib",
+        "@mojo//:test_utils",
     ],
 )

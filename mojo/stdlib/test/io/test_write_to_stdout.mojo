@@ -12,10 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import sys
+from test_utils import TestSuite
 
 
-fn main() raises:
-    test_write_to_stdout()
+def main():
+    var suite = TestSuite()
+    suite.test[test_write_to_stdout]()
+    suite^.run()
 
 
 @fieldwise_init
@@ -28,7 +31,7 @@ struct Point(Writable):
 
 
 # CHECK-LABEL: test_write_to_stdout
-fn test_write_to_stdout():
+def test_write_to_stdout():
     print("== test_write_to_stdout")
 
     var stdout = sys.stdout

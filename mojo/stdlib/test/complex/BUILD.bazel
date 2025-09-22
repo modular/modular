@@ -6,6 +6,7 @@ load("//bazel:api.bzl", "mojo_test", "pkg_files")
         srcs = [src],
         deps = [
             "@mojo//:stdlib",
+            "@mojo//:test_utils",
         ],
     )
     for src in glob(["**/*.mojo"])
