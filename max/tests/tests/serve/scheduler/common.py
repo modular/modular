@@ -16,7 +16,6 @@ from max.engine import InferenceSession
 from max.interfaces import (
     GenerationStatus,
     MAXPushQueue,
-    Pipeline,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
@@ -24,6 +23,7 @@ from max.interfaces import (
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.pipelines.lib import TextGenerationPipelineType
 from max.serve.scheduler.text_batch_constructor import (
     BatchType,
     TokenGenerationSchedulerConfig,
@@ -169,9 +169,7 @@ def create_paged_scheduler(
     return (scheduler, request_queue)
 
 
-class FakeTokenGeneratorPipeline(
-    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput]
-):
+class FakeTokenGeneratorPipeline(TextGenerationPipelineType[TextContext]):
     def __init__(
         self, kv_manager: PagedKVCacheManager, start_token_id: int = 42
     ) -> None:

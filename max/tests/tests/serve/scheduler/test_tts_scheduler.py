@@ -20,12 +20,14 @@ from max.interfaces import (
     AudioGenerationOutput,
     GenerationStatus,
     MAXPushQueue,
-    Pipeline,
     RequestID,
     SchedulerResult,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TTSContext
+from max.pipelines.lib.audio_generator_pipeline import (
+    AudioGeneratorPipelineType,
+)
 from max.serve.scheduler import AudioGenerationScheduler
 from max.serve.scheduler.audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,
@@ -174,9 +176,7 @@ def create_paged_scheduler(
     return scheduler, request_queue
 
 
-class FakeAudioGeneratorPipeline(
-    Pipeline[AudioGenerationInputs[TTSContext], AudioGenerationOutput]
-):
+class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
     def __init__(
         self, paged_manager: PagedKVCacheManager, max_num_steps: int
     ) -> None:

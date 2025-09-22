@@ -19,13 +19,16 @@ import pytest_asyncio
 from async_asgi_testclient import TestClient
 from max.interfaces import (
     GenerationStatus,
-    Pipeline,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.lib import IdentityPipelineTokenizer, PipelineConfig
+from max.pipelines.lib import (
+    IdentityPipelineTokenizer,
+    PipelineConfig,
+    TextGenerationPipelineType,
+)
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -47,9 +50,7 @@ class MockContext(Mock):
         return self.status.is_done
 
 
-class MockValueErrorTokenGenerator(
-    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
-):
+class MockValueErrorTokenGenerator(TextGenerationPipelineType[MockContext]):
     """A mock generator that throws a value error when used."""
 
     def execute(
