@@ -568,6 +568,9 @@ struct Deque[ElementType: Copyable & Movable](
             (self._data + self._tail).init_pointee_move_from(src + i)
             self._tail = self._physical_index(self._tail + 1)
 
+        # free the list backing buffer
+        values_data.free()
+
     fn extendleft(mut self, var values: List[ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
 
@@ -601,6 +604,8 @@ struct Deque[ElementType: Copyable & Movable](
         for i in range(n_move_values):
             self._head = self._physical_index(self._head - 1)
             (self._data + self._head).init_pointee_move_from(src + i)
+
+        values_data.free()
 
     fn index[
         T: EqualityComparable & Copyable & Movable, //
