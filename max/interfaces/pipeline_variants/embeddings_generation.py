@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 import msgspec
 import numpy as np
@@ -17,15 +17,11 @@ from max.interfaces.context import InputContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import RequestID
 
-EmbeddingsGenerationContextType = TypeVar(
-    "EmbeddingsGenerationContextType", bound=InputContext
-)
+EmbeddingsGenerationContextType = InputContext
 
 
 @dataclass(frozen=True)
-class EmbeddingsGenerationInputs(
-    PipelineInputs, Generic[EmbeddingsGenerationContextType]
-):
+class EmbeddingsGenerationInputs(PipelineInputs):
     batches: list[dict[RequestID, EmbeddingsGenerationContextType]]
 
     @property
