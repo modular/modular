@@ -1748,7 +1748,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
-
+    UnitAttr isMove;
     auto captureConvention = capture.getCaptureConvention();
     switch (captureConvention) {
     case CaptureConvention::kConventionUnspecified:
@@ -1801,29 +1801,31 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
         }
         if (structDeclOp.getMoveInit().has_value())
           move = *structDeclOp.getMoveInit();
-        if (captureConvention == CaptureConvention::kConventionCopy) {
-          if (structDeclOp.getCopyInit().has_value()) {
-            copy = *structDeclOp.getCopyInit();
-          } else {
-            shared.emitError(nestedFnDecl.getLoc(),
-                             "cannot capture " + capture.getSpelling() +
-                                 " by copy because it is not copyable.");
-          }
-        }
-        if (captureConvention == CaptureConvention::kConventionMove && !move) {
+        if (structDeclOp.getCopyInit().has_value())
+          copy = *structDeclOp.getCopyInit();
+
+        if (captureConvention == CaptureConvention::kConventionCopy && !copy) {
           shared.emitError(nestedFnDecl.getLoc(),
                            "cannot capture " + capture.getSpelling() +
-                               " by move because it is not movable.");
-
+                               " by copy because it is not copyable.");
           return {};
+        }
+        if (captureConvention == CaptureConvention::kConventionMove) {
+          if (!move) {
+            shared.emitError(nestedFnDecl.getLoc(),
+                             "cannot capture " + capture.getSpelling() +
+                                 " by move because it is not movable.");
+
+            return {};
+          }
+          isMove = UnitAttr::get(ctx);
         }
         if (!del)
           shared.emitError(nestedFnDecl.getLoc(),
                            "cannot capture " + capture.getSpelling() +
                                " because it is not destructable.");
-
         MemSymbolTripleAttr memTriple =
-            MemSymbolTripleAttr::get(ctx, copy, move, del);
+            MemSymbolTripleAttr::get(ctx, copy, move, del, isMove);
         captureInfo.push_back(memTriple);
         break;
       } else if (auto traitType = dyn_cast<TraitType>(mlirType)) {

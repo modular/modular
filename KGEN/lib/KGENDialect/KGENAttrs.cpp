@@ -3291,10 +3291,14 @@ static void printClosureAttr(AsmPrinter &p, Type type) {
 static ParseResult parseMemSymbolTripleAttr(AsmParser &p,
                                             SymbolConstantAttr &copy,
                                             SymbolConstantAttr &move,
-                                            SymbolConstantAttr &del) {
+                                            SymbolConstantAttr &del,
+                                            UnitAttr &isMove) {
   MemSymbolTripleParts parts;
   if (parseMemSymbolParts(p, parts))
     return failure();
+  if (parts.isMove)
+    isMove = UnitAttr::get(p.getContext());
+
   Type type;
   if (p.parseColon() || p.parseType(type))
     return failure();
@@ -3311,8 +3315,10 @@ static ParseResult parseMemSymbolTripleAttr(AsmParser &p,
 
 static void printMemSymbolTripleAttr(AsmPrinter &p, SymbolConstantAttr copy,
                                      SymbolConstantAttr move,
-                                     SymbolConstantAttr del) {
+                                     SymbolConstantAttr del, UnitAttr isMove) {
   printMemSymbolTripleAttrWithoutType(p, copy, move, del);
+  if (isMove)
+    p << " " << MemSymbolTripleAttr::kIsMoveKeyword;
   p << " : " << del.getType().getBody().getArguments().front();
 }
 

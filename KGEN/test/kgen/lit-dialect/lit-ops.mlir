@@ -507,10 +507,10 @@ lit.trait.decl @Closure<?, SELF: !Closure> {
 lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x:index, %z: !lit.ref<!String, imm Z> owned_in_mem) -> !kgen.none {
   // CHECK-NEXT: lit.closure.init[#kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !lit.trait<@Closure>](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("self": !lit.ref<@String, imm *[0,1]> read_mem, "other": !lit.ref<@String, mut *[0,0]> byref_result) -> !kgen.none>
   // CHECK-SAME: , @String::@__moveinit__ !lit.generator<[2]("self": !lit.ref<@String, imm *[0,1]> read_mem, "other": !lit.ref<@String, mut *[0,0]> byref_result) -> !kgen.none>
-  // CHECK-SAME: , @String::@__del__ !lit.generator<[1]("self": !lit.ref<@String, mut *[0,0]> owned_in_mem) -> !kgen.none>
+  // CHECK-SAME: , @String::@__del__ !lit.generator<[1]("self": !lit.ref<@String, mut *[0,0]> owned_in_mem) -> !kgen.none> move
    %impl = lit.closure.init[#type_value](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("self": !lit.ref<!String, imm *[0,1]> read_mem, "other": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
                                                   @String::@__moveinit__ !lit.generator<[2]("self": !lit.ref<!String, imm *[0,1]> read_mem, "other": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
-                                                  @String::@__del__ !lit.generator<[1]("self": !lit.ref<!String, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%y2: index) -> index {
+                                                  @String::@__del__ !lit.generator<[1]("self": !lit.ref<!String, mut *[0,0]> owned_in_mem) -> !kgen.none> move])(%y2: index) -> index {
    kgen.return %x : index
   } : (!lit.ref<!String, imm Y>, index, !lit.ref<!String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
   %2 = lit.call @direct[mut C]<:!Closure #type_value>(%impl, %x) : !lit.generator<[1]("c":!lit.ref<:!Closure #type_value, mut *[0,0]> read_mem, "x": index) -> !kgen.none>

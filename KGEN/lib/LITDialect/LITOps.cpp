@@ -1916,16 +1916,20 @@ static ParseResult parseMemSymbolTripleAttr(OpAsmParser &p,
     auto sym = SymbolConstantAttr::get(callee, generatorType, paramValues);
     symbols.push_back(sym);
   } while (succeeded(p.parseOptionalComma()));
+  UnitAttr isMove;
+  if (succeeded(p.parseOptionalKeyword(MemSymbolTripleAttr::kIsMoveKeyword)))
+    isMove = UnitAttr::get(p.getContext());
+
   if (failed(p.parseRSquare()))
     return failure();
   switch (symbols.size()) {
   case 2:
-    triple =
-        MemSymbolTripleAttr::get(p.getContext(), {}, symbols[0], symbols[1]);
+    triple = MemSymbolTripleAttr::get(p.getContext(), {}, symbols[0],
+                                      symbols[1], isMove);
     break;
   case 3:
     triple = MemSymbolTripleAttr::get(p.getContext(), symbols[0], symbols[1],
-                                      symbols[2]);
+                                      symbols[2], isMove);
     break;
   default:
     return p.emitError(p.getCurrentLocation(), "expected 2 or 3 symbols");
@@ -2047,6 +2051,8 @@ static void printClosureInitOpValue(
       p << "[";
       printMemSymbolTripleAttrWithoutType(p, triple.getCopy(), triple.getMove(),
                                           triple.getDel(), paramPrinter);
+      if (triple.getIsMove())
+        p << " " << MemSymbolTripleAttr::kIsMoveKeyword;
       p << "]";
     } else if (isa<UnitAttr>(symbol)) {
       if (++i < n)
