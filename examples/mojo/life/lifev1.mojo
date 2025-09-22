@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: mojo/docs/manual/get-started.mdx
+
 import time
 
 from gridv1 import Grid

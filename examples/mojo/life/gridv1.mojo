@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: mojo/docs/manual/get-started.mdx
+
 import random
 from collections import Optional
 
@@ -71,7 +73,7 @@ struct Grid(Copyable, Movable, Stringable):
             [0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0],
         ]
-        return Grid(8, 8, glider)
+        return Grid(8, 8, glider^)
 
     @staticmethod
     fn random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
