@@ -636,8 +636,7 @@ class TextGenerationContext(BaseContext, Protocol):
 
 
 TextGenerationContextType = TypeVar(
-    "TextGenerationContextType",
-    bound=TextGenerationContext,
+    "TextGenerationContextType", bound=TextGenerationContext
 )
 """Type variable for text generation context types, constrained to BaseContext.
 
