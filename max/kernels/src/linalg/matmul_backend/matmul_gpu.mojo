@@ -35,7 +35,7 @@ from gpu import (
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host import get_gpu_target
-from gpu.host.info import A100, H100, B200, MI355X
+from gpu.host.info import A100, H100, B200, MI355X, GPUInfo
 from gpu.memory import AddressSpace
 from layout._ndbuffer_stub import (
     from_ndbuffer_row_major,
@@ -341,7 +341,6 @@ fn _matmul_sm100[
         return
 
 
-@always_inline
 fn _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
     @parameter
     if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
@@ -353,7 +352,6 @@ fn _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
     return get_mma_shape[dtype, DType.float32]()
 
 
-@always_inline
 fn _amdgpu_matmul_config_from_block_shape[
     c_type: DType,
     a_type: DType,
@@ -411,6 +409,62 @@ fn _amdgpu_matmul_config_from_block_shape[
         num_warp_k_partitions=num_warp_k_partitions,
         pdl_level=pdl_level,
     )
+
+
+fn _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
+    alias sm_count = Int(GPUInfo.from_name[_accelerator_arch()]().sm_count)
+
+    alias block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
+    alias len_block_sizes = len(block_sizes_alias)
+
+    var block_sizes = materialize[block_sizes_alias]()
+    var emit_block_shape = InlineArray[Bool, len_block_sizes * len_block_sizes](
+        fill=False
+    )
+
+    @always_inline
+    @parameter
+    fn process_m(m: Int):
+        var best_score = Int.MAX
+        var best_idx = 0
+        var idx = 0
+
+        for block_m in block_sizes:
+            var m_blocks = ceildiv(m, block_m)
+
+            for block_n in block_sizes:
+                var n_blocks = ceildiv(N, block_n)
+
+                var total_blocks = m_blocks * n_blocks
+                var batch, extra = divmod(total_blocks - 1, sm_count)
+                var score = batch * sm_count + (sm_count - extra - 1)
+
+                if score < best_score or (
+                    score == best_score and emit_block_shape[idx]
+                ):
+                    best_score = score
+                    best_idx = idx
+
+                idx += 1
+
+        emit_block_shape[best_idx] = True
+
+    for m in range(16, 1024, 16):
+        process_m(m)
+    for m in range(1024, 8192, 32):
+        process_m(m)
+
+    var block_shape_list = List[IndexList[2]]()
+
+    for idx in range(len(emit_block_shape)):
+        if not emit_block_shape[idx]:
+            continue
+
+        var idx_m, idx_n = divmod(idx, len_block_sizes)
+
+        block_shape_list.append(Index(block_sizes[idx_m], block_sizes[idx_n]))
+
+    return block_shape_list^
 
 
 @always_inline
@@ -684,81 +738,10 @@ fn _matmul_gpu[
                         block_m, block_n, num_k_partitions=num_k_partitions
                     ]()
 
-                @parameter
-                fn build_block_shape_list() -> List[IndexList[2]]:
-                    alias sm_count = Int(ctx.default_device_info.sm_count)
-
-                    alias block_sizes_alias = [
-                        16,
-                        32,
-                        64,
-                        96,
-                        128,
-                        160,
-                        192,
-                        224,
-                        256,
-                    ]
-                    alias len_block_sizes = len(block_sizes_alias)
-
-                    var block_sizes = materialize[block_sizes_alias]()
-                    var emit_block_shape = InlineArray[
-                        Bool, len_block_sizes * len_block_sizes
-                    ](fill=False)
-
-                    @always_inline
-                    @parameter
-                    fn process_m(m: Int):
-                        var best_score = Int.MAX
-                        var best_idx = 0
-                        var idx = 0
-
-                        for block_m in block_sizes:
-                            var m_blocks = ceildiv(m, block_m)
-
-                            for block_n in block_sizes:
-                                var n_blocks = ceildiv(static_N, block_n)
-
-                                var total_blocks = m_blocks * n_blocks
-                                var batch, extra = divmod(
-                                    total_blocks - 1, sm_count
-                                )
-                                var score = batch * sm_count + (
-                                    sm_count - extra - 1
-                                )
-
-                                if score < best_score or (
-                                    score == best_score
-                                    and emit_block_shape[idx]
-                                ):
-                                    best_score = score
-                                    best_idx = idx
-
-                                idx += 1
-
-                        emit_block_shape[best_idx] = True
-
-                    for m in range(16, 1024, 16):
-                        process_m(m)
-                    for m in range(1024, 8192, 32):
-                        process_m(m)
-
-                    var block_shape_list = List[IndexList[2]]()
-
-                    for idx in range(len(emit_block_shape)):
-                        if not emit_block_shape[idx]:
-                            continue
-
-                        var idx_m, idx_n = divmod(idx, len_block_sizes)
-
-                        block_shape_list.append(
-                            Index(block_sizes[idx_m], block_sizes[idx_n])
-                        )
-
-                    return block_shape_list^
-
                 alias sm_count = Int(ctx.default_device_info.sm_count)
-                alias block_shape_list = build_block_shape_list()
+                alias block_shape_list = _amdgpu_matmul_build_block_shape_list[
+                    static_N
+                ]()
 
                 var best_idx = 0
                 var best_score = Int.MAX
