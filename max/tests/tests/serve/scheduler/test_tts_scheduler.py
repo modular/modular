@@ -9,7 +9,6 @@ from __future__ import annotations
 import queue
 from collections.abc import Generator
 from dataclasses import dataclass
-from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -40,7 +39,6 @@ def rand(length: int) -> np.ndarray:
 
 
 def create_text_context(
-    request_id: RequestID,
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
@@ -53,7 +51,6 @@ def create_text_context(
         tokens = np.concatenate([shared_prefix, rand(rem_tokens)])
 
     return TTSContext(
-        request_id=request_id,
         max_length=max_seq_len,
         tokens=tokens,
         streaming=False,
@@ -133,9 +130,7 @@ def create_paged_scheduler(
     min_batch_size_tg: int | None = None,
     ce_delay_ms: float = 0.0,
     enable_prioritize_first_decode: bool = False,
-) -> tuple[
-    AudioGenerationScheduler, MAXPushQueue[tuple[RequestID, TTSContext]]
-]:
+) -> tuple[AudioGenerationScheduler, MAXPushQueue[TTSContext]]:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
         num_blocks=num_blocks,
@@ -161,7 +156,7 @@ def create_paged_scheduler(
         paged_manager, max_num_steps=max_forward_steps_tg
     )
 
-    request_queue: queue.Queue[tuple[RequestID, TTSContext]] = queue.Queue()
+    request_queue: queue.Queue[TTSContext] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[AudioGenerationOutput]]
     ] = queue.Queue()
@@ -355,36 +350,32 @@ def run_until_completion(
 
 
 def enqueue_request(
-    queue: MAXPushQueue[tuple[str, TTSContext]],
+    queue: MAXPushQueue[TTSContext],
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
 ) -> None:
-    req_id = f"req{uuid4()}"
     context = create_text_context(
-        request_id=req_id,
         prompt_len=prompt_len,
         max_seq_len=max_seq_len,
         shared_prefix=shared_prefix,
     )
     assert context.active_length == prompt_len
-    queue.put_nowait((req_id, context))
+    queue.put_nowait(context)
 
 
 def enqueue_request_with_prompt(
-    queue: MAXPushQueue[tuple[RequestID, TTSContext]],
+    queue: MAXPushQueue[TTSContext],
     tokens: np.ndarray,
     max_seq_len: int,
 ) -> None:
-    req_id = f"req{uuid4()}"
     context = TTSContext(
-        request_id=req_id,
         max_length=max_seq_len,
         tokens=tokens,
         streaming=False,
     )
 
-    queue.put_nowait((req_id, context))
+    queue.put_nowait(context)
 
 
 CE = BatchType.CE

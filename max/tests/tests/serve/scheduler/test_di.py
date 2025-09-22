@@ -105,7 +105,7 @@ def create_di_scheduler(
     )
 
     # Use queue.Queue to simulate the ZMQ queues.
-    request_queue: queue.Queue[tuple[RequestID, TextContext]] = queue.Queue()
+    request_queue: queue.Queue[TextContext] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ] = queue.Queue()
@@ -153,7 +153,7 @@ def create_default_di_scheduler_and_submit_one_request() -> tuple[
     decode, prefill = create_di_scheduler()
     ctx = create_text_context(prompt_len=100, max_seq_len=105)
     request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)
-    request_queue.put((ctx.request_id, ctx))
+    request_queue.put(ctx)
     return decode, prefill, ctx
 
 

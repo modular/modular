@@ -6,7 +6,7 @@
 
 import queue
 from collections import OrderedDict
-from typing import cast
+from typing import Union, cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -20,7 +20,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.serve.scheduler.text_batch_constructor import (
     BatchType,
     SchedulerOutput,
@@ -63,7 +63,7 @@ def create_mock_pipeline() -> Mock:
 
 def create_scheduler() -> tuple[
     TokenGenerationScheduler,
-    MAXPushQueue[tuple[RequestID, TextContext]],
+    MAXPushQueue[Union[TextContext, TextAndVisionContext]],
     MAXPullQueue[dict[RequestID, SchedulerResult[TextGenerationOutput]]],
     MAXPushQueue[list[RequestID]],
 ]:
@@ -74,7 +74,9 @@ def create_scheduler() -> tuple[
         target_tokens_per_batch_ce=32,
     )
 
-    request_queue: queue.Queue[tuple[RequestID, TextContext]] = queue.Queue()
+    request_queue: queue.Queue[Union[TextContext, TextAndVisionContext]] = (
+        queue.Queue()
+    )
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ] = queue.Queue()
@@ -125,7 +127,7 @@ def test_should_schedule_ce_full_batch() -> None:
             mock_request
         )
     mock_request = create_mock_request()
-    request_push_socket.put_nowait((mock_request.request_id, mock_request))
+    request_push_socket.put_nowait(mock_request)
     assert not scheduler.batch_constructor._should_schedule_ce()
 
 
@@ -133,7 +135,7 @@ def test_try_create_ce_batch() -> None:
     scheduler, request_push_socket, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    request_push_socket.put_nowait((mock_request.request_id, mock_request))
+    request_push_socket.put_nowait(mock_request)
     scheduler._retrieve_pending_requests()
 
     batch = scheduler.batch_constructor.construct_batch().inputs.batch
@@ -150,7 +152,7 @@ def test_try_create_chunked_ce_batch() -> None:
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
 
     mock_data = create_mock_request(seq_len=30)
-    request_push_socket.put_nowait((mock_data.request_id, mock_data))
+    request_push_socket.put_nowait(mock_data)
     scheduler._retrieve_pending_requests()
 
     batch = scheduler.batch_constructor.construct_batch().inputs.batch
@@ -267,7 +269,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
     mock_request = create_mock_request(seq_len=30)
 
-    request_push_socket.put_nowait((mock_request.request_id, mock_request))
+    request_push_socket.put_nowait(mock_request)
     scheduler._retrieve_pending_requests()
     assert len(scheduler.batch_constructor.ce_reqs) == 1
 
@@ -314,9 +316,7 @@ def test_schedule_mixed_ce_tg() -> None:
     assert mock_request_tg.active_idx == 10
     assert mock_request_tg.end_idx == 10
 
-    request_push_socket.put_nowait(
-        (mock_request_tg.request_id, mock_request_tg)
-    )
+    request_push_socket.put_nowait(mock_request_tg)
     scheduler._retrieve_pending_requests()
 
     batch_to_execute = (
@@ -332,9 +332,7 @@ def test_schedule_mixed_ce_tg() -> None:
     # req1 has been put in `active_batch`
 
     mock_request_ce = create_mock_request(seq_len=30)
-    request_push_socket.put_nowait(
-        (mock_request_ce.request_id, mock_request_ce)
-    )
+    request_push_socket.put_nowait(mock_request_ce)
     scheduler._retrieve_pending_requests()
     batch = scheduler.batch_constructor.construct_batch().inputs.batch
 

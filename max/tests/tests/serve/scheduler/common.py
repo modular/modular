@@ -129,7 +129,7 @@ def create_paged_scheduler(
     device: Device = CPU(),
 ) -> tuple[
     TokenGenerationScheduler,
-    MAXPushQueue[tuple[RequestID, TextContext]],
+    MAXPushQueue[TextContext],
 ]:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
@@ -152,7 +152,7 @@ def create_paged_scheduler(
         enable_in_flight_batching=enable_in_flight_batching,
     )
     token_pipeline = FakeTokenGeneratorPipeline(paged_manager)
-    request_queue: queue.Queue[tuple[RequestID, TextContext]] = queue.Queue()
+    request_queue: queue.Queue[TextContext] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ] = queue.Queue()
@@ -311,7 +311,7 @@ def run_until_completion(
 
 
 def enqueue_request(
-    queue: MAXPushQueue[tuple[RequestID, TextContext]],
+    queue: MAXPushQueue[TextContext],
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
@@ -322,11 +322,11 @@ def enqueue_request(
         shared_prefix=shared_prefix,
     )
     assert context.active_length == prompt_len
-    queue.put_nowait((context.request_id, context))
+    queue.put_nowait(context)
 
 
 def enqueue_request_with_prompt(
-    queue: MAXPushQueue[tuple[RequestID, TextContext]],
+    queue: MAXPushQueue[TextContext],
     tokens: np.ndarray,
     max_seq_len: int,
 ) -> None:
@@ -335,7 +335,7 @@ def enqueue_request_with_prompt(
         tokens=tokens,
     )
 
-    queue.put_nowait((context.request_id, context))
+    queue.put_nowait(context)
 
 
 CE = BatchType.CE
