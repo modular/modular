@@ -153,10 +153,6 @@ ParameterKey = tuple[str, Union[bool, int, str, DType]]
 CompiledModelKey = tuple[Hashable, ...]
 
 
-def _model_key(args: Iterable[TensorType]) -> CompiledModelKey:
-    return tuple(arg.to_mlir() for arg in args)
-
-
 class CustomOp:
     library: CustomOpLibrary
     name: str
@@ -294,8 +290,8 @@ class MaxOp:
     name: str
     library: CustomOpLibrary
     # Specify explicit input types to eg. compile with symbolic dims
-    input_types: Sequence[TensorType] | None = None
-    output_types: Sequence[TensorType] | None = None
+    input_types: tuple[TensorType, ...] | None = None
+    output_types: tuple[TensorType, ...] | None = None
     num_outputs: int
 
     def __init__(
@@ -318,8 +314,10 @@ class MaxOp:
         self.fn = fn
         self.name = name
         self.library = library
-        self.input_types = input_types
-        self.output_types = output_types
+        self.input_types = None if input_types is None else tuple(input_types)
+        self.output_types = (
+            None if output_types is None else tuple(output_types)
+        )
 
     @property
     def _context(self) -> mlir.Context:
@@ -415,8 +413,8 @@ class MaxOp:
             input_types = self.input_types or arg_types[self.num_outputs :]
 
             # Creating types requires an MLIR context
-            with self._context:
-                key = _model_key((*input_types, *output_types))
+            key = (input_types, output_types)
+
             # Only one thread can schedule model compilation for a given key
             with model_cache_lock:
                 if not (model_future := model_cache.get(key)):
