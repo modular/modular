@@ -51,23 +51,22 @@ from sys import (
     align_of,
     bit_width_of,
     is_amd_gpu,
+    is_apple_gpu,
     is_big_endian,
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
-    is_apple_gpu,
     llvm_intrinsic,
     simd_width_of,
     size_of,
 )
 from sys._assembly import inlined_assembly
 from sys.info import (
+    _cdna_4_or_newer,
+    _is_amd_mi300x,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
-    _is_amd_mi300x,
-    _cdna_4_or_newer,
 )
-
 from sys.intrinsics import _type_is_eq
 
 from bit import bit_width, byte_swap, pop_count
@@ -77,7 +76,7 @@ from builtin.format_int import _try_write_int
 from builtin.math import Powable
 from documentation import doc_private
 from memory import bitcast, memcpy
-from python import ConvertibleToPython, PythonObject, Python
+from python import ConvertibleToPython, Python, PythonObject
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type

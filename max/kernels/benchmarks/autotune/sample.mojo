@@ -13,12 +13,7 @@
 
 from sys import env_get_dtype, env_get_int
 
-from benchmark import (
-    Bench,
-    BenchConfig,
-    Bencher,
-    BenchId,
-)
+from benchmark import Bench, BenchConfig, Bencher, BenchId
 from internal_utils import (
     Mode,
     arg_parse,

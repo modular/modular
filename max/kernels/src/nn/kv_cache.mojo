@@ -25,7 +25,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -45,7 +45,6 @@ from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor_internal import ManagedTensorSlice, trace_slice_arg
 
 from utils import Index, IndexList
-
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (padded)

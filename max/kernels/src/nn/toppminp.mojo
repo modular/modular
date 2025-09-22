@@ -15,8 +15,8 @@
 from math import iota
 from random import random_float64
 
-from buffer import NDBuffer, DimList
-from layout import LayoutTensor, Layout, RuntimeLayout, RuntimeTuple
+from buffer import DimList, NDBuffer
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from nn.softmax import softmax
 
 from utils import IndexList

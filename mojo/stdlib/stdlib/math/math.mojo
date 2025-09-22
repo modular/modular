@@ -23,12 +23,12 @@ from sys import (
     CompilationTarget,
     bit_width_of,
     is_amd_gpu,
+    is_compile_time,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
     simd_width_of,
     size_of,
-    is_compile_time,
 )
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const

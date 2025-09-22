@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import sqrt
+from random import rand
 
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.normalization import *
-from random import rand
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

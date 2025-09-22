@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_down, ceildiv, exp, exp2, log
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
@@ -24,7 +25,6 @@ from algorithm.reduction import (
 from bit import log2_floor
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import OptionalReg
 from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext

@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import align_of
-from ...vendor.blas import matmul as vendor_matmul, Backend
+
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import (
@@ -27,12 +27,15 @@ from internal_utils import (
 )
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from .matmul import warp_specialize_gemm_with_multicasting
-from ..tile_scheduler import MatmulSchedule
-from ....utils_gpu import MatmulConfig
 
 from utils.index import Index, IndexList
+
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils_gpu import MatmulConfig
+from ...vendor.blas import Backend
+from ...vendor.blas import matmul as vendor_matmul
+from ..tile_scheduler import MatmulSchedule
+from .matmul import warp_specialize_gemm_with_multicasting
 
 
 fn test_matmul_sm90[

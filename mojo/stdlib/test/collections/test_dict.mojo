@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.dict import OwnedKwargsDict
+from hashlib import Hasher, default_comp_time_hasher
 
 from test_utils import CopyCounter
-from hashlib import Hasher, default_comp_time_hasher
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 

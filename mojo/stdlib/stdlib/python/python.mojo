@@ -20,8 +20,8 @@ from python import Python
 """
 
 from collections.dict import OwnedKwargsDict
+from os import abort
 from sys.ffi import _Global
-
 
 from ._cpython import (
     CPython,
@@ -32,7 +32,6 @@ from ._cpython import (
     PyObjectPtr,
 )
 from .python_object import PythonObject
-from os import abort
 
 alias _PYTHON_GLOBAL = _Global["Python", _init_python_global]
 

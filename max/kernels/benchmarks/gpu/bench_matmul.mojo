@@ -29,10 +29,10 @@ from internal_utils._utils import (
     InitializationType,
     ValOrDim,
     dynamic,
+    init_vector_launch,
     initialize,
     random,
     static,
-    init_vector_launch,
 )
 from linalg.matmul.gpu import _matmul_gpu
 

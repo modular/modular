@@ -12,66 +12,58 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import simd_width_of, size_of, align_of
+from sys import align_of, simd_width_of, size_of
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, WARP_SIZE
-from gpu.cluster import (
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.host.info import H100, B200
+from gpu.host.info import B200, H100
 from gpu.id import (
     block_dim,
     block_id_in_cluster,
     block_idx,
     global_idx,
     grid_dim,
-    thread_idx,
     lane_id,
+    thread_idx,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.mma_sm100 import *
+from gpu.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
-from layout.tensor_core_async import (
-    TensorCoreAsync,
-    tile_layout_k_major,
-)
+from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
 )
+
+from utils.fast_div import FastDiv
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
+
+from .arch.sm100 import MmaOpSM100_SS
+from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
+from .matmul.gpu.sm90.loadop import async_load_AB
 from .matmul.gpu.sm90.matmul import (
     _get_c_smem_layout,
     cluster_size,
     consumer_main_loop,
     warp_specialized_gemm_output,
 )
-from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
-from .matmul.gpu.sm90.loadop import async_load_AB
 from .matmul.vendor.blas import matmul as vendor_matmul
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
-
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
-
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
-from .arch.sm100 import MmaOpSM100_SS
-from utils.fast_div import FastDiv
 
 # ===----------------------------------------------------------------------=== #
 # Naive grouped matmul

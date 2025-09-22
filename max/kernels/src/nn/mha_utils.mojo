@@ -27,8 +27,10 @@ from sys import (
 )
 from sys.info import _accelerator_arch
 
+from bit import prev_power_of_two
 from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
@@ -44,12 +46,9 @@ from nn.mha_mask import (
     SlidingWindowCausalMask,
 )
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
-from gpu.host._nvidia_cuda import TensorMapSwizzle
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
-
-from bit import prev_power_of_two
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention

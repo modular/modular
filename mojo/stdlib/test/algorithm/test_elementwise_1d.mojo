@@ -16,9 +16,9 @@ from sys.info import simd_width_of
 
 from algorithm import elementwise
 from buffer import NDBuffer
+from testing import assert_almost_equal
 
 from utils.index import IndexList
-from testing import assert_almost_equal
 
 
 def test_elementwise_1d():

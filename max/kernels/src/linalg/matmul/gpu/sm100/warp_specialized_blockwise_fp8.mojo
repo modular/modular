@@ -12,76 +12,72 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from math import align_up, ceildiv, gcd
 from sys import size_of
-from math import ceildiv, align_up, gcd
-from bit import prev_power_of_two
+
+from bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import B200
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import (
-    block_idx,
-    lane_id,
-    thread_idx,
-    warp_id as get_warp_id,
-    block_id_in_cluster,
+from gpu.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    elect_one_sync,
+    elect_one_sync_with_mask,
 )
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.info import B200
+from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
+from gpu.id import warp_id as get_warp_id
 from gpu.memory import (
     AddressSpace,
+    external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
-    external_memory,
 )
 from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
 )
+from gpu.tcgen05 import *
 from layout import (
+    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
-    UNKNOWN_VALUE,
     RuntimeTuple,
 )
-from layout.layout_tensor import LayoutTensorIter
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
+from layout.layout_tensor import LayoutTensorIter
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
+    st_matrix_n_layout,
     tile_layout_k_major,
     tile_layout_mn_major,
-    st_matrix_n_layout,
     tile_to_descriptor,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.swizzle import make_swizzle, make_ldmatrix_swizzle, Swizzle
-from gpu.cluster import (
-    elect_one_sync,
-    elect_one_sync_with_mask,
-    block_rank_in_cluster,
-    cluster_sync,
-)
 from layout.tma_async import (
+    PipelineState,
     SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
-    PipelineState,
 )
-from ....arch.sm100 import MmaOpSM100_SS
-from .tile_scheduler import TileScheduler, WorkInfo
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
+
+from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
-from bit import next_power_of_two, prev_power_of_two
-from .matmul import consumer_main_loop, stsm_helper, WarpRole
+from .matmul import WarpRole, consumer_main_loop, stsm_helper
+from .tile_scheduler import TileScheduler, WorkInfo
 
 
 @always_inline

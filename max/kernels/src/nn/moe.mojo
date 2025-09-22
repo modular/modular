@@ -13,23 +13,25 @@
 
 
 from math import align_up, ceildiv
+from os.atomic import Atomic
+from sys.info import simd_width_of
+
 import gpu.warp as warp
+from bit import next_power_of_two, pop_count
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    thread_idx,
-    block_idx,
     WARP_SIZE,
     barrier,
+    block_idx,
+    thread_idx,
 )
 from gpu.host.info import is_gpu
-from sys.info import simd_width_of
+from gpu.memory import AddressSpace
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
-from gpu.memory import AddressSpace
-from os.atomic import Atomic
+
 from utils.index import IndexList, StaticTuple
-from bit import pop_count, next_power_of_two
 
 
 @__llvm_metadata(

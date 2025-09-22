@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import block_idx, grid_dim
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import (
     _GPUAddressSpace,
     async_copy_commit_group,

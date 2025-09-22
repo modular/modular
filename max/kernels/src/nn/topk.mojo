@@ -38,11 +38,11 @@ from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
 from layout import (
+    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
-    UNKNOWN_VALUE,
+    RuntimeTuple,
 )
 from layout.int_tuple import fill_like
 from memory import stack_allocation

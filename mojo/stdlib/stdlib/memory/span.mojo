@@ -20,11 +20,11 @@ from memory import Span
 ```
 """
 
-from algorithm import vectorize
+from collections._index_normalization import normalize_index
 from sys import align_of
 from sys.info import simd_width_of
 
-from collections._index_normalization import normalize_index
+from algorithm import vectorize
 from memory import Pointer
 
 

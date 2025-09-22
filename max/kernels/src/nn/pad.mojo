@@ -18,11 +18,11 @@
 
 
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 
 # TODO Refactor -- we should decide on and put them into a more common file

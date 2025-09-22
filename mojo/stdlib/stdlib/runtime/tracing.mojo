@@ -13,21 +13,21 @@
 """Provides tracing utilities."""
 
 
-from collections.optional import OptionalReg, Optional
+from collections.optional import Optional, OptionalReg
 from sys import external_call, stderr
 from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing
+import logger.logger as logger
 from buffer import NDBuffer
+from gpu.host import DeviceContext
+from gpu.host._tracing import Color
 from gpu.host._tracing import _end_range as _end_gpu_range
 from gpu.host._tracing import _is_enabled as _gpu_is_enabled
 from gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
 from gpu.host._tracing import _mark as _mark_gpu
 from gpu.host._tracing import _start_range as _start_gpu_range
-from gpu.host._tracing import Color
-from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
-import logger.logger as logger
 
 from utils import IndexList, Variant
 

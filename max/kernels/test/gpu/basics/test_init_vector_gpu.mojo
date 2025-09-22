@@ -12,19 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from random import seed
+
+from buffer import DimList
 from gpu import *
 from gpu.host import DeviceContext
-from buffer import DimList
 from internal_utils import (
-    Timer,
-    initialize,
-    InitializationType,
     HostNDBuffer,
+    InitializationType,
+    Timer,
     init_vector_launch,
+    initialize,
 )
 from testing import assert_equal
-
-from random import seed
 
 
 @no_inline

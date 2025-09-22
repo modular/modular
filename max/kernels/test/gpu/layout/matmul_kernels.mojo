@@ -21,11 +21,7 @@ from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-    copy_dram_to_sram_async,
-)
+from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore

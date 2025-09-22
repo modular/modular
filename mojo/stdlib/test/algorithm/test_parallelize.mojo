@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from sys.info import num_physical_cores
 
 from algorithm import map, parallelize, sync_parallelize
 from buffer import NDBuffer
-from sys.info import num_physical_cores
 
 
 # CHECK-LABEL: test_sync_parallelize

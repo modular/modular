@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from pathlib import _dir_of_current_file
+
 from benchmark import (
     Bench,
     Bencher,
     BenchId,
-    keep,
-    ThroughputMeasure,
     BenchMetric,
+    ThroughputMeasure,
+    keep,
 )
-from pathlib import _dir_of_current_file
 
 
 # ===-----------------------------------------------------------------------===#

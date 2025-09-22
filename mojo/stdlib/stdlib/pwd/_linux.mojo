@@ -13,7 +13,6 @@
 
 from sys.ffi import c_char, external_call
 
-
 from .pwd import Passwd
 
 alias uid_t = Int32

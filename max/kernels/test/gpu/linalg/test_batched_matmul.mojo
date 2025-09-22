@@ -12,24 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
-from linalg.bmm import _batched_matmul_gpu
+from sys import has_nvidia_gpu_accelerator, simd_width_of
+
 import linalg.matmul.vendor.blas as vendor_blas
-from utils import Index, IndexList
-from internal_utils._utils import ValOrDim, dynamic, static
 from algorithm.functional import elementwise
-from sys import simd_width_of
+from buffer import DimList, NDBuffer
+from gpu.host import DeviceContext, get_gpu_target
+from internal_utils import HostNDBuffer, random, zero
+from internal_utils._utils import ValOrDim, dynamic, static
+from linalg.bmm import _batched_matmul_gpu
 from testing import assert_almost_equal
-from gpu.host import get_gpu_target
-from sys import has_nvidia_gpu_accelerator
 
-
-from internal_utils import (
-    HostNDBuffer,
-    random,
-    zero,
-)
+from utils import Index, IndexList
 
 alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
     SIMD[dtype, width]

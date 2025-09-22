@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import PythonObject
 from os import abort
+
+from python import PythonObject
 
 
 struct TestStruct(Defaultable, Movable, Representable):

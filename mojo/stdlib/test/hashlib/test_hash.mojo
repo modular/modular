@@ -17,6 +17,7 @@
 # specific. But for now they test behavior and reproducibility.
 
 from hashlib import default_comp_time_hasher
+
 from testing import assert_equal, assert_not_equal, assert_true
 
 

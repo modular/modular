@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-compare-example
-from python import Python
-from python import PythonObject
+from python import Python, PythonObject
 
 
 def main():

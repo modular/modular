@@ -11,22 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.string.string_slice import _to_string_list
+from hashlib import default_comp_time_hasher, default_hasher
+from os import abort
+from pathlib import _dir_of_current_file
+from sys import stderr
+
 from benchmark import (
     Bench,
     BenchConfig,
     Bencher,
     BenchId,
-    Unit,
     Format,
+    Unit,
     keep,
     run,
 )
-from collections.string.string_slice import _to_string_list
-from hashlib import default_comp_time_hasher, default_hasher
 from memory import memcpy, memset_zero
-from os import abort
-from pathlib import _dir_of_current_file
-from sys import stderr
 from testing import assert_equal
 
 
@@ -74,7 +75,7 @@ fn make_long_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
 # String Dict implementation for benchmarking baseline against Dict
 # ===-----------------------------------------------------------------------===#
 
-from bit import pop_count, bit_width
+from bit import bit_width, pop_count
 
 
 struct KeysContainer[KeyEndType: DType = DType.uint32](

@@ -17,9 +17,9 @@ from algorithm.functional import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from testing import assert_equal, assert_true
 
 from utils.index import IndexList
-from testing import assert_true, assert_equal
 
 
 def test_elementwise():

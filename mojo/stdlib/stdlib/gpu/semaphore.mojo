@@ -35,9 +35,8 @@ Example:
 
 from sys import is_nvidia_gpu, llvm_intrinsic
 
-
 from .intrinsics import Scope, load_acquire, store_release
-from .sync import barrier, named_barrier, MaxHardwareBarriers
+from .sync import MaxHardwareBarriers, barrier, named_barrier
 
 
 @always_inline

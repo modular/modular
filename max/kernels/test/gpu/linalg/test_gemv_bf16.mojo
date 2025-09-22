@@ -16,14 +16,14 @@ from math import ceildiv
 import gpu.warp as warp
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout.runtime_layout import RuntimeLayout
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
 from testing import assert_false
 
-from utils.numerics import isnan
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.runtime_layout import RuntimeLayout
 from utils.index import IndexList
+from utils.numerics import isnan
 
 
 fn run_matvec[

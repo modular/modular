@@ -13,16 +13,12 @@
 
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
-from buffer.dimlist import DimList
+from sys import align_of, size_of
+
 from buffer import NDBuffer
-from linalg.bmm import bmm_sm100_blockwise_scaled_fp8
-from sys import size_of
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from utils.index import Index, IndexList
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from internal_utils._measure import relative_difference
 
 # Additional imports for testing
 from internal_utils import (
@@ -33,9 +29,13 @@ from internal_utils import (
     random,
     zero,
 )
+from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.bmm import elementwise_epilogue_type
-from sys import align_of
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.bmm import bmm_sm100_blockwise_scaled_fp8, elementwise_epilogue_type
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
+
+from utils.index import Index, IndexList
 
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8[

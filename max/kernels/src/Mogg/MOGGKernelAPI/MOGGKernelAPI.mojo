@@ -34,7 +34,7 @@ from math import (
     tanh,
 )
 from random import randn, seed
-from sys import external_call, llvm_intrinsic, align_of
+from sys import align_of, external_call, llvm_intrinsic
 from sys.info import simd_width_of, size_of
 from sys.intrinsics import _type_is_eq
 
@@ -51,9 +51,9 @@ from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
-from compiler_internal import StaticTensorSpec
 from comm.allgather import allgather
 from comm.allreduce import MAX_GPUS, Signal, allreduce
+from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -61,19 +61,19 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import IntTuple, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
-from linalg.distributed_matmul import matmul_allreduce
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
+from linalg.distributed_matmul import matmul_allreduce
 from linalg.dual_gemm import swishGLU
 from linalg.fp8_quantization import (
+    convert_e4m3fn_to_e4m3fnuz,
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
-    convert_e4m3fn_to_e4m3fnuz,
 )
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
 from linalg.matmul import matmul
@@ -92,6 +92,7 @@ from nn.arange import arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
+from nn.bicubic import resize_bicubic
 from nn.concat import _concat_cpu, concat, fused_concat
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
@@ -161,11 +162,11 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
+    generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
+    kv_cache_store_ragged,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
-    generic_kv_cache_radd_dispatch,
-    kv_cache_store_ragged,
 )
 from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import MHAMask
@@ -192,10 +193,8 @@ from nn.resize import (
     resize_linear,
     resize_nearest_neighbor,
 )
-from nn.rope import rope_ragged
-
-from nn.bicubic import resize_bicubic
 from nn.roi_align import roi_align_nhwc
+from nn.rope import rope_ragged
 from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.slice import (
     copy_to_slice,
@@ -206,10 +205,9 @@ from nn.slice import (
 from nn.softmax import logsoftmax, softmax
 from nn.split import split
 from nn.tile import tile, tile_shape
-from nn.topk import top_k
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
-from nn.topk import top_k_shape_impl
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
+from nn.topk import top_k, top_k_shape_impl
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from quantization import (
@@ -233,9 +231,13 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor_internal import (
     DynamicTensor,
+    ElementwiseBinaryComparisonOp,
+    ElementwiseBinaryOp,
+    ElementwiseUnaryMixedOp,
+    ElementwiseUnaryOp,
     InputTensor,
     InputVariadicTensors,
     IOSpec,
@@ -245,18 +247,14 @@ from tensor_internal import (
     OutputVariadicTensors,
     VariadicTensors,
     _input_fusion_hook_impl,
+    _mixed_precision_compute_output_fusion_hook_impl,
     _mixed_precision_input_fusion_hook_impl,
     _mixed_precision_output_fusion_hook_impl,
-    _mixed_precision_compute_output_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
-    ElementwiseBinaryOp,
-    ElementwiseBinaryComparisonOp,
-    ElementwiseUnaryOp,
-    ElementwiseUnaryMixedOp,
 )
 from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import _FusedComputeOutputTensor
@@ -283,7 +281,6 @@ from tensor_internal.transitional import managed_tensor_slice_to_ndbuffer
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
-
 
 # ===-----------------------------------------------------------------------===#
 # Helpers

@@ -13,20 +13,14 @@
 
 from collections import InlineArray
 from math import floor
-from sys import env_get_dtype, env_get_int, env_get_bool, size_of
+from sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
-from benchmark import (
-    Bench,
-    Bencher,
-    BenchId,
-    BenchMetric,
-    ThroughputMeasure,
-)
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
-from internal_utils import arg_parse, init_vector_launch, InitializationType
+from internal_utils import InitializationType, arg_parse, init_vector_launch
 from testing import assert_almost_equal, assert_true
 
 from utils.index import IndexList, StaticTuple

@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string._utf8 import (
-    _is_valid_utf8_runtime,
-    _is_valid_utf8_comptime,
     _count_utf8_continuation_bytes,
-    _is_valid_utf8,
-    _utf8_byte_type,
     _is_utf8_continuation_byte,
+    _is_valid_utf8,
+    _is_valid_utf8_comptime,
+    _is_valid_utf8_runtime,
+    _utf8_byte_type,
 )
 
 from testing import assert_equal, assert_false, assert_raises, assert_true

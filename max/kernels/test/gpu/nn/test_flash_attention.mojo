@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import exp
-from random import rand, seed, random_float64
+from random import rand, random_float64, seed
 from sys import argv, has_amd_gpu_accelerator
 
 from buffer import NDBuffer

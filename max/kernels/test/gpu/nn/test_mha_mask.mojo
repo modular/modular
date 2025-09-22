@@ -11,8 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.compile import _compile_code
+from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from sys.info import CompilationTarget
+
 from gpu.host import get_gpu_target
+from gpu.host.compile import _compile_code
 from nn.mha_mask import (
     AndMask,
     CausalMask,
@@ -23,9 +26,6 @@ from nn.mha_mask import (
 from testing import assert_equal, assert_true
 
 from utils.index import Index, IndexList
-
-from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
-from sys.info import CompilationTarget
 
 
 def test_causal_mask():

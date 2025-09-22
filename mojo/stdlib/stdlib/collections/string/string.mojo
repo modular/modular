@@ -81,26 +81,19 @@ from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
+    _unsafe_strlen,
 )
 from hashlib.hasher import Hasher
+from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
 from sys import size_of
-from sys.info import is_32bit
 from sys.ffi import c_char
+from sys.info import is_32bit
 
 from bit import count_leading_zeros
-from memory import memcpy, memset, memcmp
-from python import PythonObject, ConvertibleFromPython, ConvertibleToPython
-
-from io.write import (
-    _TotalWritableBytes,
-    _WriteBufferStack,
-    STACK_BUFFER_BYTES,
-)
-from io.write import _WriteBufferStack
-from collections.string.string_slice import _unsafe_strlen
-
+from memory import memcmp, memcpy, memset
+from python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
 # String

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
@@ -28,9 +29,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu.sm90.splitk import (
     warp_specialize_gemm_with_multicasting_splitk,
 )
-from linalg.matmul.gpu.tile_scheduler import (
-    RasterOrder,
-)
+from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from linalg.utils_gpu import MatmulConfig
 
 from utils.index import Index, IndexList

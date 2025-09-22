@@ -11,15 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv, exp, inf, log
+
 from algorithm.functional import parallelize
 from compiler_internal import register
 from gpu import global_idx
 from gpu.host.info import is_cpu, is_gpu
-from math import ceildiv, exp, inf, log
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, OutputTensor
 from tensor_internal.transitional import managed_tensor_slice_to_ndbuffer
+
 from utils.index import IndexList
 
 

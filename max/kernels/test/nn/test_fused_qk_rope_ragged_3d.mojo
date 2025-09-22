@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import DimList, NDBuffer
 from collections import OptionalReg
+
+from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer, assert_almost_equal
 from kv_cache.types import (
@@ -27,9 +28,9 @@ from testdata.fused_qk_rope_3d_goldens import (
     freqs_cis_table_input,
     k_cache_input,
     k_out_golden,
+    position_ids_input,
     q_input,
     q_out_golden,
-    position_ids_input,
 )
 
 from utils import IndexList

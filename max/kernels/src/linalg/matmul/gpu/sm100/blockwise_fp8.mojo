@@ -10,39 +10,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from logger import Logger
 from collections import OptionalReg
-from sys import size_of, align_of
 from math import ceildiv, gcd
+from sys import align_of, size_of
+
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.id import warp_id as get_warp_id
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
+from gpu.id import warp_id as get_warp_id
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
-from layout.int_tuple import IntTuple
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import block_rank_in_cluster
-from layout.tma_async import (
-    SharedMemBarrier,
-    TMATensorTile,
-    create_tma_tile,
-)
-from ....arch.sm100 import MmaOpSM100_SS
+from layout.int_tuple import IntTuple
+from layout.runtime_layout import RuntimeLayout
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from logger import Logger
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from layout.runtime_layout import RuntimeLayout
+
+from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_epilogue_type
 
 alias smem_layout_3D[layout: Layout] = Layout(

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from nn.broadcast import broadcast
 
 

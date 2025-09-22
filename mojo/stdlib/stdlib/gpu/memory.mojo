@@ -26,8 +26,8 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from collections.string import StaticString
 from collections.optional import OptionalReg
+from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (
     align_of,
@@ -39,7 +39,7 @@ from sys import (
     size_of,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x_or_newer, CompilationTarget
+from sys.info import CompilationTarget, _is_sm_9x_or_newer
 from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width

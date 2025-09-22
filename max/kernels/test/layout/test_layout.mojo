@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from buffer import Dim, DimList
 from layout import *
 from layout.layout import (
     UNKNOWN_VALUE,
@@ -34,8 +35,8 @@ from layout.layout import (
     zipped_divide,
 )
 from testing import assert_equal
+
 from utils import IndexList
-from buffer import DimList, Dim
 
 
 # CHECK-LABEL: test_layout_basic

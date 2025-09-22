@@ -11,29 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_int, _Global
+from sys.ffi import _Global, c_int
 from sys.info import size_of
+
+from builtin._startup import _ensure_current_or_global_runtime_init
 from compile.reflection import get_type_name
 from memory import stack_allocation
-
 from python import Python, PythonObject
 from python._cpython import (
+    GILAcquired,
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
     PyCFunctionWithKeywords,
     PyMethodDef,
     PyObject,
     PyObjectPtr,
-    PyTypeObject,
-    PyTypeObjectPtr,
     PyType_Slot,
     PyType_Spec,
-    GILAcquired,
+    PyTypeObject,
+    PyTypeObjectPtr,
 )
 from python._python_func import PyObjectFunction
 from python.python_object import _unsafe_alloc, _unsafe_init
+
 from utils import Variant
-from builtin._startup import _ensure_current_or_global_runtime_init
 
 # ===-----------------------------------------------------------------------===#
 # Global `PyTypeObject` Registration

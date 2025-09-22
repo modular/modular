@@ -17,15 +17,9 @@ from sys import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from comm.allreduce import (
-    MAX_GPUS,
-    Signal,
-    allreduce,
-    _allreduce_naive_single,
-)
+from comm.allreduce import MAX_GPUS, Signal, _allreduce_naive_single, allreduce
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
 from testing import assert_almost_equal, assert_true
-
 
 from utils import IndexList, StaticTuple
 

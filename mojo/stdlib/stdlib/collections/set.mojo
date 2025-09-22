@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the  Set datatype."""
 
-from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 from hashlib import Hasher, default_hasher
+
+from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](

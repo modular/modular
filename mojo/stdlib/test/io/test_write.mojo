@@ -11,15 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from io.write import Writable, Writer, _hex_digits_to_hex_chars, _write_hex
 
 from memory.memory import memset_zero
-from io.write import (
-    Writable,
-    Writer,
-    _write_hex,
-    _hex_digits_to_hex_chars,
-)
+from testing import assert_equal
 
 
 @fieldwise_init

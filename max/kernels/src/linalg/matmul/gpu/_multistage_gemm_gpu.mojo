@@ -44,11 +44,11 @@ from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy_local_to_shared,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout
@@ -62,9 +62,9 @@ from utils import StaticTuple
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
-from .amd import gemm_kernel_amd
 from ...utils import apply_epilogue, elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle
+from .amd import gemm_kernel_amd
 
 
 @always_inline

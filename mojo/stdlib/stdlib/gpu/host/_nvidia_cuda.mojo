@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import external_call, size_of
-from sys.ffi import c_uint, c_int
+from sys.ffi import c_int, c_uint
 
 from gpu._utils import to_llvm_ptr
-from gpu.host import DeviceContext, DeviceStream, DeviceFunction
+from gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from gpu.host.device_context import (
     _CharPtr,
     _checked,
     _DeviceBufferPtr,
     _DeviceContextPtr,
-    _DeviceStreamPtr,
     _DeviceFunctionPtr,
+    _DeviceStreamPtr,
 )
 from memory import stack_allocation
 from memory.unsafe import bitcast

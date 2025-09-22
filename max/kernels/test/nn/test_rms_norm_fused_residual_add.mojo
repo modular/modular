@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import sqrt
-
-from layout import Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
-from layout.int_tuple import fill_like
 from sys.info import simd_width_of
+
+from algorithm.functional import elementwise
+from internal_utils import HostNDBuffer, random
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
+from layout.int_tuple import fill_like
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
 from testing import assert_almost_equal
-from internal_utils import HostNDBuffer, random
-from algorithm.functional import elementwise
 
 from utils.index import Index, IndexList
 

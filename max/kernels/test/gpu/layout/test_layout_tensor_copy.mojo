@@ -30,12 +30,12 @@ from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
     binary_op_type,
-    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 

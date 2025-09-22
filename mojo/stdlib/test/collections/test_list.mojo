@@ -18,8 +18,8 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
-    TriviallyCopyableMoveCounter,
     TestSuite,
+    TriviallyCopyableMoveCounter,
 )
 from testing import (
     assert_equal,

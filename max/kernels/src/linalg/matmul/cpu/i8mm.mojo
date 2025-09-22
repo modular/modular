@@ -15,13 +15,15 @@ from math import align_up
 from sys import prefetch
 from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
+
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
+
 from utils.index import Index, IndexList
 
 from ...accumulate import _Accumulator
-from .impl import InnerMatmulKernel
 from ...arch.cpu.neon_intrinsics import _neon_matmul
 from ...utils import GemmShape, get_matmul_prefetch_b_distance_k
+from .impl import InnerMatmulKernel
 
 
 struct LoadStore_i8mm[

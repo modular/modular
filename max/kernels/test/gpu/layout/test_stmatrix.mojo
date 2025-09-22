@@ -18,15 +18,15 @@ from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma, st_matrix
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
 from memory import stack_allocation
 from testing import assert_almost_equal
 
-from utils.numerics import get_accum_type
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.runtime_layout import RuntimeLayout
 from utils.index import IndexList
+from utils.numerics import get_accum_type
 
 
 fn test_stmatrix(

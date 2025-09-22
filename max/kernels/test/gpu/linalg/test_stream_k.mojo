@@ -16,12 +16,12 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import Semaphore, block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceBuffer, DeviceContext
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn swizzle_tile(

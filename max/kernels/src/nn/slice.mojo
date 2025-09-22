@@ -15,11 +15,11 @@ from math import clamp
 
 from algorithm import elementwise
 from layout import (
+    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from runtime.asyncrt import DeviceContextPtr

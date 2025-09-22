@@ -14,7 +14,7 @@
 
 from gpu import *
 from gpu.host import DeviceContext
-from layout import LayoutTensor, RuntimeLayout, Layout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
 from testing import assert_equal

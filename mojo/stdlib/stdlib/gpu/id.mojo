@@ -22,6 +22,7 @@ The module is designed to work seamlessly across different GPU architectures whi
 optimal performance through hardware-specific optimizations where applicable."""
 
 from sys import is_nvidia_gpu, llvm_intrinsic
+from sys.info import CompilationTarget
 from sys.intrinsics import block_dim as _block_dim
 from sys.intrinsics import block_id_in_cluster as _block_id_in_cluster
 from sys.intrinsics import block_idx as _block_idx
@@ -31,7 +32,6 @@ from sys.intrinsics import global_idx as _global_idx
 from sys.intrinsics import grid_dim as _grid_dim
 from sys.intrinsics import lane_id as _lane_id
 from sys.intrinsics import thread_idx as _thread_idx
-from sys.info import CompilationTarget
 
 from .globals import WARP_SIZE
 from .warp import broadcast

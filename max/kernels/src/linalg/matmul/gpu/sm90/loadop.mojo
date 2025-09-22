@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
 from sys import simd_width_of, size_of
+
 from gpu import thread_idx
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import async_copy_arrive
 from layout import Layout, LayoutTensor
@@ -20,7 +22,7 @@ from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_swizzle
 from layout.tma_async import PipelineState, SharedMemBarrier, TMATensorTile
 from memory.unsafe_pointer import UnsafePointer
-from gpu.host._nvidia_cuda import TensorMapSwizzle
+
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 

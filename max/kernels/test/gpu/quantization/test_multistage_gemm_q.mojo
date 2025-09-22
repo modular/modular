@@ -29,10 +29,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.intrinsics import lop
-from gpu.memory import (
-    AddressSpace,
-    external_memory,
-)
+from gpu.memory import AddressSpace, external_memory
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -44,21 +41,13 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import (
-    LayoutTensor,
-    copy_dram_to_sram,
-)
+from layout.layout_tensor import LayoutTensor, copy_dram_to_sram
 from layout.tensor_builder import LayoutTensorBuild as tb
 from linalg.matmul.gpu import _matmul_gpu
-from linalg.utils_gpu import (
-    MatmulKernels,
-)
+from linalg.utils_gpu import MatmulKernels
 from memory.unsafe import bitcast
 from quantization import Q4sym
-from quantization.qmatmul_gpu import (
-    multistage_gemm_q,
-    pack_Q_tile,
-)
+from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
 
 from utils import StaticTuple
 from utils.index import Index

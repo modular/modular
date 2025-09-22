@@ -13,8 +13,8 @@
 
 from sys.info import _is_sm_9x
 
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
+from gpu.host.compile import _compile_code
 from testing import *
 
 

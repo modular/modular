@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer.dimlist import Dim, DimList
-from testing import *
-from internal_utils._utils import ValOrDim, dynamic, static
 from math import ceildiv
+
+from buffer.dimlist import Dim, DimList
+from internal_utils._utils import ValOrDim, dynamic, static
+from testing import *
 
 
 # CHECK-LABEL: test_dim_list

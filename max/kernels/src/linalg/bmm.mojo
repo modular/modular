@@ -13,36 +13,50 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv, gcd
-from sys import align_of
+from sys import align_of, size_of
 from sys.info import (
-    simd_width_of,
-    has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    simd_width_of,
 )
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume_uint
 from algorithm.reduction import _reduce_generator
-from buffer import NDBuffer
+from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import is_cpu, is_valid_target, A100
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.info import A100, is_cpu, is_valid_target
+from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tma_async import TMATensorTile, create_tma_tile
+from logger import Logger
 from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
+
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     use_apple_accelerate_lib,
 )
 from .matmul.cpu.impl import _submatmul_sequential_sync
 from .matmul.gpu import _matmul_gpu
+from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
+from .matmul.gpu.amd import gemm_kernel_amd
+from .matmul.gpu.sm100.blockwise_fp8 import (
+    matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
+)
+from .utils import GemmShape
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
-    GemmShape,
     get_kernel_config,
     get_kernel_type,
     get_matmul_num_tasks,
@@ -52,27 +66,7 @@ from .utils import (
     partition_work,
     use_i8mm_fn,
 )
-from .matmul.gpu.sm100.blockwise_fp8 import (
-    matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
-)
-from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
-from .matmul.gpu.amd import gemm_kernel_amd
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout, IntTuple
-from buffer import Dim
-from .utils_gpu import (
-    MatmulConfig,
-    MatmulKernels,
-)
-from utils.static_tuple import StaticTuple
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from sys import size_of
-from sys.info import is_nvidia_gpu, is_amd_gpu
-from logger import Logger
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from layout.tma_async import (
-    TMATensorTile,
-    create_tma_tile,
-)
+from .utils_gpu import MatmulConfig, MatmulKernels
 
 alias elementwise_epilogue_type = fn[
     c_type: DType,

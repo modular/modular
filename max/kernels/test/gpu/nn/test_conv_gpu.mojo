@@ -17,10 +17,7 @@ from random import rand
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from nn.conv import (
-    Naive2dConvolution,
-    conv3d_gpu_naive_ndhwc_qrscf,
-)
+from nn.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

@@ -14,7 +14,7 @@
 from os.atomic import Atomic, fence
 
 from compile import compile_info
-from testing import assert_true, assert_false
+from testing import assert_false, assert_true
 
 
 def test_compile_atomic():

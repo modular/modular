@@ -19,9 +19,8 @@ from utils import StaticTuple
 ```
 """
 
-from compile import get_type_name
 from builtin.device_passable import DevicePassable
-
+from compile import get_type_name
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple

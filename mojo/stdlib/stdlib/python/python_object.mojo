@@ -22,11 +22,12 @@ from python import PythonObject
 from os import abort
 from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
+
 from compile.reflection import get_type_name
 
-from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject, GILAcquired
+from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
+from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
 from .python import Python
-from .bindings import _get_type_name, lookup_py_type_object, PyMojoObject
 
 
 trait ConvertibleToPython:

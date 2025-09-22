@@ -20,8 +20,8 @@ from gpu import (
     barrier,
     block_idx,
     lane_id,
-    warp_id as get_warp_id,
 )
+from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
 from gpu.sync import (
     AMDScheduleBarrierMask,
@@ -32,9 +32,9 @@ from layout import Layout, LayoutTensor
 from layout.layout import blocked_product
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
+    LayoutTensorIter,
     ThreadScope,
     copy_local_to_shared,
-    LayoutTensorIter,
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
@@ -43,17 +43,16 @@ from memory import stack_allocation
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from .._multistage_gemm_gpu import warp_split_k_reduction
-from ....utils import elementwise_epilogue_type
-from ....utils_gpu import MatmulConfig
-
 from ....structuring import (
-    ScatterGatherAmd,
     IteratorScatterGatherAmd,
+    RegTileType,
+    ScatterGatherAmd,
     SMemTileType,
     SMemWarpTileType,
-    RegTileType,
 )
+from ....utils import elementwise_epilogue_type
+from ....utils_gpu import MatmulConfig
+from .._multistage_gemm_gpu import warp_split_k_reduction
 
 
 struct MmaOpAMD[

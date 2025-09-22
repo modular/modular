@@ -17,11 +17,12 @@ from sys import (
     env_get_dtype,
     env_get_int,
     has_nvidia_gpu_accelerator,
-    size_of,
     simd_width_of,
+    size_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext, get_gpu_target
@@ -30,18 +31,16 @@ from internal_utils._utils import (
     InitializationType,
     ValOrDim,
     dynamic,
+    init_vector_launch,
     initialize,
     random,
     static,
-    init_vector_launch,
 )
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
 
 from utils import Index, IndexList
-
-from algorithm.functional import elementwise
 
 
 fn _get_run_name[

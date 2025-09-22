@@ -13,15 +13,12 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import simd_width_of, size_of
-from logger import Logger
+
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.cluster import (
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
+from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
+from gpu.globals import WARPGROUP_SIZE
 from gpu.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -31,19 +28,10 @@ from gpu.grid_controls import (
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
-from gpu.id import (
-    block_dim,
-    block_id_in_cluster,
-    grid_dim,
-    thread_idx,
-)
+from gpu.id import block_dim, block_id_in_cluster, grid_dim, thread_idx
 from gpu.id import warp_id as get_warp_id
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import (
-    AddressSpace,
-    external_memory,
-    fence_mbarrier_init,
-)
+from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
@@ -55,8 +43,7 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from ..tile_scheduler_splitk import SplitKTileScheduler
-from ..tile_scheduler import RasterOrder
+from logger import Logger
 from memory import bitcast, stack_allocation
 from stdlib.bit import log2_floor
 
@@ -65,15 +52,15 @@ from utils.static_tuple import StaticTuple
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
-
+from ..tile_scheduler import RasterOrder
+from ..tile_scheduler_splitk import SplitKTileScheduler
+from .loadop import async_load_AB
 from .matmul import (
+    _get_c_smem_layout,
+    cluster_size,
     consumer_main_loop,
     warp_specialized_gemm_output,
-    cluster_size,
-    _get_c_smem_layout,
 )
-from .loadop import async_load_AB
-from gpu.globals import WARPGROUP_SIZE
 
 
 fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[

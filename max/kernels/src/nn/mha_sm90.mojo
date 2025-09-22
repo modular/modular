@@ -54,6 +54,19 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMANestedTensorTile,
 )
+from nn.mha_fa3_utils import (
+    MHAPosition,
+    NonNullPointer,
+    NullPointer,
+    OptionalPointer,
+    Pack,
+    QTMATile,
+    _apply_mask,
+    _get_position,
+    output_reg_to_smem,
+    produce,
+    q_out_tma,
+)
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
@@ -74,19 +87,6 @@ from nn.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
     get_start_and_end_for_partitions,
-)
-from nn.mha_fa3_utils import (
-    MHAPosition,
-    _apply_mask,
-    _get_position,
-    produce,
-    q_out_tma,
-    QTMATile,
-    output_reg_to_smem,
-    Pack,
-    OptionalPointer,
-    NullPointer,
-    NonNullPointer,
 )
 from nn.softmax import (
     _online_softmax_correction,

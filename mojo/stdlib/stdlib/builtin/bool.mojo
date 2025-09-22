@@ -19,10 +19,10 @@ from collections import List, Set
 from hashlib.hasher import Hasher
 
 from python import (
-    Python,
-    PythonObject,
     ConvertibleFromPython,
     ConvertibleToPython,
+    Python,
+    PythonObject,
 )
 
 from utils._select import _select_register_value as select

@@ -17,8 +17,7 @@ from sys.info import _is_sm_100x_or_newer
 
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200
 
 from utils import Index, IndexList

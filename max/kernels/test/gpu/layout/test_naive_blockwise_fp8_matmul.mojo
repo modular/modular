@@ -13,19 +13,20 @@
 
 from math import ceildiv
 
-from buffer import DimList, Dim
+from buffer import Dim, DimList
 from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
+    fill,
     random,
     zero,
-    fill,
 )
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from utils.index import Index, IndexList
 from internal_utils._utils import ValOrDim, dynamic, static
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
+
+from utils.index import Index, IndexList
 
 
 fn test_naive_blockwise_fp8_matmul[

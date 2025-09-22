@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.interval import Interval, IntervalTree, IntervalElement
+from collections.interval import Interval, IntervalElement, IntervalTree
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 

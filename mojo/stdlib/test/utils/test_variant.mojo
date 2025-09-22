@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
 from sys.ffi import _Global
 
 from test_utils import MoveCopyCounter, ObservableDel
 from testing import assert_equal, assert_false, assert_true
 
 from utils import Variant
-from os import abort
 
 alias TEST_VARIANT_POISON = _Global["TEST_VARIANT_POISON", _initialize_poison]
 

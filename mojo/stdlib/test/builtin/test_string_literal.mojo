@@ -13,12 +13,7 @@
 
 from sys.ffi import c_char
 
-from testing import (
-    assert_equal,
-    assert_false,
-    assert_raises,
-    assert_true,
-)
+from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_add():

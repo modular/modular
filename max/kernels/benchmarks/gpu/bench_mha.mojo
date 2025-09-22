@@ -16,13 +16,7 @@ from math import isclose, isqrt
 from random import rand
 from sys import env_get_dtype, env_get_int
 
-from benchmark import (
-    Bench,
-    Bencher,
-    BenchId,
-    BenchMetric,
-    ThroughputMeasure,
-)
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *

@@ -14,10 +14,10 @@
 from python import Python, PythonObject
 from testing import (
     assert_equal,
-    assert_false,
-    assert_true,
     assert_equal_pyobj,
+    assert_false,
     assert_raises,
+    assert_true,
 )
 
 

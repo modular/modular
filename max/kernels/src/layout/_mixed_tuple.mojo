@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Unified layout system for mixed compile-time and runtime indices."""
 
-from builtin.variadics import VariadicOf, VariadicPack
-from memory import UnsafePointer
 from os import abort
 from sys.intrinsics import _type_is_eq
+
+from builtin.variadics import VariadicOf, VariadicPack
+from memory import UnsafePointer
 
 
 trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):

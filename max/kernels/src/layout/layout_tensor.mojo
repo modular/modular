@@ -23,27 +23,27 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.intrinsics import PrefetchOptions
+from sys.intrinsics import PrefetchOptions, readfirstlane
 
 import gpu.memory as gpu_memory
 from algorithm import vectorize
 from bit import log2_floor
+from builtin.device_passable import DevicePassable
+from builtin.dtype import _unsigned_integral_type_of
 from gpu.host import DeviceBuffer, HostBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_dim, block_idx, lane_id, thread_idx
+from gpu.intrinsics import AMDBufferResource
 from gpu.memory import CacheEviction, Fill, async_copy
-from layout.element import Element, MemoryElement
-from layout.tma_async import _tma_desc_tile_layout
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
-
+from layout.element import Element, MemoryElement
+from layout.tma_async import _tma_desc_tile_layout
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
-from sys.intrinsics import readfirstlane
-from gpu.intrinsics import AMDBufferResource
 
 from .int_tuple import (
     _get_index_type,
@@ -53,8 +53,8 @@ from .int_tuple import (
     depth,
     fill_like,
     flatten,
-    propagate_unknown,
     product,
+    propagate_unknown,
     to_nest,
 )
 from .layout import *
@@ -62,9 +62,6 @@ from .runtime_layout import RuntimeLayout
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
-
-from builtin.device_passable import DevicePassable
-from builtin.dtype import _unsigned_integral_type_of
 
 
 fn _compute_distribute_layout[

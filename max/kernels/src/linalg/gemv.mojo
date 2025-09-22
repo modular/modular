@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
+from io.write import Writable, Writer
 from math import align_up, ceildiv
 from sys import (
     has_amd_gpu_accelerator,
@@ -33,32 +34,36 @@ from gpu import (
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
-from gpu.host import DeviceAttribute, DeviceContext, LaunchAttribute
-from gpu.host import get_gpu_target, DeviceBuffer
+from gpu.host import (
+    DeviceAttribute,
+    DeviceBuffer,
+    DeviceContext,
+    LaunchAttribute,
+    get_gpu_target,
+)
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, load
-from logger import Logger
-from memory import stack_allocation
-
-from utils import IndexList
-from utils.index import Index
-from io.write import Writable, Writer
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
-
-from .matmul.gpu import matmul_kernel_naive
-from .utils import GemmShape, elementwise_epilogue_type
 
 # layout imports
 from layout import (
-    LayoutTensor,
-    Layout,
     UNKNOWN_VALUE,
+    Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tensor_builder import LayoutTensorBuild as tb
+from logger import Logger
+from memory import stack_allocation
+
+from utils import IndexList
+from utils.index import Index
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
+
+from .matmul.gpu import matmul_kernel_naive
+from .utils import GemmShape, elementwise_epilogue_type
 
 
 @fieldwise_init

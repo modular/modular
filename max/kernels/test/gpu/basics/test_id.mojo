@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx, block_idx, global_idx
+from gpu import block_idx, global_idx, thread_idx
 from gpu.host import DeviceContext
 from testing import assert_equal
 

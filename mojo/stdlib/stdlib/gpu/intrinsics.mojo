@@ -29,8 +29,9 @@ from collections.string.string_slice import get_static_string
 from os.atomic import Consistency
 from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x, align_of, bit_width_of, CompilationTarget
+from sys.info import CompilationTarget, _is_sm_9x, align_of, bit_width_of
 from sys.intrinsics import llvm_intrinsic, readfirstlane
+
 from memory.unsafe import bitcast
 
 from .memory import AddressSpace, CacheOperation, _int_to_str

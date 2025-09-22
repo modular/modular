@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys.info import simd_width_of
+
 from gpu.host.compile import _compile_code, get_gpu_target
 from gpu.host.info import GPUInfo
 from memory.unsafe_pointer import UnsafePointer
-from sys.info import simd_width_of
-from testing import assert_true, assert_equal
+from testing import assert_equal, assert_true
 
 alias _TargetType = __mlir_type.`!kgen.target`
 

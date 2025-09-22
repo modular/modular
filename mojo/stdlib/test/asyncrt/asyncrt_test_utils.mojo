@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.param_env import env_get_string, is_defined
 from sys.info import _accelerator_arch
+from sys.param_env import env_get_string, is_defined
+
 from gpu.host import DeviceContext
 from gpu.host.info import GPUInfo
 

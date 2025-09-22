@@ -24,11 +24,11 @@ from gpu import (
     thread_idx,
 )
 from gpu.globals import WARP_SIZE
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
-from gpu.intrinsics import load_acquire, store_release, ds_read_tr16_b64
-from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
+from gpu.host.compile import _compile_code
+from gpu.intrinsics import ds_read_tr16_b64, load_acquire, store_release
 from gpu.memory import AddressSpace
+from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
 
 alias MI300X_TARGET = get_gpu_target["mi300x"]()
 alias MI355X_TARGET = get_gpu_target["mi355x"]()

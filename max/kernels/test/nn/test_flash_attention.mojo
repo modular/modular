@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import Optional
 from math import exp, isclose
 from random import rand, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import Optional
 from nn.flash_attention import flash_attention, flash_attention_split_kv
 from nn.mha_mask import NullMask
 from testing import assert_equal

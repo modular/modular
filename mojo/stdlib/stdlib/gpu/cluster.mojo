@@ -20,11 +20,12 @@ All functions are constrained to NVIDIA SM90+ GPUs and will raise an error if us
 Note: These are low-level primitives that correspond directly to PTX/NVVM instructions and should be used
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
-from sys import llvm_intrinsic, _RegisterPackType
-from sys.info import _is_sm_9x_or_newer
-from sys.info import _is_sm_100x_or_newer
+from sys import _RegisterPackType, llvm_intrinsic
 from sys._assembly import inlined_assembly
+from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
+
 from gpu.memory import _GPUAddressSpace as AddressSpace
+
 from utils.index import IndexList, product
 
 # ===-----------------------------------------------------------------------===#

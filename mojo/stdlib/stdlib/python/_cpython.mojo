@@ -33,6 +33,7 @@ from sys.ffi import (
     c_ssize_t,
     c_uint,
 )
+
 from utils import Variant
 
 alias Py_ssize_t = c_ssize_t

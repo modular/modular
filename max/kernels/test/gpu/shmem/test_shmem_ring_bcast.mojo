@@ -18,17 +18,18 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
-from testing import assert_equal
-from shmem import *
-from pathlib import cwd, Path
+from os import getenv, listdir, setenv
 from os.path import dirname
-from os import listdir, getenv, setenv
+from pathlib import Path, cwd
 from subprocess import run
-from sys.param_env import env_get_string
-from python import Python
-from gpu.host.dim import Dim
-from gpu.host.device_attribute import DeviceAttribute
 from sys.ffi import c_int
+from sys.param_env import env_get_string
+
+from gpu.host.device_attribute import DeviceAttribute
+from gpu.host.dim import Dim
+from python import Python
+from shmem import *
+from testing import assert_equal
 
 
 fn ring_bcast(

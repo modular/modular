@@ -14,10 +14,8 @@
 from math import ceildiv
 
 from gpu import block, global_idx, warp
-from gpu.host import DeviceContext
-from gpu.host import DeviceContext
 from gpu.globals import WARP_SIZE
-from math import ceildiv
+from gpu.host import DeviceContext
 from testing import assert_equal
 
 alias dtype = DType.uint64

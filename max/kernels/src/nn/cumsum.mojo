@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import LayoutTensor, Layout, RuntimeLayout
-from utils.index import IndexList
+from layout import Layout, LayoutTensor, RuntimeLayout
 
+from utils.index import IndexList
 from utils.numerics import get_accum_type
 
 

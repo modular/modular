@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 
 from utils import IndexList
 

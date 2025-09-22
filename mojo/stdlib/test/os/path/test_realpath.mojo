@@ -13,9 +13,10 @@
 
 from os.path import realpath
 from pathlib import Path, cwd
-from testing import assert_true, assert_raises, assert_equal
 from sys import CompilationTarget
+
 from python import Python
+from testing import assert_equal, assert_raises, assert_true
 
 
 def main():

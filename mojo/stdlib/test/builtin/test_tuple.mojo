@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_false, assert_true, assert_equal
+from testing import assert_equal, assert_false, assert_true
 
 
 def test_tuple_contains():

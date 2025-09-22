@@ -13,12 +13,7 @@
 
 from collections import LinkedList
 
-from test_utils import (
-    CopyCountedStruct,
-    CopyCounter,
-    DelCounter,
-    MoveCounter,
-)
+from test_utils import CopyCountedStruct, CopyCounter, DelCounter, MoveCounter
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 

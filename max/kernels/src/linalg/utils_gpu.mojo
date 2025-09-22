@@ -13,22 +13,18 @@
 
 from hashlib.hasher import Hasher
 from math import ceildiv
-from sys import (
-    env_get_int,
-    has_nvidia_gpu_accelerator,
-    size_of,
-)
+from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 
 from gpu import WARP_SIZE
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
+from gpu.host.device_context import DeviceBuffer
 from gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from gpu.host.device_context import DeviceBuffer
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling

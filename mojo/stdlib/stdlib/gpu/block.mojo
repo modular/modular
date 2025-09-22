@@ -27,8 +27,9 @@ vectorization.
 """
 
 
-from memory import stack_allocation
 from math import align_up
+
+from memory import stack_allocation
 
 from .globals import WARP_SIZE
 from .id import lane_id, thread_idx, warp_id

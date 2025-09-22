@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
 from hashlib._ahash import AHasher
+from hashlib.hasher import Hasher
 from pathlib import Path
 
 from testing import assert_equal

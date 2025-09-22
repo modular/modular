@@ -11,28 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import random
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
+from comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
-import random
-from internal_utils._utils import (
-    ValOrDim,
-    dynamic,
-    initialize,
-    static,
-)
-from utils import IndexList, StaticTuple
-from comm.allreduce import (
-    MAX_GPUS,
-    Signal,
-)
-
+from internal_utils._utils import ValOrDim, dynamic, initialize, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from utils import IndexList
+from utils import IndexList, StaticTuple
 
 
 fn _get_run_name[

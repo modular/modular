@@ -23,16 +23,7 @@ from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
 from utils.index import Index, IndexList
 
-from .apple_accelerate import (
-    apple_gemv,
-    apple_matmul,
-    use_apple_accelerate_lib,
-)
 from ...gemv import gemv
-from .default import Inner_matmul_default
-from .i8mm import Inner_matmul_i8mm
-from .neon import Inner_matmul_neon
-from .vnni import Inner_matmul_vnni
 from ...packing import BTileGenerator
 from ...utils import (
     GemmShape,
@@ -48,6 +39,11 @@ from ...utils import (
     packA_i8mm,
     select_inner_kernel,
 )
+from .apple_accelerate import apple_gemv, apple_matmul, use_apple_accelerate_lib
+from .default import Inner_matmul_default
+from .i8mm import Inner_matmul_i8mm
+from .neon import Inner_matmul_neon
+from .vnni import Inner_matmul_vnni
 
 # Define a trait that defines the common functions across all existing
 # microkernels:

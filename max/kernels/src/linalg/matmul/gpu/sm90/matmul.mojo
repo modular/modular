@@ -17,11 +17,7 @@ from sys import align_of, simd_width_of, size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.cluster import (
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
+from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from gpu.grid_controls import (
     PDLLevel,
@@ -31,6 +27,7 @@ from gpu.grid_controls import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.device_context import DeviceBuffer
 from gpu.host.info import H100
 from gpu.id import (
     block_dim,
@@ -45,8 +42,8 @@ from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,
     external_memory,
-    fence_mbarrier_init,
     fence_async_view_proxy,
+    fence_mbarrier_init,
 )
 from gpu.mma import st_matrix
 from gpu.sync import named_barrier
@@ -72,7 +69,7 @@ from layout.tma_async import (
     create_tma_tile,
     create_tma_tile_template,
 )
-from ..tile_scheduler import MatmulSchedule, TileScheduler
+from logger import Logger
 from memory import bitcast, stack_allocation
 from memory.pointer import _GPUAddressSpace
 from stdlib.bit import log2_floor
@@ -87,11 +84,8 @@ from ....utils_gpu import (
     block_swizzle,
     get_hilbert_lut_with_cache,
 )
-
+from ..tile_scheduler import MatmulSchedule, TileScheduler
 from .loadop import async_load_AB
-from logger import Logger
-
-from gpu.host.device_context import DeviceBuffer
 
 
 @always_inline

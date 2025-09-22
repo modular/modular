@@ -11,37 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from collections import Set
+from random import random_ui64, seed
+from sys import size_of
+
+from buffer import NDBuffer
 from gpu import barrier
-from gpu.memory import fence_async_view_proxy
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
+from gpu.memory import fence_async_view_proxy
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
-    PagedKVCacheCollection,
     KVCacheStaticParams,
+    PagedKVCacheCollection,
 )
 from layout import Layout, LayoutTensor
-from layout.tensor_core_async import tile_layout_mn_major, tile_layout_k_major
-from layout.tma_async import (
-    SharedMemBarrier,
-    TMANestedTensorTile,
-)
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tma_async import SharedMemBarrier, TMANestedTensorTile
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from nn.mha_operand import (
-    MHAOperand,
     KVCacheMHAOperand,
+    MHAOperand,
     NDBufferMHAOperand,
     RaggedMHAOperand,
 )
-from random import random_ui64, seed
 from testing import assert_equal
+
 from utils import IndexList
-from sys import size_of
 
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)

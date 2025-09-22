@@ -18,18 +18,14 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import A100
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout.runtime_layout import RuntimeLayout
 from linalg.bmm import _batched_matmul_gpu
-from linalg.matmul.gpu import (
-    _matmul_gpu,
-    matmul_kernel_naive,
-    multistage_gemm,
-)
+from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.runtime_layout import RuntimeLayout
 
 
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:

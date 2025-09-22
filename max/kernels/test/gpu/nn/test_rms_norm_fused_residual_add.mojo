@@ -13,18 +13,18 @@
 
 from math import sqrt
 
+from algorithm.functional import elementwise
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from nn.normalization import *
 from testing import assert_almost_equal
-from internal_utils import HostNDBuffer, DeviceNDBuffer, random
-from algorithm.functional import elementwise
 
 from utils.index import Index, IndexList
 

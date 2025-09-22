@@ -27,8 +27,9 @@ from os import abort
 from os.atomic import Consistency, fence
 from sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
 from sys._assembly import inlined_assembly
-from sys.param_env import env_get_bool
 from sys.info import CompilationTarget
+from sys.param_env import env_get_bool
+
 from gpu.intrinsics import Scope
 from memory.pointer import AddressSpace
 

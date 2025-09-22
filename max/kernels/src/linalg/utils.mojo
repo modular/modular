@@ -14,11 +14,7 @@
 from math import align_down, align_up, ceildiv
 from sys import align_of
 from sys._build import is_debug_build
-from sys.info import (
-    CompilationTarget,
-    simd_width_of,
-    size_of,
-)
+from sys.info import CompilationTarget, simd_width_of, size_of
 
 from algorithm import vectorize
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store

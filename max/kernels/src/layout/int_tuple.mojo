@@ -60,9 +60,9 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
+from iter import _Zip2
 from memory import memcpy
 from memory.pointer import _GPUAddressSpace
-from iter import _Zip2
 
 from utils.numerics import max_finite
 

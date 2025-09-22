@@ -11,18 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout.runtime_layout import RuntimeLayout
-from math import ceildiv, align_up
-from layout import Layout, LayoutTensor
-from gpu.id import block_idx, grid_dim, thread_idx
+from math import align_up, ceildiv
+from os.atomic import Atomic
+from sys import size_of
+
 from gpu import NamedBarrierSemaphore
 from gpu.globals import WARPGROUP_SIZE
-from utils.index import Index, IndexList
 from gpu.host.info import H100
+from gpu.id import block_idx, grid_dim, thread_idx
 from gpu.memory import AddressSpace
-from sys import size_of
-from os.atomic import Atomic
+from layout import Layout, LayoutTensor
+from layout.runtime_layout import RuntimeLayout
 from stdlib.bit import log2_floor
+
+from utils.index import Index, IndexList
+
 from .tile_scheduler import RasterOrder, WorkInfo
 
 

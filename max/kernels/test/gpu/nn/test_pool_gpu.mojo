@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout import (
-    LayoutTensor,
-    Layout,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
-)
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from nn.pool import (
     PoolMethod,

@@ -16,7 +16,6 @@ from random import *
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
-
 alias INIT_LOOP_SIZE: UInt = 1000000
 """Bench loop size for BitSet init tests."""
 

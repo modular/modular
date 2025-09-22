@@ -19,11 +19,7 @@ from memory import bitcast
 ```
 """
 
-from sys import bit_width_of
-from sys import (
-    is_amd_gpu,
-    is_nvidia_gpu,
-)
+from sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
 
 # ===-----------------------------------------------------------------------===#
 # bitcast

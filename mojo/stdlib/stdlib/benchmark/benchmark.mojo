@@ -140,8 +140,9 @@ Note that the min total time will take precedence over max iterations
 
 from time import time_function
 
-from utils.numerics import max_finite, min_finite
 from testing import assert_equal
+
+from utils.numerics import max_finite, min_finite
 
 
 # ===-----------------------------------------------------------------------===#

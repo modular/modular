@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host.compile import _compile_code
+from sys.info import _accelerator_arch, _is_sm_100x_or_newer
+
 from gpu.host import get_gpu_target
-from testing import assert_false, assert_true
-from sys.info import _is_sm_100x_or_newer
+from gpu.host.compile import _compile_code
 from gpu.host.info import B200, GPUInfo
-from sys.info import _accelerator_arch
+from testing import assert_false, assert_true
 
 
 def test_operation[

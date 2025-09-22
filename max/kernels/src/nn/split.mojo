@@ -16,10 +16,9 @@ from sys import simd_width_of
 from sys.info import _current_target
 
 from algorithm import elementwise
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout import LayoutTensor, Layout, RuntimeTuple, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 
 from utils import IndexList, StaticTuple

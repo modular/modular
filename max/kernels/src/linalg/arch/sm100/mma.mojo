@@ -10,21 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from sys import size_of
+
 from gpu.cluster import cluster_mask_base
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_id_in_cluster
 from gpu.memory import AddressSpace
-
+from gpu.mma_sm100 import *
+from gpu.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import coalesce
 from layout.tensor_core_async import tile_to_descriptor
 
 from utils.index import Index, IndexList, product
-
-from sys import size_of
-
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
 
 
 # TODO: Add methods to conveniently extract specific modes from a layout.

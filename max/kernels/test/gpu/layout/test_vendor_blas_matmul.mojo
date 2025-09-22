@@ -24,9 +24,9 @@ from internal_utils import (
     random,
     zero,
 )
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn test_matmul[

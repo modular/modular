@@ -15,7 +15,7 @@ from gpu import *
 from gpu.host import DeviceContext
 from testing import assert_equal, assert_true
 
-from utils.numerics import inf, nan, neg_inf, isnan
+from utils.numerics import inf, isnan, nan, neg_inf
 
 
 fn id(

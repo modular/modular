@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from hashlib._fnv1a import Fnv1a
-from testing import assert_equal
+
 from memory import memset_zero
 from test_utils import (
-    gen_word_pairs,
     assert_dif_hashes,
     assert_fill_factor,
+    gen_word_pairs,
     words_ar,
     words_el,
     words_en,
@@ -26,6 +26,7 @@ from test_utils import (
     words_pl,
     words_ru,
 )
+from testing import assert_equal
 
 
 def test_hash_byte_array():

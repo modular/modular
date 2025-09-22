@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+import time
+
 from context_mgr import Timer
 from testing import assert_raises
-import time
 
 
 def test_timer_no_error():

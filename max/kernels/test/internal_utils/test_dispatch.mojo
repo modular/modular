@@ -11,12 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from internal_utils import arg_parse
 from bit import next_power_of_two
 
 # from internal_utils import Table, TuningConfig
-from internal_utils import TuningTableNvidia, TuningConfigNvidia
-from internal_utils import TuningTableAMD, TuningConfigAMD
+from internal_utils import (
+    TuningConfigAMD,
+    TuningConfigNvidia,
+    TuningTableAMD,
+    TuningTableNvidia,
+    arg_parse,
+)
 from testing import assert_equal
 
 # Highly recommended to use "vendor_arch_dtype" format for table names.

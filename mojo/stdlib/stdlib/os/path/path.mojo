@@ -20,12 +20,12 @@ from os.path import isdir
 ```
 """
 
+from collections.string.string_slice import _unsafe_strlen
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
 from sys import CompilationTarget, external_call
-from sys.ffi import c_char, get_errno, MAX_PATH
 from sys._libc import realpath as libc_realpath
-from collections.string.string_slice import _unsafe_strlen
+from sys.ffi import MAX_PATH, c_char, get_errno
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm

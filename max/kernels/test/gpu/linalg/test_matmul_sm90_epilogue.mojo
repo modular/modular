@@ -13,6 +13,7 @@
 
 from collections import OptionalReg
 from sys import align_of, size_of
+
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
@@ -20,6 +21,7 @@ from internal_utils._utils import dynamic, static
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from linalg.utils import elementwise_compute_lambda_type
+
 from utils.index import Index, IndexList
 
 alias block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(

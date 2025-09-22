@@ -15,11 +15,8 @@
 
 import compiler
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import (
-    InputTensor,
-    OutputTensor,
-    foreach,
-)
+from tensor_internal import InputTensor, OutputTensor, foreach
+
 from utils.index import IndexList
 
 

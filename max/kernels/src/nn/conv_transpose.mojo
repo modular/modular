@@ -14,17 +14,11 @@
 from collections import OptionalReg
 from math import align_down, ceildiv
 from sys import align_of, simd_width_of
-from nn.conv import (
-    check_cudnn_error,
-    _get_cudnn_meta,
-)
-from .conv_utils import elementwise_simd_epilogue_type
 
-from gpu.host import DeviceContext
 from _cudnn.cnn_infer import (
+    cudnnConvolutionBackwardData,
     cudnnConvolutionMode_t,
     cudnnSetConvolution2dDescriptor,
-    cudnnConvolutionBackwardData,
 )
 from _cudnn.infer import (
     cudnnConvolutionBwdDataAlgo_t,
@@ -33,7 +27,6 @@ from _cudnn.infer import (
     cudnnSetTensor4dDescriptor,
     cudnnTensorFormat_t,
 )
-
 from algorithm import (
     elementwise,
     sync_parallelize,
@@ -42,16 +35,18 @@ from algorithm import (
     vectorize,
 )
 from buffer import Dim
+from gpu.host import DeviceContext
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
+from nn.conv import _get_cudnn_meta, check_cudnn_error
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -63,6 +58,7 @@ from .conv_utils import (
     ConvShape,
     align_down_residual,
     elementwise_epilogue_type,
+    elementwise_simd_epilogue_type,
     get_conv_num_tasks,
     get_conv_shape,
     get_conv_tile_shape,

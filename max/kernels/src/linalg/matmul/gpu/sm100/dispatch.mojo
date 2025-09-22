@@ -12,34 +12,32 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import size_of, env_get_bool, env_get_int
+from sys import align_of, env_get_bool, env_get_int, simd_width_of, size_of
+
+from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from gpu.grid_controls import PDLLevel
-from gpu.host import DeviceContext
-from layout._ndbuffer_stub import (
-    from_ndbuffer_row_major,
-)
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200
-from utils.index import Index
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
+
+from utils.index import Index, IndexList
+
 from ....utils import (
     GemmShape,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
 from ....utils_gpu import MatmulConfig, MatmulKernels
+from ...gpu import matmul_kernel_naive
+from ...vendor.matmul import matmul as matmul_vendor
+from ..tile_scheduler import RasterOrder
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
     matmul_sm100_fallback,
 )
-from ..tile_scheduler import RasterOrder
-from utils.index import Index, IndexList
-from sys import align_of, simd_width_of
-from algorithm import elementwise
-from gpu.host import get_gpu_target
-from ...gpu import matmul_kernel_naive
-from ...vendor.matmul import matmul as matmul_vendor
 
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1

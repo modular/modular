@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
+from gpu.host.compile import _compile_code
 from gpu.memory import AddressSpace
+from gpu.mma_sm100 import MMASmemDescriptor
 from gpu.tcgen05 import (
     tcgen05_alloc,
+    tcgen05_cp,
     tcgen05_dealloc,
     tcgen05_ld,
-    tcgen05_st,
-    tcgen05_cp,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
+    tcgen05_st,
     tcgen05_store_wait,
 )
+from layout import IntTuple, Layout, LayoutTensor
 from memory import stack_allocation
 from testing import assert_true
-from gpu.mma_sm100 import MMASmemDescriptor
-from layout import LayoutTensor, Layout, IntTuple
 
 
 fn alloc_test_fn[cta_group: Int32]():

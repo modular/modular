@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import fma
 from sys import external_call
 
 from buffer import NDBuffer
@@ -18,20 +19,19 @@ from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from math import fma
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from memory import memcpy
 from nn.concat import concat
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal.managed_tensor_slice import get_kernel_simd_width
-from tensor_internal.io_spec import IO
 from tensor_internal import (
     DynamicTensor,
     InputTensor,
     IOSpec,
     ManagedTensorSlice,
 )
+from tensor_internal.io_spec import IO
+from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
 from utils import Index, IndexList, StaticTuple

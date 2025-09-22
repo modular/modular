@@ -37,10 +37,10 @@ value types must always be Movable so we can resize the dictionary as it grows.
 See the `Dict` docs for more details.
 """
 
-from hashlib import Hasher, default_hasher, default_comp_time_hasher
+from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
-from memory import bitcast, memcpy
 
+from memory import bitcast, memcpy
 
 alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
 """A trait composition for types which implement all requirements of

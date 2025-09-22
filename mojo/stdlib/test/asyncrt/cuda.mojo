@@ -12,11 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
-from gpu.host import (
-    DeviceContext,
-    Dim,
-)
-from gpu.host._nvidia_cuda import CUDA, CUDA_get_current_context, CUcontext
+from gpu.host import DeviceContext, Dim
+from gpu.host._nvidia_cuda import CUDA, CUcontext, CUDA_get_current_context
 
 
 fn _run_cuda_context(ctx: DeviceContext) raises:

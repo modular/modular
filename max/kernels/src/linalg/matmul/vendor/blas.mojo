@@ -14,7 +14,6 @@ from sys import has_amd_gpu_accelerator, size_of
 from sys.ffi import _get_global_or_null, external_call
 
 import _rocblas
-from buffer import NDBuffer
 from _cublas.cublas import (
     Algorithm,
     ComputeType,
@@ -76,16 +75,16 @@ from _rocblas.hipblaslt import (
     hipblasOperation_t,
     hipDataType_t,
 )
+from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
-
-from runtime.tracing import Trace, TraceLevel
-from utils.variant import Variant
-
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import Layout, LayoutTensor
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from runtime.tracing import Trace, TraceLevel
+
 from utils import IndexList
+from utils.variant import Variant
 
 # ===----------------------------------------------------------------------===#
 # Backend

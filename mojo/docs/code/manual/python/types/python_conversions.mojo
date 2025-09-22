@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-to-mojo-conversions
-from python import Python
-from python import PythonObject
+from python import Python, PythonObject
 
 
 def main():

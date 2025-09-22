@@ -18,10 +18,10 @@ from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from layout import LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
+from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
-from runtime.asyncrt import DeviceContextPtr
 
 from .shapes import get_sliding_window_out_dim
 

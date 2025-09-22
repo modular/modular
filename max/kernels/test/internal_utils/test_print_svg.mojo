@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from pathlib import Path
+
 from layout import IntTuple, Layout, LayoutTensor
 from layout._print_svg import print_svg
 from layout.swizzle import Swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from pathlib import Path
 
 
 fn test_svg_nvidia_shape() raises:

@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import global_idx
-from gpu.host import DeviceContext, DeviceStream, DeviceBuffer, DeviceEvent
+from gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
 from testing import (
-    assert_true,
-    assert_false,
     assert_equal,
+    assert_false,
     assert_not_equal,
     assert_raises,
+    assert_true,
 )
 
 

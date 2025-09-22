@@ -13,13 +13,7 @@
 
 from collections.string import StaticString
 from math import align_up, erf, exp, isqrt, log, sin, sqrt, tanh
-from sys import (
-    align_of,
-    env_get_int,
-    env_get_string,
-    simd_width_of,
-    size_of,
-)
+from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
 from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise

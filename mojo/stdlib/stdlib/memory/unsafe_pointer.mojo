@@ -16,16 +16,10 @@ These APIs are imported automatically, just like builtins.
 """
 
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
-from sys.intrinsics import (
-    gather,
-    scatter,
-    strided_load,
-    strided_store,
-)
+from sys.intrinsics import gather, scatter, strided_load, strided_store
 
 from builtin.simd import _simd_construction_checks
 from memory.memory import _free, _malloc
-
 from python import PythonObject
 
 # ===----------------------------------------------------------------------=== #

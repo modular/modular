@@ -16,16 +16,8 @@ from sys import has_nvidia_gpu_accelerator
 from benchmark import Bench
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import (
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-)
+from internal_utils import HostNDBuffer, assert_almost_equal, random, zero
+from layout.layout_tensor import Layout, LayoutTensor
 from matmul_kernels import (
     run_cublas,
     run_gemm_kernel_1,

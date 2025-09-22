@@ -16,9 +16,9 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from utils.fast_div import FastDiv
 from testing import *
 
+from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
 
 

@@ -84,15 +84,15 @@ from .memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
     external_memory,
+    fence_async_view_proxy,
     fence_mbarrier_init,
     fence_proxy_tensormap_generic_sys_acquire,
     fence_proxy_tensormap_generic_sys_release,
     load,
     multimem_ld_reduce,
     multimem_st,
-    fence_async_view_proxy,
 )
-from .semaphore import Semaphore, NamedBarrierSemaphore
+from .semaphore import NamedBarrierSemaphore, Semaphore
 from .sync import (
     AMDScheduleBarrierMask,
     async_copy_arrive,

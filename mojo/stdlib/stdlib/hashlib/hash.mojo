@@ -25,9 +25,9 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from .hasher import Hasher, default_hasher
 from memory import UnsafePointer
 
+from .hasher import Hasher, default_hasher
 
 # ===----------------------------------------------------------------------=== #
 # Implementation

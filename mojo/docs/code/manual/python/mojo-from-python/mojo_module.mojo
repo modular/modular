@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
 import math
 from os import abort
+
+from python import PythonObject
+from python.bindings import PythonModuleBuilder
 
 
 @export

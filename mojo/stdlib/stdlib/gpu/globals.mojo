@@ -23,13 +23,13 @@ are used to optimize code generation and ensure hardware compatibility.
 
 from sys.info import (
     CompilationTarget,
+    _accelerator_arch,
+    _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
-    _is_amd_rdna,
     is_amd_gpu,
-    is_nvidia_gpu,
     is_apple_gpu,
-    _accelerator_arch,
+    is_nvidia_gpu,
 )
 
 from .host.info import GPUInfo

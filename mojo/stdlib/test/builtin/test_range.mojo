@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true, assert_false
+from testing import assert_equal, assert_false, assert_true
 
 
 def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):

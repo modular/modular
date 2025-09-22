@@ -14,6 +14,7 @@
 from math import ceildiv
 from sys import size_of
 
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from gpu import barrier
 from gpu import warp_id as get_warp_id
@@ -33,7 +34,6 @@ from layout.tensor_core_async import (
     warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-import linalg.matmul.vendor.blas as vendor_blas
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal

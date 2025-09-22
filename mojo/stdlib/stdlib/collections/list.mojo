@@ -16,11 +16,11 @@ These APIs are imported automatically, just like builtins.
 """
 
 
+from collections._index_normalization import normalize_index
 from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq
 
-from collections._index_normalization import normalize_index
 from memory import Pointer, memcpy
 
 from .optional import Optional

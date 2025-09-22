@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp
+from os import abort
 from sys import align_of, simd_width_of
 from sys.info import CompilationTarget
 
@@ -25,7 +27,6 @@ from algorithm.reduction import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import OptionalReg
 from kv_cache.types import KVCacheT
 from linalg.accumulate import _Accumulator
 from linalg.matmul.cpu.apple_accelerate import (
@@ -40,7 +41,6 @@ from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import Index, IndexList
-from os import abort
 
 
 struct _MatmulConfig:

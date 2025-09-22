@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
 from testing import assert_equal
-from utils import IndexList
 
+from utils import IndexList
 
 # Tests for the ManagedLayoutTensor n-dimensional buffer support
 # Verifies that device_buffer() and buffer() methods work correctly for various ranks

@@ -20,7 +20,6 @@ functionality in the rest of the Mojo standard library.
 from sys import CompilationTarget
 from sys.ffi import c_char, c_int, c_size_t, get_errno
 
-
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
 # ===-----------------------------------------------------------------------===#

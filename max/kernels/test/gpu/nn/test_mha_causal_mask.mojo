@@ -16,18 +16,17 @@ from math import isclose
 from random import rand
 from sys import argv, size_of
 
+from bit import count_trailing_zeros
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import A100, H100, B200
+from gpu.host.info import A100, B200, H100
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
-from nn.mha_utils import MHAConfig, FlashAttentionAlgorithm
+from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from testing import assert_almost_equal
-
-from bit import count_trailing_zeros
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf

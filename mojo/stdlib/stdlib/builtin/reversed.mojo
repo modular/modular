@@ -19,7 +19,6 @@ from collections import Deque
 from collections.deque import _DequeIter
 from collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
 from collections.list import _ListIter
-
 from hashlib import Hasher
 
 from memory.span import Span, _SpanIter

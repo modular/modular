@@ -20,7 +20,7 @@ memory specifications, thread organization, and performance characteristics.
 
 from math import ceildiv, floor
 from os import abort
-from sys.info import _accelerator_arch, _TargetType, CompilationTarget
+from sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 alias _KB = 1024
 

@@ -22,8 +22,8 @@ from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu import (
-    _matmul_gpu,
     _amdgpu_matmul_config_from_block_shape,
+    _matmul_gpu,
 )
 from linalg.utils_gpu import MatmulConfig
 from testing import assert_equal

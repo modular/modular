@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from sys import env_get_int, env_get_string
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, arg_parse
-from internal_utils._utils import static, ValOrDim, dynamic
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
-from sys import env_get_int, env_get_string
 
 from utils import IndexList
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn _get_run_name[

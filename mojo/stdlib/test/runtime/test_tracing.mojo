@@ -13,10 +13,10 @@
 # RUN: env MODULAR_PROFILE_FILENAME="-" %mojo-no-debug %s | FileCheck %s
 
 
+from os import abort
+
 from runtime.asyncrt import create_task
 from runtime.tracing import Trace, TraceLevel
-
-from os import abort
 
 
 def test_tracing[level: TraceLevel, enabled: Bool]():

@@ -21,7 +21,6 @@ from os import abort
 from sys import CompilationTarget, bit_width_of, size_of
 from sys.intrinsics import _type_is_eq
 
-
 alias _mIsSigned = UInt8(1)
 alias _mIsInteger = UInt8(1 << 7)
 alias _mIsNotInteger = UInt8(~(1 << 7))

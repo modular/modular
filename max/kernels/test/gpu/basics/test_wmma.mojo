@@ -18,12 +18,13 @@ from gpu import WARP_SIZE, block_idx
 from gpu.host import DeviceContext
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout.runtime_layout import RuntimeLayout
 from linalg.matmul.gpu import matmul_kernel_naive
 from testing import assert_false
-from layout import Layout, UNKNOWN_VALUE, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
-from utils.numerics import isnan
+
 from utils.index import IndexList
+from utils.numerics import isnan
 
 
 # TF32 Tensor core Matmul with shape m16n8k8

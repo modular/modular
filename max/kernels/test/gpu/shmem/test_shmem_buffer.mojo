@@ -13,9 +13,10 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
 
+from math import iota
+
 from shmem import SHMEMBuffer, SHMEMContext
 from testing import assert_equal
-from math import iota
 
 
 def test_buffer_copy(ctx: SHMEMContext):

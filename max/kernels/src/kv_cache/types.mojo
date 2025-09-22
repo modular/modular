@@ -25,9 +25,10 @@ This module defines two traits that define the roles of the different structs
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
+
 from utils import Index, IndexList
 
 

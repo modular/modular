@@ -26,21 +26,13 @@ from sys.info import _accelerator_arch
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import (
-    barrier,
-    block_dim,
-    global_idx,
-    thread_idx,
-)
+from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.grid_controls import PDLLevel
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host import get_gpu_target
-from gpu.host.info import A100, H100, B200, MI355X, GPUInfo
+from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from gpu.memory import AddressSpace
-from layout._ndbuffer_stub import (
-    from_ndbuffer_row_major,
-)
 from layout import LayoutTensor
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from logger import Logger
@@ -49,28 +41,23 @@ from memory import bitcast, stack_allocation
 from utils import Index, IndexList
 from utils.numerics import get_accum_type
 
-from .amd import gemm_kernel_amd
-from ._multistage_gemm_gpu import (
-    multistage_gemm_kernel,
-    multistage_gemm_split_k_kernel,
-)
-from .sm80.dispatch import create_matmul_configs_ampere
 from ...gemv import gemv_gpu
-from ..vendor.matmul import matmul as matmul_vendor
-from .sm90.dispatch import matmul_dispatch_sm90
-from .sm100.dispatch import matmul_sm100_entrypoint
-from .sm100.matmul import matmul_sm100_fallback
 from ...utils import (
     GemmShape,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from ...utils_gpu import (
-    MatmulConfig,
-    MatmulKernels,
-    _bk_base,
-    select_config,
+from ...utils_gpu import MatmulConfig, MatmulKernels, _bk_base, select_config
+from ..vendor.matmul import matmul as matmul_vendor
+from ._multistage_gemm_gpu import (
+    multistage_gemm_kernel,
+    multistage_gemm_split_k_kernel,
 )
+from .amd import gemm_kernel_amd
+from .sm80.dispatch import create_matmul_configs_ampere
+from .sm90.dispatch import matmul_dispatch_sm90
+from .sm100.dispatch import matmul_sm100_entrypoint
+from .sm100.matmul import matmul_sm100_fallback
 
 
 fn matmul_kernel[

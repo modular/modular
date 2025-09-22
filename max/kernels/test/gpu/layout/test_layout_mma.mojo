@@ -16,12 +16,7 @@ from os import abort
 from random import random_float64
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from gpu import (
-    WARP_SIZE,
-    block_dim,
-    global_idx,
-    grid_dim,
-)
+from gpu import WARP_SIZE, block_dim, global_idx, grid_dim
 from gpu.host import DeviceContext
 from layout import *
 from layout._utils import ManagedLayoutTensor

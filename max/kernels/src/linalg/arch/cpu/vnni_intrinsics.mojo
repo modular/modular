@@ -16,8 +16,7 @@
 #
 # ===-----------------------------------------------------------------------===#
 
-from sys import llvm_intrinsic
-from sys import CompilationTarget
+from sys import CompilationTarget, llvm_intrinsic
 
 from memory.unsafe import bitcast
 

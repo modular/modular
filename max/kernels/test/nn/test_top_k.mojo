@@ -16,12 +16,12 @@ from math import iota
 from random import rand, seed
 
 from layout import (
+    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.topk import _top_k_cpu, _top_k_sampling

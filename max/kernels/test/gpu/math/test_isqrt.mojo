@@ -17,8 +17,7 @@ from sys import simd_width_of
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from gpu import *
-from gpu.host import DeviceContext, HostBuffer
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, HostBuffer, get_gpu_target
 from testing import *
 
 from utils import Index, IndexList

@@ -17,19 +17,18 @@ from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
-
 from utils import StaticTuple
 
 from .infer import (
-    cudnnMathType_t,
-    cudnnDeterminism_t,
-    cudnnTensorTransformStruct,
-    cudnnConvolutionFwdAlgo_t,
-    cudnnTensorFormat_t,
-    cudnnStatus_t,
-    cudnnConvolutionBwdDataAlgo_t,
-    cudnnDataType_t,
     cudnnContext,
+    cudnnConvolutionBwdDataAlgo_t,
+    cudnnConvolutionFwdAlgo_t,
+    cudnnDataType_t,
+    cudnnDeterminism_t,
+    cudnnMathType_t,
+    cudnnStatus_t,
+    cudnnTensorFormat_t,
+    cudnnTensorTransformStruct,
 )
 
 # ===-----------------------------------------------------------------------===#

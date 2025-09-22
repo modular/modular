@@ -15,7 +15,7 @@ from collections import OptionalReg
 from sys import size_of
 
 from gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from nn.concat import (
     _concat_gpu,

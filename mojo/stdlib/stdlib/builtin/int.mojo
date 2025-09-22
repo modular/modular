@@ -15,22 +15,22 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from collections.interval import IntervalElement
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
-from collections.interval import IntervalElement
 from hashlib.hasher import Hasher
-from math import CeilDivable, Ceilable, Floorable, Truncable
+from math import Ceilable, CeilDivable, Floorable, Truncable
 from sys.info import is_32bit
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, DivModable, Powable
 from python import (
-    Python,
-    PythonObject,
     ConvertibleFromPython,
     ConvertibleToPython,
+    Python,
+    PythonObject,
 )
 
 from utils._select import _select_register_value as select

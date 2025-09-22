@@ -21,20 +21,13 @@ from sys import (
     simd_width_of,
 )
 
+import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    arange,
-    random,
-    zero,
-)
+from gpu.host import DeviceContext, get_gpu_target
+from internal_utils import DeviceNDBuffer, HostNDBuffer, arange, random, zero
 from internal_utils._utils import ValOrDim, dynamic, static
-import linalg.matmul.vendor.blas as vendor_blas
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance

@@ -13,7 +13,7 @@
 
 from collections import BitSet
 
-from testing import assert_equal, assert_not_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
 def test_bitset_init():

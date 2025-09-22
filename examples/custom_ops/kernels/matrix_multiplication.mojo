@@ -13,38 +13,28 @@
 
 # DOC: max/tutorials/custom-ops-matmul.mdx
 
+from math import ceildiv
+from sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
+
 import compiler
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_dim,
     block_idx,
     thread_idx,
     warp_id,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceBuffer
 from gpu.memory import async_copy_wait_all
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-    copy_dram_to_sram_async,
-)
+from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from math import ceildiv
 from runtime.asyncrt import DeviceContextPtr
-from sys.info import (
-    has_accelerator,
-    has_amd_gpu_accelerator,
-    simd_width_of,
-)
-from tensor_internal import (
-    InputTensor,
-    ManagedTensorSlice,
-    OutputTensor,
-)
+from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+
 from utils import StaticTuple
 from utils.index import Index
 

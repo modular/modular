@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import get_errno, set_errno, ErrNo
-from sys.info import CompilationTarget
 from os.path import realpath
-from testing import assert_raises, assert_equal
+from sys.ffi import ErrNo, get_errno, set_errno
+from sys.info import CompilationTarget
+
+from testing import assert_equal, assert_raises
 
 alias error_message_linux: List[Tuple[ErrNo, String]] = [
     (ErrNo.SUCCESS, "Success"),

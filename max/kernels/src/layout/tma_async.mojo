@@ -42,6 +42,7 @@ from gpu.host._nvidia_cuda import (
     create_tma_descriptor,
     prefetch_tma_descriptor,
 )
+from gpu.intrinsics import Scope
 from gpu.memory import (
     AddressSpace,
     ReduceOp,
@@ -55,15 +56,15 @@ from gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
     mbarrier_arrive,
-    mbarrier_arrive_expect_tx_shared,
     mbarrier_arrive_expect_tx_relaxed,
+    mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import product
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from memory.pointer import _GPUAddressSpace
-from gpu.intrinsics import Scope
+
 from utils.index import Index, IndexList
 
 

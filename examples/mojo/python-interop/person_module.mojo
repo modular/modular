@@ -13,9 +13,10 @@
 
 # DOC: mojo/docs/manual/python/mojo-from-python.mdx
 
+from os import abort
+
 from python import PythonObject
 from python.bindings import PythonModuleBuilder
-from os import abort
 
 
 @fieldwise_init

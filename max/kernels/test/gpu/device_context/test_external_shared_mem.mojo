@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from sys import align_of
+
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.id import thread_idx, global_idx, block_dim
+from gpu.id import block_dim, global_idx, thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
-from testing import assert_equal, assert_almost_equal
-from sys import align_of
+from testing import assert_almost_equal, assert_equal
 
 
 fn test_external_shared_mem(ctx: DeviceContext) raises:

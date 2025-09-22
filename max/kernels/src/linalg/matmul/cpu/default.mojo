@@ -20,8 +20,8 @@ from buffer.buffer import NDBuffer
 from utils.index import Index, IndexList
 
 from ...accumulate import _Accumulator
-from .impl import InnerMatmulKernel
 from ...utils import GemmShape, get_matmul_prefetch_b_distance_k
+from .impl import InnerMatmulKernel
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that

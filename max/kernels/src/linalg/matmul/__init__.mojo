@@ -29,14 +29,14 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 
-from ..gemv import gemv
 import .cpu
-from .gpu import _matmul_gpu
+from ..gemv import gemv
 from ..utils import (
     GemmShape,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
+from .gpu import _matmul_gpu
 
 
 @always_inline

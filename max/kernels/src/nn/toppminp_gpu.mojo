@@ -15,21 +15,15 @@
 from math import ceildiv
 from sys import align_of
 
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from builtin.dtype import _uint_type_of_width
-from gpu import (
-    barrier,
-    block_dim,
-    block_idx,
-    grid_dim,
-    thread_idx,
-)
+from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
 from layout import Layout, LayoutTensor, RuntimeTuple
-from layout.int_tuple import fill_like, UNKNOWN_VALUE
+from layout.int_tuple import UNKNOWN_VALUE, fill_like
 from memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (

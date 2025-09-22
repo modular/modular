@@ -14,12 +14,10 @@
 from math import isqrt
 from sys import simd_width_of
 
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.normalization import *
 from testing import assert_almost_equal, assert_true
-
-from gpu.host import get_gpu_target
 
 from utils.index import Index, IndexList
 

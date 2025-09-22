@@ -11,17 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from os import abort
-
 from math import ceildiv
+from os import abort
 from sys import has_accelerator
 
 from complex import ComplexSIMD
 from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
+from python import PythonObject
+from python.bindings import PythonModuleBuilder
 
 alias GRID_WIDTH = 60
 alias GRID_HEIGHT = 25

@@ -40,9 +40,9 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy_local_to_shared,
     copy_dram_to_sram_async,
     copy_local_to_dram,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout

@@ -13,8 +13,9 @@
 # RUN: %mojo-no-debug -D LOGGING_LEVEL=trace %s 2>&1 | FileCheck %s
 
 
-from runtime.tracing import Trace, TraceLevel
 from collections.optional import OptionalReg
+
+from runtime.tracing import Trace, TraceLevel
 
 
 def test_op_logging[

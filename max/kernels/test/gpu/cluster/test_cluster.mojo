@@ -13,25 +13,27 @@
 
 from sys import size_of
 
-from gpu import thread_idx, block_idx, block_dim, barrier
-from gpu.host import DeviceContext
+from buffer import DimList, NDBuffer
+from gpu import barrier, block_dim, block_idx, thread_idx
 from gpu.cluster import (
     cluster_sync,
     cluster_sync_acquire,
     cluster_sync_release,
-    clusterlaunchcontrol_try_cancel,
-    clusterlaunchcontrol_query_cancel_is_canceled,
     clusterlaunchcontrol_query_cancel_get_first_ctaid,
-    elect_one_sync_with_mask,
+    clusterlaunchcontrol_query_cancel_is_canceled,
+    clusterlaunchcontrol_try_cancel,
     elect_one_sync,
+    elect_one_sync_with_mask,
 )
+from gpu.host import DeviceContext
 from gpu.id import block_id_in_cluster, lane_id
-from layout.tma_async import SharedMemBarrier, PipelineState
 from gpu.intrinsics import Scope
+from gpu.memory import _GPUAddressSpace as AddressSpace
+from gpu.memory import fence_mbarrier_init
+from layout.tma_async import PipelineState, SharedMemBarrier
 from memory import stack_allocation
-from gpu.memory import _GPUAddressSpace as AddressSpace, fence_mbarrier_init
-from buffer import DimList, NDBuffer
 from testing import assert_almost_equal
+
 from utils.static_tuple import StaticTuple
 
 

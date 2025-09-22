@@ -17,11 +17,11 @@ from sys.info import simd_width_of
 
 from algorithm.functional import vectorize
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.conv_transpose import (

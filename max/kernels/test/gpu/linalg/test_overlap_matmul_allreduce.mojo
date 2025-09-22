@@ -15,17 +15,13 @@ from sys import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from comm.allreduce import (
-    MAX_GPUS,
-    Signal,
-    allreduce,
-)
+from comm.allreduce import MAX_GPUS, Signal, allreduce
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
-from testing import assert_almost_equal
-from utils import IndexList, StaticTuple
-
 from linalg.distributed_matmul import matmul_allreduce
+from testing import assert_almost_equal
+
+from utils import IndexList, StaticTuple
 
 alias overlap_with_dpl = True
 

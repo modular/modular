@@ -36,9 +36,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext
-from gpu.host import FuncAttribute
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import (
     AddressSpace,
@@ -53,10 +51,10 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     ThreadScope,
-    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram_async,
     copy_local_to_dram,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple

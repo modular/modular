@@ -13,13 +13,14 @@
 """Implements math methods that work on layout tensors."""
 
 import math
+from sys.info import simd_width_of
 
+import algorithm.reduction
+from algorithm import vectorize
 from builtin.math import max as b_max
 from layout import LayoutTensor
-import algorithm.reduction
-from sys.info import simd_width_of
+
 from utils.index import IndexList
-from algorithm import vectorize
 
 
 @always_inline

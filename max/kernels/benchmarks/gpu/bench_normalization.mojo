@@ -18,11 +18,11 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple
 from layout import (
+    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.normalization import layer_norm_gpu, rms_norm_gpu

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from hashlib import default_comp_time_hasher
+
 from utils import IndexList
 
 from ....utils_gpu import MatmulConfig

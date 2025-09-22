@@ -32,9 +32,9 @@ from .layout import make_layout as make_layout_static
 from .runtime_tuple import (
     RuntimeTuple,
     crd2idx,
-    product,
-    idx2crd_int_tuple,
     idx2crd,
+    idx2crd_int_tuple,
+    product,
 )
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of

@@ -16,9 +16,8 @@ from sys import simd_width_of
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
-from gpu.random import Random, NormalRandom
+from gpu.host import DeviceContext, get_gpu_target
+from gpu.random import NormalRandom, Random
 from testing import *
 
 from utils.index import Index, IndexList

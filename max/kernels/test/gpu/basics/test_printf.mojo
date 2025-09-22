@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from io.io import _printf
+
 from gpu.host import DeviceContext
 
 

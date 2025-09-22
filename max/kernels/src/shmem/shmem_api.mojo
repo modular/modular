@@ -19,10 +19,18 @@ http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.6.pdf
 The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
-from sys.ffi import external_call, c_int, c_size_t
-from sys import is_nvidia_gpu, CompilationTarget
 from collections.optional import OptionalReg
-from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+from os import getenv, setenv
+from sys import (
+    CompilationTarget,
+    argv,
+    has_nvidia_gpu_accelerator,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    size_of,
+)
+from sys.ffi import c_int, c_size_t, external_call
+
 from gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
@@ -33,33 +41,38 @@ from gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from gpu.host._nvidia_cuda import (
-    CUDA,
-    CUDA_MODULE,
-)
+from gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
 from gpu.host.device_context import (
-    _DumpPath,
-    _checked,
     _CharPtr,
+    _checked,
     _DeviceContextPtr,
+    _DumpPath,
 )
-from os import getenv, setenv
-from sys import (
-    CompilationTarget,
-    is_amd_gpu,
-    has_nvidia_gpu_accelerator,
-    size_of,
-    argv,
-)
-from sys.ffi import c_int, external_call
+from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+
 from ._mpi import (
-    get_mpi_comm_world,
-    MPI_Init,
     MPI_Comm_rank,
     MPI_Comm_size,
     MPI_Finalize,
+    MPI_Init,
+    get_mpi_comm_world,
 )
 from ._nvshmem import (
+    NVSHMEM_CMP_EQ,
+    NVSHMEM_CMP_GE,
+    NVSHMEM_CMP_GT,
+    NVSHMEM_CMP_LE,
+    NVSHMEM_CMP_LT,
+    NVSHMEM_CMP_NE,
+    NVSHMEM_CMP_SENTINEL,
+    NVSHMEM_SIGNAL_ADD,
+    NVSHMEM_SIGNAL_SET,
+    NVSHMEM_TEAM_INVALID,
+    NVSHMEM_TEAM_SHARED,
+    NVSHMEM_TEAM_WORLD,
+    NVSHMEMX_INIT_WITH_MPI_COMM,
+    NVSHMEMX_TEAM_NODE,
+    NVSHMEMXInitAttr,
     nvshmem_barrier_all,
     nvshmem_calloc,
     nvshmem_fence,
@@ -79,24 +92,9 @@ from ._nvshmem import (
     nvshmemx_barrier_all_on_stream,
     nvshmemx_cumodule_init,
     nvshmemx_hostlib_finalize,
-    nvshmemx_init_status,
     nvshmemx_init,
+    nvshmemx_init_status,
     nvshmemx_signal_op,
-    NVSHMEMXInitAttr,
-    NVSHMEM_TEAM_INVALID,
-    NVSHMEM_TEAM_SHARED,
-    NVSHMEM_TEAM_WORLD,
-    NVSHMEMX_INIT_WITH_MPI_COMM,
-    NVSHMEMX_TEAM_NODE,
-    NVSHMEM_CMP_EQ,
-    NVSHMEM_CMP_NE,
-    NVSHMEM_CMP_GT,
-    NVSHMEM_CMP_LE,
-    NVSHMEM_CMP_LT,
-    NVSHMEM_CMP_GE,
-    NVSHMEM_CMP_SENTINEL,
-    NVSHMEM_SIGNAL_SET,
-    NVSHMEM_SIGNAL_ADD,
 )
 
 # ===----------------------------------------------------------------------=== #

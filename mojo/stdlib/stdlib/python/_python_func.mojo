@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import _type_is_eq
+from collections import OwnedKwargsDict
 from os import abort
+from sys.intrinsics import _type_is_eq
 
 from python import PythonObject as PO  # for brevity of signatures below
 from python.bindings import check_arguments_arity
-from collections import OwnedKwargsDict
 
 
 struct PyObjectFunction[

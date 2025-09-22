@@ -41,7 +41,7 @@ print(info)
 from collections.string.string_slice import _get_kgen_string
 from os import PathLike
 from pathlib import Path
-from sys.info import _current_target, _TargetType, CompilationTarget
+from sys.info import CompilationTarget, _current_target, _TargetType
 
 from .reflection import get_linkage_name
 

@@ -12,10 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from internal_utils import HostNDBuffer
-from kv_cache.types import (
-    KVCacheStaticParams,
-    PagedKVCacheCollection,
-)
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import IntTuple, Layout
 
 from utils.index import IndexList

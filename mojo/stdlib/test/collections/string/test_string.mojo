@@ -15,6 +15,7 @@ from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
+from collections.string.string_slice import _to_string_list
 from math import isinf, isnan
 
 from memory import memcpy
@@ -26,7 +27,6 @@ from testing import (
     assert_raises,
     assert_true,
 )
-from collections.string.string_slice import _to_string_list
 
 
 @fieldwise_init

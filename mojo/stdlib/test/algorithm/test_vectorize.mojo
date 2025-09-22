@@ -14,7 +14,6 @@
 from algorithm import vectorize
 from buffer import NDBuffer
 from memory import memcmp
-
 from testing import assert_equal
 
 

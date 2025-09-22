@@ -15,42 +15,37 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
 from sys import align_of, simd_width_of, size_of
-from sys.intrinsics import readfirstlane
 from sys.info import _cdna_4_or_newer
-from buffer import NDBuffer
+from sys.intrinsics import readfirstlane
 
 from algorithm.functional import unswitch
-from gpu import (
-    WARP_SIZE,
-    barrier,
-    block_idx,
-    lane_id,
-    thread_idx,
-)
+from buffer import NDBuffer
+from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
-from gpu.sync import (
-    AMDScheduleBarrierMask,
-    schedule_barrier,
-)
-from memory import AddressSpace as BaseAddressSpace
+from gpu.sync import AMDScheduleBarrierMask, schedule_barrier
 from layout import IntTuple, Layout, LayoutTensor
-from layout.layout import blocked_product
 from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.tensor_core import TiledTensorCore
 from layout.element import Element
+from layout.layout import blocked_product
 from layout.layout_tensor import (
     LayoutTensorIter,
     ThreadScope,
-    copy_local_to_shared,
     copy_dram_to_local,
     copy_local_to_dram,
+    copy_local_to_shared,
 )
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import TensorCore, get_mma_shape, num_matrix_reg
+from layout.tensor_core import (
+    TensorCore,
+    TiledTensorCore,
+    get_mma_shape,
+    num_matrix_reg,
+)
+from memory import AddressSpace as BaseAddressSpace
 from memory import bitcast, stack_allocation
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -59,10 +54,7 @@ from nn.mha_utils import (
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
-from nn.softmax import (
-    _online_softmax_iter_for_mma_output,
-    softmax,
-)
+from nn.softmax import _online_softmax_iter_for_mma_output, softmax
 
 from utils import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf

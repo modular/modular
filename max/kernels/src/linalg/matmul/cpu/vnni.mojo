@@ -22,13 +22,13 @@ from memory.unsafe import bitcast
 from utils.index import Index, IndexList
 
 from ...accumulate import _Accumulator
-from .impl import InnerMatmulKernel
 from ...arch.cpu.neon_intrinsics import _neon_dotprod
-from ...utils import GemmShape, get_matmul_prefetch_b_distance_k
 from ...arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i8_to_i32_x86,
 )
+from ...utils import GemmShape, get_matmul_prefetch_b_distance_k
+from .impl import InnerMatmulKernel
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that

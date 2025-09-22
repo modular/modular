@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import LayoutTensor, Layout, RuntimeLayout
 from gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.topk import topk_gpu
 
 

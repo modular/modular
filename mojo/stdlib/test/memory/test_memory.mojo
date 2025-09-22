@@ -13,13 +13,7 @@
 
 from sys import simd_width_of, size_of
 
-from memory import (
-    AddressSpace,
-    memcmp,
-    memcpy,
-    memset,
-    memset_zero,
-)
+from memory import AddressSpace, memcmp, memcpy, memset, memset_zero
 from testing import (
     assert_almost_equal,
     assert_equal,

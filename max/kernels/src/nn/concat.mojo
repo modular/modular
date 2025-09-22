@@ -25,7 +25,7 @@ from algorithm.functional import (
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -33,7 +33,6 @@ from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from utils import IndexList, StaticTuple, product
 
 from .gather_scatter import normalize_neg_index
-
 
 alias elementwise_epilogue_type = fn[
     c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1
