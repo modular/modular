@@ -64,7 +64,7 @@ fn use123[T: Traits123](x: T):
 # conditional method
 @fieldwise_init
 struct Wrapper[T: AnyType](ImplicitlyCopyable, Movable):
-    fn cond1[T: Trait1](self: Wrapper[T], other: Wrapper[T]):
+    fn cond1[Trait: Trait1](self: Wrapper[Trait], other: Wrapper[Trait]):
         print("cond")
 
 

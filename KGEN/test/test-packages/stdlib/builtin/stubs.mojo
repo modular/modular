@@ -214,11 +214,11 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     @always_inline("builtin")
     @implicit
     fn __init__(
-        value: IntLiteral[_],
+        val: IntLiteral[_],
         out result: FloatLiteral[
             __mlir_attr[
                 `#pop<int_to_float_literal<`,
-                value.value,
+                val.value,
                 `>> : !pop.float_literal`,
             ]
         ],
@@ -419,9 +419,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
 
     @implicit
     fn __init__[
-        origin: ImmutableOrigin, //
-    ](out self: StringSlice[origin], ref [origin]value: String):
-        self._slice = Span[Byte, origin]()
+        _origin: ImmutableOrigin, //
+    ](out self: StringSlice[_origin], ref [_origin]value: String):
+        self._slice = Span[Byte, _origin]()
 
     @implicit
     fn __init__(out self: StaticString, lit: StringLiteral):

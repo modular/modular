@@ -110,7 +110,7 @@ fn ambiguous_ctor_call(x: Int):
 
 # MOCO-990: Conditional conformance trick fails on SIMD constructor from Bool
 struct MySIMD[value: Int]:
-    fn __init__(out self: MySIMD[0], value: MyBool):
+    fn __init__(out self: MySIMD[0], val: MyBool):
         pass
 
 

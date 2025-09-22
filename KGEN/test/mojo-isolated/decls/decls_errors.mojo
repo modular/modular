@@ -1298,3 +1298,8 @@ struct FieldwiseInitExample[T: Movable]:
 @value # expected-error {{'@value' has been removed, please use '@fieldwise_init' and explicit `Copyable` and `Movable` conformances instead}}
 struct LegacyValueDecorator:
   pass
+
+
+struct S[param: Int]: #expected-note {{previous definition here}}
+  fn method[param: Int](self): # expected-error {{invalid redefinition of 'param'}}
+    pass
