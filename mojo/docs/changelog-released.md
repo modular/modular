@@ -20,26 +20,26 @@ This version is still a work in progress.
 
 :::caution Version scheme change!
 
-This release is technically a version _downgrade_ because we've added a
-`0.` at the beginning: This version is `0.25.6`. This is necessary because
-we started publishing `mojo` packages on pypi.org and it's important that
-we don't publish a package greater than `1.0` yet.
+This release is technically a version _downgrade_ because we've added a `0.` at
+the beginning: `0.25.6`. This is necessary because we started publishing `mojo`
+packages on pypi.org and it's important that we don't publish a package greater
+than 1.0 yet.
 
-Temporarily, this means you need to add `<1.0.0` to the `mojo` version
-if you want a nightly build. For example:
+Temporarily, this means you need to add `<1.0.0` to the version if you want a
+nightly build. For example:
 
 ```sh
 pixi add "mojo<1.0.0"
 ```
 
-If you want stable builds, this still works as expected:
+If you want a specific version, this still works as expected:
 
 ```sh
 pixi add "mojo=0.25.6"
 ```
 
-We'll eventually pull down older packages such as the `25.5.xxx`
-nightly builds so there won't be anything greater than `1.0`.
+We'll soon "yank" all past packages that are greater than 1.0 so they won't be
+installed unless explicitly specified.
 
 :::
 
@@ -502,6 +502,11 @@ nightly builds so there won't be anything greater than `1.0`.
   [`LinkedList.maybe_pop()`](/mojo/stdlib/collections/linked_list/LinkedList/#maybe_pop)
   and [`Dict.popitem()`](/mojo/stdlib/collections/dict/Dict#popitem) no longer
   copy elements, improving performance.
+
+- The `IndexList` and `DimList` types may no longer be implicitly constructed
+  from tuple values. Most existing call sites already used explicit initializer
+  calls (`IndexList(...)`), so implicit conversions have been removed to ensure
+  uniformity and consistency.
 
 #### Pointer changes
 
