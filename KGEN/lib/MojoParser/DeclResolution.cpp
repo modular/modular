@@ -1185,6 +1185,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                         /*allowKeyword=*/true))
     return failure();
 
+  ASTDecl *parentDecl = decl.getParentDecl();
   // The function signature is a self-contained scope where the input and result
   // parameters of the function are visible by all types.  We must use a
   // temporary declaration here (with an empty name) because we don't want
@@ -1192,7 +1193,25 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // we need a fully-resolved decl for incremental lookups within the scope to
   // work out.
   ASTDecl &sigDecl = addFullyResolvedDecl(funcOp.getOperation(), StringAttr(),
-                                          decl.getLoc(), decl.getParentDecl());
+                                          decl.getLoc(), parentDecl);
+
+  // If this is a struct method, inherit parameter defined in the struct so that
+  // we reject
+  //
+  // struct S[param: Int]:
+  //     fn method[param: Int](self): pass
+  if (isa_and_nonnull<StructDeclOp>(parentDecl->getIfOperation())) {
+    for (auto [name, decls] : parentDecl->getDeclsInScope()) {
+      if (decls.size() == 1) {
+        CValue irValue = decls.front()->getIfIRValue();
+        if (auto param =
+                dyn_cast_or_null<ParamDeclRefAttr>(irValue.getIfPValue().get()))
+          // This is a parameter declared in the struct.
+          addFullyResolvedDecl(PValue(param), name, decls.front()->getLoc(),
+                               &sigDecl);
+      }
+    }
+  }
 
   // Parse declared parameters and add them to the current scope.
   ParsedParamList parsedParamList;

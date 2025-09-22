@@ -18,13 +18,13 @@ struct A[x: Index, x_0: Index]:
     alias y = __mlir_attr.`11: index`
 
     # CHECK-LABEL: lit.fn @"foo
-    # CHECK-SAME: <*"x`2x", x_1>[imm *"self`2x1"]
-    fn foo[x: Index, x_1: Index](self):
-        # CHECK: lit.alias.decl *"z`2x2" = <2>
+    # CHECK-SAME: <_x, x_1>[imm *"self`2x"]
+    fn foo[_x: Index, x_1: Index](self):
+        # CHECK: lit.alias.decl *"z`2x1" = <2>
         alias z = __mlir_attr.`2: index`
-        # CHECK: lit.alias.decl *"y`2x3" = <12>
+        # CHECK: lit.alias.decl *"y`2x2" = <12>
         alias y = __mlir_attr.`12: index`
-        # CHECK: lit.alias.decl *"yy`2x4" = <22>
+        # CHECK: lit.alias.decl *"yy`2x3" = <22>
         alias yy = __mlir_attr.`22: index`
 
         # CHECK-LABEL: lit.fn *"bar
