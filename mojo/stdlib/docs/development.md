@@ -10,11 +10,8 @@ If this is your first time contributing, first read everything in
 To get started, you need to do the following:
 
 1. [Fork the repo and create a branch](../../CONTRIBUTING.md#how-to-create-a-pull-request).
-2. If you're using VS Code, [Install the nightly Mojo VS Code
-  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo-nightly)
-
-    NOTE: You can only have one Mojo extension enabled at a time, remember to
-    switch when using the stable release!
+2. If you're using VS Code, [Install the Mojo VS Code
+  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 
 3. Install the nightly Mojo compiler:
 
