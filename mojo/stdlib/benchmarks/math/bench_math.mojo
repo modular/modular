@@ -102,8 +102,8 @@ fn bench_math2[math_f2p: fn (Int, Int, /) -> Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        for i in range(len(int_inputs) // 2):
-            var result = keep(math_f2p(int_inputs[i], int_inputs[-(i + 1)]))
+        for i, input_val in enumerate(int_inputs[: len(int_inputs) // 2]):
+            var result = keep(math_f2p(input_val, int_inputs[-(i + 1)]))
             keep(result)
 
     b.iter[call_fn]()

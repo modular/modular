@@ -506,8 +506,8 @@ fn bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         var d = Dict[String, Int]()
-        for i in range(len(keys)):
-            d[keys[i]] = i
+        for i, key in enumerate(keys):
+            d[key] = i
         keep(d._entries.unsafe_ptr())
 
     b.iter[call_fn]()
@@ -521,8 +521,8 @@ fn bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         var d = Dict[String, Int, default_hasher]()
-        for i in range(len(keys)):
-            d[keys[i]] = i
+        for i, key in enumerate(keys):
+            d[key] = i
         keep(d._entries.unsafe_ptr())
 
     b.iter[call_fn]()
@@ -541,8 +541,8 @@ fn bench_string_dict_init_with_short_keys[
     @parameter
     fn call_fn():
         var d = StringDict[Int]()
-        for i in range(len(keys)):
-            d.put(keys[i], i)
+        for i, key in enumerate(keys):
+            d.put(key, i)
         keep(d.keys.keys)
 
     b.iter[call_fn]()
@@ -558,8 +558,8 @@ fn bench_string_dict_init_with_long_keys[
     @parameter
     fn call_fn():
         var d = StringDict[Int]()
-        for i in range(len(keys)):
-            d.put(keys[i], i)
+        for i, key in enumerate(keys):
+            d.put(key, i)
         keep(d.keys.keys)
 
     b.iter[call_fn]()
@@ -583,12 +583,12 @@ def validate_dicts(
         file_name,
     )
     var d = Dict[String, Int]()
-    for i in range(len(keys)):
-        d[keys[i]] = i
+    for i, key in enumerate(keys):
+        d[key] = i
 
     var sd = StringDict[Int]()
-    for i in range(len(keys)):
-        sd.put(keys[i], i)
+    for i, key in enumerate(keys):
+        sd.put(key, i)
 
     assert_equal(len(d), len(sd), "Length mismatch between Dict and StringDict")
     print("Length match between Dict and StringDict", len(d))

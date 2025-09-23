@@ -417,8 +417,8 @@ def accuracy_test():
 
 def main():
     var args = argv()
-    for i in range(len(args)):
-        if args[i] == "-c":
+    for arg in args:
+        if arg == "-c":
             print(compile_info[llvm_ldexp[DType.float32, 4]]())
             return
 
