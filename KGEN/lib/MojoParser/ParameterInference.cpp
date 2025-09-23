@@ -863,6 +863,29 @@ static void getPartiallySpecializedAttrTypes(
     type = bindingsEvaluator.getReboundType(type);
 }
 
+static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
+                                 ASTExprAnd<AnyValue> operand,
+                                 ASTType defaultType) {
+  IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
+  if (!defaultType)
+    return {};
+  ASTType inferredType =
+      defaultType.getWithUnknownParametersReplaced(declScope.getShared());
+  CallOperands operands =
+      init->getOperandsForInferredType(inferredType, emitter);
+
+  // We expect the initializer to return the constructed type.
+  // Infer the parameters of this overload candidate against the computed
+  // result type of the initializer.
+  FailureOr<PValue> initFn = OverloadSet::canConstructType(
+      inferredType, std::move(operands), operand.expr, declScope,
+      /*isImplicitConversion=*/false);
+  if (failed(initFn) || !initFn.value())
+    return {};
+  return cast<FnTypeGeneratorType>(initFn.value().getType())
+      .getUserResultType();
+}
+
 /// Infer parameters from an operand being passed into this function. This is
 /// only called on the top level function operands being matched up, not
 /// anything in recursive functiontype positions.
@@ -879,14 +902,59 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   AnyValue value = operand.ir;
   curArgExpr = operand.expr;
-
-  auto resolveOperandCValue = [&]() -> CValue {
+  /// When checking if an implicit conversion is possible, apply the bindings
+  /// inferred so far (plus a distinct new attribute relating back to the
+  /// original decls for ones that are missing) to the signature with
+  /// getSpecializedSignature so we benefit from the already-fixed substitutions
+  /// being applied to the input types.  This can make them more concrete and
+  /// help with inferring dependent types based on already-bound parameters.  If
+  /// we inferred a value for the parameter from previous arguments, substitute
+  /// it into the expected types of subsequent arguments.  This allows us to
+  /// handle dependent argument types like:
+  ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
+  ///     Scalar[p.type.type]):
+  /// where the type of 'v' depends on 'dt' being inferred.
+  auto getPartiallySpecializedType = [&](Type exptype) -> ASTType {
+    SmallVector<TypedAttr> currentParams;
+    for (TypedAttr param : inferredParams) {
+      if (param)
+        currentParams.push_back(param);
+      else
+        break;
+    }
+    SmallVector<Attribute> pendingAttrs;
+    SmallVector<Type> pendingTypes = {Type(exptype)};
+    getPartiallySpecializedAttrTypes(currentParams, evaluator,
+                                     totalExpectedBindings, pendingAttrs,
+                                     pendingTypes);
+    Type type = pendingTypes.front();
+    return type;
+  };
+  auto resolveOperandCValue = [&](Type expectedTypeOfOperand) -> CValue {
     if (auto argVal = value.getIfCValue())
       return argVal;
 
+    // Handle collection literals.
+    if (auto init = value.getIfInitializer()) {
+      auto inferredType = getPartiallySpecializedType(expectedTypeOfOperand);
+      // If we have a type like List[$0] replace it with List[?] so we can
+      // infer the unbound parameter.
+      inferredType = inferredType.getWithUnknownParametersReplaced(shared);
+      Type initType =
+          inferInitializerType(declScope, &(*init), operand, inferredType);
+      // If we could not infer the type from the inferred type (in the case
+      // where the inferred type is a parameter with trait metatype and no
+      // initialier, try the default type.)
+      if (!initType)
+        initType =
+            inferInitializerType(declScope, &(*init), operand,
+                                 init->getDefaultType(declScope.getShared()));
+      return PValue(initType);
+    }
+
     OverloadSetUValue orValue = value.getIfOverloadSet();
     if (!orValue)
-      return {}; // TODO: Handle list literal and init lists?.
+      return {};
 
     // Try to refine the OverloadSetUValue into a PValue.
     CValue argVal = orValue->getDirectSymbol(expectedType, declScope);
@@ -922,8 +990,9 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   case ArgConvention::Ref:
   case ArgConvention::MutRef: {
+    auto expectedRef = cast<RefType>(expectedType);
     // Infer the origin and address space before inferring the element type.
-    CValue argVal = resolveOperandCValue();
+    CValue argVal = resolveOperandCValue(expectedRef.getElementType());
     if (!argVal)
       return failure();
 
@@ -947,7 +1016,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // it like any other argument because we can support implicit conversions.
     RefType valueRefType =
         RefType::getAnyOrigin(argVal.getRValueType(), /*isMut=*/false);
-    auto expectedRef = cast<RefType>(expectedType);
 
     (void)matchSingleEltStruct(valueRefType.getOrigin(),
                                expectedRef.getOrigin());
@@ -969,71 +1037,38 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     break;
   }
 
-  /// When checking if an implicit conversion is possible, apply the bindings
-  /// inferred so far (plus a distinct new attribute relating back to the
-  /// original decls for ones that are missing) to the signature with
-  /// getSpecializedSignature so we benefit from the already-fixed substitutions
-  /// being applied to the input types.  This can make them more concrete and
-  /// help with inferring dependent types based on already-bound parameters.  If
-  /// we inferred a value for the parameter from previous arguments, substitute
-  /// it into the expected types of subsequent arguments.  This allows us to
-  /// handle dependent argument types like:
-  ///     fn foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
-  ///     Scalar[p.type.type]):
-  /// where the type of 'v' depends on 'dt' being inferred.
-  auto getPartiallySpecializedType = [&]() -> ASTType {
-    SmallVector<TypedAttr> currentParams;
-    for (TypedAttr param : inferredParams) {
-      if (param)
-        currentParams.push_back(param);
-      else
-        break;
-    }
-    SmallVector<Attribute> pendingAttrs;
-    SmallVector<Type> pendingTypes = {Type(expectedType)};
-    getPartiallySpecializedAttrTypes(currentParams, evaluator,
-                                     totalExpectedBindings, pendingAttrs,
-                                     pendingTypes);
-    Type type = pendingTypes.front();
-    return type;
-  };
-
   // Check to see if the expected type has an initializer with the
   // specified operands.  Remove any parameters from the expected type
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
-    IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
-    auto inferredType = getPartiallySpecializedType();
-
-    // If we have a type like List[$0] replace it with List[?] so we can infer
-    // the unbound parameter.
+    auto inferredType = getPartiallySpecializedType(expectedType);
+    // If we have a type like List[$0] replace it with List[?] so we can
+    // infer the unbound parameter.
     inferredType = inferredType.getWithUnknownParametersReplaced(shared);
-    CallOperands operands =
-        initValue->getOperandsForInferredType(inferredType, emitter);
+    Type initType =
+        inferInitializerType(declScope, &(*initValue), operand, inferredType);
+    // If the literal cannot bind to the inferred type, try binding it to the
+    // default literal type and matching the inferred type against that.
+    if (!initType)
+      initType = inferInitializerType(declScope, &(*initValue), operand,
+                                      initValue->getDefaultType(shared));
 
-    FailureOr<PValue> initFn = OverloadSet::canConstructType(
-        inferredType, std::move(operands), operand.expr, declScope,
-        /*isImplicitConversion=*/false);
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
     // declarations.
-    if (failed(initFn) || !initFn.value())
+    if (!initType)
       return failure();
     // If we found one, we recursively call inferOneOperand (but with implicit
     // conversions disabled of course) to resolve our value as the init
     // methods argument.  This allows us to infer parameters from it.
-    auto initSig = cast<FnTypeGeneratorType>(initFn.value().getType());
-    // We expect the initializer to return the constructed type.
-    // Infer the parameters of this overload candidate against the computed
-    // result type of the initializer.
-    return matchTypes(initSig.getUserResultType(), expectedType);
+    return matchTypes(initType, expectedType);
   }
 
   // Okay, we got a normal value argument convention and stripped off any
   // ArgConvention-related !lit.ref from the expected type.  See if we can
   // resolve the argument to a CValue.
-  CValue argVal = resolveOperandCValue();
+  CValue argVal = resolveOperandCValue(expectedType);
   if (!argVal)
     return failure();
 
@@ -1085,7 +1120,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // If implicit conversions are enabled and the target type is known, then
   // we can check to see if any of the constructors for the result type can
   // work.
-  ASTType knownExpectedType = getPartiallySpecializedType();
+  ASTType knownExpectedType = getPartiallySpecializedType(expectedType);
   ASTDecl *expectedDecl = knownExpectedType.getDecl(shared);
   if (!allowImplicitConversions || !expectedDecl) {
     diags.resetDiags(std::move(noImplicitConversionDiags));

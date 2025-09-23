@@ -1,0 +1,52 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %mojo %s | FileCheck %s
+
+from collections import Deque
+from collections.deque import _DequeIter
+
+
+fn not_a_list[
+    T: Copyable & Movable
+](ref value: Deque[T]) -> _DequeIter[T, __origin_of(value), False]:
+    return value.__reversed__()
+
+
+fn needs_default[
+    IterableTypeA: Iterable
+](ref iterable_a: IterableTypeA) -> IterableTypeA.IteratorType[
+    __origin_of(iterable_a)
+]:
+    return iter(iterable_a)
+
+
+def main():
+    # COM: The motivating bug. Ensure no regression.
+    # CHECK: 77 88
+    # CHECK: 99 66
+    for a, b in zip([77, 99], [88, 66]):
+        print(a, b)
+
+    # COM: the type cannot be inferred from the trait, fallback to list.
+    # CHECK: 4
+    # CHECK: 5
+    # CHECK: 6
+    for c in needs_default([4, 5, 6]):
+        print(c)
+
+    # COM: Ensure the specified type gets priority and does not fallback to list.
+    # CHECK: 3
+    # CHECK: 2
+    # CHECK: 1
+    for d in not_a_list([1, 2, 3]):
+        print(d)
+
+    # COM: Dictionary literals also work
+    # CHECK: honda
+    # CHECK: accord
+    for key in needs_default({"honda": 3, "accord": 1}):
+        print(key)
