@@ -24,7 +24,7 @@ from max.experimental.tensor import (
     default_dtype,
     driver_tensor_type,
 )
-from max.graph import DeviceRef, Graph
+from max.graph import BufferValue, DeviceRef, Graph
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
@@ -153,3 +153,50 @@ def test_constant_default_device_context() -> None:
 
     assert t.device == CPU()
     assert t.dtype == _default_dtype(CPU())
+
+
+def test_realized_tensor_as_buffer() -> None:
+    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a = Tensor(storage=a_data)
+    assert a.real
+    b = Tensor.ones_like(a.type)
+    F.buffer_store(a, b)
+    assert not a.real
+    asyncio.run(a.realize)
+    assert a.real
+
+
+def test_unrealized_value_as_buffer() -> None:
+    a = Tensor.zeros([5, 5])
+    b = Tensor.ones_like(a.type)
+    assert not a.real
+    F.buffer_store(a, b)
+    assert not a.real
+    asyncio.run(a.realize)
+    assert a.real
+
+
+def test_buffervalue_on_realized_tensor() -> None:
+    a_data = DriverTensor.zeros([5, 5], DType.float32, DEVICE)
+    a = Tensor(storage=a_data)
+    assert a.real
+    _ = BufferValue(a)
+    # Don't know whether the value was thrown away or used
+    # in a mutating op!
+    assert not a.real
+    asyncio.run(a.realize)
+    assert a.real
+
+
+def test_mutation_op_order() -> None:
+    a = Tensor.zeros([1])
+    b = Tensor.ones_like(a.type)
+    c = a + b
+    F.buffer_store(a, b)
+    d = a + b
+    asyncio.run(c.realize)
+    asyncio.run(d.realize)
+    assert a.item() == 1.0
+    assert b.item() == 1.0
+    assert c.item() == 1.0
+    assert d.item() == 2.0
