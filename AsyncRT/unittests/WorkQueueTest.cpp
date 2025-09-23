@@ -9,6 +9,7 @@
 #include "AsyncRT/Runtime/AsyncValueRef.h"
 #include "AsyncRT/Runtime/Runtime.h"
 #include "gtest/gtest.h"
+#include <atomic>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -21,6 +22,20 @@ using namespace M;
 using namespace M::AsyncRT;
 
 namespace {
+
+// Enqueue a worker-task that records the result of `shouldRunInlineFor` for a
+// given `checkHint`.
+static AsyncValueRef<bool> enqueueInlineCheck(Runtime &runtime,
+                                              WorkQueue &workQueue,
+                                              int dispatchHint, int checkHint) {
+  AsyncValueRef<bool> result = AsyncValueRef<bool>::allocate(runtime);
+  WorkItem probe([&workQueue, checkHint, ready = result.copy()]() mutable {
+    ready.copy().emplace(workQueue.shouldRunInlineFor(checkHint));
+  });
+  probe.deviceHint = dispatchHint;
+  workQueue.addTask(std::move(probe));
+  return result;
+}
 
 /// Test device-aware scheduling with device hints.
 TEST(WorkQueueTest, DeviceHintRouting) {
@@ -194,6 +209,88 @@ TEST(WorkQueueTest, NoDevicePreference) {
 
   await(result);
   EXPECT_EQ(result.get(), 99);
+}
+
+TEST(WorkQueueTest, ShouldRunInlineMatchesAssignedWorker) {
+  RuntimeOptions options;
+  options.numThreads = 4;
+  options.mainWillDonate = false;
+  std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
+  WorkQueue &workQueue = *runtime->getWorkQueue();
+
+  // Each worker executes a task pinned to its own device hint and reports
+  // whether the inline heuristic agrees; the hint-aligned tasks should all come
+  // back `true`.
+  std::vector<AsyncValueRef<bool>> inlineResults;
+  inlineResults.reserve(options.numThreads);
+  for (size_t idx = 0; idx < options.numThreads; ++idx) {
+    int hint = static_cast<int>(idx);
+    inlineResults.emplace_back(
+        enqueueInlineCheck(*runtime, workQueue, hint, hint));
+  }
+
+  for (size_t idx = 0; idx < inlineResults.size(); ++idx) {
+    await(inlineResults[idx]);
+    EXPECT_TRUE(inlineResults[idx].get());
+  }
+
+  // When a worker is pinned to device 0 but queries device 1, it should decline
+  // to inline because it is running on the wrong worker thread.
+  AsyncValueRef<bool> mismatch =
+      enqueueInlineCheck(*runtime, workQueue, /*dispatchHint=*/0,
+                         /*checkHint=*/1);
+  await(mismatch);
+  EXPECT_FALSE(mismatch.get());
+}
+
+TEST(WorkQueueTest, ShouldRunInlineHonorsMainDonation) {
+  RuntimeOptions options;
+  options.numThreads = 3;
+  options.mainWillDonate = true;
+  std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
+  WorkQueue &workQueue = *runtime->getWorkQueue();
+
+  // Even though device 0 is rerouted away from the donating worker, the worker
+  // that actually executes the task should still report inline = true.
+  std::vector<AsyncValueRef<bool>> results;
+  for (size_t idx = 0; idx < options.numThreads; ++idx) {
+    int hint = static_cast<int>(idx);
+    results.emplace_back(enqueueInlineCheck(*runtime, workQueue, hint, hint));
+  }
+
+  for (AsyncValueRef<bool> &ready : results) {
+    await(ready);
+    EXPECT_TRUE(ready.get());
+  }
+}
+
+TEST(WorkQueueTest, ShouldRunInlineFromForeignThread) {
+  RuntimeOptions options;
+  options.numThreads = 2;
+  std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
+  WorkQueue &workQueue = *runtime->getWorkQueue();
+
+  // Main thread should inline only for "no preference"; other hints belong to
+  // workers and should return false here.
+  EXPECT_TRUE(workQueue.shouldRunInlineFor(kNoDevicePreference));
+  EXPECT_FALSE(workQueue.shouldRunInlineFor(0));
+  EXPECT_FALSE(workQueue.shouldRunInlineFor(-5));
+}
+
+TEST(WorkQueueTest, ShouldRunInlineSingleThreadedAlwaysTrue) {
+  RuntimeOptions options;
+  options.singleThreaded = true;
+  std::unique_ptr<Runtime> runtime = createUniqueRuntime(options);
+  WorkQueue &workQueue = *runtime->getWorkQueue();
+
+  // The single worker should inline regardless of the hint value.
+  AsyncValueRef<bool> inlineCheck =
+      enqueueInlineCheck(*runtime, workQueue, /*dispatchHint=*/0,
+                         /*checkHint=*/3);
+  await(inlineCheck);
+  EXPECT_TRUE(inlineCheck.get());
+
+  EXPECT_TRUE(workQueue.shouldRunInlineFor(kNoDevicePreference));
 }
 
 } // namespace
