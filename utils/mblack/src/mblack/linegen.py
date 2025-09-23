@@ -221,15 +221,6 @@ class LineGenerator(Visitor[Line]):
             for child in node.children:
                 yield from self.visit(child)
 
-    def visit_alias(self, node: Node) -> Iterator[Line]:
-        """Visit alias declaration."""
-        yield from self.line()
-
-        # Handle parametric aliases like `alias addOne[x: Int] : Int = x + 1`
-        # or simple aliases like `alias x: Int = 42`
-        for child in node.children:
-            yield from self.visit(child)
-
     def visit_match_case(self, node: Node) -> Iterator[Line]:
         """Visit either a match or case statement."""
         normalize_invisible_parens(node, parens_after=set(), preview=self.mode.preview)
