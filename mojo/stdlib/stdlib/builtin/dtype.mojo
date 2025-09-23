@@ -101,14 +101,6 @@ struct DType(
     )
     """Represents a boolean data type."""
 
-    # TODO(MSTDL-1851): Remove
-    @deprecated("Use `DType.int` instead.")
-    alias index = DType(
-        mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
-    )
-    """Represents an integral type whose bitwidth is the maximum integral value
-    on the system."""
-
     alias int = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
     )
@@ -306,8 +298,6 @@ struct DType(
             return Self._from_str(str.removeprefix("DType."))
         elif str == "bool":
             return DType.bool
-        elif str == "index":  # TODO(MSTDL-1851): Remove
-            return DType.int
         elif str == "int":
             return DType.int
         elif str == "uint":
