@@ -237,6 +237,7 @@ def add_newly_encoded_reqs_to_tg_batch(
     batch_constructor.tg_reqs |= batch
     last_req = list(batch.values())[-1]
     req_id = last_req.request_id
+
     if last_req.needs_ce:
         batch_constructor.ce_reqs[req_id] = last_req
         batch_constructor.ce_reqs.move_to_end(req_id, last=False)
