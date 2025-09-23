@@ -350,6 +350,12 @@ public:
   /// error and return null.
   CValue emitAsCValue(IREmitter &emitter, ValueDest &dest);
 
+  /// If we are binding the literal to a parametric type, we cannot use the
+  /// argument type to find the constructor. Instead, default to the type
+  /// corresponding to the syntax (list, dict, or set). If the default type does
+  /// not conform to the restrictions of the parameter it is a valid failure.
+  ASTType getDefaultType(SharedState &shared) const;
+
 private:
   struct ImplWrapper;
   InitializerUValue(Syntax syntax, const ExprNode *expr,

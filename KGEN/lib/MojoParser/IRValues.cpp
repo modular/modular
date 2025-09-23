@@ -435,6 +435,20 @@ static void addEmptyTuple(CallOperands &operands, StringRef kwargName,
                  {tupleValue, expr});
 };
 
+ASTType InitializerUValue::getDefaultType(SharedState &shared) const {
+  switch (syntax) {
+  case Syntax::kListLiteral:
+    return shared.getStandardCollectionType(expr->getLoc(), "List");
+  case Syntax::kDictLiteral:
+    return shared.getStandardCollectionType(expr->getLoc(), "Dict");
+  case Syntax::kSetInitLiteral:
+    return shared.getStandardCollectionType(expr->getLoc(), "Set");
+  /// slice is not a standalone type
+  case Syntax::kSlice:
+    return {};
+  }
+}
+
 /// Given an inferred type for this initializer list, return the operands that
 /// we should use to try to construct it.  This returns failure if invalid.
 CallOperands
