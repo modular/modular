@@ -171,6 +171,11 @@ public:
   /// they should break themselves into.
   virtual size_t getParallelismLevel() const = 0;
 
+  /// Returns true when the caller is already executing on the worker thread
+  /// implied by `deviceHint`, allowing immediate execution instead of
+  /// enqueuing. Implementations should keep this lightweight.
+  virtual bool shouldRunInlineFor(int deviceHint) const { return true; }
+
   /// Shutdown the thread pool and quiesce in preparation for destruction.
   /// Must be called before the WorkQueue is destroyed. Must be called from
   /// outside of any task. Depending on WorkQueue implementation, may need

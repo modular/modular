@@ -770,6 +770,23 @@ public:
     return numWorkers;
   }
 
+  /// Returns run inline only when there's a device preference and it matches
+  /// the current worker ID.
+  bool shouldRunInlineFor(int deviceHint) const final override {
+    if (deviceHint == kNoDevicePreference)
+      return true;
+
+    WorkQueueThread *current = getOwningWorkQueueThread();
+    if (!current)
+      return false;
+
+    int taskId = taskIdForDevice(deviceHint);
+    if (taskId < 0)
+      return false;
+
+    return current->workerID == static_cast<size_t>(taskId);
+  }
+
 private:
   /// If the caller is a worker thread or the 'main' thread for this work queue
   /// then return the WorkQueueThread which represents it. Otherwise, if the
@@ -796,6 +813,20 @@ private:
   WorkQueueThread *getWorkQueueThread(size_t workerID) const {
     assert(workerID < numWorkers && "invalid worker id");
     return workers + workerID;
+  }
+
+  /// Determines which workerID corresponds to a given device hint.
+  int taskIdForDevice(int deviceHint) const {
+    if (deviceHint == kNoDevicePreference || deviceHint < 0 || numWorkers == 0)
+      return kDefaultTaskId;
+
+    // When mainWillDonate is true, worker 0 is the 'main' queue which is only
+    // serviced while awaiting; avoid pinning there to prevent stalls.
+    size_t target = static_cast<size_t>(deviceHint) % numWorkers;
+    if (sharedState.mainWillDonate && target == 0 && numWorkers > 1)
+      target = 1 + (static_cast<size_t>(deviceHint) % (numWorkers - 1));
+
+    return static_cast<int>(target);
   }
 
   /// This is the set of WorkQueueThread objects in the WorkQueue. If in
@@ -939,21 +970,9 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
 #endif
 
   // If no explicit taskId but we have a device hint, route to appropriate
-  // thread. Guard negative hints and avoid pinning to main when it only
-  // donates.
-  if ((taskId == kDefaultTaskId) &&
-      (workItem.deviceHint != kNoDevicePreference) &&
-      (workItem.deviceHint >= 0) && (numWorkers > 0)) {
-    // Simple modulo mapping: device N -> thread N % numWorkers.
-    size_t target = static_cast<size_t>(workItem.deviceHint) % numWorkers;
-    // When mainWillDonate is true, worker 0 is the 'main' queue which is only
-    // serviced while awaiting; avoid pinning there to prevent stalls.
-    if (sharedState.mainWillDonate && target == 0 && numWorkers > 1) {
-      target =
-          1 + (static_cast<size_t>(workItem.deviceHint) % (numWorkers - 1));
-    }
-    taskId = static_cast<int>(target);
-  }
+  // thread.
+  if (taskId == kDefaultTaskId)
+    taskId = taskIdForDevice(workItem.deviceHint);
 
   if (taskId >= 0) {
     auto workThread = getWorkQueueThread(taskId);
