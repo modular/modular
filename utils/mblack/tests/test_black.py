@@ -13,8 +13,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-#!/usr/bin/env python3
-
 import asyncio
 import inspect
 import io

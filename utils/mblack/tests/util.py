@@ -71,6 +71,13 @@ def _assert_format_equal(expected: str, actual: str) -> None:
     assert actual == expected
 
 
+def assert_mojo_format(source: str, expected: str) -> None:
+    """Convenience function to check that mblack formats mojo code as expected.
+    """
+    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
+    _assert_format_equal(expected, mblack.format_str(source, mode=mode))
+
+
 def assert_format(
     source: str,
     expected: str,
