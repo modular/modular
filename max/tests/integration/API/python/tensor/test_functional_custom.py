@@ -19,6 +19,7 @@ from max.nn import kernels
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
 moe_create_indices = F.functional(kernels.moe_create_indices)
+scatter_set_constant = F.functional(kernels.scatter_set_constant)
 
 
 @pytest.mark.skipif(
@@ -29,3 +30,18 @@ def test_custom():
     token_expert_order, *_rest = moe_create_indices(indices, 8)
     token_expert_order._sync_realize()
     assert token_expert_order.real
+
+
+@pytest.mark.skipif(
+    DEVICE.is_host, reason="scatter_set_constant only supports GPU devices"
+)
+def test_inplace_custom():
+    values = Tensor.zeros([2, 2])
+    indices = Tensor.ones([1, 1], dtype=DType.int32)
+    scatter_set_constant(values, indices, 5.0)
+    assert values[1, 0].item() == 5.0
+    assert values.real
+    scatter_set_constant(values, indices, 4.0)
+    assert not values.real
+    assert values[1, 0].item() == 4.0
+    assert values.real
