@@ -30,6 +30,12 @@ from max.pipelines.lib import (
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 
+from .lora_scheduler_utils import (
+    can_allocate_lora_request,
+    is_active_lora,
+    is_lora,
+)
+
 logger = logging.getLogger("max.serve")
 
 
@@ -275,12 +281,9 @@ class TextBatchConstructor:
 
             # Verify LoRA is active for TG requests
             # LoRA requests should have been activated during CE
-            if (
-                self._lora_manager
-                and self._lora_manager.is_lora(ctx.model_name)
-                and not self._lora_manager.is_active_lora(ctx.model_name)
+            if is_lora(ctx, self._lora_manager) and not is_active_lora(
+                ctx, self._lora_manager
             ):
-                # TODO E2EOPT-584
                 self._preempt_lora_request(ctx)
                 continue
 
@@ -416,8 +419,8 @@ class TextBatchConstructor:
             req_id, ctx = self.ce_reqs.popitem(last=False)
 
             # Check LoRA budget before resource allocation
-            if self._lora_manager and not self._can_allocate_lora_request(
-                ctx, active_loras
+            if self._lora_manager and not can_allocate_lora_request(
+                ctx, active_loras, self._lora_manager
             ):
                 deferred_lora_requests[req_id] = ctx
                 continue
@@ -447,9 +450,7 @@ class TextBatchConstructor:
                     break
 
             # activate the LoRA
-            if self._lora_manager and self._lora_manager.is_lora(
-                ctx.model_name
-            ):
+            if self._lora_manager and is_lora(ctx, self._lora_manager):
                 # Always call activate_adapter to refresh LRU position
                 self._lora_manager.activate_adapter(ctx.model_name)
                 active_loras.add(ctx.model_name)
@@ -495,26 +496,6 @@ class TextBatchConstructor:
         tg_batch = self._create_tg_batch()
         return tg_batch
 
-    def _can_allocate_lora_request(
-        self, ctx: TextContext, active_loras: set[str]
-    ) -> bool:
-        # This should only be called when _lora_manager exists
-        assert self._lora_manager is not None
-
-        # Non-LoRA requests can always be allocated
-        if not self._lora_manager.is_lora(ctx.model_name):
-            return True
-
-        # LoRA requests can be allocated if:
-        # - Already in active set for this batch
-        # - Already active on GPU
-        # - There's room for more LoRAs
-        return (
-            ctx.model_name in active_loras
-            or self._lora_manager.is_active_lora(ctx.model_name)
-            or len(active_loras) + 1 <= self._lora_manager.max_num_loras
-        )
-
     @traced
     def _preempt_lora_request(self, ctx: TextContext) -> None:
         """Preempts the most recently received request from active batch"""
@@ -526,5 +507,5 @@ class TextBatchConstructor:
         if current_time - self.last_preemption_logging_time > 1:
             self.last_preemption_logging_time = current_time
             logger.info(
-                f"Preempted a request due to max-num-lora limit exceeded. This can affect the end-to-end performance. Consider increasing max-num-lora. Total preemption count: {self.total_preemption_count}."
+                f"Preempted a request due to max-num-loras limit exceeded. This can affect the end-to-end performance. Consider increasing max-num-loras. Total preemption count: {self.total_preemption_count}."
             )

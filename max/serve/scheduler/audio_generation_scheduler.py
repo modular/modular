@@ -33,6 +33,7 @@ from max.interfaces import (
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
+from max.pipelines.lib import LoRAManager
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
 )
@@ -41,6 +42,11 @@ from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import SchedulerProgress
+from .lora_scheduler_utils import (
+    can_allocate_lora_request,
+    is_active_lora,
+    is_lora,
+)
 from .text_batch_constructor import BatchType, TokenGenerationSchedulerConfig
 from .utils import release_cancelled_requests, release_terminated_requests
 
@@ -230,6 +236,13 @@ class AudioGenerationScheduler(Scheduler):
         self.decode_reqs: dict[RequestID, TTSContext] = {}
         self.paged_manager = paged_manager
 
+        self._lora_manager: LoRAManager | None = LoRAManager.get_lora_manager(
+            pipeline
+        )
+
+        self.total_preemption_count = 0
+        self.last_preemption_logging_time: float = 0.0
+
         if self.scheduler_config.enable_chunked_prefill:
             logger.warning(
                 "Chunked prefill is not supported with TTS Scheduler"
@@ -261,6 +274,17 @@ class AudioGenerationScheduler(Scheduler):
                 continue
             if len(scheduled_reqs) == self.scheduler_config.max_batch_size_tg:
                 break
+
+            # Verify LoRA is active for TG requests
+            # If not, then preempt. Although, we should never hit this case...
+            if is_lora(req_data, self._lora_manager) and not is_active_lora(
+                req_data, self._lora_manager
+            ):
+                self.pipeline.release(req_id)
+                req_data.reset()
+                self.pending_reqs.appendleft(req_data)
+                continue
+
             scheduled_reqs[req_id] = req_data
 
         return AudioGenerationSchedulerOutput(
@@ -278,6 +302,17 @@ class AudioGenerationScheduler(Scheduler):
 
         input_len = 0
 
+        if self._lora_manager:
+            # Track which LoRAs are currently active from running (TG) requests
+            active_loras = set()
+
+            # Count LoRAs from TG requests (these are "running" and must be maintained)
+            for _, ctx in self.decode_reqs.items():
+                if self._lora_manager.is_lora(ctx.model_name):
+                    active_loras.add(ctx.model_name)
+
+            deferred_lora_requests = []
+
         while (
             self.pending_reqs
             and (len(ce_batch) < max_batch_size_ce)
@@ -286,11 +321,31 @@ class AudioGenerationScheduler(Scheduler):
         ):
             req_data = self.pending_reqs.popleft()
             req_id = req_data.request_id
+
+            # Check LoRA budget before resource allocation
+            if self._lora_manager and not can_allocate_lora_request(
+                req_data, active_loras, self._lora_manager
+            ):
+                deferred_lora_requests.append(req_data)
+                continue
+
             # Prefetch here for CE so that we query prefix cache
             if not self.paged_manager.maybe_reserve(req_data, num_steps=1):
                 raise RuntimeError("Ran out of KV cache")
+
+            # activate the LoRA
+            if self._lora_manager and is_lora(req_data, self._lora_manager):
+                # Always call activate_adapter to refresh LRU position
+                self._lora_manager.activate_adapter(req_data.model_name)
+                active_loras.add(req_data.model_name)
+
             ce_batch[req_id] = req_data
             input_len += req_data.active_length
+
+        if self._lora_manager:
+            # Return requests back to the queue
+            for req_data in deferred_lora_requests:
+                self.pending_reqs.appendleft(req_data)
 
         return AudioGenerationSchedulerOutput(ce_batch, batch_type=BatchType.CE)
 

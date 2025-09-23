@@ -288,6 +288,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
                     context_batch, input_row_offsets, self.devices[0]
                 )
             )
+
             inputs.lora_ids = lora_ids
             inputs.lora_ranks = lora_ranks
             inputs.lora_grouped_offsets = lora_grouped_offsets

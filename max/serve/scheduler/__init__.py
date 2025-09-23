@@ -45,6 +45,11 @@ from .audio_generation_scheduler import (
 from .base import PrefillRequest, PrefillResponse
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
+from .lora_scheduler_utils import (
+    can_allocate_lora_request,
+    is_active_lora,
+    is_lora,
+)
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 
