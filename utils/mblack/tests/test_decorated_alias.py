@@ -4,18 +4,32 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import mblack
+from tests.util import assert_mojo_format
 
-SOURCE = """struct Foo:
-    @deprecated(   "abc")
-    alias b =  6
-"""
-
-EXPECTED_OUTPUT = """struct Foo:
-    @deprecated("abc")
-    alias b = 6
-"""
 
 def test_decorated_alias():
-    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
-    assert mblack.format_str(SOURCE, mode=mode) == EXPECTED_OUTPUT
+    source = (
+        "struct Foo:\n"
+        "    @deprecated\n"
+        "    alias  b =  6\n"
+    )
+    expected = (
+        "struct Foo:\n"
+        "    @deprecated\n"
+        "    alias b = 6\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_decorated_alias_with_args():
+    source = (
+        "struct Foo:\n"
+        '    @deprecated(    "abc")\n'
+        "    alias  b =  6\n"
+    )
+    expected = (
+        "struct Foo:\n"
+        '    @deprecated("abc")\n'
+        "    alias b = 6\n"
+    )
+    assert_mojo_format(source, expected)

@@ -4,27 +4,28 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import mblack
+from tests.util import assert_mojo_format
 
-# Test cases focusing on the brace initializer expressions
-
-SOURCES = [
-    "obj{field=value}",
-    "obj{field1=value1, field2=value2}",
-    "result = foo{3, y=4}",  # Python-valid version
-    "x = SomeType{x=1, y=2}"
-]
-
-EXPECTED_OUTPUTS = [
-    "obj {field = value}\n",
-    "obj {field1 = value1, field2 = value2}\n",
-    "result = foo {3, y = 4}\n",
-    "x = SomeType {x = 1, y = 2}\n"
-]
 
 def test_brace_initializer_simple():
-    """Test that brace initializer syntax can be parsed without errors."""
+    source = "obj{field=value}"
+    expected = "obj {field = value}\n"
+    assert_mojo_format(source, expected)
 
-    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
-    for source, expected in zip(SOURCES, EXPECTED_OUTPUTS):
-        assert mblack.format_str(source, mode=mode) == expected
+
+def test_brace_initializer_multiple_kwargs():
+    source = "obj{field1=value1, field2=value2}"
+    expected = "obj {field1 = value1, field2 = value2}\n"
+    assert_mojo_format(source, expected)
+
+
+def test_brace_initializer_multiple_kwargs_with_result():
+    source = "x = SomeType{x=1, y=2}"
+    expected = "x = SomeType {x = 1, y = 2}\n"
+    assert_mojo_format(source, expected)
+
+
+def test_brace_initializer_mixed_kwargs_with_result():
+    source = "result = foo{3, y=4}"
+    expected = "result = foo {3, y = 4}\n"
+    assert_mojo_format(source, expected)

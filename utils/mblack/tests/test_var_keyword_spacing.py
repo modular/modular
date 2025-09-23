@@ -4,32 +4,31 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""Test var keyword formatting and spacing."""
+from tests.util import assert_mojo_format
 
-import mblack
 
-# Test cases for var keyword spacing
-SOURCES = [
-    "fn method(var self): pass",
-    "fn func(var x: Int): pass",
-    "fn method(var self, y: Int): pass",
-]
+def test_var_keyword_spacing_simple():
+    source = "fn method(var self): pass"
+    expected = (
+        "fn method(var self):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
 
-EXPECTED_OUTPUTS = [
-"""fn method(var self):
-    pass
-""",
-"""fn func(var x: Int):
-    pass
-""",
-"""fn method(var self, y: Int):
-    pass
-"""
-]
 
-def test_var_keyword_spacing():
-    """Test that var keyword is properly formatted with spacing."""
+def test_var_keyword_spacing_with_type():
+    source = "fn func(var x: Int): pass"
+    expected = (
+        "fn func(var x: Int):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
 
-    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
-    for source, expected in zip(SOURCES, EXPECTED_OUTPUTS):
-        assert mblack.format_str(source, mode=mode) == expected
+
+def test_var_keyword_spacing_mixed():
+    source = "fn method(var self, y: Int): pass"
+    expected = (
+        "fn method(var self, y: Int):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
