@@ -25,7 +25,7 @@ from typing import Callable, TypeVar
 from typing_extensions import ParamSpec
 
 from .. import driver
-from ..graph import Graph, TensorValue, ops
+from ..graph import BufferValue, Graph, TensorValue, ops
 from . import tensor
 
 Args = ParamSpec("Args")
@@ -38,13 +38,13 @@ def functional(op: Op) -> Op:
     types."""
 
     def to_tensor(
-        result: driver.Tensor | tensor.Tensor | TensorValue,
+        result: driver.Tensor | tensor.Tensor | TensorValue | BufferValue,
     ) -> tensor.Tensor:
         if isinstance(result, tensor.Tensor):
             return result
         if isinstance(result, driver.Tensor):
             return tensor.Tensor(storage=result)
-        return tensor.Tensor.from_tensor_value(result)
+        return tensor.Tensor.from_graph_value(result)
 
     @functools.wraps(op)
     def wrapped(*args, **kwargs):
@@ -56,7 +56,11 @@ def functional(op: Op) -> Op:
 
         with graph:
             results = op(*args, **kwargs)
-        if isinstance(results, (driver.Tensor, tensor.Tensor, TensorValue)):
+        if results is None:
+            return
+        elif isinstance(
+            results, (driver.Tensor, tensor.Tensor, TensorValue, BufferValue)
+        ):
             return to_tensor(results)
         return [to_tensor(result) for result in results]
 
@@ -93,6 +97,12 @@ band_part = functional(ops.band_part)
 #: Broadcasts a tensor to a new shape.
 #: See :func:`max.graph.ops.broadcast_to` for details.
 broadcast_to = functional(ops.broadcast_to)
+#: Sets a tensor buffer to new values.
+#: See :func:`max.graph.ops.buffer_store` for details.
+buffer_store = functional(ops.buffer_store)
+#: Sets a slice of a tensor buffer to new values.
+#: See :func:`max.graph.ops.buffer_store_slice` for details.
+buffer_store_slice = functional(ops.buffer_store_slice)
 #: Casts a tensor to a different data type.
 #: See :func:`max.graph.ops.cast` for details.
 cast = functional(ops.cast)

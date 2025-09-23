@@ -24,9 +24,12 @@ and execute using the MAX runtime.
 
 Create and manipulate tensors with automatic compilation and optimization::
 
+.. code-block:: python
+
     from max.experimental import tensor
     from max.driver import CPU
     from max.dtype import DType
+
     # Create and operate on tensors
     x = tensor.Tensor.ones((2, 3), dtype=DType.float32, device=CPU())
     y = tensor.Tensor.zeros((2, 3), dtype=DType.float32, device=CPU())
@@ -56,7 +59,13 @@ from .. import _core, driver, engine, graph, mlir
 from .._core.dialects import builtin, kgen, mo
 from ..driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from ..dtype import DType
-from ..graph import ShapeLike, TensorType, TensorValueLike, Value, ops
+from ..graph import (
+    ShapeLike,
+    TensorType,
+    TensorValueLike,
+    Value,
+    ops,
+)
 from ..graph.graph import _location
 from . import functional as F
 
@@ -153,30 +162,59 @@ class Tensor(DLPackArray, HasTensorValue):
 
     For discussion purposes, a "realized" tensor is a tensor which
     references concrete memory, and an "unrealized" one does not.
+    An "unrealized" tensor may still have a driver tensor as storage,
+    but this memory may not be an up-to-date reference of the tensor's
+    data, for instance in the case of mutating ops.
+
+    Tensors unify the graph concepts of TensorValue and BufferValue.
+    Given `x: Tensor`:
+
+    | - If `x` is realized, it will be backed by a BufferValue input
+    |   to the graph.
+    | - If `x` is unrealized
+    |     - It will be backed by a BufferValue if the op that created it
+    |       returned a buffer _or_ if BufferValue(x) is ever called
+    |     - Otherwise it will be backed by a TensorValue
+    | - `x` may _always_ be loaded into a TensorValue via `TensorValue(x)`
+    |     - If `x` is backed by a BufferValue, this will do a "load".
+    |       The load is for operation ordering and will be optimized away.
+    | - `x` may _always_ be loaded into a BufferValue via `BufferValue(x)`
+    |     - Afterwards, `x` will always be unrealized, since it may now
+    |       have been passed into side-effecting ops.
+    |     - If `x` was backed by a TensorValue, it will now be backed
+    |       by a new BufferValue from `ops.buffer_create` containing
+    |       the same data.
+
+    This allows Tensors to be transparently treated as being mutable
+    buffers or immutable tensors while encoding only the necessary
+    semantics into the compilation graph, and mutating computations
+    remain lazy.
     """
 
     #: Underlying memory for a realized tensor.
-    _storage: driver.Tensor | None
-    #: - For a realized tensor this is a graph input value
-    #: - For an unrealized tensor this is a node in the graph
-    _value: graph.TensorValue
+    storage: driver.Tensor | None
+    #: - For a realized tensor this is a graph input BufferValue
+    #: - For an unrealized tensor this is a value in the graph
+    _value: graph.BufferValue | graph.TensorValue
+    _real: bool = False
 
     def __init__(
         self,
         *,
         storage: driver.Tensor | None = None,
-        value: graph.TensorValue | None = None,
+        value: graph.BufferValue | graph.TensorValue | None = None,
     ):
-        self._storage = storage
+        self.storage = storage
         if value is not None:
             self._value = value
-            if self._in_global_compute_graph:
-                GRAPH.unrealized.add(self)
         else:
             GRAPH.add_source(self)
+        self.real = storage is not None
 
     @classmethod
-    def from_tensor_value(cls, value: graph.TensorValue) -> Tensor:
+    def from_graph_value(
+        cls, value: graph.TensorValue | graph.BufferValue
+    ) -> Tensor:
         return cls(value=value)
 
     @classmethod
@@ -276,8 +314,9 @@ class Tensor(DLPackArray, HasTensorValue):
         )
 
     @property
-    def type(self) -> TensorType:
-        return self._value.type
+    def type(self) -> graph.TensorType:
+        type = self._value.type
+        return type.as_tensor() if isinstance(type, graph.BufferType) else type
 
     @property
     def rank(self) -> int:
@@ -297,23 +336,59 @@ class Tensor(DLPackArray, HasTensorValue):
         return self._value.device.to_device()
 
     @property
-    def real(self) -> bool:
-        """Whether the tensor is realized or not."""
-        return self._storage is not None
-
-    @property
     def driver_tensor(self) -> driver.Tensor:
         """A pointer to the underlying memory.
 
         Raises if the tensor is unrealized.
         """
-        if not self.real:
+        if (storage := self.storage) is None:
             raise TypeError("Can't get driver tensor for symbolic tensor")
-        assert self._storage is not None
-        return self._storage
+        return storage
+
+    @property
+    def real(self) -> bool:
+        return self._real
+
+    @real.setter
+    def real(self, real: bool) -> None:
+        if not real and self._in_global_compute_graph:
+            GRAPH.add_unrealized(self)
+        self._real = real
 
     def __tensorvalue__(self) -> graph.TensorValue:
+        """Gets a TensorValue for the underlying data.
+
+        If self is backed by a BufferValue, this will do a `ops.buffer_load`.
+        The load is for ordering mutable operations and will be optimized away.
+        """
+        if isinstance(self._value, graph.BufferValue):
+            return self._value[...]
+        assert isinstance(self._value, graph.TensorValue)
         return self._value
+
+    def __buffervalue__(self) -> graph.BufferValue:
+        """Gets a BufferValue for the underlying data.
+
+        Afterwards this tensor will always be unrealized. Assume that
+        the resulting BufferValue is passed into a staged mutating op,
+        and the backing data is not accurate until the graph has executed.
+
+        If self is backed by a TensorValue
+            - create a new BufferValue via `ops.buffer_create` and
+            `ops.buffer_store` containing the same data
+            - `self` is updated to be backed by the new BufferValue
+            - further ops on the same tensor will then load from the
+            buffer to ensure proper sequencing with mutation
+        """
+        self.real = False
+
+        if isinstance(self._value, graph.BufferValue):
+            return self._value
+        assert isinstance(self._value, graph.TensorValue)
+        tensor = self._value
+        self._value = buffer = ops.buffer_create(tensor.type.as_buffer())
+        buffer[...] = tensor
+        return buffer
 
     @property
     def _in_global_compute_graph(self) -> bool:
@@ -382,13 +457,13 @@ class Tensor(DLPackArray, HasTensorValue):
 
     def __dlpack__(self, stream: int | None = None):
         self._sync_realize()
-        assert self._storage is not None
-        return self._storage.__dlpack__(stream=stream)
+        assert self.storage is not None
+        return self.storage.__dlpack__(stream=stream)
 
     def __dlpack_device__(self):
         self._sync_realize()
-        assert self._storage is not None
-        return self._storage.__dlpack_device__()
+        assert self.storage is not None
+        return self.storage.__dlpack_device__()
 
     def __rich_repr__(self):
         yield "shape", self.shape
@@ -577,7 +652,7 @@ class ComputeGraph:
     sources: dict[_core.Value[Any], Tensor]
     #: Keeps weak references to intermediate unrealized tensor values, which may
     #: never need to be realized.
-    unrealized: weakref.WeakSet[Tensor]
+    unrealized: weakref.WeakValueDictionary[int, Tensor]
 
     def __init__(
         self,
@@ -588,7 +663,7 @@ class ComputeGraph:
         self.context = context or mlir.Context()
         self.sources = {}
 
-        self.unrealized = weakref.WeakSet()
+        self.unrealized = weakref.WeakValueDictionary()
         self.graph = graph.Graph("main", input_types=[], context=self.context)
 
         with self.graph:
@@ -625,7 +700,7 @@ class ComputeGraph:
         gc.collect()
 
         # create strong references during execution
-        unrealized = list(self.unrealized)
+        unrealized = list(self.unrealized.values())
         with self.graph:
             # peek rather than next! If the seed is rotated but compilation
             # or execute fails, we need the seed to not rotate.
@@ -663,7 +738,8 @@ class ComputeGraph:
         for tensor, storage in zip(unrealized, results):
             # This will eventually support Mojo values also.
             assert isinstance(storage, driver.Tensor)
-            tensor._storage = storage
+            tensor.storage = storage
+            tensor.real = True
 
         # Reset the graph to a new empty graph with only inputs
         ComputeGraph.__init__(
@@ -676,18 +752,24 @@ class ComputeGraph:
         )
 
     def add_source(self, tensor: Tensor) -> None:
+        if tensor.storage is None:
+            raise TypeError("Only realized tensors may be graph sources.")
+
         op = _core.Operation._from_cmlir(self.graph._mlir_op)
         assert isinstance(op, mo.GraphOp)
         block = op.regions[0].front
         # Update the GraphOP to reflect the new argument
         with self.graph:
-            type = driver_tensor_type(tensor.driver_tensor).to_mlir()
+            type = driver_tensor_type(tensor.storage).as_buffer().to_mlir()
             inputs = op.function_type.inputs
             op.function_type = builtin.FunctionType([*inputs, type])  # type: ignore
-            tensor._value = graph.TensorValue.from_mlir(
+            tensor._value = graph.BufferValue.from_mlir(
                 block.add_argument(type, _location())
             )
         self.sources[tensor._value._mlir_value] = tensor
+
+    def add_unrealized(self, tensor: Tensor) -> None:
+        self.unrealized[id(tensor)] = tensor
 
 
 def _remove_unused_arguments(graph: graph.Graph):
