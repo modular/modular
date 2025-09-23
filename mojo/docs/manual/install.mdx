@@ -5,6 +5,8 @@ description: You can install Mojo using pixi, uv, conda, pip, or other Python/Co
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import Requirements from '@site/src/components/Requirements';
+import { requirementsNoGPU } from '@site/docs/max/requirements';
 
 You can install Mojo as a Python or Conda package. This page shows you how to
 install using `pixi`, `uv`, `pip`, and `conda`, but you can use other tools.
@@ -16,6 +18,10 @@ tutorial](/mojo/manual/get-started), which includes installation steps.
 
 :::
 
+System requirements:
+
+<Requirements requirementsData={requirementsNoGPU}
+url="/mojo/manual/install#system-requirements" />
 
 ## Install
 
