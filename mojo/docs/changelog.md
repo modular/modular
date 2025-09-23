@@ -21,6 +21,11 @@ what we publish.
 
 ### Language enhancements
 
+Literals now have a default type. For example, you can now bind
+[1,2,3] to T in a call to a function defined as
+ fn zip[T: Iterable](impl:T) because it will default to the
+ standard library's List type.
+
 ### Language changes
 
 ### Standard library changes
