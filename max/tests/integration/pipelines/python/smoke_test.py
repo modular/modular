@@ -1,0 +1,182 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""
+This script is used for the CI "Max Serve Smoke Test" workflow.
+It does two things:
+    1. Starts the MAX/SGLang/VLLM inference server for the given model
+    2. Runs a tiny evaluation task using against the chat/completions API
+
+Currently there is a hard dependency that two virtualenvs are already created:
+    - .venv-serve (not needed for max-ci, which uses bazel)
+    - .venv-lm-eval
+
+Where the serve environment should already have either MAX/VLLM/SGLang installed.
+The lm-eval environment should already have lm-eval installed.
+These dependencies are to be removed once this script
+has been integrated into bazel.
+"""
+
+import logging
+import os
+import signal
+import subprocess
+import time
+from subprocess import Popen
+
+import click
+import requests
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def get_gpu_model() -> str:
+    return subprocess.check_output(
+        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader", "-i", "0"],
+        text=True,
+    ).strip()
+
+
+def server_is_ready() -> bool:
+    health_url = "http://localhost:8000/health"
+    try:
+        return requests.get(health_url, timeout=1).status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+
+def get_server_cmd(framework: str, model: str) -> list[str]:
+    interpreter = [".venv-serve/bin/python", "-m"]
+    commands = {
+        "sglang": [
+            *interpreter,
+            "sglang.launch_server",
+            "--host",
+            "0.0.0.0",
+            "--attention-backend",
+            "triton" if "b200" in get_gpu_model().lower() else "fa3",
+            "--mem-fraction-static",
+            "0.8",
+        ],
+        "vllm": [
+            *interpreter,
+            "vllm.entrypoints.openai.api_server",
+            "--host",
+            "0.0.0.0",
+            "--max-model-len",
+            "16384",
+        ],
+        "max": [*interpreter, "max.entrypoints.pipelines", "serve"],
+        "max-ci": ["./bazelw", "run", "--config=ci", "max", "--", "serve"],
+    }
+    return commands[framework] + [
+        "--port",
+        "8000",
+        "--trust-remote-code",
+        "--model",
+        model,
+    ]
+
+
+def get_lm_eval_cmd(model: str) -> list[str]:
+    safe_model_name = model.replace("/", "_").replace(":", "_")
+
+    max_gen_toks = {
+        "unsloth/gpt-oss-20b-BF16": ",max_gen_toks=50000",
+        "Qwen/Qwen3-8B": ",max_gen_toks=4096",
+    }.get(model, "")
+
+    return [
+        ".venv-lm-eval/bin/python",
+        "-m",
+        "lm_eval",
+        "--model",
+        "local-chat-completions",
+        "--model_args",
+        f"model={model},base_url=http://localhost:8000/v1/chat/completions,num_concurrent=64",
+        "--tasks",
+        "gsm8k_cot_llama",
+        "--fewshot_as_multiturn",
+        "--apply_chat_template",
+        "--output_path",
+        f"./results_{safe_model_name}",
+        "--limit",
+        "320",
+        "--seed",
+        "42",
+        "--gen_kwargs",
+        f"top_p=1,top_k=1,temperature=0,seed=42{max_gen_toks}",
+        "--log_samples",
+    ]
+
+
+def write_github_output(key: str, value: str):
+    path = os.getenv("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a") as f:
+            f.write(f"{key}={value}\n")
+
+
+def gracefully_stop_process(process: Popen):
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        process.wait(5)
+    except subprocess.TimeoutExpired:
+        logger.warning("Process did not terminate gracefully, forcing kill")
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        process.wait(5)
+
+
+@click.command()
+@click.option(
+    "--framework",
+    type=click.Choice(["sglang", "vllm", "max", "max-ci"]),
+    required=True,
+)
+@click.option(
+    "--model",
+    type=str,
+    required=True,
+    help="huggingface model path, for example: unsloth/gpt-oss-20b-BF16",
+)
+def smoke_test(framework: str, model: str):
+    cmd = get_server_cmd(framework, model)
+
+    # SGLang depends on ninja which is in the serve environment
+    env = os.environ.copy()
+    venv_bin = os.path.abspath(".venv-serve/bin")
+    env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+
+    with Popen(cmd, start_new_session=True, env=env) as server_process:
+        script_start_time = time.perf_counter()
+        while not server_is_ready():
+            if server_process.poll() is not None:
+                raise Exception("Server process terminated unexpectedly")
+            elif time.perf_counter() - script_start_time > 600:
+                raise Exception("Server did not start in 600 seconds")
+            time.sleep(0.5)
+
+        startup_time = time.perf_counter() - script_start_time
+        logger.info(f"Server started in {startup_time:.2f} seconds")
+        write_github_output("startup_time", f"{startup_time:.2f}")
+
+        try:
+            lm_eval_cmd = get_lm_eval_cmd(model)
+            with Popen(lm_eval_cmd, start_new_session=True) as lm_eval_process:
+                try:
+                    lm_eval_process.wait(600)
+                except subprocess.TimeoutExpired:
+                    gracefully_stop_process(lm_eval_process)
+                    raise
+        finally:
+            gracefully_stop_process(server_process)
+
+    time.sleep(1)
+    logger.info("Smoke test completed")
+
+
+if __name__ == "__main__":
+    smoke_test()
