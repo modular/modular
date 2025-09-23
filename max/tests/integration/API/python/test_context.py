@@ -614,3 +614,141 @@ def test_text_context_repr(capsys: pytest.CaptureFixture) -> None:
         )
         is not None
     )
+
+
+def test_context__chunked_prefill_needs_ce_edge_case() -> None:
+    """Test that needs_ce behaves correctly during chunked prefill processing.
+
+    This test reproduces the production edge case where a context in chunked prefill
+    reaches the end of prompt processing (_start_idx == _prompt_len) but hasn't
+    started completion generation (_completion_start_idx == _completion_end_idx),
+    while status remains ACTIVE and needs_ce incorrectly returns False.
+    """
+    # Test parameters
+    n = 32  # Initial prompt length
+    chunk_size = 8  # Chunked prefill chunk size
+    m = n + chunk_size + 5  # Additional tokens: m > (n + chunk_size)
+
+    # a. Create a random prompt of length n
+    initial_prompt = np.arange(n, dtype=np.int32)
+
+    context = TextContext(
+        max_length=200,  # Large enough to accommodate all tokens
+        tokens=initial_prompt,
+    )
+
+    # Verify initial state
+    assert context.active_length == n
+    assert context.needs_ce is True
+    assert context._prompt_len == n
+    assert (
+        context._completion_start_idx == context._completion_end_idx
+    )  # No completions yet
+
+    # b. Generate n + m tokens, where m > (n + chunk_size)
+    for i in range(m):
+        context.update(n + i)
+
+    # Verify we've generated the expected number of tokens
+    assert context.current_length == n + m
+    assert (
+        context.needs_ce is False
+    )  # All original prompt processed, completion generated
+    assert (
+        context._completion_start_idx != context._completion_end_idx
+    )  # Has completions
+
+    # c. Reset the context object
+    context.reset()
+
+    # After reset, all tokens become the new prompt
+    new_prompt_len = n + m
+    assert context.active_length == new_prompt_len
+    assert context._prompt_len == new_prompt_len
+    assert context.needs_ce is True
+    assert context.status == GenerationStatus.ACTIVE
+    # Critical: completion indices are reset to equal values (the edge case setup)
+    _ = context.to_generation_output()
+    assert context._completion_start_idx == context._completion_end_idx
+
+    # d. Simulate chunked prefill processing chunk by chunk
+    processed_tokens = 0
+
+    while processed_tokens < new_prompt_len:
+        # Calculate current chunk size
+        remaining_tokens = new_prompt_len - processed_tokens
+        current_chunk_size = min(chunk_size, remaining_tokens)
+
+        # Simulate what the scheduler does: set indices for chunked processing
+        context.set_token_indices(
+            start_idx=processed_tokens,
+            active_idx=processed_tokens + current_chunk_size,
+            end_idx=new_prompt_len,
+        )
+
+        # Before simulating the update call, verify needs_ce
+        assert context.needs_ce is True, (
+            f"needs_ce should be True when processing chunk at tokens "
+            f"{processed_tokens} to {processed_tokens + current_chunk_size}"
+        )
+
+        # Simulate the chunked prefill path in update() method
+        context.update(1)
+
+        # Verify that indices were updated correctly
+        assert context._start_idx == processed_tokens + current_chunk_size
+        processed_tokens += current_chunk_size
+
+        # Key test: verify needs_ce behavior after chunk processing
+        if processed_tokens < new_prompt_len:
+            # Still have prompt tokens to process
+            assert context._active_idx == new_prompt_len
+            assert context.needs_ce is True, (
+                f"needs_ce should be True after processing {processed_tokens}/{new_prompt_len} tokens"
+            )
+            assert (
+                context._completion_start_idx == context._completion_end_idx
+            ), "Should have no completion tokens yet"
+
+        else:
+            # We've reached the critical edge case:
+            # - All prompt tokens processed (_start_idx == _prompt_len)
+            # - One completion tokens generated (_completion_start_idx == _completion_end_idx)
+            # - Status is still ACTIVE
+            assert context._active_idx == new_prompt_len + 1
+
+            assert context._start_idx == context._prompt_len, (
+                "Should have processed all prompt tokens"
+            )
+            assert context.status == GenerationStatus.ACTIVE, (
+                "Status should still be ACTIVE"
+            )
+
+            assert context.needs_ce is False, (
+                "Processed all prompt tokens but no completion tokens generated",
+            )
+            assert (
+                context._completion_start_idx + 1 == context._completion_end_idx
+            ), "Should have no completion tokens yet"
+
+    # Verify final state before first completion token
+    _ = context.to_generation_output()
+    assert context._start_idx == new_prompt_len
+    assert context.active_length == 1
+    assert (
+        context._completion_start_idx == context._completion_end_idx
+    )  # No completions yet
+
+    # Now simulate generating the first completion token
+    # This should transition the context out of the edge case
+    context.update(999)  # Generate first actual completion token
+
+    # Verify proper transition to completion generation
+    assert context.active_length == 1
+    assert context.needs_ce is False  # Now we genuinely don't need CE
+    assert (
+        context._completion_start_idx != context._completion_end_idx
+    )  # Now we have completions
+    assert (
+        context.status == GenerationStatus.ACTIVE
+    )  # Still active, but generating completions
