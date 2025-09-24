@@ -24,7 +24,6 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
-    Graph,
     ShardingStrategy,
     TensorValue,
     Weight,
@@ -1026,18 +1025,16 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
                 "All elements in freqs_cis must be TensorValue instances"
             )
 
-        attn_outputs = []
-        with Graph._async_region() as fork:
-            for i in fork.each(range(len(self.devices))):
-                attn_outputs.append(
-                    self.list_of_attentions[i](
-                        layer_idx,
-                        x[i],
-                        kv_collections[i],
-                        freqs_cis[i],
-                        input_row_offsets[i],
-                    )
-                )
+        attn_outputs = [
+            self.list_of_attentions[i](
+                layer_idx,
+                x[i],
+                kv_collections[i],
+                freqs_cis[i],
+                input_row_offsets[i],
+            )
+            for i in range(len(self.devices))
+        ]
 
         return self.allreduce(
             inputs=attn_outputs,
