@@ -110,12 +110,10 @@ static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
   return Error("non-integral dtypes are not supported");
 }
 
-/// Flat work group size attribute expects min and max values to be specified.
-/// If given attr contains just one element, return "1, N"
+/// Helper function to get min and max values of a work group size attribute.
 template <typename AttrT>
-static ErrorOrSuccess addFlatWorkGroupSizeAttr(Builder builder,
-                                               NamedAttrList &attrs,
-                                               StringRef name, AttrT attr) {
+static ErrorOr<std::pair<int64_t, int64_t>>
+getWorkGroupSizeRangeHelper(AttrT attr) {
   SmallVector<int64_t> values;
   if constexpr (std::is_same_v<POP::ArrayAttr, AttrT>) {
     if (attr.getValues().size() != 1 && attr.getValues().size() != 2)
@@ -140,10 +138,20 @@ static ErrorOrSuccess addFlatWorkGroupSizeAttr(Builder builder,
   }
   if (values.size() == 1)
     values.insert(values.begin(), 1);
-  std::string flatBufferStringValue =
-      std::to_string(values[0]) + ", " + std::to_string(values[1]);
-  attrs.append(name, builder.getStringAttr(flatBufferStringValue));
-  return success();
+
+  return std::make_pair(values[0], values[1]);
+}
+
+static ErrorOr<std::pair<int64_t, int64_t>>
+getWorkGroupSizeRange(Attribute value) {
+  if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
+    return getWorkGroupSizeRangeHelper(array);
+  }
+  if (auto integer = dyn_cast<IntegerAttr>(value)) {
+    return getWorkGroupSizeRangeHelper(integer);
+  }
+  return Error("attribute type must either be ArrayAttr of 1 or 2 elements or "
+               "IntegerAttr ");
 }
 
 //===----------------------------------------------------------------------===//
@@ -227,28 +235,34 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
       // ROCDL -> LLVM IR
       if (attr.getName() ==
           mlir::ROCDL::ROCDLDialect::getFlatWorkGroupSizeAttrName()) {
-        if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
-          if (auto err =
-                  addFlatWorkGroupSizeAttr(b, attrs, attr.getName(), array);
-              err.isError())
-            return mlir::emitError(func.getLoc(),
-                                   "unsupported `rocdl.flat_work_group_size`: ")
-                   << err.takeError();
-          continue;
-        }
-        if (auto integer = dyn_cast<IntegerAttr>(value)) {
-          if (auto err =
-                  addFlatWorkGroupSizeAttr(b, attrs, attr.getName(), integer);
-              err.isError())
-            return mlir::emitError(func.getLoc(),
-                                   "unsupported `rocdl.flat_work_group_size`: ")
-                   << err.takeError();
-          continue;
-        }
-        return mlir::emitError(
-            func.getLoc(),
-            "unsupported `rocdl.flat_work_group_size`: attribute type must "
-            "either be ArrayAttr of 1 element or IntegerAttr ");
+        auto valuesOr = getWorkGroupSizeRange(value);
+        if (valuesOr.isError())
+          return mlir::emitError(func.getLoc(), "unsupported `")
+                 << attr.getName() << "`: " << valuesOr.takeError();
+        std::pair<int64_t, int64_t> values = valuesOr.get();
+        std::string flatBufferStringValue =
+            std::to_string(values.first) + ", " + std::to_string(values.second);
+        attrs.append(attr.getName().strref(),
+                     b.getStringAttr(flatBufferStringValue));
+        continue;
+      }
+    } else if (isa<POP::POPDialect>(nameDialect)) {
+      if (attr.getName() == "pop.air.max_work_group_size") {
+
+        // Metal does not support min value for workgroup size, so
+        // min value other than 1 is ignored. Also record the
+        // `pop.air.max_work_group_size` attribute as a string attribute
+        // (removing `pop.` prefix) to allow passing it through to LLVM IR.
+        auto valuesOr = getWorkGroupSizeRange(value);
+        if (valuesOr.isError())
+          return mlir::emitError(func.getLoc(), "unsupported `")
+                 << attr.getName() << "`: " << valuesOr.takeError();
+        std::pair<int64_t, int64_t> values = valuesOr.get();
+        passthrough.push_back(
+            b.getArrayAttr({b.getStringAttr(attr.getName().strref().drop_front(
+                                StringRef("pop.").size())),
+                            b.getStringAttr(std::to_string(values.second))}));
+        continue;
       }
     }
 
