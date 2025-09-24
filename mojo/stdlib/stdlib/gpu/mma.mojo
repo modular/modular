@@ -21,6 +21,8 @@ from sys.info import (
     CompilationTarget,
     _cdna_4_or_newer,
     _is_amd_rdna,
+    _is_amd_rdna3,
+    _is_amd_rdna4,
     is_amd_gpu,
 )
 
@@ -100,17 +102,69 @@ fn _has_shape[
 
 @always_inline
 fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    """AMD RDNA3+ WMMA implementation for matrix multiplication.
+    """Performs AMD RDNA3+ WMMA (Wave Matrix Multiply-Accumulate) operations.
 
-    RDNA3/4 GPUs use WMMA instructions.
-    Per https://gpuopen.com/learn/wmma_on_rdna3/
-    the following intrinsics are supported:
-    - llvm.amdgcn.wmma.f32.16x16x16.f16
-    - llvm.amdgcn.wmma.f32.16x16x16.bf16
-    - llvm.amdgcn.wmma.f16.16x16x16.f16
-    - llvm.amdgcn.wmma.bf16.16x16x16.bf16
-    - llvm.amdgcn.wmma.i32.16x16x16.iu8
-    - llvm.amdgcn.wmma.i32.16x16x16.iu4
+    This function implements matrix multiply-accumulate operations for AMD RDNA3+
+    consumer GPUs using WMMA instructions. WMMA was introduced in RDNA3 and is not
+    available on RDNA1/2 hardware.
+
+    Supported operations by RDNA generation:
+
+    RDNA3+ (all operations):
+        - F32 = F16 * F16 + F32 (16x16x16 shape)
+        - F32 = BF16 * BF16 + F32 (16x16x16 shape)
+
+    RDNA4 additional operations:
+        - F32 = FP8 * FP8 + F32 (16x16x32 shape, native hardware support)
+
+    Args:
+        d: Output accumulator SIMD vector (modified in-place).
+        a: First input matrix as SIMD vector.
+        b: Second input matrix as SIMD vector.
+        c: Accumulator matrix as SIMD vector.
+
+    RDNA WMMA Fragment Requirements:
+        RDNA WMMA is a wave-cooperative operation where each lane holds a fragment
+        of the full matrix. For the 16×16×16 WMMA operation (M×N×K dimensions):
+
+        Matrix Dimensions:
+            - Matrix A: 16×16 (M×K) = 256 fp16/bf16 elements total
+            - Matrix B: 16×16 (K×N) = 256 fp16/bf16 elements total
+            - Matrix C/D: 16×16 (M×N) = 256 fp32 elements total
+
+        Per-Lane Fragment Sizes (wave32 mode):
+            - A fragment: 16 fp16/bf16 elements (full K=16 dimension per lane)
+            - B fragment: 16 fp16/bf16 elements (full K=16 dimension per lane)
+            - C/D fragment: 8 fp32 elements (M×N=256 distributed: 256/32 lanes = 8)
+
+        This means the SIMD sizes passed to mma() for wave32 must be:
+            - a.size = 16, b.size = 16, c.size = 8, d.size = 8
+
+        LLVM Intrinsic Signatures:
+            - FP16: llvm.amdgcn.wmma.f32.16x16x16.f16(<16 x half>, <16 x half>, <8 x float>)
+            - BF16: llvm.amdgcn.wmma.f32.16x16x16.bf16(<16 x i16>, <16 x i16>, <8 x float>)
+
+            Note: BF16 fragments must be bitcast to <16 x i16> (packed BF16 as int16)
+            before calling the intrinsic, not passed as <16 x bfloat>.
+
+        Wave-Cooperative Distribution:
+            - All 32 lanes in wave32 participate in the computation
+            - A/B fragments: Each lane holds its portion (16 elements)
+            - C/D fragments: Output distributed across all lanes (8 elements each)
+            - Wave32 requires half-wave replication (lanes 16-31 mirror lanes 0-15)
+
+        Hardware Register Usage:
+            - A/B: 8 VGPRs per lane (2 fp16/bf16 packed per 32-bit VGPR)
+            - C/D: 8 VGPRs per lane (1 fp32 per 32-bit VGPR)
+
+        Type and shape validation is performed by get_intrinsic_name() which calls
+        _unsupported_mma_op() for invalid combinations.
+
+    References:
+        - RDNA3 WMMA: https://gpuopen.com/learn/wmma_on_rdna3/
+        - RDNA3 ISA: https://www.amd.com/content/dam/amd/en/documents/radeon-tech-docs/instruction-set-architectures/rdna3-shader-instruction-set-architecture-feb-2023_0.pdf
+        - RDNA4 ISA: https://www.amd.com/content/dam/amd/en/documents/radeon-tech-docs/instruction-set-architectures/rdna4-instruction-set-architecture.pdf
+          - Section 7.5 (8-bit Math) for FP8/BF8 details
     """
 
     @parameter
@@ -121,22 +175,56 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         # F32 = BF16 * BF16 + F32 (16x16x16)
         # ===------------------------------------------------------------------===#
         @parameter
-        if (
-            _has_type[
-                (DType.float16, DType.float16, DType.float32, DType.float32)
-            ](a.dtype, b.dtype, c.dtype, d.dtype)
-            or _has_type[
-                (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
-            ](a.dtype, b.dtype, c.dtype, d.dtype)
-        ) and _has_shape[4](a.size, b.size, c.size, d.size):
-            alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
-            return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+        if _has_type[
+            (DType.float16, DType.float16, DType.float32, DType.float32)
+        ](a.dtype, b.dtype, c.dtype, d.dtype) or _has_type[
+            (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+        ](
+            a.dtype, b.dtype, c.dtype, d.dtype
+        ):
+
+            @parameter
+            if _has_shape[(16, 16, 8, 8)](a.size, b.size, c.size, d.size):
+                alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
+                return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
+        elif a.dtype in [
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+            DType.float8_e5m2,
+            DType.float8_e5m2fnuz,
+        ] or b.dtype in [
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+            DType.float8_e5m2,
+            DType.float8_e5m2fnuz,
+        ]:
+            _unsupported_mma_op(d, a, b, c)
+            return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
 
-    var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](a, b, c)
-    d = rebind[type_of(d)](r)
+    @parameter
+    if a.size == 16 and b.size == 16 and c.size == 8 and d.size == 8:
+        alias intrinsic_name = get_intrinsic_name()
+
+        @parameter
+        if a.dtype is DType.bfloat16:
+            var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
+                bitcast[DType.int16, 16](a), bitcast[DType.int16, 16](b), c
+            )
+            d = rebind[type_of(d)](r)
+        else:
+            var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](a, b, c)
+            d = rebind[type_of(d)](r)
+    else:
+        var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
+            a, b, c
+        )
+        d = rebind[type_of(d)](r)
 
 
 @fieldwise_init
