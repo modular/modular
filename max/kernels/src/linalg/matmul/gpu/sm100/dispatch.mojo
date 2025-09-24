@@ -439,6 +439,9 @@ fn matmul_dispatch_sm100_seperate_epilogue[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     block_swizzle_size: Int = 0,  # (KERN-2026) block_swizzle_size=8 fails for some special cases, so we use 0 here.
     cta_group: Int = 2,
@@ -459,6 +462,11 @@ fn matmul_dispatch_sm100_seperate_epilogue[
     var a_tensor = from_ndbuffer_row_major(a)
     var b_tensor = from_ndbuffer_row_major(b)
 
+    constrained[
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,
+        "Either the epilogue lambda or the compute lambda can be used",
+    ]()
+
     @parameter
     if not elementwise_lambda_fn:
         if not c.data:
@@ -470,6 +478,7 @@ fn matmul_dispatch_sm100_seperate_epilogue[
             cta_group=cta_group,
             block_swizzle_size=block_swizzle_size,
             num_pipeline_stages=num_pipeline_stages,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ](c_tensor, a_tensor, b_tensor, ctx)
         return
 
@@ -492,7 +501,7 @@ fn matmul_dispatch_sm100_seperate_epilogue[
             var c_val = c.load[
                 width=simd_width,
                 # Load takes alignment in bytes, lambda takes number of elements
-                alignment = alignment * size_of[c_type](),
+                alignment = alignment * size_of[c.type](),
             ](c_coord)
             epilogue[c.type, simd_width, alignment=alignment](c_coord, c_val)
 
@@ -507,6 +516,7 @@ fn matmul_dispatch_sm100_seperate_epilogue[
                 config=config,
                 cta_group=cta_group,
                 block_swizzle_size=block_swizzle_size,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             ](c_tensor, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
@@ -528,6 +538,7 @@ fn matmul_dispatch_sm100_seperate_epilogue[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
             num_pipeline_stages=num_pipeline_stages,
         ](c_tmp, a, b, ctx)
@@ -542,6 +553,10 @@ fn matmul_sm100_entrypoint[
     b_type: DType,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_wrapper: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
@@ -549,6 +564,11 @@ fn matmul_sm100_entrypoint[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
+    # NOTE:
+    # 1. if a compute epilogue is provided AND we hit our mojo SM100 kernel, we directly use it (Best case scenario - Max Perf.)
+    # 2. If a normal epilogue is provided AND we hit our mojo SM100 kernel, then for now we dispatch an unfused mojo matmul + elementwise epilogue
+    # 3. If we don't hit a mojo SM100 kernel for any reason, then we wrap compute epilogue like a normal epilogue and dispatch an unfused cublas matmul + elementwise epilogue
+
     constrained[
         a_type == b_type and a_type is DType.bfloat16,
         "a_type and b_type must be bfloat16",
@@ -587,6 +607,7 @@ fn matmul_sm100_entrypoint[
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             rasterize_order = RasterOrder(RASTERIZE_ORDER),
             num_pipeline_stages = UInt(PIPELINE_STAGE),
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ](c_tensor, a_tensor, b_tensor, ctx)
 
         return DISPATCH_HIT
@@ -635,6 +656,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=8,
                 ](c, a, b, ctx)
@@ -656,6 +678,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
@@ -676,6 +699,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=8,
                 ](c, a, b, ctx)
@@ -697,6 +721,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=0,
                 ](c, a, b, ctx)
@@ -720,6 +745,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
@@ -741,6 +767,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
@@ -762,6 +789,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=8,
                 ](c, a, b, ctx)
@@ -783,6 +811,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=2,
                 ](c, a, b, ctx)
@@ -804,6 +833,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=1,
                 ](c, a, b, ctx)
@@ -827,6 +857,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
@@ -855,6 +886,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=1,
                 ](c, a, b, ctx)
@@ -876,6 +908,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=8,
                 ](c, a, b, ctx)
@@ -899,6 +932,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
@@ -919,6 +953,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     num_pipeline_stages = UInt(7),
                     block_swizzle_size=1,
@@ -941,6 +976,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=4,
                 ](c, a, b, ctx)
@@ -962,6 +998,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=8,
                 ](c, a, b, ctx)
@@ -983,6 +1020,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                     block_swizzle_size=8,
                 ](c, a, b, ctx)
@@ -1006,6 +1044,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
@@ -1030,6 +1069,7 @@ fn matmul_sm100_entrypoint[
                     transpose_b=transpose_b,
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](c, a, b, ctx)
                 return DISPATCH_HIT
@@ -1038,13 +1078,13 @@ fn matmul_sm100_entrypoint[
         # m=1 and N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
         @parameter
         if a_type is DType.bfloat16:
-            if m == 1:
+            if m == 1 or static_N == 1:
                 return DISPATCH_MISS
 
         # fallback to vendor matmul for untuned shapes
         matmul_vendor[
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
@@ -1059,6 +1099,6 @@ fn matmul_sm100_entrypoint[
         logger.info("Executing vendor BLAS (cuBLAS)")
         matmul_vendor[
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
         ](c, a, b, ctx)
         return DISPATCH_HIT

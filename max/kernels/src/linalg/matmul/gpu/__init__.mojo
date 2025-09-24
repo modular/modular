@@ -596,7 +596,9 @@ fn _matmul_gpu[
     ):
         var status = matmul_sm100_entrypoint[
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
