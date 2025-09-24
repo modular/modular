@@ -582,6 +582,18 @@ alias H100 = GPUInfo(
     max_thread_block_size=1024,
 )
 
+# ===-----------------------------------------------------------------------===#
+# Blackwell constants
+# ===-----------------------------------------------------------------------===#
+
+# https://docs.nvidia.com/cuda/blackwell-tuning-guide/index.html#occupancy
+alias _blackwell_warp_size = 32
+alias _blackwell_shared_mem_10_0 = 228 * _KB
+alias _blackwell_shared_mem_12_0 = 100 * _KB
+alias _blackwell_max_registers_per_block = 64 * 1024
+alias _blackwell_max_threads_per_sm_10_0 = 64 * _blackwell_warp_size
+alias _blackwell_max_threads_per_sm_12_0 = 48 * _blackwell_warp_size
+alias _blackwell_max_thread_blocks_per_sm = 32
 
 # ===-----------------------------------------------------------------------===#
 # B100
@@ -618,10 +630,10 @@ alias B100 = GPUInfo(
     compute=10.0,
     version="sm_100a",
     sm_count=132,
-    warp_size=32,
-    threads_per_sm=-1,
-    shared_memory_per_multiprocessor=256 * _KB,
-    max_registers_per_block=65536,
+    warp_size=_blackwell_warp_size,
+    threads_per_sm=_blackwell_max_threads_per_sm_10_0,
+    shared_memory_per_multiprocessor=_blackwell_shared_mem_10_0,
+    max_registers_per_block=_blackwell_max_registers_per_block,
     max_thread_block_size=1024,
 )
 
@@ -633,10 +645,10 @@ alias B200 = GPUInfo(
     compute=10.0,
     version="sm_100a",
     sm_count=148,
-    warp_size=32,
-    threads_per_sm=-1,
-    shared_memory_per_multiprocessor=228 * _KB,
-    max_registers_per_block=65536,
+    warp_size=_blackwell_warp_size,
+    threads_per_sm=_blackwell_max_threads_per_sm_10_0,
+    shared_memory_per_multiprocessor=_blackwell_shared_mem_10_0,
+    max_registers_per_block=_blackwell_max_registers_per_block,
     max_thread_block_size=1024,
 )
 
@@ -674,10 +686,10 @@ alias RTX5090 = GPUInfo(
     compute=12.0,
     version="sm_120a",
     sm_count=170,
-    warp_size=32,
-    threads_per_sm=-1,
-    shared_memory_per_multiprocessor=58 * _KB,
-    max_registers_per_block=65536,
+    warp_size=_blackwell_warp_size,
+    threads_per_sm=_blackwell_max_threads_per_sm_12_0,
+    shared_memory_per_multiprocessor=_blackwell_shared_mem_12_0,
+    max_registers_per_block=_blackwell_max_registers_per_block,
     max_thread_block_size=1024,
 )
 
