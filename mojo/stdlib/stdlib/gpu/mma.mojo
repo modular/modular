@@ -107,8 +107,8 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     - llvm.amdgcn.wmma.f32.16x16x16.bf16
     - llvm.amdgcn.wmma.f16.16x16x16.f16
     - llvm.amdgcn.wmma.bf16.16x16x16.bf16
-    - llvm.amdgcn.wmma.i32.16x16x16.iu8
-    - llvm.amdgcn.wmma.i32.16x16x16.iu4
+    - llvm.amdgcn.wmma.i32.16x16x16.iu8  (signed/unsigned int8 with int32 accumulation)
+    - llvm.amdgcn.wmma.i32.16x16x16.iu4  (signed/unsigned int4 with int32 accumulation)
     """
 
     @parameter
@@ -161,6 +161,23 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 _unsupported_mma_op(d, a, b, c)
                 return ""
+        elif (a.dtype is DType.int8 or a.dtype is DType.uint8) and (b.dtype is DType.int8 or b.dtype is DType.uint8) and c.dtype is DType.int32 and d.dtype is DType.int32:
+            # Int8/UInt8 with int32 accumulation
+            @parameter
+            if _has_shape[4](a.size, b.size, c.size, d.size):
+                return "llvm.amdgcn.wmma.i32.16x16x16.iu8"
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
+        # Int4/UInt4 support commented out - DType.int4/uint4 don't exist in current Mojo
+        # elif (a.dtype is DType.int4 or a.dtype is DType.uint4) and (b.dtype is DType.int4 or b.dtype is DType.uint4) and c.dtype is DType.int32 and d.dtype is DType.int32:
+        #     # Int4/UInt4 with int32 accumulation
+        #     @parameter
+        #     if _has_shape[4](a.size, b.size, c.size, d.size):
+        #         return "llvm.amdgcn.wmma.i32.16x16x16.iu4"
+        #     else:
+        #         _unsupported_mma_op(d, a, b, c)
+        #         return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
@@ -272,8 +289,19 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         d = rebind[__type_of(d)](result)
     else:
-        var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](a, b, c)
-        d = rebind[__type_of(d)](r)
+        # Check for int4/int8 operations that need special casting
+        @parameter
+        if (a.dtype is DType.int8 or a.dtype is DType.uint8) and c.dtype is DType.int32:
+            # Cast inputs to int32 for WMMA intrinsic
+            var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
+                bitcast[DType.int32, 1](a),
+                bitcast[DType.int32, 1](b),
+                c
+            )
+            d = rebind[__type_of(d)](r)
+        else:
+            var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](a, b, c)
+            d = rebind[__type_of(d)](r)
 
 
 @fieldwise_init
