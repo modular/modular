@@ -54,19 +54,7 @@ fn get_amd_fp8_dtype() -> DType:
 
     @parameter
     if _is_amd_rdna():
-
-        @parameter
-        if _is_amd_rdna4():
-            return DType.float8_e4m3fn
-        else:
-            constrained[
-                False,
-                (
-                    "FP8 operations require RDNA4 or newer. RDNA3 and earlier"
-                    " do not support native FP8."
-                ),
-            ]()
-            return DType.float8_e4m3fn
+        return DType.float8_e4m3fn
     return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
 
 
@@ -82,19 +70,7 @@ fn get_amd_bf8_dtype() -> DType:
 
     @parameter
     if _is_amd_rdna():
-
-        @parameter
-        if _is_amd_rdna4():
-            return DType.float8_e5m2
-        else:
-            constrained[
-                False,
-                (
-                    "BF8 operations require RDNA4 or newer. RDNA3 and earlier"
-                    " do not support native BF8."
-                ),
-            ]()
-            return DType.float8_e5m2
+        return DType.float8_e5m2
     return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
 
 
@@ -177,6 +153,19 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         - llvm.amdgcn.wmma.f32.16x16x16.bf8.bf8 (E5M2×E5M2, RDNA4 only)
         - llvm.amdgcn.wmma.f32.16x16x16.fp8.bf8 (E4M3×E5M2, RDNA4 only)
         - llvm.amdgcn.wmma.f32.16x16x16.bf8.fp8 (E5M2×E4M3, RDNA4 only)
+
+    RDNA3 FP8 emulation details:
+        - RDNA3: FP8 is supported through FP16 emulation:
+          - FP8 emulation via FP16 or BF16 conversion on RDNA3
+            - We use BF16 for e5m2 variants (wider exponent range),
+              FP16 for e4m3 variants
+          - We support size 16 (split into 4x size 4) and size 4
+          - For size 8, we need to split into two WMMA operations
+            - This is a packed format where we do 2x 16x16x16 operations
+            - But the intrinsic itself only supports size 4
+          - For size 16 FP8 - will split into 4x size 4 operations
+            - We convert each FP8 chunk to target dtype and run WMMA
+        - RDNA1/2: FP8 not supported
 
     Args:
         d: Output accumulator SIMD vector (modified in-place).
@@ -293,9 +282,67 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 _unsupported_mma_op(d, a, b, c)
                 return ""
+        elif (
+            _is_amd_rdna3()
+            and a.dtype.is_float8()
+            and b.dtype.is_float8()
+            and c.dtype is DType.float32
+            and d.dtype is DType.float32
+        ):
+
+            @parameter
+            if _has_shape[4](a.size, b.size, c.size, d.size):
+                return "llvm.amdgcn.wmma.f32.16x16x16.f16"
+            elif (
+                a.size == 16 and b.size == 16 and c.size == 32 and d.size == 32
+            ):
+                return "llvm.amdgcn.wmma.f32.16x16x16.f16"
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
+
+    @parameter
+    if _is_amd_rdna3() and a.dtype.is_float8():
+        alias target_dtype = DType.bfloat16 if (
+            a.dtype is DType.float8_e5m2 or a.dtype is DType.float8_e5m2fnuz
+        ) else DType.float16
+        alias intrinsic_suffix = "bf16" if (
+            a.dtype is DType.float8_e5m2 or a.dtype is DType.float8_e5m2fnuz
+        ) else "f16"
+
+        @parameter
+        if a.size == 16 and b.size == 16:
+            var result = c.cast[DType.float32]()
+            alias intrinsic_name = "llvm.amdgcn.wmma.f32.16x16x16." + intrinsic_suffix
+
+            @parameter
+            for i in range(4):
+                alias offset = i * 4
+                var a_chunk = a.slice[4, offset=offset]()
+                var b_chunk = b.slice[4, offset=offset]()
+                var c_chunk = result.slice[4, offset=offset]()
+                var a_converted = a_chunk.cast[target_dtype]()
+                var b_converted = b_chunk.cast[target_dtype]()
+                var r_chunk = llvm_intrinsic[
+                    intrinsic_name, SIMD[DType.float32, 4]
+                ](a_converted, b_converted, c_chunk)
+                result = result.insert[offset=offset](r_chunk)
+
+            d = rebind[type_of(d)](result)
+            return
+        elif a.size == 4 and b.size == 4:
+            var a_converted = a.cast[target_dtype]()
+            var b_converted = b.cast[target_dtype]()
+
+            var r = llvm_intrinsic[
+                "llvm.amdgcn.wmma.f32.16x16x16." + intrinsic_suffix,
+                SIMD[c.dtype, c.size],
+            ](a_converted, b_converted, c)
+            d = rebind[type_of(d)](r)
+            return
 
     @parameter
     if a.size == 16 and b.size == 16 and c.size == 8 and d.size == 8:
