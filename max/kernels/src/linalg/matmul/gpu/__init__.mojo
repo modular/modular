@@ -522,6 +522,7 @@ fn _matmul_gpu[
     # For the other kernels we wrap it around an epilogue lambda instead.
     @parameter
     @always_inline
+    @__copy_capture(c)
     fn compute_lambda_wrapper[
         _dtype: DType, _width: Int, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
@@ -529,7 +530,11 @@ fn _matmul_gpu[
         if elementwise_compute_lambda_fn:
             alias compute_lambda = elementwise_compute_lambda_fn.value()
             var output = compute_lambda(coords, val)
-            c.store[alignment=alignment](
+            constrained[
+                output.dtype == c.type,
+                "compute epilogue lambda output and c type mismatch",
+            ]()
+            c.store[alignment = alignment * size_of[c.type]()](
                 coords, rebind[SIMD[c.type, _width]](output)
             )
 
