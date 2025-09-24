@@ -192,10 +192,11 @@ build:remote-h100 --platforms=//:h100-platform
 build:remote-h100 --extra_execution_platforms=//:m7i-platform,//:h100-platform,@mojo_host_platform
 build:remote-h100 --spawn_strategy=remote,worker,sandboxed,standalone
 build:remote-h100 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-h100 --build_metadata=TAG_GPU=h100
+build:remote-h100 --build_metadata=TAG_OS=linux_target
 
 build:ci-remote-h100 --config=ci-gpu-common
 build:ci-remote-h100 --config=remote-h100
-build:ci-remote-h100 --build_metadata=TAGS=h100
 build:ci-remote-h100 --test_keep_going=false
 
 build:remote-b200 --config=remote
@@ -204,10 +205,11 @@ build:remote-b200 --platforms=//:b200-platform
 build:remote-b200 --extra_execution_platforms=//:m7i-platform,//:b200-platform,@mojo_host_platform
 build:remote-b200 --spawn_strategy=remote,worker,sandboxed,standalone
 build:remote-b200 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-b200 --build_metadata=TAG_GPU=b200
+build:remote-b200 --build_metadata=TAG_OS=linux_target
 
 build:ci-remote-b200 --config=ci-gpu-common
 build:ci-remote-b200 --config=remote-b200
-build:ci-remote-b200 --build_metadata=TAGS=b200
 build:ci-remote-b200 --test_keep_going=false
 
 build:remote-mi300 --config=remote
@@ -216,10 +218,11 @@ build:remote-mi300 --platforms=//:mi300-platform
 build:remote-mi300 --extra_execution_platforms=//:m7i-platform,//:mi300-platform,@mojo_host_platform
 build:remote-mi300 --spawn_strategy=remote,worker,sandboxed,standalone
 build:remote-mi300 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-mi300 --build_metadata=TAG_GPU=mi300
+build:remote-mi300 --build_metadata=TAG_OS=linux_target
 
 build:ci-remote-mi300 --config=ci-gpu-common
 build:ci-remote-mi300 --config=remote-mi300
-build:ci-remote-mi300 --build_metadata=TAGS=mi300
 build:ci-remote-mi300 --test_keep_going=false
 
 # TODO: Remove once transitives are fixed
