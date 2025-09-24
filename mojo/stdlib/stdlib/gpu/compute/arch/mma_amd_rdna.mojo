@@ -279,6 +279,11 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         - Supports all combinations: FP8×FP8, BF8×BF8, FP8×BF8, BF8×FP8
         - Each combination has a specific WMMA intrinsic
 
+    Quantized integer operations (RDNA3+):
+        - I32 = I8/U8 * I8/U8 + I32 (16x16x16 shape via iu8 intrinsic)
+        - I32 = U4 * U4 + I32 (16x16x16 shape via iu4 intrinsic)
+        - Inputs are bitcast to int32 before passing to WMMA intrinsics
+
     Hardware intrinsics used:
         - llvm.amdgcn.wmma.f32.16x16x16.f16 (FP16)
         - llvm.amdgcn.wmma.f32.16x16x16.bf16 (BF16)
@@ -435,6 +440,44 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 _unsupported_mma_op(d, a, b, c)
                 return ""
+        elif (
+            (a.dtype is DType.int8 or a.dtype is DType.uint8)
+            and (b.dtype is DType.int8 or b.dtype is DType.uint8)
+            and c.dtype is DType.int32
+            and d.dtype is DType.int32
+        ):
+
+            @parameter
+            if _is_amd_rdna3() or _is_amd_rdna4():
+
+                @parameter
+                if _has_shape[4](a.size, b.size, c.size, d.size):
+                    return "llvm.amdgcn.wmma.i32.16x16x16.iu8"
+                else:
+                    _unsupported_mma_op(d, a, b, c)
+                    return ""
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
+        elif (
+            a.dtype is DType._uint4
+            and b.dtype is DType._uint4
+            and c.dtype is DType.int32
+            and d.dtype is DType.int32
+        ):
+
+            @parameter
+            if _is_amd_rdna3() or _is_amd_rdna4():
+
+                @parameter
+                if _has_shape[4](a.size, b.size, c.size, d.size):
+                    return "llvm.amdgcn.wmma.i32.16x16x16.iu4"
+                else:
+                    _unsupported_mma_op(d, a, b, c)
+                    return ""
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
@@ -493,7 +536,18 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](a, b, c)
             d = rebind[type_of(d)](r)
     else:
-        var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
-            a, b, c
-        )
-        d = rebind[type_of(d)](r)
+
+        @parameter
+        if (
+            a.dtype is DType.int8 or a.dtype is DType.uint8
+        ) and c.dtype is DType.int32:
+            # Cast inputs to int32 for WMMA intrinsic
+            var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
+                bitcast[DType.int32, 1](a), bitcast[DType.int32, 1](b), c
+            )
+            d = rebind[type_of(d)](r)
+        else:
+            var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
+                a, b, c
+            )
+            d = rebind[type_of(d)](r)
