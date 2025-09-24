@@ -53,6 +53,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
+from sys.info import _is_amd_rdna, _is_amd_cdna
 
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
@@ -1378,17 +1379,37 @@ fn get_mma_shape[
             constrained[False, "Unsupported mma shape."]()
             return shape_null
     else:
-
         @parameter
-        if accum_type is DType.float32 and input_type is DType.float32:
-            return shape_16x16x4
-        elif accum_type is DType.float32 and input_type.is_half_float():
-            return shape_16x16x16
-        elif accum_type is DType.float32 and input_type.is_float8():
-            return shape_16x16x32
+        if _is_amd_rdna():
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                return shape_16x16x32
+            else:
+                constrained[False, "Unsupported RDNA mma shape."]()
+                return shape_null
         else:
-            constrained[False, "Unsupported mma shape."]()
-            return shape_null
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                return shape_16x16x4
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                @parameter
+                if shape_id == 0:
+                    return shape_32x32x8
+                else:
+                    return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                @parameter
+                if shape_id == 0:
+                    return shape_32x32x16
+                else:
+                    return shape_16x16x32
+            else:
+                constrained[False, "Unsupported CDNA mma shape."]()
+                return shape_null
 
 
 @always_inline
