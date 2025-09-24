@@ -54,6 +54,16 @@ from sys import (
     size_of,
 )
 
+from sys.info import (
+    _is_amd_rdna,
+    _is_amd_rdna2,
+    _is_amd_rdna2_or_earlier,
+    _is_amd_rdna3,
+    _is_amd_rdna4,
+    _is_amd_cdna,
+)
+
+
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.mma import get_amd_bf8_dtype, get_amd_fp8_dtype, ld_matrix, mma
@@ -320,7 +330,7 @@ struct TensorCore[
             bf8_dtype,
         ):
             constrained[
-                (reg_per_thread in (1,) and in_type is DType.float32)
+                (reg_per_thread in (1, 2) and in_type is DType.float32)
                 or (
                     reg_per_thread in (4, 8)
                     and (in_type in (DType.bfloat16, DType.float16))
@@ -492,7 +502,7 @@ struct TensorCore[
             bf8_dtype,
         ):
             constrained[
-                (reg_per_thread in (1,) and in_type is DType.float32)
+                (reg_per_thread in (1, 2) and in_type is DType.float32)
                 or (
                     reg_per_thread in (4, 8)
                     and (in_type in (DType.bfloat16, DType.float16))
@@ -700,12 +710,23 @@ struct TensorCore[
         @parameter
         if out_type is DType.float32:
             constrained[
-                reg_per_thread in (4, 16),
+                reg_per_thread in (4, 8, 16),
                 "No valid shape to store to LayoutTensor d",
             ]()
 
-            var dst = d_dst.vectorize[4, 1]().distribute[warp_layout](lane_id())
-            dst.copy_from(d_src.vectorize[1, 4]())
+            @parameter
+            if _is_amd_rdna():
+                # RDNA 16x16x16 uses 8 registers per thread
+                var dst = d_dst.vectorize[8, 1]().distribute[warp_layout](
+                    lane_id()
+                )
+                dst.copy_from(d_src.vectorize[1, 8]())
+            else:
+                # CDNA use 4 or 16 registers
+                var dst = d_dst.vectorize[4, 1]().distribute[warp_layout](
+                    lane_id()
+                )
+                dst.copy_from(d_src.vectorize[1, 4]())
         else:
             constrained[False, "No valid type to store to LayoutTensor d"]()
 
@@ -1390,15 +1411,52 @@ fn get_mma_shape[
     else:
 
         @parameter
-        if accum_type is DType.float32 and input_type is DType.float32:
-            return shape_16x16x4
-        elif accum_type is DType.float32 and input_type.is_half_float():
-            return shape_16x16x16
-        elif accum_type is DType.float32 and input_type.is_float8():
-            return shape_16x16x32
+        if _is_amd_rdna():
+
+            @parameter
+            if _is_amd_rdna2_or_earlier():
+                constrained[
+                    False,
+                    (
+                        "RDNA1/RDNA2 tensor core support requires fallback"
+                        " paths (not yet implemented)"
+                    ),
+                ]()
+                return shape_null
+
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                constrained[
+                    False,
+                    (
+                        "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
+                        " -> FP32)"
+                    ),
+                ]()
+                return shape_null
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                return shape_16x16x16
+            elif (
+                _is_amd_rdna4()
+                and accum_type is DType.float32
+                and input_type.is_float8()
+            ):
+                return shape_16x16x16
+            else:
+                constrained[False, "Unsupported RDNA mma shape."]()
+                return shape_null
         else:
-            constrained[False, "Unsupported mma shape."]()
-            return shape_null
+
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                return shape_16x16x4
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                return shape_16x16x32
+            else:
+                constrained[False, "Unsupported CDNA mma shape."]()
+                return shape_null
 
 
 @always_inline
