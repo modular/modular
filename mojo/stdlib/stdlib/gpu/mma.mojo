@@ -127,6 +127,8 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     RDNA3+ (all operations):
         - F32 = F16 * F16 + F32 (16x16x16 shape)
         - F32 = BF16 * BF16 + F32 (16x16x16 shape)
+        - I32 = I8/U8 * I8/U8 + I32 (16x16x16 shape)
+        - I32 = U4 * U4 + I32 (16x16x16 shape, using DType._uint4)
 
     RDNA4 additional operations:
         - F32 = FP8 * FP8 + F32 (16x16x32 shape, native hardware support)
@@ -166,6 +168,20 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
           - For size 16 FP8 - will split into 4x size 4 operations
             - We convert each FP8 chunk to target dtype and run WMMA
         - RDNA1/2: FP8 not supported
+
+    RDNA3 FP8 emulation details:
+        - FP8 operations emulated via FP16/BF16 conversion
+        - BF16 used for E5M2 variants (wider exponent range)
+        - FP16 used for E4M3 variants (more mantissa precision)
+        - Size 16 operations split into 4x size 4 WMMA calls
+        - Size 4 operations converted and executed directly
+
+    Hardware intrinsics used:
+        - llvm.amdgcn.wmma.f32.16x16x16.f16 (FP16)
+        - llvm.amdgcn.wmma.f32.16x16x16.bf16 (BF16)
+        - llvm.amdgcn.wmma.i32.16x16x16.iu8 (INT8/UINT8, RDNA3+)
+        - llvm.amdgcn.wmma.i32.16x16x16.iu4 (UINT4, RDNA3+)
+        - llvm.amdgcn.wmma.f32.16x16x32.fp8 (FP8, RDNA4 only)
 
     Args:
         d: Output accumulator SIMD vector (modified in-place).
@@ -209,6 +225,11 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         Type and shape validation is performed by get_intrinsic_name() which calls
         _unsupported_mma_op() for invalid combinations.
+
+        For quantized integer operations (int8/uint8/uint4), inputs are bitcast to
+        int32 before passing to WMMA intrinsics.
+
+        FP8 operations on RDNA4 require NEG=0 for A/B matrices (hardware constraint).
 
     References:
         - RDNA3 WMMA: https://gpuopen.com/learn/wmma_on_rdna3/
@@ -300,6 +321,44 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 _unsupported_mma_op(d, a, b, c)
                 return ""
+        elif (
+            (a.dtype is DType.int8 or a.dtype is DType.uint8)
+            and (b.dtype is DType.int8 or b.dtype is DType.uint8)
+            and c.dtype is DType.int32
+            and d.dtype is DType.int32
+        ):
+
+            @parameter
+            if _is_amd_rdna3() or _is_amd_rdna4():
+
+                @parameter
+                if _has_shape[4](a.size, b.size, c.size, d.size):
+                    return "llvm.amdgcn.wmma.i32.16x16x16.iu8"
+                else:
+                    _unsupported_mma_op(d, a, b, c)
+                    return ""
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
+        elif (
+            a.dtype is DType._uint4
+            and b.dtype is DType._uint4
+            and c.dtype is DType.int32
+            and d.dtype is DType.int32
+        ):
+
+            @parameter
+            if _is_amd_rdna3() or _is_amd_rdna4():
+
+                @parameter
+                if _has_shape[4](a.size, b.size, c.size, d.size):
+                    return "llvm.amdgcn.wmma.i32.16x16x16.iu4"
+                else:
+                    _unsupported_mma_op(d, a, b, c)
+                    return ""
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
@@ -358,10 +417,21 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](a, b, c)
             d = rebind[type_of(d)](r)
     else:
-        var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
-            a, b, c
-        )
-        d = rebind[type_of(d)](r)
+
+        @parameter
+        if (
+            a.dtype is DType.int8 or a.dtype is DType.uint8
+        ) and c.dtype is DType.int32:
+            # Cast inputs to int32 for WMMA intrinsic
+            var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
+                bitcast[DType.int32, 1](a), bitcast[DType.int32, 1](b), c
+            )
+            d = rebind[type_of(d)](r)
+        else:
+            var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](
+                a, b, c
+            )
+            d = rebind[type_of(d)](r)
 
 
 @fieldwise_init
