@@ -111,9 +111,6 @@ fn _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
         return "nvvm.maxntid".value
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return "rocdl.flat_work_group_size".value
-    elif is_apple_gpu():
-        # That attribute is used to represent Metal's [[max_total_threads_per_threadgroup(x)]]
-        return "pop.air.max_work_group_size".value
     else:
         return CompilationTarget.unsupported_target_error[
             __mlir_type.`!kgen.string`,
