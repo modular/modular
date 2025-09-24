@@ -175,10 +175,8 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             # Size 16 FP8 operations - split into 4x size 4
             # Convert each FP8 chunk to FP16 and run WMMA
 
-            var result = SIMD[DType.float32, 32]()
-            # Initialize with accumulator
-            for i in range(32):
-                result[i] = c[i].cast[DType.float32]()
+            # Initialize with accumulator cast to float32
+            var result = c.cast[DType.float32]()
 
             # Process 4 chunks of size 4 - unrolled for compile-time constants
             # Chunk 0
@@ -191,8 +189,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 "llvm.amdgcn.wmma.f32.16x16x16.f16",
                 SIMD[DType.float32, 4]
             ](a_fp16_0, b_fp16_0, c_chunk0)
-            for i in range(4):
-                result[i] = r_chunk0[i]
+            result = result.insert(r_chunk0, 0)
 
             # Chunk 1
             var a_chunk1 = a.slice[4, offset=4]()
@@ -204,8 +201,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 "llvm.amdgcn.wmma.f32.16x16x16.f16",
                 SIMD[DType.float32, 4]
             ](a_fp16_1, b_fp16_1, c_chunk1)
-            for i in range(4):
-                result[4 + i] = r_chunk1[i]
+            result = result.insert(r_chunk1, 4)
 
             # Chunk 2
             var a_chunk2 = a.slice[4, offset=8]()
@@ -217,8 +213,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 "llvm.amdgcn.wmma.f32.16x16x16.f16",
                 SIMD[DType.float32, 4]
             ](a_fp16_2, b_fp16_2, c_chunk2)
-            for i in range(4):
-                result[8 + i] = r_chunk2[i]
+            result = result.insert(r_chunk2, 8)
 
             # Chunk 3
             var a_chunk3 = a.slice[4, offset=12]()
@@ -230,8 +225,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 "llvm.amdgcn.wmma.f32.16x16x16.f16",
                 SIMD[DType.float32, 4]
             ](a_fp16_3, b_fp16_3, c_chunk3)
-            for i in range(4):
-                result[12 + i] = r_chunk3[i]
+            result = result.insert(r_chunk3, 12)
 
             d = rebind[__type_of(d)](result)
             return
