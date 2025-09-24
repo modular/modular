@@ -53,6 +53,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
+from sys.info import _is_amd_rdna, _is_amd_cdna
 
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
@@ -102,7 +103,7 @@ alias shape_8x8x4 = IndexList[3](8, 8, 4)
 alias shape_16x8x32 = IndexList[3](16, 8, 32)
 
 # AMDGPU shapes
-alias shape_16x16x4 = IndexList[3](16, 16, 4)
+alias shape_16x16x4 = IndexList[3](16, 16, 4)  # Legacy alias for compatibility
 alias shape_16x16x16 = IndexList[3](16, 16, 16)
 alias shape_16x16x32 = IndexList[3](16, 16, 32)
 alias shape_32x32x8 = IndexList[3](32, 32, 8)
@@ -173,7 +174,7 @@ struct TensorCore[
     # Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
 
     alias supported_fp32 = in_type is DType.float32 and (
-        shape == shape_16x8x8 if is_nvidia_gpu() else shape == shape_16x16x4
+        shape == shape_16x8x8 if is_nvidia_gpu() else shape == shape_16x16x16
     )
     alias supported_half = in_type.is_half_float() and (
         shape
@@ -1380,17 +1381,43 @@ fn get_mma_shape[
             constrained[False, "Unsupported mma shape."]()
             return shape_null
     else:
-
+        # AMD GPU path - distinguish between RDNA and CDNA
         @parameter
-        if accum_type is DType.float32 and input_type is DType.float32:
-            return shape_16x16x4
-        elif accum_type is DType.float32 and input_type.is_half_float():
-            return shape_16x16x16
-        elif accum_type is DType.float32 and input_type.is_float8():
-            return shape_16x16x32
+        if _is_amd_rdna():
+            # RDNA GPUs (W7900, etc.) use 16x16xK shapes
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                return shape_16x16x32
+            else:
+                constrained[False, "Unsupported RDNA mma shape."]()
+                return shape_null
         else:
-            constrained[False, "Unsupported mma shape."]()
-            return shape_null
+            # CDNA GPUs (MI300, etc.) can use 32x32xK shapes
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                # For FP32, use 16x16x16 on all AMD GPUs
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                # CDNA can use larger 32x32x8 shapes for better performance
+                @parameter
+                if shape_id == 0:
+                    return shape_32x32x8
+                else:
+                    return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                # CDNA can use 32x32x16 for FP8
+                @parameter
+                if shape_id == 0:
+                    return shape_32x32x16
+                else:
+                    return shape_16x16x32
+            else:
+                constrained[False, "Unsupported CDNA mma shape."]()
+                return shape_null
 
 
 @always_inline
