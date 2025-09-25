@@ -56,7 +56,7 @@ from ._multistage_gemm_gpu import (
 from .amd import gemm_kernel_amd
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
-from .sm100.dispatch import matmul_sm100_entrypoint
+from .sm100.dispatch import matmul_dispatch_sm100
 from .sm100.matmul import matmul_sm100_fallback
 
 
@@ -588,33 +588,12 @@ fn _matmul_gpu[
     alias bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
     @parameter
-    if (
-        ctx.default_device_info is B200
-        and transpose_b
-        and (a_type == b_type == DType.bfloat16)
-        and c_type == DType.bfloat16
-    ):
-        var status = matmul_sm100_entrypoint[
+    if ctx.default_device_info > H100:
+        return matmul_dispatch_sm100[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-        if status:
-            return
-
-    @parameter
-    if ctx.default_device_info > H100:
-        return _matmul_sm100[
-            c_type,
-            a_type,
-            b_type,
-            use_tensor_core,
-            transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
-            config=config,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
