@@ -736,6 +736,9 @@ fn _matmul_gpu[
                     static_N
                 ]()
 
+                # Auto-tune block shape selection: Find the configuration that minimizes
+                # SM idle time by scoring how evenly work distributes across all SMs.
+                # Lower score = better load balance (fewer idle SMs in the last wave).
                 var best_idx = 0
                 var best_score = Int.MAX
 

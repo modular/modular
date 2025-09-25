@@ -2257,6 +2257,23 @@ struct LayoutTensor[
             ]()
         )
 
+    @staticmethod
+    @always_inline("nodebug")
+    fn null() -> Self.StackTensorType:
+        """
+        Returns a null `LayoutTensor` object.
+
+        Returns:
+            A null `LayoutTensor` object.
+        """
+        return Self.StackTensorType(
+            UnsafePointer[
+                Scalar[dtype],
+                address_space=address_space,
+                origin = MutableOrigin.empty,
+            ]()
+        )
+
     alias StackTensorType = LayoutTensor[
         dtype,
         layout,

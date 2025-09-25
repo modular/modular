@@ -66,6 +66,8 @@ from ...utils import apply_epilogue, elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle
 from .amd import gemm_kernel_amd
 
+from ...structuring import SMemTileType
+
 
 @always_inline
 fn distance[
@@ -74,6 +76,14 @@ fn distance[
     arg0: UnsafePointer[Scalar[dtype]], arg1: UnsafePointer[Scalar[dtype]]
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // dtype.size_of()
+
+
+alias WarpSplitKReductionSMem[
+    c_type: DType, BM: Int, BN: Int, num_warp_k_partitions: Int
+] = SMemTileType[
+    c_type,
+    Layout.row_major(1, BM * BN * (num_warp_k_partitions // 2)),
+]
 
 
 @always_inline
