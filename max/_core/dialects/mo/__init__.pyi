@@ -3067,41 +3067,6 @@ class ExpOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
 
-class FenceOp(max._core.Operation):
-    """
-    Acts as an IR anchor to express readiness/scheduling boundaries while
-    being a pure identity on SSA values.
-    This operation takes a variadic number of !mo.tensor inputs and returns the
-    same number of results with identical types.
-    The purpose of the op is to ensure that any output of mo.fence is ready
-    only when _all_ inputs are ready.
-
-    During lowering, this operation is converted to mgp.guard which enforces
-    ordering via chain propagation without modifying the execute chain.
-
-    Relation between similar ops:
-    - mo.fence: barrier identity (prevents reordering across a set of values).
-    - mo.guard: value identity with explicit chain argument for ordering.
-
-    Example:
-
-    ```mlir
-    %x : !mo.tensor<[N], f32>
-    %y : !mo.tensor<[N], f32>
-    %x2, %y2 = mo.fence(%x, %y) : !mo.tensor<[N], f32>, !mo.tensor<[N], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        results: Sequence[max._core.Type],
-        inputs: Sequence[max._core.Value[max._core.Type]],
-    ) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-
 class FloorOp(max._core.Operation):
     """
     Returns the elementwise largest integer not greater than `x`, where `x` is
