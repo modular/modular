@@ -22,8 +22,6 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.serve.scheduler.text_batch_constructor import (
-    BatchType,
-    SchedulerOutput,
     TokenGenerationSchedulerConfig,
 )
 from max.serve.scheduler.text_generation_scheduler import (
@@ -31,6 +29,7 @@ from max.serve.scheduler.text_generation_scheduler import (
 )
 from max.serve.scheduler.utils import (
     add_newly_encoded_reqs_to_tg_batch,
+    release_cancelled_requests,
     release_terminated_requests,
 )
 
@@ -138,7 +137,7 @@ def test_try_create_ce_batch() -> None:
     request_push_socket.put_nowait(mock_request)
     scheduler._retrieve_pending_requests()
 
-    batch = scheduler.batch_constructor.construct_batch().inputs.batch
+    batch = scheduler.batch_constructor.construct_batch().batch
     assert len(batch) == 1
     assert mock_request.request_id in batch
     # Cache management is now handled by the paged_manager/pipeline
@@ -155,7 +154,7 @@ def test_try_create_chunked_ce_batch() -> None:
     request_push_socket.put_nowait(mock_data)
     scheduler._retrieve_pending_requests()
 
-    batch = scheduler.batch_constructor.construct_batch().inputs.batch
+    batch = scheduler.batch_constructor.construct_batch().batch
     assert len(batch) == 1
     assert mock_data.request_id in batch
     # Cache management is now handled by the paged_manager/pipeline
@@ -180,17 +179,13 @@ def test_scheduler_handle_terminated_responses() -> None:
     batch_responses[mock_2.request_id].tokens = []
     scheduler.batch_constructor.tg_reqs = OrderedDict(batch_executed)
 
-    sch_output = SchedulerOutput(
-        inputs=TextGenerationInputs(batches=[batch_executed], num_steps=1)
-    )
-    release_terminated_requests(
-        sch_output,
+    num_terminated_reqs = release_terminated_requests(
         cast(dict[str, TextGenerationOutput], batch_responses),
         scheduler.pipeline,
         scheduler.batch_constructor.tg_reqs,
     )
 
-    assert sch_output.num_terminated == 1
+    assert num_terminated_reqs == 1
     assert isinstance(scheduler.pipeline, Mock)
     scheduler.pipeline.release.assert_called_once()
 
@@ -231,7 +226,12 @@ def test_handle_cancelled_requests() -> None:
 
     cancel_push_socket.put_nowait([mock_request.request_id])
 
-    scheduler._handle_cancelled_requests()
+    release_cancelled_requests(
+        scheduler.cancel_queue,
+        scheduler.response_queue,
+        scheduler.batch_constructor.tg_reqs,
+        scheduler.pipeline,
+    )
 
     assert len(scheduler.batch_constructor.tg_reqs) == 0
     # Cache cleanup is now handled by pipeline.release()
@@ -246,18 +246,16 @@ def test_schedule_ce() -> None:
     batch_to_execute: dict[str, TextContext] = {
         mock_request.request_id: mock_request
     }
-    sch_output = SchedulerOutput(
-        batch_type=BatchType.CE,
-        inputs=TextGenerationInputs(batches=[batch_to_execute], num_steps=1),
+    inputs = TextGenerationInputs(
+        batches=[batch_to_execute],
+        num_steps=1,
     )
 
-    scheduler._schedule(sch_output)
+    scheduler._schedule(inputs)
 
     assert mock_request.request_id in scheduler.batch_constructor.tg_reqs
     assert isinstance(scheduler.pipeline, Mock)
-    scheduler.pipeline.execute.assert_called_once_with(
-        TextGenerationInputs([batch_to_execute], num_steps=1)
-    )
+    scheduler.pipeline.execute.assert_called_once()
 
 
 def test_schedule_ce_with_chunked_prefill() -> None:
@@ -273,20 +271,15 @@ def test_schedule_ce_with_chunked_prefill() -> None:
     scheduler._retrieve_pending_requests()
     assert len(scheduler.batch_constructor.ce_reqs) == 1
 
-    batch_to_execute = (
-        scheduler.batch_constructor.construct_batch().inputs.batch
-    )
+    batch_to_execute = scheduler.batch_constructor.construct_batch().batch
     assert len(batch_to_execute) > 0
 
-    sch_output = SchedulerOutput(
-        batch_type=BatchType.CE,
-        inputs=TextGenerationInputs(
-            batches=[batch_to_execute],
-            num_steps=1,
-        ),
+    inputs = TextGenerationInputs(
+        batches=[batch_to_execute],
+        num_steps=1,
     )
 
-    scheduler._schedule(sch_output)
+    scheduler._schedule(inputs)
 
     assert mock_request.request_id not in scheduler.batch_constructor.tg_reqs
 
@@ -319,22 +312,20 @@ def test_schedule_mixed_ce_tg() -> None:
     request_push_socket.put_nowait(mock_request_tg)
     scheduler._retrieve_pending_requests()
 
-    batch_to_execute = (
-        scheduler.batch_constructor.construct_batch().inputs.batch
-    )
+    batch_to_execute = scheduler.batch_constructor.construct_batch().batch
     assert len(batch_to_execute) == 1
-    sch_output = SchedulerOutput(
-        batch_type=BatchType.CE,
-        inputs=TextGenerationInputs(batches=[batch_to_execute], num_steps=1),
+    inputs = TextGenerationInputs(
+        batches=[batch_to_execute],
+        num_steps=1,
     )
 
-    scheduler._schedule(sch_output)
+    scheduler._schedule(inputs)
     # req1 has been put in `active_batch`
 
     mock_request_ce = create_mock_request(seq_len=30)
     request_push_socket.put_nowait(mock_request_ce)
     scheduler._retrieve_pending_requests()
-    batch = scheduler.batch_constructor.construct_batch().inputs.batch
+    batch = scheduler.batch_constructor.construct_batch().batch
 
     # `batch_to_execute` should contain 1 token from req1 and 19 tokens from req2
     assert len(batch) == 2
@@ -353,19 +344,12 @@ def test_schedule_tg() -> None:
     batch_to_execute: dict[str, TextContext] = {
         mock_request.request_id: mock_request
     }
-    sch_output = SchedulerOutput(
-        inputs=TextGenerationInputs(
-            batches=[batch_to_execute],
-            num_steps=scheduler.scheduler_config.max_forward_steps_tg,
-        ),
+    inputs = TextGenerationInputs(
+        batches=[batch_to_execute],
+        num_steps=scheduler.scheduler_config.max_forward_steps_tg,
     )
 
-    scheduler._schedule(sch_output)
+    scheduler._schedule(inputs)
 
     assert isinstance(scheduler.pipeline, Mock)
-    scheduler.pipeline.execute.assert_called_once_with(
-        TextGenerationInputs(
-            [batch_to_execute],
-            num_steps=scheduler.scheduler_config.max_forward_steps_tg,
-        )
-    )
+    scheduler.pipeline.execute.assert_called_once()

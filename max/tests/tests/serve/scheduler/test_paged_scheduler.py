@@ -308,7 +308,6 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
-    print(actual)
     assert len(actual) == len(expected) and actual == expected
 
 

@@ -18,6 +18,7 @@ from max.engine import InferenceSession
 from max.interfaces import (
     AudioGenerationInputs,
     AudioGenerationOutput,
+    BatchType,
     GenerationStatus,
     MAXPushQueue,
     RequestID,
@@ -33,7 +34,6 @@ from max.serve.scheduler.audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,
     AudioGenerationSchedulerOutput,
 )
-from max.serve.scheduler.text_batch_constructor import BatchType
 
 
 def rand(length: int) -> np.ndarray:
@@ -243,33 +243,13 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
         pass
 
 
-@dataclass
+@dataclass(eq=True)
 class BatchInfo:
     batch_type: BatchType
     batch_size: int
     terminated: int
     num_steps: int
     input_tokens: int
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, BatchInfo):
-            return False
-        # All empty batches are equivalent
-        if self.batch_size == 0 and other.batch_size == 0:
-            return True
-        return (
-            self.batch_type,
-            self.batch_size,
-            self.terminated,
-            self.num_steps,
-            self.input_tokens,
-        ) == (
-            other.batch_type,
-            other.batch_size,
-            other.terminated,
-            other.num_steps,
-            other.input_tokens,
-        )
 
     @classmethod
     def empty(cls) -> BatchInfo:

@@ -143,8 +143,8 @@ def test_single_lora_scheduling() -> None:
     output = batch_constructor._try_create_ce_batch()
 
     # Verify the request was scheduled and LoRA was activated
-    assert len(output.inputs.batch) == 1
-    assert ctx.request_id in output.inputs.batch
+    assert len(output.batch) == 1
+    assert ctx.request_id in output.batch
     lora_manager.activate_adapter.assert_called_once_with("lora_model1")
     assert "lora_model1" in lora_manager._active_loras
 
@@ -181,10 +181,10 @@ def test_multi_lora_within_budget() -> None:
     output = batch_constructor._try_create_ce_batch()
 
     # All should be scheduled since we're within budget
-    assert len(output.inputs.batch) == 3
-    assert ctx1.request_id in output.inputs.batch
-    assert ctx2.request_id in output.inputs.batch
-    assert ctx3.request_id in output.inputs.batch
+    assert len(output.batch) == 3
+    assert ctx1.request_id in output.batch
+    assert ctx2.request_id in output.batch
+    assert ctx3.request_id in output.batch
     assert len(lora_manager._active_loras) == 3
 
 
@@ -223,13 +223,13 @@ def test_lora_preemption_over_budget() -> None:
     output = batch_constructor._try_create_ce_batch()
 
     # Only 2 LoRAs can be activated (max_num_loras=2), plus base
-    assert len(output.inputs.batch) == 3
-    assert ctx_base.request_id in output.inputs.batch  # Base always scheduled
+    assert len(output.batch) == 3
+    assert ctx_base.request_id in output.batch  # Base always scheduled
     # First 2 LoRAs should be scheduled
-    assert ctx_lora1.request_id in output.inputs.batch
-    assert ctx_lora2.request_id in output.inputs.batch
+    assert ctx_lora1.request_id in output.batch
+    assert ctx_lora2.request_id in output.batch
     # Third LoRA should be deferred
-    assert ctx_lora3.request_id not in output.inputs.batch
+    assert ctx_lora3.request_id not in output.batch
 
     # Deferred request should be back in ce_reqs
     assert ctx_lora3.request_id in batch_constructor.ce_reqs
@@ -271,9 +271,9 @@ def test_age_based_scheduling_with_lora() -> None:
     output = batch_constructor._try_create_ce_batch()
 
     # Should schedule first two by age: inactive (will activate) and base
-    assert len(output.inputs.batch) == 2
-    assert ctx_inactive.request_id in output.inputs.batch
-    assert ctx_base.request_id in output.inputs.batch
+    assert len(output.batch) == 2
+    assert ctx_inactive.request_id in output.batch
+    assert ctx_base.request_id in output.batch
     # Active LoRA added last should not be in batch due to batch size limit
 
 
@@ -317,10 +317,10 @@ def test_tg_batch_with_active_loras() -> None:
     output = batch_constructor._create_tg_batch()
 
     # All requests should be in batch (all have active LoRAs or are base)
-    assert len(output.inputs.batch) == 3
-    assert ctx_active1.request_id in output.inputs.batch
-    assert ctx_active2.request_id in output.inputs.batch
-    assert ctx_base.request_id in output.inputs.batch
+    assert len(output.batch) == 3
+    assert ctx_active1.request_id in output.batch
+    assert ctx_active2.request_id in output.batch
+    assert ctx_base.request_id in output.batch
 
 
 def test_ce_lora_activation_within_budget() -> None:
@@ -353,9 +353,9 @@ def test_ce_lora_activation_within_budget() -> None:
     output = batch_constructor._try_create_ce_batch()
 
     # Both should be scheduled since we're within budget (max_num_loras=3)
-    assert len(output.inputs.batch) == 2
-    assert ctx_lora1.request_id in output.inputs.batch
-    assert ctx_lora2.request_id in output.inputs.batch
+    assert len(output.batch) == 2
+    assert ctx_lora1.request_id in output.batch
+    assert ctx_lora2.request_id in output.batch
 
     # Both LoRAs should have been activated
     assert "lora_model1" in lora_manager._active_loras
@@ -411,7 +411,7 @@ def test_tg_pure_age_based_preemption() -> None:
     output = batch_constructor._create_tg_batch()
 
     # Only first request should be scheduled (due to our mock)
-    assert len(output.inputs.batch) == 1
+    assert len(output.batch) == 1
 
     # The newest request should have been preempted
     pipeline.release.assert_called()
@@ -463,8 +463,8 @@ def test_lora_swapping_ce_to_tg() -> None:
     tg_output = batch_constructor._create_tg_batch()
 
     # Both requests should be in batch (both LoRAs are active)
-    assert ctx.request_id in tg_output.inputs.batch
-    assert ctx2.request_id in tg_output.inputs.batch
+    assert ctx.request_id in tg_output.batch
+    assert ctx2.request_id in tg_output.batch
 
 
 def test_mixed_requests_scheduling() -> None:
@@ -502,12 +502,12 @@ def test_mixed_requests_scheduling() -> None:
 
     # One LoRA, both base requests should be scheduled
     # Second LoRA should be preempted due to budget
-    assert len(output.inputs.batch) == 3
-    assert ctx_base1.request_id in output.inputs.batch
-    assert ctx_base2.request_id in output.inputs.batch
+    assert len(output.batch) == 3
+    assert ctx_base1.request_id in output.batch
+    assert ctx_base2.request_id in output.batch
     # One of the LoRA requests should be scheduled
-    assert (ctx_lora1.request_id in output.inputs.batch) or (
-        ctx_lora2.request_id in output.inputs.batch
+    assert (ctx_lora1.request_id in output.batch) or (
+        ctx_lora2.request_id in output.batch
     )
 
     # One LoRA should be active

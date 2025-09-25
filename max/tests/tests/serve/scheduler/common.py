@@ -14,6 +14,7 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import (
+    BatchType,
     GenerationStatus,
     MAXPushQueue,
     RequestID,
@@ -25,7 +26,6 @@ from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TextContext
 from max.pipelines.lib import TextGenerationPipelineType
 from max.serve.scheduler.text_batch_constructor import (
-    BatchType,
     TokenGenerationSchedulerConfig,
 )
 from max.serve.scheduler.text_generation_scheduler import (
@@ -221,33 +221,13 @@ class FakeTokenGeneratorPipeline(TextGenerationPipelineType[TextContext]):
         self.kv_manager.release(request_id)
 
 
-@dataclass
+@dataclass(eq=True)
 class BatchInfo:
     batch_type: BatchType
     batch_size: int
     terminated: int
     num_steps: int
     input_tokens: int
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, BatchInfo):
-            return False
-        # All empty batches are equivalent
-        if self.batch_size == 0 and other.batch_size == 0:
-            return True
-        return (
-            self.batch_type,
-            self.batch_size,
-            self.terminated,
-            self.num_steps,
-            self.input_tokens,
-        ) == (
-            other.batch_type,
-            other.batch_size,
-            other.terminated,
-            other.num_steps,
-            other.input_tokens,
-        )
 
     @classmethod
     def empty(cls) -> BatchInfo:
@@ -264,27 +244,23 @@ class BatchInfo:
         )
 
 
-def create_batch_and_execute(
-    scheduler: TokenGenerationScheduler,
-) -> BatchInfo:
+def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     scheduler._retrieve_pending_requests()
-    batch_to_execute = scheduler.batch_constructor.construct_batch()
-    batch_size = batch_to_execute.batch_size
-    batch_type = batch_to_execute.batch_type
-    input_tokens = batch_to_execute.input_tokens
-    num_steps = batch_to_execute.inputs.num_steps
-    if batch_to_execute.batch_size == 0:
+    inputs = scheduler.batch_constructor.construct_batch()
+    batch_size = len(inputs.batch)
+    batch_type = inputs.batch_type
+    input_tokens = inputs.input_tokens
+    num_steps = inputs.num_steps
+    if batch_size == 0:
         return BatchInfo.empty()
 
-    scheduler._schedule(batch_to_execute)
-    terminated_reqs = batch_to_execute.num_terminated
-
+    num_terminated_reqs = scheduler._schedule(inputs)
     assert isinstance(scheduler.pipeline, FakeTokenGeneratorPipeline)
 
     return BatchInfo(
         batch_type=batch_type,
         batch_size=batch_size,
-        terminated=terminated_reqs,
+        terminated=num_terminated_reqs,
         num_steps=num_steps,
         input_tokens=input_tokens,
     )
