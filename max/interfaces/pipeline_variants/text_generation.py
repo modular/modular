@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import (
     Any,
     Generic,
@@ -645,7 +646,16 @@ context type that implements the BaseContext protocol.
 """
 
 
-@dataclass(frozen=False)
+class BatchType(Enum):
+    """Type of batch."""
+
+    CE = "CE"
+    """Context encoding batch."""
+    TG = "TG"
+    """Token generation batch."""
+
+
+@dataclass(eq=True)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     """
     Input parameters for text generation pipeline operations.
@@ -664,12 +674,31 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     """
 
     num_steps: int
-    """Number of tokens to generate."""
+    """Number of steps to run for."""
+
+    input_tokens: int = -1
+    """Number of input tokens."""
+
+    batch_type: BatchType = BatchType.TG
+    """Type of batch."""
+
+    def __post_init__(self) -> None:
+        self.input_tokens = sum(
+            ctx.active_length for ctx in self.batch.values()
+        )
+        self.batch_type = BatchType.TG
+        for req in self.batch.values():
+            if req.needs_ce:
+                self.batch_type = BatchType.CE
+                break
 
     @property
     def batch(self) -> dict[RequestID, TextGenerationContextType]:
         """Returns merged batches."""
         return {k: v for batch in self.batches for k, v in batch.items()}
+
+    def __bool__(self) -> bool:
+        return len(self.batch) > 0
 
     def __repr__(self) -> str:
         return f"TextGenerationInputs(batch_size={len(self.batch)}, num_steps={self.num_steps})"
