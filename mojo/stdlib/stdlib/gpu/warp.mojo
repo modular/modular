@@ -1198,11 +1198,28 @@ fn _vote_nvidia_helper(vote: Bool) -> SIMD[DType.uint32, 1]:
 
 
 @always_inline
-fn vote(val: Bool) -> SIMD[DType.uint32, 1]:
-    """Creates a 32 bit mask among all threads in the warp, where each bit is set to 1 if the corresponding thread voted True,
-    and 0 otherwise.
+fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
+    constrained[
+        ret_type in (DType.uint32, DType.uint64),
+        "Unsupported return type",
+    ]()
 
-    This function takes a boolean value signaling if the thread vote.
+    alias instruction = String("llvm.amdgcn.ballot.i", ret_type.bit_width())
+    return llvm_intrinsic[
+        instruction,
+        Scalar[ret_type],
+        has_side_effect=False,
+    ](vote)
+
+
+@always_inline
+fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
+    """Creates a 32 or 64 bit mask among all threads in the warp, where each bit is set to 1 if the
+    corresponding thread voted True, and 0 otherwise.
+
+    This function takes a boolean value which represents the cooresponding threads vote.
+
+    Nvidia only supports 32 bit masks, while AMD supports 32 and 64 bit masks.
 
     Args:
         val: The boolean vote.
@@ -1210,8 +1227,14 @@ fn vote(val: Bool) -> SIMD[DType.uint32, 1]:
     Returns:
         A mask containing the vote of all threads in the warp.
     """
-    constrained[
-        is_nvidia_gpu(),
-        "This intrinsic is currently only defined for NVIDIA GPUs",
-    ]()
-    return _vote_nvidia_helper(val)
+
+    @parameter
+    if is_nvidia_gpu():
+        constrained[ret_type is DType.uint32, "Unsupported return type"]()
+        return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
+    elif is_amd_gpu():
+        return _vote_amd_helper[ret_type](val)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            Scalar[ret_type], operation="vote"
+        ]()
