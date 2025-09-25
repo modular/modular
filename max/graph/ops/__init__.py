@@ -56,7 +56,6 @@ from .debug import print
 from .elementwise import *
 from .elementwise import max as _elementwise_max
 from .elementwise import min as _elementwise_min
-from .fence import fence
 from .flatten import flatten
 from .fold import fold
 from .gather import gather, gather_nd
