@@ -17,6 +17,7 @@ from .embeddings_generation import (
     EmbeddingsGenerationOutput,
 )
 from .text_generation import (
+    BatchType,
     TextGenerationContext,
     TextGenerationContextType,
     TextGenerationInputs,
@@ -35,6 +36,7 @@ __all__ = [
     "AudioGenerationOutput",
     "AudioGenerationOutput",
     "AudioGenerationRequest",
+    "BatchType",
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
