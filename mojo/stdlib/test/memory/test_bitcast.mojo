@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import bitcast, pack_bits
+from test_utils import TestSuite
 from testing import assert_equal
 
 
@@ -52,5 +53,9 @@ def test_pack_bits():
 
 
 def main():
-    test_bitcast()
-    test_pack_bits()
+    var suite = TestSuite()
+
+    suite.test[test_bitcast]()
+    suite.test[test_pack_bits]()
+
+    suite^.run()

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from test_utils import TestSuite
 from testing import assert_equal, assert_raises, assert_true
 
 
@@ -350,23 +351,27 @@ def test_unsafe_subspan():
 
 
 def main():
-    test_span_list_int()
-    test_span_list_str()
-    test_span_array_int()
-    test_span_array_str()
-    test_indexing()
-    test_span_slice()
-    test_equality()
-    test_bool()
-    test_contains()
-    test_fill()
-    test_ref()
-    test_reversed()
-    test_swap_elements()
-    test_merge()
-    test_span_to_string()
-    test_span_repr()
-    test_reverse()
-    test_apply()
-    test_count_func()
-    test_unsafe_subspan()
+    var suite = TestSuite()
+
+    suite.test[test_span_list_int]()
+    suite.test[test_span_list_str]()
+    suite.test[test_span_array_int]()
+    suite.test[test_span_array_str]()
+    suite.test[test_indexing]()
+    suite.test[test_span_slice]()
+    suite.test[test_equality]()
+    suite.test[test_bool]()
+    suite.test[test_contains]()
+    suite.test[test_fill]()
+    suite.test[test_ref]()
+    suite.test[test_reversed]()
+    suite.test[test_swap_elements]()
+    suite.test[test_merge]()
+    suite.test[test_span_to_string]()
+    suite.test[test_span_repr]()
+    suite.test[test_reverse]()
+    suite.test[test_apply]()
+    suite.test[test_count_func]()
+    suite.test[test_unsafe_subspan]()
+
+    suite^.run()
