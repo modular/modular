@@ -34,6 +34,10 @@ Literals now have a default type. For example, you can now bind
 
 - The deprecated `DType.index` is now removed in favor of the `DType.int`.
 
+- `String` can now decode UTF-16 input using the `String(from_utf16=...)`
+  constructor. PR [#5255](https://github.com/modular/modular/pull/5255) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 ### ❌ Removed
