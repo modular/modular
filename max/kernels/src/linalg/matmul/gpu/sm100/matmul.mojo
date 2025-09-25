@@ -414,8 +414,7 @@ fn elementwise_helper[
 
     alias fragment_size = c_smem_upper_frag.layout.size()
 
-    var local_col = lane_id() % distribute_cols
-    var local_row = lane_id() // distribute_cols
+    var local_row, local_col = divmod(lane_id(), distribute_cols)
 
     var shared_memory_col = local_col * simd_size
     shared_memory_row_lower_half += local_row
@@ -437,10 +436,10 @@ fn elementwise_helper[
         var offset_upper = swizzle(swz_offset_upper)
         var offset_lower = swizzle(swz_offset_lower)
 
-        var shared_upper_row: SIMD[DType.int64, 1]
-        var shared_upper_col: SIMD[DType.int64, 1]
-        var shared_lower_row: SIMD[DType.int64, 1]
-        var shared_lower_col: SIMD[DType.int64, 1]
+        var shared_upper_row: Int64
+        var shared_upper_col: Int64
+        var shared_lower_row: Int64
+        var shared_lower_col: Int64
 
         # Now that we have the true index we, need to add the global tile index to find the correlating
         # index, in gmem. However the data will be stored in tensor memory differently depending on
