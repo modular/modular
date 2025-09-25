@@ -182,23 +182,22 @@ fn bench_matmul_naive[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function[
-                matmul_kernel_naive[
-                    out_type,
-                    in_type,
-                    in_type,
-                    c_tensor.layout,
-                    a_tensor.layout,
-                    b_tensor.layout,
-                    BLOCK_DIM,
-                ]
-            ](
+            alias kernel = matmul_kernel_naive[
+                out_type,
+                in_type,
+                in_type,
+                c_tensor.layout,
+                a_tensor.layout,
+                b_tensor.layout,
+                BLOCK_DIM,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 c_tensor,
                 a_tensor,
                 b_tensor,
-                UInt(M),
-                UInt(N),
-                UInt(K),
+                M,
+                N,
+                K,
                 grid_dim=(ceildiv(M, WARPS_PER_BLOCK), ceildiv(N, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
             )
