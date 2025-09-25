@@ -848,11 +848,11 @@ def test_isspace():
     for i in List[String]("not", "space", "", "s", "a", "c"):
         assert_false(i.isspace())
 
-    for i in range(len(univ_sep_var)):
+    for sep1 in univ_sep_var:
         var sep = String()
-        for j in range(len(univ_sep_var)):
-            sep += univ_sep_var[i]
-            sep += univ_sep_var[j]
+        for sep2 in univ_sep_var:
+            sep += sep1
+            sep += sep2
         assert_true(sep.isspace())
         _ = sep
 
@@ -896,8 +896,8 @@ def test_ascii_aliases():
     assert_true("'" in String.PUNCTUATION)
 
     var text = "I love my Mom and Dad so much!!!\n"
-    for i in range(len(text)):
-        assert_true(text[i] in String.PRINTABLE)
+    for char in text:
+        assert_true(char in String.PRINTABLE)
 
 
 def test_rstrip():

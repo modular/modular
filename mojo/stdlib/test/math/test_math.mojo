@@ -124,8 +124,8 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
             (edge_val[symm](v, atol, rtol), v),
         ]
 
-    for i in range(len(all_close)):
-        var a, b = all_close[i]
+    for item in all_close:
+        var a, b = item
         var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
         assert_true(all(res))
 
@@ -149,8 +149,8 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
             (v, edge_val[symm](v, 1.1 * atol, 1.1 * rtol)),
         ]
 
-    for i in range(len(none_close)):
-        var a, b = none_close[i]
+    for item in none_close:
+        var a, b = item
         var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
         assert_false(any(res))
 

@@ -497,8 +497,8 @@ fn test_impl_add() raises:
     assert_equal(q3._shrink, True)
     assert_equal(q3._head, 0)
     assert_equal(q3._tail, 16)
-    for i in range(len(q3)):
-        assert_equal((q3._data + i)[], 1 + i)
+    for i, value in enumerate(q3):
+        assert_equal(value, 1 + i)
 
     q4 = q2 + q1
     # has to inherit q2 properties
@@ -557,8 +557,8 @@ fn test_impl_iadd() raises:
     assert_equal(len(q1), 10)
     assert_equal(q1._head, 6)
     assert_equal(q1._tail, 0)
-    for i in range(len(q1)):
-        assert_equal(q1[i], 7 + i)
+    for i, value in enumerate(q1):
+        assert_equal(value, 7 + i)
 
     q2 += q1
     # has to keep q2 properties

@@ -140,8 +140,8 @@ def test_copy_from():
     var s = Span(a)
     var s2 = Span(b)
     s.copy_from(s2[: len(a)])
-    for i in range(len(a)):
-        assert_equal(a[i], b[i])
+    for i, val in enumerate(a):
+        assert_equal(val, b[i])
         assert_equal(s[i], s2[i])
 
 
@@ -183,8 +183,8 @@ def test_fill():
 
     s.fill(2)
 
-    for i in range(len(a)):
-        assert_equal(a[i], 2)
+    for i, val in enumerate(a):
+        assert_equal(val, 2)
         assert_equal(s[i], 2)
 
 
@@ -302,18 +302,18 @@ def test_apply():
         twice = items.copy()
         span = Span(twice)
         span.apply[func = _twice[D]]()
-        for i in range(len(items)):
-            assert_true(span[i] == items[i] * 2)
+        for i, item in enumerate(items):
+            assert_true(span[i] == item * 2)
 
         # twice only even numbers
         twice = items.copy()
         span = Span(twice)
         span.apply[func = _twice[D], where = _where[D]]()
-        for i in range(len(items)):
-            if items[i] % 2 == 0:
-                assert_true(span[i] == items[i] * 2)
+        for i, item in enumerate(items):
+            if item % 2 == 0:
+                assert_true(span[i] == item * 2)
             else:
-                assert_true(span[i] == items[i])
+                assert_true(span[i] == item)
 
     _test[DType.uint8]()
     _test[DType.uint16]()

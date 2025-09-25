@@ -2147,20 +2147,16 @@ def test_vector_from_bytes_as_bytes():
     ]
     # fmt: on
     var actual_v8_u16_be_bytes = v8_u16.as_bytes[big_endian=True]()
-    for i in range(len(expected_v8_u16_be_bytes)):
-        assert_equal(
-            Int(actual_v8_u16_be_bytes[i]), expected_v8_u16_be_bytes[i]
-        )
+    for i, expected in enumerate(expected_v8_u16_be_bytes):
+        assert_equal(Int(actual_v8_u16_be_bytes[i]), expected)
     # fmt: off
     var expected_v8_u16_le_bytes = [
         1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0,
     ]
     # fmt: on
     var actual_v8_u16_le_bytes = v8_u16.as_bytes[big_endian=False]()
-    for i in range(len(expected_v8_u16_le_bytes)):
-        assert_equal(
-            Int(actual_v8_u16_le_bytes[i]), expected_v8_u16_le_bytes[i]
-        )
+    for i, expected in enumerate(expected_v8_u16_le_bytes):
+        assert_equal(Int(actual_v8_u16_le_bytes[i]), expected)
 
     var v8_i64 = SIMD[DType.int64, 8](1, -2, 3, -4, 5, -6, 7, -8)
     assert_equal(
