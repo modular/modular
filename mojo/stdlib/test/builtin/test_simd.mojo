@@ -49,17 +49,11 @@ def test_cast():
     assert_equal(Int(b.cast[DType.int8]()), -128)
     assert_equal(Int(b.cast[DType.int16]()), 128)
 
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_equal(
-            BFloat16(33.0).cast[DType.float32]().cast[DType.bfloat16](), 33
-        )
-        assert_equal(
-            Float16(33.0).cast[DType.float32]().cast[DType.float16](), 33
-        )
-        assert_equal(
-            Float64(33.0).cast[DType.float32]().cast[DType.float16](), 33
-        )
+    assert_equal(
+        BFloat16(33.0).cast[DType.float32]().cast[DType.bfloat16](), 33
+    )
+    assert_equal(Float16(33.0).cast[DType.float32]().cast[DType.float16](), 33)
+    assert_equal(Float64(33.0).cast[DType.float32]().cast[DType.float16](), 33)
 
 
 def test_list_literal_ctor():
@@ -223,9 +217,7 @@ def test_from_to_bits_roundtrip():
     fn floating_point_dtypes() -> List[DType]:
         var res = [DType.float16, DType.float32, DType.float64]
 
-        @parameter
-        if not CompilationTarget.has_neon():
-            res.append(DType.bfloat16)
+        res.append(DType.bfloat16)
         return res^
 
     alias fp_dtypes = floating_point_dtypes()
@@ -447,10 +439,7 @@ def test_truthy():
         alias dtype = dtypes[i]
         test_dtype[dtype]()
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_dtype[DType.bfloat16]()
+    test_dtype[DType.bfloat16]()
 
 
 def test_len():
@@ -473,14 +462,11 @@ def test_len():
     var i6 = UI64(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
     assert_equal(16, i6.__len__())
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        alias BF16 = SIMD[DType.bfloat16, 2]
-        var f1 = BF16(0.0)
-        assert_equal(2, f1.__len__())
-        var f2 = BF16(0.1, 0.2)
-        assert_equal(2, f2.__len__())
+    alias BF16 = SIMD[DType.bfloat16, 2]
+    var f1 = BF16(0.0)
+    assert_equal(2, f1.__len__())
+    var f2 = BF16(0.1, 0.2)
+    assert_equal(2, f2.__len__())
 
     alias F = SIMD[DType.float64, 8]
     var f3 = F(1.0)
@@ -614,10 +600,7 @@ def test_ceil():
     assert_equal(Float32.__ceil__(Float32(-1.5)), -1.0)
     assert_equal(Float32.__ceil__(Float32(3.0)), 3.0)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_equal(BFloat16.__ceil__(BFloat16(2.5)), 3.0)
+    assert_equal(BFloat16.__ceil__(BFloat16(2.5)), 3.0)
 
     alias F = SIMD[DType.float32, 4]
     assert_equal(
@@ -642,10 +625,7 @@ def test_floor():
     assert_equal(Float32.__floor__(Float32(-1.5)), -2.0)
     assert_equal(Float32.__floor__(Float32(3.0)), 3.0)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_equal(BFloat16.__floor__(BFloat16(2.5)), 2.0)
+    assert_equal(BFloat16.__floor__(BFloat16(2.5)), 2.0)
 
     alias F = SIMD[DType.float32, 4]
     assert_equal(
@@ -1575,10 +1555,7 @@ def test_reduce():
     test_dtype[DType.int]()
     test_dtype[DType.uint]()
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_dtype[DType.bfloat16]()
+    test_dtype[DType.bfloat16]()
 
 
 def test_reduce_bit_count():
@@ -2053,10 +2030,7 @@ def test_comparison():
         alias dtype = dtypes[i]
         test_dtype[dtype]()
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_dtype[DType.bfloat16]()
+    test_dtype[DType.bfloat16]()
 
 
 def test_float_conversion():

@@ -87,7 +87,7 @@ _EXTRA_CONSTRAINTS = {
     "gpu/bench_grouped_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),  # FIXME: PRDT-506
+    }),  # FIXME: MOCO-2477
 }
 
 _CPU_TESTS = glob(

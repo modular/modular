@@ -20,10 +20,7 @@ from testing import assert_almost_equal, assert_equal
 
 
 def test_exp_bfloat16():
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_equal(exp(BFloat16(2.0)), 7.375)
+    assert_equal(exp(BFloat16(2.0)), 7.375)
 
 
 def test_exp_float16():

@@ -51,10 +51,7 @@ fn test_sin() raises:
 fn test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_equal(cos(BFloat16(2.0)), -0.416015625)
+    assert_equal(cos(BFloat16(2.0)), -0.416015625)
 
 
 fn test_factorial() raises:
@@ -457,30 +454,21 @@ def test_frexp():
     _test_frexp_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log():
     _test_log_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log2():
     _test_log2_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log2_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log1p():
@@ -488,10 +476,7 @@ def test_log1p():
     _test_log1p_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log1p_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_gcd():
