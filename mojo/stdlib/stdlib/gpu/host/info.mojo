@@ -23,6 +23,7 @@ from os import abort
 from sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 alias _KB = 1024
+alias _K = 1024
 
 # ===-----------------------------------------------------------------------===#
 # Vendor
@@ -126,8 +127,7 @@ struct Vendor(Identifiable, Writable):
 
 
 fn _get_empty_target() -> _TargetType:
-    """
-    Creates an empty target configuration for when no GPU is available.
+    """Creates an empty target configuration for when no GPU is available.
 
     Returns:
         An empty MLIR target configuration.
@@ -163,8 +163,8 @@ alias NoGPU = GPUInfo(
 # Apple M1
 # ===-----------------------------------------------------------------------===#
 fn _get_metal_m1_target() -> __mlir_type.`!kgen.target`:
-    """
-    Creates an MLIR target configuration for M1 Metal GPU.
+    """Creates an MLIR target configuration for M1 Metal GPU.
+
     Returns:
         MLIR target configuration for M1 Metal.
     """
@@ -180,8 +180,8 @@ fn _get_metal_m1_target() -> __mlir_type.`!kgen.target`:
 
 
 fn _get_metal_m2_target() -> __mlir_type.`!kgen.target`:
-    """
-    Creates an MLIR target configuration for M2 Metal GPU.
+    """Creates an MLIR target configuration for M2 Metal GPU.
+
     Returns:
         MLIR target configuration for M2 Metal.
     """
@@ -197,8 +197,8 @@ fn _get_metal_m2_target() -> __mlir_type.`!kgen.target`:
 
 
 fn _get_metal_m3_target() -> __mlir_type.`!kgen.target`:
-    """
-    Creates an MLIR target configuration for M3 Metal GPU.
+    """Creates an MLIR target configuration for M3 Metal GPU.
+
     Returns:
         MLIR target configuration for M3 Metal.
     """
@@ -214,8 +214,8 @@ fn _get_metal_m3_target() -> __mlir_type.`!kgen.target`:
 
 
 fn _get_metal_m4_target() -> __mlir_type.`!kgen.target`:
-    """
-    Creates an MLIR target configuration for M4 Metal GPU.
+    """Creates an MLIR target configuration for M4 Metal GPU.
+
     Returns:
         MLIR target configuration for M4 Metal.
     """
@@ -239,10 +239,11 @@ alias MetalM1 = GPUInfo(
     version="metal_3",
     sm_count=8,  # M1 has 8 GPU cores
     warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
-    threads_per_sm=1024,  # Threads per compute unit
-    shared_memory_per_multiprocessor=32768,  # 32KB shared memory per compute unit
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,  # Max threads per threadgroup
+    threads_per_sm=32 * 32,  # Threads per compute unit
+    shared_memory_per_multiprocessor=32
+    * _KB,  # 32KB shared memory per compute unit
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,  # Max threads per threadgroup
 )
 
 alias MetalM2 = GPUInfo(
@@ -254,10 +255,11 @@ alias MetalM2 = GPUInfo(
     version="metal_3",
     sm_count=10,  # M2 has 10 GPU cores
     warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
-    threads_per_sm=1024,  # Threads per compute unit
-    shared_memory_per_multiprocessor=32768,  # 32KB shared memory per compute unit
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,  # Max threads per threadgroup
+    threads_per_sm=32 * 32,  # Threads per compute unit
+    shared_memory_per_multiprocessor=32
+    * _KB,  # 32KB shared memory per compute unit
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,  # Max threads per threadgroup
 )
 
 alias MetalM3 = GPUInfo(
@@ -269,10 +271,11 @@ alias MetalM3 = GPUInfo(
     version="metal_3",
     sm_count=10,  # M3 has 10 GPU cores
     warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
-    threads_per_sm=1024,  # Threads per compute unit
-    shared_memory_per_multiprocessor=32768,  # 32KB shared memory per compute unit
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,  # Max threads per threadgroup
+    threads_per_sm=32 * 32,  # Threads per compute unit
+    shared_memory_per_multiprocessor=32
+    * _KB,  # 32KB shared memory per compute unit
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,  # Max threads per threadgroup
 )
 
 alias MetalM4 = GPUInfo(
@@ -284,10 +287,11 @@ alias MetalM4 = GPUInfo(
     version="metal_4",
     sm_count=10,  # M4 has 10 GPU cores
     warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
-    threads_per_sm=1024,  # Threads per compute unit
-    shared_memory_per_multiprocessor=32768,  # 32KB shared memory per compute unit
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,  # Max threads per threadgroup
+    threads_per_sm=32 * 32,  # Threads per compute unit
+    shared_memory_per_multiprocessor=32
+    * _KB,  # 32KB shared memory per compute unit
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,  # Max threads per threadgroup
 )
 
 
@@ -305,8 +309,7 @@ alias MetalM4 = GPUInfo(
 
 
 fn _get_a100_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA A100 GPU.
+    """Creates an MLIR target configuration for NVIDIA A100 GPU.
 
     Returns:
         MLIR target configuration for A100.
@@ -333,10 +336,10 @@ alias A100 = GPUInfo(
     version="sm_80",
     sm_count=108,
     warp_size=32,
-    threads_per_sm=2048,
-    shared_memory_per_multiprocessor=167936,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    threads_per_sm=64 * 32,
+    shared_memory_per_multiprocessor=164 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -345,8 +348,7 @@ alias A100 = GPUInfo(
 
 
 fn _get_a10_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA A10 GPU.
+    """Creates an MLIR target configuration for NVIDIA A10 GPU.
 
     Returns:
         MLIR target configuration for A10.
@@ -373,10 +375,10 @@ alias A10 = GPUInfo(
     version="sm_86",
     sm_count=72,
     warp_size=32,
-    threads_per_sm=1536,
-    shared_memory_per_multiprocessor=102400,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    threads_per_sm=48 * 32,
+    shared_memory_per_multiprocessor=100 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -385,8 +387,7 @@ alias A10 = GPUInfo(
 
 
 fn _get_orin_nano_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA Jetson Orin Nano GPU.
+    """Creates an MLIR target configuration for NVIDIA Jetson Orin Nano GPU.
 
     Returns:
         MLIR target configuration for Orin Nano.
@@ -413,10 +414,10 @@ alias OrinNano = GPUInfo(
     version="sm_87",
     sm_count=8,
     warp_size=32,
-    threads_per_sm=1536,
-    shared_memory_per_multiprocessor=167936,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    threads_per_sm=48 * 32,
+    shared_memory_per_multiprocessor=164 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -426,8 +427,7 @@ alias OrinNano = GPUInfo(
 
 
 fn _get_l4_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA L4 GPU.
+    """Creates an MLIR target configuration for NVIDIA L4 GPU.
 
     Returns:
         MLIR target configuration for L4.
@@ -454,10 +454,10 @@ alias L4 = GPUInfo(
     version="sm_89",
     sm_count=58,
     warp_size=32,
-    threads_per_sm=1536,
-    shared_memory_per_multiprocessor=102400,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    threads_per_sm=48 * 32,
+    shared_memory_per_multiprocessor=100 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -466,8 +466,7 @@ alias L4 = GPUInfo(
 
 
 fn _get_rtx4090m_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
+    """Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
 
     Returns:
         MLIR target configuration for H100.
@@ -495,9 +494,9 @@ alias RTX4090m = GPUInfo(
     sm_count=76,
     warp_size=32,
     threads_per_sm=-1,
-    shared_memory_per_multiprocessor=102400,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    shared_memory_per_multiprocessor=100 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -506,8 +505,7 @@ alias RTX4090m = GPUInfo(
 
 
 fn _get_rtx4090_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA RTX 4090.
+    """Creates an MLIR target configuration for NVIDIA RTX 4090.
 
     Returns:
         MLIR target configuration for H100.
@@ -535,9 +533,9 @@ alias RTX4090 = GPUInfo(
     sm_count=128,
     warp_size=32,
     threads_per_sm=-1,
-    shared_memory_per_multiprocessor=102400,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    shared_memory_per_multiprocessor=100 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -547,8 +545,7 @@ alias RTX4090 = GPUInfo(
 
 
 fn _get_h100_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA H100 GPU.
+    """Creates an MLIR target configuration for NVIDIA H100 GPU.
 
     Returns:
         MLIR target configuration for H100.
@@ -576,10 +573,10 @@ alias H100 = GPUInfo(
     version="sm_90a",
     sm_count=132,
     warp_size=32,
-    threads_per_sm=2048,
+    threads_per_sm=64 * 32,
     shared_memory_per_multiprocessor=228 * _KB,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -590,7 +587,7 @@ alias H100 = GPUInfo(
 alias _blackwell_warp_size = 32
 alias _blackwell_shared_mem_10_0 = 228 * _KB
 alias _blackwell_shared_mem_12_0 = 100 * _KB
-alias _blackwell_max_registers_per_block = 64 * 1024
+alias _blackwell_max_registers_per_block = 64 * _K
 alias _blackwell_max_threads_per_sm_10_0 = 64 * _blackwell_warp_size
 alias _blackwell_max_threads_per_sm_12_0 = 48 * _blackwell_warp_size
 alias _blackwell_max_thread_blocks_per_sm = 32
@@ -601,8 +598,7 @@ alias _blackwell_max_thread_blocks_per_sm = 32
 
 
 fn _get_b100_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA B100 GPU.
+    """Creates an MLIR target configuration for NVIDIA B100 GPU.
 
     Returns:
         MLIR target configuration for B100.
@@ -634,7 +630,7 @@ alias B100 = GPUInfo(
     threads_per_sm=_blackwell_max_threads_per_sm_10_0,
     shared_memory_per_multiprocessor=_blackwell_shared_mem_10_0,
     max_registers_per_block=_blackwell_max_registers_per_block,
-    max_thread_block_size=1024,
+    max_thread_block_size=_K,
 )
 
 alias B200 = GPUInfo(
@@ -649,7 +645,7 @@ alias B200 = GPUInfo(
     threads_per_sm=_blackwell_max_threads_per_sm_10_0,
     shared_memory_per_multiprocessor=_blackwell_shared_mem_10_0,
     max_registers_per_block=_blackwell_max_registers_per_block,
-    max_thread_block_size=1024,
+    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -658,8 +654,7 @@ alias B200 = GPUInfo(
 
 
 fn _get_rtx5090_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA RTX5090 GPU.
+    """Creates an MLIR target configuration for NVIDIA RTX5090 GPU.
 
     Returns:
         MLIR target configuration for RTX5090.
@@ -690,7 +685,7 @@ alias RTX5090 = GPUInfo(
     threads_per_sm=_blackwell_max_threads_per_sm_12_0,
     shared_memory_per_multiprocessor=_blackwell_shared_mem_12_0,
     max_registers_per_block=_blackwell_max_registers_per_block,
-    max_thread_block_size=1024,
+    max_thread_block_size=_K,
 )
 
 
@@ -700,8 +695,7 @@ alias RTX5090 = GPUInfo(
 
 
 fn _get_rtx3090_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA GeForce RTX 3090
+    """Creates an MLIR target configuration for NVIDIA GeForce RTX 3090.
 
     Returns:
         MLIR target configuration for NVIDIA GeForce RTX 3090.
@@ -730,9 +724,9 @@ alias RTX3090 = GPUInfo(
     sm_count=82,
     warp_size=32,
     threads_per_sm=-1,
-    shared_memory_per_multiprocessor=102400,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    shared_memory_per_multiprocessor=100 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -742,8 +736,8 @@ alias RTX3090 = GPUInfo(
 
 
 fn _get_gtx1080ti_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA GTX 1080 Ti GPU.
+    """Creates an MLIR target configuration for NVIDIA GTX 1080 Ti GPU.
+
     Returns:
         MLIR target configuration for GTX 1080 Ti.
     """
@@ -765,10 +759,10 @@ alias GTX1080Ti = GPUInfo(
     version="sm_61",
     sm_count=28,
     warp_size=32,
-    threads_per_sm=2048,
+    threads_per_sm=64 * 32,
     shared_memory_per_multiprocessor=98304,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -778,8 +772,7 @@ alias GTX1080Ti = GPUInfo(
 
 
 fn _get_teslap100_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA Tesla P100 GPU.
+    """Creates an MLIR target configuration for NVIDIA Tesla P100 GPU.
 
     Returns:
         MLIR target configuration for Tesla P100.
@@ -806,10 +799,10 @@ alias TeslaP100 = GPUInfo(
     version="sm_60",
     sm_count=56,
     warp_size=32,
-    threads_per_sm=2048,
+    threads_per_sm=64 * 32,
     shared_memory_per_multiprocessor=64 * _KB,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -819,8 +812,7 @@ alias TeslaP100 = GPUInfo(
 
 
 fn _get_rtx2060_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for NVIDIA RTX 2060 GPU.
+    """Creates an MLIR target configuration for NVIDIA RTX 2060 GPU.
 
     Returns:
         MLIR target configuration for RTX 2060.
@@ -847,10 +839,10 @@ alias RTX2060 = GPUInfo(
     version="sm_75",
     sm_count=30,
     warp_size=32,
-    threads_per_sm=2048,
+    threads_per_sm=64 * 32,
     shared_memory_per_multiprocessor=64 * _KB,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -860,8 +852,7 @@ alias RTX2060 = GPUInfo(
 
 
 fn _get_mi300x_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD MI300X GPU.
+    """Creates an MLIR target configuration for AMD MI300X GPU.
 
     Returns:
         MLIR target configuration for MI300X.
@@ -887,10 +878,10 @@ alias MI300X = GPUInfo(
     version="CDNA3",
     sm_count=304,
     warp_size=64,
-    threads_per_sm=2048,
-    shared_memory_per_multiprocessor=65536,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    threads_per_sm=64 * 32,
+    shared_memory_per_multiprocessor=64 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -900,8 +891,7 @@ alias MI300X = GPUInfo(
 
 
 fn _get_mi355x_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD MI355X GPU.
+    """Creates an MLIR target configuration for AMD MI355X GPU.
 
     Returns:
         MLIR target configuration for MI355X.
@@ -927,10 +917,10 @@ alias MI355X = GPUInfo(
     version="CDNA4",
     sm_count=256,
     warp_size=64,
-    threads_per_sm=2048,
+    threads_per_sm=64 * 32,
     shared_memory_per_multiprocessor=160 * _KB,
-    max_registers_per_block=65536,
-    max_thread_block_size=1024,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -940,8 +930,7 @@ alias MI355X = GPUInfo(
 
 
 fn _get_9070_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 9070 GPU.
+    """Creates an MLIR target configuration for AMD Radeon 9070 GPU.
 
     Returns:
         MLIR target configuration for 9070.
@@ -959,8 +948,7 @@ fn _get_9070_target() -> _TargetType:
 
 
 fn _get_9060_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 9060 GPU.
+    """Creates an MLIR target configuration for AMD Radeon 9060 GPU.
 
     Returns:
         MLIR target configuration for 9060.
@@ -978,8 +966,7 @@ fn _get_9060_target() -> _TargetType:
 
 
 fn _get_7900_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 7900 GPU.
+    """Creates an MLIR target configuration for AMD Radeon 7900 GPU.
 
     Returns:
         MLIR target configuration for 7900.
@@ -997,8 +984,7 @@ fn _get_7900_target() -> _TargetType:
 
 
 fn _get_7800_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 7800/7700 GPU.
+    """Creates an MLIR target configuration for AMD Radeon 7800/7700 GPU.
 
     Returns:
         MLIR target configuration for 7800/7700.
@@ -1016,8 +1002,7 @@ fn _get_7800_target() -> _TargetType:
 
 
 fn _get_7600_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 7600 GPU.
+    """Creates an MLIR target configuration for AMD Radeon 7600 GPU.
 
     Returns:
         MLIR target configuration for 7600.
@@ -1035,8 +1020,7 @@ fn _get_7600_target() -> _TargetType:
 
 
 fn _get_6900_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 6900 GPU.
+    """Creates an MLIR target configuration for AMD Radeon 6900 GPU.
 
     Returns:
         MLIR target configuration for 6900.
@@ -1054,8 +1038,7 @@ fn _get_6900_target() -> _TargetType:
 
 
 fn _get_780m_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 780m GPU.
+    """Creates an MLIR target configuration for AMD Radeon 780m GPU.
 
     Returns:
         MLIR target configuration for 780m.
@@ -1073,8 +1056,7 @@ fn _get_780m_target() -> _TargetType:
 
 
 fn _get_880m_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 880M GPU.
+    """Creates an MLIR target configuration for AMD Radeon 880M GPU.
 
     Returns:
         MLIR target configuration for 880M.
@@ -1092,8 +1074,7 @@ fn _get_880m_target() -> _TargetType:
 
 
 fn _get_8060s_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 8060S GPU.
+    """Creates an MLIR target configuration for AMD Radeon 8060S GPU.
 
     Returns:
         MLIR target configuration for 8060S.
@@ -1111,8 +1092,7 @@ fn _get_8060s_target() -> _TargetType:
 
 
 fn _get_860m_target() -> _TargetType:
-    """
-    Creates an MLIR target configuration for AMD Radeon 860M GPU.
+    """Creates an MLIR target configuration for AMD Radeon 860M GPU.
 
     Returns:
         MLIR target configuration for 860M.
@@ -1138,10 +1118,10 @@ alias Radeon9070 = GPUInfo(
     version="RDNA4",
     sm_count=64,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 alias Radeon9060 = GPUInfo(
@@ -1153,10 +1133,10 @@ alias Radeon9060 = GPUInfo(
     version="RDNA4",
     sm_count=32,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 alias Radeon7900 = GPUInfo(
@@ -1168,10 +1148,10 @@ alias Radeon7900 = GPUInfo(
     version="RDNA3",
     sm_count=96,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 alias Radeon7800 = GPUInfo(
@@ -1183,10 +1163,10 @@ alias Radeon7800 = GPUInfo(
     version="RDNA3",
     sm_count=60,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 alias Radeon7600 = GPUInfo(
@@ -1198,10 +1178,10 @@ alias Radeon7600 = GPUInfo(
     version="RDNA3",
     sm_count=32,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 alias Radeon6900 = GPUInfo(
@@ -1213,10 +1193,10 @@ alias Radeon6900 = GPUInfo(
     version="RDNA2",
     sm_count=60,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -1229,10 +1209,10 @@ alias Radeon780m = GPUInfo(
     version="RDNA3",
     sm_count=12,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 alias Radeon880m = GPUInfo(
@@ -1244,10 +1224,10 @@ alias Radeon880m = GPUInfo(
     version="RDNA3.5",
     sm_count=12,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 alias Radeon8060s = GPUInfo(
@@ -1259,10 +1239,10 @@ alias Radeon8060s = GPUInfo(
     version="RDNA3.5",
     sm_count=40,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 alias Radeon860m = GPUInfo(
@@ -1274,10 +1254,10 @@ alias Radeon860m = GPUInfo(
     version="RDNA3.5",
     sm_count=8,
     warp_size=32,
-    threads_per_sm=1024,
-    shared_memory_per_multiprocessor=32768,
-    max_registers_per_block=32768,
-    max_thread_block_size=1024,
+    threads_per_sm=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
 )
 
 
@@ -1289,8 +1269,7 @@ alias Radeon860m = GPUInfo(
 @fieldwise_init
 @register_passable
 struct GPUInfo(Identifiable, Stringable, Writable):
-    """
-    Comprehensive information about a GPU architecture.
+    """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,
     including compute units, memory, thread organization, and performance
@@ -1334,8 +1313,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
     """Maximum number of threads allowed in a thread block."""
 
     fn target(self) -> _TargetType:
-        """
-        Gets the MLIR target configuration for this GPU.
+        """Gets the MLIR target configuration for this GPU.
 
         Returns:
             MLIR target configuration for the GPU.
@@ -1403,8 +1381,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
 
     @staticmethod
     fn from_target[target: _TargetType]() -> Self:
-        """
-        Creates a `GPUInfo` instance from an MLIR target.
+        """Creates a `GPUInfo` instance from an MLIR target.
 
         Parameters:
             target: MLIR target configuration.
@@ -1416,8 +1393,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
 
     @staticmethod
     fn from_name[name: StaticString]() -> Self:
-        """
-        Creates a `GPUInfo` instance from a GPU architecture name.
+        """Creates a `GPUInfo` instance from a GPU architecture name.
 
         Parameters:
             name: GPU architecture name (e.g., "sm_80", "gfx942").
@@ -1428,8 +1404,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         return _get_info_from_target[name]()
 
     fn __lt__(self, other: Self) -> Bool:
-        """
-        Compares if this GPU has lower compute capability than another.
+        """Compares if this GPU has lower compute capability than another.
 
         Args:
             other: Another `GPUInfo` instance to compare against.
@@ -1444,8 +1419,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         return self.compute < other.compute
 
     fn __le__(self, other: Self) -> Bool:
-        """
-        Compares if this GPU has lower or equal compute capability.
+        """Compares if this GPU has lower or equal compute capability.
 
         Args:
             other: Another `GPUInfo` instance to compare against.
@@ -1460,8 +1434,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         return self.compute <= other.compute
 
     fn __gt__(self, other: Self) -> Bool:
-        """
-        Compares if this GPU has higher compute capability than another.
+        """Compares if this GPU has higher compute capability than another.
 
         Args:
             other: Another `GPUInfo` instance to compare against.
@@ -1474,8 +1447,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         return self.compute > other.compute
 
     fn __ge__(self, other: Self) -> Bool:
-        """
-        Compares if this GPU has higher or equal compute capability.
+        """Compares if this GPU has higher or equal compute capability.
 
         Args:
             other: Another `GPUInfo` instance to compare against.
@@ -1488,8 +1460,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         return self.compute >= other.compute
 
     fn __eq__(self, other: Self) -> Bool:
-        """
-        Checks if two `GPUInfo` instances represent the same GPU model.
+        """Checks if two `GPUInfo` instances represent the same GPU model.
 
         Args:
             other: Another `GPUInfo` instance to compare against.
@@ -1500,8 +1471,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         return self.name == other.name
 
     fn __ne__(self, other: Self) -> Bool:
-        """
-        Checks if two `GPUInfo` instances represent different GPU models.
+        """Checks if two `GPUInfo` instances represent different GPU models.
 
         Args:
             other: Another `GPUInfo` instance to compare against.
@@ -1512,8 +1482,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
-        """
-        Identity comparison operator for `GPUInfo` instances.
+        """Identity comparison operator for `GPUInfo` instances.
 
         Args:
             other: Another `GPUInfo` instance to compare against.
@@ -1525,8 +1494,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        """
-        Writes GPU information to a writer.
+        """Writes GPU information to a writer.
 
         Outputs all GPU specifications and capabilities to the provided writer
         in a human-readable format.
@@ -1557,8 +1525,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
 
     @no_inline
     fn __str__(self) -> String:
-        """
-        Returns a string representation of the GPU information.
+        """Returns a string representation of the GPU information.
 
         Converts all GPU specifications and capabilities to a human-readable
         string format.
@@ -1576,8 +1543,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
 
 @always_inline
 fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
-    """
-    Gets `GPUInfo` for a specific target architecture.
+    """Gets `GPUInfo` for a specific target architecture.
 
     Maps target architecture strings to corresponding `GPUInfo` instances.
 
@@ -1701,8 +1667,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
 
 
 fn is_gpu[target: StringSlice]() -> Bool:
-    """
-    Checks if the target is a GPU (compile-time version).
+    """Checks if the target is a GPU (compile-time version).
 
     Parameters:
         target: Target string to check.
@@ -1714,8 +1679,7 @@ fn is_gpu[target: StringSlice]() -> Bool:
 
 
 fn is_gpu(target: StringSlice) -> Bool:
-    """
-    Checks if the target is a GPU (runtime version).
+    """Checks if the target is a GPU (runtime version).
 
     Args:
         target: Target string to check.
@@ -1727,8 +1691,7 @@ fn is_gpu(target: StringSlice) -> Bool:
 
 
 fn is_cpu[target: StringSlice]() -> Bool:
-    """
-    Checks if the target is a CPU (compile-time version).
+    """Checks if the target is a CPU (compile-time version).
 
     Parameters:
         target: Target string to check.
@@ -1740,8 +1703,7 @@ fn is_cpu[target: StringSlice]() -> Bool:
 
 
 fn is_cpu(target: StringSlice) -> Bool:
-    """
-    Checks if the target is a CPU (runtime version).
+    """Checks if the target is a CPU (runtime version).
 
     Args:
         target: Target string to check.
@@ -1753,8 +1715,7 @@ fn is_cpu(target: StringSlice) -> Bool:
 
 
 fn is_valid_target[target: StringSlice]() -> Bool:
-    """
-    Checks if the target is valid (compile-time version).
+    """Checks if the target is valid (compile-time version).
 
     Parameters:
         target: Target string to check.
@@ -1766,8 +1727,7 @@ fn is_valid_target[target: StringSlice]() -> Bool:
 
 
 fn is_valid_target(target: StringSlice) -> Bool:
-    """
-    Checks if the target is valid (runtime version).
+    """Checks if the target is valid (runtime version).
 
     Args:
         target: Target string to check.
