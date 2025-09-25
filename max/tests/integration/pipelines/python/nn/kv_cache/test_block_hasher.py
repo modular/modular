@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.nn.kv_cache.paged_cache import block_utils
 from max.nn.kv_cache.paged_cache.block_utils import (
     hash_block_tokens,
     hash_request_tokens,
@@ -16,15 +15,9 @@ from max.nn.kv_cache.paged_cache.block_utils import (
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("use_mojo_hasher", [True, False])
 @pytest.mark.parametrize("block_size", [1, 2, 4, 64, 128, 256, 1024])
 @pytest.mark.parametrize("prompt_len", [16, 65536])
-async def test_basic(
-    use_mojo_hasher: bool, block_size: int, prompt_len: int
-) -> None:
-    # Set the global variable to toggle mojo block hashing.
-    block_utils.ENABLE_MOJO_BLOCK_HASHER = use_mojo_hasher
-
+async def test_basic(block_size: int, prompt_len: int) -> None:
     prompt = np.arange(prompt_len, dtype=np.int64)
     hash_vals = hash_request_tokens(prompt, block_size)
     assert len(hash_vals) == prompt_len // block_size
@@ -70,9 +63,7 @@ def check_for_collisions(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("use_mojo_hasher", [True, False])
-async def test_collision(use_mojo_hasher: bool) -> None:
-    block_utils.ENABLE_MOJO_BLOCK_HASHER = use_mojo_hasher
+async def test_collision() -> None:
     block_size = 1
 
     prompt_1 = np.array([1, 1, 0, 1, 0, 0, 0, 1, 1, 0])
@@ -82,10 +73,8 @@ async def test_collision(use_mojo_hasher: bool) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("use_mojo_hasher", [False, True])
 @pytest.mark.parametrize("block_size", [1, 128])
-async def test_collision_random(use_mojo_hasher: bool, block_size: int) -> None:
-    block_utils.ENABLE_MOJO_BLOCK_HASHER = use_mojo_hasher
+async def test_collision_random(block_size: int) -> None:
     # Picking too large of number of iterations can cause test to timeout.
     iterations = 10
 

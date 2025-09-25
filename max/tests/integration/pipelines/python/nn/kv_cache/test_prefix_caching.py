@@ -14,18 +14,15 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.interfaces import RequestID, TextGenerationContext
+from max.interfaces import RequestID
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheManager,
     RaggedKVCacheInputs,
 )
-from max.nn.kv_cache.paged_cache import block_utils
 from max.pipelines.core import TextContext
 from test_common.context_utils import create_text_context
-
-block_utils.ENABLE_MOJO_BLOCK_HASHER = True
 
 
 def gen_prompt(length: int) -> np.ndarray:
@@ -47,34 +44,9 @@ def get_cache_lengths_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[int]:
     return kv_tuple[1].to_numpy().tolist()
 
 
-class PagedKVCacheManagerWithCacheHitRate(PagedKVCacheManager):
-    prompt_tokens: int = 0
-    cached_prompt_tokens: int = 0
-
-    def maybe_reserve(
-        self, ctx: TextGenerationContext, num_steps: int = 1
-    ) -> bool:
-        needs_ce = ctx.active_length > 1
-        input_tokens_before = ctx.active_length if needs_ce else 0
-        self.prompt_tokens += input_tokens_before
-
-        x = super().maybe_reserve(ctx, num_steps=num_steps)
-
-        input_tokens_after = ctx.active_length if needs_ce else 0
-        cached_prompt_tokens = input_tokens_before - input_tokens_after
-        self.cached_prompt_tokens += cached_prompt_tokens
-        return x
-
-    @property
-    def cache_hit_rate(self) -> float:
-        if self.prompt_tokens == 0:
-            return 0.0
-        return self.cached_prompt_tokens / self.prompt_tokens
-
-
 def create_paged_manager(
     num_blocks: int, page_size: int = 1
-) -> PagedKVCacheManagerWithCacheHitRate:
+) -> PagedKVCacheManager:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
     NUM_KV_HEADS = 1
@@ -101,7 +73,7 @@ def create_paged_manager(
         * num_blocks
         * kv_params.dtype.size_in_bytes
     )
-    kv_manager = PagedKVCacheManagerWithCacheHitRate(
+    kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=512,
         max_seq_len=4096,
@@ -181,11 +153,11 @@ async def test_prefix_caching_basic() -> None:
         kv_manager.step(batch)
 
     # first and second ce have 5 + 4 tokens
-    assert kv_manager.prompt_tokens == 9
+    assert kv_manager.metrics.prompt_tokens == 9
     # second ce gets cache hit on 3 tokens
-    assert kv_manager.cached_prompt_tokens == 3
+    assert kv_manager.metrics.cache_tokens == 3
     # cache hit rate is = 3 / 9
-    assert kv_manager.cache_hit_rate >= 0.333
+    assert kv_manager.metrics.cache_hit_rate >= 0.333
 
 
 @pytest.mark.asyncio
@@ -223,7 +195,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         kv_manager.release(context.request_id)
 
     # cache hit rate is ~= 4 / 5 tokens
-    assert kv_manager.cache_hit_rate > 0.79
+    assert kv_manager.metrics.cache_hit_rate > 0.79
 
 
 @pytest.mark.asyncio
@@ -246,7 +218,7 @@ async def test_prefix_caching_with_no_release() -> None:
 
             # We intentionally do not release the sequence here!
 
-    assert kv_manager.cache_hit_rate > 0.1
+    assert kv_manager.metrics.cache_hit_rate > 0.1
 
 
 @pytest.mark.asyncio
@@ -366,7 +338,7 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
         batch[0].update(tok)
     kv_manager.step(batch)
 
-    assert kv_manager.cache_hit_rate == 0.0
+    assert kv_manager.metrics.cache_hit_rate == 0.0
 
 
 @pytest.mark.asyncio
@@ -406,7 +378,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     batch[0].update(17)
     kv_manager.step(batch)
 
-    assert kv_manager.cache_hit_rate == 0.0
+    assert kv_manager.metrics.cache_hit_rate == 0.0
 
 
 @pytest.mark.asyncio
@@ -599,7 +571,7 @@ async def test_prefix_caching_grouped_prefixes(
 
     # Since our prompts have large grouped prefixes, we should have a high cache
     # hit rate.
-    cache_hit_rate = kv_manager.cache_hit_rate
+    cache_hit_rate = kv_manager.metrics.cache_hit_rate
     if shared_prefix_len > 0:
         assert cache_hit_rate > 0.45
 
@@ -704,5 +676,5 @@ async def test_prefix_caching_chunked_prefill() -> None:
     blocks = kv_manager.get_req_blocks(ctx_2.request_id)
     assert 2 not in blocks
 
-    assert kv_manager.cached_prompt_tokens == 6
-    assert kv_manager.cache_hit_rate > 0.2
+    assert kv_manager.metrics.cache_tokens == 6
+    assert kv_manager.metrics.cache_hit_rate > 0.2
