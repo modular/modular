@@ -24,6 +24,7 @@ from typing import Any
 from max.interfaces import (
     AudioGenerationInputs,
     AudioGenerationOutput,
+    BatchType,
     MAXPullQueue,
     MAXPushQueue,
     RequestID,
@@ -47,7 +48,7 @@ from .lora_scheduler_utils import (
     is_active_lora,
     is_lora,
 )
-from .text_batch_constructor import BatchType, TokenGenerationSchedulerConfig
+from .text_batch_constructor import TokenGenerationSchedulerConfig
 from .utils import release_cancelled_requests, release_terminated_requests
 
 logger = logging.getLogger("max.serve")
@@ -175,6 +176,9 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
             )
 
 
+# TODO: the concept of scheduler output is a bit weird and audio specific. Can
+#       we delete this like we did for text scheduler? Alternatively, we can
+#       just keep this tech debt localized to this corner of the codebase.
 class AudioGenerationSchedulerOutput:
     def __init__(
         self,
@@ -367,12 +371,14 @@ class AudioGenerationScheduler(Scheduler):
         self.decode_reqs.update(batch.reqs)
 
         # remove terminated requests from the batch
-        release_terminated_requests(
-            batch,
+        num_terminated_reqs = release_terminated_requests(
             responses,
             self.pipeline,
             self.decode_reqs,
         )
+        # TODO: We set the num_terminated field in the scheduler output object.
+        # This is kind of ugly since we default to 0 then override.
+        batch.num_terminated = num_terminated_reqs
 
         # send the responses to the API process
         self.response_queue.put_nowait(

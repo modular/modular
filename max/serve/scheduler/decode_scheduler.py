@@ -24,6 +24,7 @@ from max.interfaces import (
     RequestID,
     Scheduler,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
 )
 from max.interfaces.queue import drain_queue
@@ -48,7 +49,6 @@ from .text_batch_constructor import (
 )
 from .utils import (
     SchedulerLogger,
-    SchedulerOutput,
     add_newly_encoded_reqs_to_tg_batch,
     release_terminated_requests,
 )
@@ -275,24 +275,23 @@ class DecodeScheduler(Scheduler):
         self._handle_cancelled_requests()
 
     @traced
-    def schedule(self, sch_output: SchedulerOutput) -> None:
+    def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Schedules a batch of requests for token generation and handles the responses.
 
         Args:
-            sch_output: The scheduler output containing the batch of requests to schedule.
+            inputs: The inputs containing the batch of requests to schedule.
         """
-        assert sch_output.batch_size > 0
-        responses = self.pipeline.execute(sch_output.inputs)
+        assert len(inputs.batches) > 0
+        responses = self.pipeline.execute(inputs)
 
         add_newly_encoded_reqs_to_tg_batch(
-            sch_output.inputs.batch,
+            inputs.batch,
             responses,
             self.batch_constructor,
         )
 
         # remove terminated requests from the batch
-        release_terminated_requests(
-            sch_output,
+        num_terminated_reqs = release_terminated_requests(
             responses,
             self.pipeline,
             self.batch_constructor.tg_reqs,
@@ -305,6 +304,8 @@ class DecodeScheduler(Scheduler):
                 for req_id, response in responses.items()
             }
         )
+
+        return num_terminated_reqs
 
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes decode requests.
@@ -335,30 +336,30 @@ class DecodeScheduler(Scheduler):
 
         # Construct the batch to execute
         t0 = time.monotonic()
-        batch_to_execute = self.batch_constructor.construct_batch()
+        inputs = self.batch_constructor.construct_batch()
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
         # If the batch is empty, skip
-        batch_size = batch_to_execute.batch_size
-        if batch_size == 0:
+        if len(inputs.batch) == 0:
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
-        with Tracer(f"_schedule({batch_to_execute})"):
-            self.schedule(batch_to_execute)
+        with Tracer(f"_schedule({inputs})"):
+            num_terminated_reqs = self.schedule(inputs)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
-            sch_output=batch_to_execute,
+            inputs=inputs,
             paged_cache=self.paged_manager,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.pending_reqs) + len(self.prefill_reqs),
+            num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 

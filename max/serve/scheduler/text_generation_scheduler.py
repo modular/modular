@@ -22,6 +22,7 @@ from max.interfaces import (
     RequestID,
     Scheduler,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
     drain_queue,
 )
@@ -34,7 +35,6 @@ from max.profiler import Tracer
 from .base import SchedulerProgress
 from .data_parallelism_utils import split_by_replica_idx
 from .text_batch_constructor import (
-    SchedulerOutput,
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
@@ -91,38 +91,33 @@ class TokenGenerationScheduler(Scheduler):
 
         # Construct the batch to execute
         t0 = time.monotonic()
-        batch_to_execute = self.batch_constructor.construct_batch()
+        inputs = self.batch_constructor.construct_batch()
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
         # If the batch is empty, skip
-        batch_size = batch_to_execute.batch_size
-        if batch_size == 0:
+        if not inputs:
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
-        with Tracer(f"_schedule({batch_to_execute})"):
-            self._schedule(batch_to_execute)
+        with Tracer(f"_schedule({inputs})"):
+            num_terminated_reqs = self._schedule(inputs)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
-            sch_output=batch_to_execute,
+            inputs=inputs,
             paged_cache=self.batch_constructor.paged_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.ce_reqs),
+            num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
-        self._handle_cancelled_requests()
-
-        return SchedulerProgress.MADE_PROGRESS
-
-    def _handle_cancelled_requests(self) -> None:
         release_cancelled_requests(
             self.cancel_queue,
             self.response_queue,
@@ -130,24 +125,25 @@ class TokenGenerationScheduler(Scheduler):
             self.pipeline,
         )
 
-    def _schedule(self, sch_output: SchedulerOutput) -> None:
-        assert sch_output.batch_size > 0
+        return SchedulerProgress.MADE_PROGRESS
+
+    def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
+        """Returns the number of terminated requests."""
+        assert inputs
 
         # TODO(E2EOPT-399): Add proper data parallelism support. Currently
         # this naively splits the batch onto different devices.
-        batches = split_by_replica_idx(
-            sch_output.inputs.batch,
+        split_by_replica_idx(
+            inputs,
             self.scheduler_config.data_parallel_degree,
             self.batch_constructor.paged_cache,
         )
 
-        sch_output.inputs.batches = batches
-
         # execute the batch
-        responses = self.pipeline.execute(sch_output.inputs)
+        responses = self.pipeline.execute(inputs)
 
         # Process each batch (usually just one unless using data parallelism)
-        for executed_batch in sch_output.inputs.batches:
+        for executed_batch in inputs.batches:
             # If there is a chunked request, we put it back into the request queue
             add_newly_encoded_reqs_to_tg_batch(
                 executed_batch,
@@ -156,8 +152,7 @@ class TokenGenerationScheduler(Scheduler):
             )
 
         # remove terminated requests from the batch
-        release_terminated_requests(
-            sch_output,
+        num_terminated_reqs = release_terminated_requests(
             responses,
             self.pipeline,
             self.batch_constructor.tg_reqs,
@@ -171,6 +166,8 @@ class TokenGenerationScheduler(Scheduler):
                     for req_id, response in responses.items()
                 }
             )
+
+        return num_terminated_reqs
 
 
 def load_text_generation_scheduler(
