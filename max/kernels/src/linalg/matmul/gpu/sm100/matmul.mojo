@@ -174,7 +174,7 @@ fn load_AB[
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
-    iter_idx: UInt,
+    iter_idx: UInt32,
     elect_one_cta: Bool,
 ):
     alias BM = block_tile_shape[0]
@@ -291,7 +291,7 @@ fn consumer_main_loop[
         transpose_b=transpose_b,
     ],
     elect_one_warp: Bool,
-    iter_idx: UInt,
+    iter_idx: UInt32,
 ):
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
@@ -375,7 +375,6 @@ fn stsm_helper[
 
 @always_inline
 fn elementwise_helper[
-    N: UInt,
     MMA_M: UInt,
     data_paths: UInt,
     num_stages: UInt,
@@ -390,7 +389,8 @@ fn elementwise_helper[
     compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: UInt,
 ](
-    M: UInt,
+    M: UInt32,
+    N: UInt32,
     c_col: UInt,
     c_row: UInt,
     c_smem_warp_tile_upper: LayoutTensor[
@@ -534,14 +534,14 @@ fn elementwise_helper[
         var global_lower_row = shared_lower_row + c_row
         var global_lower_col = shared_lower_col + staged_c_col
 
-        if global_upper_row < M and global_upper_col < N:
+        if global_upper_row < Int(M) and global_upper_col < Int(N):
             var reg_val = compute_lambda_fn[alignment=alignment](
                 (Int(global_upper_row), Int(global_upper_col)),
                 c_smem_upper_frag[i, 0],
             )
             c_smem_upper_frag[i, 0] = reg_val
 
-        if global_lower_row < M and global_lower_col < N:
+        if global_lower_row < Int(M) and global_lower_col < Int(N):
             var reg_val = compute_lambda_fn[alignment=alignment](
                 (Int(global_lower_row), Int(global_lower_col)),
                 c_smem_lower_frag[i, 0],
@@ -570,7 +570,6 @@ fn multi_stage_store_C[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     stage_stride_cols: UInt,
-    n: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: UInt = 4,
@@ -598,7 +597,8 @@ fn multi_stage_store_C[
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
-    m: Int,
+    M: UInt32,
+    N: UInt32,
 ):
     # WAIT FOR MMA TO FINISH AND STORE RESULT
     # scheduler fetch next work
@@ -707,7 +707,6 @@ fn multi_stage_store_C[
             @parameter
             if elementwise_compute_lambda_fn:
                 elementwise_helper[
-                    n,
                     MMA_M,
                     data_paths,
                     num_stages,
@@ -722,7 +721,8 @@ fn multi_stage_store_C[
                     elementwise_compute_lambda_fn.value(),
                     num_output_warps,
                 ](
-                    m,
+                    M,
+                    N,
                     c_col,
                     c_row,
                     c_smem_warp_tile_upper,
@@ -750,7 +750,6 @@ fn multi_stage_store_C[
             @parameter
             if elementwise_compute_lambda_fn:
                 elementwise_helper[
-                    n,
                     MMA_M,
                     data_paths,
                     num_stages,
@@ -765,7 +764,8 @@ fn multi_stage_store_C[
                     elementwise_compute_lambda_fn.value(),
                     num_output_warps,
                 ](
-                    m,
+                    M,
+                    N,
                     c_col,
                     c_row,
                     c_smem_warp_tile_upper,
@@ -1115,7 +1115,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     num_pipeline_stages: UInt,
     num_clc_pipeline_stages: UInt,
     num_accum_pipeline_stages: UInt,
-    n: Int,
     num_output_stages: UInt = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
     transpose_b: Bool = True,
@@ -1134,8 +1133,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: UInt,
-    m: Int,
+    mnk: StaticTuple[UInt32, 3],
 ):
     constrained[c_type is not DType.float32, "c_type cannot be float32"]()
 
@@ -1394,6 +1392,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
     var mma_complete_mask = self_mask | peer_mask
 
+    var num_iters: UInt32 = mnk[2] // BK
+
     if WarpRole.is_main_load():
         var required_clc_query = True
 
@@ -1546,7 +1546,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
                 stage_stride_cols = UInt(stage_stride_cols),
-                n=n,
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
@@ -1562,7 +1561,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 tmem_addr,
                 work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
                 elect_one_warp=elect_one_warp,
-                m=m,
+                M=mnk[0],
+                N=mnk[1],
             )
             accum_pipeline_consumer_state.step()
 
@@ -1701,8 +1701,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     alias cluster_shape = config.cluster_shape
 
-    var M = a_device.dim[0]()
-    var N = b_device.dim[0]()
+    var M = c_device.dim[0]()
+    var N = c_device.dim[1]()
+    var M_maybe_swapped = a_device.dim[0]()
+    var N_maybe_swapped = b_device.dim[0]()
     var K = a_device.dim[1]()
 
     a_tma_op = create_tma_tile[
@@ -1845,7 +1847,6 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         num_pipeline_stages = UInt(pipeline_stage),
         num_clc_pipeline_stages=num_clc_pipeline_stages,
         num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
-        n = c_device.shape[1](),
         num_output_stages = UInt(num_output_stages),
         output_tile_shape=output_tile_shape,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -1855,8 +1856,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     ]
 
     var grid_dim = (
-        align_up(ceildiv(M, BM), Int(cluster_shape[0])),
-        align_up(ceildiv(N, MMA_N), Int(cluster_shape[1])),
+        align_up(ceildiv(M_maybe_swapped, BM), Int(cluster_shape[0])),
+        align_up(ceildiv(N_maybe_swapped, MMA_N), Int(cluster_shape[1])),
         1,
     )
 
@@ -1866,13 +1867,14 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         1,
     )
 
+    var mnk = StaticTuple[UInt32, 3](M, N, K)
+
     ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
         cluster_dim,
-        K // BK,
-        c_device.dim[0](),
+        mnk,
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
