@@ -54,7 +54,6 @@ from layout.layout_tensor import (
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from memory.pointer import _GPUAddressSpace as AddressSpace
 
@@ -66,6 +65,8 @@ from ...utils import apply_epilogue, elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle
 from .amd import gemm_kernel_amd
 
+from ...structuring import SMemTileType
+
 
 @always_inline
 fn distance[
@@ -74,6 +75,14 @@ fn distance[
     arg0: UnsafePointer[Scalar[dtype]], arg1: UnsafePointer[Scalar[dtype]]
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // dtype.size_of()
+
+
+alias WarpSplitKReductionSMem[
+    c_type: DType, BM: Int, BN: Int, num_warp_k_partitions: Int
+] = SMemTileType[
+    c_type,
+    Layout.row_major(1, BM * BN * (num_warp_k_partitions // 2)),
+]
 
 
 @always_inline
@@ -103,16 +112,17 @@ fn warp_split_k_reduction[
 
     while i_red > 0:
         barrier()
-        var red_tb_smem = (
-            tb[c_type]()
-            .row_major[1, BM * BN]()
-            .shared()
-            .view(
-                smem.bitcast[Scalar[c_type]]()
-                + ((warp_k_part_id % i_red) * BM * BN)
-            )
-            .vectorize[1, c_frag_size]()
-        )
+        var red_tb_smem = LayoutTensor[
+            c_type,
+            Layout.row_major(1, BM * BN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](
+            smem.bitcast[Scalar[c_type]]()
+            + ((warp_k_part_id % i_red) * BM * BN)
+        ).vectorize[
+            1, c_frag_size
+        ]()
         if i_red <= warp_k_part_id < 2 * i_red:
             copy_local_to_shared[thread_layout=red_layout](
                 red_tb_smem,
@@ -367,19 +377,31 @@ fn multistage_mma[
 
     alias num_reg_tiles = 2 * k_group_size
     # Register tiles.
+    alias a_reg_layout = Layout.row_major(
+        Int(2 * k_group_size * num_m_mmas), a_frag_size
+    )
     var a_reg_tiles = (
-        tb[a_type]()
-        .row_major[Int(2 * k_group_size * num_m_mmas), a_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            a_type,
+            a_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .split[Int(2 * k_group_size)]()
     )
 
+    alias b_reg_layout = Layout.row_major(
+        Int(2 * k_group_size * num_n_mmas), b_frag_size
+    )
     var b_reg_tiles = (
-        tb[b_type]()
-        .row_major[Int(2 * k_group_size * num_n_mmas), b_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            b_type,
+            b_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, b_frag_size]()
         .split[Int(2 * k_group_size)]()
     )
@@ -830,11 +852,15 @@ fn multistage_gemm_kernel[
     alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
+    alias c_reg_layout = Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
     var c_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
-        .local()
-        .alloc()  # ALIGN-TODO: pass alignment here?
+        LayoutTensor[
+            accum_type,
+            c_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()  # ALIGN-TODO: pass alignment here?
         .fill(0)
     )
 
@@ -945,12 +971,12 @@ fn multistage_gemm_kernel[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = (
-            tb[c_type]()
-            .row_major[WM, WN]()
-            .shared()
-            .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
-        )
+        var accum_smem_warp_tile = LayoutTensor[
+            c_type,
+            Layout.row_major(WM, WN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),

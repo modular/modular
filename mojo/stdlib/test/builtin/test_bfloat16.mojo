@@ -84,9 +84,6 @@ def check_float64_values():
 def main():
     check_float64_values()
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_methods()
+    test_methods()
 
-        test_bf_primitives()
+    test_bf_primitives()

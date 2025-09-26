@@ -37,7 +37,7 @@ from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
 from .broadcast_to import broadcast_to
-from .buffer import buffer_load, buffer_store, buffer_store_slice
+from .buffer import buffer_create, buffer_load, buffer_store, buffer_store_slice
 from .call import call
 from .cast import cast
 from .chunk import chunk
@@ -56,7 +56,6 @@ from .debug import print
 from .elementwise import *
 from .elementwise import max as _elementwise_max
 from .elementwise import min as _elementwise_min
-from .fence import fence
 from .flatten import flatten
 from .fold import fold
 from .gather import gather, gather_nd

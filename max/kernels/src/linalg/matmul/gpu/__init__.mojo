@@ -56,7 +56,7 @@ from ._multistage_gemm_gpu import (
 from .amd import gemm_kernel_amd
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
-from .sm100.dispatch import matmul_sm100_entrypoint
+from .sm100.dispatch import matmul_dispatch_sm100
 from .sm100.matmul import matmul_sm100_fallback
 
 
@@ -522,6 +522,7 @@ fn _matmul_gpu[
     # For the other kernels we wrap it around an epilogue lambda instead.
     @parameter
     @always_inline
+    @__copy_capture(c)
     fn compute_lambda_wrapper[
         _dtype: DType, _width: Int, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
@@ -529,7 +530,11 @@ fn _matmul_gpu[
         if elementwise_compute_lambda_fn:
             alias compute_lambda = elementwise_compute_lambda_fn.value()
             var output = compute_lambda(coords, val)
-            c.store[alignment=alignment](
+            constrained[
+                output.dtype == c.type,
+                "compute epilogue lambda output and c type mismatch",
+            ]()
+            c.store[alignment = alignment * size_of[c.type]()](
                 coords, rebind[SIMD[c.type, _width]](output)
             )
 
@@ -583,31 +588,12 @@ fn _matmul_gpu[
     alias bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
     @parameter
-    if (
-        ctx.default_device_info is B200
-        and transpose_b
-        and (a_type == b_type == DType.bfloat16)
-        and c_type == DType.bfloat16
-    ):
-        var status = matmul_sm100_entrypoint[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-
-        if status:
-            return
-
-    @parameter
     if ctx.default_device_info > H100:
-        return _matmul_sm100[
-            c_type,
-            a_type,
-            b_type,
-            use_tensor_core,
-            transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
-            config=config,
+        return matmul_dispatch_sm100[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
@@ -618,8 +604,7 @@ fn _matmul_gpu[
             a_type,
             b_type,
             transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
@@ -730,6 +715,9 @@ fn _matmul_gpu[
                     static_N
                 ]()
 
+                # Auto-tune block shape selection: Find the configuration that minimizes
+                # SM idle time by scoring how evenly work distributes across all SMs.
+                # Lower score = better load balance (fewer idle SMs in the last wave).
                 var best_idx = 0
                 var best_score = Int.MAX
 

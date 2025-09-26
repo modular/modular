@@ -18,22 +18,6 @@ from __future__ import annotations
 from max.driver import DeviceStream, Tensor
 
 
-class BlockCopyMetrics:
-    def __init__(self) -> None:
-        self.h2d = 0
-        self.d2h = 0
-
-    def reset(self) -> None:
-        self.h2d = 0
-        self.d2h = 0
-
-    def __add__(self, other: BlockCopyMetrics) -> BlockCopyMetrics:
-        new_metrics = BlockCopyMetrics()
-        new_metrics.h2d = self.h2d + other.h2d
-        new_metrics.d2h = self.d2h + other.d2h
-        return new_metrics
-
-
 class BlockCopyEngine:
     def __init__(
         self,
@@ -81,9 +65,6 @@ class BlockCopyEngine:
                 for i in range(len(self.device_tensors))
             ]
 
-        # Number of blocks that have been copied
-        self.blocks_copied: BlockCopyMetrics = BlockCopyMetrics()
-
     def supports_multistream(self) -> bool:
         return self.d2h_auxiliary_streams is not None
 
@@ -92,7 +73,6 @@ class BlockCopyEngine:
             raise ValueError(
                 "Attempted to enqueue h2d copy but there is no host tensor"
             )
-        self.blocks_copied.h2d += 1
 
         # Copy block from host to each of the devices
         for device_tensor, host_tensor in zip(
@@ -107,7 +87,6 @@ class BlockCopyEngine:
             raise ValueError(
                 "Attempted to enqueue d2h copy but there is no host tensor"
             )
-        self.blocks_copied.d2h += 1
 
         # Copy the data from one device to the host.
         for i, (device_tensor, host_tensor) in enumerate(

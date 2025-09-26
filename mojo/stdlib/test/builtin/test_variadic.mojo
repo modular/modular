@@ -11,20 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+
+from testing import assert_equal, assert_false, assert_true
 
 
-fn sum_items(data: List[Int8]) -> Int:
-    var sum: Int = 0
-    for item in data:
-        sum += Int(item)
-    return sum
+fn test_iterator() raises:
+    fn helper(*args: Int) raises:
+        var n = 5
+        var count = 0
 
+        for i, e in enumerate(args):
+            assert_equal(e, n)
+            assert_equal(i, count)
+            count += 1
+            n -= 1
 
-fn make_abcd_vector() -> List[Int8]:
-    return List[Int8](97, 98, 99, 100)
+    helper(5, 4, 3, 2, 1)
 
 
 def main():
-    var vec = make_abcd_vector()
-    assert_equal(sum_items(vec), 394)
+    test_iterator()

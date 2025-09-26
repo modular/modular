@@ -438,6 +438,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
         self._start_idx = 0
+        self._prompt_len = self._active_idx
 
         self._is_initial_prompt = True
 

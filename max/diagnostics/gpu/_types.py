@@ -19,23 +19,47 @@ import msgspec
 
 
 class GPUStats(msgspec.Struct):
-    """A snapshot-in-time representation of a GPU's state."""
+    """Comprehensive GPU state snapshot containing memory and utilization metrics.
 
+    This class provides a complete view of a GPU's current state, including
+    detailed memory usage statistics and utilization percentages. It serves
+    as the primary data structure returned by GPU diagnostic queries.
+    """
+
+    """Detailed memory usage statistics for the GPU."""
     memory: MemoryStats
+    """Current GPU compute and memory utilization percentages."""
     utilization: UtilizationStats
 
 
 class MemoryStats(msgspec.Struct):
-    """A snapshot-in-time representation of a GPU's memory usage."""
+    """Detailed GPU memory usage statistics including total, free, used, and reserved memory.
 
+    This class provides comprehensive memory information for a GPU, allowing
+    developers to monitor memory consumption and identify potential memory
+    bottlenecks during model inference or training.
+    """
+
+    """Total GPU memory capacity in bytes."""
     total_bytes: int
+    """Currently available GPU memory in bytes."""
     free_bytes: int
+    """Currently allocated GPU memory in bytes."""
     used_bytes: int
+    """Memory reserved by the driver, if available from the GPU vendor."""
     reserved_bytes: int | None
 
 
 class UtilizationStats(msgspec.Struct):
-    """A snapshot-in-time representation of the utilization of a GPU."""
+    """GPU compute and memory activity utilization percentages.
+
+    This class captures the current utilization levels of a GPU's compute
+    units and memory subsystem, providing insights into how effectively
+    the GPU resources are being utilized during workload execution.
+    """
 
     gpu_usage_percent: int
+    """Current GPU compute utilization as a percentage (0-100)."""
+
     memory_activity_percent: int | None
+    """Memory controller activity percentage, if available from the GPU vendor."""

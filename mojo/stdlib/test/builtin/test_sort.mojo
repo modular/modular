@@ -478,8 +478,7 @@ fn test_sort_stress() raises:
     fn _leq(lhs: Int, rhs: Int) -> Bool:
         return lhs <= rhs
 
-    for i in range(len(lens)):
-        var length = lens[i]
+    for length in lens:
         test[_gt, _geq](length)
         test[_lt, _leq](length)
 
@@ -632,8 +631,7 @@ def test_stable_sort_stress():
     fn _lt_check(lhs: IntPair, rhs: IntPair) -> Bool:
         return lhs.idx < rhs.idx if lhs.x == rhs.x else lhs.x < rhs.x
 
-    for i in range(len(lens)):
-        var length = lens[i]
+    for length in lens:
         test[_lt, _lt_check](length)
 
 

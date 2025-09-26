@@ -25,7 +25,21 @@ from ._types import GPUStats
 
 
 class GPUDiagContext:
-    """Context for accessing GPU statistics of all supported GPU types."""
+    """Context manager providing unified access to GPU diagnostic information across NVIDIA and AMD hardware.
+
+    This class automatically detects and initializes supported GPU vendor libraries
+    (NVML for NVIDIA, ROCm SMI for AMD) and provides a unified interface for
+    collecting diagnostic statistics from all available GPUs in the system.
+
+    .. code-block:: python
+
+        from max.diagnostics.gpu import GPUDiagContext
+
+        with GPUDiagContext() as ctx:
+            stats = ctx.get_stats()
+            for gpu_id, gpu_stats in stats.items():
+                print(f"GPU {gpu_id}:  {gpu_stats.memory.used_bytes} bytes used")
+    """
 
     def __init__(self) -> None:
         self._nvml: NVMLContext | None = None
@@ -64,7 +78,13 @@ class GPUDiagContext:
         self._stack = None
 
     def get_stats(self) -> dict[str, GPUStats]:
-        """Get GPU statistics for all GPUs."""
+        """Retrieve current GPU statistics for all detected GPUs in the system.
+
+        Returns:
+            A dictionary mapping GPU identifiers to their current statistics.
+            NVIDIA GPUs are prefixed with ``nv`` (e.g., ``nv0``, ``nv1``) and AMD
+            GPUs are prefixed with ``amd`` (e.g., ``amd0``, ``amd1``).
+        """
         stats: dict[str, GPUStats] = {}
         if self._nvml is not None:
             nvml_stats = self._nvml.get_stats()

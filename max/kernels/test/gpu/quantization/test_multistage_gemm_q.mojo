@@ -41,8 +41,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor, copy_dram_to_sram
-from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.layout_tensor import LayoutTensor, Layout, copy_dram_to_sram
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulKernels
 from memory.unsafe import bitcast
@@ -310,10 +309,13 @@ fn create_ref_b[
     ](0, warp_x)
     alias smem_reg_scales_layout = Layout.row_major(8, 4)
     var scales_reg_tiles = (
-        tb[scales_type]()
-        .row_major[repack_tile[0] // 8, 1]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            scales_type,
+            Layout.row_major(repack_tile[0] // 8, 1),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, 1]()
     )
     # load scales

@@ -77,12 +77,9 @@ def test_get_accum_type():
 def test_isfinite():
     assert_true(isfinite(Float32(33)))
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_false(isfinite(inf[DType.bfloat16]()))
-        assert_false(isfinite(neg_inf[DType.bfloat16]()))
-        assert_false(isfinite(nan[DType.bfloat16]()))
+    assert_false(isfinite(inf[DType.bfloat16]()))
+    assert_false(isfinite(neg_inf[DType.bfloat16]()))
+    assert_false(isfinite(nan[DType.bfloat16]()))
 
     assert_false(isfinite(inf[DType.float16]()))
     assert_false(isfinite(inf[DType.float32]()))
@@ -98,12 +95,9 @@ def test_isfinite():
 def test_isinf():
     assert_false(isinf(Float32(33)))
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_true(isinf(inf[DType.bfloat16]()))
-        assert_true(isinf(neg_inf[DType.bfloat16]()))
-        assert_false(isinf(nan[DType.bfloat16]()))
+    assert_true(isinf(inf[DType.bfloat16]()))
+    assert_true(isinf(neg_inf[DType.bfloat16]()))
+    assert_false(isinf(nan[DType.bfloat16]()))
 
     assert_true(isinf(inf[DType.float16]()))
     assert_true(isinf(inf[DType.float32]()))
@@ -119,12 +113,9 @@ def test_isinf():
 def test_isnan():
     assert_false(isnan(Float32(33)))
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_false(isnan(inf[DType.bfloat16]()))
-        assert_false(isnan(neg_inf[DType.bfloat16]()))
-        assert_true(isnan(nan[DType.bfloat16]()))
+    assert_false(isnan(inf[DType.bfloat16]()))
+    assert_false(isnan(neg_inf[DType.bfloat16]()))
+    assert_true(isnan(nan[DType.bfloat16]()))
 
     assert_false(isnan(inf[DType.float16]()))
     assert_false(isnan(inf[DType.float32]()))

@@ -137,11 +137,9 @@ fn bench_grouped_matmul[
     # Total and max number of tokens
     total_num_tokens = 0
     max_num_tokens_by_expert = 0
-    for i in range(len(num_tokens_by_expert)):
-        total_num_tokens += num_tokens_by_expert[i]
-        max_num_tokens_by_expert = max(
-            max_num_tokens_by_expert, num_tokens_by_expert[i]
-        )
+    for num_tokens in num_tokens_by_expert:
+        total_num_tokens += num_tokens
+        max_num_tokens_by_expert = max(max_num_tokens_by_expert, num_tokens)
 
     # Create host A C buffers
     alias static_a_shape = DimList(Dim(), K)

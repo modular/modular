@@ -812,7 +812,7 @@ async def openai_create_chat_completion(
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(
-                response_generator.stream(token_request), ping=100000
+                response_generator.stream(token_request), ping=100000, sep="\n"
             )
 
         response = await response_generator.complete([token_request])
@@ -1296,7 +1296,9 @@ async def openai_create_completion(
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(
-                response_generator.stream(token_requests[0]), ping=100000
+                response_generator.stream(token_requests[0]),
+                ping=100000,
+                sep="\n",
             )
 
         resp = await response_generator.complete(token_requests)

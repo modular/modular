@@ -177,6 +177,9 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             page_size=page_size,
         )
 
+        # Store language kvcache attributes.
+        self.text_kv_params = params
+
     @classmethod
     @final
     def estimated_memory_size(
@@ -382,22 +385,15 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         # Step the text KV manager as usual for autoregressive text generation.
         self.text_kv_manager.step(batch)
 
-        # Keep the base class's state in sync with the text KV manager's.
-        super().step(batch)
-
     def external_claim(self, request_id: RequestID) -> None:
         """Reserves sequence IDs for the given request ID in both modalities' KV caches."""
         self.text_kv_manager.external_claim(request_id)
         self.vision_kv_manager.external_claim(request_id)
 
-        # Keep the base class's state in sync with the text KV manager's.
-        super().external_claim(request_id)
-
     def release(self, request_id: RequestID) -> None:
         """Marks the sequence complete for both modalities' KV caches."""
         self.text_kv_manager.release(request_id)
         self.vision_kv_manager.release(request_id)
-        super().release(request_id)
 
     def contains(self, request_id: RequestID) -> bool:
         """Returns whether `request_id` is in the KV cache."""
@@ -876,7 +872,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         ]
         self.language_graph_input_size = len(input_types)
 
-        kv_params = self.kv_manager.params
+        kv_params = self.kv_manager.text_kv_params
         vision_kv_params = self.kv_manager.vision_kv_params
 
         return Graph(

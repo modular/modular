@@ -27,8 +27,11 @@ from max.interfaces import RequestID, TextGenerationContext
 from ..cache_params import KVCacheParams
 from ..data_parallelism_utils import split_input_row_offsets, split_into_groups
 from ..manager import RaggedKVCacheInputs
-from .block_copy_engine import BlockCopyMetrics
-from .paged_cache import PagedCacheInputSymbols, PagedKVCacheManager
+from .paged_cache import (
+    KVCacheMetrics,
+    PagedCacheInputSymbols,
+    PagedKVCacheManager,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -268,17 +271,15 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         )
 
     @property
-    def num_blocks_copied(self) -> BlockCopyMetrics:
-        """Get the number of blocks copied for each type."""
+    def metrics(self) -> KVCacheMetrics:
         return sum(
-            (manager.num_blocks_copied for manager in self._replica_managers),
-            start=BlockCopyMetrics(),
+            (manager.metrics for manager in self._replica_managers),
+            start=KVCacheMetrics(),
         )
 
-    def reset_num_blocks_copied(self) -> None:
-        """Reset the number of blocks copied for each type."""
+    def reset_metrics(self) -> None:
         for manager in self._replica_managers:
-            manager.reset_num_blocks_copied()
+            manager.reset_metrics()
 
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
         input_symbols = self.input_symbols()

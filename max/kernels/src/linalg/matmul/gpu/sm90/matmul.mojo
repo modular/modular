@@ -737,6 +737,14 @@ fn warp_specialized_gemm_output[
                     )
 
     else:
+        constrained[
+            elementwise_compute_lambda_fn is None,
+            (
+                "compute_lambda_fn is not supported when N % BN != 0 and TMA is"
+                " not used"
+            ),
+        ]()
+
         # Lane's coordinate is in 8x4 warp.
         var lane_coord0 = UInt32(lane_id() // 4)
         var lane_coord1 = UInt32(lane_id() % 4)

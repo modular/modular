@@ -162,6 +162,24 @@ struct MatmulConfig[
         self.partitioned_multicast = partitioned_multicast
         self._pdl_level = pdl_level
 
+    fn copy_field(mut self, other: MatmulConfig):
+        self.block_tile_shape = other.block_tile_shape
+        self.warp_tile_shape = other.warp_tile_shape
+        self.mma_shape = other.mma_shape
+        self.num_pipeline_stages = other.num_pipeline_stages
+        self.num_k_partitions = other.num_k_partitions
+        self.k_group_size = other.k_group_size
+        self.num_warp_k_partitions = other.num_warp_k_partitions
+        self.cluster_shape = other.cluster_shape
+        self.num_consumer = other.num_consumer
+        self.partitioned_multicast = other.partitioned_multicast
+        self._pdl_level = other._pdl_level
+
+    fn swapAB(self) -> MatmulConfig[b_type, a_type, c_type, transpose_b]:
+        var new_config = MatmulConfig[b_type, a_type, c_type, transpose_b]()
+        new_config.copy_field(self)
+        return new_config
+
     fn num_warps_m(self) -> UInt:
         return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
 

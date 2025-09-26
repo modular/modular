@@ -11,20 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+"""Diagnostics API for MAX platform.
 
+This module provides diagnostic utilities for monitoring and analyzing
+system performance, including GPU utilization and memory usage.
+"""
 
-fn sum_items(data: List[Int8]) -> Int:
-    var sum: Int = 0
-    for item in data:
-        sum += Int(item)
-    return sum
+from . import gpu
 
-
-fn make_abcd_vector() -> List[Int8]:
-    return List[Int8](97, 98, 99, 100)
-
-
-def main():
-    var vec = make_abcd_vector()
-    assert_equal(sum_items(vec), 394)
+__all__ = ["gpu"]

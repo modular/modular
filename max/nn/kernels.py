@@ -22,6 +22,7 @@ from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
     BufferValue,
+    BufferValueLike,
     DeviceRef,
     Dim,
     TensorType,
@@ -2388,13 +2389,15 @@ def update_frequency_data(
 
 
 def scatter_set_constant(
-    data: BufferValue,
-    indices: TensorValue,
+    data: BufferValueLike,
+    indices: TensorValueLike,
     fill_val: float,
 ) -> None:
     """
     Scatters values into a tensor at specified indices.
     """
+    data = BufferValue(data)
+    indices = TensorValue(indices)
 
     if data.rank != 2:
         raise ValueError(

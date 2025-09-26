@@ -398,9 +398,9 @@ struct PythonObject(
         if not dict_obj_ptr:
             raise Error("internal error: PyDict_New failed")
 
-        for i in range(len(keys)):
-            var key_obj = keys[i].copy().to_python_object()
-            var val_obj = values[i].copy().to_python_object()
+        for key, value in zip(keys, values):
+            var key_obj = key.copy().to_python_object()
+            var val_obj = value.copy().to_python_object()
             var result = cpython.PyDict_SetItem(
                 dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
             )

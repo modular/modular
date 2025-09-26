@@ -18,6 +18,7 @@ from layout.swizzle import Swizzle
 
 
 fn print_svg[
+    tensor_list_origin: ImmutableOrigin,
     dtype: DType,
     layout: Layout,
     layout_int_type: DType,
@@ -27,12 +28,12 @@ fn print_svg[
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
-    tensor_base: LayoutTensor,
+    tensor_base: LayoutTensor[mut=False, **_],
     tensors: List[
         LayoutTensor[
             dtype,
             layout,
-            MutableAnyOrigin,
+            tensor_list_origin,
             element_layout=element_layout,
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
@@ -51,6 +52,7 @@ fn print_svg[
 
 
 fn _print_svg_impl[
+    tensor_list_origin: ImmutableOrigin,
     dtype: DType,
     layout: Layout,
     layout_int_type: DType,
@@ -61,12 +63,12 @@ fn _print_svg_impl[
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
 ](
-    tensor_base: LayoutTensor,
+    tensor_base: LayoutTensor[mut=False, **_],
     tensors: List[
         LayoutTensor[
             dtype,
             layout,
-            MutableAnyOrigin,
+            tensor_list_origin,
             element_layout=element_layout,
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,

@@ -54,12 +54,12 @@ def main():
     var inputs = List[String]()
     inputs.append("input1")
     inputs.append("input2")
-    for i in range(len(inputs)):
+    for i, input_val in enumerate(inputs):
         m.bench_with_input[String, bench2](
             BenchId("bench2", String(i)),
-            inputs[i],
-            ThroughputMeasure(BenchMetric.elements, len(inputs[i])),
-            ThroughputMeasure(BenchMetric.flops, len(inputs[i])),
+            input_val,
+            ThroughputMeasure(BenchMetric.elements, len(input_val)),
+            ThroughputMeasure(BenchMetric.flops, len(input_val)),
         )
 
     m.config.verbose_timing = True

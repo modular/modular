@@ -551,8 +551,7 @@ fn tile[
     # Initialize the work_idx with the starting offset.
     var work_idx = offset
     # Iterate on the list of given tile sizes.
-    for tile_idx in range(len(tile_size_list)):
-        var tile_size = tile_size_list[tile_idx]
+    for tile_size in tile_size_list:
         # Launch workloads on the current tile sizes until cannot proceed.
         while work_idx <= upperbound - tile_size:
             workgroup_function(work_idx, tile_size)
@@ -901,16 +900,11 @@ fn tile_and_unswitch[
     # Initialize where to start on the overall work load.
     var current_offset: Int = offset
 
-    for idx in range(len(tile_size_list)):
-        # Get the tile size to proceed with.
-        var tile_size = tile_size_list[idx]
-
+    for tile_size in tile_size_list:
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
         while current_offset <= upperbound - tile_size:
-            workgroup_function[True](
-                current_offset, upperbound, tile_size_list[idx]
-            )
+            workgroup_function[True](current_offset, upperbound, tile_size)
             current_offset += tile_size
 
     # Use the last tile size to process the residue.

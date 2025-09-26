@@ -32,6 +32,8 @@ Literals now have a default type. For example, you can now bind
 
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
+- The deprecated `DType.index` is now removed in favor of the `DType.int`.
+
 ### Tooling changes
 
 ### ❌ Removed

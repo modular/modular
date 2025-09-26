@@ -16,7 +16,6 @@ from gpu.host import DeviceContext
 from gpu.host.info import MI300X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 

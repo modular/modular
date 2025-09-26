@@ -17,6 +17,7 @@ from test_utils import (
     ImplicitCopyOnly,
     MoveOnly,
     ObservableDel,
+    TestSuite,
 )
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
@@ -137,13 +138,17 @@ def test_steal_data():
 
 
 def main():
-    test_basic_ref()
-    test_owned_pointer_copy_constructor()
-    test_moving_constructor()
-    test_copying_constructor()
-    test_explicitly_copying_constructor()
-    test_basic_ref_mutate()
-    test_basic_del()
-    test_take()
-    test_moveinit()
-    test_steal_data()
+    var suite = TestSuite()
+
+    suite.test[test_basic_ref]()
+    suite.test[test_owned_pointer_copy_constructor]()
+    suite.test[test_moving_constructor]()
+    suite.test[test_copying_constructor]()
+    suite.test[test_explicitly_copying_constructor]()
+    suite.test[test_basic_ref_mutate]()
+    suite.test[test_basic_del]()
+    suite.test[test_take]()
+    suite.test[test_moveinit]()
+    suite.test[test_steal_data]()
+
+    suite^.run()

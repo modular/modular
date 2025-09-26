@@ -47,8 +47,8 @@ from max.support.math import ceildiv
 from ..cache_params import KVCacheParams
 from ..manager import KVCacheInputSymbols, RaggedKVCacheInputs
 from ..utils import build_max_lengths_tensor
-from .block_copy_engine import BlockCopyEngine, BlockCopyMetrics
-from .block_manager import BlockManager
+from .block_copy_engine import BlockCopyEngine
+from .block_manager import BlockManager, KVCacheMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -744,19 +744,6 @@ class PagedKVCacheManager:
         """Get the block ids for a request."""
         return self.block_manager.get_req_blocks(request_id)
 
-    @property
-    def num_blocks_copied(self) -> BlockCopyMetrics:
-        """Get the number of blocks copied for each type."""
-        if self.block_copy_engine is None:
-            return BlockCopyMetrics()
-        return self.block_copy_engine.blocks_copied
-
-    def reset_num_blocks_copied(self) -> None:
-        """Reset the number of blocks copied for each type."""
-        if self.block_copy_engine is None:
-            return
-        self.block_copy_engine.blocks_copied.reset()
-
     def _create_increment_cache_lengths_graph(self) -> Graph:
         input_symbols = self.input_symbols()
         cache_lengths_types = [
@@ -882,3 +869,10 @@ class PagedKVCacheManager:
             True if the request ID is active in the cache, False otherwise.
         """
         return request_id in self._request_to_seq_id
+
+    @property
+    def metrics(self) -> KVCacheMetrics:
+        return self.block_manager.metrics
+
+    def reset_metrics(self) -> None:
+        self.block_manager.reset_metrics()

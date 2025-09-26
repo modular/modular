@@ -493,12 +493,11 @@ def test_mojo_issue_1729():
         -6981562940350531355,
     ]
     var d: Dict[DummyKey, Int] = {}
-    for i in range(len(keys)):
-        d[DummyKey(keys[i])] = i
+    for i, key in enumerate(keys):
+        d[DummyKey(key)] = i
     assert_equal(len(d), len(keys))
-    for i in range(len(d)):
-        var k = keys[i]
-        assert_equal(i, d[k])
+    for i, key in enumerate(keys):
+        assert_equal(i, d[key])
 
 
 fn test[name: String, test_fn: fn () raises]() raises:

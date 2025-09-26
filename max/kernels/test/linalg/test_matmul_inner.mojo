@@ -201,12 +201,5 @@ fn main() raises:
         DType.uint8, DType.int8, DType.int32, saturated_vnni=True
     ](M, N, K)
 
-    # TODO(KERN-228): Re-enable after we resolve llvm lowering issues.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](
-            M, N, K
-        )
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](
-            M, N, K
-        )
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](M, N, K)
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](M, N, K)
