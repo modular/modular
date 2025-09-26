@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from test_utils import TestSuite
 from testing import assert_equal
 
 
@@ -37,5 +38,9 @@ def test_min_scalar():
 
 
 def main():
-    test_min()
-    test_min_scalar()
+    var suite = TestSuite()
+
+    suite.test[test_min]()
+    suite.test[test_min_scalar]()
+
+    suite^.run()

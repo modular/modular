@@ -39,6 +39,7 @@ from math import (
 )
 from sys import CompilationTarget
 
+from test_utils import TestSuite
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
 from utils.numerics import inf, isinf, isnan, nan, neg_inf
@@ -651,27 +652,31 @@ def test_atanh():
 
 
 def main():
-    test_sin()
-    test_cos()
-    test_factorial()
-    test_copysign()
-    test_isclose()
-    test_ceil()
-    test_floor()
-    test_trunc()
-    test_exp2()
-    test_iota()
-    test_sqrt()
-    test_isqrt()
-    test_frexp()
-    test_log()
-    test_log2()
-    test_log1p()
-    test_gcd()
-    test_lcm()
-    test_ulp()
-    test_ceildiv()
-    test_align_down()
-    test_align_up()
-    test_clamp()
-    test_atanh()
+    var suite = TestSuite()
+
+    suite.test[test_sin]()
+    suite.test[test_cos]()
+    suite.test[test_factorial]()
+    suite.test[test_copysign]()
+    suite.test[test_isclose]()
+    suite.test[test_ceil]()
+    suite.test[test_floor]()
+    suite.test[test_trunc]()
+    suite.test[test_exp2]()
+    suite.test[test_iota]()
+    suite.test[test_sqrt]()
+    suite.test[test_isqrt]()
+    suite.test[test_frexp]()
+    suite.test[test_log]()
+    suite.test[test_log2]()
+    suite.test[test_log1p]()
+    suite.test[test_gcd]()
+    suite.test[test_lcm]()
+    suite.test[test_ulp]()
+    suite.test[test_ceildiv]()
+    suite.test[test_align_down]()
+    suite.test[test_align_up]()
+    suite.test[test_clamp]()
+    suite.test[test_atanh]()
+
+    suite^.run()

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from test_utils import ulp_distance
+from test_utils import ulp_distance, TestSuite
 from testing import assert_true
 
 
@@ -58,4 +58,8 @@ fn test_ulp_distance() raises:
 
 
 fn main() raises:
-    test_ulp_distance()
+    var suite = TestSuite()
+
+    suite.test[test_ulp_distance]()
+
+    suite^.run()
