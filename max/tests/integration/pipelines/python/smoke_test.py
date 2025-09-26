@@ -19,12 +19,16 @@ These dependencies are to be removed once this script
 has been integrated into bazel.
 """
 
+import json
 import logging
 import os
 import signal
 import subprocess
 import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from subprocess import Popen
+from typing import Optional
 
 import click
 import requests
@@ -81,9 +85,11 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
     ]
 
 
-def get_lm_eval_cmd(model: str) -> list[str]:
-    safe_model_name = model.replace("/", "_").replace(":", "_")
+def safe_model_name(model: str) -> str:
+    return model.replace("/", "__")
 
+
+def get_lm_eval_cmd(model: str) -> list[str]:
     max_gen_toks = {
         "unsloth/gpt-oss-20b-BF16": ",max_gen_toks=50000",
         "Qwen/Qwen3-8B": ",max_gen_toks=4096",
@@ -102,7 +108,7 @@ def get_lm_eval_cmd(model: str) -> list[str]:
         "--fewshot_as_multiturn",
         "--apply_chat_template",
         "--output_path",
-        f"./results_{safe_model_name}",
+        "./lm_eval_output",
         "--limit",
         "320",
         "--seed",
@@ -130,6 +136,49 @@ def gracefully_stop_process(process: Popen):
         process.wait(5)
 
 
+def locate_results_json(model: str) -> Path:
+    sanitized_name = safe_model_name(model)
+    results_dir = Path("./lm_eval_output") / Path(sanitized_name)
+    candidates = sorted(
+        results_dir.glob("results_*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        raise FileNotFoundError(f"No results_*.json under {results_dir}")
+    return candidates[0]
+
+
+@dataclass
+class EvalSummary:
+    startup_time_seconds: float
+    eval_task: str
+    accuracy: float
+    accuracy_stderr: float
+    total_evaluation_time_seconds: float
+    task_hash: str
+
+
+def build_eval_summary(
+    results_json: Path, startup_time_seconds: float
+) -> EvalSummary:
+    """
+    Parse lm-eval's results JSON and extract the metrics
+    """
+    data = json.loads(results_json.read_text())
+    metrics = data["results"]["gsm8k_cot_llama"]
+    total_secs = float(data["total_evaluation_time_seconds"])
+
+    return EvalSummary(
+        startup_time_seconds=round(startup_time_seconds, 2),
+        eval_task="gsm8k_cot_llama",
+        accuracy=metrics["exact_match,flexible-extract"],
+        accuracy_stderr=metrics["exact_match_stderr,flexible-extract"],
+        total_evaluation_time_seconds=total_secs,
+        task_hash=data["task_hashes"]["gsm8k_cot_llama"],
+    )
+
+
 @click.command()
 @click.option(
     "--framework",
@@ -142,7 +191,13 @@ def gracefully_stop_process(process: Popen):
     required=True,
     help="huggingface model path, for example: unsloth/gpt-oss-20b-BF16",
 )
-def smoke_test(framework: str, model: str):
+@click.option(
+    "--output-file",
+    type=click.Path(dir_okay=False, writable=True, path_type=Path),
+    default=None,
+    help="If provided, write the summary of the smoke test to this file",
+)
+def smoke_test(framework: str, model: str, output_file: Optional[Path]):
     cmd = get_server_cmd(framework, model)
 
     # SGLang depends on ninja which is in the serve environment
@@ -167,15 +222,27 @@ def smoke_test(framework: str, model: str):
             lm_eval_cmd = get_lm_eval_cmd(model)
             with Popen(lm_eval_cmd, start_new_session=True) as lm_eval_process:
                 try:
-                    lm_eval_process.wait(600)
+                    rc = lm_eval_process.wait(600)
                 except subprocess.TimeoutExpired:
                     gracefully_stop_process(lm_eval_process)
                     raise
+                if rc != 0:
+                    raise Exception(f"lm-eval exited with non-zero status {rc}")
         finally:
             gracefully_stop_process(server_process)
 
+    results_json = locate_results_json(model)
+    summary = build_eval_summary(
+        results_json, startup_time_seconds=startup_time
+    )
+
+    if output_file is not None:
+        output_file.write_text(json.dumps(asdict(summary), indent=2))
+        logger.info(f"Wrote EvalSummary JSON to {output_file.resolve()}")
+
     time.sleep(1)
     logger.info("Smoke test completed")
+    logger.info(f"EvalSummary: {json.dumps(asdict(summary), indent=2)}")
 
 
 if __name__ == "__main__":
