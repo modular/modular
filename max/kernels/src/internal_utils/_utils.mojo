@@ -157,7 +157,7 @@ struct DeviceNDBuffer[
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
         self.buffer = ctx.enqueue_create_buffer[dtype](shape.product().get())
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(),
+            self.buffer.unsafe_ptr(),
         )
 
     @always_inline
@@ -172,7 +172,7 @@ struct DeviceNDBuffer[
             product(dynamic_shape, rank)
         )
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(), dynamic_shape
+            self.buffer.unsafe_ptr(), dynamic_shape
         )
 
     @always_inline
@@ -197,7 +197,7 @@ struct DeviceNDBuffer[
             product(dynamic_shape, rank)
         )
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(), dynamic_shape, stride
+            self.buffer.unsafe_ptr(), dynamic_shape, stride
         )
 
     @always_inline

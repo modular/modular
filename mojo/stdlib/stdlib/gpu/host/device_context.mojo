@@ -1197,11 +1197,6 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer that was owned by this buffer.
         """
-        return self._take_ptr()
-
-    fn _take_ptr(
-        var self,
-    ) -> Self._DevicePtr:
         constrained[
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
@@ -1226,11 +1221,6 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer owned by this buffer.
         """
-        return self._unsafe_ptr()
-
-    fn _unsafe_ptr(
-        self,
-    ) -> Self._DevicePtr:
         constrained[
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",

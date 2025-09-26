@@ -42,8 +42,8 @@ def run_elementwise[
             in_host2[i] = 0.001 * abs(Scalar[dtype](i) - length // 2)
         in_host = in_host2^
 
-    var in_buffer = NDBuffer[dtype, 1](in_device._unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
+    var in_buffer = NDBuffer[dtype, 1](in_device.unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[dtype, 1](out_device.unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)

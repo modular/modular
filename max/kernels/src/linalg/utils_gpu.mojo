@@ -553,7 +553,7 @@ fn get_hilbert_lut_with_cache(
 
     # not in cache :(
     var buf = create_hilbert_lut(ctx, grid_x, grid_y)
-    var device_ptr = buf._unsafe_ptr()
+    var device_ptr = buf.unsafe_ptr()
     var num_blocks = grid_x * grid_y
 
     # store the device pointer directly in global cache

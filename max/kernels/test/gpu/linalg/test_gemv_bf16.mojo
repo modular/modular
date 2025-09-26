@@ -106,17 +106,17 @@ fn run_matvec[
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_n._unsafe_ptr(),
+        c_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_n._unsafe_ptr(),
+        a_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_n._unsafe_ptr(),
+        b_device_n.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 

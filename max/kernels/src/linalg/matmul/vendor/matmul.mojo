@@ -102,7 +102,7 @@ fn matmul[
         # We do not want to mark c as `mut` in the function signature, so we
         # create a new shallow copy of c as a temporary buffer.
         var c_tmp = c
-        c_tmp.data = tmp_device_buffer._unsafe_ptr()
+        c_tmp.data = tmp_device_buffer.unsafe_ptr()
 
         matmul[
             transpose_b=transpose_b,

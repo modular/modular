@@ -143,17 +143,17 @@ fn check_ldmatrix_fp8[
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor_ref = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref._unsafe_ptr(),
+        c_device_ref.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
-        a_device._unsafe_ptr(),
+        a_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
-        b_device._unsafe_ptr(),
+        b_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(
             IndexList[2](N, K)
         ),  # N x K for transpose_b=True

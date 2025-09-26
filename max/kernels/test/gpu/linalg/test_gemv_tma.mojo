@@ -404,7 +404,7 @@ def test_gemv_tma[
     else:
         # Compare with vendor BLAS for correctness.
         var b_2d = NDBuffer[dtype, 2](
-            b_device.buffer._unsafe_ptr(),
+            b_device.buffer.unsafe_ptr(),
             Index(K, 1),
             Index(1, K),
         )

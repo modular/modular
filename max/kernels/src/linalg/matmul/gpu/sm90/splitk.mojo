@@ -698,7 +698,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         NUM_TILES * BM * BN
     )
     var reduction_workspace = NDBuffer[accum_type, 3](
-        workspace_data._unsafe_ptr(),
+        workspace_data.unsafe_ptr(),
         Index(NUM_TILES, BM, BN),
     )
 

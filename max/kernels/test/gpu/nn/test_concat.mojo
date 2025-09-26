@@ -77,19 +77,19 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     alias layout = Layout.row_major[rank]()
     var input_0_device_ref = LayoutTensor[dtype, layout](
-        input_0_device._unsafe_ptr(),
+        input_0_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(input_shape),
     )
     var input_1_device_ref = LayoutTensor[dtype, layout](
-        input_1_device._unsafe_ptr(),
+        input_1_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(input_shape),
     )
     var input_2_device_ref = LayoutTensor[dtype, layout](
-        input_2_device._unsafe_ptr(),
+        input_2_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(input_shape),
     )
     var input_3_device_ref = LayoutTensor[dtype, layout](
-        input_3_device._unsafe_ptr(),
+        input_3_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(input_shape),
     )
 
@@ -101,7 +101,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var total_size_outp: Int = product(output_shape)
     var output_device = ctx.enqueue_create_buffer[dtype](total_size_outp)
     var output_device_ref = LayoutTensor[dtype, layout](
-        output_device._unsafe_ptr(),
+        output_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(output_shape),
     )
 

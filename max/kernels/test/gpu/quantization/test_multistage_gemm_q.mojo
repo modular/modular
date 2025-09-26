@@ -526,7 +526,7 @@ fn test_repack_Q4_0_for_sm8x(
         repacked_b_device.buffer,
     )
     var repacked_dequan_tensor = repacked_dequan_tensor_type(
-        repacked_dequan_device.buffer._unsafe_ptr(),
+        repacked_dequan_device.buffer.unsafe_ptr(),
         RuntimeLayout[
             repack_dequan_layout,
             element_type = repacked_dequan_tensor_type.layout_int_type,

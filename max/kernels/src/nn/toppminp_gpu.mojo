@@ -723,7 +723,7 @@ fn _topp_minp_sampling_gpu[
     # TODO: Should softmax be done in-place without needing this other buffer?
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
     var input_probs = NDBuffer[dtype, input_logits.rank](
-        probs_buf._unsafe_ptr(), DimList(batch_size, vocab_size)
+        probs_buf.unsafe_ptr(), DimList(batch_size, vocab_size)
     )
 
     _softmax_gpu[

@@ -284,17 +284,17 @@ fn check_ldmatrix(
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor_ref = LayoutTensor[DType.float32, layout](
-        c_device_ref._unsafe_ptr(),
+        c_device_ref.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor = LayoutTensor[DType.float32, layout](
-        a_device._unsafe_ptr(),
+        a_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[DType.float32, layout](
-        b_device._unsafe_ptr(),
+        b_device.unsafe_ptr(),
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 

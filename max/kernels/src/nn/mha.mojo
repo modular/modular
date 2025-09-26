@@ -788,7 +788,7 @@ fn flash_attention_dispatch[
                     ](num_heads * depth * batch_size * num_partitions_value)
 
                     var output_intermediate = NDBuffer[output.dtype, 4](
-                        output_intermediate_data._unsafe_ptr(),
+                        output_intermediate_data.unsafe_ptr(),
                         Index(
                             num_partitions_value,
                             batch_size,
@@ -808,11 +808,11 @@ fn flash_attention_dispatch[
                     ](2 * data_len)
 
                     var exp_sum = NDBuffer[accum_type, 3](
-                        exp_sum_qk_max_data._unsafe_ptr(), data_dim
+                        exp_sum_qk_max_data.unsafe_ptr(), data_dim
                     )
 
                     var qk_max = NDBuffer[accum_type, 3](
-                        exp_sum_qk_max_data._unsafe_ptr().offset(data_len),
+                        exp_sum_qk_max_data.unsafe_ptr().offset(data_len),
                         data_dim,
                     )
 
@@ -848,7 +848,7 @@ fn flash_attention_dispatch[
                                 kv_input_row_offsets,
                                 batch_size,
                                 SplitKPartition(
-                                    exp_sum_qk_max_data._unsafe_ptr(),
+                                    exp_sum_qk_max_data.unsafe_ptr(),
                                     num_partitions_value,
                                 ),
                                 ctx,
@@ -879,7 +879,7 @@ fn flash_attention_dispatch[
                                 kv_input_row_offsets,
                                 batch_size,
                                 SplitKPartition(
-                                    exp_sum_qk_max_data._unsafe_ptr(),
+                                    exp_sum_qk_max_data.unsafe_ptr(),
                                     num_partitions_value,
                                 ),
                                 ctx,
@@ -4394,7 +4394,7 @@ fn mha_gpu_naive[
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var p_buffer = NDBuffer[p_type, 3](
-        p_device._unsafe_ptr(),
+        p_device.unsafe_ptr(),
         Index(batch_size * num_heads, max_prompt_len, num_keys),
     )
     var q_ptr = q.data

@@ -651,7 +651,7 @@ struct LayoutTensor[
         Args:
             device_buffer: Contains the underlying data to point to.
         """
-        self = Self.GenericLayoutTensorType(device_buffer._unsafe_ptr())
+        self = Self.GenericLayoutTensorType(device_buffer.unsafe_ptr())
 
     @always_inline
     fn __init__(
@@ -704,7 +704,7 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the LayoutTensor.
         """
         self = Self.GenericLayoutTensorType(
-            device_buffer._unsafe_ptr(), runtime_layout
+            device_buffer.unsafe_ptr(), runtime_layout
         )
 
     @always_inline
@@ -749,7 +749,7 @@ struct LayoutTensor[
             element_runtime_layout: The runtime layout of each element.
         """
         self = Self.GenericLayoutTensorType(
-            device_buffer._unsafe_ptr(), runtime_layout, element_runtime_layout
+            device_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
     @always_inline

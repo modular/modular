@@ -32,8 +32,8 @@ def run_elementwise[
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
 
-    var in_buffer = NDBuffer[dtype, 1](in_device._unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
+    var in_buffer = NDBuffer[dtype, 1](in_device.unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[dtype, 1](out_device.unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)

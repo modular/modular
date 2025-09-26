@@ -316,13 +316,13 @@ fn run_layer_norm_warp_tiling[
     alias layout = Layout.row_major[2]()
     alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d._unsafe_ptr(), RuntimeLayout[layout].row_major(data_shape)
+        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(data_shape)
     )
     var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d._unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var beta = LayoutTensor[dtype, layout_1d](
-        beta_d._unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var epsilon = Scalar[dtype]()
 

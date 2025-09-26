@@ -148,11 +148,11 @@ struct ManagedLayoutTensor[
         @parameter
         if layout.all_dims_known():
             return Self.layout_tensor_type(
-                self.device_data.value()._unsafe_ptr(),
+                self.device_data.value().unsafe_ptr(),
             )
         else:
             return Self.layout_tensor_type(
-                self.device_data.value()._unsafe_ptr(),
+                self.device_data.value().unsafe_ptr(),
                 self.runtime_layout,
             )
 
@@ -170,7 +170,7 @@ struct ManagedLayoutTensor[
             shape[r] = self.runtime_layout.dim(r)
 
         return NDBuffer[dtype, layout.rank()](
-            self.device_data.value()._unsafe_ptr(), shape
+            self.device_data.value().unsafe_ptr(), shape
         )
 
     fn tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:

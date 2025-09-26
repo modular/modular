@@ -1039,7 +1039,7 @@ fn multistage_gemm[
             Int(runtime_config.num_k_partitions * M * N)
         )
         var work_space = NDBuffer[work_space_type, 3](
-            work_space_data._unsafe_ptr(),
+            work_space_data.unsafe_ptr(),
             Index(Int(runtime_config.num_k_partitions), M, N),
         )
 

@@ -101,13 +101,13 @@ fn test_conv3d_gpu[
 
     # create ndbuffer views, making it easier to work with
     var input_buf = NDBuffer[dtype, 5, _, input_dim](
-        input_dev._unsafe_ptr(), input_dim
+        input_dev.unsafe_ptr(), input_dim
     )
     var filter_buf = NDBuffer[dtype, 5, _, filter_dim](
-        filter_dev._unsafe_ptr(), filter_dim
+        filter_dev.unsafe_ptr(), filter_dim
     )
     var output_buf = NDBuffer[dtype, 5, _, output_dim](
-        output_dev._unsafe_ptr(), output_dim
+        output_dev.unsafe_ptr(), output_dim
     )
 
     # define grid and block dimensions for the gpu kernel

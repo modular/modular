@@ -93,7 +93,7 @@ def all_gather_test[
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[dtype, rank](
-            in_bufs_list[i]._unsafe_ptr(), DimList(lengths[i])
+            in_bufs_list[i].unsafe_ptr(), DimList(lengths[i])
         )
 
     # Create flat output buffer array (ngpus * ngpus).
@@ -105,7 +105,7 @@ def all_gather_test[
         for input_idx in range(ngpus):
             var output_idx = device_idx * ngpus + input_idx
             out_bufs[output_idx] = NDBuffer[dtype, rank](
-                out_bufs_list[device_idx][input_idx]._unsafe_ptr(),
+                out_bufs_list[device_idx][input_idx].unsafe_ptr(),
                 DimList(lengths[input_idx]),
             )
 

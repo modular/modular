@@ -1507,7 +1507,7 @@ fn topk_gpu[
         Int(product(internal_cache_shape))
     )
     var device_local_topk_vals = LayoutTensor[dtype, internal_layout](
-        internal_vals_buf._unsafe_ptr(),
+        internal_vals_buf.unsafe_ptr(),
         RuntimeLayout[internal_layout].row_major(internal_cache_shape),
     )
 
@@ -1516,7 +1516,7 @@ fn topk_gpu[
         Int(product(internal_cache_shape))
     )
     var device_local_topk_idxs = LayoutTensor[out_idx_type, internal_layout](
-        internal_idxs_buf._unsafe_ptr(),
+        internal_idxs_buf.unsafe_ptr(),
         RuntimeLayout[internal_layout].row_major(internal_cache_shape),
     )
 
@@ -1592,7 +1592,7 @@ fn fused_token_sampling_gpu[
         out_vals_shape.flattened_length()
     )
     var out_vals = LayoutTensor[dtype, Layout.row_major[input.rank]()](
-        out_vals_buf._unsafe_ptr(),
+        out_vals_buf.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[input.rank]()].row_major(out_vals_shape),
     )
 
