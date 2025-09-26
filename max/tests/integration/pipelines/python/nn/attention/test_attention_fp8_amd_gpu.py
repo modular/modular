@@ -21,9 +21,9 @@ from max.nn import (
 from max.nn.attention.attention_with_rope import AttentionWithRope
 from max.nn.float8_config import Float8WeightScaleSpec
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
@@ -227,9 +227,8 @@ def _build_and_execute_attention_graph(
             max_lengths,
         ) = graph.inputs
 
-        fetch_op = FetchPagedKVCacheCollection(kv_cache_params)
-        kv_collection = fetch_op(
-            blocks.tensor,
+        kv_collection = PagedCacheValues(
+            blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,

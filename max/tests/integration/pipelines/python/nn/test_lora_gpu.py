@@ -25,9 +25,9 @@ from max.graph.weights import WeightData
 from max.graph.weights.weights import _cast_to_dtype
 from max.nn import AttentionWithRopeAndLoRA, LinearLoRA, RotaryEmbedding
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 from test_common.context_utils import create_text_context
@@ -680,9 +680,8 @@ def attention_lora_max_output(
                     lora_input_row_offsets_input.tensor,
                 )
 
-        fetch_op = FetchPagedKVCacheCollection(kv_params)
-        kv_collection = fetch_op(
-            blocks.tensor,
+        kv_collection = PagedCacheValues(
+            blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,

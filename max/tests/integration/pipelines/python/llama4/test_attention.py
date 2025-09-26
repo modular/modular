@@ -6,18 +6,19 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import torch
 from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.nn import RotaryEmbedding
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
     load_kv_manager,
 )
@@ -117,19 +118,20 @@ def generate_torch_outputs(
 def unflatten_kv_inputs(
     kv_manager: PagedKVCacheManager,
     kv_params: KVCacheParams,
-    kv_inputs_flat: Sequence[TensorValue],
-) -> list[tuple[TensorValue, ...]]:
+    kv_inputs_flat: Sequence[Value[Any]],
+) -> list[PagedCacheValues]:
     n_devices = kv_params.n_devices
-    fetch_types = kv_manager.input_symbols()[0]
-    len_of_kv_tuple_per_dev = len(list(fetch_types))
-    kv_caches_per_dev = [
-        tuple(
-            kv_inputs_flat[
-                i * len_of_kv_tuple_per_dev : (i + 1) * len_of_kv_tuple_per_dev
-            ]
+    kv_caches_per_dev: list[PagedCacheValues] = []
+    for i in range(n_devices):
+        start_idx = i * n_devices
+        kv_caches_per_dev.append(
+            PagedCacheValues(
+                kv_blocks=kv_inputs_flat[start_idx].buffer,
+                cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+            )
         )
-        for i in range(n_devices)
-    ]
     return kv_caches_per_dev
 
 
@@ -163,9 +165,6 @@ def generate_max_outputs(
         1,
         kv_cache_config,
         dtype,
-    )
-    kv_collection_constructor = FetchPagedKVCacheCollection(
-        kv_params, num_layers=text_config.num_hidden_layers
     )
 
     session = InferenceSession(devices=[Accelerator(0)])
@@ -239,13 +238,9 @@ def generate_max_outputs(
             ),
         ) as graph:
             inputs, input_row_offsets, cache_positions, *kv_cache = graph.inputs
-            kv_cache_inputs_per_dev = unflatten_kv_inputs(
-                kv_manager, kv_params, [k.tensor for k in kv_cache]
+            kv_collections = unflatten_kv_inputs(
+                kv_manager, kv_params, kv_cache
             )
-            kv_collections = [
-                kv_collection_constructor(*kv_cache_inputs)
-                for kv_cache_inputs in kv_cache_inputs_per_dev
-            ]
             graph.output(
                 attention(
                     [inputs.tensor],

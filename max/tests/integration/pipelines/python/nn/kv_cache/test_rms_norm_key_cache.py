@@ -15,9 +15,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import rms_norm_key_cache
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
     RaggedKVCacheInputs,
 )
@@ -27,9 +27,6 @@ from test_common.context_utils import create_text_context
 @dataclass(frozen=True)
 class RMSNormKeyCacheModel:
     """Model containing a single matmul KV ragged op."""
-
-    fetch_layer: FetchPagedKVCacheCollection
-    """Layer for fetching a kv cache collection."""
 
     kv_params: KVCacheParams
     """Hyperparameters describing this instance of the KV cache."""
@@ -59,7 +56,12 @@ class RMSNormKeyCacheModel:
         """
         rms_norm_key_cache(
             self.kv_params,
-            self.fetch_layer(*fetch_args),
+            PagedCacheValues(
+                kv_blocks=fetch_args[0].buffer,
+                cache_lengths=fetch_args[1].tensor,
+                lookup_table=fetch_args[2].tensor,
+                max_lengths=fetch_args[3].tensor,
+            ),
             gamma=gamma,
             epsilon=1e-5,
             layer_idx=ops.constant(
@@ -98,7 +100,6 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(
@@ -110,7 +111,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     graph = Graph(
         "matmul_kv_cache_ragged",
         forward=RMSNormKeyCacheModel(
-            fetch_layer, kv_params, layer_idx=0, total_seq_len=sum(seq_lens)
+            kv_params, layer_idx=0, total_seq_len=sum(seq_lens)
         ),
         input_types=[
             gamma_type,
@@ -178,7 +179,6 @@ def test_partial_rms_norm_key_cache(
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
@@ -188,7 +188,6 @@ def test_partial_rms_norm_key_cache(
     graph = Graph(
         "matmul_kv_cache_ragged",
         forward=RMSNormKeyCacheModel(
-            fetch_layer,
             kv_params,
             layer_idx=0,
             total_seq_len=sum(seq_lens),
@@ -273,7 +272,6 @@ def test_rms_norm_new_key_cache(
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[gamma_size], device=DeviceRef.CPU())
@@ -283,7 +281,6 @@ def test_rms_norm_new_key_cache(
     graph = Graph(
         "matmul_kv_cache_ragged",
         forward=RMSNormKeyCacheModel(
-            fetch_layer,
             kv_params,
             layer_idx=0,
             total_seq_len=sum(seq_lens),
@@ -380,7 +377,6 @@ def test_rms_norm_key_cache_dtype_mismatch(
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(
@@ -396,7 +392,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
         graph = Graph(
             "matmul_kv_cache_ragged",
             forward=RMSNormKeyCacheModel(
-                fetch_layer, kv_params, layer_idx=0, total_seq_len=sum(seq_lens)
+                kv_params, layer_idx=0, total_seq_len=sum(seq_lens)
             ),
             input_types=[
                 gamma_type,
@@ -431,7 +427,6 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # For per token normalization, gamma has shape [n_kv_heads * head_dim]
     # This means normalization is applied across all heads for each token
@@ -447,7 +442,6 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     graph = Graph(
         "rms_norm_key_cache_per_token",
         forward=RMSNormKeyCacheModel(
-            fetch_layer,
             kv_params,
             layer_idx=0,
             total_seq_len=sum(seq_lens),

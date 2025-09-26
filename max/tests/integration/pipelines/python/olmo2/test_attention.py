@@ -15,9 +15,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
     load_kv_manager,
 )
@@ -146,9 +146,6 @@ def generate_max_outputs(
         kv_cache_config=kv_cache_config,
         cache_dtype=dtype,
     )
-    kv_collection_constructor = FetchPagedKVCacheCollection(
-        kv_params, num_layers=text_config.num_hidden_layers
-    )
 
     session = InferenceSession(devices=[Accelerator(0)])
 
@@ -221,8 +218,12 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_inputs_flat = [k.tensor for k in kv_cache]
-        kv_collection = kv_collection_constructor(*kv_inputs_flat)
+        kv_collection = PagedCacheValues(
+            kv_blocks=kv_cache[0].buffer,
+            cache_lengths=kv_cache[1].tensor,
+            lookup_table=kv_cache[2].tensor,
+            max_lengths=kv_cache[3].tensor,
+        )
 
         graph.output(
             attention(

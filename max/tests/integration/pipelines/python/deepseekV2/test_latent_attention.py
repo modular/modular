@@ -14,9 +14,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 from max.nn.rotary_embedding import (
@@ -116,9 +116,6 @@ def generate_max_outputs(
         session=session,
     )
 
-    # Fetch
-    fetch_op = FetchPagedKVCacheCollection(kv_params)
-
     # Set input types for the graph.
     hidden_state_type = TensorType(
         DType.bfloat16, ["total_seq_len", config.hidden_size], DeviceRef.GPU()
@@ -138,7 +135,12 @@ def generate_max_outputs(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = fetch_op(*[v.tensor for v in graph.inputs[2:]])
+            kv_collection = PagedCacheValues(
+                kv_blocks=graph.inputs[2].buffer,
+                cache_lengths=graph.inputs[3].tensor,
+                lookup_table=graph.inputs[4].tensor,
+                max_lengths=graph.inputs[5].tensor,
+            )
 
             result = latent_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),

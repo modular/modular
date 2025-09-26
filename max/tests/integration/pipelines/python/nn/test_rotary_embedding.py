@@ -27,9 +27,9 @@ from max.nn import (
 )
 from max.nn.kernels import fused_qk_ragged_rope
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
@@ -417,7 +417,6 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
-    fetch_op = FetchPagedKVCacheCollection(kv_params)
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
     )
@@ -435,7 +434,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
                 is_cache_empty_type,
             ],
         ) as g:
-            assert are_all_tensor_values(g.inputs)
+            assert g.inputs
             (
                 input,
                 input_row_offsets,
@@ -451,18 +450,18 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
                 DeviceRef.CPU(),
             )
 
-            kv_collection = fetch_op(
-                blocks,
-                cache_lengths,
-                lookup_table,
-                is_cache_empty,
+            kv_collection = PagedCacheValues(
+                blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                is_cache_empty.tensor,
             )
             result = fused_qk_ragged_rope(
                 kv_params,
-                input,
-                input_row_offsets,
+                input.tensor,
+                input_row_offsets.tensor,
                 kv_collection,
-                freqs_cis,
+                freqs_cis.tensor,
                 layer_idx,
             )
             g.output(result)

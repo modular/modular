@@ -16,9 +16,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight
 from max.nn import LinearV1, RMSNormV1
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
     load_kv_manager,
 )
@@ -35,9 +35,6 @@ from transformers.models.mllama.modeling_mllama import MllamaTextCrossAttention
 class CrossAttentionModel:
     """Model containing fetch and cross attention layers."""
 
-    fetch: FetchPagedKVCacheCollection
-    """Layer for fetching a kv cache collection."""
-
     cross_attention: CrossSdpaAttention
     """Layer for computing multimodal cross attention."""
 
@@ -53,8 +50,6 @@ class CrossAttentionModel:
     ) -> None:
         """Inits fetch and cross attention layers using the torch model."""
         self.dtype = dtype
-
-        self.fetch = FetchPagedKVCacheCollection(kv_params)
 
         # Use torch model weights to initialize MAX graph cross attention
         # shapes.
@@ -118,7 +113,12 @@ class CrossAttentionModel:
         *fetch_args: TensorValue,
     ) -> TensorValue:
         """Builds the cross attention model graph."""
-        kv_collection = self.fetch(*fetch_args)
+        kv_collection = PagedCacheValues(
+            kv_blocks=fetch_args[0].buffer,
+            cache_lengths=fetch_args[1].tensor,
+            lookup_table=fetch_args[2].tensor,
+            max_lengths=fetch_args[3].tensor,
+        )
         return self.cross_attention(
             hidden_states,
             hidden_input_row_offsets,

@@ -25,13 +25,13 @@ from max.nn.kernels import (
     matmul_kv_cache_ragged,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 from max.pipelines import TextContext
-from modular_graph_test import are_all_tensor_values, modular_graph_test
+from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -160,7 +160,6 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         page_size=128,
         cache_memory=1024 * 1024 * 1024,
     )
-    fetch_op = FetchPagedKVCacheCollection(kv_params)
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
     )
@@ -178,7 +177,6 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
                 is_cache_empty_type,
             ],
         ) as g:
-            assert are_all_tensor_values(g.inputs)
             (
                 input,
                 input_row_offsets,
@@ -190,14 +188,17 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             ) = g.inputs
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = fetch_op(
-                blocks, cache_lengths, lookup_table, is_cache_empty
+            kv_collection = PagedCacheValues(
+                blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                is_cache_empty.tensor,
             )
             result = fused_qkv_ragged_matmul(
                 kv_params,
-                input,
-                input_row_offsets,
-                wqkv,
+                input.tensor,
+                input_row_offsets.tensor,
+                wqkv.tensor,
                 kv_collection,
                 layer_idx,
                 num_q_heads,
@@ -258,9 +259,6 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
 class MatmulKVRaggedModel:
     """Model containing a single matmul KV ragged op."""
 
-    fetch_layer: FetchPagedKVCacheCollection
-    """Layer for fetching a kv cache collection."""
-
     kv_params: KVCacheParams
     """Hyperparameters describing this instance of the KV cache."""
 
@@ -284,7 +282,12 @@ class MatmulKVRaggedModel:
             hidden_states,
             input_row_offsets,
             weight,
-            kv_collection=self.fetch_layer(*fetch_args),
+            kv_collection=PagedCacheValues(
+                kv_blocks=fetch_args[0].buffer,
+                cache_lengths=fetch_args[1].tensor,
+                lookup_table=fetch_args[2].tensor,
+                max_lengths=fetch_args[3].tensor,
+            ),
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
             ),
@@ -349,12 +352,11 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         page_size=128,
         cache_memory=1024 * 1024 * 1024,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(
         "matmul_kv_cache_ragged",
-        forward=MatmulKVRaggedModel(fetch_layer, kv_params, layer_idx=0),
+        forward=MatmulKVRaggedModel(kv_params, layer_idx=0),
         input_types=[
             hidden_state_type,
             input_row_offsets_type,
@@ -401,9 +403,6 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
 class MatmulKRaggedModel:
     """Model containing a single matmul KV ragged op."""
 
-    fetch_layer: FetchPagedKVCacheCollection
-    """Layer for fetching a kv cache collection."""
-
     kv_params: KVCacheParams
     """Hyperparameters describing this instance of the KV cache."""
 
@@ -427,7 +426,12 @@ class MatmulKRaggedModel:
             hidden_states,
             input_row_offsets,
             weight,
-            kv_collection=self.fetch_layer(*fetch_args),
+            kv_collection=PagedCacheValues(
+                kv_blocks=fetch_args[0].buffer,
+                cache_lengths=fetch_args[1].tensor,
+                lookup_table=fetch_args[2].tensor,
+                max_lengths=fetch_args[3].tensor,
+            ),
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
             ),
@@ -485,11 +489,10 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         devices=[CPU()],
         session=session,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     graph = Graph(
         "matmul_k_cache_ragged",
-        forward=MatmulKRaggedModel(fetch_layer, kv_params, layer_idx=0),
+        forward=MatmulKRaggedModel(kv_params, layer_idx=0),
         input_types=[
             hidden_state_type,
             input_row_offsets_type,
@@ -593,11 +596,10 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         page_size=128,
         cache_memory=1024 * 1024 * 1024,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(
         "matmul_kv_cache_ragged",
-        forward=MatmulKVRaggedModel(fetch_layer, kv_params, layer_idx=0),
+        forward=MatmulKVRaggedModel(kv_params, layer_idx=0),
         input_types=[
             hidden_state_type,
             input_row_offsets_type,

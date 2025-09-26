@@ -14,7 +14,6 @@ from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
-    BufferType,
     BufferValue,
     DeviceRef,
     Dim,
@@ -30,7 +29,8 @@ from max.nn.attention.attention_with_rope import (
     PagedKVCacheTensorsNoOpaque,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
+    KVCacheInputSymbols,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
@@ -59,7 +59,7 @@ def build_and_execute_graph(
     attention_fn: AttentionFn,
     model: Module,
     kv_inputs: PagedKVCacheTensorsNoOpaque,
-    kv_input_symbols: tuple[BufferType, TensorType, TensorType, TensorType],
+    kv_input_symbols: KVCacheInputSymbols,
 ) -> npt.NDArray[np.floating[Any]]:
     device_ref = DeviceRef.from_device(device)
     hidden_state_type = TensorType(
@@ -174,7 +174,6 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         cache_memory=1024 * 1024 * 1024,
         session=session,
     )
-    fetch_op = FetchPagedKVCacheCollection(kv_params)
 
     # Create contexts and claim seq_ids in cache.
     batch = []
@@ -186,15 +185,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         batch.append(context)
 
     kv_inputs = PagedKVCacheTensorsNoOpaque(*kv_manager.fetch(batch)[0])
-    kv_input_symbols_immut = kv_manager.input_symbols()[0]
-    kv_input_symbols_mut: tuple[
-        BufferType, TensorType, TensorType, TensorType
-    ] = (
-        kv_input_symbols_immut[0].as_buffer(),
-        kv_input_symbols_immut[1],
-        kv_input_symbols_immut[2],
-        kv_input_symbols_immut[3],
-    )
+    kv_input_symbols = kv_manager.input_symbols()[0]
 
     def reference_attention_fn(
         hidden_state: TensorValue,
@@ -205,9 +196,8 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         max_lengths: TensorValue,
         layer_idx: TensorValue,
     ) -> TensorValue:
-        blocks_tensor = ops.buffer_load(blocks.buffer)
-        kv_collection = fetch_op(
-            blocks_tensor,
+        kv_collection = PagedCacheValues(
+            blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
@@ -269,7 +259,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             no_opaque_attention_fn,
             kv_inputs=kv_inputs,
             model=no_opaque_attention,
-            kv_input_symbols=kv_input_symbols_mut,
+            kv_input_symbols=kv_input_symbols,
         )
     assert "flash_attention_ragged_no_opaque not implemented" in str(e.value)
     # assert torch.allclose(no_opaque_output, reference_output)

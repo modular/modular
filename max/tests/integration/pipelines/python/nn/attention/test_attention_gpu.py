@@ -24,9 +24,9 @@ from max.nn.kernels import (
     flash_attention_ragged_gpu,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
     load_kv_manager,
 )
@@ -59,9 +59,6 @@ torch.manual_seed(42)
 class CrossAttentionModel:
     """Model containing fetch and cross attention layers."""
 
-    fetch: FetchPagedKVCacheCollection
-    """Layer for fetching a kv cache collection."""
-
     cross_attention: CrossSdpaAttention
     """Layer for computing multimodal cross attention."""
 
@@ -77,8 +74,6 @@ class CrossAttentionModel:
     ) -> None:
         """Inits fetch and cross attention layers using the torch model."""
         self.dtype = dtype
-
-        self.fetch = FetchPagedKVCacheCollection(kv_params)
 
         # Use torch model weights to initialize MAX graph cross attention
         # shapes.
@@ -144,7 +139,12 @@ class CrossAttentionModel:
         *fetch_args: TensorValue,
     ) -> TensorValue:
         """Builds the cross attention model graph."""
-        kv_collection = self.fetch(*fetch_args)
+        kv_collection = PagedCacheValues(
+            kv_blocks=fetch_args[0].buffer,
+            cache_lengths=fetch_args[1].tensor,
+            lookup_table=fetch_args[2].tensor,
+            max_lengths=fetch_args[3].tensor,
+        )
         return self.cross_attention(
             hidden_states,
             hidden_input_row_offsets,
@@ -402,7 +402,6 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         devices=[cuda],
         session=session,
     )
-    fetch_op = FetchPagedKVCacheCollection(kv_params)
 
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
@@ -422,7 +421,6 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 is_cache_empty_type,
             ],
         ) as g:
-            assert are_all_tensor_values(g.inputs)
             (
                 input,
                 input_row_offsets,
@@ -436,17 +434,20 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
-            kv_collection = fetch_op(
-                blocks, cache_lengths, lookup_table, is_cache_empty
+            kv_collection = PagedCacheValues(
+                blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                is_cache_empty.tensor,
             )
             result = flare_mla_prefill_ragged(
                 kv_params,
-                input,
-                k_buffer,
-                v_buffer,
-                input_row_offsets,
-                input_row_offsets,  # actually buffer_row_offsets
-                cache_lengths,
+                input.tensor,
+                k_buffer.tensor,
+                v_buffer.tensor,
+                input_row_offsets.tensor,
+                input_row_offsets.tensor,  # actually buffer_row_offsets
+                cache_lengths.tensor,
                 kv_collection,
                 layer_idx,
                 MHAMaskVariant.CAUSAL_MASK,

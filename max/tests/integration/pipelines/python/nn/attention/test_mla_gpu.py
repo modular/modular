@@ -13,9 +13,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 from test_common.context_utils import create_text_context
@@ -54,7 +54,6 @@ def test_mla_prefill_plan() -> None:
         devices=[Accelerator(0)],
         session=session,
     )
-    fetch_op = FetchPagedKVCacheCollection(kv_params)
 
     def construct() -> Graph:
         with Graph(
@@ -67,7 +66,12 @@ def test_mla_prefill_plan() -> None:
             input_row_offsets = g.inputs[0].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = fetch_op(*[v.tensor for v in g.inputs[1:]])
+            kv_collection = PagedCacheValues(
+                kv_blocks=g.inputs[1].buffer,
+                cache_lengths=g.inputs[2].tensor,
+                lookup_table=g.inputs[3].tensor,
+                max_lengths=g.inputs[4].tensor,
+            )
 
             results = flare_mla_prefill_plan(
                 kv_params, input_row_offsets, kv_collection, layer_idx, 32
@@ -158,7 +162,6 @@ def test_mla_decompress_k_cache() -> None:
         devices=[Accelerator(0)],
         session=session,
     )
-    fetch_op = FetchPagedKVCacheCollection(kv_params)
 
     def construct() -> Graph:
         with Graph(
@@ -173,7 +176,12 @@ def test_mla_decompress_k_cache() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = fetch_op(*[v.tensor for v in g.inputs[2:]])
+            kv_collection = PagedCacheValues(
+                kv_blocks=g.inputs[2].buffer,
+                cache_lengths=g.inputs[3].tensor,
+                lookup_table=g.inputs[4].tensor,
+                max_lengths=g.inputs[5].tensor,
+            )
 
             # Allocate a buffer to hold KV cache for 60 decompressed tokens
             buffer_tok_size = 60

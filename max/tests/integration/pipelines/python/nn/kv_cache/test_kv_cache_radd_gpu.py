@@ -14,9 +14,9 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights.weights import _cast_to_dtype
 from max.nn.kernels import kv_cache_ragged_radd
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 from test_common.context_utils import create_text_context
@@ -25,9 +25,6 @@ from test_common.context_utils import create_text_context
 @dataclass(frozen=True)
 class KVCacheRaddModel:
     """Model containing a single kv_cache_ragged_radd op."""
-
-    fetch_layer: FetchPagedKVCacheCollection
-    """Layer for fetching a kv cache collection."""
 
     kv_params: KVCacheParams
     """Hyperparameters describing this instance of the KV cache."""
@@ -46,7 +43,12 @@ class KVCacheRaddModel:
         kv_cache_ragged_radd(
             kv_params=self.kv_params,
             a=a,
-            kv_collection=self.fetch_layer(*fetch_args),
+            kv_collection=PagedCacheValues(
+                kv_blocks=fetch_args[0].buffer,
+                cache_lengths=fetch_args[1].tensor,
+                lookup_table=fetch_args[2].tensor,
+                max_lengths=fetch_args[3].tensor,
+            ),
             input_row_offsets=input_row_offsets,
             batch_offset=batch_offset,
             layer_idx=self.layer_idx,
@@ -94,7 +96,6 @@ def test_kv_cache_radd_basic() -> None:
         session=session,
         cache_memory=cache_memory,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     # Calculate total length and offsets
     total_length = sum(prompt_lens)
@@ -117,7 +118,7 @@ def test_kv_cache_radd_basic() -> None:
 
     graph = Graph(
         "kv_cache_radd_test",
-        forward=KVCacheRaddModel(fetch_layer, kv_params, layer_idx),
+        forward=KVCacheRaddModel(kv_params, layer_idx),
         input_types=[
             a_type,
             input_row_offsets_type,

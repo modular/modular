@@ -18,9 +18,9 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     load_kv_manager,
 )
 from test_common.context_utils import create_text_context
@@ -111,9 +111,6 @@ def max_flash_attention_with_sinks(
         DeviceRef.GPU(),
     )
 
-    # Build graph
-    fetch_op = FetchPagedKVCacheCollection(kv_params)
-
     def build_graph():
         with Graph(
             "flash_attention_with_sinks",
@@ -128,10 +125,14 @@ def max_flash_attention_with_sinks(
             q = inputs[0].tensor
             input_row_offsets = inputs[1].tensor
             sink_weights = inputs[2].tensor
-            kv_inputs = [v.tensor for v in inputs[3:]]
 
             # Fetch KV cache
-            kv_collection = fetch_op(*kv_inputs)
+            kv_collection = PagedCacheValues(
+                kv_blocks=inputs[3].buffer,
+                cache_lengths=inputs[4].tensor,
+                lookup_table=inputs[5].tensor,
+                max_lengths=inputs[6].tensor,
+            )
 
             # Layer index
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())

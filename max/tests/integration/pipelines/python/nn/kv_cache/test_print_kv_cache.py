@@ -12,9 +12,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
 )
 
@@ -22,9 +22,6 @@ from max.nn.kv_cache import (
 @dataclass(frozen=True)
 class PrintKVCacheModel:
     """Model containing a single print KV cache op."""
-
-    fetch_layer: FetchPagedKVCacheCollection
-    """Layer for fetching a kv cache collection."""
 
     kv_params: KVCacheParams
     """Hyperparameters describing this instance of the KV cache."""
@@ -42,7 +39,12 @@ class PrintKVCacheModel:
         This contains both the print KV cache op and a "fetch" op to get a
         KVCacheCollection.
         """
-        kv_collection = self.fetch_layer(*fetch_args)
+        kv_collection = PagedCacheValues(
+            kv_blocks=fetch_args[0].buffer,
+            cache_lengths=fetch_args[1].tensor,
+            lookup_table=fetch_args[2].tensor,
+            max_lengths=fetch_args[3].tensor,
+        )
         page_size = self.kv_params.page_size
         if page_size is None:
             raise ValueError(
@@ -53,18 +55,12 @@ class PrintKVCacheModel:
             device=valid_lengths.device,
             values=[
                 valid_lengths,
-                kv_collection,
+                *kv_collection,
                 ops.constant(
                     self.layer_idx, DType.uint32, device=DeviceRef.CPU()
                 ),
                 ops.constant(True, DType.bool, device=DeviceRef.CPU()),
             ],
-            parameters={
-                "num_heads": self.kv_params.n_kv_heads_per_device,
-                "head_dim": self.kv_params.head_dim,
-                "dtype": self.kv_params.dtype,
-                "page_size": page_size,
-            },
         )
 
 
@@ -106,12 +102,11 @@ def test_print_kv_cache(dtype: DType) -> None:
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
-    fetch_layer = FetchPagedKVCacheCollection(kv_params)
 
     batch_size = 2
     graph = Graph(
         "print_kv_cache",
-        forward=PrintKVCacheModel(fetch_layer, kv_params, layer_idx=0),
+        forward=PrintKVCacheModel(kv_params, layer_idx=0),
         input_types=[
             TensorType(
                 dtype=DType.uint32, shape=[batch_size], device=DeviceRef.CPU()
