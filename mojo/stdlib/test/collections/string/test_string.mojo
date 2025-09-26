@@ -1453,6 +1453,10 @@ def test_variadic_ctors():
 
     var s2 = String.write("message", 42, 42.2, True, sep=", ")
     assert_equal(s2, "message, 42, 42.2, True")
+    s2 = String.write(
+        "message", 42, 42.2, True, sep=String(", "), end=String("!")
+    )
+    assert_equal(s2, "message, 42, 42.2, True!")
 
     fn forward_variadic_pack[
         *Ts: Writable,
