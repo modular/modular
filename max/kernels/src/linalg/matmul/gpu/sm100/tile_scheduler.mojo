@@ -140,7 +140,7 @@ struct TileScheduler[
             asm,
             _RegisterPackType[UInt32, UInt32, UInt32, UInt32],
             has_side_effect=True,
-            constraints="=r,=r,=r,=r,l",
+            constraints="=r,=r,=r,=r,r",
         ](UInt32(Int(result)))
 
         fence_async_view_proxy()
