@@ -22,6 +22,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.interfaces.nested_iterable import NestedIterableDataclass
 from max.nn.attention.attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeNoOpaque,
@@ -29,7 +30,6 @@ from max.nn.attention.attention_with_rope import (
     PagedKVCacheTensorsNoOpaque,
 )
 from max.nn.kv_cache import (
-    KVCacheInputSymbols,
     PagedCacheValues,
     PagedKVCacheManager,
 )
@@ -59,7 +59,7 @@ def build_and_execute_graph(
     attention_fn: AttentionFn,
     model: Module,
     kv_inputs: PagedKVCacheTensorsNoOpaque,
-    kv_input_symbols: KVCacheInputSymbols,
+    kv_input_symbols: NestedIterableDataclass,
 ) -> npt.NDArray[np.floating[Any]]:
     device_ref = DeviceRef.from_device(device)
     hidden_state_type = TensorType(
