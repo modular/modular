@@ -159,6 +159,7 @@ def inplace_custom(
     out_mlir_types = [t.to_mlir() for t in out_types] if out_types else []
 
     graph = Graph.current
+    current_chain = graph._current_chain
 
     values = [
         TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
@@ -167,10 +168,10 @@ def inplace_custom(
     (*results, out_chain), custom_op = graph._add_op_get_op_with_results(
         mo.custom,
         results_=[*out_mlir_types, _ChainType().to_mlir()],
-        operands_=[*values, graph.device_chains[device]],
+        operands_=[*values, current_chain],
         symbol=StringAttr.get(name, graph._context),
     )
-    graph.device_chains[device] = out_chain
+    graph._update_chain(out_chain)
 
     if parameters is not None:
         custom_op.parameters = DictAttr.get(
