@@ -70,9 +70,9 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     alias ROW_BLOCKS = ceildiv(GRID_HEIGHT, BLOCK_SIZE)
 
     # Launch the Mandelbrot kernel on the GPU with a 2D grid of thread blocks.
-    ctx.enqueue_function[mandelbrot](
+    ctx.enqueue_function_checked[mandelbrot, mandelbrot](
         out_tensor,
-        Int(iterations),
+        Int32(iterations),
         grid_dim=(COL_BLOCKS, ROW_BLOCKS),
         block_dim=(BLOCK_SIZE, BLOCK_SIZE),
     )

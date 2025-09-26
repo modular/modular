@@ -568,7 +568,8 @@ fn compare_equal[
     )
 
     # Compute the relative error between the reference and computed tensors
-    gpu_ctx.enqueue_function[compute_relative_error_kernel[dtype, layout]](
+    alias rel_error_kernel = compute_relative_error_kernel[dtype, layout]
+    gpu_ctx.enqueue_function_checked[rel_error_kernel, rel_error_kernel](
         reference,
         computed,
         max_relative_error,
@@ -585,7 +586,8 @@ fn compare_equal[
         var num_threadblocks = ceildiv(i, 1024)
         var num_elements = i if i < 1024 else 1024
 
-        gpu_ctx.enqueue_function[max_reduce_kernel[dtype, layout]](
+        alias reduce_kernel = max_reduce_kernel[dtype, layout]
+        gpu_ctx.enqueue_function_checked[reduce_kernel, reduce_kernel](
             max_relative_error,
             num_elements,
             offset,

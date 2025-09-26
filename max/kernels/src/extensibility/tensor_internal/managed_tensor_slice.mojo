@@ -1164,7 +1164,7 @@ struct ManagedTensorSlice[
         ],
     ):
         alias layout = static_spec.to_layout()
-        return LayoutTensor[dtype, layout](
+        return __type_of(result)(
             self.unsafe_ptr(),
             __type_of(result.runtime_layout)(
                 self.shape().cast[result.layout_int_type](),
