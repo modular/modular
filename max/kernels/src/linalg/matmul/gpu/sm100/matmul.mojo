@@ -345,9 +345,12 @@ fn stsm_helper[
     ) * stsmx4_row_size
 
     var lane = lane_id()
-    var stsm_lane_offset = (lane & 15) * stride0 + (
+    alias RLayout32Bits[layout: Layout] = RuntimeLayout[
+        layout, element_type = DType.uint32, linear_idx_type = DType.uint32
+    ]
+    var stsm_lane_offset: UInt32 = (lane & 15) * stride0 + (
         lane >> 4
-    ) * 8 if not transpose_c else RuntimeLayout[trans_st_matrix_layout]()(lane)
+    ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
 
     # Helper function to slice a range of SIMD vector.
     # LLVM extract intrinsic generates bad code on GPU.
