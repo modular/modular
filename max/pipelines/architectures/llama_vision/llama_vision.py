@@ -37,11 +37,11 @@ from max.graph import (
 )
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import InputContext
+from max.interfaces.nested_iterable import NestedIterableDataclass
 from max.interfaces.request import RequestID
 from max.nn import LinearV1, ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheInputSymbols,
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
@@ -78,9 +78,9 @@ _DO_PARALLEL_COMPILATION = False
 
 
 @dataclass
-class MultimodalKVCacheInputSymbols(KVCacheInputSymbols):
-    text_kv_input_symbols: KVCacheInputSymbols
-    vision_kv_input_symbols: KVCacheInputSymbols
+class MultimodalKVCacheInputSymbols(NestedIterableDataclass):
+    text_kv_input_symbols: NestedIterableDataclass
+    vision_kv_input_symbols: NestedIterableDataclass
 
 
 @dataclass

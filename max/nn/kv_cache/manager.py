@@ -106,35 +106,3 @@ class KVCacheInputsSequence(KVCacheInputs):
     """
 
     kv_cache_inputs: Sequence[KVCacheInputs]
-
-
-@dataclass
-class KVCacheInputSymbols:
-    """
-    Base class for input symbols for KV cache managers.
-
-    The derived class is responsible for defining the input symbols for the
-    specific KV cache manager.
-    For example, here's a derived class for a text KV cache manager:
-
-    .. code-block:: python
-
-        @dataclass
-        class KVCacheInputSymbols(KVCacheInputSymbols):
-            kv_blocks: TensorType
-            cache_lengths: TensorType
-            lookup_table: TensorType
-            max_lengths: TensorType
-    """
-
-    def __iter__(self) -> Iterator[Any]:
-        """Iterates through each Type in order."""
-        for field in self.__dataclass_fields__:
-            value = getattr(self, field)
-            if isinstance(value, KVCacheInputSymbols):
-                yield from value
-            else:
-                yield value
-
-    def __getitem__(self, index: int | slice) -> Any:
-        return list(self)[index]

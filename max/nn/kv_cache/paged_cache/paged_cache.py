@@ -36,6 +36,7 @@ from max.graph import (
     TensorValue,
 )
 from max.interfaces import RequestID, TextGenerationContext
+from max.interfaces.nested_iterable import NestedIterableDataclass
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -44,7 +45,7 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
 from ..cache_params import KVCacheParams
-from ..manager import KVCacheInputSymbols, RaggedKVCacheInputs
+from ..manager import RaggedKVCacheInputs
 from ..utils import build_max_lengths_tensor
 from .block_copy_engine import BlockCopyEngine
 from .block_manager import BlockManager, KVCacheMetrics
@@ -53,7 +54,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class PagedCacheInputSymbols(KVCacheInputSymbols):
+class PagedCacheInputSymbols(NestedIterableDataclass):
     kv_blocks: BufferType
     cache_lengths: TensorType
     lookup_table: TensorType
@@ -61,7 +62,7 @@ class PagedCacheInputSymbols(KVCacheInputSymbols):
 
 
 @dataclass
-class PagedCacheValues(KVCacheInputSymbols):
+class PagedCacheValues(NestedIterableDataclass):
     kv_blocks: BufferValue
     cache_lengths: TensorValue
     lookup_table: TensorValue
@@ -537,7 +538,7 @@ class PagedKVCacheManager:
         self,
         devices: Sequence[Device] | None = None,
         num_layers: int | None = None,
-    ) -> Sequence[KVCacheInputSymbols]:
+    ) -> Sequence[NestedIterableDataclass]:
         return self._input_symbols(devices, num_layers, dynamic_dim_prefix="")
 
     def _input_symbols(
