@@ -18,7 +18,7 @@ from max.nn.attention import AttentionWithRope, DistributedAttentionWithRope
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
 
@@ -160,9 +160,7 @@ def test_distributed_attention_with_rope_call_validation(
         )
         x = [dummy_tensor, dummy_tensor]
         signal_buffers = [mock.Mock(spec=BufferValue) for _ in devices]
-        kv_collections = [
-            mock.Mock(spec=PagedKVCacheCollection) for _ in devices
-        ]
+        kv_collections = [mock.Mock(spec=PagedCacheValues) for _ in devices]
 
         # Test wrong number of input_row_offsets
         with pytest.raises(
@@ -173,7 +171,7 @@ def test_distributed_attention_with_rope_call_validation(
                 x,
                 cast(list[BufferValue], signal_buffers),
                 cast(
-                    list[PagedKVCacheCollection],
+                    list[PagedCacheValues],
                     kv_collections,
                 ),
                 freqs_cis=[rope.freqs_cis, rope.freqs_cis],
@@ -189,10 +187,7 @@ def test_distributed_attention_with_rope_call_validation(
                 layer_idx,
                 x,
                 cast(list[BufferValue], signal_buffers),
-                cast(
-                    list[PagedKVCacheCollection],
-                    kv_collections,
-                ),
+                cast(list[PagedCacheValues], kv_collections),
                 freqs_cis=[rope.freqs_cis, rope.freqs_cis],
                 input_row_offsets=[dummy_tensor, "not-a-tensor-value"],  # type: ignore
             )

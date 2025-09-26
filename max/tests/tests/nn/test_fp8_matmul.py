@@ -12,7 +12,7 @@ from unittest.mock import Mock
 
 import pytest
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
 from max.nn import (
     Float8InputScaleSpec,
     Float8ScaleGranularity,
@@ -26,9 +26,8 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
-from max.nn.kv_cache.paged_cache.paged_cache import PagedKVCacheCollectionType
 
 
 class DynamicScaledMatmul:
@@ -183,7 +182,7 @@ class FusedQKVRaggedMatmulScaledFloat8:
     def __init__(
         self,
         kv_params: KVCacheParams,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         n_heads: int,
     ) -> None:
         self.kv_params = kv_params
@@ -242,7 +241,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             TensorType(DType.bfloat16, shape=(1, 1), device=device),
             # KV cache collection inputs
             # blocks: [num_pages, 2, n_kv_heads, page_size, head_dim]
-            TensorType(
+            BufferType(
                 DType.bfloat16, shape=(16, 2, 8, 128, 64), device=device
             ),
             # cache_lengths: [batch_size]
@@ -264,34 +263,26 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             cache_lengths,
             lookup_table,
             is_cache_empty,
-        ) = [inp.tensor for inp in graph.inputs]
+        ) = graph.inputs
 
-        # Create PagedKVCacheCollection
-        kv_collection = PagedKVCacheCollection(
-            ops.custom(
-                "mo.kv_collection_ctor.paged",
-                device=blocks.device,
-                values=[blocks, cache_lengths, lookup_table, is_cache_empty],
-                out_types=[PagedKVCacheCollectionType()],
-                parameters={
-                    "num_heads": kv_params.n_kv_heads_per_device,
-                    "head_dim": kv_params.head_dim,
-                    "page_size": 128,
-                },
-            )[0].opaque
+        kv_collection = PagedCacheValues(
+            blocks.buffer,
+            cache_lengths.tensor,
+            lookup_table.tensor,
+            is_cache_empty.tensor,
         )
 
         # Now call the kernel - should not raise any errors when all devices match
         output = fused_qkv_ragged_matmul_scaled_float8(
             kv_params,
-            input_tensor,
-            input_row_offsets,
-            wqkv,
+            input_tensor.tensor,
+            input_row_offsets.tensor,
+            wqkv.tensor,
             kv_collection,
-            layer_idx,
+            layer_idx.tensor,
             32,  # n_heads
-            input_scale,
-            weight_scale,
+            input_scale.tensor,
+            weight_scale.tensor,
         )
         assert output.shape == [10, 32 * 64]  # [seq_len, n_heads * head_dim]
         assert output.dtype == DType.bfloat16
@@ -365,7 +356,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_device_mismatch(
         page_size=128,
     )
 
-    kv_collection = Mock(spec=PagedKVCacheCollection)
+    kv_collection = Mock(spec=PagedCacheValues)
 
     with pytest.raises(ValueError, match=err_msg_part):
         Graph(
@@ -419,7 +410,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
         page_size=128,
     )
 
-    kv_collection = Mock(spec=PagedKVCacheCollection)
+    kv_collection = Mock(spec=PagedCacheValues)
 
     with pytest.raises(
         ValueError,
