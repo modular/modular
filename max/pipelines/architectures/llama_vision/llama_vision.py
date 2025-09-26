@@ -32,6 +32,7 @@ from max.graph import (
     SymbolicDim,
     TensorType,
     TensorValue,
+    Value,
     ops,
 )
 from max.graph.weights import Weights, WeightsAdapter
@@ -43,6 +44,7 @@ from max.nn.kv_cache import (
     KVCacheInputSymbols,
     KVCacheParams,
     KVCacheStrategy,
+    PagedCacheValues,
     PagedKVCacheManager,
     RaggedKVCacheInputs,
     build_max_lengths_tensor,
@@ -121,6 +123,8 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         available_cache_memory: int,
         page_size: int,
     ) -> None:
+        self.params = params
+
         assert max_batch_size, "Expected max_batch_size to be set"
         paged_text_kv_manager = load_kv_manager(
             params=params,
@@ -664,15 +668,30 @@ class LlamaVisionLanguageModel(Layer):
         hidden_input_row_offsets: TensorValue,
         hidden_max_seq_len: TensorValue,
         cross_input_row_offsets: TensorValue,
-        *kv_cache_inputs: TensorValue,
+        *kv_cache_inputs: Value[Any],
     ) -> TensorValue:
+        text_kv_collection = PagedCacheValues(
+            kv_blocks=kv_cache_inputs[0].buffer,
+            cache_lengths=kv_cache_inputs[1].tensor,
+            lookup_table=kv_cache_inputs[2].tensor,
+            max_lengths=kv_cache_inputs[3].tensor,
+        )
+        vision_kv_collection = PagedCacheValues(
+            kv_blocks=kv_cache_inputs[self.num_text_kv_cache_inputs].buffer,
+            cache_lengths=kv_cache_inputs[
+                self.num_text_kv_cache_inputs + 1
+            ].tensor,
+            lookup_table=kv_cache_inputs[
+                self.num_text_kv_cache_inputs + 2
+            ].tensor,
+            max_lengths=kv_cache_inputs[
+                self.num_text_kv_cache_inputs + 3
+            ].tensor,
+        )
+
         logits = self.language_model(
-            text_kv_cache_inputs=kv_cache_inputs[
-                : self.num_text_kv_cache_inputs
-            ],
-            vision_kv_cache_inputs=kv_cache_inputs[
-                self.num_text_kv_cache_inputs :
-            ],
+            text_kv_collection=text_kv_collection,
+            vision_kv_collection=vision_kv_collection,
             input_ids=input_ids,
             hidden_input_row_offsets=hidden_input_row_offsets,
             hidden_max_seq_len=hidden_max_seq_len,

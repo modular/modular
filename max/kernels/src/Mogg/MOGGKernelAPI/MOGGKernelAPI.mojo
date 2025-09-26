@@ -6144,26 +6144,26 @@ struct Struct_fused_qkv_matmul_padded_ragged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
         hidden_state: InputTensor[dtype=dtype, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         weight: InputTensor[dtype=dtype, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
             target=target
         ](
@@ -6184,24 +6184,18 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
     fn execute[
         dtype: DType,
         weight_type: DType,
-        num_heads: Int,
-        head_dim: Int,
         group_size: Int,
-        has_zp_int: Int,
-        page_size: Int, //,
+        has_zp_int: Int, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
         hidden_state: InputTensor[dtype=dtype, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         weight: InputTensor[dtype=weight_type, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -6209,7 +6203,12 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
         # zero point that need to be subtracted from the quantized weights.
         alias has_zp = True if has_zp_int == 1 else False
-
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
             target=target,
             group_size=group_size,
@@ -6230,27 +6229,27 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
         hidden_state: InputTensor[dtype=dtype, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         weight: InputTensor[dtype=dtype, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         bias: InputTensor[dtype=dtype, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
             target=target
         ](
@@ -6273,10 +6272,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         dtype: DType,
         scale_type: DType,
         output_type: DType,
-        kv_type: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        kv_type: DType, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2],
@@ -6285,16 +6281,19 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         weight: InputTensor[dtype=dtype, rank=2],
         input_scale: InputTensor[dtype=scale_type, rank=2],
         weight_scale: InputTensor[dtype=scale_type, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            kv_type,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             target=target
         ](
@@ -6317,24 +6316,18 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
     fn execute[
         dtype: DType,
         weight_type: DType,
-        num_heads: Int,
-        head_dim: Int,
         group_size: Int,
-        has_zp_int: Int,
-        page_size: Int, //,
+        has_zp_int: Int, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
         hidden_state: InputTensor[dtype=dtype, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         weight: InputTensor[dtype=weight_type, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         bias: InputTensor[dtype=dtype, rank=1],
         ctx: DeviceContextPtr,
@@ -6343,7 +6336,12 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
         # zero point that need to be subtracted from the quantized weights.
         alias has_zp = True if has_zp_int == 1 else False
-
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
             target=target,
             group_size=group_size,
@@ -6411,27 +6409,27 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     fn execute[
         dtype: DType,
         freq_dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int,
         mrope_section: StaticString, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q_proj: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         position_ids: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
             interleaved=interleaved,
             has_position_ids=True,
@@ -6457,22 +6455,16 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     @staticmethod
     fn execute[
         dtype: DType,
-        freq_dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        freq_dtype: DType, //,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q_proj: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
@@ -6480,6 +6472,12 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype = DType.uint32, rank=2](
             UnsafePointer[UInt32](), IndexList[2](0)
+        )
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
         )
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
             interleaved=interleaved, has_position_ids=False, target=target
@@ -6578,10 +6576,7 @@ struct Struct_mha_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -6590,17 +6585,20 @@ struct Struct_mha_ragged_paged:
         output: OutputTensor[dtype=dtype, rank=3],
         q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         generic_flash_attention_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
@@ -6622,10 +6620,7 @@ struct Struct_mha_ragged_paged_sink_weights:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -6634,20 +6629,22 @@ struct Struct_mha_ragged_paged_sink_weights:
         output: OutputTensor[dtype=dtype, rank=3],
         q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
         sink_weights: InputTensor[dtype=dtype, rank=1],
         context: DeviceContextPtr,
     ) raises:
         var sink_buf = managed_tensor_slice_to_ndbuffer(sink_weights)
-
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         generic_flash_attention_kv_cache_ragged_sink[
             target=target,
             mask_str=mask_str,
@@ -6678,10 +6675,7 @@ struct Struct_mla_decode_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         mask_str: StaticString,
         score_mod_str: StaticString,
         target: StaticString,
@@ -6689,17 +6683,20 @@ struct Struct_mla_decode_ragged_paged:
         output: OutputTensor[dtype=dtype, rank=3],
         q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
@@ -6721,10 +6718,7 @@ struct Struct_mla_prefill_init_ragged_paged:
     @staticmethod
     fn execute[
         dtype: DType,
-        softmax_type: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        softmax_type: DType, //,
         mask_str: StaticString,
         score_mod_str: StaticString,
         target: StaticString,
@@ -6737,17 +6731,20 @@ struct Struct_mla_prefill_init_ragged_paged:
         buffer_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets: InputTensor[dtype = DType.uint32, rank=1],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         generic_flare_mla_prefill_kv_cache_ragged[
             write_softmax_info=True,
             use_cascade_attention=False,
@@ -6776,10 +6773,7 @@ struct Struct_mla_prefill_ragged_paged:
     @staticmethod
     fn execute[
         dtype: DType,
-        softmax_type: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        softmax_type: DType, //,
         target: StaticString,
         mask_str: StaticString,
         score_mod_str: StaticString,
@@ -6792,13 +6786,10 @@ struct Struct_mla_prefill_ragged_paged:
         buffer_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets: InputTensor[dtype = DType.uint32, rank=1],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
         prev_output: InputTensor[dtype=dtype, rank=3],
@@ -6808,6 +6799,12 @@ struct Struct_mla_prefill_ragged_paged:
         var prev_output_nd = managed_tensor_slice_to_ndbuffer(prev_output)
         var prev_softmax_info_nd = managed_tensor_slice_to_ndbuffer(
             prev_softmax_info
+        )
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
         )
         generic_flare_mla_prefill_kv_cache_ragged[
             write_softmax_info=True,
@@ -6840,27 +6837,27 @@ struct Struct_mla_prefill_ragged_plan:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         buffer_row_offsets: OutputTensor[dtype = DType.uint32, rank=2],
         cache_offsets: OutputTensor[dtype = DType.uint32, rank=2],
         buffer_lengths: OutputTensor[dtype = DType.int32, rank=1],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         buffer_tok_size: UInt32,
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         generic_flare_mla_prefill_ragged_paged_plan[target=target](
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
             kv_collection,
@@ -6878,10 +6875,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         k_latent_buffer: OutputTensor[dtype=dtype, rank=2],
@@ -6890,16 +6884,19 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         buffer_length: Int32,
         weight: InputTensor[dtype=dtype, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         generic_flare_mla_decompress_k_cache_ragged_paged[target=target](
             managed_tensor_slice_to_ndbuffer(buffer_row_offsets_1d),
             managed_tensor_slice_to_ndbuffer(cache_offsets_1d),
@@ -6918,22 +6915,22 @@ struct Struct_kv_cache_get_max_seq_len_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         max_seq_len: OutputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,
         # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
         max_seq_len[0] = kv_collection.max_seq_length
@@ -6952,10 +6949,7 @@ struct Struct_cross_attention_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         mask_str: StaticString,
         score_mod_str: StaticString,
         target: StaticString,
@@ -6966,17 +6960,20 @@ struct Struct_cross_attention_ragged_paged:
         q_input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         q_max_seq_len: InputTensor[dtype = DType.uint32, rank=1],
         kv_input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         generic_cross_attention_kv_cache[
             mask_str=mask_str,
             score_mod_str=score_mod_str,
@@ -7075,25 +7072,19 @@ struct Struct_kv_cache_store_paged:
         dtype: DType, target: StaticString, key_or_value: Int
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=3],
-        blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
-        lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        alias page_size = blocks.static_spec.shape.get[3]()
-        alias head_dim = inputs.static_spec.shape.get[2]()
-        alias num_heads = inputs.static_spec.shape.get[1]()
-        var paged_kv_collection = generic_get_paged_cache[
-            kv_params = KVCacheStaticParams(UInt(num_heads), UInt(head_dim)),
-            page_size=page_size,
-        ](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
+        var paged_kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
         )
 
         var cache: paged_kv_collection.CacheType
@@ -7423,20 +7414,14 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
     @staticmethod
     fn execute[
         dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int,
         multiply_before_cast: Bool,
         per_head_norm: Bool, //,
         target: StaticString,
     ](
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         gamma: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype],
         layer_idx: UInt32,
@@ -7445,6 +7430,12 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         weight_offset: Scalar[dtype=dtype],
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         rms_norm_kv_cache_ragged_paged[
             target=target,
             multiply_before_cast=multiply_before_cast,
@@ -7505,67 +7496,30 @@ struct Struct_print_kv_cache_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         valid_lengths: InputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         is_print_compact: InputTensor[dtype = DType.bool, rank=1],
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         print_kv_cache_paged_generic_kernel_api[target](
             valid_lengths,
             kv_collection,
             layer_idx,
             is_print_compact,
             context,
-        )
-
-
-# ===-----------------------------------------------------------------------===#
-# KV Collection Constructors (Ctor)
-#
-# Expected kernel name format:
-# mo.kv_collection_ctor.<continuous_batching/paged>
-# ===-----------------------------------------------------------------------===#
-
-
-@compiler.register("mo.kv_collection_ctor.paged")
-struct Struct_kv_collection_ctor_paged:
-    @always_inline
-    @staticmethod
-    fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int,
-        target: StaticString,
-    ](
-        blocks: InputTensor[dtype=dtype, rank=6],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
-        lookup_table: InputTensor[dtype = DType.uint32, rank=2],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
-    ) -> PagedKVCacheCollection[
-        dtype, KVCacheStaticParams(UInt(num_heads), UInt(head_dim)), page_size
-    ]:
-        return generic_get_paged_cache[
-            kv_params = KVCacheStaticParams(UInt(num_heads), UInt(head_dim)),
-            page_size=page_size,
-        ](
-            managed_tensor_slice_to_ndbuffer(blocks),
-            managed_tensor_slice_to_ndbuffer(cache_lengths),
-            managed_tensor_slice_to_ndbuffer(lookup_table),
-            managed_tensor_slice_to_ndbuffer(max_lengths),
         )
 
 
@@ -7582,25 +7536,25 @@ struct Struct_kv_matmul_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         weight: InputTensor[dtype=dtype, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         kv_matmul_ragged_paged[target=target](
             managed_tensor_slice_to_ndbuffer(hidden_state),
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
@@ -7624,25 +7578,25 @@ struct Struct_k_matmul_ragged_paged:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         weight: InputTensor[dtype=dtype, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         k_matmul_ragged_paged[target=target](
             managed_tensor_slice_to_ndbuffer(hidden_state),
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
@@ -7658,9 +7612,6 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
     @always_inline
     @staticmethod
     fn execute[
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
         quantization_encoding_q: StaticString,
         quantization_encoding_k: StaticString,
         quantization_encoding_v: StaticString,
@@ -7671,16 +7622,19 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         q_weight: InputTensor[dtype = DType.uint8, rank=2],
         k_weight: InputTensor[dtype = DType.uint8, rank=2],
         v_weight: InputTensor[dtype = DType.uint8, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            DType.float32,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype = DType.float32, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
         unfused_qkv_matmul_ragged_paged_gguf_quantized[
             quantization_encoding_q,
             quantization_encoding_k,
@@ -8761,25 +8715,26 @@ struct Struct_kv_cache_ragged_paged_radd:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
+        dtype: DType, //,
         target: StaticString,
     ](
         a: InputTensor[dtype=dtype, rank=2],
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(
-                num_heads=UInt(num_heads), head_size=UInt(head_dim)
-            ),
-            page_size,
-        ],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         batch_offset: UInt32,
         layer_idx: UInt32,
         context: DeviceContextPtr,
     ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
         cuda_ctx: Optional[DeviceContext] = None
         if is_gpu[target]():
             cuda_ctx = context.get_device_context()

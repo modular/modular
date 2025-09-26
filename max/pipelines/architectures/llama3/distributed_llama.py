@@ -33,8 +33,6 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
     PagedKVCacheManager,
 )
 
@@ -183,15 +181,6 @@ class DistributedLlama3(DistributedTransformer):
             quantization_encoding=embedding_output_quantization,
         )
 
-        kv_collection_cls: type[FetchPagedKVCacheCollection]
-        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
-            kv_collection_cls = FetchPagedKVCacheCollection
-        else:
-            raise ValueError(
-                "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
-            )
-
         super().__init__(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -200,9 +189,6 @@ class DistributedLlama3(DistributedTransformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(
-                config.kv_params, num_layers=config.num_hidden_layers
-            ),
             devices=config.devices,
             rope=rope,
             return_logits=config.return_logits,

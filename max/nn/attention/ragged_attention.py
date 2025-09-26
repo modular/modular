@@ -25,7 +25,7 @@ from ..clamp import clamp
 from ..kernels import flash_attention_ragged, fused_qkv_ragged_matmul
 from ..kv_cache import (
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from ..layer import Module
 from ..linear import Linear
@@ -179,7 +179,7 @@ class RaggedAttention(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
         # Get attributes from input.

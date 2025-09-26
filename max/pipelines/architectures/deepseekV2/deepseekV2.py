@@ -26,7 +26,6 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.moe import MoE
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -125,9 +124,6 @@ class DeepseekV2(Transformer):
             output=lm_head,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=FetchPagedKVCacheCollection(
-                config.kv_params
-            ),
             rope=rope,
         )
 

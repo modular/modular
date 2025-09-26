@@ -45,6 +45,10 @@ from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor_internal import ManagedTensorSlice, trace_slice_arg
 
 from utils import Index, IndexList
+from tensor_internal import InputTensor
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputTensor as MutableInputTensor,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (padded)
@@ -1353,6 +1357,35 @@ fn generic_get_continuous_cache[
 ) -> ContinuousBatchingKVCacheCollection[dtype, kv_params]:
     return _continuous_batch_kv_cache_collection[kv_params](
         blocks, cache_lengths, lookup_table, max_lengths
+    )
+
+
+fn generic_get_paged_cache[
+    dtype: DType
+](
+    blocks: MutableInputTensor[dtype=dtype, rank=6],
+    cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+    lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+    max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+    out result: PagedKVCacheCollection[
+        dtype,
+        KVCacheStaticParams(
+            UInt(blocks.static_spec.shape.get[4]()),
+            UInt(blocks.static_spec.shape.get[5]()),
+        ),
+        blocks.static_spec.shape.get[3](),
+    ],
+):
+    alias page_size = blocks.static_spec.shape.get[3]()
+    alias head_dim = blocks.static_spec.shape.get[5]()
+    alias num_heads = blocks.static_spec.shape.get[4]()
+    return generic_get_paged_cache[
+        dtype, KVCacheStaticParams(UInt(num_heads), UInt(head_dim)), page_size
+    ](
+        managed_tensor_slice_to_ndbuffer(blocks),
+        managed_tensor_slice_to_ndbuffer(cache_lengths),
+        managed_tensor_slice_to_ndbuffer(lookup_table),
+        managed_tensor_slice_to_ndbuffer(max_lengths),
     )
 
 

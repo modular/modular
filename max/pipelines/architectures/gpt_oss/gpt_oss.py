@@ -31,7 +31,7 @@ from max.nn import (
     LayerList,
     Module,
 )
-from max.nn.kv_cache import FetchPagedKVCacheCollection
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.norm.rms_norm import RMSNorm
 from max.nn.rotary_embedding import (
     YarnRotaryEmbedding,
@@ -140,17 +140,13 @@ class GptOssTextModel(Module):
         self.n_heads = config.num_attention_heads
         self.layers = LayerList(layers)
         self.kv_params = config.kv_params
-        self.kv_collection_constructor = FetchPagedKVCacheCollection(
-            config.kv_params,
-            num_layers=config.num_hidden_layers,
-        )
         self.return_logits = config.return_logits
 
     def __call__(
         self,
         tokens: TensorValue,
         signal_buffers: Sequence[BufferValue],
-        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
+        kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         **kwargs,
@@ -158,12 +154,6 @@ class GptOssTextModel(Module):
         h_embed = self.embed_tokens(tokens)
         # Replicate embedding output to all devices
         h = [h_embed.to(device) for device in self.devices]
-
-        # Create KV cache collections per device
-        kv_collections = [
-            self.kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
-        ]
 
         # Run through transformer layers
         for idx, layer in enumerate(self.layers):
@@ -215,7 +205,7 @@ class GptOss(Module):
         self,
         tokens: TensorValue,
         signal_buffers: Sequence[BufferValue],
-        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
+        kv_cache_inputs_per_dev: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> tuple[TensorValue, ...]:

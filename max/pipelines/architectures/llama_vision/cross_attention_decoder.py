@@ -27,7 +27,7 @@ from max.nn.kernels import (
     matmul_kv_cache_ragged,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import KVCacheParams, PagedKVCacheCollection
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Layer
 from max.nn.linear import LinearV1
 
@@ -70,7 +70,7 @@ class CrossSdpaAttention(Layer):
         hidden_max_seq_len: TensorValue,
         cross_attention_states: TensorValue,
         cross_input_row_offsets: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
     ) -> TensorValue:
         """Computes attention on hidden (query) and cross (key and value).
 
@@ -151,7 +151,7 @@ class CrossAttentionDecoderLayer(Layer):
         hidden_max_seq_len: TensorValue,
         cross_attention_states: TensorValue,
         cross_input_row_offsets: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
     ) -> TensorValue:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)

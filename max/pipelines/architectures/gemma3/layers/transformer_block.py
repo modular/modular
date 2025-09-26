@@ -23,7 +23,7 @@ from max.graph import (
 )
 from max.nn import Module
 from max.nn.comm.allreduce import Allreduce
-from max.nn.kv_cache import PagedKVCacheCollection
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
@@ -103,7 +103,7 @@ class Gemma3TransformerBlock(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[PagedKVCacheCollection],
+        kv_collections: list[PagedCacheValues],
         input_row_offsets: list[TensorValue],
         **kwargs,
     ) -> list[TensorValue]:

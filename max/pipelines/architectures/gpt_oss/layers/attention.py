@@ -28,7 +28,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
@@ -207,7 +207,7 @@ class GptOssAttention(Module, Shardable):
     def __call__(
         self,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
         # Get attributes from input.

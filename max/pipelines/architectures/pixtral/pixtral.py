@@ -24,10 +24,6 @@ from max.nn import (
     RotaryEmbedding,
     TransformerBlock,
 )
-from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
-)
 
 from .llava.llava import LlavaConditionalGeneration
 from .llava.llava_decoder import Transformer
@@ -129,15 +125,6 @@ class Pixtral(LlavaConditionalGeneration):
             embedding_output_dtype,
             config.devices[0],
         )
-        kv_collection_cls: type[FetchPagedKVCacheCollection]
-
-        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
-            kv_collection_cls = FetchPagedKVCacheCollection
-        else:
-            raise ValueError(
-                "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
-            )
 
         return Transformer(
             dim=config.hidden_size,
@@ -152,7 +139,6 @@ class Pixtral(LlavaConditionalGeneration):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(config.kv_params),
             rope=rope,
             return_logits=config.return_logits,
         )

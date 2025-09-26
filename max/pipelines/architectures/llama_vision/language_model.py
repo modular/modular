@@ -30,7 +30,7 @@ from max.nn import (
     RotaryEmbedding,
     TransformerBlock,
 )
-from max.nn.kv_cache import FetchPagedKVCacheCollection, KVCacheParams
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Layer
 
 from .cross_attention_decoder import (
@@ -56,8 +56,8 @@ class TextModel(Layer):
 
     def __call__(
         self,
-        text_kv_cache_inputs: tuple[TensorValue, ...],
-        vision_kv_cache_inputs: tuple[TensorValue, ...],
+        text_kv_collection: PagedCacheValues,
+        vision_kv_collection: PagedCacheValues,
         input_ids: TensorValue,
         hidden_input_row_offsets: TensorValue,
         hidden_max_seq_len: TensorValue,
@@ -69,23 +69,6 @@ class TextModel(Layer):
         hidden_states = ops.cast(inputs_embeds, self.dtype)
 
         before_attention_blocks_shape = hidden_states.shape
-
-        # Assume that text and vision KV caches have the same KV params for now.
-        # So they can share the KV collection constructor object.
-        text_kv_collection_constructor = FetchPagedKVCacheCollection(
-            self.kv_params
-        )
-        vision_kv_collection_constructor = FetchPagedKVCacheCollection(
-            self.vision_kv_params
-        )
-
-        # Construct text and vision KV collections with their distinct inputs.
-        text_kv_collection = text_kv_collection_constructor(
-            *text_kv_cache_inputs
-        )
-        vision_kv_collection = vision_kv_collection_constructor(
-            *vision_kv_cache_inputs
-        )
 
         freqs_cis = self.rope.freqs_cis
         for decoder_layer in self.layers:
@@ -127,8 +110,8 @@ class CausalLanguageModel(Layer):
 
     def __call__(
         self,
-        text_kv_cache_inputs: tuple[TensorValue, ...],
-        vision_kv_cache_inputs: tuple[TensorValue, ...],
+        text_kv_collection: PagedCacheValues,
+        vision_kv_collection: PagedCacheValues,
         input_ids: TensorValue,
         hidden_input_row_offsets: TensorValue,
         hidden_max_seq_len: TensorValue,
@@ -136,8 +119,8 @@ class CausalLanguageModel(Layer):
         cross_input_row_offsets: TensorValue,
     ) -> TensorValue:
         last_hidden_state = self.model(
-            text_kv_cache_inputs,
-            vision_kv_cache_inputs,
+            text_kv_collection,
+            vision_kv_collection,
             input_ids,
             hidden_input_row_offsets,
             hidden_max_seq_len,

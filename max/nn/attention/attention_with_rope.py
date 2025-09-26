@@ -28,7 +28,6 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
     Weight,
-    _OpaqueValue,
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
@@ -50,7 +49,7 @@ from ..kernels import (
     quantize_static_scaled_float8,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
-from ..kv_cache import KVCacheParams, PagedKVCacheCollection
+from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module
 from ..linear import Linear
 from ..no_opaque_kernels import (
@@ -89,7 +88,7 @@ class AttentionWithRopeV1(AttentionImpl):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -405,7 +404,7 @@ class AttentionWithRope(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -419,14 +418,6 @@ class AttentionWithRope(Module):
             wqkv_bias = None
 
         if self.float8_config:
-            # TODO(GEX-2452): Find a cleaner way to write assertions like this
-            # or improve the subgraph code so that it can preserve the Python
-            # classes which wrap our opaque types.
-            assert isinstance(kv_collection, PagedKVCacheCollection) or (
-                isinstance(kv_collection, _OpaqueValue)
-                and kv_collection.type.name == "PagedKVCacheCollection"
-            )
-
             x_scales: TensorValue
             weight_scale = self.qkv_weight_scale
             if self.float8_config.is_static:
@@ -632,7 +623,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -818,7 +809,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -1007,7 +998,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         layer_idx: TensorValue,
         x: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-        kv_collections: Sequence[PagedKVCacheCollection],
+        kv_collections: Sequence[PagedCacheValues],
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
@@ -1056,7 +1047,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:

@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from max.graph import TensorType, TensorValue, TensorValueLike, ops
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Layer, Module
 from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
     VisionEncoder,
@@ -52,7 +52,7 @@ class LlavaConditionalGeneration(Module):
         input_ids: TensorValue,
         pixel_values: TensorValue,
         attention_mask: TensorValue,
-        kv_cache_inputs: Sequence[TensorValue],
+        kv_collection: PagedCacheValues,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
@@ -117,7 +117,7 @@ class LlavaConditionalGeneration(Module):
 
         return self.language_model(
             embeds=inputs_embeds,
-            kv_cache_inputs=kv_cache_inputs,
+            kv_collection=kv_collection,
             return_n_logits=return_n_logits,
             input_row_offsets=input_row_offsets,
         )
@@ -174,9 +174,7 @@ class LlavaConditionalGenerationTextOnly(Layer):
         self,
         input_ids: TensorValueLike,
         image_embeds: TensorValue,
-        kv_cache_inputs: tuple[
-            TensorValue, TensorValue, TensorValue, TensorValue
-        ],
+        kv_collection: PagedCacheValues,
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         """
@@ -208,6 +206,6 @@ class LlavaConditionalGenerationTextOnly(Layer):
             image_embeds,
             out_dim="unmasked_inputs",
         )
-        logits = self.language_model(inputs_embeds, kv_cache_inputs, **kwargs)
+        logits = self.language_model(inputs_embeds, kv_collection, **kwargs)
 
         return logits

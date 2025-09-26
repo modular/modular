@@ -52,10 +52,8 @@ from max.nn.kernels import (
     fused_qkv_ragged_matmul,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
-    KVCacheStrategy,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from max.nn.layer import Shardable
 from max.nn.transformer.distributed_transformer import (
@@ -196,7 +194,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
         position_ids: TensorValue,
@@ -391,7 +389,7 @@ class Qwen25VLDecoderTransformerBlock(Module):
         self,
         layer_idx: TensorValue,
         xs: list[TensorValue],
-        kv_collections: list[PagedKVCacheCollection],
+        kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
         position_ids: TensorValue,
@@ -533,16 +531,6 @@ class Qwen25VLDecoder(Module):
         if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
-        kv_collection_cls: type[FetchPagedKVCacheCollection]
-
-        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
-            kv_collection_cls = FetchPagedKVCacheCollection
-        else:
-            raise ValueError(
-                "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
-            )
-
         super().__init__()
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
@@ -556,10 +544,6 @@ class Qwen25VLDecoder(Module):
         self.lm_head = output
         self.embed_tokens = embedding_layer
         self.kv_params = config.kv_params
-        self.kv_collection_constructor = kv_collection_cls(
-            config.kv_params,
-            num_layers=config.num_hidden_layers,
-        )
         self.rope = rope
         self.return_logits = config.return_logits
 
@@ -571,7 +555,7 @@ class Qwen25VLDecoder(Module):
         image_token_indices: list[TensorValue],
         position_ids: TensorValue,
         mrope_section: list[int],
-        kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
+        kv_collections: list[PagedCacheValues],
         input_row_offsets: list[TensorValue],
         signal_buffers: list[BufferValue],
     ) -> tuple[TensorValue, ...]:
@@ -589,12 +573,6 @@ class Qwen25VLDecoder(Module):
             for h_device, img_embed, img_tok_indices in zip(
                 h, image_embeddings, image_token_indices
             )
-        ]
-
-        # Create KV cache collections per device
-        kv_collections = [
-            self.kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
         # Create position embeddings shared across the decoder layers.

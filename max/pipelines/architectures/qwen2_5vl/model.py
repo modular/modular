@@ -25,7 +25,7 @@ from max._core.engine import Model
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -40,6 +40,7 @@ from max.nn import (
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
+    PagedCacheValues,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -277,23 +278,24 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> list[tuple[TensorValue, ...]]:
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
         """Unflatten KV cache inputs from flat list to per-device structure."""
         fetch_types = self.kv_manager.input_symbols()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
         n_devices = len(self.devices)
 
-        kv_caches_per_dev = [
-            tuple(
-                kv_inputs_flat[
-                    i * len_of_kv_tuple_per_dev : (i + 1)
-                    * len_of_kv_tuple_per_dev
-                ]
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
             )
-            for i in range(n_devices)
-        ]
-
         return kv_caches_per_dev
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
@@ -671,9 +673,10 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             signal_buffers = [
                 v.buffer for v in variadic_args[: len(self.devices)]
             ]
-            variadic_args = variadic_args[len(self.devices) :]
 
-            kv_cache_inputs_unflattened = [v.tensor for v in variadic_args]
+            # Unmarshal the remaining arguments, which are for KV cache.
+            variadic_args = variadic_args[len(self.devices) :]
+            kv_collections = self._unflatten_kv_inputs(variadic_args)
 
             # Execute language model: text + image embeddings -> logits
             outputs = language_model(
@@ -683,9 +686,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 image_token_indices=image_token_indices,
                 position_ids=position_ids,
                 signal_buffers=signal_buffers,
-                kv_cache_inputs_per_dev=self._unflatten_kv_inputs(
-                    kv_cache_inputs_unflattened
-                ),
+                kv_collections=kv_collections,
                 input_row_offsets=input_row_offsets,
                 mrope_section=self.model_config.mrope_section,
             )
