@@ -53,7 +53,7 @@ from gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import Layout
-from layout.int_tuple import IntTuple
+from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -65,7 +65,6 @@ from layout.layout_tensor import (
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_builder import static
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.bmm import batched_matmul
@@ -4265,22 +4264,28 @@ fn mha_splitk_reduce[
     var qk_max = warp.shuffle_idx(warp.max(l), 0)
 
     # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
-    var exp_sums = tb[accum_type]().layout[WARP_SIZE]().shared().alloc()
+    var exp_sums = LayoutTensor[
+        accum_type,
+        Layout(WARP_SIZE),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
-    var intermediate_output = (
-        tb[output_type]()
-        .row_major(
-            num_partitions,
-            batch_size,
-            static[num_heads](),
-            static[depth](),
-        )
-        .view(intermediate_ptr)
+    alias intermediate_layout = Layout.row_major(
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
-    var output = (
-        tb[output_type]()
-        .row_major(batch_size, static[num_heads](), static[depth]())
-        .view(output_ptr)
+    var intermediate_output = LayoutTensor[output_type, intermediate_layout](
+        intermediate_ptr,
+        RuntimeLayout[intermediate_layout].row_major(
+            Index(num_partitions, batch_size, num_heads, depth)
+        ),
+    )
+    alias output_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
+    var output = LayoutTensor[output_type, output_layout](
+        output_ptr,
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, num_heads, depth)
+        ),
     )
 
     var rescaled_exp_sum: Scalar[accum_type] = 0
@@ -4303,7 +4308,16 @@ fn mha_splitk_reduce[
     var inv_global_exp_sum = 1.0 / exp_sum
     # TODO: vectorize load and store operations
     alias width = Int(ceildiv(depth, num_threads))
-    acc = tb[accum_type]().layout[width]().local().alloc().fill(0)
+    acc = (
+        LayoutTensor[
+            accum_type,
+            Layout(width),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
     for partition_idx in range(num_partitions):
         var partition_exp_sum = exp_sums[partition_idx]
         if partition_exp_sum > 0:

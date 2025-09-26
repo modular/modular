@@ -53,7 +53,6 @@ from layout import (
     RuntimeTuple,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tensor_builder import LayoutTensorBuild as tb
 from logger import Logger
 from memory import stack_allocation
 
@@ -284,10 +283,24 @@ fn gemv_split_k[
     # which rows of the weight matrix each thread will process
     var tile_id_n = block_idx.y * tile_n
     var tid = thread_idx.x
-    var tile_w = tb[b_type]().row_major[tile_n, simd_width]().local().alloc()
+    var tile_w = LayoutTensor[
+        b_type,
+        Layout.row_major(tile_n, simd_width),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector
-    var acc = tb[s_type]().row_major[tile_m, tile_n]().local().alloc().fill(0)
+    var acc = (
+        LayoutTensor[
+            s_type,
+            Layout.row_major(tile_m, tile_n),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
     var output_idx = tile_id_m * n + tile_id_n
     var iteration = 0
     alias WeightVecType = SIMD[b_type, simd_width]
@@ -343,12 +356,12 @@ fn gemv_split_k[
     # Warps are arranged along K.
     alias k_warp_num = num_threads // WARP_SIZE
     var warp_id = warp.broadcast(tid // WARP_SIZE)
-    var shmem = (
-        tb[s_type]()
-        .row_major[1, tile_m * tile_n * k_warp_num]()
-        .shared()
-        .alloc()
-    )
+    var shmem = LayoutTensor[
+        s_type,
+        Layout.row_major(1, tile_m * tile_n * k_warp_num),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.

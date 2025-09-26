@@ -49,7 +49,6 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import warp_split_k_reduction
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
@@ -259,29 +258,39 @@ fn multistage_mma_q[
     alias b_frag_size = frag_size[1]
     alias c_frag_size = frag_size[2]
 
+    alias a_reg_layout = Layout.row_major(2 * num_m_mmas, a_frag_size)
     # Register tiles.
     var a_reg_tiles = (
-        tb[a_type]()
-        .row_major[2 * num_m_mmas, a_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            a_type,
+            a_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .split[2]()
     )
-
+    alias b_reg_layout = Layout.row_major(2 * num_n_mmas, b_frag_size)
     var b_reg_tiles = (
-        tb[a_type]()
-        .row_major[2 * num_n_mmas, b_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            a_type,
+            b_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, b_frag_size]()
         .split[2]()
     )
 
     var scales_reg_tiles = (
-        tb[scales_type]()
-        .row_major[num_n_mmas, 1]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            scales_type,
+            Layout.row_major(num_n_mmas, 1),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, 1]()
     )
 
@@ -616,11 +625,15 @@ fn multistage_qgemm_kernel[
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
 
+    alias c_reg_layout = Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
     var c_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            accum_type,
+            c_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
@@ -734,12 +747,12 @@ fn multistage_qgemm_kernel[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = (
-            tb[c_type]()
-            .row_major[WM, WN]()
-            .shared()
-            .view(a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN))
-        )
+        var accum_smem_warp_tile = LayoutTensor[
+            c_type,
+            Layout.row_major(WM, WN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
