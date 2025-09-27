@@ -1450,7 +1450,10 @@ fn get_mma_shape[
             if accum_type is DType.float32 and input_type is DType.float32:
                 constrained[
                     False,
-                    "RDNA WMMA does not support FP32 inputs (only FP16/BF16 -> FP32)",
+                    (
+                        "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
+                        " -> FP32)"
+                    ),
                 ]()
                 return shape_null
             elif accum_type is DType.float32 and input_type.is_half_float():
