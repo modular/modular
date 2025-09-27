@@ -23,7 +23,6 @@ modular_cc_binary = _cc_binary
 modular_cc_library = _cc_library
 modular_py_venv = _modular_py_venv
 mojo_filecheck_test = _mojo_filecheck_test
-mojo_test = _mojo_test
 mojo_test_environment = _mojo_test_environment
 proto_library = _proto_library
 py_grpc_library = _py_grpc_library
@@ -82,8 +81,8 @@ def _rewrite_deps(deps):
                 replaced_dep = "@modular_wheel//:wheel"
             if replaced_dep not in new_deps:
                 new_deps.append(replaced_dep)
-        elif dep.startswith("//open-source/max/mojo"):
-            replaced_dep = dep.replace("//open-source/max/mojo", "//mojo")
+        elif dep.startswith("//open-source/max/"):
+            replaced_dep = dep.replace("//open-source/max/", "//")
             new_deps.append(replaced_dep)
         else:
             new_deps.append(dep)
@@ -185,6 +184,14 @@ def mojo_binary(
     _mojo_binary(
         data = data,
         deps = deps,
+        **kwargs
+    )
+
+def mojo_test(
+        data = [],
+        **kwargs):
+    _mojo_test(
+        data = _rewrite_deps(data),
         **kwargs
     )
 
