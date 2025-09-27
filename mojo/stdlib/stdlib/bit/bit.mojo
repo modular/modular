@@ -274,6 +274,19 @@ fn pop_count[
 
 
 @always_inline("nodebug")
+fn bit_not(val: Int) -> Int:
+    """Performs a bitwise NOT operation on an integer value.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The bitwise NOT of the input value.
+    """
+    return ~val
+
+
+@always_inline("nodebug")
 fn bit_not[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:

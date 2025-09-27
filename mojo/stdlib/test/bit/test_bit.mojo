@@ -253,6 +253,20 @@ def test_pop_count_simd():
     assert_equal(pop_count(var4), SIMD[int64_t, simd_width](51, 0, 10, 1))
 
 
+def test_bit_not():
+    assert_equal(bit_not(0), -1)
+    assert_equal(bit_not(-1), 0)
+    assert_equal(bit_not(1), -2)
+    assert_equal(bit_not(2), -3)
+    assert_equal(bit_not(3), -4)
+    assert_equal(bit_not(4), -5)
+    assert_equal(bit_not(5), -6)
+    assert_equal(bit_not(100), -101)
+    assert_equal(bit_not(-100), 99)
+    assert_equal(bit_not(2**20), -(2**20) - 1)
+    assert_equal(bit_not(-(2**20)), 2**20 - 1)
+
+
 def test_bit_not_simd():
     alias simd_width = 4
     alias int8_t = DType.int8
@@ -653,6 +667,7 @@ def main():
     test_byte_swap_simd()
     test_pop_count()
     test_pop_count_simd()
+    test_bit_not()
     test_bit_not_simd()
     test_log2_floor()
     test_log2_ceil()
