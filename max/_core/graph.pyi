@@ -12,22 +12,22 @@ from collections.abc import Sequence
 
 import max._core
 import max._core.dialects.kgen
+import max._core.dialects.m
+import max._core.dialects.mo
+import max._core.driver
 import max._core.dtype
-from numpy.typing import ArrayLike
 
 # isort: off
 from max._mlir._mlir_libs._mlir import MlirOperation  # type: ignore[attr-defined]
 from max._mlir._mlir_libs._mlir import MlirContext  # type: ignore[attr-defined]
-from max._mlir._mlir_libs._mlir import MlirAttribute  # type: ignore[attr-defined]
-from max._mlir._mlir_libs._mlir import MlirType  # type: ignore[attr-defined]
 from max._mlir._mlir_libs._mlir import MlirLocation  # type: ignore[attr-defined]
 from max._mlir._mlir_libs._mlir import MlirDialectRegistry  # type: ignore[attr-defined]
 # isort: on
 
 def load_modular_dialects(arg: MlirDialectRegistry, /) -> None: ...
 def array_attr(
-    arg0: str, arg1: ArrayLike, arg2: MlirType, /
-) -> MlirAttribute: ...
+    arg0: max._core.driver.Tensor, arg1: max._core.dialects.mo.TensorType, /
+) -> max._core.dialects.m.ArrayElementsAttr: ...
 def dtype_to_type(arg: max._core.dtype.DType, /) -> max._core.Type: ...
 def type_to_dtype(arg: max._core.Type, /) -> max._core.dtype.DType: ...
 def frame_loc(arg0: MlirContext, arg1: object, /) -> MlirLocation: ...
