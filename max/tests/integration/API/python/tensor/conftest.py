@@ -6,14 +6,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
-import numpy as np
-from max.experimental.tensor import Tensor
+from max.driver import DLPackArray
+from max.experimental.tensor import NestedArray, Number, Tensor
 
 
 def assert_all_close(
-    t1: Tensor | np.ndarray | Sequence[int | float],
+    t1: DLPackArray | NestedArray | Number,
     t2: Tensor,
     atol: float = 1e-6,
     rtol: float = 1e-6,

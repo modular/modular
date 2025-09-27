@@ -15,13 +15,13 @@ from max.experimental.tensor import Tensor, default_dtype
 
 def test_arange() -> None:
     t = Tensor.arange(10, dtype=DType.float32, device=CPU())
-    assert_all_close(list(range(10)), t)
+    assert_all_close(range(10), t)
 
 
 def test_arange_defaults() -> None:
     with default_dtype(DType.float32):
         t = Tensor.arange(10)
-        assert_all_close(list(range(10)), t)
+        assert_all_close(range(10), t)
 
 
 def test_invalid() -> None:
@@ -29,4 +29,4 @@ def test_invalid() -> None:
     with pytest.raises(
         AssertionError, match="atol: tensors not close at index 0, 2.0 > 1e-06"
     ):
-        assert_all_close(list(range(2, 12)), t)
+        assert_all_close(range(2, 12), t)

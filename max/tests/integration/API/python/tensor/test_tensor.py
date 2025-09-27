@@ -22,7 +22,7 @@ DEVICE = Accelerator() if accelerator_count() else CPU()
 def test_ones_defaults() -> None:
     with default_dtype(DType.float32):
         t = Tensor.ones([10])
-        assert_all_close(list([1] * 10), t)
+        assert_all_close([1] * 10, t)
 
 
 def test_abs():
