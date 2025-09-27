@@ -97,7 +97,10 @@ private:
 };
 
 template <llvm::APFloat::Semantics Semantics>
-struct float8_generic_t : float_conversion_generic_t<Semantics, 8> {};
+struct float8_generic_t : float_conversion_generic_t<Semantics, 8> {
+  using Base = float_conversion_generic_t<Semantics, 8>;
+  using Base::Base;
+};
 } // namespace Detail
 
 //===----------------------------------------------------------------------===//
@@ -119,31 +122,31 @@ struct float4_e2m1fn_t
 namespace Float8 {
 
 struct float8_e3m4_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E3M4> {
-  explicit float8_e3m4_t(uint8_t rawBits)
-      : float8_generic_t<llvm::APFloat::S_Float8E3M4>(rawBits) {}
+  using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E3M4>;
+  using Base::Base;
 };
 struct float8_e4m3_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3> {
-  explicit float8_e4m3_t(uint8_t rawBits)
-      : float8_generic_t<llvm::APFloat::S_Float8E4M3>(rawBits) {}
+  using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3>;
+  using Base::Base;
 };
 struct float8_e4m3fn_t
     : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FN> {
-  explicit float8_e4m3fn_t(uint8_t rawBits)
-      : float8_generic_t<llvm::APFloat::S_Float8E4M3FN>(rawBits) {}
+  using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FN>;
+  using Base::Base;
 };
 struct float8_e4m3fnuz_t
     : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ> {
-  explicit float8_e4m3fnuz_t(uint8_t rawBits)
-      : float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ>(rawBits) {}
+  using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ>;
+  using Base::Base;
 };
 struct float8_e5m2_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2> {
-  explicit float8_e5m2_t(uint8_t rawBits)
-      : float8_generic_t<llvm::APFloat::S_Float8E5M2>(rawBits) {}
+  using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2>;
+  using Base::Base;
 };
 struct float8_e5m2fnuz_t
     : Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2FNUZ> {
-  explicit float8_e5m2fnuz_t(uint8_t rawBits)
-      : float8_generic_t<llvm::APFloat::S_Float8E5M2FNUZ>(rawBits) {}
+  using Base = Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2FNUZ>;
+  using Base::Base;
 };
 } // namespace Float8
 
