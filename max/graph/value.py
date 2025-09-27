@@ -27,10 +27,10 @@ from typing import (
 )
 
 import numpy as np
-import numpy.typing as npt
 from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core.dialects import mo
+from max.driver import DLPackArray
 from max.dtype import DType
 from typing_extensions import TypeAlias, TypeGuard
 
@@ -1242,9 +1242,7 @@ class HasBufferValue(Protocol):
     def __buffervalue__(self) -> BufferValue: ...
 
 
-Numeric = Union[
-    int, float, np.integer[Any], np.floating[Any], npt.NDArray[np.number[Any]]
-]
+Numeric = Union[int, float, np.integer[Any], np.floating[Any], DLPackArray]
 Scalar = Union[int, float, np.integer[Any], np.floating[Any], Dim]
 StrongTensorValueLike = Union[
     _Value[mo.TensorType], TensorValue, Shape, Dim, HasTensorValue

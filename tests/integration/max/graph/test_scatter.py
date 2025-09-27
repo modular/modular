@@ -55,12 +55,8 @@ def test_scatter(
     input_type = TensorType(DType.float32, input_np.shape, device_ref)
     with Graph("scatter", input_types=[input_type]) as graph:
         input_val = graph.inputs[0].tensor
-        updates_val = ops.constant(
-            np.array(updates), DType.float32, device=device_ref
-        )
-        indices_val = ops.constant(
-            np.array(indices), DType.int32, device=device_ref
-        )
+        updates_val = ops.constant(updates, DType.float32, device=device_ref)
+        indices_val = ops.constant(indices, DType.int32, device=device_ref)
         out = ops.scatter(input_val, updates_val, indices_val, axis)
         graph.output(out)
 
@@ -121,16 +117,8 @@ def test_scatter_nd(
 
     with Graph("scatter_nd", input_types=[input_type]) as graph:
         input_val = graph.inputs[0].tensor
-        updates = ops.constant(
-            np.array(updates_data, dtype=np.float32),
-            DType.float32,
-            device=device_ref,
-        )
-        indices = ops.constant(
-            np.array(indices_data, dtype=np.int32),
-            DType.int32,
-            device=device_ref,
-        )
+        updates = ops.constant(updates_data, DType.float32, device=device_ref)
+        indices = ops.constant(indices_data, DType.int32, device=device_ref)
         out = ops.scatter_nd(input_val, updates, indices)
         graph.output(out)
 
