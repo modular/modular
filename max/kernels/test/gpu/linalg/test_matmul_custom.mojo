@@ -71,17 +71,17 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
-        c_device.unsafe_ptr(),
+        c_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
-        a_device.unsafe_ptr(),
+        a_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
-        b_device.unsafe_ptr(),
+        b_device,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
@@ -118,17 +118,17 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     # Create layout tensors for fp32 kernel
     var c_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_n.unsafe_ptr(),
+        c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_n.unsafe_ptr(),
+        a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_n.unsafe_ptr(),
+        b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
@@ -258,17 +258,17 @@ fn run_matmul[
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        c_device_n.unsafe_ptr(),
+        c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        a_device_n.unsafe_ptr(),
+        a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        b_device_n.unsafe_ptr(),
+        b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
@@ -414,17 +414,17 @@ fn run_matmul_split_k[
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        c_device_n.unsafe_ptr(),
+        c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        a_device_n.unsafe_ptr(),
+        a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        b_device_n.unsafe_ptr(),
+        b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
@@ -553,17 +553,17 @@ fn run_matmul_transpose[
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        c_device_n.unsafe_ptr(),
+        c_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        a_device_n.unsafe_ptr(),
+        a_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
-        b_device_n.unsafe_ptr(),
+        b_device_n,
         RuntimeLayout[layout].row_major(IndexList[2](N, K)),
     )
 

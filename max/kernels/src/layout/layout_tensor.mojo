@@ -416,17 +416,7 @@ struct LayoutTensor[
         Args:
             span: The `Span` pointing to the underlying data.
         """
-
-        constrained[layout.all_dims_known(), "Layout must be fully static"]()
-
-        constrained[
-            layout_int_type.is_signed() and linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
-
-        self.ptr = span.unsafe_ptr()
-        self.runtime_layout = {}
-        self.runtime_element_layout = {}
+        self = Self(span.unsafe_ptr())
 
     @always_inline
     fn __init__(
@@ -449,16 +439,7 @@ struct LayoutTensor[
             span: The `Span` pointing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
-
-        constrained[
-            element_layout.all_dims_known(), "Layout must be fully static"
-        ]()
-
-        self.ptr = span.unsafe_ptr()
-        self.runtime_layout = runtime_layout.cast[
-            layout_int_type, target_linear_idx_type=linear_idx_type
-        ]()
-        self.runtime_element_layout = {}
+        self = Self(span.unsafe_ptr(), runtime_layout)
 
     @always_inline
     fn __init__(
@@ -484,24 +465,12 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
-
-        constrained[
-            layout_int_type.is_signed() and linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
-
-        self.ptr = span.unsafe_ptr()
-        self.runtime_layout = runtime_layout.cast[
-            layout_int_type, target_linear_idx_type=linear_idx_type
-        ]()
-        self.runtime_element_layout = element_runtime_layout.cast[
-            DType.int32, target_linear_idx_type=linear_idx_type
-        ]()
+        self = Self(span.unsafe_ptr(), runtime_layout, element_runtime_layout)
 
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
             mut=mut,
@@ -514,7 +483,7 @@ struct LayoutTensor[
             Layout must be fully static.
 
         Args:
-            ptr: The `UnsafePointer` pointing to the underlying data.
+            unsafe_ptr: The `UnsafePointer` pointing to the underlying data.
         """
 
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
@@ -524,14 +493,14 @@ struct LayoutTensor[
             "Layout integer type and linear index type must be signed.",
         ]()
 
-        self.ptr = ptr
+        self.ptr = unsafe_ptr
         self.runtime_layout = {}
         self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
             mut=mut,
@@ -547,7 +516,7 @@ struct LayoutTensor[
             Element layout must be fully static.
 
         Args:
-            ptr: The UnsafePointer pointing to the underlying data.
+            unsafe_ptr: The UnsafePointer pointing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
 
@@ -555,7 +524,7 @@ struct LayoutTensor[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
 
-        self.ptr = ptr
+        self.ptr = unsafe_ptr
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, target_linear_idx_type=linear_idx_type
         ]()
@@ -564,7 +533,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
             mut=mut,
@@ -578,12 +547,12 @@ struct LayoutTensor[
         element type will be casted to the layout tensor layout integer type.
 
         Args:
-            ptr: The `UnsafePointer` pointing to the underlying data.
+            unsafe_ptr: The `UnsafePointer` pointing to the underlying data.
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
 
-        self.ptr = ptr
+        self.ptr = unsafe_ptr
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, target_linear_idx_type=linear_idx_type
         ]()

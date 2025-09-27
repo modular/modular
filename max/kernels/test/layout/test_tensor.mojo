@@ -1555,7 +1555,7 @@ fn test_layout_tensor_iterator():
         iter2x2_circular += 1
 
     # Tiled iterator.
-    var tensor = LayoutTensor[type, Layout.row_major(8, 8)](arr.unsafe_ptr())
+    var tensor = LayoutTensor[type, Layout.row_major(8, 8)](arr)
     # CHECK: 32.0 33.0
     # CHECK: 40.0 41.0
     # CHECK: 34.0 35.0
@@ -1651,7 +1651,7 @@ fn test_nested_layout_tensor_iterator():
     var nested_tensor = LayoutTensor[
         DType.float32,
         nested_layout,
-    ](arr.unsafe_ptr())
+    ](arr)
 
     var tiled_nested_tensor_iter = nested_tensor.tiled_iterator[64, 2, axis=1](
         0, 0

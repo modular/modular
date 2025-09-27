@@ -292,17 +292,17 @@ fn run_mma_fp32_tf32(
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref.unsafe_ptr(),
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref.unsafe_ptr(),
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
     var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
@@ -460,17 +460,17 @@ fn run_mma_fp32_bf16(
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref.unsafe_ptr(),
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref.unsafe_ptr(),
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
     var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
@@ -625,17 +625,17 @@ fn run_mma_fp32_bf16_2(
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref.unsafe_ptr(),
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref.unsafe_ptr(),
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
     var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
@@ -789,17 +789,17 @@ fn run_mma_fp32_fp16(
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref.unsafe_ptr(),
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref.unsafe_ptr(),
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
     var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
@@ -954,17 +954,17 @@ fn run_mma_fp16_fp16(
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var a_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        a_device_ref.unsafe_ptr(),
+        a_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        b_device_ref.unsafe_ptr(),
+        b_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](K, N)),
     )
 
     var c_tensor = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 

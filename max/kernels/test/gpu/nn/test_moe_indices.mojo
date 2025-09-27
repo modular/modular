@@ -180,7 +180,7 @@ fn test_moe_create_indices(
     var token_expert_order = LayoutTensor[
         DType.uint32, layout, MutableAnyOrigin
     ](
-        token_expert_order_buffer_device.unsafe_ptr(),
+        token_expert_order_buffer_device,
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
         ),

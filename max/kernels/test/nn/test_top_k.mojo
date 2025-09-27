@@ -41,9 +41,11 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
 
     fn to_layout_tensor(
         ref self,
-    ) -> LayoutTensor[dtype, Layout.row_major[rank](), __origin_of(self)]:
+    ) -> LayoutTensor[
+        dtype, Layout.row_major[rank](), __origin_of(self.storage)
+    ]:
         return {
-            self.storage.unsafe_ptr(),
+            Span[Scalar[dtype]](self.storage),
             RuntimeLayout[Layout.row_major[rank]()].row_major(self.shape),
         }
 
