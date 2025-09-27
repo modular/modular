@@ -89,7 +89,7 @@ def safe_model_name(model: str) -> str:
     return model.replace("/", "__")
 
 
-def get_lm_eval_cmd(model: str) -> list[str]:
+def get_lm_eval_cmd(model: str, task: str) -> list[str]:
     max_gen_toks = {
         "unsloth/gpt-oss-20b-BF16": ",max_gen_toks=50000",
         "Qwen/Qwen3-8B": ",max_gen_toks=4096",
@@ -104,7 +104,7 @@ def get_lm_eval_cmd(model: str) -> list[str]:
         "--model_args",
         f"model={model},base_url=http://localhost:8000/v1/chat/completions,num_concurrent=64",
         "--tasks",
-        "gsm8k_cot_llama",
+        task,
         "--fewshot_as_multiturn",
         "--apply_chat_template",
         "--output_path",
@@ -160,22 +160,31 @@ class EvalSummary:
 
 
 def build_eval_summary(
-    results_json: Path, startup_time_seconds: float
+    results_json: Path, startup_time_seconds: float, task: str
 ) -> EvalSummary:
     """
     Parse lm-eval's results JSON and extract the metrics
     """
     data = json.loads(results_json.read_text())
-    metrics = data["results"]["gsm8k_cot_llama"]
+    metrics = data["results"][task]
     total_secs = float(data["total_evaluation_time_seconds"])
+
+    if task == "chartqa":
+        accuracy = metrics["relaxed_accuracy,none"]
+        accuracy_stderr = metrics["relaxed_accuracy_stderr,none"]
+    elif task == "gsm8k_cot_llama":
+        accuracy = metrics["exact_match,flexible-extract"]
+        accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
+    else:
+        raise ValueError(f"Unknown task: {task}")
 
     return EvalSummary(
         startup_time_seconds=round(startup_time_seconds, 2),
-        eval_task="gsm8k_cot_llama",
-        accuracy=metrics["exact_match,flexible-extract"],
-        accuracy_stderr=metrics["exact_match_stderr,flexible-extract"],
+        eval_task=task,
+        accuracy=accuracy,
+        accuracy_stderr=accuracy_stderr,
         total_evaluation_time_seconds=total_secs,
-        task_hash=data["task_hashes"]["gsm8k_cot_llama"],
+        task_hash=data["task_hashes"][task],
     )
 
 
@@ -200,6 +209,12 @@ def build_eval_summary(
 def smoke_test(framework: str, model: str, output_file: Optional[Path]):
     cmd = get_server_cmd(framework, model)
 
+    # TODO Refactor this to a model list/matrix specfying type of model
+    if any(x in model.lower() for x in ["qwen2.5-vl", "vision", "internvl"]):
+        task = "chartqa"
+    else:
+        task = "gsm8k_cot_llama"
+
     # SGLang depends on ninja which is in the serve environment
     env = os.environ.copy()
     venv_bin = os.path.abspath(".venv-serve/bin")
@@ -219,7 +234,7 @@ def smoke_test(framework: str, model: str, output_file: Optional[Path]):
         write_github_output("startup_time", f"{startup_time:.2f}")
 
         try:
-            lm_eval_cmd = get_lm_eval_cmd(model)
+            lm_eval_cmd = get_lm_eval_cmd(model, task)
             with Popen(lm_eval_cmd, start_new_session=True) as lm_eval_process:
                 try:
                     rc = lm_eval_process.wait(600)
@@ -233,7 +248,7 @@ def smoke_test(framework: str, model: str, output_file: Optional[Path]):
 
     results_json = locate_results_json(model)
     summary = build_eval_summary(
-        results_json, startup_time_seconds=startup_time
+        results_json, startup_time_seconds=startup_time, task=task
     )
 
     if output_file is not None:
