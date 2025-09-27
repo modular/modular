@@ -93,11 +93,11 @@ struct MmaOpAMD[
     var _a_reg_tile: Self.RegTileType[num_m_mmas]
     var _b_reg_tile: Self.RegTileType[num_n_mmas]
 
-    # FIXME: We didn't use to support 3D layouts, now we do.
-    # This should really be Layout.row_major(num_m_mmas, num_n_mmas, out_frag_size)
-    alias out_reg_layout = Layout.row_major(
-        num_m_mmas * num_n_mmas, out_frag_size
-    )
+    # Calculate c_frag_size based on the actual MMA shape for RDNA/CDNA compatibility
+    # For RDNA (16x16xK): c_frag_size = (16 * 16) / 64 = 4
+    # For CDNA (32x32xK): c_frag_size = (32 * 32) / 64 = 16
+    alias c_frag_size = Self.tensor_core_mma.mma_op.c_reg_type.size
+    alias out_reg_layout = Layout.row_major(num_m_mmas * num_n_mmas, Self.c_frag_size)
     alias OutRegTileType = RegTileType[out_type, Self.out_reg_layout]
 
     # Accumulation registers for result
