@@ -24,6 +24,9 @@ using namespace LIT;
 // LITDialect
 //===----------------------------------------------------------------------===//
 
+static ParseResult
+parseStructTypeParams(AsmParser &p, SmallVectorImpl<TypedAttr> &paramValues);
+
 void LITDialect::registerTypes() {
   addTypes<
 #define GET_TYPEDEF_LIST
@@ -39,20 +42,13 @@ void LITDialect::registerTypes() {
   // Register the StructType parser.
   getContext()->getLoadedDialect<KGENDialect>()->setSymbolTypeParser(
       [&](AsmParser &p, SymbolRefAttr symbol) -> FailureOr<Type> {
+        // Symbol reference is type positions are implicitly !lit.struct types.
         SmallVector<TypedAttr> values;
-        if (parseParameterValues(p, values))
+        if (failed(parseStructTypeParams(p, values)))
           return failure();
-        // Delete all this meta type stuff and remove from tests.
-        TypeSignatureType typeSig;
-        if (succeeded(p.parseOptionalColon())) {
-          Type metatype;
-          if (parseKGENType(p, metatype))
-            return failure();
-          if (auto anyStruct = dyn_cast<StructMetaType>(metatype))
-            typeSig = anyStruct.getSignature();
-        }
-        if (!typeSig)
-          typeSig = TypeSignatureType::get(p.getContext());
+
+        // FIXME: Shouldn't just work with fully bound types.
+        auto typeSig = TypeSignatureType::get(p.getContext());
         return StructType::get(symbol, values, typeSig);
       });
 }
@@ -320,16 +316,21 @@ LIT::StructType::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 }
 
 static ParseResult
-parseParameterizedSymbol(AsmParser &p, SymbolAttr &symbol,
-                         SmallVectorImpl<TypedAttr> &paramValues) {
+parseStructTypeParams(AsmParser &p, SmallVectorImpl<TypedAttr> &paramValues) {
+  return parseParameterValues(p, paramValues);
+}
+
+static ParseResult
+parseStructTypeBody(AsmParser &p, SymbolAttr &symbol,
+                    SmallVectorImpl<TypedAttr> &paramValues) {
   if (p.parseCustomAttributeWithFallback(symbol) ||
-      parseParameterValues(p, paramValues))
+      parseStructTypeParams(p, paramValues))
     return failure();
   return success();
 }
 
-static void printParameterizedSymbol(AsmPrinter &p, SymbolAttr symbol,
-                                     ArrayRef<TypedAttr> paramValues) {
+static void printStructTypeBody(AsmPrinter &p, SymbolAttr symbol,
+                                ArrayRef<TypedAttr> paramValues) {
   if (!paramValues.empty() && succeeded(p.printAlias(symbol)))
     p << ' ';
   else

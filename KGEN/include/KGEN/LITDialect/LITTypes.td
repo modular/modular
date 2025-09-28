@@ -194,7 +194,7 @@ def LIT_StructType : LITType<"Struct", "struct", [
     OptionalParameter<"StructType">:$canonical
   );
   let assemblyFormat = [{
-    `<` custom<ParameterizedSymbol>($value, $paramValues) ``
+    `<` custom<StructTypeBody>($value, $paramValues) ``
         (`,` $signature^)? `>`
   }];
 
