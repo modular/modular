@@ -1200,16 +1200,20 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   //
   // struct S[param: Int]:
   //     fn method[param: Int](self): pass
-  if (isa_and_nonnull<StructDeclOp>(parentDecl->getIfOperation())) {
-    for (auto [name, decls] : parentDecl->getDeclsInScope()) {
-      if (decls.size() == 1) {
-        CValue irValue = decls.front()->getIfIRValue();
-        if (auto param =
-                dyn_cast_or_null<ParamDeclRefAttr>(irValue.getIfPValue().get()))
-          // This is a parameter declared in the struct.
-          addFullyResolvedDecl(PValue(param), name, decls.front()->getLoc(),
-                               &sigDecl);
-      }
+  if (auto structOp =
+          dyn_cast_or_null<StructDeclOp>(parentDecl->getIfOperation())) {
+    for (auto param : structOp.getParamsAttr()) {
+      StringRef paramName = demangleParameterName(param.getName());
+      ArrayRef paramDecls = parentDecl->lookupInCurrentScope(paramName);
+      // Must be autoparams, they aren't explicitly declared by the user so
+      // can't be looked up by their names, nor should they lead to name
+      // conflict.
+      if (paramDecls.empty())
+        continue;
+
+      assert(paramDecls.size() == 1);
+      addFullyResolvedDecl(PValue(ParamDeclRefAttr::get(param)), paramName,
+                           paramDecls.front()->getLoc(), &sigDecl);
     }
   }
 
