@@ -698,7 +698,7 @@ struct TensorCore[
         @parameter
         if out_type is DType.float32:
             constrained[
-                reg_per_thread in (4, 16),
+                reg_per_thread in (4, 8, 16),
                 "No valid shape to store to LayoutTensor d",
             ]()
 

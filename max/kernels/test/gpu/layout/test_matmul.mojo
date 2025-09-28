@@ -173,9 +173,6 @@ def main():
             DType.float32, a_layout, b_layout, c_layout, False
         ](m, ctx)
 
-        var test_tc = test_matmul[
-            DType.float32, a_layout, b_layout, c_layout, True
-        ](m, ctx)
 
         alias k1 = run_gemm_kernel_1[
             DType.float32, a_layout, b_layout, c_layout, 32, 32
@@ -201,26 +198,6 @@ def main():
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
-        # MMA dimensions: NVIDIA (16x8x8), CDNA (16x16x4), RDNA WMMA (16x16x16)
-        alias MMA_M = 16
-        alias MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
-        alias MMA_K = 8 if has_nvidia_gpu_accelerator() else (4 if _is_amd_cdna() else 16)
-
-        alias k_tc = run_gemm_kernel_tc[
-            DType.float32,
-            a_layout,
-            b_layout,
-            c_layout,
-            64,  # BM: The block size in the M dimension
-            64,  # BN: The block size in the N dimension
-            32,  # BK: The block size in the K dimension
-            32,  # WM: The warp tile size in the M dimension
-            32,  # WN: The warp tile size in the N dimension
-            MMA_M,  # MMA_M: Tensor core instruction shape in M dimension
-            MMA_N,  # MMA_N: Tensor core instruction shape in N dimension
-            MMA_K,  # MMA_K: Tensor core instruction shape in K dimension
-        ]
-
         test.run_test[k1](m)
         test.run_test[k2](m)
         test.run_test[k3](m)
@@ -231,6 +208,30 @@ def main():
         # Skip tensor core tests on RDNA (no float32 MMA support)
         @parameter
         if not _is_amd_rdna():
+            var test_tc = test_matmul[
+                DType.float32, a_layout, b_layout, c_layout, True
+            ](m, ctx)
+
+            # MMA dimensions: NVIDIA (16x8x8), CDNA (16x16x4), RDNA WMMA (16x16x16)
+            alias MMA_M = 16
+            alias MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
+            alias MMA_K = 8 if has_nvidia_gpu_accelerator() else (4 if _is_amd_cdna() else 16)
+
+            alias k_tc = run_gemm_kernel_tc[
+                DType.float32,
+                a_layout,
+                b_layout,
+                c_layout,
+                64,  # BM: The block size in the M dimension
+                64,  # BN: The block size in the N dimension
+                32,  # BK: The block size in the K dimension
+                32,  # WM: The warp tile size in the M dimension
+                32,  # WN: The warp tile size in the N dimension
+                MMA_M,  # MMA_M: Tensor core instruction shape in M dimension
+                MMA_N,  # MMA_N: Tensor core instruction shape in N dimension
+                MMA_K,  # MMA_K: Tensor core instruction shape in K dimension
+            ]
+
             test_tc.run_test[k_tc](m)
 
     m.dump_report()
