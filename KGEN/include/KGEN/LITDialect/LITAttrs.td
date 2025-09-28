@@ -1005,16 +1005,23 @@ def LIT_SugarAttr : LITTypedAttr<"Sugar", "sugar"> {
   }];
 
   let parameters = (ins
-    "SugarKind":$sugarKind, "TypedAttr":$sugared, "TypedAttr":$original,
+    "SugarKind":$kind, "TypedAttr":$sugared, "TypedAttr":$original,
     "TypedAttr":$canonical, AttributeSelfTypeParameter<"">:$type
   );
 
-  let assemblyFormat = "$sugarKind `,` $sugared `,` $original `,` $canonical";
+  let assemblyFormat =
+    "$kind `,` custom<SugarAttr>($sugared, $original, $canonical)";
 
+  let skipDefaultBuilders = 1;
   let builders = [
-    AttrBuilderWithInferredContext<(ins "SugarKind":$sugarKind,
+    AttrBuilderWithInferredContext<(ins "SugarKind":$kind,
                                     "TypedAttr":$sugared,
-                                    "TypedAttr":$original)>,
+                                    "TypedAttr":$original), "", "TypedAttr">,
+
+    // Override the default builder used by the generated parser.
+    AttrBuilder<(ins "SugarKind":$kind, "TypedAttr":$sugared,
+                  "TypedAttr":$original, "TypedAttr":$canonical, "Type":$type),
+                   "", "TypedAttr">,
   ];
 }
 

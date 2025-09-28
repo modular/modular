@@ -330,6 +330,10 @@ public:
   /// This produces an error and returns null on an invalid conversion.
   CValue rebindValue(ASTExprAnd<CValue> value, Type destType);
 
+  /// If the type of the specified value differs from the destination type, emit
+  /// a rebind operation to convert it.
+  Value emitRebindOpIfNeeded(Value value, Type destType, SMLoc loc);
+
   /// Returns true if a value of the specified type can be coerced to the other
   /// type with a zero-cost conversion like a rebind.  This means that values of
   /// the two types have exactly the same representation post-elaboration.

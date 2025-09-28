@@ -287,14 +287,14 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
     // The origins may disagree if we're converting a value to a
     // superset origin, e.g. "immortal -> X" or "X -> X|y".
-    if (refValueType.getOrigin() != expectedRefType.getOrigin()) {
-      refValue = emitter.builder->create<RebindOp>(
-          operand.expr->getLocation(emitter),
-          refValueType.getWithOrigin(expectedRefType.getOrigin()), refValue);
-      refValueType = cast<RefType>(refValue.getType());
-    }
+    refValue = emitter.emitRebindOpIfNeeded(
+        refValue, refValueType.getWithOrigin(expectedRefType.getOrigin()),
+        operand.expr->getLoc());
+    refValueType = cast<RefType>(refValue.getType());
 
-    assert(refValueType == expectedType && "Should have exact match now");
+    assert((refValueType == expectedType ||
+            getCanonicalType(refValueType) == getCanonicalType(expectedType)) &&
+           "Should have exact match now");
     return CValue::getMValueForRef(refValue);
   }
 
@@ -422,8 +422,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       if (argType.getOrigin() == commonOrigin)
         continue; // Already the right origin.
       // Cast to common origin with a rebind.
-      arg = emitter.builder->create<RebindOp>(
-          loc, argType.getWithOrigin(commonOrigin), arg);
+      arg = emitter.emitRebindOpIfNeeded(
+          arg, argType.getWithOrigin(commonOrigin), callExpr->getLoc());
     }
   }
 

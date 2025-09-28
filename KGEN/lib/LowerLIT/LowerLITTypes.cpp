@@ -401,6 +401,11 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         return KGEN::StructExtractAttr::get(*valueOr, idx);
       });
 
+  // Sugar attr is turned into canonical form.
+  replacer.addInferredDomainNonRecursiveReplacement([&](SugarAttr sugar) {
+    return replacer.replaceParameter(sugar.getCanonical());
+  });
+
   // Since lowerings have been generated for all struct types, we just need to
   // lookup the lowered type and substitute the parameters.
   // - For the AsType type domain, convert into a StructType.

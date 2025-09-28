@@ -830,8 +830,12 @@ TypedAttr RefType::isMutable() {
 
 /// Return true if this is in address space 0.
 bool RefType::isDefaultAddrSpace() {
-  if (auto intAttr = ::dyn_cast<IntegerAttr>(getAddressSpace()))
+  auto addrSpace = getAddressSpace();
+  if (!isa<IntegerAttr>(addrSpace))
+    addrSpace = getCanonicalAttr(addrSpace);
+  if (auto intAttr = ::dyn_cast<IntegerAttr>(addrSpace))
     return intAttr.getInt() == 0;
+
   return false;
 }
 

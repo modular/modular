@@ -1021,6 +1021,25 @@ Value IREmitter::emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context) {
 //===----------------------------------------------------------------------===//
 // Emission helpers for various value classifications.
 
+/// If the type of the specified value differs from the destination type, emit
+/// a rebind operation to convert it.
+Value IREmitter::emitRebindOpIfNeeded(Value value, Type destType, SMLoc loc) {
+  if (!value || value.getType() == destType)
+    return value;
+
+  // Sanity check that rebind isn't *introducing* reference mutability.
+  if (auto srcRefType = dyn_cast<RefType>(value.getType()))
+    if (auto dstRefType = dyn_cast<RefType>(destType)) {
+      assert(!(srcRefType.isMutableKnown(false) &&
+               dstRefType.isMutableKnown(true)) &&
+             "Rebind is introducing mutability");
+      assert(getCanonicalAttr(srcRefType.getAddressSpace()) ==
+                 getCanonicalAttr(dstRefType.getAddressSpace()) &&
+             "rebind cannot change address space");
+    }
+  return builder->create<RebindOp>(translateLocation(loc), destType, value);
+}
+
 /// If needed, convert the specified value to the target destination type,
 /// with a noop cast.  This is used to adjust inconsequential details of the
 /// type or for simple things like upcasts.  This does not invoke constructors
@@ -1041,37 +1060,21 @@ CValue IREmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
     return emitErrorForDynamicValueInParameter(value.expr);
 
   // Materialize a rebind operation.
-  auto rebind = [&](Value v) -> Value {
-    if (v.getType() == destType)
-      return v;
-
-    // Sanity check that rebind isn't *introducing* reference mutability.
-    if (auto srcRefType = dyn_cast<RefType>(v.getType()))
-      if (auto dstRefType = dyn_cast<RefType>(destType)) {
-        assert(!(srcRefType.isMutableKnown(false) &&
-                 dstRefType.isMutableKnown(true)) &&
-               "Rebind is introducing mutability");
-        assert(srcRefType.getAddressSpace() == dstRefType.getAddressSpace() &&
-               "rebind cannot change address space");
-      }
-    return builder->create<RebindOp>(translateLocation(value.expr->getLoc()),
-                                     destType, v);
-  };
-
+  auto loc = value.expr->getLoc();
   if (auto refValue = value.ir.getIfMLValue())
-    return MLValue(rebind(refValue));
+    return MLValue(emitRebindOpIfNeeded(refValue, destType, loc));
   if (auto refValue = value.ir.getIfMRValue())
-    return MRValue(rebind(refValue));
+    return MRValue(emitRebindOpIfNeeded(refValue, destType, loc));
   if (auto refValue = value.ir.getIfMBValue())
-    return MBValue(rebind(refValue));
+    return MBValue(emitRebindOpIfNeeded(refValue, destType, loc));
   if (auto refValue = value.ir.getIfMBPValue())
-    return MBPValue(rebind(refValue));
+    return MBPValue(emitRebindOpIfNeeded(refValue, destType, loc));
   if (auto sbValue = value.ir.getIfSBValue())
-    return SBValue(rebind(sbValue));
+    return SBValue(emitRebindOpIfNeeded(sbValue, destType, loc));
 
   auto srValue = value.ir.getIfSRValue();
   assert(srValue && "Unknown value kind");
-  return SRValue(rebind(srValue));
+  return SRValue(emitRebindOpIfNeeded(srValue, destType, loc));
 }
 
 /// Emit the specified value into the current destination if present.  This
@@ -1294,8 +1297,11 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)
       return {};
-    builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()),
-                                regValue, destBuffer);
+    regValue = emitRebindOpIfNeeded(
+        regValue, ASTType(destBuffer.getType()).getReferenceElementType(),
+        exprLoc);
+    builder->create<RefStoreOp>(translateLocation(exprLoc), regValue,
+                                destBuffer);
     CValue result = MRValue(destBuffer);
     return emitCResult(result, value.expr, dest);
   }
@@ -1477,9 +1483,11 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       emitErrorForDynamicValueInParameter(value.expr);
       return {};
     }
-    // Store the value to memory.  StoreOp takes ownership of the input SRValue.
-    builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()), val,
-                                destRef);
+    // Store the value to memory after adjusting sugar.  StoreOp takes
+    // ownership of the input SRValue.
+    val = emitRebindOpIfNeeded(
+        val, ASTType(destRef.getType()).getReferenceElementType(), exprLoc);
+    builder->create<RefStoreOp>(translateLocation(exprLoc), val, destRef);
     // Must return a borrow of the result, use SBValue if we can to avoid a load
     // but otherwise we need a MBValue for non-trivial types.
     if (valueType.isTrivial(exprLoc, shared))

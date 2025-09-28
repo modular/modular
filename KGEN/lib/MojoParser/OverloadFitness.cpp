@@ -673,6 +673,8 @@ static LogicalResult checkConstraints(ASTDecl &declScope,
     overallAssumption =
         ParamOperatorAttr::get(POC::And, overallAssumptionOperands);
   }
+  if (overallAssumption)
+    overallAssumption = getCanonicalAttr(overallAssumption);
 
   SmallVector<ConstraintAttr> failedConstraints;
   SmallVector<ConstraintAttr> unprovableConstraints;
@@ -680,8 +682,9 @@ static LogicalResult checkConstraints(ASTDecl &declScope,
     TypedAttr prop = constraint.getProposition();
     // If there are contextual assumptions, and the constraint is implied by
     // them, skip it.
+    TypedAttr propCan = getCanonicalAttr(prop);
     if (overallAssumption &&
-        ParamOperatorAttr::get(POC::And, {overallAssumption, prop}) ==
+        ParamOperatorAttr::get(POC::And, {overallAssumption, propCan}) ==
             overallAssumption)
       continue;
 
