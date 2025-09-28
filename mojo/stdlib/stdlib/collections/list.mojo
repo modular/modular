@@ -135,15 +135,16 @@ struct List[T: Copyable & Movable](
       union type, meaning it can store any number of different types that can
       vary at runtime.
 
-    - **Value semantics:** A `List` is value semantic by default, so
-      assignment creates a deep copy of all elements:
+    - **Value semantics:** A `List` is value semantic by default and can't be
+      assigned directly to another variable. Instead, use the `copy()` method
+      tocreate a deep copy of all elements:
 
       ```mojo
       var list1 = [1, 2, 3]
-      var list2 = list1        # Deep copy
+      var list2 = list1.copy()  # Deep copy
       list2.append(4)
-      print(list1.__str__())   # => [1, 2, 3]
-      print(list2.__str__())   # => [1, 2, 3, 4]
+      print(list1.__str__())    # => [1, 2, 3]
+      print(list2.__str__())    # => [1, 2, 3, 4]
       ```
 
       This is different from Python, where assignment creates a reference to
