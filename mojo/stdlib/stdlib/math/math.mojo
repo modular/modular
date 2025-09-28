@@ -2017,6 +2017,92 @@ fn hypot[
     return _simd_apply[_float32_dispatch, dtype, width](arg0, arg1)
 
 
+fn hypot(l: List[Float64, *_], /) -> Float64:
+    """Computes the hypot of a list of floating-point values.
+
+    This function computes the Euclidean norm (square root of sum of squares)
+    of the given values, similar to Python's math.hypot(*coordinates).
+
+    Args:
+        l: A list containing floating-point values.
+
+    Returns:
+        The hypot of the given values. Returns 0.0 if the list is empty.
+
+    Examples:
+        ```mojo
+        from math import hypot
+        
+        # Two arguments (same as existing hypot)
+        let result1 = hypot(3.0, 4.0)  # Returns 5.0
+        
+        # Multiple arguments
+        let result2 = hypot(3.0, 4.0, 5.0)  # Returns ~7.071
+        
+        # Single argument
+        let result3 = hypot(3.0)  # Returns 3.0
+        
+        # No arguments
+        let result4 = hypot()  # Returns 0.0
+        ```
+    """
+    if len(l) == 0:
+        return 0.0
+    elif len(l) == 1:
+        return abs(l[0])
+    elif len(l) == 2:
+        return hypot(l[0], l[1])
+    else:
+        # For more than 2 arguments, compute pairwise
+        var result = hypot(l[0], l[1])
+        for i in range(2, len(l)):
+            result = hypot(result, l[i])
+        return result
+
+
+fn hypot(*values: Float64) -> Float64:
+    """Computes the hypot of a variadic number of floating-point values.
+
+    This function computes the Euclidean norm (square root of sum of squares)
+    of the given values, similar to Python's math.hypot(*coordinates).
+
+    Args:
+        values: A variadic list of floating-point values.
+
+    Returns:
+        The hypot of the given values. Returns 0.0 if no arguments are provided.
+
+    Examples:
+        ```mojo
+        from math import hypot
+        
+        # Two arguments (same as existing hypot)
+        let result1 = hypot(3.0, 4.0)  # Returns 5.0
+        
+        # Multiple arguments
+        let result2 = hypot(3.0, 4.0, 5.0)  # Returns ~7.071
+        
+        # Single argument
+        let result3 = hypot(3.0)  # Returns 3.0
+        
+        # No arguments
+        let result4 = hypot()  # Returns 0.0
+        ```
+    """
+    if len(values) == 0:
+        return 0.0
+    elif len(values) == 1:
+        return abs(values[0])
+    elif len(values) == 2:
+        return hypot(values[0], values[1])
+    else:
+        # For more than 2 arguments, compute pairwise
+        var result = hypot(values[0], values[1])
+        for i in range(2, len(values)):
+            result = hypot(result, values[i])
+        return result
+
+
 # ===----------------------------------------------------------------------=== #
 # erfc
 # ===----------------------------------------------------------------------=== #

@@ -25,6 +25,7 @@ from math import (
     floor,
     frexp,
     gcd,
+    hypot,
     iota,
     isclose,
     isqrt,
@@ -650,6 +651,38 @@ def test_atanh():
     )
 
 
+fn test_hypot() raises:
+    """Test the variadic hypot function with various inputs."""
+    # Test with no arguments
+    assert_equal(hypot(), 0.0)
+    
+    # Test with single argument
+    assert_almost_equal(hypot(3.0), 3.0)
+    assert_almost_equal(hypot(-3.0), 3.0)
+    assert_almost_equal(hypot(0.0), 0.0)
+    
+    # Test with two arguments (should match existing hypot behavior)
+    assert_almost_equal(hypot(3.0, 4.0), 5.0)
+    assert_almost_equal(hypot(-3.0, -4.0), 5.0)
+    assert_almost_equal(hypot(0.0, 0.0), 0.0)
+    
+    # Test with three arguments
+    assert_almost_equal(hypot(3.0, 4.0, 5.0), 7.0710678118654755)
+    assert_almost_equal(hypot(1.0, 1.0, 1.0), 1.7320508075688772)  # sqrt(3)
+    
+    # Test with four arguments
+    assert_almost_equal(hypot(1.0, 1.0, 1.0, 1.0), 2.0)  # sqrt(4)
+    
+    # Test with mixed positive and negative values
+    assert_almost_equal(hypot(3.0, -4.0, 5.0), 7.0710678118654755)
+    
+    # Test with very small values
+    assert_almost_equal(hypot(1e-10, 1e-10), 1.4142135623730951e-10)
+    
+    # Test with very large values
+    assert_almost_equal(hypot(1e10, 1e10), 1.4142135623730951e10)
+
+
 def main():
     test_sin()
     test_cos()
@@ -675,3 +708,4 @@ def main():
     test_align_up()
     test_clamp()
     test_atanh()
+    test_hypot()
