@@ -205,17 +205,18 @@ def main():
         test.run_test[k5](m)
         test.run_test[k6](m)
 
-        # Skip tensor core tests on RDNA (no float32 MMA support)
+        # Tensor core tests - use float16 for RDNA, float32 for others
         @parameter
         if not _is_amd_rdna():
+            # NVIDIA and CDNA support float32 tensor cores
             var test_tc = test_matmul[
                 DType.float32, a_layout, b_layout, c_layout, True
             ](m, ctx)
 
-            # MMA dimensions: NVIDIA (16x8x8), CDNA (16x16x4), RDNA WMMA (16x16x16)
+            # MMA dimensions: NVIDIA (16x8x8), CDNA (16x16x4)
             alias MMA_M = 16
             alias MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
-            alias MMA_K = 8 if has_nvidia_gpu_accelerator() else (4 if _is_amd_cdna() else 16)
+            alias MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
 
             alias k_tc = run_gemm_kernel_tc[
                 DType.float32,
@@ -233,5 +234,32 @@ def main():
             ]
 
             test_tc.run_test[k_tc](m)
+        else:
+            # RDNA supports WMMA with float16 inputs, float32 accumulation
+            var test_tc_rdna = test_matmul[
+                DType.float16, a_layout, b_layout, c_layout, True
+            ](m, ctx)
+
+            # RDNA WMMA dimensions (16x16x16)
+            alias MMA_M = 16
+            alias MMA_N = 16
+            alias MMA_K = 16
+
+            alias k_tc_rdna = run_gemm_kernel_tc[
+                DType.float16,
+                a_layout,
+                b_layout,
+                c_layout,
+                64,  # BM: The block size in the M dimension
+                64,  # BN: The block size in the N dimension
+                32,  # BK: The block size in the K dimension
+                32,  # WM: The warp tile size in the M dimension
+                32,  # WN: The warp tile size in the N dimension
+                MMA_M,  # MMA_M: Tensor core instruction shape in M dimension
+                MMA_N,  # MMA_N: Tensor core instruction shape in N dimension
+                MMA_K,  # MMA_K: Tensor core instruction shape in K dimension
+            ]
+
+            test_tc_rdna.run_test[k_tc_rdna](m)
 
     m.dump_report()

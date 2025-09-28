@@ -127,16 +127,17 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
             ](a.dtype, b.dtype, c.dtype, d.dtype)
         ):
-            # RDNA WMMA supports both size 4 (single wave) and size 8 (double wave)
-            # Size 8 represents two 16x16x16 operations packed together
+            # RDNA WMMA supports size 4 (single wave) and size 8 (Wave32 accumulator)
             @parameter
             if _has_shape[4](a.size, b.size, c.size, d.size):
                 alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
                 return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+            elif _has_shape[(8, 8, 8, 8)](a.size, b.size, c.size, d.size):
+                # Size 8 for Wave32 mode - single WMMA operation with 8 accumulator registers
+                alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
+                return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
             elif _has_shape[(8, 8, 32, 32)](a.size, b.size, c.size, d.size):
-                # For size 8, we need to split into two WMMA operations
-                # This is a packed format where we do 2x 16x16x16 operations
-                # But the intrinsic itself only supports size 4
+                # For packed operations we need to split into multiple WMMA operations
                 alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
                 return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
             else:
@@ -259,7 +260,12 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             return
 
     @parameter
-    if a.size == 8 and b.size == 8 and c.size == 32 and d.size == 32:
+    if a.size == 8 and b.size == 8 and c.size == 8 and d.size == 8:
+        # RDNA Wave32 mode - single WMMA operation with 8 accumulator registers
+        alias intrinsic_name = get_intrinsic_name()
+        var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](a, b, c)
+        d = rebind[__type_of(d)](r)
+    elif a.size == 8 and b.size == 8 and c.size == 32 and d.size == 32:
         # For size 8 BF16/FP16, we need to split into two WMMA operations
         # Each WMMA operates on 4 elements, producing 4 outputs
 
