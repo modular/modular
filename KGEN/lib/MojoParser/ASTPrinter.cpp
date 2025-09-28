@@ -699,12 +699,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
     // If the struct has a single element, elide the braces.
     if (diagShared && structAttr.getValues().size() == 1) {
-      ASTDecl *decl = ASTType(structAttr.getType()).getDecl(*diagShared);
       StringRef typeName;
-      if (decl && isa_and_nonnull<LIT::StructDeclOp>(decl->getIfOperation()))
-        typeName = cast<LIT::StructDeclOp>(decl->getIfOperation())
-                       .getDeclName()
-                       .strref();
+      if (auto structType = dyn_cast<StructType>(structAttr.getType()))
+        typeName = structType.getSymbol().getLeafReference().strref();
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
       if (typeName == "Int" || typeName == "Bool" || typeName == "Origin" ||
           typeName == "DType") {
@@ -800,12 +797,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   // IntLiteral/FloatLiteral/StringLiteral are stateless values that end up as
   // UnknownAttr.
   if (isa<UnknownAttr>(param) && diagShared) {
-    ASTDecl *decl = ASTType(param.getType()).getDecl(*diagShared);
     StringRef typeName;
-    if (decl && isa_and_nonnull<LIT::StructDeclOp>(decl->getIfOperation()))
-      typeName = cast<LIT::StructDeclOp>(decl->getIfOperation())
-                     .getDeclName()
-                     .strref();
+    if (auto structType = dyn_cast<StructType>(param.getType()))
+      typeName = structType.getSymbol().getLeafReference().strref();
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
         typeName == "StringLiteral") {
       auto structType = cast<LIT::StructType>(param.getType());
@@ -864,6 +858,16 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     }
     os << ")";
     return;
+  }
+
+  if (auto sugar = dyn_cast<SugarAttr>(param)) {
+    // Sugared parameters print as their sugar when always_inline("builtin")
+    // even for mangled names because the arguments should be unique.  We don't
+    // sugar other things though because the identifiers may not be fully
+    // qualified. (TODO: it would be great to do this!)
+    if (diagShared || sugar.getKind() == SugarKind::AlwaysInlineBuiltin)
+      return printParam(os, sugar.getSugared(), diagShared);
+    return printParam(os, sugar.getOriginal(), diagShared);
   }
 
   // Handle other KGEN parameters that it knows about with an ugly fallback.

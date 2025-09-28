@@ -1184,11 +1184,43 @@ bool RefPackAttr::isConstant() const {
 // SugarAttr
 //===----------------------------------------------------------------------===//
 
-SugarAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
+static ParseResult parseSugarAttr(AsmParser &p, TypedAttr &sugared,
+                                  TypedAttr &original, TypedAttr &canonical) {
+  Type type;
+  if (p.parseType(type) || p.parseComma() ||
+      parseParamValue(p, sugared, type) || p.parseComma() ||
+      parseParamValue(p, original, type))
+    return failure();
+
+  canonical = getCanonicalAttr(original);
+  return success();
+}
+
+static void printSugarAttr(AsmPrinter &p, TypedAttr sugared, TypedAttr original,
+                           TypedAttr canonical) {
+  p.printType(sugared.getType());
+  p << ", ";
+  printParamValue(p, sugared);
+  p << ", ";
+  printParamValue(p, original);
+  // The canonical value is rebuilt as needed.
+}
+
+TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
                          TypedAttr original) {
   auto canonical = getCanonicalAttr(original);
-  return SugarAttr::get(sugared.getContext(), kind, sugared, original,
-                        canonical, sugared.getType());
+  return Base::get(sugared.getContext(), kind, sugared, original, canonical,
+                   sugared.getType());
+}
+
+TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
+                         TypedAttr sugared, TypedAttr original,
+                         TypedAttr canonical, Type type) {
+  // This method gets called by client doing general structural replacements,
+  // e.g. a parameter with an arbitrary attribute.  This can turn canonical
+  // forms to non-canonical and visa-versa, so always recompute the canonical
+  // pointer.
+  return get(kind, sugared, original);
 }
 
 static Attribute getLocalCanonical(Attribute attr) {
@@ -1205,6 +1237,11 @@ static Type getLocalCanonical(Type type) {
     return structType;
   }
 
+  // TypeSignatureType is always canonical, because the embedded types mirror
+  // the parameter decls of the type.  These must line up.
+  if (isa<TypeSignatureType>(type))
+    return type;
+
   return {};
 }
 
@@ -1216,6 +1253,45 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     // If this type has a canonical cache pointer, use it.
     if (auto can = getLocalCanonical(value))
       return can;
+
+    // Param/Symbol references are handled specially because the decl being
+    // referenced may have a sugared type must always be referred to that
+    // sugared type (they must match up).  Handle this by using a rebind to the
+    // canonical type.
+    if constexpr (std::is_base_of_v<Attribute, T>) {
+      if (isa<ParamDeclRefAttr, ParamIndexRefAttr, SymbolConstantAttr>(value)) {
+        auto ref = cast<TypedAttr>(value);
+        auto canType = this->replaceImpl(ref.getType(), depth);
+        if (canType == ref.getType())
+          return ref;
+        return ParamOperatorAttr::get(POC::Rebind, {ref}, canType);
+      }
+
+      // The values specified for BindParamsAttr must align with the declared
+      // types of the parameters, even if those types are non-canonical.
+      if (auto bind = dyn_cast<BindParamsAttr>(value)) {
+        auto canGenerator =
+            cast<TypedAttr>(this->replaceImpl(bind.getGenerator(), depth));
+        bool changed = canGenerator != bind.getGenerator();
+        SmallVector<TypedAttr> canBindings;
+        for (auto param : bind.getParamValues()) {
+          auto canParam = cast<TypedAttr>(this->replaceImpl(param, depth));
+          // The parameter values must line up with the declared types of the
+          // generator, but need to be canonicalized within themselves.
+          if (canParam.getType() != param.getType())
+            canParam = ParamOperatorAttr::get(POC::Rebind, {canParam},
+                                              param.getType());
+          canBindings.push_back(canParam);
+          changed |= canParam != param;
+        }
+        auto canType = this->replaceImpl(bind.getType(), depth);
+        changed |= canType != bind.getType();
+        if (!changed)
+          return bind;
+        return BindParamsAttr::get(canGenerator.getContext(), canGenerator,
+                                   canBindings, canType);
+      }
+    }
 
     // Otherwise, recursively walk and rebuild the attribute with
     // canonicalized subelements.

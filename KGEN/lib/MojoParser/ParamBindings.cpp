@@ -209,15 +209,28 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
     return PValue(UnboundAttr::get(expectedType));
 
   // If the parameter already has the right type, then we're good.
-  if (expectedType.isEqualCanon(bindingVal.getType()))
+  if (expectedType.isEqualCanon(bindingVal.getType())) {
+    if (expectedType.mlirType != bindingVal.getType())
+      bindingVal =
+          ParamOperatorAttr::get(POC::Rebind, {bindingVal}, expectedType);
     return bindingVal;
+  }
 
   // If the parameter can be implicitly converted, do so.
   if (IREmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
     numImplicitConversions += 2;
-    return emitter.emitPValue(binding, EC_CallParamValue, expectedType);
+    bindingVal = emitter.emitPValue(binding, EC_CallParamValue, expectedType);
+    if (!bindingVal)
+      return {};
+
+    if (expectedType.mlirType != bindingVal.getType())
+      bindingVal =
+          ParamOperatorAttr::get(POC::Rebind, {bindingVal}, expectedType);
+    return bindingVal;
   }
+
+  // Otherwise, we have an error.
   return {};
 }
 
@@ -472,6 +485,7 @@ ParamBindings::verifyBindingsImpl(
           diagEmitter->emitTypeMismatch(idx, binding, expectedType);
         return {{}, fitness};
       }
+
       setParamValue(pValue);
       ++posBindingIdx;
       continue;

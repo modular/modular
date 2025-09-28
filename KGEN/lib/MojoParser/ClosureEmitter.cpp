@@ -1220,6 +1220,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     //        use(self.a)
     // which now has the origin (and mutability) of 'self'.
     Value captureValue = capture.getValue().getMlirValue();
+    // FIXME: This should use emitRebindOpIfNeeded, but it is introducing
+    // mutability with the rebind!
     if (captureValue.getType() != target.getType())
       target = builder.create<RebindOp>(captureValue.getType(), target);
 

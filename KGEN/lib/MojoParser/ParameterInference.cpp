@@ -642,6 +642,26 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     }
   }
 
+  // We look through non-builtin-apply sugar, but expect builtin applies to line
+  // up exactly for the purposes of param inference.  This is to match user
+  // expectations: an alias of Int should be treated the same as Int, but a call
+  // to x+y shouldn't be treated the same as y+x unless canonically equal.
+  if (auto actualSugar = dyn_cast<SugarAttr>(actualAttr)) {
+    if (actualSugar.getKind() != SugarKind::AlwaysInlineBuiltin)
+      return matchParams(actualSugar.getOriginal(), expectedAttr);
+    if (auto expectedSugar = dyn_cast<SugarAttr>(expectedAttr)) {
+      if (expectedSugar.getKind() == SugarKind::AlwaysInlineBuiltin) {
+        if (actualSugar.getCanonical() == expectedSugar.getCanonical())
+          return success();
+        return matchParams(actualSugar.getSugared(),
+                           expectedSugar.getSugared());
+      }
+    }
+  } else if (auto expectedSugar = dyn_cast<SugarAttr>(expectedAttr)) {
+    if (expectedSugar.getKind() != SugarKind::AlwaysInlineBuiltin)
+      return matchParams(actualAttr, expectedSugar.getOriginal());
+  }
+
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");
   return failure();

@@ -617,6 +617,10 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
                                             TypedAttr inputAttr, Location loc,
                                             StringRef argName,
                                             bool isShapeFunc) {
+  // Strip off sugar for our pattern matching.
+  mutAttr = LIT::getCanonicalAttr(mutAttr);
+  inputAttr = LIT::getCanonicalAttr(inputAttr);
+
   auto processMut = [&]() -> std::optional<bool> {
     auto mutStruct = dyn_cast<LIT::LITStructAttr>(mutAttr);
     if (!mutStruct) {
