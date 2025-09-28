@@ -137,7 +137,7 @@ struct List[T: Copyable & Movable](
 
     - **Value semantics:** A `List` is value semantic by default and can't be
       assigned directly to another variable. Instead, use the `copy()` method
-      tocreate a deep copy of all elements:
+      to create a deep copy of all elements:
 
       ```mojo
       var list1 = [1, 2, 3]
