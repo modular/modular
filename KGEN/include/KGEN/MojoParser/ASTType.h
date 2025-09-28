@@ -71,9 +71,6 @@ public:
   /// Return this type with any parameter bindings removed.
   ASTType getWithoutParameters(SharedState &shared) const;
 
-  /// Get the default values for the unbound parameters of the type.
-  ArrayRef<TypedAttr> getDefaultPosParams() const;
-
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;

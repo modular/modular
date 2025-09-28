@@ -42,8 +42,7 @@ Type ASTType::getMetaType() const {
   if (!mlirType)
     return {};
   if (auto declRef = dyn_cast<StructType>(mlirType))
-    return StructMetaType::get(LIT::StructType::get(
-        declRef.getSymbol(), declRef.getParamValues(), declRef.getSignature()));
+    return StructMetaType::get(declRef);
   if (auto paramRef = dyn_cast<ParamType>(mlirType))
     return paramRef.getParam().getType();
   if (auto traitRef = dyn_cast<TraitType>(mlirType))
@@ -104,17 +103,10 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
     return cast<StructDeclOp>(getDecl(shared)->getIfOperation())
         .bindReference();
   if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(mlirType))
-    return StructMetaType::get(
-        LIT::StructType::get(metaType.getSymbol(), metaType.getSignature()));
+    return MetaType::get(
+        ASTType(metaType.getType()).getWithoutParameters(shared));
   // Not parameterized.
   return *this;
-}
-
-ArrayRef<TypedAttr> ASTType::getDefaultPosParams() const {
-  // Query the metatype for the parameter signature.
-  if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(getMetaType()))
-    return metaType.getSignature().getDefaultPosParams();
-  return {};
 }
 
 bool ASTType::isEqualCanon(ASTType other) const {
