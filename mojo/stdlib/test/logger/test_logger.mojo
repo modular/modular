@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Level, Logger
 from builtin._location import _SourceLocation
+from logger import Level, Logger
 
 
 # CHECK-LABEL: Test logging at trace level

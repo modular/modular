@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
+from collections import OptionalReg, Set
 from math import isqrt
 from random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer, DeviceNDBuffer, random
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -29,8 +29,8 @@ from nn.mha_score_mod import IdentityScoreMod
 from tensor_internal import IOUnknown, ManagedTensorSlice
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
+
 from utils import IndexList
-from collections import OptionalReg
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32

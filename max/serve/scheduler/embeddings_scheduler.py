@@ -14,7 +14,6 @@
 import logging
 import queue
 from dataclasses import dataclass
-from typing import Generic
 
 from max.interfaces import (
     EmbeddingsGenerationContextType,
@@ -22,11 +21,11 @@ from max.interfaces import (
     EmbeddingsGenerationOutput,
     MAXPullQueue,
     MAXPushQueue,
-    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
 )
+from max.pipelines.lib import EmbeddingsPipelineType
 from max.profiler import traced
 
 from .base import SchedulerProgress
@@ -42,17 +41,12 @@ class EmbeddingsSchedulerConfig:
     max_batch_size: int
 
 
-class EmbeddingsScheduler(Scheduler, Generic[EmbeddingsGenerationContextType]):
+class EmbeddingsScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: EmbeddingsSchedulerConfig,
-        pipeline: Pipeline[
-            EmbeddingsGenerationInputs[EmbeddingsGenerationContextType],
-            EmbeddingsGenerationOutput,
-        ],
-        request_queue: MAXPullQueue[
-            tuple[RequestID, EmbeddingsGenerationContextType]
-        ],
+        pipeline: EmbeddingsPipelineType,
+        request_queue: MAXPullQueue[EmbeddingsGenerationContextType],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
         ],
@@ -73,7 +67,8 @@ class EmbeddingsScheduler(Scheduler, Generic[EmbeddingsGenerationContextType]):
         batch: dict[RequestID, EmbeddingsGenerationContextType] = {}
         try:
             while max_batch_size_to_create > 0:
-                req_id, data = self.request_queue.get_nowait()
+                data = self.request_queue.get_nowait()
+                req_id = data.request_id
                 batch[req_id] = data
                 max_batch_size_to_create -= 1
         except queue.Empty:

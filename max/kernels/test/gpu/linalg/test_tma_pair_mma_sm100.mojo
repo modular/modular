@@ -13,33 +13,33 @@
 
 from math import align_up
 from sys import size_of
-from layout._fillers import random
-from utils.numerics import min_finite, max_finite
+
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    elect_one_sync_with_mask,
+)
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
+from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
+from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from gpu.cluster import (
-    elect_one_sync_with_mask,
-    block_rank_in_cluster,
-    cluster_sync,
-)
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from utils.numerics import get_accum_type, max_finite, min_finite
 from utils.static_tuple import StaticTuple
 
 
@@ -426,11 +426,9 @@ def test_tma_umma_pair_cta[
     ](ctx)
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),

@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import warp, block, global_idx
-from gpu.host import DeviceContext
-from gpu.globals import WARP_SIZE
 from math import ceildiv
+
+from gpu import block, global_idx, warp
+from gpu.globals import WARP_SIZE
+from gpu.host import DeviceContext
 from testing import assert_equal
 
 alias dtype = DType.uint64

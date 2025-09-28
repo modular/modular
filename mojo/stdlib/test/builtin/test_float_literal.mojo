@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import (
-    assert_equal,
-    assert_false,
-    assert_true,
-)
+from testing import assert_equal, assert_false, assert_true
 
 alias nan = FloatLiteral.nan
 alias neg_zero = FloatLiteral.negative_zero

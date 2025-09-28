@@ -31,15 +31,13 @@ from max.profiler import traced
 # behavior of None prior to Python 3.12.
 DEFAULT_PARENT_HASH = hash("None")
 
-ENABLE_MOJO_BLOCK_HASHER = True
-
 
 @traced
-def _hash_block_tokens_mojo(
+def hash_block_tokens(
     block_token_ids: npt.NDArray[np.integer[Any]],
     parent_hash: int | None = None,
 ) -> int:
-    """Hash the tokens of a block using the Mojo implementation."""
+    """Compute the hash value of a block."""
     block_size = len(block_token_ids)
     if parent_hash is None:
         parent_hash = DEFAULT_PARENT_HASH
@@ -49,7 +47,7 @@ def _hash_block_tokens_mojo(
 
 
 @traced
-def _hash_request_tokens_mojo(
+def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
     parent_hash: int | None = None,
@@ -62,49 +60,6 @@ def _hash_request_tokens_mojo(
     assert len(hash_vals) == len(token_ids) // block_size
 
     return hash_vals
-
-
-@traced
-def hash_block_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    parent_hash: int | None = None,
-) -> int:
-    """Compute the hash value of a block."""
-
-    if ENABLE_MOJO_BLOCK_HASHER:
-        return _hash_block_tokens_mojo(token_ids, parent_hash)
-
-    if parent_hash is None:
-        parent_hash = DEFAULT_PARENT_HASH
-
-    token_ids_tuple = tuple(token_ids)
-    tuple_to_hash = (token_ids_tuple, parent_hash)
-    hash_value = hash(tuple_to_hash)
-    return hash_value
-
-
-@traced
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: int | None = None,
-) -> list[int]:
-    """Hash the tokens of a request."""
-
-    if ENABLE_MOJO_BLOCK_HASHER:
-        return _hash_request_tokens_mojo(token_ids, block_size, parent_hash)
-
-    ret = []
-    for start in range(0, len(token_ids), block_size):
-        end = start + block_size
-        block_token_ids = token_ids[start:end]
-        # Do not hash the block if it is not full.
-        if len(block_token_ids) < block_size:
-            break
-        block_hash = hash_block_tokens(block_token_ids, parent_hash)
-        ret.append(block_hash)
-        parent_hash = block_hash
-    return ret
 
 
 @dataclass

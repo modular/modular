@@ -20,11 +20,11 @@ from tempfile import gettempdir
 """
 
 import os
+from io.write import _WriteBufferStack
 from pathlib import Path
 from sys import CompilationTarget
 
 from memory import Span
-from io.write import _WriteBufferStack
 
 alias TMP_MAX = 10_000
 

@@ -12,7 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import AbortOnDel, CopyCounter, DelRecorder, MoveCounter
+from test_utils import (
+    AbortOnDel,
+    CopyCounter,
+    DelRecorder,
+    MoveCounter,
+    TestSuite,
+)
 from testing import assert_equal
 
 
@@ -94,8 +100,12 @@ def test_maybe_uninitialized_copy():
 
 
 def main():
-    test_maybe_uninitialized()
-    test_write_does_not_trigger_destructor()
-    test_maybe_uninitialized_move()
-    test_maybe_uninitialized_move_from_pointer()
-    test_maybe_uninitialized_copy()
+    var suite = TestSuite()
+
+    suite.test[test_maybe_uninitialized]()
+    suite.test[test_write_does_not_trigger_destructor]()
+    suite.test[test_maybe_uninitialized_move]()
+    suite.test[test_maybe_uninitialized_move_from_pointer]()
+    suite.test[test_maybe_uninitialized_copy]()
+
+    suite^.run()

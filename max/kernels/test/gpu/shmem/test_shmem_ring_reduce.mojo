@@ -16,13 +16,13 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
-from shmem import *
-from os import listdir, getenv, setenv, abort
-from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
-from sys.ffi import c_int
-from sys import size_of
 from math import iota
+from os import abort, getenv, listdir, setenv
+from sys import size_of
+from sys.ffi import c_int
 
+from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from shmem import *
 
 alias min_size = 1024 * 1024 * 32
 alias max_size = min_size * 16

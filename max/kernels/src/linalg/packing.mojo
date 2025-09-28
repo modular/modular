@@ -23,7 +23,7 @@ from register import register_internal
 
 from utils.index import Index, IndexList
 
-from .apple_accelerate import use_apple_accelerate_lib
+from .matmul.cpu.apple_accelerate import use_apple_accelerate_lib
 from .transpose import transpose, transpose_inplace
 from .utils import (
     GemmShape,

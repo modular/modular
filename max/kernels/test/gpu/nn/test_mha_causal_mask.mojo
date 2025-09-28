@@ -16,18 +16,17 @@ from math import isclose
 from random import rand
 from sys import argv, size_of
 
+from bit import count_trailing_zeros
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import A100, H100, B200
+from gpu.host.info import A100, B200, H100
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
-from nn.mha_utils import MHAConfig, FlashAttentionAlgorithm
+from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
 from testing import assert_almost_equal
-
-from bit import count_trailing_zeros
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
@@ -140,29 +139,29 @@ fn test[
     var q_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](
-        q_device_ptr._unsafe_ptr(),
+        q_device_ptr.unsafe_ptr(),
         Index(batch_size, seq_len, num_heads, depth),
     )
     var k_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
     ](
-        k_device_ptr._unsafe_ptr(),
+        k_device_ptr.unsafe_ptr(),
         Index(batch_size, num_keys, kv_num_heads, depth),
     )
     var v_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
     ](
-        v_device_ptr._unsafe_ptr(),
+        v_device_ptr.unsafe_ptr(),
         Index(batch_size, num_keys, kv_num_heads, depth),
     )
     var mask4d = NDBuffer[mask_type, 4, _, DimList.create_unknown[4]()](
-        mask_device_ptr._unsafe_ptr(),
+        mask_device_ptr.unsafe_ptr(),
         Index(batch_size, num_heads, seq_len, num_keys),
     )
     var output_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](
-        output_device_ptr._unsafe_ptr(),
+        output_device_ptr.unsafe_ptr(),
         Index(batch_size, seq_len, num_heads, depth),
     )
 
@@ -215,7 +214,7 @@ fn test[
     var output_device_ref = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](
-        output_ref_device_ptr._unsafe_ptr(),
+        output_ref_device_ptr.unsafe_ptr(),
         Index(batch_size, seq_len, num_heads, depth),
     )
 

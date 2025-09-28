@@ -16,11 +16,11 @@ These APIs are imported automatically, just like builtins.
 """
 
 
+from collections._index_normalization import normalize_index
 from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq
 
-from collections._index_normalization import normalize_index
 from memory import Pointer, memcpy
 
 from .optional import Optional
@@ -1184,12 +1184,12 @@ struct List[T: Copyable & Movable](
         (self._data + idx).init_pointee_move(value^)
 
     fn count[
-        T: EqualityComparable & Copyable & Movable, //
-    ](self: List[T, *_], value: T) -> Int:
+        _T: EqualityComparable & Copyable & Movable, //
+    ](self: List[_T, *_], value: _T) -> Int:
         """Counts the number of occurrences of a value in the list.
 
         Parameters:
-            T: The type of the elements in the list. Must implement the
+            _T: The type of the elements in the list. Must implement the
                 trait `EqualityComparable`.
 
         Args:

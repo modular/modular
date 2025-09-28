@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from pathlib import _dir_of_current_file
+
 from benchmark import (
     Bench,
     Bencher,
     BenchId,
-    keep,
-    ThroughputMeasure,
     BenchMetric,
+    ThroughputMeasure,
+    keep,
 )
-from pathlib import _dir_of_current_file
 
 
 # ===-----------------------------------------------------------------------===#
@@ -50,8 +51,7 @@ fn main() raises:
     alias files = ["canada", "mesh"]
 
     @parameter
-    for i in range(len(files)):
-        alias filename = files[i]
+    for filename in files:
         var file_path = _dir_of_current_file() / "data" / (filename + ".txt")
         var items_to_parse = file_path.read_text().splitlines()
         var nb_of_bytes = 0

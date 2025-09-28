@@ -184,9 +184,9 @@ fn make_layout(*layouts: Layout) -> Layout:
     """
     var shape = IntTuple()
     var stride = IntTuple()
-    for i in range(len(layouts)):
-        shape.append(layouts[i].shape)
-        stride.append(layouts[i].stride)
+    for layout in layouts:
+        shape.append(layout.shape)
+        stride.append(layout.stride)
     return Layout(shape, stride)
 
 
@@ -1281,8 +1281,8 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
     ```
     """
     var result = Layout()
-    for i in range(len(tiler)):
-        result.append(composition(layout_a[i], tiler[i]))
+    for layout_item, tiler_item in zip(layout_a, tiler):
+        result.append(composition(layout_item, tiler_item))
 
     # Remainder if tiler is shorter.
     for i in range(len(tiler), len(layout_a)):

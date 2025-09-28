@@ -27,10 +27,10 @@ from typing import (
 )
 
 import numpy as np
-import numpy.typing as npt
 from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core.dialects import mo
+from max.driver import DLPackArray
 from max.dtype import DType
 from typing_extensions import TypeAlias, TypeGuard
 
@@ -215,7 +215,9 @@ class _OpaqueValue(Value[mo.OpaqueType]):
 class BufferValue(Value[mo.BufferType]):
     """Represents a mutable semantic tensor within a `Graph`."""
 
-    def __init__(self, value: Value[Any] | _Value[mo.BufferType]) -> None:
+    def __init__(
+        self, value: Value[Any] | _Value[mo.BufferType] | HasBufferValue
+    ) -> None:
         """Initializes a :obj:`BufferValue` from another value.
 
         Args:
@@ -226,6 +228,8 @@ class BufferValue(Value[mo.BufferType]):
             self._mlir_value = value
         elif isinstance(value, BufferValue):
             self._mlir_value = value._mlir_value
+        elif isinstance(value, HasBufferValue):
+            self._mlir_value = value.__buffervalue__()._mlir_value
         else:
             raise TypeError(
                 "BufferValue() argument must be an mlir.Value of buffer type "
@@ -1230,17 +1234,21 @@ class TensorValue(Value[mo.TensorType]):
 
 @runtime_checkable
 class HasTensorValue(Protocol):
-    def __tensorvalue__(self) -> Value[Any]: ...
+    def __tensorvalue__(self) -> TensorValue: ...
 
 
-Numeric = Union[
-    int, float, np.integer[Any], np.floating[Any], npt.NDArray[np.number[Any]]
-]
+@runtime_checkable
+class HasBufferValue(Protocol):
+    def __buffervalue__(self) -> BufferValue: ...
+
+
+Numeric = Union[int, float, np.integer[Any], np.floating[Any], DLPackArray]
 Scalar = Union[int, float, np.integer[Any], np.floating[Any], Dim]
 StrongTensorValueLike = Union[
     _Value[mo.TensorType], TensorValue, Shape, Dim, HasTensorValue
 ]
 TensorValueLike = Union[StrongTensorValueLike, Numeric]
+BufferValueLike = Union[BufferValue, HasBufferValue]
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.

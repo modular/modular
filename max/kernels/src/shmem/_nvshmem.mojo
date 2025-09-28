@@ -10,25 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.info import CompilationTarget, is_nvidia_gpu
-from sys import argv
 from collections.string.string_slice import get_static_string
+from os import abort
 from pathlib import Path
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUstream, CUmodule
-from ._mpi import MPIComm, MPI_Init, MPI_Comm_rank, get_mpi_comm_world
-from sys import size_of
+from sys import argv, size_of
 from sys.ffi import (
     _find_dylib,
+    _get_dylib_function,
     _Global,
     _OwnedDLHandle,
-    external_call,
-    _get_dylib_function,
     c_int,
     c_size_t,
+    external_call,
 )
-from os import abort
+from sys.info import CompilationTarget, is_nvidia_gpu
 
+from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import CUmodule, CUstream
+
+from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 
 # ===-----------------------------------------------------------------------===#
 # Library Load

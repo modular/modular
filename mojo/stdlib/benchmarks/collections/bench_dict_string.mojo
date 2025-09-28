@@ -11,22 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.string.string_slice import _to_string_list
+from hashlib import default_comp_time_hasher, default_hasher
+from os import abort
+from pathlib import _dir_of_current_file
+from sys import stderr
+
 from benchmark import (
     Bench,
     BenchConfig,
     Bencher,
     BenchId,
-    Unit,
     Format,
+    Unit,
     keep,
     run,
 )
-from collections.string.string_slice import _to_string_list
-from hashlib import default_comp_time_hasher, default_hasher
 from memory import memcpy, memset_zero
-from os import abort
-from pathlib import _dir_of_current_file
-from sys import stderr
 from testing import assert_equal
 
 
@@ -74,7 +75,7 @@ fn make_long_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
 # String Dict implementation for benchmarking baseline against Dict
 # ===-----------------------------------------------------------------------===#
 
-from bit import pop_count, bit_width
+from bit import bit_width, pop_count
 
 
 struct KeysContainer[KeyEndType: DType = DType.uint32](
@@ -505,8 +506,8 @@ fn bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         var d = Dict[String, Int]()
-        for i in range(len(keys)):
-            d[keys[i]] = i
+        for i, key in enumerate(keys):
+            d[key] = i
         keep(d._entries.unsafe_ptr())
 
     b.iter[call_fn]()
@@ -520,8 +521,8 @@ fn bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         var d = Dict[String, Int, default_hasher]()
-        for i in range(len(keys)):
-            d[keys[i]] = i
+        for i, key in enumerate(keys):
+            d[key] = i
         keep(d._entries.unsafe_ptr())
 
     b.iter[call_fn]()
@@ -540,8 +541,8 @@ fn bench_string_dict_init_with_short_keys[
     @parameter
     fn call_fn():
         var d = StringDict[Int]()
-        for i in range(len(keys)):
-            d.put(keys[i], i)
+        for i, key in enumerate(keys):
+            d.put(key, i)
         keep(d.keys.keys)
 
     b.iter[call_fn]()
@@ -557,8 +558,8 @@ fn bench_string_dict_init_with_long_keys[
     @parameter
     fn call_fn():
         var d = StringDict[Int]()
-        for i in range(len(keys)):
-            d.put(keys[i], i)
+        for i, key in enumerate(keys):
+            d.put(key, i)
         keep(d.keys.keys)
 
     b.iter[call_fn]()
@@ -582,12 +583,12 @@ def validate_dicts(
         file_name,
     )
     var d = Dict[String, Int]()
-    for i in range(len(keys)):
-        d[keys[i]] = i
+    for i, key in enumerate(keys):
+        d[key] = i
 
     var sd = StringDict[Int]()
-    for i in range(len(keys)):
-        sd.put(keys[i], i)
+    for i, key in enumerate(keys):
+        sd.put(key, i)
 
     assert_equal(len(d), len(sd), "Length mismatch between Dict and StringDict")
     print("Length match between Dict and StringDict", len(d))

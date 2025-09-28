@@ -253,3 +253,133 @@ def test_call_with_prefix() -> None:
         r"mo.call @subgraph.*\{prefix = \"prefix\"\}.*!mo.tensor<\[10\], f32",
         str(main_graph),
     )
+
+
+def test_call_threads_device_chains_without_merge() -> None:
+    """IR shows call threading per-device chains without merging."""
+
+    tensor0 = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
+    tensor1 = TensorType(DType.float32, [4], device=DeviceRef.GPU(1))
+    signal0 = BufferType(DType.int64, [1], device=DeviceRef.GPU(0))
+    signal1 = BufferType(DType.int64, [1], device=DeviceRef.GPU(1))
+
+    with Graph(
+        "main_call_device_chains",
+        input_types=[tensor0, tensor1, signal0, signal1],
+    ) as main_graph:
+        with main_graph.add_subgraph(
+            "collective_subgraph",
+            input_types=[tensor0, tensor1, signal0, signal1],
+        ) as subgraph:
+            x0, x1, s0, s1 = subgraph.inputs
+            outs = ops.allreduce.sum(
+                inputs=(x0.tensor, x1.tensor),
+                signal_buffers=(s0.buffer, s1.buffer),
+            )
+            subgraph.output(*outs)
+
+        res0, res1 = ops.call(subgraph, *main_graph.inputs)
+        main_graph.output(res0, res1)
+
+    ir = str(main_graph)
+
+    call_match = re.search(
+        r"mo\.call @collective_subgraph\(([^)]*)\) : \(([^)]*)\) -> \(([^)]*)\)",
+        ir,
+        flags=re.DOTALL,
+    )
+    assert call_match is not None, ir
+
+    _, operand_text, result_text = call_match.groups()
+    operand_chain_count = operand_text.count("!mo.chain")
+    result_chain_count = result_text.count("!mo.chain")
+
+    # Expect one global chain plus one chain per device.
+    expected = 1 + 2
+    assert operand_chain_count == expected, operand_text
+    assert result_chain_count == expected, result_text
+
+
+def test_call_registers_device_chains_at_call_time() -> None:
+    """Parent graph can add device chains lazily when calling a subgraph."""
+
+    tensor0 = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
+    tensor1 = TensorType(DType.float32, [4], device=DeviceRef.GPU(1))
+    signal0 = BufferType(DType.int64, [1], device=DeviceRef.GPU(0))
+    signal1 = BufferType(DType.int64, [1], device=DeviceRef.GPU(1))
+
+    with Graph(
+        "main_lazy_device_chains",
+        input_types=[tensor0, tensor1, signal0, signal1],
+    ) as main_graph:
+        with main_graph.add_subgraph(
+            "collective_subgraph_lazy",
+            input_types=[tensor0, tensor1, signal0, signal1],
+        ) as subgraph:
+            x0, x1, s0, s1 = subgraph.inputs
+            outs = ops.allreduce.sum(
+                inputs=(x0.tensor, x1.tensor),
+                signal_buffers=(s0.buffer, s1.buffer),
+            )
+            subgraph.output(*outs)
+
+        # Parent hasn't seen any device-specific ops yet.
+        assert not main_graph.device_chains
+
+        res0, res1 = ops.call(subgraph, *main_graph.inputs)
+        main_graph.output(res0, res1)
+
+    ir = str(main_graph)
+    call_match = re.search(
+        r"mo\.call @collective_subgraph_lazy\(([^)]*)\) : \(([^)]*)\) -> \(([^)]*)\)",
+        ir,
+        flags=re.DOTALL,
+    )
+    assert call_match is not None, ir
+    _, operands, results = call_match.groups()
+
+    # Expect one global chain plus one per device (two GPUs).
+    expected = 1 + 2
+    assert operands.count("!mo.chain") == expected, operands
+    assert results.count("!mo.chain") == expected, results
+
+
+def test_device_chain_copy_does_not_mutate_subgraph_signature() -> None:
+    tensor = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
+
+    with Graph("outer_copy_test", input_types=[tensor]) as main_graph:
+        with main_graph.add_subgraph(
+            "inner_copy_test",
+            input_types=[tensor],
+        ) as subgraph:
+            device = DeviceRef.GPU(0)
+            _ = subgraph.device_chains[device]
+            before = len(subgraph._graph_body.arguments)
+
+            copied = subgraph.device_chains.copy()
+            after = len(subgraph._graph_body.arguments)
+
+            assert after == before
+            assert copied[device] == subgraph.device_chains[device]
+
+
+def test_device_chain_map_sorted_iteration() -> None:
+    tensor = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
+
+    with Graph("sorted_device_chain_map", input_types=[tensor]) as graph:
+        # Touch out-of-order devices to populate the map.
+        _ = graph.device_chains[DeviceRef.GPU(5)]
+        _ = graph.device_chains[DeviceRef.CPU(2)]
+        _ = graph.device_chains[DeviceRef.GPU(1)]
+
+        ordered_devices = list(graph.device_chains)
+        assert ordered_devices == [
+            DeviceRef.CPU(2),
+            DeviceRef.GPU(1),
+            DeviceRef.GPU(5),
+        ]
+
+        repr_devices = str(graph.device_chains)
+        assert "cpu:2" in repr_devices
+        assert repr_devices.index("cpu:2") < repr_devices.index("gpu:1")
+        assert repr_devices.index("gpu:1") < repr_devices.index("gpu:5")

@@ -14,12 +14,7 @@
 from random import *
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
-from stdlib.builtin.sort import (
-    _heap_sort,
-    _insertion_sort,
-    _small_sort,
-    sort,
-)
+from stdlib.builtin.sort import _heap_sort, _insertion_sort, _small_sort, sort
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Utils
@@ -316,13 +311,11 @@ def main():
     var deltas = [0, 2, 5, 20, 100]
 
     @parameter
-    for i in range(len(dtypes)):
-        alias dtype = dtypes[i]
+    for dtype in dtypes:
         bench_tiny_list_sort[dtype](m)
 
     @parameter
-    for i in range(len(dtypes)):
-        alias dtype = dtypes[i]
+    for dtype in dtypes:
         for count1 in small_counts:
             bench_small_list_sort[dtype](m, count1)
 

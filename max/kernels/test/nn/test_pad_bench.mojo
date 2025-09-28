@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from gpu.memory import AddressSpace
 
 import benchmark
 from benchmark import Unit, keep
-from layout import LayoutTensor, Layout, RuntimeLayout
+from gpu.memory import AddressSpace
+from layout import Layout, LayoutTensor, RuntimeLayout
 from memory import memcpy
 from nn.pad import _do_pad, _fill, pad_constant, pad_reflect
 from python import Python

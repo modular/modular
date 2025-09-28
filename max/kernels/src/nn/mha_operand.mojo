@@ -15,9 +15,10 @@ from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from kv_cache.types import KVCacheT
 from layout import Layout, LayoutTensor
-from layout.layout import DimList, UNKNOWN_VALUE
+from layout.layout import UNKNOWN_VALUE, DimList
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
+
 from utils import Index, IndexList, StaticTuple
 
 

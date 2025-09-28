@@ -28,7 +28,7 @@ from ..kernels import (
 )
 from ..kv_cache import (
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
@@ -120,7 +120,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -182,7 +182,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
     def fused_qkv_lora(
         self,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
         layer_idx: TensorValue,
     ):
@@ -193,7 +193,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             x (TensorValue): The input tensor of shape [total_tokens, hidden_dim].
             qkv_loras (list[LinearLoRA]): List of 3 LinearLoRA modules for Q, K, and V projections.
             input_row_offsets (TensorValue): 1D tensor indicating the start index of each sequence in `x`.
-            kv_collection (PagedKVCacheCollection):
+            kv_collection (PagedCacheValues):
                 The key/value cache collection structure.
             layer_idx (TensorValue): Index of the current transformer layer (used for caching).
 

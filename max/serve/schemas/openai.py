@@ -19,7 +19,6 @@ from pydantic import (
 )
 from typing_extensions import Literal
 
-
 class Error(BaseModel):
     code: str
     message: str

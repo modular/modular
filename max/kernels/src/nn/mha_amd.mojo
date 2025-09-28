@@ -15,42 +15,36 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
 from sys import align_of, simd_width_of, size_of
-from sys.intrinsics import readfirstlane
 from sys.info import _cdna_4_or_newer
-from buffer import NDBuffer
+from sys.intrinsics import readfirstlane
 
 from algorithm.functional import unswitch
-from gpu import (
-    WARP_SIZE,
-    barrier,
-    block_idx,
-    lane_id,
-    thread_idx,
-)
+from buffer import NDBuffer
+from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
-from gpu.sync import (
-    AMDScheduleBarrierMask,
-    schedule_barrier,
-)
-from memory import AddressSpace as BaseAddressSpace
+from gpu.sync import AMDScheduleBarrierMask, schedule_barrier
 from layout import IntTuple, Layout, LayoutTensor
-from layout.layout import blocked_product
 from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.tensor_core import TiledTensorCore
 from layout.element import Element
+from layout.layout import blocked_product
 from layout.layout_tensor import (
     LayoutTensorIter,
     ThreadScope,
-    copy_local_to_shared,
     copy_dram_to_local,
     copy_local_to_dram,
+    copy_local_to_shared,
 )
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import TensorCore, get_mma_shape, num_matrix_reg
+from layout.tensor_core import (
+    TensorCore,
+    TiledTensorCore,
+    get_mma_shape,
+    num_matrix_reg,
+)
+from memory import AddressSpace as BaseAddressSpace
 from memory import bitcast, stack_allocation
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -59,10 +53,7 @@ from nn.mha_utils import (
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
-from nn.softmax import (
-    _online_softmax_iter_for_mma_output,
-    softmax,
-)
+from nn.softmax import _online_softmax_iter_for_mma_output, softmax
 
 from utils import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf
@@ -324,8 +315,8 @@ struct KBuffer[
     fn load_from_shared[
         accum_type: DType,
         mma_input_type: DType,
-        mma_shape: IndexList[3],
-        k_group_size: Int,
+        _mma_shape: IndexList[3],
+        _k_group_size: Int,
         transpose_b: Bool,
         k_mma: Int,
     ](self):
@@ -341,8 +332,8 @@ struct KBuffer[
         alias tensor_core_mma = TiledTensorCore[
             accum_type,
             mma_input_type,
-            mma_shape,
-            group_size=k_group_size,
+            _mma_shape,
+            group_size=_k_group_size,
             transpose_b=transpose_b,
         ]()
         tensor_core_mma.mma_op.load_b[swizzle=swizzle](
@@ -1030,14 +1021,14 @@ struct SharedMemoryManager[
 
     @always_inline
     fn get_kv_ptr[
-        dtype: DType
+        _dtype: DType
     ](
         self,
     ) -> UnsafePointer[
-        Scalar[dtype],
+        Scalar[_dtype],
         address_space = AddressSpace.SHARED,
     ]:
-        return self.k_v_smem.bitcast[Scalar[dtype]]()
+        return self.k_v_smem.bitcast[Scalar[_dtype]]()
 
     @always_inline
     fn get_p_ptr(
@@ -1279,10 +1270,13 @@ fn mha_single_batch_amd[
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     var out_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
-        .local()
-        .alloc()  # ALIGN-TODO: align?
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, output_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()  # ALIGN-TODO: align?
         .fill(0)
     )
 
@@ -1305,18 +1299,21 @@ fn mha_single_batch_amd[
 
     var output_tile = gmem_manager.get_output_tensor(output)
 
-    var rowmax = (
-        tb[accum_type]()
-        .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
-        .local()
-        .alloc()
+    alias row_layout = Layout.row_major(
+        num_m_mmas, fragment_layout.shape[0].value()
     )
-    var rowsum = (
-        tb[accum_type]()
-        .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
-        .local()
-        .alloc()
-    )
+    var rowmax = LayoutTensor[
+        accum_type,
+        row_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    var rowsum = LayoutTensor[
+        accum_type,
+        row_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
 
     @parameter
     if sink:
@@ -1655,10 +1652,15 @@ fn mma[
     alias c_frag_size = num_matrix_reg[MMA_M, MMA_N]()
 
     var b_load_tile = (
-        tb[mma_input_type]()
-        .row_major[2 * num_n_mmas * num_k_mmas2, b_frag_size * k_group_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            mma_input_type,
+            Layout.row_major(
+                2 * num_n_mmas * num_k_mmas2, b_frag_size * k_group_size
+            ),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .split[2]()
     )
 
@@ -1699,18 +1701,18 @@ fn mma[
 
         barrier()
 
-        var a_reg_tile = (
-            tb[mma_input_type]()
-            .row_major[num_m_mmas, a_frag_size * k_group_size]()
-            .local()
-            .alloc()
-        )
-        var b_reg_tile = (
-            tb[mma_input_type]()
-            .row_major[num_n_mmas, b_frag_size * k_group_size]()
-            .local()
-            .alloc()
-        )
+        var a_reg_tile = LayoutTensor[
+            mma_input_type,
+            Layout.row_major(num_m_mmas, a_frag_size * k_group_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+        var b_reg_tile = LayoutTensor[
+            mma_input_type,
+            Layout.row_major(num_n_mmas, b_frag_size * k_group_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
 
         alias b_wtile_dim0 = WN if transpose_b else BK
         alias b_wtile_dim1 = BK if transpose_b else WN
@@ -1813,10 +1815,13 @@ fn mha_decoding_single_batch_amd[
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     var out_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, output_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
@@ -1842,18 +1847,18 @@ fn mha_decoding_single_batch_amd[
 
     var output_tile = gmem_manager.get_output_tensor(output)
 
-    var rowmax = (
-        tb[accum_type]()
-        .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
-        .local()
-        .alloc()
-    )
-    var rowsum = (
-        tb[accum_type]()
-        .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
-        .local()
-        .alloc()
-    )
+    var rowmax = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas, fragment_layout.shape[0].value()),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    var rowsum = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas, fragment_layout.shape[0].value()),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
 
     @parameter
     if sink:
@@ -1951,10 +1956,13 @@ fn mha_decoding_single_batch_amd[
         var v_global_iterator = v_tile.tiled_iterator[BK, BN, axis=0](0, 0)
 
         var p_reg_tile = (
-            tb[accum_type]()
-            .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
-            .local()
-            .alloc()
+            LayoutTensor[
+                accum_type,
+                Layout.row_major(num_m_mmas * num_n_mmas, output_frag_size),
+                MutableAnyOrigin,
+                address_space = AddressSpace.LOCAL,
+            ]
+            .stack_allocation()
             .fill(0)
         )
 

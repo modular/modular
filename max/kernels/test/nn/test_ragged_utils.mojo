@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from buffer import DimList
 from internal_utils import HostNDBuffer
 from nn._ragged_utils import get_batch_from_row_offsets
 from testing import assert_equal
-from buffer import DimList
 
 
 def test_get_batch_from_row_offsets():

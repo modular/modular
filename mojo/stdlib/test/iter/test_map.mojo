@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
 from test_utils import CopyCounter
+from testing import assert_equal
 
 
 fn test_map() raises:

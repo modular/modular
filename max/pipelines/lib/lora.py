@@ -998,6 +998,8 @@ class LoRAManager:
 
         if hasattr(pipeline, "_pipeline_model"):
             manager = pipeline._pipeline_model._lora_manager
+        elif hasattr(pipeline, "speech_lm_pipeline"):
+            manager = pipeline.speech_lm_pipeline._pipeline_model._lora_manager
         elif hasattr(pipeline, "pipeline_model"):
             manager = pipeline.pipeline_model._lora_manager
 

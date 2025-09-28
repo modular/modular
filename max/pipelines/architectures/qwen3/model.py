@@ -21,6 +21,7 @@ from max.driver import Tensor
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 
 from ..llama3.model import LlamaModelBase
@@ -94,10 +95,19 @@ class Qwen3Model(LlamaModelBase):
 
         with Graph("qwen3", input_types=graph_inputs) as graph:
             tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                inp.tensor for inp in graph.inputs
+                graph.inputs
+            )
+            kv_collection = PagedCacheValues(
+                kv_blocks=kv_cache_inputs[0].buffer,
+                cache_lengths=kv_cache_inputs[1].tensor,
+                lookup_table=kv_cache_inputs[2].tensor,
+                max_lengths=kv_cache_inputs[3].tensor,
             )
             outputs = nn_model(
-                tokens, kv_cache_inputs, return_n_logits, input_row_offsets
+                tokens.tensor,
+                kv_collection,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
             )
             graph.output(*outputs)
             return graph

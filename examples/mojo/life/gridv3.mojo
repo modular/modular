@@ -13,8 +13,8 @@
 
 import random
 from collections import Optional
-from algorithm import parallelize
 
+from algorithm import parallelize
 from memory import memcpy, memset_zero
 
 

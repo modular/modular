@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from testing import assert_false, assert_true, assert_equal
+from testing import assert_equal, assert_false, assert_true
 
 # ===-----------------------------------------------------------------------===#
 # Triviality Struct

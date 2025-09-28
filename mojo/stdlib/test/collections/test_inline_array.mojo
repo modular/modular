@@ -14,7 +14,7 @@
 from sys.info import size_of
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import CopyCounter, DelRecorder, MoveCounter
+from test_utils import CopyCounter, DelRecorder, MoveCounter, TestSuite
 from testing import assert_equal, assert_true
 
 
@@ -315,16 +315,21 @@ def test_move():
     # Double check that the destructor is called when the array is destroyed
     assert_equal(len(del_counter_ptr[]), 1)
     _ = del_recorder
+    _ = del_counter
 
 
 def main():
-    test_array_unsafe_get()
-    test_array_int()
-    test_array_str()
-    test_array_int_pointer()
-    test_array_unsafe_assume_initialized_constructor_string()
-    test_array_contains()
-    test_inline_array_runs_destructors()
-    test_unsafe_ptr()
-    test_size_of_array[Int, capacity=32]()
-    test_move()
+    var suite = TestSuite()
+
+    suite.test[test_array_unsafe_get]()
+    suite.test[test_array_int]()
+    suite.test[test_array_str]()
+    suite.test[test_array_int_pointer]()
+    suite.test[test_array_unsafe_assume_initialized_constructor_string]()
+    suite.test[test_array_contains]()
+    suite.test[test_inline_array_runs_destructors]()
+    suite.test[test_unsafe_ptr]()
+    suite.test[test_size_of_array[Int, capacity=32]]()
+    suite.test[test_move]()
+
+    suite^.run()

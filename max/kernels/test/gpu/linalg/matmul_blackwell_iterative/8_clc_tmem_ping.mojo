@@ -11,83 +11,79 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from sys import size_of, argv
 from hashlib import default_comp_time_hasher
+from math import align_up, ceildiv
+from sys import argv, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
+from bit import prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from layout.layout_tensor import LayoutTensorIter
 from gpu import WARP_SIZE, barrier, block_idx
+from gpu.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    elect_one_sync,
+    elect_one_sync_with_mask,
+)
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.info import B200
+from gpu.id import block_id_in_cluster, lane_id, thread_idx
+from gpu.id import warp_id as get_warp_id
+from gpu.memory import (
+    AddressSpace,
+    external_memory,
+    fence_async_view_proxy,
+    fence_mbarrier_init,
+)
+from gpu.mma import st_matrix
+from gpu.mma_sm100 import *
 from gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
 )
-
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu.id import lane_id, thread_idx, block_id_in_cluster
-from gpu.id import warp_id as get_warp_id
-from gpu.memory import (
-    AddressSpace,
-    fence_async_view_proxy,
-    fence_mbarrier_init,
-    external_memory,
-)
-from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from internal_utils import ndbuffer_to_str
-from bit import prev_power_of_two
-
-from gpu.mma import st_matrix
-from layout import (
-    Layout,
-    RuntimeLayout,
-    RuntimeTuple,
-    LayoutTensor,
-    IntTuple,
-    UNKNOWN_VALUE,
-)
-from layout.swizzle import make_swizzle, make_ldmatrix_swizzle, Swizzle
-
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    st_matrix_n_layout,
-    tile_to_descriptor,
-)
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import (
-    elect_one_sync,
-    elect_one_sync_with_mask,
-    block_rank_in_cluster,
-    cluster_sync,
-)
-from layout.tma_async import (
-    SharedMemBarrier,
-    TMATensorTile,
-    create_tma_tile,
-    PipelineState,
-)
-
-from linalg import vendor_blas
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from linalg.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
-
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
+    ndbuffer_to_str,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import (
+    UNKNOWN_VALUE,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+)
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.layout_tensor import LayoutTensorIter
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.tensor_core_async import (
+    st_matrix_n_layout,
+    tile_layout_k_major,
+    tile_layout_mn_major,
+    tile_to_descriptor,
+)
+from layout.tma_async import (
+    PipelineState,
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tma_tile,
+)
+from linalg.arch.sm100 import MmaOpSM100_SS
+from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler, WorkInfo
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -1019,12 +1015,10 @@ fn blackwell_kernel_8[
     alias MMA_K = umma_shape[2]
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
@@ -1034,12 +1028,9 @@ fn blackwell_kernel_8[
 
     alias output_tile_shape = Index(BM, 32)
     alias c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-    var c_tma_op = create_tma_tile[
-        c_type,
-        2,
-        output_tile_shape,
-        swizzle_mode=c_swizzle,
-    ](ctx, c)
+    var c_tma_op = create_tma_tile[output_tile_shape, swizzle_mode=c_swizzle](
+        ctx, c
+    )
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024

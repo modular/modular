@@ -10,22 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from buffer import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-
-from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
-from buffer import DimList
-from nn.conv_transpose import conv_transpose_naive
-from nn.conv_transpose import conv_transposed_cudnn
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-)
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from layout import Layout, LayoutTensor, RuntimeLayout
+from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

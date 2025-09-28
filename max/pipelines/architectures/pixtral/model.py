@@ -33,8 +33,9 @@ from max.graph.weights import (
 from max.nn import Module, ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
+    PagedCacheValues,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -304,7 +305,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> KVCacheManager[TextAndVisionContext]:
+    ) -> PagedKVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
                 huggingface_config=self.huggingface_config,
@@ -485,11 +486,17 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                     return_n_logits,
                     *kv_cache_inputs,
                 ) = graph.inputs
+                kv_collection = PagedCacheValues(
+                    kv_blocks=kv_cache_inputs[0].buffer,
+                    cache_lengths=kv_cache_inputs[1].tensor,
+                    lookup_table=kv_cache_inputs[2].tensor,
+                    max_lengths=kv_cache_inputs[3].tensor,
+                )
                 outputs = nn_model(
                     input_ids=input_ids.tensor,
                     pixel_values=pixel_values.tensor,
                     attention_mask=attention_mask.tensor,
-                    kv_cache_inputs=[inp.tensor for inp in kv_cache_inputs],
+                    kv_collection=kv_collection,
                     return_n_logits=return_n_logits.tensor,
                     input_row_offsets=input_row_offsets.tensor,
                 )

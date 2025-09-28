@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 
 from utils.index import IndexList
@@ -70,17 +70,17 @@ struct ImageData[
     fn __init__(
         out self,
         data: LayoutTensor[dtype, layout, origin],
-        layout: Image2DLayout,
+        _layout: Image2DLayout,
     ):
         """Construct of an image data instance with dynamic layout param.
 
         Args:
             data: A 4d buffer containing the actual data.
-            layout: Data layout tag.
+            _layout: Data layout tag.
         """
         constrained[static_image_layout == Image2DLayout.UNKNOWN]()
         self.data = data
-        self.dynamic_image_layout = layout
+        self.dynamic_image_layout = _layout
 
     fn __init__(out self, data: LayoutTensor[dtype, layout, origin]):
         constrained[static_image_layout != Image2DLayout.UNKNOWN]()

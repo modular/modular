@@ -21,7 +21,7 @@ from max.graph import BufferValue, TensorValue, TensorValueLike
 
 from ..kv_cache import (
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from ..layer import Layer, Module
 from ..linear import LinearV1
@@ -62,10 +62,10 @@ class AttentionImpl(Layer, ABC):
             def __call__(
                 self,
                 x: TensorValueLike,
-                kv_collection: PagedKVCacheCollection,
+                kv_collection: PagedCacheValues,
                 valid_lengths: TensorValueLike,
                 **kwargs,
-            ) -> tuple[TensorValue, PagedKVCacheCollection]: ...
+            ) -> tuple[TensorValue, PagedCacheValues]: ...
 
                 if "attn_mask" not in kwargs:
                     raise ValueError("attn_mask not provided to VanillaAttentionWithCausalMask")
@@ -105,7 +105,7 @@ class AttentionImpl(Layer, ABC):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue: ...
@@ -122,7 +122,7 @@ class DistributedAttentionImpl(Module, ABC):
         layer_idx: TensorValue,
         x: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[PagedKVCacheCollection],
+        kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: TensorValue,
     ) -> list[TensorValue]: ...
@@ -163,10 +163,10 @@ class AttentionImplQKV(Layer, ABC):
             def __call__(
                 self,
                 x: TensorValueLike,
-                kv_collection: PagedKVCacheCollection,
+                kv_collection: PagedCacheValues,
                 valid_lengths: TensorValueLike,
                 **kwargs,
-            ) -> tuple[TensorValue, PagedKVCacheCollection]: ...
+            ) -> tuple[TensorValue, PagedCacheValues]: ...
 
                 if "attn_mask" not in kwargs:
                     raise ValueError("attn_mask not provided to VanillaAttentionWithCausalMask")
@@ -214,7 +214,7 @@ class AttentionImplQKV(Layer, ABC):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue: ...

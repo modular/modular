@@ -14,12 +14,12 @@
 """Test FP8 E4M3FN to E4M3FNUZ conversion kernel."""
 
 from buffer import NDBuffer
-from gpu.host import DeviceContext
-from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
-from testing import assert_equal
-from memory import bitcast
-from internal_utils import DeviceNDBuffer, HostNDBuffer
 from buffer.dimlist import DimList
+from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer
+from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
+from memory import bitcast
+from testing import assert_equal
 
 
 # CHECK-LABEL: test_convert_e4m3fn_to_e4m3fnuz_basic

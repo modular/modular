@@ -12,21 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from math import ceildiv
+from random import rand
+from sys import argv, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from gpu.host._nvidia_cuda import (
-    TMADescriptor,
-    create_tma_descriptor,
-)
-from gpu.id import block_idx, thread_idx, warp_id, lane_id
 from gpu import WARP_SIZE, barrier, warp
+from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
+from gpu.id import block_idx, lane_id, thread_idx, warp_id
 from gpu.memory import (
     AddressSpace,
-    external_memory,
     cp_async_bulk_tensor_shared_cluster_global,
+    external_memory,
 )
-from internal_utils._utils import ValOrDim, dynamic, static
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -34,18 +35,13 @@ from internal_utils import (
     random,
     zero,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from internal_utils._utils import ValOrDim, dynamic, static
 from layout import Layout, LayoutTensor
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import LayoutTensorIter
-from layout.tma_async import (
-    SharedMemBarrier,
-    PipelineState,
-)
-from linalg import vendor_blas
-from math import ceildiv
-from random import rand
-from sys import size_of, argv
+from layout.tma_async import PipelineState, SharedMemBarrier
+
 from utils import StaticTuple
 from utils.index import Index
 from utils.numerics import get_accum_type
@@ -408,7 +404,7 @@ def test_gemv_tma[
     else:
         # Compare with vendor BLAS for correctness.
         var b_2d = NDBuffer[dtype, 2](
-            b_device.buffer._unsafe_ptr(),
+            b_device.buffer.unsafe_ptr(),
             Index(K, 1),
             Index(1, K),
         )

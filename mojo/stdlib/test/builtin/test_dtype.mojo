@@ -102,8 +102,6 @@ fn test_size_of() raises:
     @parameter
     for dt in non_index_integral_dtypes:
         assert_equal(dt.size_of(), size_of[dt]())
-    # TODO(MSTDL-1851): Remove
-    assert_equal(DType.index.size_of(), size_of[DType.index]())
     assert_equal(DType.int.size_of(), size_of[DType.int]())
     assert_equal(DType.uint.size_of(), size_of[DType.uint]())
     assert_equal(DType.float32.size_of(), size_of[DType.float32]())

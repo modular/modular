@@ -14,11 +14,11 @@
 
 from algorithm import elementwise
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.slice import slice_as_copy, slice_as_view
@@ -64,7 +64,7 @@ def test_slice[
 
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = LayoutTensor[dtype, Layout.row_major[outer_rank]()](
-        memory1.unsafe_ptr(),
+        memory1,
         RuntimeLayout[Layout.row_major[outer_rank]()].row_major(dims),
     )
 
@@ -75,7 +75,7 @@ def test_slice[
         uninitialized=True
     )
     var start_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
-        start_tensor_mem.unsafe_ptr(),
+        start_tensor_mem,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)
         ),
@@ -85,7 +85,7 @@ def test_slice[
         uninitialized=True
     )
     var end_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
-        end_tensor_mem.unsafe_ptr(),
+        end_tensor_mem,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)
         ),
@@ -95,7 +95,7 @@ def test_slice[
         uninitialized=True
     )
     var step_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
-        step_tensor_mem.unsafe_ptr(),
+        step_tensor_mem,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](outer_rank)
         ),

@@ -13,22 +13,18 @@
 
 from hashlib.hasher import Hasher
 from math import ceildiv
-from sys import (
-    env_get_int,
-    has_nvidia_gpu_accelerator,
-    size_of,
-)
+from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 
 from gpu import WARP_SIZE
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
+from gpu.host.device_context import DeviceBuffer
 from gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from gpu.host.device_context import DeviceBuffer
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -165,6 +161,24 @@ struct MatmulConfig[
         self.num_consumer = num_consumer
         self.partitioned_multicast = partitioned_multicast
         self._pdl_level = pdl_level
+
+    fn copy_field(mut self, other: MatmulConfig):
+        self.block_tile_shape = other.block_tile_shape
+        self.warp_tile_shape = other.warp_tile_shape
+        self.mma_shape = other.mma_shape
+        self.num_pipeline_stages = other.num_pipeline_stages
+        self.num_k_partitions = other.num_k_partitions
+        self.k_group_size = other.k_group_size
+        self.num_warp_k_partitions = other.num_warp_k_partitions
+        self.cluster_shape = other.cluster_shape
+        self.num_consumer = other.num_consumer
+        self.partitioned_multicast = other.partitioned_multicast
+        self._pdl_level = other._pdl_level
+
+    fn swapAB(self) -> MatmulConfig[b_type, a_type, c_type, transpose_b]:
+        var new_config = MatmulConfig[b_type, a_type, c_type, transpose_b]()
+        new_config.copy_field(self)
+        return new_config
 
     fn num_warps_m(self) -> UInt:
         return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
@@ -539,7 +553,7 @@ fn get_hilbert_lut_with_cache(
 
     # not in cache :(
     var buf = create_hilbert_lut(ctx, grid_x, grid_y)
-    var device_ptr = buf._unsafe_ptr()
+    var device_ptr = buf.unsafe_ptr()
     var num_blocks = grid_x * grid_y
 
     # store the device pointer directly in global cache

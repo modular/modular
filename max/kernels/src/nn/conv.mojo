@@ -13,9 +13,40 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv
+from os import abort
 from sys.ffi import _get_global_or_null, external_call
 from sys.info import align_of, simd_width_of
 
+from _cudnn.cnn_infer import (
+    cudnnConvolutionForward,
+    cudnnConvolutionMode_t,
+    cudnnConvolutionStruct,
+    cudnnCreateConvolutionDescriptor,
+    cudnnDestroyConvolutionDescriptor,
+    cudnnGetConvolutionForwardWorkspaceSize,
+    cudnnSetConvolution2dDescriptor,
+    cudnnSetConvolutionGroupCount,
+    cudnnSetConvolutionMathType,
+)
+from _cudnn.infer import (
+    cudnnContext,
+    cudnnConvolutionFwdAlgo_t,
+    cudnnCreate,
+    cudnnCreateFilterDescriptor,
+    cudnnCreateTensorDescriptor,
+    cudnnDataType_t,
+    cudnnDestroy,
+    cudnnDestroyFilterDescriptor,
+    cudnnDestroyTensorDescriptor,
+    cudnnFilterStruct,
+    cudnnMathType_t,
+    cudnnSetFilter4dDescriptor,
+    cudnnSetStream,
+    cudnnSetTensor4dDescriptor,
+    cudnnStatus_t,
+    cudnnTensorFormat_t,
+    cudnnTensorStruct,
+)
 from algorithm import (
     elementwise,
     sync_parallelize,
@@ -31,36 +62,6 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.dimlist import Dim, DimList
-from _cudnn.cnn_infer import (
-    cudnnConvolutionForward,
-    cudnnConvolutionMode_t,
-    cudnnConvolutionStruct,
-    cudnnCreateConvolutionDescriptor,
-    cudnnDestroyConvolutionDescriptor,
-    cudnnSetConvolution2dDescriptor,
-    cudnnSetConvolutionGroupCount,
-    cudnnSetConvolutionMathType,
-    cudnnGetConvolutionForwardWorkspaceSize,
-)
-from _cudnn.infer import (
-    cudnnContext,
-    cudnnConvolutionFwdAlgo_t,
-    cudnnCreate,
-    cudnnCreateFilterDescriptor,
-    cudnnCreateTensorDescriptor,
-    cudnnDataType_t,
-    cudnnDestroy,
-    cudnnDestroyFilterDescriptor,
-    cudnnDestroyTensorDescriptor,
-    cudnnFilterStruct,
-    cudnnSetFilter4dDescriptor,
-    cudnnSetStream,
-    cudnnSetTensor4dDescriptor,
-    cudnnStatus_t,
-    cudnnTensorFormat_t,
-    cudnnTensorStruct,
-    cudnnMathType_t,
-)
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
 from gpu.id import block_dim, block_idx, thread_idx
@@ -71,7 +72,6 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from os import abort
 
 from .conv_utils import (
     ConvInfoStatic,

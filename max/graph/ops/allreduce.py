@@ -87,8 +87,9 @@ def sum(
     # device's chain independently.
     # Do not merge device chains.
     results = []
+    graph = Graph.current
     for input_tensor, device in zip(inputs, devices):
-        in_chain = Graph.current.device_chains[device]
+        in_chain = graph.device_chains[device]
         # Each op takes all inputs but only produces output for its device.
         (result, out_chain), _ = Graph.current._add_op_get_op_with_results(
             _mo.distributed_allreduce_sum,
@@ -104,7 +105,7 @@ def sum(
 
         results.append(result.tensor)
         # Advance only this device's chain.
-        Graph.current.device_chains[device] = out_chain
+        graph.device_chains[device] = out_chain
 
     return results
 

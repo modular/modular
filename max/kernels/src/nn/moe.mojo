@@ -13,23 +13,26 @@
 
 
 from math import align_up, ceildiv
+from os.atomic import Atomic
+from sys.info import simd_width_of
+
 import gpu.warp as warp
+from bit import next_power_of_two, pop_count
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    thread_idx,
-    block_idx,
     WARP_SIZE,
     barrier,
+    block_idx,
+    thread_idx,
 )
 from gpu.host.info import is_gpu
-from sys.info import simd_width_of
+from gpu.memory import AddressSpace
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
-from gpu.memory import AddressSpace
-from os.atomic import Atomic
+
 from utils.index import IndexList, StaticTuple
-from bit import pop_count, next_power_of_two
+from builtin.dtype import _uint_type_of_width
 
 
 @__llvm_metadata(
@@ -263,6 +266,12 @@ fn moe_create_indices_bucket_sort_kernel[
     in the token_expert_order tensor. For our example the restore_token_order would be [0, 2, 1, 3, 4, 5]
     """
 
+    constrained[
+        num_threads in (32, 64),
+        "Only support 32 or 64 threads per warp",
+    ]()
+    alias mask_type = _uint_type_of_width[num_threads]()
+
     alias SmemVectorType = LayoutTensor[
         DType.uint32,
         Layout.row_major(1, expected_count),
@@ -283,7 +292,7 @@ fn moe_create_indices_bucket_sort_kernel[
     var topk_ids_length = topk_ids.dim(1)
     var topk_ids_length_rounded = align_up(topk_ids_length, reads_per_iteration)
 
-    var total_writes: UInt32 = 0
+    var total_writes: UInt64 = 0
 
     var start_idx = thread_idx.x * width
 
@@ -307,12 +316,12 @@ fn moe_create_indices_bucket_sort_kernel[
             # but we need to know how many threads will write to smem before us
             # to get the correct offset. So all threads vote and we tally the votes
             # before us
-            var mask = warp.vote(state)
+            var mask = UInt64(warp.vote[mask_type](state))
 
             var writes = pop_count(mask)
             total_writes += writes
 
-            var preceding_mask = mask & ((UInt32(1) << thread_idx.x) - 1)
+            var preceding_mask = mask & ((UInt64(1) << thread_idx.x) - 1)
             offset += pop_count(preceding_mask)
 
             if state:
@@ -328,11 +337,11 @@ fn moe_create_indices_bucket_sort_kernel[
 
     var offset = total_writes
 
-    var mask = warp.vote(state)
+    var mask = UInt64(warp.vote[mask_type](state))
     var writes = pop_count(mask)
     total_writes += writes
 
-    var preceding_mask = mask & ((UInt32(1) << thread_idx.x) - 1)
+    var preceding_mask = mask & ((UInt64(1) << thread_idx.x) - 1)
     offset += pop_count(preceding_mask)
 
     if state:
@@ -349,7 +358,7 @@ fn moe_create_indices_bucket_sort_kernel[
             # we atomically update the offset and expert index with one update by adding to the offset using the last 24 bits
             # and the expert index using the upper 8 bits
             expert_idx_and_offsets = Atomic.fetch_add(
-                lock.ptr, total_writes | 0x01000000
+                lock.ptr, UInt32(total_writes) | 0x01000000
             )
 
         expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
@@ -361,7 +370,7 @@ fn moe_create_indices_bucket_sort_kernel[
 
         # NOTE: expert_start_indices must be zero initialized otherwise the first offset will not be zero
         # add starting index for the next expert, to expert_start_indices
-        expert_start_indices[expert_idx + 1] = g_offset + total_writes
+        expert_start_indices[expert_idx + 1] = g_offset + UInt32(total_writes)
 
         if expert_idx == 0:
             expert_start_indices[expert_idx] = 0
@@ -381,9 +390,9 @@ fn moe_create_indices_bucket_sort_kernel[
                 @parameter
                 for i in range(width):
                     token_expert_order[g_offset + smem_idx + i] = source_vector[
-                        smem_idx + i
+                        i
                     ]
-                    restore_token_order[source_vector[smem_idx + i]] = (
+                    restore_token_order[source_vector[i]] = (
                         g_offset + smem_idx + i
                     )
 
@@ -404,7 +413,7 @@ fn moe_create_indices_bucket_sort_kernel[
             _ = Atomic.fetch_add(expert_usage_stats.ptr + 1, 1)
 
             # NOTE: must be zero initialized otherwise atomic max will not work
-            _ = Atomic.max(expert_usage_stats.ptr, total_writes)
+            _ = Atomic.max(expert_usage_stats.ptr, UInt32(total_writes))
 
 
 @always_inline
@@ -429,128 +438,53 @@ fn moe_create_indices[
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
     ):
+        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](
+            1
+        ).enqueue_fill(0)
+        var lock = LayoutTensor[
+            DType.uint32, Layout.row_major(1), MutableAnyOrigin
+        ](lock_buffer.unsafe_ptr())
 
-        @parameter
-        if cuda_ctx.default_device_info.api == "cuda":
-            var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](
-                1
-            ).enqueue_fill(0)
-            var lock = LayoutTensor[
-                DType.uint32, Layout.row_major(1), MutableAnyOrigin
-            ](lock_buffer.unsafe_ptr())
+        alias topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
 
-            alias topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
+        var topk_2D = LayoutTensor[input_type, topk_layout, MutableAnyOrigin](
+            rebind[UnsafePointer[Scalar[input_type]]](topk_ids.ptr),
+            RuntimeLayout[topk_layout].row_major(
+                IndexList[2](1, topk_ids.dim(0))
+            ),
+        )
 
-            var topk_2D = LayoutTensor[
-                input_type, topk_layout, MutableAnyOrigin
-            ](
-                rebind[UnsafePointer[Scalar[input_type]]](topk_ids.ptr),
-                RuntimeLayout[topk_layout].row_major(
-                    IndexList[2](1, topk_ids.dim(0))
-                ),
-            )
+        var num_experts = expert_ids.dim(0)
 
-            var num_experts = expert_ids.dim(0)
+        var expert_usage_stats_host = cuda_ctx.enqueue_create_host_buffer[
+            DType.uint32
+        ](2).enqueue_fill(0)
+        cuda_ctx.enqueue_copy[DType.uint32](
+            rebind[UnsafePointer[Scalar[DType.uint32]]](expert_usage_stats.ptr),
+            expert_usage_stats_host,
+        )
 
-            var expert_usage_stats_host = cuda_ctx.enqueue_create_host_buffer[
-                DType.uint32
-            ](2).enqueue_fill(0)
-            cuda_ctx.enqueue_copy[DType.uint32](
-                rebind[UnsafePointer[Scalar[DType.uint32]]](
-                    expert_usage_stats.ptr
-                ),
-                expert_usage_stats_host,
-            )
+        alias kernel = moe_create_indices_bucket_sort_kernel[
+            input_type,
+            token_expert_order.layout,
+            expert_start_indices.layout,
+            restore_token_order.layout,
+            expert_ids.layout,
+            expert_usage_stats.layout,
+            topk_layout,
+        ]
 
-            alias kernel = moe_create_indices_bucket_sort_kernel[
-                input_type,
-                token_expert_order.layout,
-                expert_start_indices.layout,
-                restore_token_order.layout,
-                expert_ids.layout,
-                expert_usage_stats.layout,
-                topk_layout,
-            ]
+        cuda_ctx.enqueue_function_checked[kernel, kernel](
+            token_expert_order,
+            lock,
+            expert_start_indices,
+            restore_token_order,
+            expert_ids,
+            expert_usage_stats,
+            topk_2D,
+            grid_dim=(num_experts),
+            block_dim=(WARP_SIZE),
+        )
 
-            cuda_ctx.enqueue_function_checked[kernel, kernel](
-                token_expert_order,
-                lock,
-                expert_start_indices,
-                restore_token_order,
-                expert_ids,
-                expert_usage_stats,
-                topk_2D,
-                grid_dim=(num_experts),
-                block_dim=(WARP_SIZE),
-            )
-
-            _ = lock_buffer^
-            _ = expert_usage_stats_host^
-        else:
-            var n = topk_ids.size()
-            var pow_2_length = next_power_of_two(n)
-            var padded_input_buffer = cuda_ctx.enqueue_create_buffer[
-                input_type
-            ](pow_2_length)
-            alias unknown_layout = Layout.row_major(UNKNOWN_VALUE)
-            var padded_input = LayoutTensor[
-                mut=True, input_type, unknown_layout, token_expert_order.origin
-            ](
-                padded_input_buffer.unsafe_ptr(),
-                RuntimeLayout[unknown_layout].row_major(
-                    IndexList[1](pow_2_length)
-                ),
-            )
-
-            var padded_indices_buffer = cuda_ctx.enqueue_create_buffer[
-                DType.uint32
-            ](pow_2_length)
-            var padded_indices = LayoutTensor[
-                mut=True,
-                DType.uint32,
-                unknown_layout,
-                token_expert_order.origin,
-            ](
-                padded_indices_buffer.unsafe_ptr(),
-                RuntimeLayout[unknown_layout].row_major(
-                    IndexList[1](pow_2_length)
-                ),
-            )
-
-            alias hw_info = cuda_ctx.default_device_info
-            alias registers_per_thread = 255
-            alias registers_per_block = hw_info.max_registers_per_block
-            alias block_size_unrounded = registers_per_block // registers_per_thread
-            alias block_size: UInt = UInt(
-                block_size_unrounded - (block_size_unrounded % 2)
-            )
-
-            alias kernel = moe_create_indices_kernel[
-                input_type,
-                block_size,
-                token_expert_order.layout,
-                expert_start_indices.layout,
-                restore_token_order.layout,
-                expert_ids.layout,
-                expert_usage_stats.layout,
-                padded_indices.layout,
-                padded_input.layout,
-                topk_ids.layout,
-            ]
-
-            cuda_ctx.enqueue_function_checked[kernel, kernel](
-                token_expert_order,
-                expert_start_indices,
-                restore_token_order,
-                expert_ids,
-                expert_usage_stats,
-                padded_indices,
-                padded_input,
-                topk_ids,
-                grid_dim=(1, 1, 1),
-                block_dim=(block_size, 1, 1),
-            )
-
-            # Free the temporary input buffer
-            _ = padded_input_buffer^
-            _ = padded_indices_buffer^
+        _ = lock_buffer^
+        _ = expert_usage_stats_host^

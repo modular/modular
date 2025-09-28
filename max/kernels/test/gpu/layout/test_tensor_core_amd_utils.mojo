@@ -13,12 +13,12 @@
 
 from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext
+from gpu.host.info import MI300X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
+
 from utils.index import Index, IndexList
-from gpu.host.info import MI300X
 
 alias fp8_dtype = DType.float8_e4m3fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e4m3fn
 alias bf8_dtype = DType.float8_e5m2fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e5m2
@@ -159,44 +159,37 @@ def test_load_and_mma_and_multiply_operands[
     var b_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
     var c_lane_device = ctx.enqueue_create_buffer[dst_dtype](WARP_SIZE * 4)
 
-    var a_host = tb[dtype]().row_major[M, K]().view(a_host_ptr)
-    var a_dev = tb[dtype]().row_major[M, K]().view(a_device.unsafe_ptr())
+    alias layout_mk = Layout.row_major(M, K)
+    alias layout_mn = Layout.row_major(M, N)
+    var a_host = LayoutTensor[dtype, layout_mk](a_host_ptr)
+    var a_dev = LayoutTensor[dtype, layout_mk](a_device)
 
     alias B_row = N if transpose_b else K
     alias B_col = K if transpose_b else N
 
-    var b_host = tb[dtype]().row_major[B_row, B_col]().view(b_host_ptr)
-    var b_dev = (
-        tb[dtype]().row_major[B_row, B_col]().view(b_device.unsafe_ptr())
-    )
+    alias layout_b = Layout.row_major(B_row, B_col)
 
-    var c_host = tb[dst_dtype]().row_major[M, N]().view(c_host_ptr).fill(0)
-    var c_dev = tb[dst_dtype]().row_major[M, N]().view(c_device.unsafe_ptr())
+    var b_host = LayoutTensor[dtype, layout_b](b_host_ptr)
+    var b_dev = LayoutTensor[dtype, layout_b](b_device)
 
-    var d_host = tb[dst_dtype]().row_major[M, N]().view(d_host_ptr).fill(0)
+    var c_host = LayoutTensor[dst_dtype, layout_mn](c_host_ptr).fill(0)
+    var c_dev = LayoutTensor[dst_dtype, layout_mn](c_device)
 
-    var d_dev = tb[dst_dtype]().row_major[M, N]().view(d_device.unsafe_ptr())
-    var d_dev_mma = (
-        tb[dst_dtype]().row_major[M, N]().view(d_device_mma.unsafe_ptr())
-    )
+    var d_host = LayoutTensor[dst_dtype, layout_mn](d_host_ptr).fill(0)
 
-    var a_lane_host = tb[dtype]().layout[WARP_SIZE]().view(a_lane_host_ptr)
-    var a_lane_dev = (
-        tb[dtype]().layout[WARP_SIZE]().view(a_lane_device.unsafe_ptr())
-    )
-    var b_lane_host = tb[dtype]().layout[WARP_SIZE]().view(b_lane_host_ptr)
-    var b_lane_dev = (
-        tb[dtype]().layout[WARP_SIZE]().view(b_lane_device.unsafe_ptr())
-    )
+    var d_dev = LayoutTensor[dst_dtype, layout_mn](d_device)
+    var d_dev_mma = LayoutTensor[dst_dtype, layout_mn](d_device_mma)
 
-    var c_lane_host = (
-        tb[dst_dtype]().row_major[WARP_SIZE, 4]().view(c_lane_host_ptr)
-    )
-    var c_lane_dev = (
-        tb[dst_dtype]()
-        .row_major[WARP_SIZE, 4]()
-        .view(c_lane_device.unsafe_ptr())
-    )
+    alias layout_warp = Layout(WARP_SIZE)
+    alias layout_warp4 = Layout.row_major(WARP_SIZE, 4)
+
+    var a_lane_host = LayoutTensor[dtype, layout_warp](a_lane_host_ptr)
+    var a_lane_dev = LayoutTensor[dtype, layout_warp](a_lane_device)
+    var b_lane_host = LayoutTensor[dtype, layout_warp](b_lane_host_ptr)
+    var b_lane_dev = LayoutTensor[dtype, layout_warp](b_lane_device)
+
+    var c_lane_host = LayoutTensor[dst_dtype, layout_warp4](c_lane_host_ptr)
+    var c_lane_dev = LayoutTensor[dst_dtype, layout_warp4](c_lane_device)
 
     _arange(a_host)
     _arange(b_host)

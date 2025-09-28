@@ -20,7 +20,6 @@ from max.tensor import RuntimeTensorSpec
 
 from sys import size_of
 
-
 from utils import IndexList, product
 
 

@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin._location import __call_location
-from compile.reflection import get_linkage_name
 from math import ceil, floor
 from os import sep
 from time import perf_counter_ns
+
+from builtin._location import __call_location
+from compile.reflection import get_linkage_name
 
 
 fn _get_test_func_name[

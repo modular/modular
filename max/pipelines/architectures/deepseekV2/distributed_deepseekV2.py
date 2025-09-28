@@ -28,7 +28,6 @@ from max.nn import (
 from max.nn.attention.multi_latent_attention import (
     DistributedLatentAttentionWithRope,
 )
-from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.moe import MoE
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -122,9 +121,6 @@ class DistributedDeepseekV2(DistributedTransformer):
             output=lm_head,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=FetchPagedKVCacheCollection(
-                config.kv_params
-            ),
             rope=rope,
             devices=config.devices,
             use_subgraphs=True,

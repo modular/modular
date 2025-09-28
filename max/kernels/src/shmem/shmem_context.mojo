@@ -11,53 +11,53 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import external_call, c_int, c_size_t
-from sys import is_nvidia_gpu, CompilationTarget
 from collections.optional import OptionalReg
-from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
-from gpu.host import (
-    DeviceContext,
-    ConstantMemoryMapping,
-    DeviceFunction,
-    DeviceStream,
-    DeviceEvent,
-    LaunchAttribute,
-    FuncAttribute,
-    DeviceAttribute,
-    Dim,
-    HostBuffer,
-)
-from gpu.host.device_context import (
-    _DumpPath,
-    _checked,
-    _CharPtr,
-    _DeviceContextPtr,
-)
-from os import getenv, setenv
+from os import abort, getenv, setenv
 from sys import (
     CompilationTarget,
-    is_amd_gpu,
-    has_nvidia_gpu_accelerator,
-    size_of,
     argv,
+    has_nvidia_gpu_accelerator,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    size_of,
 )
-from sys.ffi import c_int, external_call
+from sys.ffi import c_int, c_size_t, external_call
+
+from gpu.host import (
+    ConstantMemoryMapping,
+    DeviceAttribute,
+    DeviceContext,
+    DeviceEvent,
+    DeviceFunction,
+    DeviceStream,
+    Dim,
+    FuncAttribute,
+    HostBuffer,
+    LaunchAttribute,
+)
+from gpu.host.device_context import (
+    _CharPtr,
+    _checked,
+    _DeviceContextPtr,
+    _DumpPath,
+)
+from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+
 from ._mpi import (
-    get_mpi_comm_world,
-    MPI_Init,
     MPI_Comm_rank,
     MPI_Comm_size,
     MPI_Finalize,
+    MPI_Init,
+    get_mpi_comm_world,
 )
 from .shmem_api import (
-    shmem_team_t,
     SHMEM_TEAM_NODE,
+    shmem_barrier_all_on_stream,
     shmem_finalize,
     shmem_init,
-    shmem_barrier_all_on_stream,
     shmem_module_init,
+    shmem_team_t,
 )
-from os import abort
 
 
 struct SHMEMContext(ImplicitlyCopyable, Movable):

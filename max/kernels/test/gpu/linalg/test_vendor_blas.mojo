@@ -14,13 +14,13 @@
 from math import ceildiv
 from random import random_float64
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from gpu import block_dim
 from gpu.host import DeviceContext
-from linalg.matmul_gpu import matmul_kernel_naive
-from testing import assert_almost_equal
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu import matmul_kernel_naive
+from testing import assert_almost_equal
 
 
 def test_vendor_blas[
@@ -47,12 +47,12 @@ def test_vendor_blas[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var a = NDBuffer[dtype, 2](a_device._unsafe_ptr(), (M, K))
+    var a = NDBuffer[dtype, 2](a_device.unsafe_ptr(), (M, K))
     var b = NDBuffer[dtype, 2](
-        b_device._unsafe_ptr(), (N, K) if transpose_b else (K, N)
+        b_device.unsafe_ptr(), (N, K) if transpose_b else (K, N)
     )
-    var c = NDBuffer[dtype, 2](c_device._unsafe_ptr(), (M, N))
-    var c_ref = NDBuffer[dtype, 2](c_device_ref._unsafe_ptr(), (M, N))
+    var c = NDBuffer[dtype, 2](c_device.unsafe_ptr(), (M, N))
+    var c_ref = NDBuffer[dtype, 2](c_device_ref.unsafe_ptr(), (M, N))
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
 

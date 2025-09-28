@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import (
@@ -26,8 +24,8 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
+    PagedCacheValues,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
 
@@ -54,7 +52,6 @@ class Transformer(Module):
         output: Linear,
         embedding: Embedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: FetchPagedKVCacheCollection,
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
@@ -67,7 +64,6 @@ class Transformer(Module):
         self.lm_head = output
         self.embed_tokens = embedding
         self.kv_params = kv_params
-        self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
         self.rope = rope
         self.return_logits = return_logits
@@ -75,7 +71,7 @@ class Transformer(Module):
     def __call__(
         self,
         embeds: TensorValue,
-        kv_cache_inputs: Sequence[TensorValue],
+        kv_collection: PagedCacheValues,
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
@@ -89,7 +85,6 @@ class Transformer(Module):
                 continuous attention, (blocks, cache_lengths, lookup_table, max_lengths).
         """
         h = embeds
-        kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
 
         freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):

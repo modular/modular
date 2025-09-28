@@ -15,7 +15,7 @@
 The functions and traits provided here are built-ins, so you don't need to import them.
 """
 
-from collections import Set, LinkedList, Deque
+from collections import Deque, LinkedList, Set
 
 
 trait Representable:

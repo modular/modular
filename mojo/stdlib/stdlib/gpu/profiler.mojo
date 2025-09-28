@@ -31,10 +31,10 @@ from gpu import profiler
 ```
 """
 
+from io.io import _printf
 from time import perf_counter_ns
 
 from builtin._location import __call_location, _SourceLocation
-from io.io import _printf
 
 
 @fieldwise_init

@@ -197,7 +197,7 @@ def test_invalid_split_full_error_message(graph_builder: GraphBuilder) -> None:
     axis = 0
     input_type = TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
     with graph_builder(input_types=[input_type]) as graph:
-        expected_message = "Split sizes must sum to dimension value; x.shape[axis]=Dim(15) != sum(split_sizes=[Dim(10), Dim(6)])"
+        expected_message = "Split sizes must sum to dimension value; x.shape[axis]=Dim(15) != sum(sizes=[10, 6])"
         with pytest.raises(ValueError, match=re.escape(expected_message)):
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
@@ -221,8 +221,6 @@ def test_negative_split_size_full_error_message(
     axis = 0
     input_type = TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
     with graph_builder(input_types=[input_type]) as graph:
-        expected_message = (
-            "Split sizes must be positive: split_sizes=[Dim(10), Dim(-6)]"
-        )
+        expected_message = "Split sizes must be positive: sizes=[10, -6]"
         with pytest.raises(ValueError, match=re.escape(expected_message)):
             ops.split(graph.inputs[0].tensor, split_sizes, axis)

@@ -28,6 +28,7 @@ from max.interfaces import (
     GenerationStatus,
     InputContext,
     LogProbabilities,
+    RequestID,
     SamplingParams,
     TextGenerationOutput,
 )
@@ -76,7 +77,9 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         _draft_offset: Offset for draft decoding
     """
 
-    request_id: str = msgspec.field(default_factory=lambda: str(uuid.uuid4()))
+    request_id: RequestID = msgspec.field(
+        default_factory=lambda: str(uuid.uuid4())
+    )
     max_length: int
     tokens: npt.NDArray[np.integer[Any]]
     eos_token_ids: set[int] = msgspec.field(default_factory=set)
@@ -435,6 +438,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
         self._start_idx = 0
+        self._prompt_len = self._active_idx
 
         self._is_initial_prompt = True
 

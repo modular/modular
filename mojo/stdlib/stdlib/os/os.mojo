@@ -25,7 +25,6 @@ from collections.string.string_slice import _unsafe_strlen
 from sys import CompilationTarget, external_call, is_gpu
 from sys.ffi import c_char
 
-
 from .path import isdir, split
 from .pathlike import PathLike
 

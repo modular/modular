@@ -16,8 +16,8 @@ from testing import assert_equal
 
 fn sum_items(data: List[Int8]) -> Int:
     var sum: Int = 0
-    for i in range(len(data)):
-        sum += Int(data[i])
+    for item in data:
+        sum += Int(item)
     return sum
 
 

@@ -57,7 +57,7 @@ fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
 
 @fieldwise_init
 struct _VariadicListIter[type: AnyTrivialRegType](
-    ImplicitlyCopyable, Iterator, Movable
+    ImplicitlyCopyable, Iterable, Iterator, Movable
 ):
     """Const Iterator for VariadicList.
 
@@ -66,6 +66,9 @@ struct _VariadicListIter[type: AnyTrivialRegType](
     """
 
     alias Element = type
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
 
     var index: Int
     var src: VariadicList[type]
@@ -78,6 +81,9 @@ struct _VariadicListIter[type: AnyTrivialRegType](
         self.index += 1
         return self.src[self.index - 1]
 
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
+
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var len = len(self.src) - self.index
@@ -85,7 +91,7 @@ struct _VariadicListIter[type: AnyTrivialRegType](
 
 
 @register_passable("trivial")
-struct VariadicList[type: AnyTrivialRegType](Sized):
+struct VariadicList[type: AnyTrivialRegType](Iterable, Sized):
     """A utility class to access homogeneous variadic function arguments.
 
     `VariadicList` is used when you need to accept variadic arguments where all
@@ -130,7 +136,9 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
     var value: Self._mlir_type
     """The underlying storage for the variadic list."""
 
-    alias IterType = _VariadicListIter[type]
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _VariadicListIter[type]
 
     @always_inline
     @implicit
@@ -180,13 +188,13 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
         return __mlir_op.`pop.variadic.get`(self.value, index(idx)._mlir_value)
 
     @always_inline
-    fn __iter__(self) -> Self.IterType:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over the list.
 
         Returns:
             An iterator to the start of the list.
         """
-        return Self.IterType(0, self)
+        return {0, self}
 
 
 @fieldwise_init

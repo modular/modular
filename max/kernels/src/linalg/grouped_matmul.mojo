@@ -12,66 +12,58 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import simd_width_of, size_of, align_of
+from sys import align_of, simd_width_of, size_of
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, WARP_SIZE
-from gpu.cluster import (
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from gpu.cluster import cluster_sync, cluster_sync_relaxed, elect_one_sync
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.host.info import H100, B200
+from gpu.host.info import B200, H100
 from gpu.id import (
     block_dim,
     block_id_in_cluster,
     block_idx,
     global_idx,
     grid_dim,
-    thread_idx,
     lane_id,
+    thread_idx,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from gpu.mma_sm100 import *
+from gpu.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
-from layout.tensor_core_async import (
-    TensorCoreAsync,
-    tile_layout_k_major,
-)
+from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
 )
-from .matmul_sm90 import (
+
+from utils.fast_div import FastDiv
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
+
+from .arch.sm100 import MmaOpSM100_SS
+from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
+from .matmul.gpu.sm90.loadop import async_load_AB
+from .matmul.gpu.sm90.matmul import (
     _get_c_smem_layout,
     cluster_size,
     consumer_main_loop,
     warp_specialized_gemm_output,
 )
-from .matmul_dispatch.sm90 import _find_largest_bn_for_sm90_matmul
-from .matmul_loadop_sm90 import async_load_AB
-from .vendor_blas import matmul as vendor_matmul
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
-
+from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
-
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from utils.fast_div import FastDiv
 
 # ===----------------------------------------------------------------------=== #
 # Naive grouped matmul
@@ -267,12 +259,9 @@ fn grouped_matmul_sm90[
 
     # Create TMA op for the entire A tensor including all tokens.
     a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[
-        a_type,
-        2,
-        Index(BM, BK),
-        swizzle_mode=a_swizzle,
-    ](ctx, a_tensor)
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a_tensor
+    )
 
     # Flattne B tensor into a 2D tensor for easier TMA support.
     b_tensor = LayoutTensor[
@@ -281,21 +270,15 @@ fn grouped_matmul_sm90[
         MutableAnyOrigin,
         address_space = AddressSpace.GENERIC,
     ](b.data)
-    b_tma_op = create_tma_tile[
-        b_type,
-        2,
-        Index(BN, BK),
-        swizzle_mode=b_swizzle,
-    ](ctx, b_tensor)
+    b_tma_op = create_tma_tile[Index(BN, BK), swizzle_mode=b_swizzle](
+        ctx, b_tensor
+    )
 
     # Create a dummy TMA op for C, we don't support TMA store for output.
     c_tensor = from_ndbuffer_row_major(c)
-    c_tma_op = create_tma_tile[
-        c_type,
-        2,
-        Index(BM, BK),
-        swizzle_mode=c_swizzle,
-    ](ctx, c_tensor)
+    c_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=c_swizzle](
+        ctx, c_tensor
+    )
 
     alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
@@ -1049,9 +1032,9 @@ fn grouped_matmul_sm100[
     alias c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
     a_tensor = from_ndbuffer_row_major(a)
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
-    ](ctx, a_tensor)
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a_tensor
+    )
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
@@ -1059,8 +1042,6 @@ fn grouped_matmul_sm100[
         address_space = AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,

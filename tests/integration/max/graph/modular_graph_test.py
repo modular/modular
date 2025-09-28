@@ -25,7 +25,7 @@ from hypothesis.extra import numpy as nps
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Dim, Graph, StaticDim, SymbolicDim, TensorType
+from max.graph import BufferType, Dim, Graph, StaticDim, SymbolicDim, TensorType
 from test_common.graph_utils import (
     are_all_tensor_values_iterable as _are_all_tensor_values_iterable,
 )
@@ -67,7 +67,7 @@ def elements(
 @st.composite
 def shapes(
     draw: st.DrawFn,
-    tensor_type: TensorType,
+    tensor_type: TensorType | BufferType,
     static_dims: Mapping[str, int] = {},
 ) -> tuple[int, ...]:
     """Defines a strategy for generating a concrete shape from a TensorType.
@@ -102,7 +102,9 @@ def shapes(
 
 
 def arrays(
-    tensor_type: TensorType, static_dims: Mapping[str, int] = {}, **kwargs
+    tensor_type: TensorType | BufferType,
+    static_dims: Mapping[str, int] = {},
+    **kwargs,
 ) -> st.SearchStrategy[Tensor]:
     if tensor_type.dtype == DType.bfloat16:
         tensor_type = TensorType(
@@ -123,7 +125,7 @@ def arrays(
 
 
 def given_input_types(
-    input_types: Iterable[TensorType],
+    input_types: Iterable[TensorType | BufferType],
     static_dims: Mapping[str, int] = {},
     provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
     max_magnitude: float | None = None,
@@ -201,7 +203,8 @@ def modular_graph_test(
 
         input_types = []
         for input in graph.inputs:
-            assert isinstance(input.type, TensorType)
+            assert isinstance(input.type, (TensorType, BufferType))
+
             input_types.append(input.type)
 
         @settings(suppress_health_check=[HealthCheck.data_too_large])

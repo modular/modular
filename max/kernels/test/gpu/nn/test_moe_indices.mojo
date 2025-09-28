@@ -13,11 +13,12 @@
 
 
 from gpu.host import DeviceContext, HostBuffer
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._fillers import random
 from nn.moe import moe_create_indices
 from testing import assert_equal
+
 from utils import IndexList
-from layout._fillers import random
 
 
 fn get_expert_dictionary(
@@ -179,7 +180,7 @@ fn test_moe_create_indices(
     var token_expert_order = LayoutTensor[
         DType.uint32, layout, MutableAnyOrigin
     ](
-        token_expert_order_buffer_device.unsafe_ptr(),
+        token_expert_order_buffer_device,
         RuntimeLayout[layout].row_major(
             IndexList[1](token_expert_order_length)
         ),

@@ -21,7 +21,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 from nn.kv_cache import _fused_qkv_matmul_kv_cache_impl
 from testing import assert_almost_equal
 

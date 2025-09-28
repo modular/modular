@@ -16,6 +16,7 @@ from os import Atomic
 
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
 from gpu.host.info import is_cpu
+from gpu.host import DeviceBuffer
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr
@@ -78,9 +79,16 @@ fn _histogram_gpu(
 
     var ctx = ctx_ptr.get_device_context()
 
-    ctx.enqueue_function[kernel](
-        output.unsafe_ptr(),
-        input.unsafe_ptr(),
+    var output_device = DeviceBuffer[output.dtype](
+        ctx, output.unsafe_ptr(), output.size(), owning=False
+    )
+    var input_device = DeviceBuffer[input.dtype](
+        ctx, input.unsafe_ptr(), input.size(), owning=False
+    )
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        output_device,
+        input_device,
         n,
         block_dim=block_dim,
         grid_dim=grid_dim,

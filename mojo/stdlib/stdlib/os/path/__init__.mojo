@@ -26,8 +26,8 @@ from .path import (
     islink,
     join,
     lexists,
+    realpath,
     split,
     split_extension,
     splitroot,
-    realpath,
 )

@@ -13,8 +13,8 @@
 # RUN: echo "Hello, World" | %mojo %s
 
 import sys
-
 from io.io import _fdopen
+
 from testing import testing
 
 

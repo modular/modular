@@ -21,11 +21,7 @@ from importlib.util import spec_from_file_location
 from pathlib import Path
 from typing import Optional
 
-from .paths import (
-    MojoCompilationError,
-    MojoModulePath,
-    find_mojo_module_in_dir,
-)
+from .paths import MojoCompilationError, MojoModulePath, find_mojo_module_in_dir
 from .run import subprocess_run_mojo
 
 # ---------------------------------------

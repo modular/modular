@@ -120,7 +120,7 @@ def allgather(
                 ).to_mlir()
             )
 
-    # Get the current chain for synchronization
+    # Get the current chain for synchronization.
     graph = Graph.current
     in_chain = graph._add_op_generated(
         mo.ChainCreateOp,
@@ -129,7 +129,7 @@ def allgather(
     )[0]
 
     # Stage the allgather op with signal buffers and chain.
-    *results, out_chain = Graph.current._add_op_generated(
+    *results, out_chain = graph._add_op_generated(
         mo.DistributedAllgatherOp,
         # Output types: tensors + chain
         output_types,
@@ -139,12 +139,12 @@ def allgather(
         in_chain,
     )
 
-    # Update the chain
-    Graph.current._update_chain(out_chain)
+    # Update the chain.
+    graph._update_chain(out_chain)
 
     # Update device chains.
     for device in devices:
-        Graph.current.device_chains[device] = out_chain
+        graph.device_chains[device] = out_chain
 
     # Convert results to TensorValues.
     all_outputs = [res.tensor for res in results]

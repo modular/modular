@@ -17,7 +17,7 @@ the underlying data. This type is used to build custom graph operations.
 from collections import OptionalReg
 from math import ceil, fma
 from sys import align_of, simd_width_of, size_of
-from sys.info import is_gpu, CompilationTarget
+from sys.info import CompilationTarget, is_gpu
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
@@ -1164,7 +1164,7 @@ struct ManagedTensorSlice[
         ],
     ):
         alias layout = static_spec.to_layout()
-        return LayoutTensor[dtype, layout](
+        return __type_of(result)(
             self.unsafe_ptr(),
             __type_of(result.runtime_layout)(
                 self.shape().cast[result.layout_int_type](),

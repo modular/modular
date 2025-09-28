@@ -18,14 +18,14 @@ from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
-from linalg.matmul import elementwise_epilogue_type
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
-from linalg.utils import partition_work
 from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     pmaddubs,
     pmaddw,
 )
+from linalg.matmul import elementwise_epilogue_type
+from linalg.utils import partition_work
 from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 

@@ -18,26 +18,26 @@ from collections.string.string_slice import _get_kgen_string
 from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
 from sys._assembly import inlined_assembly
 from sys.info import (
-    is_amd_gpu,
-    _is_amd_rdna,
-    _cdna_4_or_newer,
     CompilationTarget,
+    _cdna_4_or_newer,
+    _is_amd_rdna,
+    is_amd_gpu,
 )
 
+from gpu._utils import (
+    array_to_llvm_struct,
+    dtype_to_llvm_type,
+    llvm_struct_to_array,
+    llvm_struct_to_simd,
+    simd_to_llvm_struct,
+)
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from gpu.memory import AddressSpace
+from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from memory import bitcast
 
 from utils import StaticTuple
 from utils.index import Index
-from gpu._utils import (
-    simd_to_llvm_struct,
-    llvm_struct_to_simd,
-    array_to_llvm_struct,
-    llvm_struct_to_array,
-    dtype_to_llvm_type,
-)
 
 
 fn get_amd_fp8_dtype() -> DType:

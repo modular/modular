@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from sys import align_of
 
 from buffer.dimlist import DimList
 from layout import IntTuple, Layout
-from sys import align_of
 
 from utils import IndexList
 

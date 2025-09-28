@@ -14,9 +14,9 @@
 from pathlib import Path
 from sys.ffi import (
     _find_dylib,
+    _get_dylib_function,
     _Global,
     _OwnedDLHandle,
-    _get_dylib_function,
     c_int,
 )
 

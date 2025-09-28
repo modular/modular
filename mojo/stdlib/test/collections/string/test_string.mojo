@@ -15,6 +15,7 @@ from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
+from collections.string.string_slice import _to_string_list
 from math import isinf, isnan
 
 from memory import memcpy
@@ -26,7 +27,7 @@ from testing import (
     assert_raises,
     assert_true,
 )
-from collections.string.string_slice import _to_string_list
+from test_utils import TestSuite
 
 
 @fieldwise_init
@@ -847,11 +848,11 @@ def test_isspace():
     for i in List[String]("not", "space", "", "s", "a", "c"):
         assert_false(i.isspace())
 
-    for i in range(len(univ_sep_var)):
+    for sep1 in univ_sep_var:
         var sep = String()
-        for j in range(len(univ_sep_var)):
-            sep += univ_sep_var[i]
-            sep += univ_sep_var[j]
+        for sep2 in univ_sep_var:
+            sep += sep1
+            sep += sep2
         assert_true(sep.isspace())
         _ = sep
 
@@ -895,8 +896,8 @@ def test_ascii_aliases():
     assert_true("'" in String.PUNCTUATION)
 
     var text = "I love my Mom and Dad so much!!!\n"
-    for i in range(len(text)):
-        assert_true(text[i] in String.PRINTABLE)
+    for char in text:
+        assert_true(char in String.PRINTABLE)
 
 
 def test_rstrip():
@@ -1575,51 +1576,55 @@ def test_copyinit():
 
 
 def main():
-    test_constructors()
-    test_copy()
-    test_len()
-    test_equality_operators()
-    test_comparison_operators()
-    test_add()
-    test_add_string_slice()
-    test_stringable()
-    test_string_join()
-    test_ord()
-    test_chr()
-    test_string_indexing()
-    test_atol()
-    test_atol_base_0()
-    test_atof()
-    test_calc_initial_buffer_size_int32()
-    test_calc_initial_buffer_size_int64()
-    test_contains()
-    test_find()
-    test_replace()
-    test_rfind()
-    test_split()
-    test_splitlines()
-    test_isspace()
-    test_ascii_aliases()
-    test_rstrip()
-    test_lstrip()
-    test_strip()
-    test_hash()
-    test_startswith()
-    test_endswith()
-    test_removeprefix()
-    test_removesuffix()
-    test_intable()
-    test_string_mul()
-    test_indexing()
-    test_string_codepoints_iter()
-    test_string_char_slices_iter()
-    test_format_args()
-    test_format_conversion_flags()
-    test_float_conversion()
-    test_slice_contains()
-    test_uninit_ctor()
-    test_unsafe_cstr()
-    test_variadic_ctors()
-    test_sso()
-    test_python_object()
-    test_copyinit()
+    var suite = TestSuite()
+
+    suite.test[test_constructors]()
+    suite.test[test_copy]()
+    suite.test[test_len]()
+    suite.test[test_equality_operators]()
+    suite.test[test_comparison_operators]()
+    suite.test[test_add]()
+    suite.test[test_add_string_slice]()
+    suite.test[test_stringable]()
+    suite.test[test_string_join]()
+    suite.test[test_ord]()
+    suite.test[test_chr]()
+    suite.test[test_string_indexing]()
+    suite.test[test_atol]()
+    suite.test[test_atol_base_0]()
+    suite.test[test_atof]()
+    suite.test[test_calc_initial_buffer_size_int32]()
+    suite.test[test_calc_initial_buffer_size_int64]()
+    suite.test[test_contains]()
+    suite.test[test_find]()
+    suite.test[test_replace]()
+    suite.test[test_rfind]()
+    suite.test[test_split]()
+    suite.test[test_splitlines]()
+    suite.test[test_isspace]()
+    suite.test[test_ascii_aliases]()
+    suite.test[test_rstrip]()
+    suite.test[test_lstrip]()
+    suite.test[test_strip]()
+    suite.test[test_hash]()
+    suite.test[test_startswith]()
+    suite.test[test_endswith]()
+    suite.test[test_removeprefix]()
+    suite.test[test_removesuffix]()
+    suite.test[test_intable]()
+    suite.test[test_string_mul]()
+    suite.test[test_indexing]()
+    suite.test[test_string_codepoints_iter]()
+    suite.test[test_string_char_slices_iter]()
+    suite.test[test_format_args]()
+    suite.test[test_format_conversion_flags]()
+    suite.test[test_float_conversion]()
+    suite.test[test_slice_contains]()
+    suite.test[test_uninit_ctor]()
+    suite.test[test_unsafe_cstr]()
+    suite.test[test_variadic_ctors]()
+    suite.test[test_sso]()
+    suite.test[test_python_object]()
+    suite.test[test_copyinit]()
+
+    suite^.run()

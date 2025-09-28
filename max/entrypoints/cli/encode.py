@@ -23,12 +23,16 @@ from typing import cast
 from max.interfaces import (
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
-    Pipeline,
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
 )
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    EmbeddingsPipelineType,
+    PipelineConfig,
+    TextContext,
+)
 
 from .metrics import EmbeddingsMetrics
 
@@ -38,10 +42,7 @@ MODEL_NAME = "model"
 
 
 async def _run_pipeline_encode(
-    pipeline: Pipeline[
-        EmbeddingsGenerationInputs[TextContext],
-        EmbeddingsGenerationOutput,
-    ],
+    pipeline: EmbeddingsPipelineType,
     tokenizer: PipelineTokenizer[TextContext, int, TextGenerationRequest],
     prompt: str,
     metrics: EmbeddingsMetrics | None = None,
@@ -77,13 +78,7 @@ def pipeline_encode(
         )
 
         # Cast pipeline to the expected type for embeddings generation
-        embeddings_pipeline = cast(
-            Pipeline[
-                EmbeddingsGenerationInputs[TextContext],
-                EmbeddingsGenerationOutput,
-            ],
-            pipeline,
-        )
+        embeddings_pipeline = cast(EmbeddingsPipelineType, pipeline)
 
         if num_warmups > 0:
             logger.info("Running warmup")

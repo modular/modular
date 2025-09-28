@@ -16,19 +16,15 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
-from testing import assert_equal
-from shmem import (
-    shmem_my_pe,
-    shmem_n_pes,
-    shmem_p,
-    SHMEMContext,
-)
-from pathlib import cwd, Path
+from os import getenv, listdir, setenv
 from os.path import dirname
-from os import listdir, getenv, setenv
+from pathlib import Path, cwd
 from subprocess import run
 from sys.param_env import env_get_string
+
 from python import Python
+from shmem import SHMEMContext, shmem_my_pe, shmem_n_pes, shmem_p
+from testing import assert_equal
 
 
 fn simple_shift_kernel(destination: UnsafePointer[Int32]):

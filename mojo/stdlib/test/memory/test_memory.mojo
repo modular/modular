@@ -13,13 +13,8 @@
 
 from sys import simd_width_of, size_of
 
-from memory import (
-    AddressSpace,
-    memcmp,
-    memcpy,
-    memset,
-    memset_zero,
-)
+from memory import AddressSpace, memcmp, memcpy, memset, memset_zero
+from test_utils import TestSuite
 from testing import (
     assert_almost_equal,
     assert_equal,
@@ -774,31 +769,32 @@ def test_indexing():
 
 
 def main():
-    test_memcpy()
-    test_memcpy_dtype()
-    test_memcmp()
-    test_memcmp_non_multiple_of_int32()
-    test_memcmp_overflow()
-    test_memcmp_simd()
-    test_memcmp_extensive()
-    test_memcmp_simd_boundary()
-    test_memcmp_simd_overlap()
-    test_memcmp_simd_index_finding()
-    test_memcmp_simd_signed_overflow()
-    test_memcmp_simd_alignment()
-    test_memcmp_simd_width_edge_cases()
-    test_memcmp_simd_zero_bytes()
-    test_memset()
+    var suite = TestSuite()
 
-    test_pointer_explicit_copy()
-    test_dtypepointer_string()
-    test_pointer_refitem()
-    test_pointer_refitem_string()
-    test_pointer_refitem_pair()
-    test_pointer_string()
+    suite.test[test_memcpy]()
+    suite.test[test_memcpy_dtype]()
+    suite.test[test_memcmp]()
+    suite.test[test_memcmp_non_multiple_of_int32]()
+    suite.test[test_memcmp_overflow]()
+    suite.test[test_memcmp_simd]()
+    suite.test[test_memcmp_extensive]()
+    suite.test[test_memcmp_simd_boundary]()
+    suite.test[test_memcmp_simd_overlap]()
+    suite.test[test_memcmp_simd_index_finding]()
+    suite.test[test_memcmp_simd_signed_overflow]()
+    suite.test[test_memcmp_simd_alignment]()
+    suite.test[test_memcmp_simd_width_edge_cases]()
+    suite.test[test_memcmp_simd_zero_bytes]()
+    suite.test[test_memset]()
+    suite.test[test_pointer_explicit_copy]()
+    suite.test[test_dtypepointer_string]()
+    suite.test[test_pointer_refitem]()
+    suite.test[test_pointer_refitem_string]()
+    suite.test[test_pointer_refitem_pair]()
+    suite.test[test_pointer_string]()
+    suite.test[test_address_space_str]()
+    suite.test[test_dtypepointer_gather]()
+    suite.test[test_dtypepointer_scatter]()
+    suite.test[test_indexing]()
 
-    test_address_space_str()
-
-    test_dtypepointer_gather()
-    test_dtypepointer_scatter()
-    test_indexing()
+    suite^.run()

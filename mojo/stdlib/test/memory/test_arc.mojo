@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import ArcPointer
-from test_utils import ObservableDel
+from test_utils import ObservableDel, TestSuite
 from testing import assert_equal, assert_false, assert_true
 
 
@@ -109,10 +109,14 @@ def test_steal_data_does_not_decrement_refcount():
 
 
 def main():
-    test_basic()
-    test_is()
-    test_deleter_not_called_until_no_references()
-    test_deleter_not_called_until_no_references_explicit_copy()
-    test_count()
-    test_steal_data_and_construct_from_raw_ptr()
-    test_steal_data_does_not_decrement_refcount()
+    var suite = TestSuite()
+
+    suite.test[test_basic]()
+    suite.test[test_is]()
+    suite.test[test_deleter_not_called_until_no_references]()
+    suite.test[test_deleter_not_called_until_no_references_explicit_copy]()
+    suite.test[test_count]()
+    suite.test[test_steal_data_and_construct_from_raw_ptr]()
+    suite.test[test_steal_data_does_not_decrement_refcount]()
+
+    suite^.run()

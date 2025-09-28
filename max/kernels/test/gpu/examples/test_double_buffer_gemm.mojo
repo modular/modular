@@ -29,8 +29,7 @@ from layout.layout_tensor import (
     copy_sram_to_local,
 )
 from layout.math import outer_product_acc
-from layout.tensor_builder import LayoutTensorBuild as tb
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul.gpu import matmul_kernel_naive
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
 
@@ -155,15 +154,47 @@ fn sgemm_double_buffer[
     b_gmem_tile = b.tile[BK, BN](1, block_idx.x)
 
     # Double buffer in registers (fragments in nvidia terms).
+    alias layout_a = Layout.row_major(TM)
     var a_reg = InlineArray[_, 2](
-        tb[a_type]().row_major[TM]().local().alloc(),
-        tb[a_type]().row_major[TM]().local().alloc(),
+        LayoutTensor[
+            a_type,
+            layout_a,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation(),
+        LayoutTensor[
+            a_type,
+            layout_a,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation(),
     )
+    alias layout_b = Layout.row_major(TN)
     var b_reg = InlineArray[_, 2](
-        tb[b_type]().row_major[TN]().local().alloc(),
-        tb[b_type]().row_major[TN]().local().alloc(),
+        LayoutTensor[
+            b_type,
+            layout_b,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation(),
+        LayoutTensor[
+            b_type,
+            layout_b,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation(),
     )
-    var c_reg = tb[c_type]().row_major[TM, TN]().local().alloc().fill(0)
+    alias layout_c = Layout.row_major(TM, TN)
+    var c_reg = (
+        LayoutTensor[
+            c_type,
+            layout_c,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Thread swizzling
     # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to

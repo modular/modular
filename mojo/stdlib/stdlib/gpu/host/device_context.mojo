@@ -19,7 +19,6 @@ which represents a single stream of execution on a given accelerator. You can
 use this struct to allocate accelerator memory, copy data to and from the
 accelerator, and compile and execute functions on the accelerator."""
 
-from compile.reflection import get_linkage_name
 from collections.optional import OptionalReg
 from math import align_up
 from os import abort
@@ -36,10 +35,10 @@ from sys import (
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.ffi import c_char, c_int, c_uint
 from sys.info import (
-    is_triple,
-    _TargetType,
-    _accelerator_arch,
     CompilationTarget,
+    _accelerator_arch,
+    _TargetType,
+    is_triple,
 )
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
@@ -49,15 +48,17 @@ from builtin.device_passable import DevicePassable
 from builtin.variadics import VariadicOf
 from compile import get_type_name
 from compile.compile import CompiledFunctionInfo
+from compile.reflection import get_linkage_name
 from gpu.host.compile import (
     _compile_code,
     _cross_compilation,
-    get_gpu_target,
     _ptxas_compile,
     _to_sass,
+    get_gpu_target,
 )
 from memory import stack_allocation
 from memory.unsafe import bitcast
+
 from utils import Variant
 from utils._serialize import _serialize_elements
 
@@ -1196,11 +1197,6 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer that was owned by this buffer.
         """
-        return self._take_ptr()
-
-    fn _take_ptr(
-        var self,
-    ) -> Self._DevicePtr:
         constrained[
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
@@ -1225,11 +1221,6 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer owned by this buffer.
         """
-        return self._unsafe_ptr()
-
-    fn _unsafe_ptr(
-        self,
-    ) -> Self._DevicePtr:
         constrained[
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",

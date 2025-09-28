@@ -16,9 +16,9 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from utils.fast_div import FastDiv
 from testing import *
 
+from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
 
 
@@ -62,10 +62,10 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     var out_remainders = ctx.enqueue_create_buffer[type](length)
 
     var out_divisors_buffer = NDBuffer[type, 1](
-        out_divisors._unsafe_ptr(), Index(length)
+        out_divisors.unsafe_ptr(), Index(length)
     )
     var out_remainders_buffer = NDBuffer[type, 1](
-        out_remainders._unsafe_ptr(), Index(length)
+        out_remainders.unsafe_ptr(), Index(length)
     )
 
     @always_inline

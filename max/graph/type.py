@@ -310,7 +310,11 @@ class _TensorTypeBase(Type[MlirType]):
             isinstance(other, type(self))
             and (self.dtype == other.dtype)
             and (self.shape == other.shape)
+            and (self.device == other.device)
         )
+
+    def __hash__(self) -> int:
+        return hash((self.dtype, tuple(self.shape), self.device))
 
     # ===------------------------------------------------------------------=== #
     # Utilities
@@ -399,6 +403,9 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
     ) -> None:
         super().__init__(dtype, shape, DeviceRef.from_device(device))
         self._layout = _layout
+
+    def __hash__(self) -> int:
+        return hash((self.dtype, tuple(self.shape), self.device))
 
     @classmethod
     def from_mlir(cls, type: mo.TensorType) -> TensorType:

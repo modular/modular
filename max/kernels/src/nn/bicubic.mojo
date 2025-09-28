@@ -16,11 +16,12 @@ Bicubic interpolation is a 2D extension of cubic interpolation for resampling
 digital images. It uses the weighted average of the 4x4 neighborhood of pixels
 around the target location to compute the interpolated value.
 """
+from math import clamp, floor
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host.info import is_gpu
 from gpu.id import block_dim, block_idx, thread_idx
-from math import floor, clamp
 from runtime.asyncrt import DeviceContextPtr
 
 

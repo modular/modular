@@ -18,12 +18,14 @@ from sys.intrinsics import readfirstlane
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from gpu.intrinsics import AMDBufferResource
+from gpu.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
-from utils import IndexList
-from gpu.mma import mma
-from .int_tuple import _get_index_type, _get_layout_type, product
 from memory.unsafe import bitcast
+
+from utils import IndexList
+
+from .int_tuple import _get_index_type, _get_layout_type, product
 
 
 struct ManagedLayoutTensor[
@@ -146,11 +148,11 @@ struct ManagedLayoutTensor[
         @parameter
         if layout.all_dims_known():
             return Self.layout_tensor_type(
-                self.device_data.value()._unsafe_ptr(),
+                self.device_data.value().unsafe_ptr(),
             )
         else:
             return Self.layout_tensor_type(
-                self.device_data.value()._unsafe_ptr(),
+                self.device_data.value().unsafe_ptr(),
                 self.runtime_layout,
             )
 
@@ -168,7 +170,7 @@ struct ManagedLayoutTensor[
             shape[r] = self.runtime_layout.dim(r)
 
         return NDBuffer[dtype, layout.rank()](
-            self.device_data.value()._unsafe_ptr(), shape
+            self.device_data.value().unsafe_ptr(), shape
         )
 
     fn tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:

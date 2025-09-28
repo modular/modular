@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.string.string_slice import _to_string_list
 from pathlib import _dir_of_current_file
-from random import random_float64, random_si64, random_ui64, seed, rand
+from random import rand, random_float64, random_si64, random_ui64, seed
 
 from builtin.sort import (
+    _heap_sort,
+    _insertion_sort,
     _quicksort,
     _small_sort,
-    _insertion_sort,
     _stable_sort,
-    _heap_sort,
 )
-from collections.string.string_slice import _to_string_list
-from testing import assert_equal, assert_false, assert_true
 from test_utils import CopyCounter
+from testing import assert_equal, assert_false, assert_true
 
 
 fn random_numbers[
@@ -478,8 +478,7 @@ fn test_sort_stress() raises:
     fn _leq(lhs: Int, rhs: Int) -> Bool:
         return lhs <= rhs
 
-    for i in range(len(lens)):
-        var length = lens[i]
+    for length in lens:
         test[_gt, _geq](length)
         test[_lt, _leq](length)
 
@@ -632,8 +631,7 @@ def test_stable_sort_stress():
     fn _lt_check(lhs: IntPair, rhs: IntPair) -> Bool:
         return lhs.idx < rhs.idx if lhs.x == rhs.x else lhs.x < rhs.x
 
-    for i in range(len(lens)):
-        var length = lens[i]
+    for length in lens:
         test[_lt, _lt_check](length)
 
 

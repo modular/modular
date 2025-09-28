@@ -14,6 +14,7 @@
 from math import frexp, ldexp
 from sys import external_call
 
+from test_utils import TestSuite
 from testing import assert_almost_equal, assert_equal
 
 
@@ -75,6 +76,10 @@ def test_ldexp_extensive_float32():
 
 
 def main():
-    test_ldexp()
-    test_ldexp_vector()
-    test_ldexp_extensive_float32()
+    var suite = TestSuite()
+
+    suite.test[test_ldexp]()
+    suite.test[test_ldexp_vector]()
+    suite.test[test_ldexp_extensive_float32]()
+
+    suite^.run()

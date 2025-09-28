@@ -19,6 +19,7 @@ from max.driver import Tensor
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import PagedCacheValues
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Olmo2Config
@@ -94,9 +95,15 @@ class Olmo2Model(LlamaModelBase):
             tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                 graph.inputs
             )
+            kv_collection = PagedCacheValues(
+                kv_blocks=kv_cache_inputs[0].buffer,
+                cache_lengths=kv_cache_inputs[1].tensor,
+                lookup_table=kv_cache_inputs[2].tensor,
+                max_lengths=kv_cache_inputs[3].tensor,
+            )
             outputs = nn_model(
                 tokens.tensor,
-                [inp.tensor for inp in kv_cache_inputs],
+                kv_collection,
                 input_row_offsets=input_row_offsets.tensor,
                 return_n_logits=return_n_logits.tensor,
             )

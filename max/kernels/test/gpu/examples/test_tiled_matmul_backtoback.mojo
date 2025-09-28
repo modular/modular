@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from io.io import _printf
 from math import ceildiv
 from os import abort
 from sys import size_of
 from sys.info import align_of, simd_width_of
 
 from buffer.dimlist import Dim
-from io.io import _printf
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -29,24 +29,20 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import (
-    AddressSpace,
-    external_memory,
-)
+from gpu.memory import AddressSpace, external_memory
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import size
 from layout.layout_tensor import (
     LayoutTensorIter,
-    copy_local_to_shared,
     copy_local_to_dram,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.swizzle import make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from linalg._multistage_gemm_gpu import multistage_mma
+from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import block_swizzle
 from testing import assert_almost_equal
@@ -293,20 +289,24 @@ fn b2b_gemm[
     # alias c_frag_size = b_frag_size
     alias d_frag_size = frag_size[2]
     # (WM*WN // WARP_SIZE)
+    alias layout = Layout.row_major(num_m_mmas * num_n_mmas, d_frag_size)
     var d_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, d_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            accum_type,
+            layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
-    var ab_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, d_frag_size]()
-        .local()
-        .alloc()
-    )
+    var ab_reg_tile = LayoutTensor[
+        accum_type,
+        layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
         var b_tile_coords = (Int(l), 0) if transpose_b else (0, Int(l))
@@ -447,12 +447,12 @@ fn b2b_gemm[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = (
-            tb[accum_type]()
-            .row_major[WM, WN]()
-            .shared()
-            .view(a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
-        )
+        var accum_smem_warp_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(WM, WN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
@@ -669,9 +669,19 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     var mat_b = ManagedLayoutTensor[src_type, layout_b](ctx)
     var mat_c = ManagedLayoutTensor[src_type, layout_c](ctx)
     var mat_d = ManagedLayoutTensor[dst_type, layout_d](ctx)
-    var host_d_ref = tb[dst_type]().row_major[M, N]().alloc()
-    var host_ab = tb[dst_type]().row_major[M, L]().alloc()
-    var host_ab_downcast = tb[src_type]().row_major[M, L]().alloc()
+    var stack_d = InlineArray[Scalar[dst_type], layout_d.size()](
+        uninitialized=True
+    )
+    alias layout_ab = Layout.row_major(M, L)
+    var stack_ab = InlineArray[Scalar[dst_type], layout_ab.size()](
+        uninitialized=True
+    )
+    var stack_ab_downcast = InlineArray[Scalar[src_type], layout_ab.size()](
+        uninitialized=True
+    )
+    var host_d_ref = LayoutTensor[dst_type, layout_d](stack_d)
+    var host_ab = LayoutTensor[dst_type, layout_ab](stack_ab)
+    var host_ab_downcast = LayoutTensor[src_type, layout_ab](stack_ab_downcast)
 
     var mat_a_tensor = mat_a.tensor()
     var mat_b_tensor = mat_b.tensor()

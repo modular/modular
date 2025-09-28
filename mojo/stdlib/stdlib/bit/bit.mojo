@@ -19,9 +19,10 @@ from bit import count_leading_zeros
 ```
 """
 
-from bit._mask import is_negative
 from sys import llvm_intrinsic
 from sys.info import bit_width_of
+
+from bit._mask import is_negative
 
 from utils._select import _select_register_value as select
 

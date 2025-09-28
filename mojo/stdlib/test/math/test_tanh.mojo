@@ -15,7 +15,7 @@ from math import tanh
 from random import randn, seed
 
 from buffer import NDBuffer
-from test_utils import compare, libm_call
+from test_utils import compare, libm_call, TestSuite
 from testing import assert_almost_equal
 
 
@@ -180,8 +180,16 @@ def test_direct():
     )
 
 
+def test_tanh_libm_wrapper():
+    test_tanh_libm[]()
+
+
 def main():
-    test_direct()
-    test_tanh_tfvals_fp32()
-    test_tanh_tfvals_fp64()
-    test_tanh_libm()
+    var suite = TestSuite()
+
+    suite.test[test_direct]()
+    suite.test[test_tanh_tfvals_fp32]()
+    suite.test[test_tanh_tfvals_fp64]()
+    suite.test[test_tanh_libm_wrapper]()
+
+    suite^.run()

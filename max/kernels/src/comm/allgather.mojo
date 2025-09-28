@@ -33,19 +33,13 @@ from math import ceildiv
 from sys import simd_width_of
 
 from buffer import NDBuffer
-from gpu import (
-    block_dim,
-    global_idx,
-    grid_dim,
-    WARP_SIZE,
-)
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host import get_gpu_target
+from gpu import WARP_SIZE, block_dim, global_idx, grid_dim
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
 # Import P2P detection and synchronization from allreduce
-from .allreduce import MAX_GPUS, Signal, can_enable_p2p, _multi_gpu_barrier
+from .allreduce import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
 
 
 @always_inline

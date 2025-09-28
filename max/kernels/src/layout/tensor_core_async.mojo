@@ -34,7 +34,9 @@ Performance features:
 
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
+from collections import OptionalReg
 from sys import size_of
+from sys._assembly import inlined_assembly
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace
@@ -59,8 +61,6 @@ from layout.layout import (
 )
 
 from utils import IndexList, StaticTuple
-from sys._assembly import inlined_assembly
-from collections import OptionalReg
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #

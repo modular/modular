@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OwnedKwargsDict
 from os import abort
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
-from collections import OwnedKwargsDict
 
 
 @export

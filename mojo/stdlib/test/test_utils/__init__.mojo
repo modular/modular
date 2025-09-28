@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .compare_helpers import compare
-from .hash import dif_bits, assert_dif_hashes, assert_fill_factor
+from .hash import assert_dif_hashes, assert_fill_factor, dif_bits
 from .math_helpers import ulp_distance
 from .suite import TestSuite
 from .test_utils import libm_call
@@ -28,11 +28,10 @@ from .types import (
     MoveCopyCounter,
     MoveCounter,
     MoveOnly,
-    TriviallyCopyableMoveCounter,
     ObservableDel,
     ObservableMoveOnly,
+    TriviallyCopyableMoveCounter,
 )
-
 from .words import (
     gen_word_pairs,
     words_ar,

@@ -16,11 +16,11 @@ from math import ceil, floor
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from memory import memcpy

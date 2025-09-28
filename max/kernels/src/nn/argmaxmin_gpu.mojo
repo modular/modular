@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import LayoutTensor, Layout, RuntimeLayout
 from gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.topk import topk_gpu
 
 
@@ -49,7 +49,7 @@ fn argmaxmin_gpu[
         out_vals_shape.flattened_length()
     )
     var out_vals = LayoutTensor[dtype, Layout.row_major[input.rank]()](
-        out_vals_buf._unsafe_ptr(),
+        out_vals_buf.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[input.rank]()].row_major(out_vals_shape),
     )
 

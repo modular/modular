@@ -15,21 +15,15 @@
 from math import ceildiv
 from sys import align_of
 
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from builtin.dtype import _uint_type_of_width
-from gpu import (
-    barrier,
-    block_dim,
-    block_idx,
-    grid_dim,
-    thread_idx,
-)
+from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
 from layout import Layout, LayoutTensor, RuntimeTuple
-from layout.int_tuple import fill_like, UNKNOWN_VALUE
+from layout.int_tuple import UNKNOWN_VALUE, fill_like
 from memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
@@ -729,7 +723,7 @@ fn _topp_minp_sampling_gpu[
     # TODO: Should softmax be done in-place without needing this other buffer?
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
     var input_probs = NDBuffer[dtype, input_logits.rank](
-        probs_buf._unsafe_ptr(), DimList(batch_size, vocab_size)
+        probs_buf.unsafe_ptr(), DimList(batch_size, vocab_size)
     )
 
     _softmax_gpu[

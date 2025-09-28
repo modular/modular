@@ -63,6 +63,7 @@ from collections.string._utf8 import (
 )
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from hashlib.hasher import Hasher
+from io.write import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
 from os import PathLike, abort
 from sys import is_compile_time, simd_width_of
@@ -70,12 +71,10 @@ from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
 from bit import count_trailing_zeros
-from bit._mask import splat, is_negative
+from bit._mask import is_negative, splat
 from memory import Span, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
-from python import Python, ConvertibleToPython, PythonObject
-
-from io.write import _WriteBufferStack, _TotalWritableBytes
+from python import ConvertibleToPython, Python, PythonObject
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -659,12 +658,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @implicit
     fn __init__[
-        origin: ImmutableOrigin, //
-    ](out self: StringSlice[origin], ref [origin]value: String):
+        _origin: ImmutableOrigin, //
+    ](out self: StringSlice[_origin], ref [_origin]value: String):
         """Construct an immutable StringSlice.
 
         Parameters:
-            origin: The immutable origin.
+            _origin: The immutable origin.
 
         Args:
             value: The string value.
@@ -672,12 +671,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self = value.as_string_slice()
 
     fn __init__[
-        origin: MutableOrigin, //
-    ](out self: StringSlice[origin], ref [origin]value: String):
+        _origin: MutableOrigin, //
+    ](out self: StringSlice[_origin], ref [_origin]value: String):
         """Construct a mutable StringSlice.
 
         Parameters:
-            origin: The mutable origin.
+            _origin: The mutable origin.
 
         Args:
             value: The string value.

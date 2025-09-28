@@ -110,6 +110,7 @@ fn test_vectorize_2() raises:
     var val4 = frag4[crd]
     assert_equal(val4[0], 16)
     assert_equal(val4[1], 17)
+    heap.free()
 
 
 def main():

@@ -14,10 +14,9 @@ from __future__ import annotations
 
 from .multi_cache_manager import MultiPagedKVCacheManager
 from .paged_cache import (
-    FetchPagedKVCacheCollection,
-    PagedKVCacheCollection,
+    PagedCacheInputSymbols,
+    PagedCacheValues,
     PagedKVCacheManager,
-    PagedKVCacheType,
 )
 from .transfer_engine import (
     KVTransferEngine,
@@ -27,13 +26,12 @@ from .transfer_engine import (
 )
 
 __all__ = [
-    "FetchPagedKVCacheCollection",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
     "MultiPagedKVCacheManager",
-    "PagedKVCacheCollection",
+    "PagedCacheInputSymbols",
+    "PagedCacheValues",
     "PagedKVCacheManager",
-    "PagedKVCacheType",
     "XferReqData",
     "available_port",
 ]

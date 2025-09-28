@@ -33,17 +33,16 @@ from gpu import (
     warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import AddressSpace, external_memory
 from layout import (
-    LayoutTensor,
-    Layout,
+    UNKNOWN_VALUE,
     IntTuple,
+    Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from memory import stack_allocation

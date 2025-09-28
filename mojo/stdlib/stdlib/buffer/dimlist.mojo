@@ -19,9 +19,11 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-from utils import IndexList, StaticTuple
-from builtin.variadics import Variadic
 from math import CeilDivable, ceildiv
+
+from builtin.variadics import Variadic
+
+from utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Dim

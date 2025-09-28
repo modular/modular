@@ -25,7 +25,7 @@ import numpy.typing as npt
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -35,8 +35,9 @@ from max.graph.weights import (
 from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
+    PagedCacheValues,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -240,9 +241,7 @@ class Idefics3Inputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Idefics3Model(
-    PipelineModel[TextAndVisionContext], KVCacheMixin[TextAndVisionContext]
-):
+class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """An Idefics3 pipeline model for multimodal text generation."""
 
     vision_model: Model
@@ -538,8 +537,8 @@ class Idefics3Model(
         )
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> list[tuple[TensorValue, ...]]:
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
         kv_params = Idefics3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
@@ -549,15 +548,17 @@ class Idefics3Model(
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev = [
-            tuple(
-                kv_inputs_flat[
-                    i * len_of_kv_tuple_per_dev : (i + 1)
-                    * len_of_kv_tuple_per_dev
-                ]
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
             )
-            for i in range(n_devices)
-        ]
         return kv_caches_per_dev
 
     def _build_language_graph(
@@ -593,12 +594,12 @@ class Idefics3Model(
             ) = graph.inputs
 
             # Unmarshal the remaining arguments, which are for KV cache
-            kv_cache = [v.tensor for v in variadic_args]
+            kv_cache = self._unflatten_kv_inputs(variadic_args)
 
             # Execute language model: text + image embeddings -> logits
             outputs = language_model(
                 tokens=tokens.tensor,
-                kv_cache_inputs=self._unflatten_kv_inputs(kv_cache)[0],
+                kv_collection=kv_cache[0],
                 return_n_logits=return_n_logits.tensor,
                 input_row_offsets=input_row_offsets.tensor,
                 image_embeddings=image_embeddings.tensor,
@@ -807,8 +808,8 @@ class Idefics3Model(
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager[TextAndVisionContext]:
-        """Loads and initializes the KVCacheManager for the Idefics3 model."""
+    ) -> PagedKVCacheManager:
+        """Loads and initializes the PagedKVCacheManager for the Idefics3 model."""
         return load_kv_manager(
             params=Idefics3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,

@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
+from sys import env_get_int, env_get_string
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, arg_parse
-from internal_utils._utils import static, ValOrDim, dynamic
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from sys import env_get_int, env_get_string
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 
 from utils import IndexList
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn _get_run_name[
@@ -182,23 +182,22 @@ fn bench_matmul_naive[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function[
-                matmul_kernel_naive[
-                    out_type,
-                    in_type,
-                    in_type,
-                    c_tensor.layout,
-                    a_tensor.layout,
-                    b_tensor.layout,
-                    BLOCK_DIM,
-                ]
-            ](
+            alias kernel = matmul_kernel_naive[
+                out_type,
+                in_type,
+                in_type,
+                c_tensor.layout,
+                a_tensor.layout,
+                b_tensor.layout,
+                BLOCK_DIM,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 c_tensor,
                 a_tensor,
                 b_tensor,
-                UInt(M),
-                UInt(N),
-                UInt(K),
+                M,
+                N,
+                K,
                 grid_dim=(ceildiv(M, WARPS_PER_BLOCK), ceildiv(N, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
             )

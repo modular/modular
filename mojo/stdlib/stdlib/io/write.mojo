@@ -12,15 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Establishes the contract between `Writer` and `Writable` types."""
 
-from bit import byte_swap
 from io.io import _printf
-from sys.info import is_gpu
-from memory import memcpy, bitcast
 from os import abort
 from sys import align_of
-from memory import Span, memcpy
+from sys.info import is_gpu
 from sys.param_env import env_get_int
 
+from bit import byte_swap
+from memory import Span, bitcast, memcpy
 
 # ===-----------------------------------------------------------------------===#
 

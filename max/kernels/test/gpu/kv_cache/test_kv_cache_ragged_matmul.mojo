@@ -25,7 +25,7 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from linalg.matmul import matmul
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 from memory import memcpy
 from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,

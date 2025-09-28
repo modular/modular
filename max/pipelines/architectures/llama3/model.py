@@ -22,15 +22,16 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorValue
+from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheManager,
     KVCacheParams,
     MultiPagedKVCacheManager,
+    PagedCacheValues,
+    PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -111,7 +112,7 @@ class Llama3Inputs(ModelInputs):
         self.data_parallel_splits = data_parallel_splits
 
 
-class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
+class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     """Base Llama pipeline model implementation."""
 
     model: Model
@@ -288,6 +289,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
                     context_batch, input_row_offsets, self.devices[0]
                 )
             )
+
             inputs.lora_ids = lora_ids
             inputs.lora_ranks = lora_ranks
             inputs.lora_grouped_offsets = lora_grouped_offsets
@@ -330,7 +332,8 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int | None,
-    ) -> KVCacheManager[TextContext]:
+    ) -> PagedKVCacheManager:
+        # For pipeline parallel, use layers per stage instead of total layers
         num_layers_for_cache = Llama3Config.get_num_layers(
             huggingface_config=self.huggingface_config
         )
@@ -426,8 +429,8 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
         return session.load(graph)
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> list[tuple[TensorValue, ...]]:
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
         kv_params = Llama3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
@@ -437,15 +440,17 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev = [
-            tuple(
-                kv_inputs_flat[
-                    i * len_of_kv_tuple_per_dev : (i + 1)
-                    * len_of_kv_tuple_per_dev
-                ]
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
             )
-            for i in range(n_devices)
-        ]
         return kv_caches_per_dev
 
     def _get_state_dict(
@@ -522,11 +527,9 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
                 ]
 
                 # Unmarshal the remaining arguments, which are for KV cache.
-                kv_cache = [
-                    v.tensor for v in variadic_args[len(self.devices) :]
-                ]
-
-                kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
+                kv_caches_per_dev = self._unflatten_kv_inputs(
+                    variadic_args[len(self.devices) :]
+                )
 
                 outputs = dist_model(
                     tokens.tensor,
@@ -583,9 +586,15 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin[TextContext]):
                         return_n_logits,
                         *kv_cache_inputs,
                     ) = graph.inputs
+                kv_collection = PagedCacheValues(
+                    kv_blocks=kv_cache_inputs[0].buffer,
+                    cache_lengths=kv_cache_inputs[1].tensor,
+                    lookup_table=kv_cache_inputs[2].tensor,
+                    max_lengths=kv_cache_inputs[3].tensor,
+                )
                 outputs = single_model(
                     tokens.tensor,
-                    [inp.tensor for inp in kv_cache_inputs],
+                    kv_collection,
                     return_n_logits.tensor,
                     input_row_offsets.tensor,
                 )

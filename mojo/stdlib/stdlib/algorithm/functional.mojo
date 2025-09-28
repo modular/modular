@@ -19,11 +19,12 @@ from algorithm import map
 ```
 """
 
+import sys
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
 from os import abort
-import sys
+from pathlib import Path
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -39,18 +40,14 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
+from gpu.host.info import B200, is_cpu, is_gpu
 from runtime import tracing
 from runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import FlushDenormals
 from utils.static_tuple import StaticTuple
-from pathlib import Path
-
-from gpu.host.info import B200
-
 
 # ===-----------------------------------------------------------------------===#
 # Map
@@ -554,8 +551,7 @@ fn tile[
     # Initialize the work_idx with the starting offset.
     var work_idx = offset
     # Iterate on the list of given tile sizes.
-    for tile_idx in range(len(tile_size_list)):
-        var tile_size = tile_size_list[tile_idx]
+    for tile_size in tile_size_list:
         # Launch workloads on the current tile sizes until cannot proceed.
         while work_idx <= upperbound - tile_size:
             workgroup_function(work_idx, tile_size)
@@ -904,16 +900,11 @@ fn tile_and_unswitch[
     # Initialize where to start on the overall work load.
     var current_offset: Int = offset
 
-    for idx in range(len(tile_size_list)):
-        # Get the tile size to proceed with.
-        var tile_size = tile_size_list[idx]
-
+    for tile_size in tile_size_list:
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
         while current_offset <= upperbound - tile_size:
-            workgroup_function[True](
-                current_offset, upperbound, tile_size_list[idx]
-            )
+            workgroup_function[True](current_offset, upperbound, tile_size)
             current_offset += tile_size
 
     # Use the last tile size to process the residue.

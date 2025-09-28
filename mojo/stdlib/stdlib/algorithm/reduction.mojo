@@ -21,7 +21,7 @@ from algorithm import map_reduce
 
 from collections import OptionalReg
 from math import align_down, ceildiv
-from sys.info import simd_width_of, size_of, align_of
+from sys.info import align_of, simd_width_of, size_of
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -34,12 +34,11 @@ from builtin.math import min as _min
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils.index import Index, IndexList, StaticTuple
 
 from ._gpu.reduction import reduce_launch
-
 
 # ===-----------------------------------------------------------------------===#
 # ND indexing helper

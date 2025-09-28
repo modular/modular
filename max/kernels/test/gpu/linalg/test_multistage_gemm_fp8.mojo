@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu import grid_dim
 from gpu.host import DeviceContext, FuncAttribute
@@ -24,10 +24,8 @@ from internal_utils import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
-from linalg._multistage_gemm_gpu import multistage_gemm_kernel
-from linalg.utils_gpu import (
-    MatmulKernels,
-)
+from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
+from linalg.utils_gpu import MatmulKernels
 
 
 fn test_fp8_multistage_gemm[

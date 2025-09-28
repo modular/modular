@@ -16,12 +16,13 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
-from gpu.host import DeviceContext, DeviceBuffer
+from os.path import dirname
+from pathlib import Path
+from sys.param_env import env_get_string
+
+from gpu.host import DeviceBuffer, DeviceContext
 from shmem import *
 from testing import assert_equal
-from pathlib import Path
-from os.path import dirname
-from sys.param_env import env_get_string
 
 
 fn simple_shift_kernel(destination: UnsafePointer[Int32]):

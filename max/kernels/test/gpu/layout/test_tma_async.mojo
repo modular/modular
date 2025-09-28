@@ -754,18 +754,18 @@ def test_tma_load_and_store_two_buffers_row_major[
 
     arange(a_src.tensor(), 1)
     arange(b_src.tensor(), 1)
-    var a_tma_src_tensor = create_tma_tile[
-        DType.float32, 2, Index(tileM, tileN)
-    ](ctx, a_src.device_tensor())
-    var b_tma_src_tensor = create_tma_tile[
-        DType.float32, 2, Index(tileM, tileN)
-    ](ctx, b_src.device_tensor())
-    var a_tma_dst_tensor = create_tma_tile[
-        DType.float32, 2, Index(tileM, tileN)
-    ](ctx, a_dst.device_tensor())
-    var b_tma_dst_tensor = create_tma_tile[
-        DType.float32, 2, Index(tileM, tileN)
-    ](ctx, b_dst.device_tensor())
+    var a_tma_src_tensor = create_tma_tile[Index(tileM, tileN)](
+        ctx, a_src.device_tensor()
+    )
+    var b_tma_src_tensor = create_tma_tile[Index(tileM, tileN)](
+        ctx, b_src.device_tensor()
+    )
+    var a_tma_dst_tensor = create_tma_tile[Index(tileM, tileN)](
+        ctx, a_dst.device_tensor()
+    )
+    var b_tma_dst_tensor = create_tma_tile[Index(tileM, tileN)](
+        ctx, b_dst.device_tensor()
+    )
     ctx.synchronize()
 
     alias kernel = test_tma_loads_and_store_two_buffers_kernel[

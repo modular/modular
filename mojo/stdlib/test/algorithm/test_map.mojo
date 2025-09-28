@@ -13,7 +13,6 @@
 
 from algorithm import map
 from buffer import NDBuffer
-
 from testing import assert_equal
 
 

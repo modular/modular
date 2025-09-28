@@ -16,8 +16,7 @@ from sys import simd_width_of
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from gpu import *
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -39,8 +38,8 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
         for i in range(length):
             in_host[i] = abs((Scalar[type](i) - length // 2) + epsilon)
 
-    var in_buffer = NDBuffer[type, 1](in_device._unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[type, 1](out_device._unsafe_ptr(), Index(length))
+    var in_buffer = NDBuffer[type, 1](in_device.unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[type, 1](out_device.unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer, exponent)

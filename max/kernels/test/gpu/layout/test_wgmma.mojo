@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext

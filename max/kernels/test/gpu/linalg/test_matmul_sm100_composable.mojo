@@ -11,35 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
-from math import ceildiv
 from hashlib import default_comp_time_hasher
+from math import ceildiv
+from sys import size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from layout import Layout, LayoutTensor
-from layout.int_tuple import IntTuple
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import block_rank_in_cluster
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-from linalg.matmul_sm100_composable import matmul_sm100
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 # Additional imports for testing
 from internal_utils import (
@@ -50,6 +36,17 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import Layout, LayoutTensor
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.int_tuple import IntTuple
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from linalg.arch.sm100 import MmaOpSM100_SS
+from linalg.matmul.gpu.sm100.composable import matmul_sm100
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 def test_blackwell_matmul_tma_umma[

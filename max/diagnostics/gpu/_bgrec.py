@@ -273,12 +273,30 @@ def _read_stats(path: Path) -> list[dict[str, GPUStats]]:
 
 
 class BackgroundRecorder:
-    """Background recorder for GPU diagnostics.
+    """Asynchronous GPU metrics collection and data export capabilities.
 
-    When active, GPU statistics will be sampled every second.  To activate the
-    recorder, use it as a context manager.  After exiting the context manager,
-    the recorder will have stopped and the statistics will be available in the
-    `stats` property.
+    The ``BackgroundRecorder`` enables continuous monitoring of GPU performance metrics
+    without blocking the main application thread. It automatically samples GPU
+    statistics at one-second intervals in a separate process, making it ideal for
+    profiling long-running inference sessions or training workloads.
+
+    When used as a context manager, the recorder starts background collection upon
+    entry and stops collection upon exit. The collected statistics are then
+    available through the `stats` property as a time-series of GPU measurements.
+
+    .. code-block:: python
+
+        from max.diagnostics.gpu import BackgroundRecorder
+
+        with BackgroundRecorder() as recorder:
+            # Run your GPU workload here
+            run_inference_session()
+
+        # Access collected time-series data
+        for i, snapshot in enumerate(recorder.stats):
+            print(f"Sample {i}: {len(snapshot)} GPUs detected")
+            for gpu_id, gpu_stats in snapshot.items():
+                print(f"  {gpu_id}: {gpu_stats.memory.used_bytes} bytes used")
     """
 
     def __init__(self) -> None:
@@ -287,7 +305,16 @@ class BackgroundRecorder:
 
     @property
     def stats(self) -> list[dict[str, GPUStats]]:
-        """The statistics collected by the recorder."""
+        """Time-series of GPU statistics collected during background recording.
+
+        Returns:
+            A list of dictionaries, where each dictionary represents GPU statistics
+            at a specific point in time. Each dictionary maps GPU identifiers to
+            their corresponding :obj:`GPUStats` objects.
+
+        Raises:
+            RuntimeError: If accessed before the recorder context has exited.
+        """
         if self._stats is None:
             raise RuntimeError("Recorder has not finished yet")
         return self._stats

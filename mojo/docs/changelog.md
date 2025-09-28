@@ -21,11 +21,18 @@ what we publish.
 
 ### Language enhancements
 
+Literals now have a default type. For example, you can now bind
+[1,2,3] to T in a call to a function defined as
+ fn zip[T: Iterable](impl:T) because it will default to the
+ standard library's List type.
+
 ### Language changes
 
 ### Standard library changes
 
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
+
+- The deprecated `DType.index` is now removed in favor of the `DType.int`.
 
 ### Tooling changes
 

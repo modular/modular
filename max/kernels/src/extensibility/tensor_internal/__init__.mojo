@@ -33,9 +33,9 @@ from .managed_tensor_slice import (
     VariadicTensors,
     _FusedComputeOutputTensor,
     _input_fusion_hook_impl,
+    _mixed_precision_compute_output_fusion_hook_impl,
     _mixed_precision_input_fusion_hook_impl,
     _mixed_precision_output_fusion_hook_impl,
-    _mixed_precision_compute_output_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
@@ -43,10 +43,10 @@ from .managed_tensor_slice import (
     trace_slice_arg,
     view_copy_impl,
 )
-from .tensor_spec import RuntimeTensorSpec
 from .operation_traits import (
-    ElementwiseBinaryOp,
     ElementwiseBinaryComparisonOp,
-    ElementwiseUnaryOp,
+    ElementwiseBinaryOp,
     ElementwiseUnaryMixedOp,
+    ElementwiseUnaryOp,
 )
+from .tensor_spec import RuntimeTensorSpec

@@ -48,7 +48,7 @@ from max.nn import (
 )
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
-from max.nn.kv_cache import FetchPagedKVCacheCollection, PagedKVCacheCollection
+from max.nn.kv_cache import PagedCacheValues
 
 from .embedding_utils import merge_multimodal_embeddings
 from .layers.attention import (
@@ -168,7 +168,7 @@ class InternVLDecoderLayer(Module):
         layer_idx: TensorValue,
         xs: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-        kv_collections: Sequence[PagedKVCacheCollection],
+        kv_collections: Sequence[PagedCacheValues],
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
@@ -305,12 +305,6 @@ class InternVLLanguageModel(Module):
             quantization_encoding=None,
         )
 
-        # Always assume paged KV cache for InternVL.
-        self.kv_collection_constructor = FetchPagedKVCacheCollection(
-            llm_config.kv_params,
-            num_layers=llm_config.num_hidden_layers,
-        )
-
         # Store image context token ID.
         self.image_context_token_id = image_context_token_id
 
@@ -318,7 +312,7 @@ class InternVLLanguageModel(Module):
         self,
         tokens: TensorValue,
         signal_buffers: Iterable[BufferValue],
-        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
+        kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
@@ -353,12 +347,6 @@ class InternVLLanguageModel(Module):
             for h_device, img_embed, img_tok_indices in zip(
                 h, image_embeddings, image_token_indices
             )
-        ]
-
-        # Create KV cache collections.
-        kv_collections = [
-            self.kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
         # Create position embeddings shared across the decoder layers.

@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
 from layout._mixed_layout import MixedLayout, make_row_major
-from layout._mixed_tuple import Idx, MixedTuple, ComptimeInt, RuntimeInt
+from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from layout.int_tuple import IntTuple
+from testing import assert_equal, assert_true
 
 
 fn main() raises:

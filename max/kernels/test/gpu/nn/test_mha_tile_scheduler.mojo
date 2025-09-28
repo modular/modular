@@ -17,6 +17,7 @@ from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.id import block_idx
 from gpu.memory import AddressSpace
+from nn.mha_fa3_utils import NullPointer
 from nn.mha_tile_scheduler import (
     MHASchedule,
     MHASchedulerSynchronization,
@@ -24,7 +25,6 @@ from nn.mha_tile_scheduler import (
     TileScheduler,
     WorkInfo,
 )
-from nn.mha_fa3_utils import NullPointer
 
 
 fn test_kernel[schedule: MHASchedule]():

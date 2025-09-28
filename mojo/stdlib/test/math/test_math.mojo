@@ -30,8 +30,8 @@ from math import (
     isqrt,
     lcm,
     log,
-    log2,
     log1p,
+    log2,
     sin,
     sqrt,
     trunc,
@@ -39,6 +39,7 @@ from math import (
 )
 from sys import CompilationTarget
 
+from test_utils import TestSuite
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
 from utils.numerics import inf, isinf, isnan, nan, neg_inf
@@ -51,10 +52,7 @@ fn test_sin() raises:
 fn test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        assert_equal(cos(BFloat16(2.0)), -0.416015625)
+    assert_equal(cos(BFloat16(2.0)), -0.416015625)
 
 
 fn test_factorial() raises:
@@ -127,8 +125,8 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
             (edge_val[symm](v, atol, rtol), v),
         ]
 
-    for i in range(len(all_close)):
-        var a, b = all_close[i]
+    for item in all_close:
+        var a, b = item
         var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
         assert_true(all(res))
 
@@ -152,8 +150,8 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
             (v, edge_val[symm](v, 1.1 * atol, 1.1 * rtol)),
         ]
 
-    for i in range(len(none_close)):
-        var a, b = none_close[i]
+    for item in none_close:
+        var a, b = item
         var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
         assert_false(any(res))
 
@@ -457,30 +455,21 @@ def test_frexp():
     _test_frexp_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log():
     _test_log_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log2():
     _test_log2_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log2_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log1p():
@@ -488,10 +477,7 @@ def test_log1p():
     _test_log1p_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log1p_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_gcd():
@@ -666,27 +652,31 @@ def test_atanh():
 
 
 def main():
-    test_sin()
-    test_cos()
-    test_factorial()
-    test_copysign()
-    test_isclose()
-    test_ceil()
-    test_floor()
-    test_trunc()
-    test_exp2()
-    test_iota()
-    test_sqrt()
-    test_isqrt()
-    test_frexp()
-    test_log()
-    test_log2()
-    test_log1p()
-    test_gcd()
-    test_lcm()
-    test_ulp()
-    test_ceildiv()
-    test_align_down()
-    test_align_up()
-    test_clamp()
-    test_atanh()
+    var suite = TestSuite()
+
+    suite.test[test_sin]()
+    suite.test[test_cos]()
+    suite.test[test_factorial]()
+    suite.test[test_copysign]()
+    suite.test[test_isclose]()
+    suite.test[test_ceil]()
+    suite.test[test_floor]()
+    suite.test[test_trunc]()
+    suite.test[test_exp2]()
+    suite.test[test_iota]()
+    suite.test[test_sqrt]()
+    suite.test[test_isqrt]()
+    suite.test[test_frexp]()
+    suite.test[test_log]()
+    suite.test[test_log2]()
+    suite.test[test_log1p]()
+    suite.test[test_gcd]()
+    suite.test[test_lcm]()
+    suite.test[test_ulp]()
+    suite.test[test_ceildiv]()
+    suite.test[test_align_down]()
+    suite.test[test_align_up]()
+    suite.test[test_clamp]()
+    suite.test[test_atanh]()
+
+    suite^.run()

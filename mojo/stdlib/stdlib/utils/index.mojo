@@ -22,8 +22,8 @@ from utils import IndexList
 
 from hashlib.hasher import Hasher
 
-from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from builtin.device_passable import DevicePassable
+from builtin.dtype import _int_type_of_width, _uint_type_of_width
 
 from .static_tuple import StaticTuple
 

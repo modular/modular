@@ -64,10 +64,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2366
-    "gpu/test_random.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
     "gpu/bench_kv_cache_ragged_qkv_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -88,6 +84,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "gpu/bench_grouped_matmul.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2477
 }
 
 _CPU_TESTS = glob(

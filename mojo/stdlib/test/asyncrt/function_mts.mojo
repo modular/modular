@@ -63,7 +63,7 @@ fn main() raises:
     )
 
     var rgb_tensor = InputTensor[static_spec=rgb_spec](
-        rgb_buffer._unsafe_ptr(), IndexList[3](HEIGHT, WIDTH, NUM_CHANNELS)
+        rgb_buffer.unsafe_ptr(), IndexList[3](HEIGHT, WIDTH, NUM_CHANNELS)
     )
 
     # Map device buffer to host to initialize values from CPU
@@ -79,7 +79,7 @@ fn main() raises:
                 rgb_tensor[row, col, 2] = row + col + 40
 
     var gray_tensor = OutputTensor[static_spec=gray_spec](
-        gray_buffer._unsafe_ptr(), IndexList[2](HEIGHT, WIDTH)
+        gray_buffer.unsafe_ptr(), IndexList[2](HEIGHT, WIDTH)
     )
 
     # The grid is divided up into blocks, making sure there's an extra

@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the unified LayoutLike system."""
 
-from testing import assert_equal
+from sys import size_of
+
 from layout._mixed_tuple import (
-    MixedTuple,
-    Idx,
     ComptimeInt,
+    Idx,
+    MixedTuple,
     RuntimeInt,
     mixed_int_tuple_to_int_tuple,
 )
-from sys import size_of
+from testing import assert_equal
 
 
 fn test_nested_layouts() raises:

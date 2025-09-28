@@ -15,11 +15,7 @@ from os import abort
 from random import rand, seed
 
 import internal_utils
-from layout.layout_tensor import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-)
+from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
 from linalg.qr_factorization import form_q, qr_factorization
 from memory import memcpy
 from testing import assert_almost_equal

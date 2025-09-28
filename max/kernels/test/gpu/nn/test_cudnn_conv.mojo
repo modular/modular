@@ -14,16 +14,8 @@
 
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-    zero,
-)
-from nn.conv import (
-    conv_cudnn,
-    conv_gpu,
-)
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random, zero
+from nn.conv import conv_cudnn, conv_gpu
 from testing import assert_almost_equal
 
 from utils.index import IndexList

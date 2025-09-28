@@ -22,7 +22,7 @@ import random
 from collections.abc import Generator, Sequence
 from functools import reduce
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 import numpy as np
 import pytest
@@ -42,6 +42,7 @@ from max.graph import (
     SymbolicDim,
     TensorType,
     _OpaqueType,
+    dtype_promotion,
 )
 
 # When running in CI, graph tests can take around 300ms for a single run.
@@ -74,6 +75,14 @@ dtypes = st.sampled_from(
         )
     ]
 )
+
+
+def float_dtypes():
+    return st.sampled_from([d for d in DType if d.is_float()])
+
+
+def integral_dtypes():
+    return st.sampled_from([d for d in DType if d.is_integral()])
 
 
 def uniform_distributed_static_dims(min: int = 0, max: int = 2**63 - 1):
@@ -324,8 +333,8 @@ def broadcastable_tensor_types(n: int):
     )
 
 
-def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim | None]:
-    def broadcast_dim(d1: Optional[Dim], d2: Optional[Dim]):
+def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim]:
+    def broadcast_dim(d1: Dim | None, d2: Dim | None):
         if d1 is None:
             return d2
         if d2 is None:
@@ -343,6 +352,52 @@ def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim | None]:
             ]
         )
     )
+
+
+def shapes_are_broadcastable(*shapes: list[Dim]) -> bool:
+    shape, *rest = shapes
+    for other_shape in rest:
+        try:
+            shape = broadcast_shapes(shape, other_shape)
+        except ValueError:
+            return False
+    return True
+
+
+def int_value_in_range(dtype: DType):
+    min, max = dtype_promotion._DTYPE_MIN_AND_MAX_FULL_PRECISION[dtype]
+    return st.integers(min_value=int(min), max_value=int(max))
+
+
+def int_value_out_of_range(dtype: DType):
+    min, max = dtype_promotion._DTYPE_MIN_AND_MAX_FULL_PRECISION[dtype]
+    return st.one_of(
+        st.integers(max_value=int(min) - 1), st.integers(min_value=int(max) + 1)
+    )
+
+
+def float_value_in_range(dtype: DType):
+    min, max = dtype_promotion._DTYPE_MIN_AND_MAX_FULL_PRECISION[dtype]
+    return st.floats(min_value=min, max_value=max)
+
+
+def float_value_out_of_range(dtype: DType):
+    min, max = dtype_promotion._DTYPE_MIN_AND_MAX_FULL_PRECISION[dtype]
+    return st.one_of(
+        st.floats(max_value=min, exclude_max=True),
+        st.floats(min_value=max, exclude_min=True),
+    )
+
+
+def value_in_range(dtype: DType) -> st.SearchStrategy[float]:
+    if dtype.is_float():
+        return st.one_of(st.floats(), int_value_in_range(dtype))
+    return int_value_in_range(dtype)
+
+
+def value_out_of_range(dtype: DType) -> st.SearchStrategy[float]:
+    # Floats are always promotable to float dtypes
+    return int_value_out_of_range(dtype)
 
 
 @pytest.fixture

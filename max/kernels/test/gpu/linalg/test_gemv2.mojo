@@ -15,13 +15,13 @@
 
 from random import random_si64
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul.gpu import _matmul_gpu
 
 from utils import IndexList
 

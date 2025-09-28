@@ -32,11 +32,12 @@ print(len(bs))          # Prints 0.
 # ---------------------------------------------------------------------------
 
 
+from math import ceildiv
+from sys import simd_width_of
+
 from algorithm import vectorize
 from bit import log2_floor, pop_count
-from math import ceildiv
 from memory import pack_bits
-from sys import simd_width_of
 
 from .inline_array import InlineArray
 

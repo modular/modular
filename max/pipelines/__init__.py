@@ -27,7 +27,7 @@ from .lib.config_enums import (
     RopeType,
     SupportedEncoding,
 )
-from .lib.embeddings_pipeline import EmbeddingsPipeline
+from .lib.embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .lib.hf_utils import download_weight_files
 from .lib.kv_cache_config import KVCacheConfig
 from .lib.memory_estimation import MEMORY_ESTIMATOR
@@ -38,6 +38,7 @@ from .lib.pipeline import (
     ModelOutputs,
     PipelineModel,
     TextGenerationPipeline,
+    TextGenerationPipelineType,
     upper_bounded_default,
 )
 from .lib.profiling_config import ProfilingConfig
@@ -60,6 +61,7 @@ __all__ = [
     "PIPELINE_REGISTRY",
     "AudioGenerationConfig",
     "EmbeddingsPipeline",
+    "EmbeddingsPipelineType",
     "GenerateMixin",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
@@ -85,6 +87,7 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
+    "TextGenerationPipelineType",
     "TextTokenizer",
     "download_weight_files",
     "upper_bounded_default",

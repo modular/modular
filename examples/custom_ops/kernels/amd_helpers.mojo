@@ -11,28 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys import align_of
+
 # AMD Helper functions and structs for Tensor Core MMA operations
 from sys.info import simd_width_of
-from gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
+
+from gpu import barrier, block_dim, block_idx, global_idx, lane_id, thread_idx
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import AddressSpace
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu import lane_id
-from utils.index import IndexList
-from sys import align_of
+from gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from layout import Layout
+from layout._utils import make_amd_buffer_resource
+from layout.element import Element
 from layout.layout_tensor import (
     LayoutTensor,
-    copy_local_to_shared,
-    copy_dram_to_local,
     ThreadScope,
+    copy_dram_to_local,
+    copy_local_to_shared,
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from layout._utils import make_amd_buffer_resource
-from layout.element import Element
-from memory import UnsafePointer, Pointer
-from gpu import global_idx, thread_idx, block_dim, block_idx, barrier
-from math import ceildiv
+from memory import Pointer, UnsafePointer
+
+from utils.index import IndexList
 
 
 # Function to handle AMD-specific scheduling
@@ -566,7 +568,8 @@ fn compare_equal[
     )
 
     # Compute the relative error between the reference and computed tensors
-    gpu_ctx.enqueue_function[compute_relative_error_kernel[dtype, layout]](
+    alias rel_error_kernel = compute_relative_error_kernel[dtype, layout]
+    gpu_ctx.enqueue_function_checked[rel_error_kernel, rel_error_kernel](
         reference,
         computed,
         max_relative_error,
@@ -583,7 +586,8 @@ fn compare_equal[
         var num_threadblocks = ceildiv(i, 1024)
         var num_elements = i if i < 1024 else 1024
 
-        gpu_ctx.enqueue_function[max_reduce_kernel[dtype, layout]](
+        alias reduce_kernel = max_reduce_kernel[dtype, layout]
+        gpu_ctx.enqueue_function_checked[reduce_kernel, reduce_kernel](
             max_relative_error,
             num_elements,
             offset,

@@ -20,11 +20,11 @@ from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
@@ -836,12 +836,16 @@ fn transpose_inplace[
         _transpose_inplace_naive[rows, cols, dtype](buf)
 
 
-fn transpose_inplace(buf: LayoutTensor[mut=True, **_]):
+fn transpose_inplace[
+    rows: Int,
+    cols: Int,
+    dtype: DType,
+](buf: LayoutTensor[mut=True, dtype, **_]):
     # Reject sizes covered by specialized implementations
     constrained[buf.rank == 2]()
-    alias rows = Int(buf.layout.shape[0])
-    alias cols = Int(buf.layout.shape[1])
     constrained[rows == cols]()
+    constrained[rows == Int(buf.layout.shape[0])]()
+    constrained[cols == Int(buf.layout.shape[1])]()
 
     @parameter
     if rows == 4:

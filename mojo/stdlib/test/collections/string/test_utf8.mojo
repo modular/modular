@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string._utf8 import (
-    _is_valid_utf8_runtime,
-    _is_valid_utf8_comptime,
     _count_utf8_continuation_bytes,
-    _is_valid_utf8,
-    _utf8_byte_type,
     _is_utf8_continuation_byte,
+    _is_valid_utf8,
+    _is_valid_utf8_comptime,
+    _is_valid_utf8_runtime,
+    _utf8_byte_type,
 )
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from test_utils import TestSuite
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
@@ -299,15 +300,18 @@ def test_utf8_byte_type():
 
 
 def main():
-    test_count_utf8_continuation_bytes()
-    test_utf8_byte_type()
+    var suite = TestSuite()
 
-    test_utf8_validation()
-    test_good_utf8_sequences()
-    test_bad_utf8_sequences()
-    test_stringslice_from_utf8()
-    test_combination_good_utf8_sequences()
-    test_combination_bad_utf8_sequences()
-    test_combination_good_bad_utf8_sequences()
-    test_combination_10_good_utf8_sequences()
-    test_combination_10_good_10_bad_utf8_sequences()
+    suite.test[test_count_utf8_continuation_bytes]()
+    suite.test[test_utf8_byte_type]()
+    suite.test[test_utf8_validation]()
+    suite.test[test_good_utf8_sequences]()
+    suite.test[test_bad_utf8_sequences]()
+    suite.test[test_stringslice_from_utf8]()
+    suite.test[test_combination_good_utf8_sequences]()
+    suite.test[test_combination_bad_utf8_sequences]()
+    suite.test[test_combination_good_bad_utf8_sequences]()
+    suite.test[test_combination_10_good_utf8_sequences]()
+    suite.test[test_combination_10_good_10_bad_utf8_sequences]()
+
+    suite^.run()

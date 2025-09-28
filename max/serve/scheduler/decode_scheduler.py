@@ -21,7 +21,6 @@ from collections import OrderedDict
 from max.interfaces import (
     MAXPullQueue,
     MAXPushQueue,
-    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
@@ -35,8 +34,8 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
     XferReqData,
 )
-from max.pipelines.core import TextContext
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -50,7 +49,6 @@ from .text_batch_constructor import (
 )
 from .utils import (
     SchedulerLogger,
-    SchedulerOutput,
     add_newly_encoded_reqs_to_tg_batch,
     release_terminated_requests,
 )
@@ -61,14 +59,11 @@ logger = logging.getLogger("max.serve")
 class DecodeScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: Pipeline[
-            TextGenerationInputs[TextContext],
-            TextGenerationOutput,
-        ],
+        pipeline: TextGenerationPipelineType[TextContext],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: PagedKVCacheManager[TextContext],
+        paged_manager: PagedKVCacheManager,
         *,
-        request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
+        request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
@@ -176,7 +171,9 @@ class DecodeScheduler(Scheduler):
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        self.pending_reqs |= dict(drain_queue(self.request_queue))
+        new_contexts = drain_queue(self.request_queue)
+        for context in new_contexts:
+            self.pending_reqs[context.request_id] = context
 
         while (
             self.pending_reqs
@@ -188,7 +185,9 @@ class DecodeScheduler(Scheduler):
             )
         ):
             # Pop off request queue
-            req_id, context = self.pending_reqs.popitem(last=False)
+            context = next(iter(self.pending_reqs.values()))
+            req_id = context.request_id
+            del self.pending_reqs[req_id]
 
             # Claim the slot with the paged manager
             if not self.paged_manager.contains(req_id):
@@ -196,7 +195,7 @@ class DecodeScheduler(Scheduler):
 
             # Prefetch memory for Context Encoding eagerly, this only needs to be
             # for one step.
-            if not self.paged_manager.prefetch(context, 1):
+            if not self.paged_manager.maybe_reserve(context, 1):
                 # If we don't have enough space in the paged manager
                 # return this to the request queue.
                 self.pending_reqs[req_id] = context
@@ -276,24 +275,23 @@ class DecodeScheduler(Scheduler):
         self._handle_cancelled_requests()
 
     @traced
-    def schedule(self, sch_output: SchedulerOutput) -> None:
+    def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Schedules a batch of requests for token generation and handles the responses.
 
         Args:
-            sch_output: The scheduler output containing the batch of requests to schedule.
+            inputs: The inputs containing the batch of requests to schedule.
         """
-        assert sch_output.batch_size > 0
-        responses = self.pipeline.execute(sch_output.inputs)
+        assert len(inputs.batches) > 0
+        responses = self.pipeline.execute(inputs)
 
         add_newly_encoded_reqs_to_tg_batch(
-            sch_output.inputs.batch,
+            inputs.batch,
             responses,
             self.batch_constructor,
         )
 
         # remove terminated requests from the batch
-        release_terminated_requests(
-            sch_output,
+        num_terminated_reqs = release_terminated_requests(
             responses,
             self.pipeline,
             self.batch_constructor.tg_reqs,
@@ -306,6 +304,8 @@ class DecodeScheduler(Scheduler):
                 for req_id, response in responses.items()
             }
         )
+
+        return num_terminated_reqs
 
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes decode requests.
@@ -336,30 +336,30 @@ class DecodeScheduler(Scheduler):
 
         # Construct the batch to execute
         t0 = time.monotonic()
-        batch_to_execute = self.batch_constructor.construct_batch()
+        inputs = self.batch_constructor.construct_batch()
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
         # If the batch is empty, skip
-        batch_size = batch_to_execute.batch_size
-        if batch_size == 0:
+        if len(inputs.batch) == 0:
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
-        with Tracer(f"_schedule({batch_to_execute})"):
-            self.schedule(batch_to_execute)
+        with Tracer(f"_schedule({inputs})"):
+            num_terminated_reqs = self.schedule(inputs)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
-            sch_output=batch_to_execute,
+            inputs=inputs,
             paged_cache=self.paged_manager,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.pending_reqs) + len(self.prefill_reqs),
+            num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
@@ -367,12 +367,9 @@ class DecodeScheduler(Scheduler):
 
 
 def load_decode_scheduler(
-    pipeline: Pipeline[
-        TextGenerationInputs[TextContext],
-        TextGenerationOutput,
-    ],
+    pipeline: TextGenerationPipelineType[TextContext],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
+    request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],

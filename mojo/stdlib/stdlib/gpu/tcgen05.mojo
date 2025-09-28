@@ -15,16 +15,14 @@
 tensorcore 5th generation (tcgen05) instructions."""
 
 from os import abort
-
 from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma import _str_iota  # TODO: move to a string module
-from memory import bitcast
-
 from gpu.mma_sm100 import MMASmemDescriptor
+from memory import bitcast
 
 alias check_blackwell_constraint = constrained[
     _has_blackwell_tcgen05(),

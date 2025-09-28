@@ -13,34 +13,30 @@
 
 from collections import OptionalReg
 from hashlib import default_comp_time_hasher
-from buffer.dimlist import DimList, Dim
+from sys import align_of, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
+from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+
+# Additional imports for testing
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random, zero
+from internal_utils._measure import relative_difference
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8,
 )
-from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
-from sys import size_of
-from gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg import vendor_blas
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from utils.index import Index, IndexList
-from linalg.fp8_quantization import (
-    naive_blockwise_scaled_fp8_grouped_matmul,
+from linalg.matmul.gpu.sm100.blockwise_fp8 import (
+    matmul_sm100_blockwise_scaled_fp8,
 )
-from internal_utils._measure import relative_difference
-
-# Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-    zero,
-)
-from testing import assert_almost_equal
-from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.utils import elementwise_epilogue_type
-from sys import align_of
+from testing import assert_almost_equal
+
+from utils.index import Index, IndexList
 
 
 def test_grouped_matmul_sm100_blockwise_scaled_fp8[

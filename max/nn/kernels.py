@@ -22,6 +22,7 @@ from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
     BufferValue,
+    BufferValueLike,
     DeviceRef,
     Dim,
     TensorType,
@@ -43,7 +44,7 @@ from .attention.mask_config import (
     MHAMaskVariant,
     PositionalEncodingVariant,
 )
-from .kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheCollection
+from .kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
 
 _MHA_MASK_CONFIG_DICT = {
     MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
@@ -74,7 +75,7 @@ def fused_qkv_ragged_matmul(
     input: TensorValue,
     input_row_offsets: TensorValue,
     wqkv: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     n_heads: int,
     bias: TensorValue | None = None,
@@ -117,17 +118,9 @@ def fused_qkv_ragged_matmul(
         msg = f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-    }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
-        assert kv_params.page_size is not None
-        parameters["page_size"] = int(kv_params.page_size)
-
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}"
-    values = [input, input_row_offsets, wqkv, kv_collection, layer_idx]
+    values = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
 
     if bias:
         op_name += ".bias"
@@ -136,7 +129,7 @@ def fused_qkv_ragged_matmul(
     return ops.inplace_custom(
         op_name,
         device=input.device,
-        values=values,  # type: ignore
+        values=values,
         out_types=[
             TensorType(
                 dtype=input.dtype,
@@ -144,7 +137,6 @@ def fused_qkv_ragged_matmul(
                 device=input.device,
             )
         ],
-        parameters=parameters,
     )[0].tensor
 
 
@@ -153,7 +145,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
     input: TensorValue,
     input_row_offsets: TensorValue,
     wqkv: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     n_heads: int,
     input_scale: TensorValue,
@@ -224,9 +216,6 @@ def fused_qkv_ragged_matmul_scaled_float8(
     assert kv_params.page_size is not None
     parameters: dict[str, int | str | DType] = {
         "kv_type": kv_params.dtype,
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-        "page_size": int(kv_params.page_size),
     }
 
     op_name = "mo.fused_qkv_matmul.ragged.paged.scale"
@@ -240,7 +229,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
             wqkv,
             input_scale,
             weight_scale,
-            kv_collection,
+            *kv_collection,
             layer_idx,
         ],
         out_types=[
@@ -265,7 +254,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     quantization_encoding_q: QuantizationEncoding,
     quantization_encoding_k: QuantizationEncoding,
     quantization_encoding_v: QuantizationEncoding,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input and
@@ -314,12 +303,9 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
 
     assert kv_params.page_size is not None
     parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
         "quantization_encoding_q": quantization_encoding_q.name,
         "quantization_encoding_k": quantization_encoding_k.name,
         "quantization_encoding_v": quantization_encoding_v.name,
-        "page_size": kv_params.page_size,
     }
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
@@ -332,7 +318,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
             repack_gguf_quantized_weights(q_weight, quantization_encoding_q),
             repack_gguf_quantized_weights(k_weight, quantization_encoding_k),
             repack_gguf_quantized_weights(v_weight, quantization_encoding_v),
-            kv_collection,
+            *kv_collection,
             layer_idx,
         ],
         out_types=[
@@ -351,7 +337,7 @@ def fused_qkv_ragged_matmul_quantized(
     input: TensorValue,
     input_row_offsets: TensorValue,
     wqkv: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     n_heads: int,
     quantization_config: QuantizationConfig,
@@ -398,8 +384,6 @@ def fused_qkv_ragged_matmul_quantized(
     # we pass `has_zp` as an integer (`has_zp_int`).
     # For GPTQ, `has_zp_int` will always be 0.
     parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
         "group_size": quantization_config.group_size,
         "has_zp_int": 0,
     }
@@ -432,13 +416,9 @@ def fused_qkv_ragged_matmul_quantized(
             ],
         )[0].tensor
 
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
-        assert kv_params.page_size is not None
-        parameters["page_size"] = int(kv_params.page_size)
-
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
 
-    args = [input, input_row_offsets, wqkv, kv_collection, layer_idx]
+    args = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
     if bias:
         args.append(bias)
         bias_name_str = "bias."
@@ -450,7 +430,7 @@ def fused_qkv_ragged_matmul_quantized(
     return ops.inplace_custom(
         op_name,
         device=input.device,
-        values=args,  # type: ignore
+        values=args,
         out_types=[
             TensorType(
                 dtype=input.dtype,
@@ -467,7 +447,7 @@ def matmul_kv_cache_ragged(
     hidden_states: TensorValue,
     input_row_offsets: TensorValue,
     weight: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
 ) -> None:
     """Computes key and value projections with ragged input.
@@ -502,14 +482,6 @@ def matmul_kv_cache_ragged(
         msg = f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-    }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
-        assert kv_params.page_size is not None
-        parameters["page_size"] = kv_params.page_size
-
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     op_name = f"mo.kv_matmul.ragged.{cache_strategy_str}"
 
@@ -520,10 +492,9 @@ def matmul_kv_cache_ragged(
             hidden_states,
             input_row_offsets,
             weight,
-            kv_collection,
+            *kv_collection,
             layer_idx,
         ],
-        parameters=parameters,
     )
 
 
@@ -532,7 +503,7 @@ def matmul_k_cache_ragged(
     hidden_states: TensorValue,
     input_row_offsets: TensorValue,
     weight: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
 ) -> None:
     """Computes key projections with ragged input.
@@ -567,14 +538,6 @@ def matmul_k_cache_ragged(
         msg = f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-    }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
-        assert kv_params.page_size is not None
-        parameters["page_size"] = kv_params.page_size
-
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     op_name = f"mo.k_matmul.ragged.{cache_strategy_str}"
 
@@ -585,10 +548,9 @@ def matmul_k_cache_ragged(
             hidden_states,
             input_row_offsets,
             weight,
-            kv_collection,
+            *kv_collection,
             layer_idx,
         ],
-        parameters=parameters,
     )
 
 
@@ -596,7 +558,7 @@ def fused_qk_ragged_rope(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     freqs_cis: TensorValue,
     layer_idx: TensorValue,
     interleaved: bool = True,
@@ -649,13 +611,8 @@ def fused_qk_ragged_rope(
         raise ValueError(msg)
 
     parameters: dict[str, bool | int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
         "interleaved": interleaved,
     }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
-        assert kv_params.page_size is not None
-        parameters["page_size"] = kv_params.page_size
 
     if position_ids is not None:
         if position_ids.dtype != DType.uint32:
@@ -693,19 +650,25 @@ def fused_qk_ragged_rope(
         values = [
             input,
             input_row_offsets,
-            kv_collection,
+            *kv_collection,
             freqs_cis,
             position_ids,
             layer_idx,
         ]
     else:
         op_name = f"mo.fused_qk_rope.ragged.{cache_strategy_str}"
-        values = [input, input_row_offsets, kv_collection, freqs_cis, layer_idx]
+        values = [
+            input,
+            input_row_offsets,
+            *kv_collection,
+            freqs_cis,
+            layer_idx,
+        ]
 
     return ops.inplace_custom(
         op_name,
         device=input.device,
-        values=values,  # type: ignore
+        values=values,
         out_types=[
             TensorType(
                 dtype=input.dtype, shape=input.shape, device=input.device
@@ -811,7 +774,7 @@ def flash_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
@@ -834,7 +797,7 @@ def flash_attention_ragged(
         kv_params: KVCacheParams object containing key-value cache parameters.
         input: TensorValue representing the input tensor with shape [total_seq_len, hidden_dim].
         input_row_offsets: TensorValue indicating the start and end of each batch in the input tensor with shape [batch_size + 1].
-        kv_collection: PagedKVCacheCollection object for managing key-value cache.
+        kv_collection: PagedCacheValues object for managing key-value cache.
         layer_idx: TensorValue representing the layer index, expected to have dtype uint32.
         mask_variant: MHAMaskVariant specifying the type of attention mask to use.
         scale: float value used to scale the attention scores.
@@ -882,14 +845,6 @@ def flash_attention_ragged(
             )
             raise ValueError(msg)
 
-    parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-    }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
-        assert kv_params.page_size is not None
-        parameters["page_size"] = kv_params.page_size
-
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
 
@@ -898,17 +853,16 @@ def flash_attention_ragged(
 
     if sink_weights is not None:
         op_name += ".sink_weights"
-
-    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
-    parameters["score_mod_str"] = (
-        mha_mask_config.positional_encoding_variant.value
-    )
-    parameters["local_window_size"] = local_window_size
+    parameters: dict[str, int | str | DType] = {
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
+        "local_window_size": local_window_size,
+    }
 
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        kv_collection,
+        *kv_collection,
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -1036,7 +990,7 @@ def flare_mla_decode_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
@@ -1082,9 +1036,6 @@ def flare_mla_decode_ragged(
     assert kv_params.page_size is not None
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-        "page_size": kv_params.page_size,
         "mask_str": mha_mask_config.attention_mask_variant.value,
         "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
@@ -1097,7 +1048,7 @@ def flare_mla_decode_ragged(
         values=[
             input,
             input_row_offsets,
-            kv_collection,
+            *kv_collection,
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -1125,7 +1076,7 @@ def flare_mla_prefill_ragged(
     input_row_offsets: TensorValue,
     buffer_row_offsets: TensorValue,
     cache_offsets: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
@@ -1193,9 +1144,6 @@ def flare_mla_prefill_ragged(
     assert kv_params.page_size is not None
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-        "page_size": kv_params.page_size,
         "mask_str": mha_mask_config.attention_mask_variant.value,
         "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
@@ -1210,7 +1158,7 @@ def flare_mla_prefill_ragged(
         buffer_row_offsets,
         cache_offsets,
         input_row_offsets,
-        kv_collection,
+        *kv_collection,
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
@@ -1252,7 +1200,7 @@ def flare_mla_prefill_ragged(
 def flare_mla_prefill_plan(
     kv_params: KVCacheParams,
     input_row_offsets: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     buffer_size: int,
     max_chunks: int = 16,
@@ -1282,12 +1230,6 @@ def flare_mla_prefill_plan(
         raise ValueError(msg)
 
     assert kv_params.page_size is not None
-    parameters: dict[str, int | str | DType] = {
-        "dtype": kv_params.dtype,
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-        "page_size": kv_params.page_size,
-    }
 
     buffer_size_tensor = ops.constant(
         buffer_size, DType.uint32, device=DeviceRef.CPU()
@@ -1298,7 +1240,7 @@ def flare_mla_prefill_plan(
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            kv_collection,
+            *kv_collection,
             layer_idx,
             buffer_size_tensor,
         ],
@@ -1319,7 +1261,6 @@ def flare_mla_prefill_plan(
                 device=input_row_offsets.device,
             ),  # buffer_lengths
         ],
-        parameters=parameters,
     )
 
     return results[0].tensor, results[1].tensor, results[2].tensor
@@ -1331,7 +1272,7 @@ def flare_mla_decompress_k_cache(
     cache_offsets_1d: TensorValue,
     buffer_length: TensorValue,
     weight: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     buffer_size: int,
 ) -> TensorValue:
@@ -1361,11 +1302,6 @@ def flare_mla_decompress_k_cache(
         raise ValueError(msg)
 
     assert kv_params.page_size is not None
-    parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-        "page_size": kv_params.page_size,
-    }
 
     results = ops.inplace_custom(
         "mo.mla.decompress.k.cache.ragged.paged",
@@ -1375,7 +1311,7 @@ def flare_mla_decompress_k_cache(
             cache_offsets_1d,
             buffer_length,
             weight,
-            kv_collection,
+            *kv_collection,
             layer_idx,
         ],
         out_types=[
@@ -1390,7 +1326,6 @@ def flare_mla_decompress_k_cache(
                 device=buffer_row_offsets_1d.device,
             ),  # k_buffer
         ],
-        parameters=parameters,
     )
 
     return results[1].tensor
@@ -1398,26 +1333,19 @@ def flare_mla_decompress_k_cache(
 
 def kv_cache_get_max_seq_len(
     kv_params: KVCacheParams,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
 ) -> TensorValue:
     """This kernel returns the maximum sequence length."""
 
     assert kv_params.page_size is not None
-    parameters: dict[str, int | str | DType] = {
-        "dtype": kv_params.dtype,
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-        "page_size": kv_params.page_size,
-    }
 
     return ops.inplace_custom(
         "mo.kv_cache.get_max_seq_len.paged",
         device=DeviceRef.CPU(),
-        values=[kv_collection],
+        values=[*kv_collection],
         out_types=[
             TensorType(dtype=DType.uint32, shape=[1], device=DeviceRef.CPU())
         ],
-        parameters=parameters,
     )[0].tensor[0]
 
 
@@ -1425,7 +1353,7 @@ def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     kv_input_row_offsets: TensorValue,
@@ -1478,15 +1406,10 @@ def cross_attention_ragged(
 
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
         "local_window_size": local_window_size,
         "mask_str": mha_mask_config.attention_mask_variant.value,
         "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
-        assert kv_params.page_size is not None
-        parameters["page_size"] = kv_params.page_size
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     op_name = f"mo.cross_attention.ragged.{cache_strategy_str}"
@@ -1502,7 +1425,7 @@ def cross_attention_ragged(
             # on the kv_collection, but that isn't the case for cross attention.
             q_max_seq_len,
             kv_input_row_offsets,
-            kv_collection,
+            *kv_collection,
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -1566,7 +1489,7 @@ def swish_glu(
 def kv_cache_ragged_radd(
     kv_params: KVCacheParams,
     a: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     input_row_offsets: TensorValue,
     batch_offset: TensorValue,
     layer_idx: int,
@@ -1608,28 +1531,22 @@ def kv_cache_ragged_radd(
     op_name = (
         f"mo.kv_cache.ragged.{kv_params.cache_strategy.kernel_substring()}.radd"
     )
-    parameters: dict[str, int | str | DType | bool] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-        "page_size": kv_params.page_size,
-    }
     ops.inplace_custom(
         op_name,
         device=input_row_offsets.device,
         values=[
             a,
-            kv_collection,
+            *kv_collection,
             input_row_offsets,
             batch_offset,
             ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
         ],
-        parameters=parameters,
     )
 
 
 def rms_norm_key_cache(
     kv_params: KVCacheParams,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     gamma: TensorValue,
     epsilon: float | np.floating[Any],
     layer_idx: TensorValue,
@@ -1690,20 +1607,17 @@ def rms_norm_key_cache(
         raise TypeError(msg)
 
     parameters: dict[str, int | str | DType | bool] = {
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
         "multiply_before_cast": multiply_before_cast,
         "per_head_norm": per_head_norm,
     }
     if kv_params.cache_strategy == KVCacheStrategy.PAGED:
         assert kv_params.page_size is not None
-        parameters["page_size"] = kv_params.page_size
 
     ops.inplace_custom(
         op_name,
         device=input_row_offsets.device,
         values=[
-            kv_collection,
+            *kv_collection,
             gamma,
             ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
             layer_idx,
@@ -2388,13 +2302,15 @@ def update_frequency_data(
 
 
 def scatter_set_constant(
-    data: BufferValue,
-    indices: TensorValue,
+    data: BufferValueLike,
+    indices: TensorValueLike,
     fill_val: float,
 ) -> None:
     """
     Scatters values into a tensor at specified indices.
     """
+    data = BufferValue(data)
+    indices = TensorValue(indices)
 
     if data.rank != 2:
         raise ValueError(
@@ -2646,7 +2562,7 @@ def sgmv_qkv_lora_kernel(
     lora_ranks: TensorValue,
     input_row_offsets: TensorValue,
     lora_grouped_offsets: TensorValue,
-    kv_collection: PagedKVCacheCollection,
+    kv_collection: PagedCacheValues,
     kv_params: KVCacheParams,
     layer_idx: TensorValue,
     max_lora_seq_len: int,
@@ -2677,13 +2593,7 @@ def sgmv_qkv_lora_kernel(
     if kv_params.cache_strategy != KVCacheStrategy.PAGED:
         raise ValueError("KV cache SGMV only supports Paged KV cache.")
 
-    parameters: dict[str, int | str | DType | bool] = {
-        "dtype": input.dtype,
-        "num_heads": kv_params.n_kv_heads_per_device,
-        "head_dim": kv_params.head_dim,
-    }
     assert kv_params.page_size is not None
-    parameters["page_size"] = int(kv_params.page_size)
 
     v_qkv = sgmv_kernel(
         input,
@@ -2730,12 +2640,11 @@ def sgmv_qkv_lora_kernel(
         device=input.device,
         values=[
             ops.concat([k_out, v_out], axis=1),
-            kv_collection,
+            *kv_collection,
             input_row_offsets,
             ops.constant(0, DType.uint32, DeviceRef.CPU()),
             layer_idx,
         ],
-        parameters=parameters,
     )
 
     return q_out

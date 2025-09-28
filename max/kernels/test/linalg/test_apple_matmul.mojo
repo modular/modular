@@ -22,7 +22,8 @@ import benchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.bmm import batched_matmul
-from linalg.matmul import _matmul_cpu, matmul
+from linalg.matmul import matmul
+from linalg.matmul.cpu import matmul as _matmul_cpu
 from linalg.packing import (
     _pack_b_ndbuffer_impl,
     _pack_matmul_b_shape_func_impl,
@@ -240,7 +241,7 @@ def test_matmul[
     transpose_b: Bool,
 ](m: Int, n: Int, k: Int):
     print("== test_matmul")
-    var errors = 0
+    var errors: Int
     var kernel_type_m = m if mixed_kernels else 0
     alias a_shape = DimList.create_unknown[2]()
     alias b_shape = DimList.create_unknown[2]()
@@ -252,7 +253,7 @@ def test_matmul[
         b_ptr, Index(n, k) if transpose_b else Index(k, n)
     )
 
-    var padded_n_k = IndexList[2]()
+    var padded_n_k: IndexList[2]
     if kernel_type_m != 0:
         padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,

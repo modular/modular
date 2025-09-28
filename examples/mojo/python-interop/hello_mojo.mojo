@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from os import abort
+
 from python import PythonObject
 from python.bindings import PythonModuleBuilder
-from os import abort
 
 
 # An interface for this Mojo module must be exported to Python.

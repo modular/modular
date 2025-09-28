@@ -13,11 +13,12 @@
 """Implements a foreign functions interface (FFI)."""
 
 from collections.string.string_slice import _get_kgen_string, get_static_string
-from memory import OwnedPointer
 from os import PathLike, abort
 from pathlib import Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
-from sys._libc_errno import get_errno, set_errno, ErrNo
+from sys._libc_errno import ErrNo, get_errno, set_errno
+
+from memory import OwnedPointer
 
 from .info import CompilationTarget, is_64bit
 from .intrinsics import _mlirtype_is_eq
@@ -240,19 +241,17 @@ struct DLHandle(Boolable, Copyable, Movable):
         self = Self._dlopen(fspath.unsafe_cstr_ptr(), flags)
 
     @staticmethod
-    fn _dlopen(file: UnsafePointer[c_char], flags: Int) raises -> DLHandle:
+    fn _dlopen(
+        file: UnsafePointer[c_char, mut=False, origin=_], flags: Int
+    ) raises -> DLHandle:
         @parameter
         if not CompilationTarget.is_windows():
             var handle = dlopen(file, flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
                 raise Error(
-                    String(
-                        "dlopen failed: ",
-                        StringSlice[error_message.origin](
-                            unsafe_from_utf8_ptr=error_message
-                        ),
-                    )
+                    "dlopen failed: ",
+                    StringSlice(unsafe_from_utf8_ptr=error_message),
                 )
             return DLHandle(handle)
         else:
@@ -341,7 +340,9 @@ struct DLHandle(Boolable, Copyable, Movable):
     @always_inline
     fn _get_function[
         result_type: AnyTrivialRegType
-    ](self, *, cstr_name: UnsafePointer[c_char, **_]) -> result_type:
+    ](
+        self, *, cstr_name: UnsafePointer[c_char, mut=False, origin=_]
+    ) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -380,9 +381,9 @@ struct DLHandle(Boolable, Copyable, Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[Int8, **_]) -> UnsafePointer[
-        result_type
-    ]:
+    ](
+        self, *, cstr_name: UnsafePointer[Int8, mut=False, origin=_]
+    ) -> UnsafePointer[result_type]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 

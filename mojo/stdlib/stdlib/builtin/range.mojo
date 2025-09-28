@@ -17,11 +17,11 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from math import ceildiv
+from sys.info import size_of
+from sys.intrinsics import unlikely
 
 from python import PythonObject
 
-from sys.info import size_of
-from sys.intrinsics import unlikely
 from utils._select import _select_register_value as select
 
 # ===----------------------------------------------------------------------=== #

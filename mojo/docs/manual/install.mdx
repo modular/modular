@@ -5,6 +5,8 @@ description: You can install Mojo using pixi, uv, conda, pip, or other Python/Co
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import Requirements from '@site/src/components/Requirements';
+import { requirementsNoGPU } from '@site/docs/max/requirements';
 
 You can install Mojo as a Python or Conda package. This page shows you how to
 install using `pixi`, `uv`, `pip`, and `conda`, but you can use other tools.
@@ -16,6 +18,10 @@ tutorial](/mojo/manual/get-started), which includes installation steps.
 
 :::
 
+System requirements:
+
+<Requirements requirementsData={requirementsNoGPU}
+url="/mojo/manual/install#system-requirements" />
 
 ## Install
 
@@ -132,11 +138,6 @@ more help with it, see our [Pixi basics guide](/pixi).
         </TabItem>
         <TabItem value="stable" label="Stable">
 
-        ```output
-        Stable builds aren't on pypi.org yet.
-        Either install nightly or switch to Pixi or Conda.
-        ```
-
         ```sh
         uv pip install mojo \
           --extra-index-url https://modular.gateway.scarf.sh/simple/
@@ -177,11 +178,6 @@ more help with it, see our [Pixi basics guide](/pixi).
 
         </TabItem>
         <TabItem value="stable" label="Stable">
-
-        ```output
-        Stable builds aren't on pypi.org yet.
-        Either install nightly or switch to Pixi or Conda.
-        ```
 
         ```sh
         pip install mojo \
@@ -265,28 +261,31 @@ mojo --version
 
 If you're using [Visual Studio Code](https://code.visualstudio.com/) or another
 IDE derived from it (such as [Cursor](https://cursor.com/home)), we recommend
-installing the Mojo extension, which provides features like syntax
-highlighting, code completion, and debugging support.
+installing the Mojo extension, which provides features like syntax highlighting,
+code completion, and debugging support. You can install it from either:
 
-There are currently two extensions:
+- The
+  [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
+  for VS Code users
+- The
+  [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo),
+  for users of Cursor and other editors that support VS Code extensions
 
-- [Mojo (nightly)
-extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo-nightly):
-For projects using the nightly build.
-- [Mojo (stable)
-extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo):
-For projects using the stable build.
-
-Follow the corresponding link above and click **Install**. Or, open the
-Extensions view in VS Code and search for "Mojo"—make sure you install the
-extension from Modular.
+Or, open the Extensions view in your IDE and search for "Mojo"—make sure you
+install the extension from Modular.
 
 :::note
 
-We're working on a new version of the Mojo extension that works for both
-nightly and stable builds. Until that's released, you'll need to use whichever
-extension corresponds to your current project. You can install both but only
-one should be enabled at a time.
+Prior to the 0.25.6 Mojo release, there were two versions of the Mojo extension:
+a stable version for working with the stable build of Mojo and a nightly version
+for working with the nightly build of Mojo. Concurrent with the 0.25.6 Mojo
+release, we've consolidated the two versions into a single extension that works
+for both stable and nightly builds.
+
+The new extension replaces the old stable version, so if you have the stable
+version installed, you can simply update it to receive the new version. If you
+have the nightly version of the extension installed, you should uninstall it and
+install the regular (non-nightly) version.
 
 :::
 
@@ -482,6 +481,8 @@ Includes:
 
 - [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
 - [Mojo standard library](/mojo/lib)
+- [`mojo` Python
+  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 - Mojo language server (LSP) for IDE/editor integration
 - [Mojo debugger](/mojo/tools/debugging) (includes LLDB)
 - [Mojo code formatter](/mojo/cli/format)
@@ -499,6 +500,8 @@ Includes:
 
 - [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
 - [Mojo standard library](/mojo/lib)
+- [`mojo` Python
+  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 
 ## System requirements
 

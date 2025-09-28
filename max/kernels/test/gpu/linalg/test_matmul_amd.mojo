@@ -16,14 +16,14 @@
 from collections.optional import OptionalReg
 from random import random_si64
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_gpu import (
-    _matmul_gpu,
+from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
+    _matmul_gpu,
 )
 from linalg.utils_gpu import MatmulConfig
 from testing import assert_equal
@@ -307,7 +307,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
             def test_block_shape[block_m: Int, block_n: Int, k: Int]():
                 alias config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
-                ](block_m, block_n)
+                ](Index(block_m, block_n))
                 print(
                     block_m,
                     block_n,

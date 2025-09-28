@@ -13,7 +13,7 @@
 
 from gpu.host import DeviceContext
 from gpu.id import block_idx
-from linalg.matmul_tile_scheduler import TileScheduler
+from linalg.matmul.gpu.tile_scheduler import TileScheduler
 
 from utils.index import Index
 

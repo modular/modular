@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
 from math import isclose
-from internal_utils import ndbuffer_to_str
+
 from buffer.dimlist import DimList
+from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     fill,
-    zero,
     ndbuffer_to_str,
+    zero,
 )
-from nn.bicubic import resize_bicubic, cpu_bicubic_kernel, gpu_bicubic_kernel
+from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
 from testing import assert_almost_equal
 
 alias num_elements = 20

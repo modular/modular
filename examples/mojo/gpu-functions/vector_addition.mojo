@@ -48,7 +48,7 @@ def main():
     var grid_dim = ceildiv(VECTOR_WIDTH, BLOCK_SIZE)
 
     # Launch the vector_addition function as a GPU kernel
-    ctx.enqueue_function[vector_addition](
+    ctx.enqueue_function_checked[vector_addition, vector_addition](
         lhs_tensor,
         rhs_tensor,
         out_tensor,

@@ -11,29 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import iota
+from random import rand
+from sys import argv, has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+
 from benchmark import (
     Bench,
+    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
-    BenchConfig,
 )
 from bit import log2_floor
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
+from kernels.causal_conv1d import CausalConv1Dcpu, CausalConv1Dgpu
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
-from kernels.causal_conv1d import CausalConv1Dgpu, CausalConv1Dcpu
 from kernels.top_k import TopK
-from math import iota
-from random import rand
-from sys import (
-    argv,
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-)
-from gpu.host import DeviceContext, DeviceBuffer
 from tensor_internal import (
     Input,
     IOSpec,

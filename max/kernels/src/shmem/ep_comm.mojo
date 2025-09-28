@@ -11,36 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
-
-import gpu.warp as warp
-from gpu.intrinsics import Scope, load_acquire, store_release
-from gpu.memory import AddressSpace
-from gpu.sync import syncwarp
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import (
-    IntTuple,
-    UNKNOWN_VALUE,
-    _get_index_type,
-    _get_layout_type,
-)
 from math import align_up, ceildiv
-from memory import stack_allocation
-from memory.unsafe import bitcast
 from os.atomic import Atomic
 from sys.info import align_of, simd_width_of, size_of
-from utils.index import IndexList, StaticTuple
 
-
+import gpu.warp as warp
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_idx,
+    lane_id,
     thread_idx,
     warp_id,
-    lane_id,
 )
+from gpu.intrinsics import Scope, load_acquire, store_release
+from gpu.memory import AddressSpace
+from gpu.sync import syncwarp
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout.int_tuple import (
+    UNKNOWN_VALUE,
+    IntTuple,
+    _get_index_type,
+    _get_layout_type,
+)
+from memory import stack_allocation
+from memory.unsafe import bitcast
+from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
+
+from utils.index import IndexList, StaticTuple
 
 alias RtTuple_2 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), element_type = DType.int32

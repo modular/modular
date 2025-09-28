@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+
 from gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
-from linalg.matmul_sm90_testbed import test_matmul_sm90
-from linalg.matmul_tile_scheduler import MatmulSchedule
+from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
+
 from utils.index import Index
 
 # Helper to calculate wgmma_shape based on dtype and BN

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from layout import LayoutTensor, Layout, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from register import register_internal
 
 from utils.index import IndexList

@@ -21,21 +21,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, TypeVar
+from typing import Any
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
+    BufferType,
+    BufferValue,
     DeviceRef,
+    Graph,
     TensorType,
     TensorValue,
-    _OpaqueType,
-    _OpaqueValue,
-    ops,
 )
-from max.interfaces.request import RequestID
+from max.interfaces import RequestID, TextGenerationContext
+from max.interfaces.nested_iterable import NestedIterableDataclass
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -44,110 +45,31 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
 from ..cache_params import KVCacheParams
-from ..context import KVCacheAwareContext
-from ..manager import KVCacheInputSymbols, KVCacheManager, RaggedKVCacheInputs
+from ..manager import RaggedKVCacheInputs
 from ..utils import build_max_lengths_tensor
-from .block_copy_engine import BlockCopyEngine, BlockCopyMetrics
-from .block_manager import BlockManager
+from .block_copy_engine import BlockCopyEngine
+from .block_manager import BlockManager, KVCacheMetrics
 
 logger = logging.getLogger("max.pipelines")
 
-T = TypeVar("T", bound=KVCacheAwareContext)
-
 
 @dataclass
-class PagedCacheInputSymbols(KVCacheInputSymbols):
-    kv_blocks: TensorType
+class PagedCacheInputSymbols(NestedIterableDataclass):
+    kv_blocks: BufferType
     cache_lengths: TensorType
     lookup_table: TensorType
     max_lengths: TensorType
 
 
-class PagedKVCacheType(_OpaqueType):
-    """PagedAttention Mojo KV Cache graph type."""
-
-    def __init__(self) -> None:
-        """Creates an opaque type containing a paged KV Cache."""
-        super().__init__("PagedKVCache")
-
-
-class PagedKVCacheCollectionType(_OpaqueType):
-    """The graph type for a "view" of the cache for the given sequences in the
-    batch.
-
-    This object does not own the underlying buffers in k_cache and v_cache,
-    it's borrowing them from the BlockWrappers in our ContinuousKVCacheManager.
-    It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
-    """
-
-    def __init__(self) -> None:
-        """Creates an opaque type containing a paged KV cache collection."""
-        super().__init__("PagedKVCacheCollection")
+@dataclass
+class PagedCacheValues(NestedIterableDataclass):
+    kv_blocks: BufferValue
+    cache_lengths: TensorValue
+    lookup_table: TensorValue
+    max_lengths: TensorValue
 
 
-class PagedKVCacheCollection(_OpaqueValue):
-    """The graph value for a view of the KV cache."""
-
-
-class FetchPagedKVCacheCollection:
-    def __init__(self, kv_params: KVCacheParams, **kwargs: Any) -> None:
-        self.kv_params = kv_params
-
-    def __call__(
-        self,
-        blocks: TensorValue,  # NDBuffer[type, 6, Self.blocks_shape]
-        cache_lengths: TensorValue,  # NDBuffer[DType.uint32, 1],
-        lookup_table: TensorValue,  # NDBuffer[DType.uint32, 2],
-        is_cache_empty: TensorValue,
-    ) -> PagedKVCacheCollection:
-        """Constructs a PagedKVCacheCollection for use downstream."""
-
-        # Explicit validation.
-        if blocks.dtype != self.kv_params.dtype:
-            msg = (
-                f"expected blocks to be dtype: {self.kv_params.dtype}, got"
-                f" {blocks.dtype}"
-            )
-            raise ValueError(msg)
-
-        if blocks.rank != 6:
-            msg = f"expected blocks to be of rank 6, got {blocks.rank}"
-            raise ValueError(msg)
-
-        # For all tensors other than the blocks tensor, the length should be equivalent
-        # to batch size, which is unknown within the graph at this stage.
-        if cache_lengths.dtype != DType.uint32:
-            msg = f"expected cache lengths to be dtype: uint32, got {cache_lengths.dtype}"
-            raise ValueError(msg)
-
-        if cache_lengths.rank != 1:
-            msg = f"expected cache lengths to be of rank 1, got {cache_lengths.rank}"
-            raise ValueError(msg)
-
-        if lookup_table.dtype != DType.uint32:
-            msg = f"expected lookup_table to be dtype: uint32, got {lookup_table.dtype}"
-            raise ValueError(msg)
-
-        if lookup_table.rank != 2:
-            msg = f"expected lookup_table to be of rank 2, got {lookup_table.rank}"
-            raise ValueError(msg)
-
-        return PagedKVCacheCollection(
-            ops.custom(
-                "mo.kv_collection_ctor.paged",
-                device=blocks.device,
-                values=[blocks, cache_lengths, lookup_table, is_cache_empty],
-                out_types=[PagedKVCacheCollectionType()],
-                parameters={
-                    "num_heads": self.kv_params.n_kv_heads_per_device,
-                    "head_dim": self.kv_params.head_dim,
-                    "page_size": int(blocks.shape[3]),
-                },
-            )[0].opaque
-        )
-
-
-class PagedKVCacheManager(KVCacheManager[T]):
+class PagedKVCacheManager:
     page_size: int
     """Number of tokens stored per block."""
 
@@ -163,7 +85,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
     total_num_host_pages: int
     """Total number of blocks allocated on the host for swapping (if enabled)."""
 
-    block_manager: BlockManager[T]
+    block_manager: BlockManager
     """Manages allocation, eviction, and reuse of KV cache blocks."""
 
     enable_prefix_caching: bool
@@ -202,6 +124,19 @@ class PagedKVCacheManager(KVCacheManager[T]):
             page_size: The number of tokens that will be stored in a single block.
             enable_runtime_checks: Whether to enable runtime correctness checks.
         """
+        self.params = params
+        self.max_batch_size = max_batch_size
+        self.max_seq_len = max_seq_len
+        self.num_layers = num_layers
+        self.devices = devices
+        self.session = session
+
+        # Attributes for managing available slots.
+        self._available = set(range(self.max_batch_size))
+
+        # Mappings between request IDs and sequence IDs.
+        self._request_to_seq_id: dict[RequestID, int] = {}
+
         # The number of tokens in a single block.
         self.page_size = page_size
 
@@ -224,6 +159,13 @@ class PagedKVCacheManager(KVCacheManager[T]):
         # The total number of blocks we'll have per-device.
         self.total_num_pages = int(
             cache_memory_per_device // single_page_size_per_device_bytes
+        )
+
+        increment_cache_lengths_graph = (
+            self._create_increment_cache_lengths_graph()
+        )
+        self.increment_cache_lengths_model = session.load(
+            increment_cache_lengths_graph
         )
 
         # Validate that we are allocating enough blocks.
@@ -264,16 +206,6 @@ class PagedKVCacheManager(KVCacheManager[T]):
                 f"pages ({memory_needed_str}), but only have enough memory for "
                 f"{self.total_num_pages} pages ({cache_memory_str}{across_x_devices_str})."
             )
-
-        # call our base class constructor
-        super().__init__(
-            params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            num_layers=num_layers,
-            devices=devices,
-            session=session,
-        )
 
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
@@ -478,21 +410,19 @@ class PagedKVCacheManager(KVCacheManager[T]):
             params.head_dim,
         ]
 
-    def _get_num_req_slots(self, request_id: RequestID) -> int:
-        """Get the number of KV slots available for a request."""
-        return (
-            len(self.block_manager.current_blocks_per_request[request_id])
-            * self.page_size
-        )
-
     @traced
-    def _does_req_need_more_blocks(self, ctx: T, num_steps: int) -> bool:
+    def _does_req_need_more_blocks(
+        self, ctx: TextGenerationContext, num_steps: int
+    ) -> bool:
         """Determines if a request needs additional blocks."""
         seq_len = ctx.current_length + num_steps - 1
-        return seq_len > self._get_num_req_slots(ctx.request_id)
+        num_blocks = len(self.block_manager.req_to_blocks[ctx.request_id])
+        return seq_len > num_blocks * self.page_size
 
     @traced
-    def prefetch(self, data: T, num_steps: int = 1) -> bool:
+    def maybe_reserve(
+        self, data: TextGenerationContext, num_steps: int = 1
+    ) -> bool:
         """Prepares blocks for a request prior to a subsequent fetch call.
 
         This will reuse blocks from prefix cache and allocate new blocks for the
@@ -512,7 +442,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
 
     @traced
     def fetch(
-        self, batch: Sequence[T], num_steps: int = 1
+        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> Sequence[RaggedKVCacheInputs]:
         """Reuses blocks from prefix cache and allocates new blocks for requests in batch.
 
@@ -608,7 +538,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
         self,
         devices: Sequence[Device] | None = None,
         num_layers: int | None = None,
-    ) -> Sequence[PagedCacheInputSymbols]:
+    ) -> Sequence[NestedIterableDataclass]:
         return self._input_symbols(devices, num_layers, dynamic_dim_prefix="")
 
     def _input_symbols(
@@ -634,7 +564,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
 
         return [
             PagedCacheInputSymbols(
-                kv_blocks=TensorType(
+                kv_blocks=BufferType(
                     self.params.dtype,
                     shape=self.block_shape(
                         num_layers=num_layers, is_parameterized=True
@@ -675,12 +605,24 @@ class PagedKVCacheManager(KVCacheManager[T]):
             )
 
         # Call the base class release method with the request_id
-        super().release(request_id)
+        if request_id not in self._request_to_seq_id:
+            raise ValueError(
+                f"Attempted to release request ID {request_id} but it is not claimed"
+            )
+
+        # Look up the sequence ID
+        seq_id = self._request_to_seq_id[request_id]
+
+        # Clean up mappings
+        del self._request_to_seq_id[request_id]
+
+        self._available.add(seq_id)
+
         # Call the block manager release method with the request_id
         self.block_manager.release(request_id)
 
     @traced
-    def step(self, batch: Sequence[T]) -> None:
+    def step(self, batch: Sequence[TextGenerationContext]) -> None:
         """Commit new tokens into the prefix cache.
 
         This is a no-op if prefix caching is disabled.
@@ -722,26 +664,139 @@ class PagedKVCacheManager(KVCacheManager[T]):
         assert 0 <= pct <= 1
         return pct
 
-    @property
-    def cache_hit_rate(self) -> float:
-        """Get the percentage of prompt tokens that were retrieved from the cache."""
-        pct = self.block_manager.cache_hit_rate
-        assert 0 <= pct <= 1
-        return pct
-
     def get_req_blocks(self, request_id: RequestID) -> Sequence[int]:
         """Get the block ids for a request."""
         return self.block_manager.get_req_blocks(request_id)
 
-    @property
-    def num_blocks_copied(self) -> BlockCopyMetrics:
-        """Get the number of blocks copied for each type."""
-        if self.block_copy_engine is None:
-            return BlockCopyMetrics()
-        return self.block_copy_engine.blocks_copied
+    def _create_increment_cache_lengths_graph(self) -> Graph:
+        input_symbols = self.input_symbols()
+        cache_lengths_types = [
+            input_symbols[i][1] for i in range(len(self.devices))
+        ]
 
-    def reset_num_blocks_copied(self) -> None:
-        """Reset the number of blocks copied for each type."""
-        if self.block_copy_engine is None:
-            return
-        self.block_copy_engine.blocks_copied.reset()
+        input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=DeviceRef(self.devices[0].label, self.devices[0].id),
+        )
+
+        with Graph(
+            "update_cache_lengths",
+            input_types=[input_row_offsets_type, *cache_lengths_types],
+        ) as graph:
+            inp_row_offset, *cache_lengths = (
+                inp.tensor for inp in graph.inputs
+            )
+            # broadcast the inp_row_offset to all devices (naive)
+            # get rid of this if statement after #51465 merges
+            if len(self.devices) > 1:
+                input_row_offsets = [
+                    inp_row_offset.to(DeviceRef(d.label, d.id))
+                    for d in self.devices
+                ]
+            else:
+                input_row_offsets = [inp_row_offset]
+            outputs = []
+            for i in range(len(self.devices)):
+                cache_length = cache_lengths[i]
+                assert isinstance(cache_length, TensorValue)
+                right_slice = input_row_offsets[i][1:].rebind(
+                    cache_length.shape
+                )
+                left_slice = input_row_offsets[i][
+                    : input_row_offsets[i].shape[0] - 1
+                ].rebind(cache_length.shape)
+                increment_amount = right_slice - left_slice
+                outputs.append(cache_length + increment_amount)
+            graph.output(*outputs)
+
+        return graph
+
+    def increment_cache_lengths(
+        self,
+        kv_cache_inputs: list[RaggedKVCacheInputs],
+        prev_model_inputs: Any,
+    ) -> list[RaggedKVCacheInputs]:
+        """Prepares cache inputs for the next token in multistep execution.
+
+        Updates the cache lengths for the next inference step without requiring device
+        synchronization or memory copies. This is crucial for maintaining performance
+        during multi-token generation.
+
+        Args:
+            kv_cache_inputs: Current cache state tuples (blocks, lengths, lookup, max_lengths)
+            prev_model_inputs: Previous model inputs including row offsets
+
+        Returns:
+            Updated cache input tuples with incremented lengths.
+        """
+        blocks = [kv_cache_inputs[i].blocks for i in range(len(self.devices))]
+        cache_lengths = [
+            kv_cache_inputs[i].cache_lengths for i in range(len(self.devices))
+        ]
+        lookup_table = [
+            kv_cache_inputs[i].lookup_table for i in range(len(self.devices))
+        ]
+
+        # max_lengths is host allocated and the same across all devices.
+        max_lengths = kv_cache_inputs[0].max_lengths
+
+        # Update the cache_lengths of our batch by the previous sequence length.
+        # Handle both single tensor and list of tensors for compatibility
+        if isinstance(prev_model_inputs.input_row_offsets, list):
+            # InternVL case: use the first tensor (row offsets are identical across devices)
+            row_offsets = prev_model_inputs.input_row_offsets[0]
+        else:
+            # Standard case: single tensor
+            row_offsets = prev_model_inputs.input_row_offsets
+
+        updated_cache_lengths = self.increment_cache_lengths_model.execute(
+            row_offsets, *cache_lengths
+        )
+
+        # Advance to the next step of the max_lengths tensor.
+        updated_max_lengths = max_lengths[1:, :]
+
+        # Return our updated batch.
+        for i in range(len(self.devices)):
+            updated_cache_length = updated_cache_lengths[i]
+            assert isinstance(updated_cache_length, Tensor)
+            kv_cache_inputs[i] = RaggedKVCacheInputs(
+                blocks=blocks[i],
+                cache_lengths=updated_cache_length,
+                lookup_table=lookup_table[i],
+                max_lengths=updated_max_lengths,
+            )
+        return kv_cache_inputs
+
+    def external_claim(self, request_id: RequestID) -> None:
+        """Reserve a sequence ID for the given request ID."""
+        if request_id in self._request_to_seq_id:
+            raise ValueError(f"Request ID {request_id} is already claimed")
+
+        if not self._available:
+            raise ValueError("No available sequence IDs to claim")
+
+        # Get the next available sequence ID
+        seq_id = self._available.pop()
+
+        # Update mappings
+        self._request_to_seq_id[request_id] = seq_id
+
+    def contains(self, request_id: RequestID) -> bool:
+        """Check if the given request ID is currently active in the cache.
+
+        Args:
+            request_id: The request ID to check for.
+
+        Returns:
+            True if the request ID is active in the cache, False otherwise.
+        """
+        return request_id in self._request_to_seq_id
+
+    @property
+    def metrics(self) -> KVCacheMetrics:
+        return self.block_manager.metrics
+
+    def reset_metrics(self) -> None:
+        self.block_manager.reset_metrics()

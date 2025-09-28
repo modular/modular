@@ -15,11 +15,7 @@ from collections import OptionalReg
 
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    random,
-)
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig

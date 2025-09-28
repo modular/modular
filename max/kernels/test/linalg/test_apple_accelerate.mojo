@@ -12,7 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from linalg.apple_accelerate import apple_batched_matmul, apple_matmul
+from linalg.matmul.cpu.apple_accelerate import (
+    apple_batched_matmul,
+    apple_matmul,
+)
 from testing import *
 
 from utils.index import Index

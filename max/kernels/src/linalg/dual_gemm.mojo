@@ -40,15 +40,14 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy_local_to_shared,
     copy_dram_to_sram_async,
     copy_local_to_dram,
+    copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from memory import memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as AddressSpace
@@ -265,27 +264,42 @@ fn multistage_dual_mma[
 
     alias num_reg_tiles = 2 * k_group_size
     # Register tiles.
+    alias a_reg_layout = Layout.row_major(
+        Int(2 * k_group_size * num_m_mmas), a_frag_size
+    )
     var a_reg_tiles = (
-        tb[a_type]()
-        .row_major[Int(2 * k_group_size * num_m_mmas), a_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            a_type,
+            a_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .split[Int(2 * k_group_size)]()
     )
 
+    alias b_reg_layout = Layout.row_major(
+        Int(2 * k_group_size * num_n_mmas), b_frag_size
+    )
     var b0_reg_tiles = (
-        tb[b_type]()
-        .row_major[Int(2 * k_group_size * num_n_mmas), b_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            b_type,
+            b_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, b_frag_size]()
         .split[Int(2 * k_group_size)]()
     )
     var b1_reg_tiles = (
-        tb[b_type]()
-        .row_major[Int(2 * k_group_size * num_n_mmas), b_frag_size]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            b_type,
+            b_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, b_frag_size]()
         .split[Int(2 * k_group_size)]()
     )
@@ -572,18 +586,25 @@ fn multistage_dual_gemm_kernel[
 
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
+    alias c_reg_layout = Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
     var c0_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
-        .local()
-        .alloc()  # ALIGN-TODO: alignment?
+        LayoutTensor[
+            accum_type,
+            c_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()  # ALIGN-TODO: alignment?
         .fill(0)
     )
     var c1_reg_tile = (
-        tb[accum_type]()
-        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
-        .local()
-        .alloc()  # ALIGN-TODO: alignment?
+        LayoutTensor[
+            accum_type,
+            c_reg_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()  # ALIGN-TODO: alignment?
         .fill(0)
     )
 
@@ -635,12 +656,12 @@ fn multistage_dual_gemm_kernel[
             num_rows = MMA_M // 2, row_size=HWN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = (
-            tb[c_type]()
-            .row_major[WM, HWN]()
-            .shared()
-            .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
-        )
+        var accum_smem_warp_tile = LayoutTensor[
+            c_type,
+            Layout.row_major(WM, HWN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),

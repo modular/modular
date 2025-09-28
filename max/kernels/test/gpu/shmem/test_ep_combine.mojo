@@ -16,29 +16,29 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
-from gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+import time
 from io.io import _printf
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
 from math import sqrt
-from shmem import *
-from testing import assert_equal
-from pathlib import Path
 from os.path import dirname
+from pathlib import Path
 from random import randint, randn, seed
 from sys import align_of, argv, simd_width_of, size_of
 from sys.param_env import env_get_string
-from utils import IndexList
 
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout.runtime_layout import RuntimeLayout
+from shmem import *
 from shmem.ep_comm import (
     EPMsgConfig,
-    dispatch_kernel,
-    dispatch_cb_kernel,
-    combine_kernel,
     combine_cb_kernel,
+    combine_kernel,
+    dispatch_cb_kernel,
+    dispatch_kernel,
 )
+from testing import assert_equal
 
-import time
+from utils import IndexList
 
 
 fn is_benchmark() -> Bool:

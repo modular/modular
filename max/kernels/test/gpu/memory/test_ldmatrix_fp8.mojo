@@ -18,16 +18,15 @@ from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
-from gpu.memory import AddressSpace
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from linalg.matmul_gpu import matmul_kernel_naive
+from linalg.matmul.gpu import matmul_kernel_naive
 from memory import stack_allocation
 from testing import assert_almost_equal
 
-from utils.numerics import get_accum_type
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.runtime_layout import RuntimeLayout
 from utils import IndexList
+from utils.numerics import get_accum_type
 
 
 fn test_ldmatrix_fp8[
@@ -144,17 +143,17 @@ fn check_ldmatrix_fp8[
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var c_tensor_ref = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
-        c_device_ref._unsafe_ptr(),
+        c_device_ref,
         RuntimeLayout[layout].row_major(IndexList[2](M, N)),
     )
 
     var a_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
-        a_device._unsafe_ptr(),
+        a_device,
         RuntimeLayout[layout].row_major(IndexList[2](M, K)),
     )
 
     var b_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
-        b_device._unsafe_ptr(),
+        b_device,
         RuntimeLayout[layout].row_major(
             IndexList[2](N, K)
         ),  # N x K for transpose_b=True

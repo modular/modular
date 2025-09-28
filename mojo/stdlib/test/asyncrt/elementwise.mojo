@@ -17,8 +17,7 @@ from algorithm.functional import elementwise
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from buffer import NDBuffer
 from gpu import *
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 
 from utils import IndexList
 from utils.index import Index
@@ -44,8 +43,8 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             in_host[i] = i
             out_host[i] = length + i
 
-    var in_buffer = NDBuffer[dtype, 2](in0._unsafe_ptr(), Index(dim_x, dim_y))
-    var out_buffer = NDBuffer[dtype, 2](out._unsafe_ptr(), Index(dim_x, dim_y))
+    var in_buffer = NDBuffer[dtype, 2](in0.unsafe_ptr(), Index(dim_x, dim_y))
+    var out_buffer = NDBuffer[dtype, 2](out.unsafe_ptr(), Index(dim_x, dim_y))
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)

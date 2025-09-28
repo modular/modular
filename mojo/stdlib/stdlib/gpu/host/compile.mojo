@@ -15,7 +15,7 @@
 import subprocess
 import tempfile
 from pathlib import Path
-from sys.info import _accelerator_arch, _TargetType, CompilationTarget
+from sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 from compile import CompiledFunctionInfo, compile_info
 

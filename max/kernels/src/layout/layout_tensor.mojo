@@ -23,27 +23,27 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.intrinsics import PrefetchOptions
+from sys.intrinsics import PrefetchOptions, readfirstlane
 
 import gpu.memory as gpu_memory
 from algorithm import vectorize
 from bit import log2_floor
+from builtin.device_passable import DevicePassable
+from builtin.dtype import _unsigned_integral_type_of
 from gpu.host import DeviceBuffer, HostBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_dim, block_idx, lane_id, thread_idx
+from gpu.intrinsics import AMDBufferResource
 from gpu.memory import CacheEviction, Fill, async_copy
-from layout.element import Element, MemoryElement
-from layout.tma_async import _tma_desc_tile_layout
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
-
+from layout.element import Element, MemoryElement
+from layout.tma_async import _tma_desc_tile_layout
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
-from sys.intrinsics import readfirstlane
-from gpu.intrinsics import AMDBufferResource
 
 from .int_tuple import (
     _get_index_type,
@@ -53,8 +53,8 @@ from .int_tuple import (
     depth,
     fill_like,
     flatten,
-    propagate_unknown,
     product,
+    propagate_unknown,
     to_nest,
 )
 from .layout import *
@@ -62,9 +62,6 @@ from .runtime_layout import RuntimeLayout
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
-
-from builtin.device_passable import DevicePassable
-from builtin.dtype import _unsigned_integral_type_of
 
 
 fn _compute_distribute_layout[
@@ -419,17 +416,7 @@ struct LayoutTensor[
         Args:
             span: The `Span` pointing to the underlying data.
         """
-
-        constrained[layout.all_dims_known(), "Layout must be fully static"]()
-
-        constrained[
-            layout_int_type.is_signed() and linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
-
-        self.ptr = span.unsafe_ptr()
-        self.runtime_layout = {}
-        self.runtime_element_layout = {}
+        self = Self(span.unsafe_ptr())
 
     @always_inline
     fn __init__(
@@ -452,16 +439,7 @@ struct LayoutTensor[
             span: The `Span` pointing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
-
-        constrained[
-            element_layout.all_dims_known(), "Layout must be fully static"
-        ]()
-
-        self.ptr = span.unsafe_ptr()
-        self.runtime_layout = runtime_layout.cast[
-            layout_int_type, target_linear_idx_type=linear_idx_type
-        ]()
-        self.runtime_element_layout = {}
+        self = Self(span.unsafe_ptr(), runtime_layout)
 
     @always_inline
     fn __init__(
@@ -487,24 +465,12 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
-
-        constrained[
-            layout_int_type.is_signed() and linear_idx_type.is_signed(),
-            "Layout integer type and linear index type must be signed.",
-        ]()
-
-        self.ptr = span.unsafe_ptr()
-        self.runtime_layout = runtime_layout.cast[
-            layout_int_type, target_linear_idx_type=linear_idx_type
-        ]()
-        self.runtime_element_layout = element_runtime_layout.cast[
-            DType.int32, target_linear_idx_type=linear_idx_type
-        ]()
+        self = Self(span.unsafe_ptr(), runtime_layout, element_runtime_layout)
 
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
             mut=mut,
@@ -517,7 +483,7 @@ struct LayoutTensor[
             Layout must be fully static.
 
         Args:
-            ptr: The `UnsafePointer` pointing to the underlying data.
+            unsafe_ptr: The `UnsafePointer` pointing to the underlying data.
         """
 
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
@@ -527,14 +493,14 @@ struct LayoutTensor[
             "Layout integer type and linear index type must be signed.",
         ]()
 
-        self.ptr = ptr
+        self.ptr = unsafe_ptr
         self.runtime_layout = {}
         self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
             mut=mut,
@@ -550,7 +516,7 @@ struct LayoutTensor[
             Element layout must be fully static.
 
         Args:
-            ptr: The UnsafePointer pointing to the underlying data.
+            unsafe_ptr: The UnsafePointer pointing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
 
@@ -558,7 +524,7 @@ struct LayoutTensor[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
 
-        self.ptr = ptr
+        self.ptr = unsafe_ptr
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, target_linear_idx_type=linear_idx_type
         ]()
@@ -567,7 +533,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
             mut=mut,
@@ -581,12 +547,12 @@ struct LayoutTensor[
         element type will be casted to the layout tensor layout integer type.
 
         Args:
-            ptr: The `UnsafePointer` pointing to the underlying data.
+            unsafe_ptr: The `UnsafePointer` pointing to the underlying data.
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
 
-        self.ptr = ptr
+        self.ptr = unsafe_ptr
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, target_linear_idx_type=linear_idx_type
         ]()
@@ -654,7 +620,7 @@ struct LayoutTensor[
         Args:
             device_buffer: Contains the underlying data to point to.
         """
-        self = Self.GenericLayoutTensorType(device_buffer._unsafe_ptr())
+        self = Self.GenericLayoutTensorType(device_buffer.unsafe_ptr())
 
     @always_inline
     fn __init__(
@@ -707,7 +673,7 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the LayoutTensor.
         """
         self = Self.GenericLayoutTensorType(
-            device_buffer._unsafe_ptr(), runtime_layout
+            device_buffer.unsafe_ptr(), runtime_layout
         )
 
     @always_inline
@@ -752,7 +718,7 @@ struct LayoutTensor[
             element_runtime_layout: The runtime layout of each element.
         """
         self = Self.GenericLayoutTensorType(
-            device_buffer._unsafe_ptr(), runtime_layout, element_runtime_layout
+            device_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
     @always_inline
@@ -842,23 +808,23 @@ struct LayoutTensor[
         new_dtype: DType,
         /,
         target_address_space: AddressSpace = Self.address_space,
-        element_layout: Layout = Self.element_layout,
+        _element_layout: Layout = Self.element_layout,
     ](self) -> Self.BitcastType[
-        new_dtype, target_address_space, element_layout
+        new_dtype, target_address_space, _element_layout
     ]:
         """Bitcast the underlying pointer to a new data type.
 
         Parameters:
             new_dtype: The new data type it is casting to.
             target_address_space: The address space of the returned `LayoutTensor`.
-            element_layout: The element layout of the returned `LayoutTensor`.
+            _element_layout: The element layout of the returned `LayoutTensor`.
 
         Returns:
             A new `LayoutTensor` with the same memory location but with the
             specified data type, address space, and element layout.
         """
         return Self.BitcastType[
-            new_dtype, target_address_space, element_layout
+            new_dtype, target_address_space, _element_layout
         ](
             self.ptr.bitcast[Scalar[new_dtype]]().address_space_cast[
                 target_address_space
@@ -985,6 +951,27 @@ struct LayoutTensor[
             The calculated memory offset as an integer.
         """
         return Self.stride[0]() * m + Self.stride[1]() * n
+
+    @always_inline
+    fn _offset(self, coords: IndexList) -> Int:
+        """Calculate the memory offset for a row-major tensor element.
+
+        Computes the linear memory offset based on the tensor's stride
+        configuration.
+
+        Args:
+            coords: The coordinates for the index.
+
+        Returns:
+            The calculated memory offset as an integer.
+        """
+        return Int(
+            self.runtime_layout(
+                RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
+                    coords
+                )
+            )
+        )
 
     @always_inline
     fn _elementwise_unary[
@@ -2036,8 +2023,8 @@ struct LayoutTensor[
             result in undefined behavior.
         """
 
-        alias alignment = align_of[SIMD[dtype, width]]()
-        return self.ptr.load[width=width, alignment=alignment](
+        alias _alignment = align_of[SIMD[dtype, width]]()
+        return self.ptr.load[width=width, alignment=_alignment](
             self._offset(m, n)
         )
 
@@ -2158,8 +2145,8 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
 
-        alias alignment = align_of[SIMD[dtype, width]]()
-        return self.ptr.store[alignment=alignment](self._offset(m, n), val)
+        alias _alignment = align_of[SIMD[dtype, width]]()
+        return self.ptr.store[alignment=_alignment](self._offset(m, n), val)
 
     @always_inline("nodebug")
     fn size(self) -> Int:
@@ -2236,6 +2223,23 @@ struct LayoutTensor[
                 dtype,
                 alignment=stack_alignment,
                 address_space=address_space,
+            ]()
+        )
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn null() -> Self.StackTensorType:
+        """
+        Returns a null `LayoutTensor` object.
+
+        Returns:
+            A null `LayoutTensor` object.
+        """
+        return Self.StackTensorType(
+            UnsafePointer[
+                Scalar[dtype],
+                address_space=address_space,
+                origin = MutableOrigin.empty,
             ]()
         )
 
@@ -3870,11 +3874,13 @@ struct LayoutTensor[
 
     @always_inline
     fn _vectorize_2[
-        origin: ImmutableOrigin,  # FIXME: MOCO-1912
-        vector_shape: IntTuple[origin],
+        _origin: ImmutableOrigin,  # FIXME: MOCO-1912
+        vector_shape: IntTuple[_origin],
         check_rank: Bool = True,
         linear_vectorize: Bool = vector_shape.is_value(),
-    ](self) -> Self.ShapeVectorizedType[origin, vector_shape, linear_vectorize]:
+    ](self) -> Self.ShapeVectorizedType[
+        _origin, vector_shape, linear_vectorize
+    ]:
         """Experimental implementation of the generalized vectorize operation
         using IntTuple.
 
@@ -3882,7 +3888,7 @@ struct LayoutTensor[
         to specify the vector dimensions rather than variadic parameters.
 
         Parameters:
-            origin: The origin of the IntTuple.
+            _origin: The origin of the IntTuple.
             vector_shape: The dimensions of each vector unit as an IntTuple.
             check_rank: Whether to verify that vector_shape is congruent with
                 the tensor's shape. Defaults to True.
@@ -3902,7 +3908,7 @@ struct LayoutTensor[
         ]()
 
         alias vectorized_type = Self.ShapeVectorizedType[
-            origin, vector_shape, linear_vectorize
+            _origin, vector_shape, linear_vectorize
         ]
         runtime_shape = vectorized_type.RuntimeLayoutType.ShapeType()
         runtime_stride = vectorized_type.RuntimeLayoutType.StrideType()
@@ -3960,7 +3966,7 @@ struct LayoutTensor[
             )
 
             return Self.ShapeVectorizedType[
-                origin, vector_shape, linear_vectorize
+                _origin, vector_shape, linear_vectorize
             ](
                 self.ptr,
                 vectorized_type.RuntimeLayoutType(
@@ -4039,9 +4045,9 @@ struct LayoutTensor[
         """
 
         alias shape = IntTuple(vector_shape)
-        alias origin = __origin_of()  # FIXME: MOCO-1912
+        alias _origin = __origin_of()  # FIXME: MOCO-1912
         var ret = self._vectorize_2[
-            origin,
+            _origin,
             shape,
             check_rank=False,
             linear_vectorize=False,

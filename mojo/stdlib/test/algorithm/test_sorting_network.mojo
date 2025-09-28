@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_true
 from algorithm._sorting_network import _sort
-
+from testing import assert_true
 
 alias sizes = [
     2,

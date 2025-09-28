@@ -40,7 +40,7 @@ from ..kernels import (
     matmul_k_cache_ragged,
     rms_norm_key_cache,
 )
-from ..kv_cache import KVCacheParams, PagedKVCacheCollection
+from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
@@ -341,7 +341,7 @@ class LatentAttentionWithRope(Module, Shardable):
         self,
         xq_nope: TensorValue,
         xq_rope: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -513,7 +513,7 @@ class LatentAttentionWithRope(Module, Shardable):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
@@ -600,7 +600,7 @@ class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
         layer_idx: TensorValue,
         xs: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
-        kv_collections: Sequence[PagedKVCacheCollection],
+        kv_collections: Sequence[PagedCacheValues],
         freqs_cis: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:

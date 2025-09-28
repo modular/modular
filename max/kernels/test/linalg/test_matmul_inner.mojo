@@ -17,13 +17,14 @@ from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from linalg.matmul import GemmShape, KernelConfig
-from linalg.matmul_default import Inner_matmul_default
-from linalg.matmul_i8mm import Inner_matmul_i8mm
-from linalg.matmul_neon import Inner_matmul_neon
-from linalg.matmul_vnni import Inner_matmul_vnni
+from linalg.matmul.cpu.default import Inner_matmul_default
+from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
+from linalg.matmul.cpu.neon import Inner_matmul_neon
+from linalg.matmul.cpu.vnni import Inner_matmul_vnni
 from linalg.utils import (
+    GemmShape,
     InnerKernelID,
+    KernelConfig,
     get_kernel_config,
     get_matmul_arch_factor,
     select_inner_kernel,
@@ -200,12 +201,5 @@ fn main() raises:
         DType.uint8, DType.int8, DType.int32, saturated_vnni=True
     ](M, N, K)
 
-    # TODO(KERN-228): Re-enable after we resolve llvm lowering issues.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](
-            M, N, K
-        )
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](
-            M, N, K
-        )
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](M, N, K)
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](M, N, K)

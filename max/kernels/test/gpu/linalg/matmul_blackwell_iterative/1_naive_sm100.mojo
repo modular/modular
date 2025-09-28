@@ -14,17 +14,16 @@
 from math import ceildiv
 from sys import argv
 
+import linalg.matmul.vendor.blas as vendor_blas
 from gpu import block_dim
 from gpu.host import DeviceContext
 from gpu.id import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from linalg import vendor_blas
+from testing import assert_almost_equal
 
 from utils.index import IndexList
-
-from testing import assert_almost_equal
 
 
 fn is_benchmark() -> Bool:

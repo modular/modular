@@ -29,8 +29,9 @@ from collections.string.string_slice import get_static_string
 from os.atomic import Consistency
 from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x, align_of, bit_width_of, CompilationTarget
+from sys.info import CompilationTarget, _is_sm_9x, align_of, bit_width_of
 from sys.intrinsics import llvm_intrinsic, readfirstlane
+
 from memory.unsafe import bitcast
 
 from .memory import AddressSpace, CacheOperation, _int_to_str
@@ -635,7 +636,14 @@ fn _get_type_suffix[dtype: DType]() -> StaticString:
     return str
 
 
-fn _get_register_constraint[dtype: DType]() -> StaticString:
+fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
+    constrained[
+        is_nvidia_gpu(),
+        (
+            "the _get_nvtx_register_constraint function is currently restricted"
+            " to only be defined on NVIDIA GPUs"
+        ),
+    ]()
     if dtype is DType.bool:
         return "b"
     if dtype.is_half_float():
@@ -656,8 +664,15 @@ fn _get_register_constraint[dtype: DType]() -> StaticString:
     return "<<unknown_register_constraint>>"
 
 
-fn _get_pointer_constraint() -> StaticString:
-    return _get_register_constraint[DType.int]()
+fn _get_nvtx_pointer_constraint() -> StaticString:
+    constrained[
+        is_nvidia_gpu(),
+        (
+            "the _get_nvtx_pointer_constraint function is currently restricted"
+            " to only be defined on NVIDIA GPUs"
+        ),
+    ]()
+    return _get_nvtx_register_constraint[DType.int]()
 
 
 @always_inline
@@ -694,9 +709,9 @@ fn store_release[
     @parameter
     if is_nvidia_gpu():
         alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = _get_register_constraint[
+        alias constraints = _get_nvtx_register_constraint[
             dtype
-        ]() + "," + _get_pointer_constraint() + mem_constraint
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
         alias scope_str = scope.mnemonic()
         inlined_assembly[
             "st.release."
@@ -755,9 +770,9 @@ fn load_acquire[
     @parameter
     if is_nvidia_gpu():
         alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = "=" + _get_register_constraint[
+        alias constraints = "=" + _get_nvtx_register_constraint[
             dtype
-        ]() + "," + _get_pointer_constraint() + mem_constraint
+        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
         alias scope_str = scope.mnemonic()
         return inlined_assembly[
             "ld.acquire."
@@ -808,9 +823,9 @@ fn store_volatile[
         is_nvidia_gpu(), "store_volatile is not currently supported on AMD GPUs"
     ]()
     alias mem_constraint = StaticString(",~{memory}") if memory else ""
-    alias constraints = _get_register_constraint[
+    alias constraints = _get_nvtx_register_constraint[
         dtype
-    ]() + "," + _get_pointer_constraint() + mem_constraint
+    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
     inlined_assembly[
         "st.volatile.global." + _get_type_suffix[dtype]() + " [$1], $0;",
         NoneType,
@@ -848,9 +863,9 @@ fn load_volatile[
         is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
     ]()
     alias mem_constraint = StaticString(",~{memory}") if memory else ""
-    alias constraints = "=" + _get_register_constraint[
+    alias constraints = "=" + _get_nvtx_register_constraint[
         dtype
-    ]() + "," + _get_pointer_constraint() + mem_constraint
+    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
     return inlined_assembly[
         "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
         Scalar[dtype],

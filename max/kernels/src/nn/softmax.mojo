@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_down, ceildiv, exp, exp2, log
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
@@ -24,7 +25,6 @@ from algorithm.reduction import (
 from bit import log2_floor
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import OptionalReg
 from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext
@@ -33,7 +33,6 @@ from gpu.memory import AddressSpace
 from layout._utils import idx2crd
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import get_fragment_size
 from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
@@ -1054,11 +1053,9 @@ fn _online_softmax_kernel[
                         2 * m_mma + 1
                     ]
                 else:
-                    var rowsum_tensor = (
-                        tb[dtype]()
-                        .row_major[num_m_mmas, frag_num_rows]()
-                        .view(rowsum)
-                    )
+                    var rowsum_tensor = LayoutTensor[
+                        dtype, Layout.row_major(num_m_mmas, frag_num_rows)
+                    ](rowsum)
                     p[n_mma * num_m_mmas + m_mma, i] /= rowsum_tensor[
                         m_mma, 0 if fragment_transpose else i
                     ]
@@ -1127,31 +1124,35 @@ fn _online_softmax_iter_for_mma_output[
     # The online softmax attributes for each thread's elements (fragments).
     alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
-    var score_frag_rowmax = (
-        tb[dtype]()
-        .row_major[num_colwise_tiles, frag_num_rows]()
-        .local()
-        .alloc()
-    )
-    var score_frag_rowsum = (
-        tb[dtype]()
-        .row_major[num_colwise_tiles, frag_num_rows]()
-        .local()
-        .alloc()
-    )
-    var correction = (
-        tb[dtype]()
-        .row_major[num_colwise_tiles, frag_num_rows]()
-        .local()
-        .alloc()
-    )
+    var score_frag_rowmax = LayoutTensor[
+        dtype,
+        Layout.row_major(num_colwise_tiles, frag_num_rows),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    var score_frag_rowsum = LayoutTensor[
+        dtype,
+        Layout.row_major(num_colwise_tiles, frag_num_rows),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    var correction = LayoutTensor[
+        dtype,
+        Layout.row_major(num_colwise_tiles, frag_num_rows),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
 
-    var rowmax_tensor = (
-        tb[dtype]().row_major[num_colwise_tiles, frag_num_rows]().view(rowmax)
-    )
-    var rowsum_tensor = (
-        tb[dtype]().row_major[num_colwise_tiles, frag_num_rows]().view(rowsum)
-    )
+    var rowmax_tensor = LayoutTensor[
+        dtype,
+        Layout.row_major(num_colwise_tiles, frag_num_rows),
+        address_space = rowmax.address_space,
+    ](rowmax)
+    var rowsum_tensor = LayoutTensor[
+        dtype,
+        Layout.row_major(num_colwise_tiles, frag_num_rows),
+        address_space = rowsum.address_space,
+    ](rowsum)
 
     # Initialize local max with the running max, and local sum with zero.
     @parameter
@@ -1587,21 +1588,15 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
-    var interwarp_frag_rowmax = (
-        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
-    )
-    var interwarp_frag_rowsum = (
-        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
-    )
-    var correction = (
-        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
-    )
-    var rowmax_tensor = (
-        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().view(rowmax)
-    )
-    var rowsum_tensor = (
-        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().view(rowsum)
-    )
+    alias layout = Layout.row_major(num_m_mmas, frag_num_rows)
+    alias TensorType = LayoutTensor[
+        dtype, layout, MutableAnyOrigin, address_space = AddressSpace.LOCAL
+    ]
+    var interwarp_frag_rowmax = TensorType.stack_allocation()
+    var interwarp_frag_rowsum = TensorType.stack_allocation()
+    var correction = TensorType.stack_allocation()
+    var rowmax_tensor = TensorType.stack_allocation()
+    var rowsum_tensor = TensorType.stack_allocation()
     # corrections across warps
     # Write per warp rowmax to shared memory.
     if lane % num_lanes_n == 0:

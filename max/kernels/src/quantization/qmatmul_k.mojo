@@ -12,24 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import (
-    CompilationTarget,
-    align_of,
-    simd_width_of,
-    size_of,
-)
+from sys import CompilationTarget, align_of, simd_width_of, size_of
 from sys.intrinsics import llvm_intrinsic
 
 from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
 from linalg.accumulate import _Accumulator
-from linalg.matmul import elementwise_epilogue_type
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
-from linalg.utils import partition_work
 from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
+from linalg.matmul import elementwise_epilogue_type
+from linalg.utils import partition_work
 from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 

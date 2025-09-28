@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer, DimList
-from complex import ComplexSIMD
-from gpu.host import DeviceContext
-from nn._ragged_utils import get_batch_from_row_offsets
 from collections import OptionalReg
-from utils import IndexList
-from sys.info import alignof
-from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE
-from algorithm.functional import elementwise
 from math import gcd
-from sys.info import _current_target, simd_width_of
-from gpu.host import get_gpu_target
+from sys.info import _current_target, alignof, simd_width_of
+
+from algorithm.functional import elementwise
+from buffer import DimList, NDBuffer
+from complex import ComplexSIMD
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
+from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor
+from nn._ragged_utils import get_batch_from_row_offsets
+
+from utils import IndexList
 
 
 @always_inline

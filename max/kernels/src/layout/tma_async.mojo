@@ -42,6 +42,7 @@ from gpu.host._nvidia_cuda import (
     create_tma_descriptor,
     prefetch_tma_descriptor,
 )
+from gpu.intrinsics import Scope
 from gpu.memory import (
     AddressSpace,
     ReduceOp,
@@ -55,15 +56,15 @@ from gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
     mbarrier_arrive,
-    mbarrier_arrive_expect_tx_shared,
     mbarrier_arrive_expect_tx_relaxed,
+    mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import product
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from memory.pointer import _GPUAddressSpace
-from gpu.intrinsics import Scope
+
 from utils.index import Index, IndexList
 
 
@@ -1000,8 +1001,8 @@ struct TMATensorTile[
 
     @always_inline
     fn replace_tensormap_global_address_in_gmem[
-        dtype: DType,
-    ](self, src_ptr: UnsafePointer[Scalar[dtype],],):
+        _dtype: DType,
+    ](self, src_ptr: UnsafePointer[Scalar[_dtype],],):
         """
         Replaces the global memory address in the TMA descriptor stored in global memory.
 
@@ -1011,7 +1012,7 @@ struct TMATensorTile[
 
 
         Parameters:
-            dtype: The data type of the new source tensor.
+            _dtype: The data type of the new source tensor.
 
         Args:
             src_ptr: The new source tensor whose address will replace the current one in the descriptor.
@@ -1088,13 +1089,13 @@ struct TMATensorTile[
 
     @always_inline
     fn replace_tensormap_global_address_in_shared_mem[
-        dtype: DType,
+        _dtype: DType,
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
         ],
-        src_ptr: UnsafePointer[Scalar[dtype],],
+        src_ptr: UnsafePointer[Scalar[_dtype],],
     ):
         """
         Replaces the global memory address in the TMA descriptor stored in shared memory.
@@ -1106,7 +1107,7 @@ struct TMATensorTile[
 
 
         Parameters:
-            dtype: The data type of the new source tensor.
+            _dtype: The data type of the new source tensor.
 
         Args:
             smem_tma_descriptor_ptr: Pointer to the TMA descriptor in shared memory that will be modified.
@@ -1186,7 +1187,7 @@ struct TMATensorTile[
 
     @always_inline
     fn replace_tensormap_global_dim_strides_in_shared_mem[
-        dtype: DType,
+        _dtype: DType,
         only_update_dim_0: Bool,
         /,
         *,
@@ -1207,7 +1208,7 @@ struct TMATensorTile[
         descriptor that has been previously initialized in shared memory. If only the first dimension (dim 0) is updated, then updating strides can be skipped.
 
         Parameters:
-            dtype: The data type of the new source tensor.
+            _dtype: The data type of the new source tensor.
             only_update_dim_0: If true, only the first dimension (dim 0) is updated with updating strides.
             rank: The rank of the tensor.
 
@@ -1266,7 +1267,7 @@ struct TMATensorTile[
 
     @always_inline
     fn replace_tensormap_global_dim_strides_in_shared_mem[
-        dtype: DType,
+        _dtype: DType,
         tensor_rank: Int,
         dim_idx: Int,
     ](
@@ -1284,7 +1285,7 @@ struct TMATensorTile[
         descriptor that has been previously initialized in shared memory. If only the first dimension is updated, then updating strides can be skipped.
 
         Parameters:
-            dtype: The data type of the source tensor in GMEM.
+            _dtype: The data type of the source tensor in GMEM.
             tensor_rank: The rank of the source tensor in GMEM.
             dim_idx: The index of the dimension to be updated in the TMA descriptor with the provided dimension and stride values at runtime.
 
@@ -1406,7 +1407,7 @@ def create_tma_tile[
 @always_inline
 def create_tma_tile[
     dtype: DType,
-    rank: Int,
+    rank: Int, //,
     tile_shape: IndexList[rank],
     /,
     is_k_major: Bool = True,
@@ -1759,7 +1760,7 @@ struct TMATensorTileArray[
             tensormaps_device: Device buffer to store TMA descriptors.
         """
 
-        self.tensormaps_ptr = tensormaps_device._unsafe_ptr()
+        self.tensormaps_ptr = tensormaps_device.unsafe_ptr()
 
     @always_inline
     fn __getitem__(

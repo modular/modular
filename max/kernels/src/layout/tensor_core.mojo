@@ -57,7 +57,7 @@ from sys import (
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
-from gpu.mma import ld_matrix, mma, get_amd_fp8_dtype, get_amd_bf8_dtype
+from gpu.mma import get_amd_bf8_dtype, get_amd_fp8_dtype, ld_matrix, mma
 from layout._utils import load_to_simd
 from layout.int_tuple import product
 from layout.layout import Layout
@@ -215,15 +215,15 @@ struct TensorCore[
         pass
 
     @staticmethod
-    fn get_shapes[out_type: DType, in_type: DType]() -> List[IndexList[3]]:
+    fn get_shapes[_out_type: DType, _in_type: DType]() -> List[IndexList[3]]:
         """
         Get supported shapes for given data types.
 
         Returns a list of valid shapes for the specified output and input data types.
 
         Parameters:
-            out_type: The output/accumulation data type.
-            in_type: The input matrix data type.
+            _out_type: The output/accumulation data type.
+            _in_type: The input matrix data type.
 
         Returns:
             List[IndexList[3]]: Valid shapes for the matrix operations given the specified types.
@@ -234,14 +234,14 @@ struct TensorCore[
         """
 
         @parameter
-        if out_type is DType.float32 and in_type is DType.float32:
+        if _out_type is DType.float32 and _in_type is DType.float32:
             return List[IndexList[3]](shape_16x8x4, shape_16x8x8)
-        elif out_type is DType.float32 and in_type is DType.bfloat16:
+        elif _out_type is DType.float32 and _in_type is DType.bfloat16:
             return List[IndexList[3]](shape_16x8x8, shape_16x8x16)
-        elif out_type is DType.float32 and in_type is DType.float16:
+        elif _out_type is DType.float32 and _in_type is DType.float16:
             return List[IndexList[3]](shape_16x8x8, shape_8x8x4)
-        elif out_type is DType.float32 and (
-            in_type is DType.float8_e4m3fn or in_type is DType.float8_e5m2
+        elif _out_type is DType.float32 and (
+            _in_type is DType.float8_e4m3fn or _in_type is DType.float8_e5m2
         ):
             return List[IndexList[3]](shape_16x8x32)
         else:

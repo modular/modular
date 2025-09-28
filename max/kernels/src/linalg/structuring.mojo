@@ -11,18 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from sys import align_of, simd_width_of, size_of
-from gpu.memory import AddressSpace
+
 from gpu.intrinsics import AMDBufferResource
+from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
+from layout._utils import _get_bounds, make_amd_buffer_resource
 from layout.layout_tensor import (
+    LayoutTensorIter,
     ThreadScope,
     _copy_dram_to_local,
     _copy_local_to_dram,
-    LayoutTensorIter,
 )
-from collections import OptionalReg
-from layout._utils import _get_bounds, make_amd_buffer_resource
 
 
 # Tile based AMD Data Movement Delegate

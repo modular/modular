@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the  Set datatype."""
 
-from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 from hashlib import Hasher, default_hasher
+
+from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
@@ -271,13 +272,13 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self._data)
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    fn __hash__[_H: Hasher](self, mut hasher: _H):
         """Updates hasher with the underlying values.
 
         The update is order independent, so s1 == s2 -> hash(s1) == hash(s2).
 
         Parameters:
-            H: The hasher type.
+            _H: The hasher type.
 
         Args:
             hasher: The hasher instance.

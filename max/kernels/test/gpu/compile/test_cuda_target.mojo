@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from io.io import _printf
 from math import erf
 from sys.info import is_nvidia_gpu, simd_width_of
 
 import gpu.warp as warp
 from algorithm.functional import elementwise
 from bit import log2_floor
-from io.io import _printf
 from gpu import (
     WARP_SIZE,
     barrier,
@@ -28,9 +28,8 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
 from testing import *

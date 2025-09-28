@@ -19,7 +19,6 @@ from collections import Counter
 ```
 """
 from collections.dict import Dict, _DictEntryIter, _DictKeyIter, _DictValueIter
-
 from hashlib import Hasher, default_hasher
 
 from utils import Variant

@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import time
+from collections import OptionalReg
+from io.io import _snprintf
+from math import ceildiv
 from random import rand, random_float64
 from sys import argv, env_get_string
 
@@ -25,20 +29,15 @@ from benchmark import (
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from compile import compile_info
+from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from io.io import _snprintf
 from tensor_internal import DynamicTensor
 from testing import assert_equal, assert_true
 
 from utils import IndexList
 from utils.index import product
-import time
-from math import ceildiv
-from gpu import *
-from gpu.random import Random
-
-from collections import OptionalReg
 
 
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
@@ -158,7 +157,7 @@ struct DeviceNDBuffer[
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
         self.buffer = ctx.enqueue_create_buffer[dtype](shape.product().get())
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(),
+            self.buffer.unsafe_ptr(),
         )
 
     @always_inline
@@ -173,7 +172,7 @@ struct DeviceNDBuffer[
             product(dynamic_shape, rank)
         )
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(), dynamic_shape
+            self.buffer.unsafe_ptr(), dynamic_shape
         )
 
     @always_inline
@@ -198,7 +197,7 @@ struct DeviceNDBuffer[
             product(dynamic_shape, rank)
         )
         self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
-            self.buffer._unsafe_ptr(), dynamic_shape, stride
+            self.buffer.unsafe_ptr(), dynamic_shape, stride
         )
 
     @always_inline

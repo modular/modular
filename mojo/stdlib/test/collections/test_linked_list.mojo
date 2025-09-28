@@ -18,6 +18,7 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
+    TestSuite,
 )
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
@@ -387,8 +388,8 @@ def test_list_insert():
         v4.insert(0, 4 - i)
         v4.insert(len(v4), 4 + i + 1)
 
-    for i in range(len(v4)):
-        assert_equal(v4[i], i + 1)
+    for i, value in enumerate(v4):
+        assert_equal(value, i + 1)
 
 
 def test_list_extend_non_trivial():
@@ -462,8 +463,8 @@ def test_list_explicit_copy():
 
     var l2_copy = l2.copy()
     assert_equal(len(l2), len(l2_copy))
-    for i in range(len(l2)):
-        assert_equal(l2[i], l2_copy[i])
+    for i, value in enumerate(l2):
+        assert_equal(value, l2_copy[i])
 
 
 def test_no_extra_copies_with_sugared_set_by_field():
@@ -609,36 +610,40 @@ def test_repr_wrap():
 
 
 def main():
-    test_construction()
-    test_linkedlist_literal()
-    test_append()
-    test_prepend()
-    test_copy()
-    test_reverse()
-    test_pop()
-    test_pop_copies()
-    test_getitem()
-    test_setitem()
-    test_str()
-    test_repr()
-    test_pop_on_empty_list()
-    test_optional_pop_on_empty_linked_list()
-    test_list()
-    test_list_clear()
-    test_list_to_bool_conversion()
-    test_list_pop()
-    test_list_variadic_constructor()
-    test_list_reverse()
-    test_list_extend_non_trivial()
-    test_list_explicit_copy()
-    test_no_extra_copies_with_sugared_set_by_field()
-    test_2d_dynamic_list()
-    test_list_boolable()
-    test_list_count()
-    test_list_contains()
-    test_indexing()
-    test_list_dtor()
-    test_list_insert()
-    test_list_eq_ne()
-    test_iter()
-    test_repr_wrap()
+    var suite = TestSuite()
+
+    suite.test[test_construction]()
+    suite.test[test_linkedlist_literal]()
+    suite.test[test_append]()
+    suite.test[test_prepend]()
+    suite.test[test_copy]()
+    suite.test[test_reverse]()
+    suite.test[test_pop]()
+    suite.test[test_pop_copies]()
+    suite.test[test_getitem]()
+    suite.test[test_setitem]()
+    suite.test[test_str]()
+    suite.test[test_repr]()
+    suite.test[test_pop_on_empty_list]()
+    suite.test[test_optional_pop_on_empty_linked_list]()
+    suite.test[test_list]()
+    suite.test[test_list_clear]()
+    suite.test[test_list_to_bool_conversion]()
+    suite.test[test_list_pop]()
+    suite.test[test_list_variadic_constructor]()
+    suite.test[test_list_reverse]()
+    suite.test[test_list_extend_non_trivial]()
+    suite.test[test_list_explicit_copy]()
+    suite.test[test_no_extra_copies_with_sugared_set_by_field]()
+    suite.test[test_2d_dynamic_list]()
+    suite.test[test_list_boolable]()
+    suite.test[test_list_count]()
+    suite.test[test_list_contains]()
+    suite.test[test_indexing]()
+    suite.test[test_list_dtor]()
+    suite.test[test_list_insert]()
+    suite.test[test_list_eq_ne]()
+    suite.test[test_iter]()
+    suite.test[test_repr_wrap]()
+
+    suite^.run()

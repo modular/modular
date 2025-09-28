@@ -11,10 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
+from math import ceildiv, exp2, recip
+from math.constants import log2e
+from sys import align_of, simd_width_of, size_of
+
+import gpu.warp as warp
 from algorithm.functional import unswitch
 from buffer import NDBuffer
-from collections import OptionalReg
-from math import exp2
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -31,11 +35,11 @@ from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma import MMAOperandDescriptor
 from gpu.mma_sm100 import (
-    UMMAInsDescriptor,
     MMASmemDescriptor,
+    UMMAInsDescriptor,
     UMMAKind,
-    mma_arrive,
     mma,
+    mma_arrive,
 )
 from gpu.sync import named_barrier
 from gpu.tcgen05 import (
@@ -68,20 +72,18 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMANestedTensorTile,
 )
-from math import ceildiv, recip
-from math.constants import log2e
-from memory import stack_allocation, bitcast
+from memory import bitcast, stack_allocation
 from nn.mha_fa3_utils import (
     MHAPosition,
     NonNullPointer,
     NullPointer,
     OptionalPointer,
     Pack,
+    QTMATile,
     _apply_mask,
     _get_position,
     produce,
     q_out_tma,
-    QTMATile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -107,12 +109,11 @@ from nn.softmax import (
     _rowmax_online_softmax,
     _rowsum,
 )
-from sys import align_of, simd_width_of, size_of
 from tensor_internal import ManagedTensorSlice
+
 from utils.index import Index
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
-import gpu.warp as warp
 
 
 struct RegisterAccumulatorDescription:

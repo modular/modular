@@ -14,13 +14,13 @@
 from os import abort
 
 from python import Python, PythonObject
+from python._cpython import PyObjectPtr
 from python.bindings import (
+    PythonModuleBuilder,
     check_and_get_arg,
     check_and_get_or_convert_arg,
     check_arguments_arity,
-    PythonModuleBuilder,
 )
-from python._cpython import PyObjectPtr
 
 
 @export

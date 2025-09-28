@@ -14,16 +14,18 @@
 from collections import OptionalReg
 from math import ceildiv, iota
 from random import random_float64
-from gpu import WARP_SIZE
+
+from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
-from algorithm.reduction import max as reduce_max
+
 from utils import IndexList
 
 alias DEBUG_BENCH = False

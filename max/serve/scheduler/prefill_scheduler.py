@@ -17,13 +17,7 @@ import queue
 import time
 import uuid
 
-from max.interfaces import (
-    Pipeline,
-    RequestID,
-    Scheduler,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
+from max.interfaces import RequestID, Scheduler, TextGenerationInputs
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -31,7 +25,7 @@ from max.nn.kv_cache import (
     XferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
@@ -39,7 +33,6 @@ from max.serve.queue.zmq_queue import ClientIdentity
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
 from max.serve.scheduler.text_batch_constructor import (
-    SchedulerOutput,
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
@@ -53,12 +46,9 @@ logger = logging.getLogger("max.serve")
 class PrefillScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: Pipeline[
-            TextGenerationInputs[TextContext],
-            TextGenerationOutput,
-        ],
+        pipeline: TextGenerationPipelineType[TextContext],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_cache: PagedKVCacheManager[TextContext],
+        paged_cache: PagedKVCacheManager,
         dispatcher: PrefillDispatcherServerV2,
     ) -> None:
         self.pipeline = pipeline
@@ -148,16 +138,14 @@ class PrefillScheduler(Scheduler):
             del self.active_transfers[id]
 
     @traced
-    def schedule(self, sch_output: SchedulerOutput) -> None:
+    def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Executes the current batch of requests and sends completed requests to decode.
 
         Processes the active batch through the pipeline, handles any chunked prefill requests,
         and sends completed requests to the decode queue while resetting their token indices.
         """
         # Execute the Batch
-        assert sch_output.batch_size > 0
-        batches = sch_output.inputs.batches
-        inputs = TextGenerationInputs(batches=batches, num_steps=1)
+        assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
         add_newly_encoded_reqs_to_tg_batch(
@@ -203,9 +191,6 @@ class PrefillScheduler(Scheduler):
             )
             self.active_transfers[req_id] = (context, xfer_data)
 
-            # Increment the number of terminated requests.
-            sch_output.num_terminated += 1
-
             assert not context.needs_ce, (
                 f"Invalid Context: Expected needs_ce to be False. Found: {context}"
             )
@@ -222,7 +207,9 @@ class PrefillScheduler(Scheduler):
             )
 
         # Remove all TG requests from the batch constructor.
+        num_terminated_reqs = len(self.batch_constructor.tg_reqs)
         self.batch_constructor.tg_reqs.clear()
+        return num_terminated_reqs
 
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes prefill requests.
@@ -253,30 +240,30 @@ class PrefillScheduler(Scheduler):
 
         # Construct the batch to execute
         t0 = time.monotonic()
-        batch_to_execute = self.batch_constructor.construct_batch()
+        inputs = self.batch_constructor.construct_batch()
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
         # If the batch is empty, skip
-        batch_size = batch_to_execute.batch_size
-        if batch_size == 0:
+        if len(inputs.batch) == 0:
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
-        with Tracer(f"_schedule({batch_to_execute})"):
-            self.schedule(batch_to_execute)
+        with Tracer(f"_schedule({inputs})"):
+            num_terminated_reqs = self.schedule(inputs)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
-            sch_output=batch_to_execute,
+            inputs=inputs,
             paged_cache=self.paged_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.ce_reqs),
+            num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
@@ -284,10 +271,7 @@ class PrefillScheduler(Scheduler):
 
 
 def load_prefill_scheduler(
-    pipeline: Pipeline[
-        TextGenerationInputs[TextContext],
-        TextGenerationOutput,
-    ],
+    pipeline: TextGenerationPipelineType[TextContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
 ) -> PrefillScheduler:

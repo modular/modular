@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from test_utils import TestSuite
 
 
 def test_char_validity():
@@ -231,16 +232,19 @@ def test_char_comptime():
 
 
 def main():
-    test_char_validity()
-    test_char_from_u8()
-    test_char_comparison()
-    test_char_formatting()
-    test_char_properties()
-    test_char_is_posix_space()
-    test_char_is_lower()
-    test_char_is_upper()
-    test_char_is_digit()
-    test_char_is_printable()
-    test_char_utf8_encoding()
-    test_char_utf8_byte_length()
-    test_char_comptime()
+    var suite = TestSuite()
+    suite.test[test_char_validity]()
+    suite.test[test_char_from_u8]()
+    suite.test[test_char_comparison]()
+    suite.test[test_char_formatting]()
+    suite.test[test_char_properties]()
+    suite.test[test_char_is_posix_space]()
+    suite.test[test_char_is_lower]()
+    suite.test[test_char_is_upper]()
+    suite.test[test_char_is_digit]()
+    suite.test[test_char_is_printable]()
+    suite.test[test_char_utf8_encoding]()
+    suite.test[test_char_utf8_byte_length]()
+    suite.test[test_char_comptime]()
+
+    suite^.run()

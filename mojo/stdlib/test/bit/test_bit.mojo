@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import floor, ceil, log2
+from math import ceil, floor, log2
+
 from bit import (
     bit_not,
     bit_reverse,
@@ -19,8 +20,8 @@ from bit import (
     byte_swap,
     count_leading_zeros,
     count_trailing_zeros,
-    log2_floor,
     log2_ceil,
+    log2_floor,
     next_power_of_two,
     pop_count,
     prev_power_of_two,

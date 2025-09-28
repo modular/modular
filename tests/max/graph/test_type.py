@@ -301,4 +301,5 @@ def test_type_hashing(mlir_context) -> None:  # noqa: ANN001
     rhs = TensorType(DType.float32, [7, 2], device=DeviceRef.CPU())
 
     assert lhs.to_mlir() == rhs.to_mlir()
+    assert hash(lhs) == hash(rhs)
     assert hash(lhs.to_mlir() == rhs.to_mlir())

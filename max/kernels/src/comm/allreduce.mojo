@@ -93,8 +93,8 @@ For the naive allreduce (no P2P) per‑device flow and staging details, see the
 
 from collections import InlineArray
 from math import ceildiv
-from sys import align_of, simd_width_of, size_of, is_amd_gpu
-from sys.ffi import external_call, _Global
+from sys import align_of, is_amd_gpu, simd_width_of, size_of
+from sys.ffi import _Global, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer
@@ -103,9 +103,9 @@ from gpu import (
     barrier,
     block_dim,
     block_idx,
+    global_idx,
     grid_dim,
     thread_idx,
-    global_idx,
 )
 from gpu.grid_controls import (
     PDLLevel,
@@ -113,18 +113,12 @@ from gpu.grid_controls import (
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
-from gpu.memory import (
-    multimem_ld_reduce,
-    ReduceOp,
-    Scope,
-    Consistency,
-    AddressSpace,
-)
-from memory import stack_allocation
+from gpu.memory import AddressSpace
 from gpu.memory import AddressSpace as GPUAddressSpace
+from gpu.memory import Consistency, ReduceOp, Scope, multimem_ld_reduce
+from memory import stack_allocation
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type

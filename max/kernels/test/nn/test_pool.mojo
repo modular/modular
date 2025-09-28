@@ -13,15 +13,10 @@
 
 from sys import simd_width_of
 
-from layout import (
-    LayoutTensor,
-    Layout,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
-)
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
-from testing import assert_equal, assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils.index import IndexList
 

@@ -22,8 +22,8 @@ fn test_multicast_memory(contexts: List[DeviceContext]) raises:
 
     var multicast_buf = DeviceMulticastBuffer[dtype](contexts.copy(), alloc_len)
 
-    for i in range(len(contexts)):
-        var dev_buf = multicast_buf.unicast_buffer_for(contexts[i])
+    for context in contexts:
+        var dev_buf = multicast_buf.unicast_buffer_for(context)
         with dev_buf.map_to_host() as host_buf:
             for i in range(len(host_buf)):
                 host_buf[i] = i * 2

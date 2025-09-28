@@ -11,36 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Logger
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simd_width_of
-from memory import bitcast
-from stdlib.bit import log2_floor
+
+import gpu.block
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, block_idx, thread_idx
-import gpu.block
+from gpu import WARP_SIZE, block_idx, global_idx, thread_idx
 from gpu.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
-from linalg.matmul import matmul
-from linalg.utils_gpu import MatmulConfig
-from runtime.tracing import trace_arg
-from utils.numerics import get_accum_type
-from utils.index import IndexList
-from utils.numerics import max_finite, min_finite
-from .utils import elementwise_epilogue_type
-from gpu import global_idx
-from utils.index import Index
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from gpu.host import DeviceContext, get_gpu_target
+from gpu.host.info import B200, H100
 from layout import IntTuple, Layout, LayoutTensor
-from gpu.host.info import H100, B200
-from linalg.matmul_sm100_warp_specialized_blockwise_fp8 import (
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from logger import Logger
+from memory import bitcast
+from runtime.tracing import trace_arg
+from stdlib.bit import log2_floor
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type, max_finite, min_finite
+
+from .matmul import matmul
+from .matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
     sm100_warp_specialized_blockwise_fp8,
 )
+from .utils import elementwise_epilogue_type
+from .utils_gpu import MatmulConfig
 
 ########################################################
 # Static scaled fp8 quantization

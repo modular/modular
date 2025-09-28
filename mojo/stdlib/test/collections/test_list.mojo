@@ -18,8 +18,8 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
-    TriviallyCopyableMoveCounter,
     TestSuite,
+    TriviallyCopyableMoveCounter,
 )
 from testing import (
     assert_equal,
@@ -461,8 +461,8 @@ def test_list_insert():
         v4.insert(0, 4 - i)
         v4.insert(len(v4), 4 + i + 1)
 
-    for i in range(len(v4)):
-        assert_equal(v4[i], i + 1)
+    for i, value in enumerate(v4):
+        assert_equal(value, i + 1)
 
 
 def test_list_index():
@@ -665,8 +665,8 @@ def test_list_explicit_copy():
 
     var l2_copy = l2.copy()
     assert_equal(len(l2), len(l2_copy))
-    for i in range(len(l2)):
-        assert_equal(l2[i], l2_copy[i])
+    for val1, val2 in zip(l2, l2_copy):
+        assert_equal(val1, val2)
 
 
 def test_no_extra_copies_with_sugared_set_by_field():
@@ -964,8 +964,8 @@ def test_list_init_span():
     var l = [String("a"), "bb", "cc", "def"]
     var sp = Span(l)
     var l2 = List[String](sp)
-    for i in range(len(l)):
-        assert_equal(l[i], l2[i])
+    for val1, val2 in zip(l, l2):
+        assert_equal(val1, val2)
 
 
 def test_indexing():

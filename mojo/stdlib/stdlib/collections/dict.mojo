@@ -37,10 +37,10 @@ value types must always be Movable so we can resize the dictionary as it grows.
 See the `Dict` docs for more details.
 """
 
-from hashlib import Hasher, default_hasher, default_comp_time_hasher
+from hashlib import Hasher, default_comp_time_hasher, default_hasher
 from sys.intrinsics import likely
-from memory import bitcast, memcpy
 
+from memory import bitcast, memcpy
 
 alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
 """A trait composition for types which implement all requirements of
@@ -440,8 +440,8 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
     var keys = ["red", "green", "blue"]
     var values = [255, 128, 64]
     var colors = Dict[String, Int]()
-    for i in range(len(keys)):
-        colors[keys[i]] = values[i]
+    for key, value in zip(keys, values):
+        colors[key] = value
     ```
 
     Be aware of the following characteristics:
@@ -726,8 +726,8 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
 
         # TODO: Should transfer the key/value's from the list to avoid copying
         # the values.
-        for i in range(len(keys)):
-            self._insert(keys[i].copy(), values[i].copy())
+        for key, value in zip(keys, values):
+            self._insert(key.copy(), value.copy())
 
     # TODO: add @property when Mojo supports it to make
     # it possible to do `self._reserved`.
@@ -1266,8 +1266,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         self._entries = self._new_entries(_reserved)
         self._index = _DictIndex(self._reserved())
 
-        for i in range(len(old_entries)):
-            var entry = old_entries[i]
+        for var entry in old_entries:
             if entry:
                 self._insert[safe_context=True](entry.unsafe_take())
 

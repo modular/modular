@@ -10,3 +10,10 @@ mojo_library(
         "@mojo//:stdlib",
     ],
 )
+
+# Export PTX files as filegroup
+filegroup(
+    name = "ptx_files",
+    srcs = glob(["*.ptx"]),
+    visibility = ["//visibility:public"],
+)

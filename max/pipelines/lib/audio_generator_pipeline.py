@@ -30,10 +30,12 @@ if TYPE_CHECKING:
 
 from .pipeline import PipelineModel
 
+AudioGeneratorPipelineType = Pipeline[
+    AudioGenerationInputs[TTSContext], AudioGenerationOutput
+]
 
-class AudioGeneratorPipeline(
-    Pipeline[AudioGenerationInputs[TTSContext], AudioGenerationOutput]
-):
+
+class AudioGeneratorPipeline(AudioGeneratorPipelineType):
     """Converts text to speech.
 
     This pipeline passes all of the work through to the PipelineModel.
@@ -74,6 +76,6 @@ class AudioGeneratorPipeline(
         next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]  # noqa: B009
         return next_chunk(inputs.batch)
 
-    def release(self, request_id: str) -> None:
+    def release(self, request_id: RequestID) -> None:
         release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]  # noqa: B009
         release(request_id)

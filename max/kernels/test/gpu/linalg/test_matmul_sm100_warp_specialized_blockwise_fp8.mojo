@@ -11,22 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from sys import size_of, argv
 from hashlib import default_comp_time_hasher
+from math import align_up, ceildiv
+from sys import argv, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from linalg import vendor_blas
-from linalg.matmul_sm100_warp_specialized_blockwise_fp8 import (
-    sm100_warp_specialized_blockwise_fp8,
-)
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -35,9 +28,18 @@ from internal_utils import (
     random,
     zero,
 )
-from linalg.utils_gpu import MatmulConfig
-from internal_utils._utils import ValOrDim, dynamic, static
 from internal_utils._measure import relative_difference
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
+from linalg.matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
+    sm100_warp_specialized_blockwise_fp8,
+)
+from linalg.utils_gpu import MatmulConfig
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:

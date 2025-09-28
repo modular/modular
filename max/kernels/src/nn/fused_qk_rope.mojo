@@ -18,8 +18,7 @@ from sys.info import _current_target, simd_width_of
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from complex import ComplexSIMD
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
 from layout import IntTuple

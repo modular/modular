@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from hashlib._fnv1a import Fnv1a
-from testing import assert_equal
+
 from memory import memset_zero
 from test_utils import (
-    gen_word_pairs,
     assert_dif_hashes,
     assert_fill_factor,
+    gen_word_pairs,
     words_ar,
     words_el,
     words_en,
@@ -25,7 +25,9 @@ from test_utils import (
     words_lv,
     words_pl,
     words_ru,
+    TestSuite,
 )
+from testing import assert_equal
 
 
 def test_hash_byte_array():
@@ -180,9 +182,13 @@ def test_hash_at_compile_time():
 
 
 def main():
-    test_hash_byte_array()
-    test_avalanche()
-    test_trailing_zeros()
-    test_fill_factor()
-    test_hash_simd_values()
-    test_hash_at_compile_time()
+    var suite = TestSuite()
+
+    suite.test[test_hash_byte_array]()
+    suite.test[test_avalanche]()
+    suite.test[test_trailing_zeros]()
+    suite.test[test_fill_factor]()
+    suite.test[test_hash_simd_values]()
+    suite.test[test_hash_at_compile_time]()
+
+    suite^.run()

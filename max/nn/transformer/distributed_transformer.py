@@ -34,9 +34,8 @@ from max.nn.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import (
-    FetchPagedKVCacheCollection,
     KVCacheParams,
-    PagedKVCacheCollection,
+    PagedCacheValues,
 )
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear, DistributedGemmConfig
@@ -129,12 +128,28 @@ class DistributedTransformerBlock(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[PagedKVCacheCollection],
+        kv_blocks: list[BufferValue],
+        kv_cache_lengths: list[TensorValue],
+        kv_lookup_table: list[TensorValue],
+        kv_max_lengths: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
+
+        # We have to unpack our PagedCacheValues into constituent parts so
+        # subgraphs have only max.graph.Values as arguments.
+        # Re-pack those arguments into a nice structured type.
+        kv_collections = [
+            PagedCacheValues(
+                kv_blocks[i],
+                kv_cache_lengths[i],
+                kv_lookup_table[i],
+                kv_max_lengths[i],
+            )
+            for i in range(len(kv_blocks))
+        ]
 
         attn_outs = self.self_attn(
             layer_idx,
@@ -185,7 +200,6 @@ class DistributedTransformer(Module):
         output: ColumnParallelLinear,
         embedding: VocabParallelEmbedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: FetchPagedKVCacheCollection,
         devices: list[DeviceRef],
         rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
@@ -204,7 +218,6 @@ class DistributedTransformer(Module):
         self.lm_head = output
         self.embed_tokens = embedding
         self.kv_params = kv_params
-        self.kv_collection_constructor = kv_collection_constructor
         self.return_logits = return_logits
         self.devices = devices
         self.rope = rope
@@ -220,16 +233,11 @@ class DistributedTransformer(Module):
         self,
         tokens: TensorValueLike,
         signal_buffers: list[BufferValue],
-        kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
+        kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
-
-        kv_collections = [
-            self.kv_collection_constructor(*kv_cache_inputs)
-            for kv_cache_inputs in kv_cache_inputs_per_dev
-        ]
 
         freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
 
@@ -240,7 +248,10 @@ class DistributedTransformer(Module):
                 TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
                 [hidden.type for hidden in h],
                 [signal_buffer.type for signal_buffer in signal_buffers],
-                [kv_collection.type for kv_collection in kv_collections],
+                [kv_collection[0].type for kv_collection in kv_collections],
+                [kv_collection[1].type for kv_collection in kv_collections],
+                [kv_collection[2].type for kv_collection in kv_collections],
+                [kv_collection[3].type for kv_collection in kv_collections],
                 [freq.type for freq in freqs_cis],
                 [offset.type for offset in input_row_offsets_],
             ]
@@ -280,7 +291,22 @@ class DistributedTransformer(Module):
                                 ),
                                 *h,
                                 *signal_buffers,
-                                *kv_collections,
+                                *[
+                                    kv_collection[0]
+                                    for kv_collection in kv_collections
+                                ],
+                                *[
+                                    kv_collection[1]
+                                    for kv_collection in kv_collections
+                                ],
+                                *[
+                                    kv_collection[2]
+                                    for kv_collection in kv_collections
+                                ],
+                                *[
+                                    kv_collection[3]
+                                    for kv_collection in kv_collections
+                                ],
                                 *freqs_cis,
                                 *input_row_offsets_,
                                 prefix=f"layers.{idx}.",

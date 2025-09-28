@@ -17,14 +17,15 @@ import logging
 import os
 import time
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
 
 from max.interfaces import (
     AudioGenerationOutput,
+    BatchType,
     MAXPullQueue,
     MAXPushQueue,
     RequestID,
     SchedulerResult,
+    TextGenerationInputs,
     TextGenerationOutput,
 )
 from max.interfaces.pipeline import (
@@ -39,15 +40,9 @@ from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .text_batch_constructor import (
-    BatchType,
-    SchedulerOutput,
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
 )
-
-if TYPE_CHECKING:
-    from .audio_generation_scheduler import AudioGenerationSchedulerOutput
-
 
 logger = logging.getLogger("max.serve")
 
@@ -72,28 +67,27 @@ class SchedulerLogger:
 
         # How frequently to log CE and TG batches.
         # We restrict logs to at most once every few seconds to avoid spam.
-        self.ce_log_interval_s = log_interval_s
-        self.tg_log_interval_s = log_interval_s
+        self.log_interval_s = log_interval_s
 
         # The last time we last logged a CE or TG batch.
-        self.time_of_last_ce_log = 0.0
-        self.time_of_last_tg_log = 0.0
+        self.time_of_last_log = 0.0
 
     def log_metrics(
         self,
         sch_config: TokenGenerationSchedulerConfig,
-        sch_output: SchedulerOutput,
-        paged_cache: PagedKVCacheManager[TextContext] | None,
+        inputs: TextGenerationInputs[TextContext],
+        paged_cache: PagedKVCacheManager | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
+        num_terminated_reqs: int,
         total_preemption_count: int,
     ) -> None:
         """Periodically logs batch-level metrics to console.
 
         Args:
             sch_config: The scheduler configuration.
-            sch_output: The scheduler output / batch.
+            inputs: The pipeline input / batch.
             paged_cache: The PagedKVCacheManager, if any.
             batch_creation_time_s: The time it took to create the batch.
             batch_execution_time_s: The time it took to execute the batch.
@@ -103,32 +97,20 @@ class SchedulerLogger:
         Returns:
             None
         """
-
-        batch_type = sch_output.batch_type
+        batch_type = inputs.batch_type
 
         now = time.monotonic()
         log_batch_info = True
-        if batch_type == BatchType.CE:
-            time_since_last_ce_log = now - self.time_of_last_ce_log
-            if time_since_last_ce_log < self.ce_log_interval_s:
-                log_batch_info = False
-            else:
-                self.time_of_last_ce_log = now
-        elif batch_type == BatchType.TG:
-            time_since_last_tg_log = now - self.time_of_last_tg_log
-            if time_since_last_tg_log < self.tg_log_interval_s:
-                log_batch_info = False
-            else:
-                self.time_of_last_tg_log = now
+        time_since_last_ce_log = now - self.time_of_last_log
+        if time_since_last_ce_log < self.log_interval_s:
+            log_batch_info = False
         else:
-            raise ValueError(f"Invalid batch type: {batch_type}")
+            self.time_of_last_log = now
 
-        batch_size = sch_output.batch_size
+        batch_size = len(inputs.batch)
         assert batch_size > 0
-        terminated_reqs = sch_output.num_terminated
-        num_steps = (
-            1 if batch_type == BatchType.CE else sch_config.max_forward_steps_tg
-        )
+        terminated_reqs = num_terminated_reqs
+        num_steps = inputs.num_steps
         num_generated_tokens = batch_size * num_steps
 
         def to_human_readable_throughput(tps: float) -> str:
@@ -137,7 +119,7 @@ class SchedulerLogger:
             return f"{tps:.1f} tok/s"
 
         # Format latency and throughput metrics
-        num_input_tokens = sch_output.input_tokens
+        num_input_tokens = inputs.input_tokens
         prompt_throughput_str = to_human_readable_throughput(
             num_input_tokens / batch_execution_time_s
         )
@@ -152,25 +134,21 @@ class SchedulerLogger:
         )
 
         # Prompt cache hit info
-        target_tokens = (
-            sch_config.target_tokens_per_batch_ce
+        target_tokens_str = (
+            f"{sch_config.target_tokens_per_batch_ce}"
             if batch_type == BatchType.CE
-            else None
+            else "INF"
         )
-        target_tokens_str = f"{target_tokens}" if target_tokens else "INF"
-        input_tokens = sch_output.input_tokens
-        cache_hits = sch_output.cached_tokens
 
         METRICS.batch_size(batch_size)
 
         if paged_cache is None:
-            assert cache_hits == 0
             if log_batch_info:
                 logger.info(
                     f"Executed {batch_type.value} batch with {batch_size} reqs | "
                     f"Terminated: {terminated_reqs} reqs, "
                     f"Pending: {num_pending_reqs} reqs | "
-                    f"Input Tokens: {input_tokens}/{target_tokens_str} toks | "
+                    f"Input Tokens: {num_input_tokens}/{target_tokens_str} toks | "
                     f"Prompt Tput: {prompt_throughput_str}, "
                     f"Generation Tput: {generation_throughput_str} | "
                     f"Batch creation: {batch_creation_latency_str}, "
@@ -179,8 +157,12 @@ class SchedulerLogger:
             return
 
         # KVCache specific metrics
+        cache_metrics = paged_cache.metrics
+        paged_cache.reset_metrics()
+
         used_pct = paged_cache.used_blocks_pct
-        cache_hit_rate = sch_output.cache_hit_rate
+        # this might differ from cache_metrics.cache_hit_rate due to chunked prefill...
+        cache_hit_rate = cache_metrics.cache_tokens / num_input_tokens
         total_blocks = paged_cache.total_num_pages
 
         host_kvcache_str = ""
@@ -194,25 +176,23 @@ class SchedulerLogger:
         if paged_cache.enable_prefix_caching:
             cache_hit_rate_str = f"Cache hit rate: {cache_hit_rate:.1%} | "
 
-            blocks_copied = paged_cache.num_blocks_copied
             if paged_cache.enable_kvcache_swapping_to_host:
-                blocks_copied_str = f"Blocks copied: {blocks_copied.h2d} H2D, {blocks_copied.d2h} D2H | "
-            paged_cache.reset_num_blocks_copied()
+                blocks_copied_str = f"Blocks copied: {cache_metrics.h2d_blocks_copied} H2D, {cache_metrics.d2h_blocks_copied} D2H | "
 
         used_blocks = paged_cache.total_num_pages - paged_cache.num_free_blocks
 
         METRICS.cache_num_used_blocks(used_blocks)
         METRICS.cache_num_total_blocks(total_blocks)
         METRICS.cache_hit_rate(cache_hit_rate)
-        METRICS.cache_hits(cache_hits)
-        METRICS.cache_misses(input_tokens)
+        METRICS.cache_hits(cache_metrics.cache_tokens)
+        METRICS.cache_misses(num_input_tokens)
 
         if log_batch_info:
             logger.info(
                 f"Executed {batch_type.value} batch with {batch_size} reqs | "
                 f"Terminated: {terminated_reqs} reqs, "
                 f"Pending: {num_pending_reqs} reqs | "
-                f"Input Tokens: {input_tokens}/{target_tokens_str} toks | "
+                f"Input Tokens: {num_input_tokens}/{target_tokens_str} toks | "
                 f"Prompt Tput: {prompt_throughput_str}, "
                 f"Generation Tput: {generation_throughput_str} | "
                 f"Batch creation: {batch_creation_latency_str}, "
@@ -237,6 +217,7 @@ def add_newly_encoded_reqs_to_tg_batch(
     batch_constructor.tg_reqs |= batch
     last_req = list(batch.values())[-1]
     req_id = last_req.request_id
+
     if last_req.needs_ce:
         batch_constructor.ce_reqs[req_id] = last_req
         batch_constructor.ce_reqs.move_to_end(req_id, last=False)
@@ -245,17 +226,18 @@ def add_newly_encoded_reqs_to_tg_batch(
 
 
 def release_terminated_requests(
-    sch_output: SchedulerOutput | AudioGenerationSchedulerOutput,
     responses: Mapping[RequestID, TextGenerationOutput | AudioGenerationOutput],
     pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
     tg_reqs: dict[RequestID, TextContext] | dict[RequestID, TTSContext],
-) -> None:
+) -> int:
+    num_terminated_reqs = 0
     for req_id, response in responses.items():
         if not response.is_done:
             continue
-        sch_output.num_terminated += 1
+        num_terminated_reqs += 1
         pipeline.release(req_id)
         del tg_reqs[req_id]
+    return num_terminated_reqs
 
 
 def release_cancelled_requests(

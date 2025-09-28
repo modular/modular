@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp
+from os import abort
 from sys import align_of, simd_width_of
 from sys.info import CompilationTarget
 
@@ -23,12 +25,15 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
     map_reduce,
 )
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from collections import OptionalReg
 from kv_cache.types import KVCacheT
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout.int_tuple import to_index_list
 from linalg.accumulate import _Accumulator
-from linalg.apple_accelerate import _cblas_f32, use_apple_accelerate_lib
+from linalg.matmul.cpu.apple_accelerate import (
+    _cblas_f32,
+    use_apple_accelerate_lib,
+)
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
 from memory import memset_zero, stack_allocation
@@ -37,7 +42,6 @@ from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import Index, IndexList
-from os import abort
 
 
 struct _MatmulConfig:
@@ -230,9 +234,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     @no_inline
     @staticmethod
     fn _pack_buffer_transposed[
-        input_b_fn: Self._input_fn_type, static_k: Dim
+        input_b_fn: Self._input_fn_type, static_k: Int
     ](packed_ptr: UnsafePointer[Scalar[dtype]], N: Int, dynamic_k: Int):
-        var K = Int(static_k) if static_k else dynamic_k
+        var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
 
         var aligned_n = align_up(N, simd_width)
 
@@ -242,12 +246,14 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         alias transpose_width = 4
         alias tile_sizes = VariadicList[Int](transpose_width, 1)
 
-        var transpose_buffer = NDBuffer[
+        alias layout = Layout.row_major(transpose_width, transpose_width)
+        var transpose_stack = InlineArray[Scalar[dtype], layout.size()](
+            uninitialized=True
+        )
+        var transpose_buffer = LayoutTensor[
             dtype,
-            2,
-            MutableAnyOrigin,
-            DimList(transpose_width, transpose_width),
-        ].stack_allocation()
+            layout,
+        ](transpose_stack)
 
         @parameter
         @always_inline
@@ -318,14 +324,14 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     @no_inline
     @staticmethod
     fn _gemv_transposed[
-        input_b_fn: Self._input_fn_type, static_k: Dim
+        input_b_fn: Self._input_fn_type, static_k: Int
     ](
         N: Int,
         dynamic_k: Int,
         a_ptr: UnsafePointer[Scalar[dtype]],
         c_ptr: UnsafePointer[Scalar[dtype]],
     ):
-        var K = Int(static_k) if static_k else dynamic_k
+        var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
 
         var cn_ptr = c_ptr
 
@@ -425,7 +431,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         input_b_fn: Self._input_fn_type,
         *,
         transpose_b: Bool = False,
-        static_k: Dim = Dim(),
+        static_k: Int = UNKNOWN_VALUE,
     ](
         M: Int,
         N: Int,
@@ -492,7 +498,7 @@ struct _FlashAttentionConfig[
     dtype: DType,
     rank: Int,
     simd_width: Int,
-    output_static_shape: DimList,
+    output_static_shape: IndexList[rank],
 ](Defaultable):
     var block_m: Int
     var qk_block_n: Int
@@ -505,10 +511,10 @@ struct _FlashAttentionConfig[
         # Set a target size for the output block array.
         alias output_target_size = 8192
 
-        alias depth_static_dim = output_static_shape.at[rank - 1]()
+        alias depth_static_dim = output_static_shape[rank - 1]
 
         @parameter
-        if depth_static_dim:
+        if depth_static_dim != UNKNOWN_VALUE:
             # Extract the static depth dimension with a guard against zero.
             var depth_dim = max(Int(depth_static_dim), 1)
 
@@ -548,7 +554,7 @@ struct _FlashAttention[
     q_length_fn: fn (batch: Int) capturing -> Int,
     kv_length_fn: fn (batch: Int) capturing -> Int,
     kv_cache_length_fn: fn (batch: Int) capturing -> Int,
-    padded_output_shape: DimList,
+    padded_output_shape: IndexList[rank],
     *,
     simd_width: Int = simd_width_of[dtype](),
 ]:
@@ -556,11 +562,11 @@ struct _FlashAttention[
     alias _config = _FlashAttentionConfig[
         dtype, rank, simd_width, padded_output_shape
     ]()
-    alias _depth_static_dim = padded_output_shape.at[rank - 1]()
+    alias _depth_static_dim = padded_output_shape[rank - 1]
 
     @staticmethod
     fn _online_softmax[
-        mask_fn: fn[simd_width: Int] (
+        _mask_fn: fn[simd_width: Int] (
             m: Int, n: Int, score_vec: SIMD[dtype, simd_width]
         ) capturing -> SIMD[dtype, simd_width],
     ](
@@ -582,8 +588,12 @@ struct _FlashAttention[
         if do_sink:
             sink_logit = sink_weight.value()
 
+        alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
         for m in range(count_m):
-            var qk_row = NDBuffer[dtype, 1](qk_row_ptr, kv_seq_cnt)
+            var qk_row = LayoutTensor[dtype, layout_1d](
+                qk_row_ptr,
+                RuntimeLayout[layout_1d].row_major(IndexList[1](kv_seq_cnt)),
+            )
 
             @parameter
             @always_inline
@@ -591,14 +601,22 @@ struct _FlashAttention[
                 _dtype: DType, _simd_width: Int
             ](idx: Int) -> SIMD[_dtype, _simd_width]:
                 var val = qk_row_ptr.load[width=_simd_width](idx)
-                return mask_fn(m, idx, val * scale.cast[dtype]()).cast[_dtype]()
+                return _mask_fn(m, idx, val * scale.cast[dtype]()).cast[
+                    _dtype
+                ]()
+
+            @always_inline
+            @parameter
+            fn output_fn[
+                _dtype: DType, width: Int, rank: Int
+            ](idx: Int, val: SIMD[_dtype, width]):
+                qk_row.store(IndexList[1](idx), rebind[SIMD[dtype, width]](val))
 
             # Update the row with the scale and mask. Find the maximum value
             # of the row to bias the exponential function below for numeric
             # stability.
             var max_val = map_reduce[
                 simd_width,
-                Dim(),
                 dtype,
                 dtype,
                 __origin_of(),
@@ -606,7 +624,8 @@ struct _FlashAttention[
                 __origin_of(),
                 _simd_max_elementwise,
                 _simd_max,
-            ](qk_row, max_vals[m])
+                output_fn,
+            ](qk_row.size(), max_vals[m])
 
             if do_sink:
                 max_val = max(max_val, sink_logit)
@@ -623,7 +642,6 @@ struct _FlashAttention[
             # the result.
             var accum_val = map_reduce[
                 simd_width,
-                Dim(),
                 dtype,
                 dtype,
                 __origin_of(),
@@ -631,7 +649,8 @@ struct _FlashAttention[
                 __origin_of(),
                 _simd_sum_elementwise,
                 _simd_sum,
-            ](qk_row, 0)
+                output_fn,
+            ](qk_row.size(), 0)
 
             if do_sink:
                 accum_val += exp(sink_logit - max_val)
@@ -662,7 +681,11 @@ struct _FlashAttention[
         # Max sequence length of query states.
         max_seq_len: Int,
         scale: Float32,
-        sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
+        sink_weights: OptionalReg[
+            LayoutTensor[
+                dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            ]
+        ] = None,
     ):
         var kv_group_count = num_heads // num_kv_heads
 
@@ -701,12 +724,15 @@ struct _FlashAttention[
                 dtype,
                 alignment = align_of[SIMD[dtype, simd_width]](),
             ]()
-            var max_vals = NDBuffer[
-                dtype, 1, MutableAnyOrigin, Dim(Self._config.block_m)
-            ]().stack_allocation()
-            var sum_vals = NDBuffer[
-                dtype, 1, MutableAnyOrigin, Dim(Self._config.block_m)
-            ]().stack_allocation()
+            alias layout = Layout.row_major(Self._config.block_m)
+            var max_vals_stack = InlineArray[
+                Scalar[dtype], Self._config.block_m
+            ](uninitialized=True)
+            var max_vals = LayoutTensor[dtype, layout](max_vals_stack)
+            var sum_vals_stack = InlineArray[
+                Scalar[dtype], Self._config.block_m
+            ](uninitialized=True)
+            var sum_vals = LayoutTensor[dtype, layout](sum_vals_stack)
 
             var packed_ptr = UnsafePointer[Scalar[dtype]]()
             if max_seq_len != 1:
@@ -771,8 +797,8 @@ struct _FlashAttention[
                 var o_ptr = output_ptr_fn(get_nd_index(m, n))
                 var q_ptr = input_q_ptr_fn(get_nd_index(m, 0))
 
-                max_vals.fill(Scalar[dtype].MIN)
-                sum_vals.fill(0)
+                _ = max_vals.fill(Scalar[dtype].MIN)
+                _ = sum_vals.fill(0)
 
                 for kv_seq_idx in range(0, kv_seq_len, Self._config.qk_block_n):
                     var kv_seq_cnt = min(
@@ -823,13 +849,13 @@ struct _FlashAttention[
 
                     var sink_weight: Optional[Scalar[dtype]] = None
                     if sink_weights:
-                        sink_weight = sink_weights.value()[head]
+                        sink_weight = sink_weights.value()[head][0]
 
                     Self._online_softmax[mask_2d_fn](
                         qk_block_ptr,
                         o_block_ptr,
-                        max_vals.data,
-                        sum_vals.data,
+                        max_vals.ptr,
+                        sum_vals.ptr,
                         count_m,
                         count_n,
                         kv_seq_cnt,
@@ -867,7 +893,7 @@ struct _FlashAttention[
                 var oz_ptr = o_block_ptr
 
                 for m in range(count_m):
-                    var reciprocal = 1 / sum_vals[m]
+                    var reciprocal = 1 / sum_vals[m][0]
 
                     @parameter
                     @always_inline
@@ -901,13 +927,17 @@ fn _flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: NDBuffer[dtype, rank, *_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[mut=True, dtype, rank, *_],
+    output: LayoutTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
-    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ] = None,
 ):
     var num_batches = output.dim[0]()
     var max_seq_len = output.dim[1]()
@@ -918,13 +948,15 @@ fn _flash_attention[
 
     @always_inline
     @parameter
-    fn input_q_ptr_fn(idx: IndexList[rank]) -> UnsafePointer[Scalar[dtype]]:
-        return q._offset(idx)
+    fn input_q_ptr_fn(coords: IndexList[rank]) -> UnsafePointer[Scalar[dtype]]:
+        var idx = q._offset(coords)
+        return q.ptr + idx
 
     @always_inline
     @parameter
-    fn output_ptr_fn(idx: IndexList[rank]) -> UnsafePointer[Scalar[dtype]]:
-        return output._offset(idx)
+    fn output_ptr_fn(coords: IndexList[rank]) -> UnsafePointer[Scalar[dtype]]:
+        var idx = output._offset(coords)
+        return output.ptr + idx
 
     @always_inline
     @parameter
@@ -962,7 +994,9 @@ fn _flash_attention[
         # cross attention, which has different KV lengths.
         q_length_fn,
         kv_cache_length_fn,
-        output.shape,
+        rebind[IndexList[rank]](
+            to_index_list[output.rank](output.layout.shape)
+        ),
     ].run(
         num_batches,
         num_heads,
@@ -988,13 +1022,17 @@ fn flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: NDBuffer[dtype, rank, *_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[mut=True, dtype, rank, *_],
+    output: LayoutTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
-    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ] = None,
 ):
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
         q,
@@ -1027,14 +1065,16 @@ fn flash_attention_split_kv[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: NDBuffer[dtype, rank, *_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
     k_cache_shape: IndexList[rank + 1],
     v_cache_shape: IndexList[rank + 1],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[mut=True, dtype, rank, *_],
+    output: LayoutTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+    ],
     scale: Float32,
 ) raises:
     """Variant of flash attention that takes the previous KV cache
@@ -1058,12 +1098,12 @@ fn flash_attention_split_kv[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            trace_arg("q", q),
+            trace_arg("q", q.runtime_layout.shape.value),
             trace_arg("k", k_shape),
             trace_arg("v", v_shape),
             trace_arg("k_cache", k_cache_shape),
             trace_arg("v_cache", v_cache_shape),
-            trace_arg("output", output),
+            trace_arg("output", output.runtime_layout.shape.value),
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
@@ -1135,7 +1175,9 @@ fn flash_attention_split_kv[
             v_shape[0], v_shape[1] + v_cache_shape[3], v_shape[2], v_shape[3]
         )
         _flash_attention[
-            input_k_cache_fn_wrapper, input_v_cache_fn_wrapper, input_mask_fn
+            input_k_cache_fn_wrapper,
+            input_v_cache_fn_wrapper,
+            input_mask_fn,
         ](
             q,
             combined_k_shape,
@@ -1157,30 +1199,38 @@ fn _flash_attention_kv_cache[
     ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
 ](
-    q: NDBuffer[dtype, 4, *_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     k: cache_t,
     v: cache_t,
     scale: Float32,
-    output: NDBuffer[mut=True, dtype, 4, *_],
-    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
+    output: LayoutTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+    ],
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ] = None,
 ):
     alias kv_params = cache_t.kv_params
 
     var max_seq_len = q.dim[1]()
     var num_batches = q.dim[0]()
-    alias num_heads = q.shape.get[2]()
+    alias num_heads = Int(q.layout.shape[2])
     alias head_size = cache_t.kv_params.head_size
-    alias output_shape = DimList(Dim(), Dim(), num_heads, head_size)
+    alias output_shape = IndexList[4](
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
+    )
 
     @always_inline
     @parameter
-    fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
-        return q._offset(idx)
+    fn input_q_ptr_fn(coords: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
+        var idx = q._offset(coords)
+        return q.ptr + idx
 
     @always_inline
     @parameter
-    fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
-        return output._offset(idx)
+    fn output_ptr_fn(coords: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
+        var idx = output._offset(coords)
+        return output.ptr + idx
 
     @always_inline
     @__copy_capture(max_seq_len)
@@ -1214,7 +1264,7 @@ fn _flash_attention_kv_cache[
         kv_cache_length: Int,
     ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
-    output_shape: DimList,
+    output_shape: IndexList[4],
 ](
     k: cache_t,
     v: cache_t,
@@ -1222,7 +1272,9 @@ fn _flash_attention_kv_cache[
     num_heads: Int,
     max_seq_len: Int,
     scale: Float32,
-    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ] = None,
 ):
     alias num_kv_heads = cache_t.kv_params.num_heads
     alias depth_dim = cache_t.kv_params.head_size
@@ -1285,13 +1337,17 @@ fn _flash_attention_kv_cache[
 fn flash_attention_kv_cache[
     dtype: DType, cache_t: KVCacheT, //
 ](
-    q: NDBuffer[dtype, 4, *_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     k: cache_t,
     v: cache_t,
-    mask: NDBuffer[dtype, *_],
+    mask: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     scale: Float32,
-    output: NDBuffer[mut=True, dtype, 4, *_],
-    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
+    output: LayoutTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+    ],
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ] = None,
 ):
     @always_inline
     @parameter
@@ -1314,13 +1370,17 @@ fn flash_attention_kv_cache[
     cache_t: KVCacheT,
     mask_t: MHAMask, //,
 ](
-    q: NDBuffer[dtype, 4, *_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[mut=True, dtype, 4, *_],
-    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
+    output: LayoutTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+    ],
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ] = None,
 ):
     @always_inline
     @parameter
@@ -1345,15 +1405,23 @@ fn flash_attention_kv_cache[
     cache_t: KVCacheT,
     mask_t: MHAMask, //,
 ](
-    q: NDBuffer[dtype, 3, *_],
-    q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
+    kv_input_row_offsets: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, **_
+    ],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[mut=True, dtype, 3, *_],
-    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
+    output: LayoutTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
+    ],
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ] = None,
 ):
     """Entrypoint for ragged tensors."""
 
@@ -1391,7 +1459,8 @@ fn flash_attention_kv_cache[
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
-        return q._offset(flat_idx)
+        var out_idx = q._offset(flat_idx)
+        return q.ptr + out_idx
 
     @always_inline
     @parameter
@@ -1400,14 +1469,17 @@ fn flash_attention_kv_cache[
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
-        return output._offset(flat_idx)
+        var out_idx = output._offset(flat_idx)
+        return output.ptr + out_idx
 
     alias mask_rank = 4
     var num_batches = q_input_row_offsets.dim[0]() - 1
     var max_seq_len = k.max_prompt_length()
-    alias num_heads = q.shape.get[q.rank - 2]()
+    alias num_heads = Int(q.layout.shape[q.rank - 2])
     alias head_size = cache_t.kv_params.head_size
-    alias output_shape = DimList(Dim(), Dim(), num_heads, head_size)
+    alias output_shape = IndexList[4](
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
+    )
 
     _flash_attention_kv_cache[
         input_q_ptr_fn,

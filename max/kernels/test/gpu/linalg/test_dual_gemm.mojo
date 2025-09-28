@@ -15,19 +15,18 @@ from collections import OptionalReg
 from math import exp2
 from os import abort
 from random import rand, randn
-from sys import argv, simd_width_of, align_of
+from sys import align_of, argv, simd_width_of
 
 import benchmark
 from algorithm.functional import elementwise
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from linalg._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
+from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base
 from testing import assert_almost_equal

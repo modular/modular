@@ -13,7 +13,7 @@
 
 """Helpers and types for core input and output functionality."""
 
-from .file_descriptor import FileDescriptor
 from .file import FileHandle
-from .io import print, input
+from .file_descriptor import FileDescriptor
+from .io import input, print
 from .write import Writable, Writer

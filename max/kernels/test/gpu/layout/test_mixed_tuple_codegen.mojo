@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedTuple GPU memory codegen."""
 
+import sys
+
 from gpu.host.compile import _compile_code, get_gpu_target
-from layout._mixed_tuple import MixedTuple, Idx, ComptimeInt, RuntimeInt
+from layout._mixed_tuple import ComptimeInt, Idx, MixedTuple, RuntimeInt
 from memory.unsafe_pointer import UnsafePointer
 from testing import assert_true
-import sys
 
 
 fn kernel(v: Int, ptr: UnsafePointer[Int32]):

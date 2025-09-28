@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer.dimlist import DimList
-from layout import Layout, LayoutTensor
 from internal_utils._utils import ValOrDim, dynamic, static
-from utils.index import IndexList
-from layout import RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from testing import assert_equal
+
+from utils.index import IndexList
 
 
 fn test_runtime_and_compile_time_dim_and_stride(

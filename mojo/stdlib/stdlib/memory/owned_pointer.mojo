@@ -42,58 +42,58 @@ struct OwnedPointer[T: AnyType]:
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__[T: Movable](out self: OwnedPointer[T], var value: T):
+    fn __init__[_T: Movable](out self: OwnedPointer[_T], var value: _T):
         """Construct a new `OwnedPointer` by moving the passed value into a new backing allocation.
 
         Parameters:
-            T: The type of the data to store. It is restricted to `Movable` here to allow efficient move construction.
+            _T: The type of the data to store. It is restricted to `Movable` here to allow efficient move construction.
 
         Args:
             value: The value to move into the `OwnedPointer`.
         """
-        self._inner = UnsafePointer[T].alloc(1)
+        self._inner = UnsafePointer[_T].alloc(1)
         self._inner.init_pointee_move(value^)
 
-    fn __init__[T: Copyable](out self: OwnedPointer[T], *, copy_value: T):
+    fn __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
         """Construct a new `OwnedPointer` by explicitly copying the passed value into a new backing allocation.
 
         Parameters:
-            T: The type of the data to store, which must be
+            _T: The type of the data to store, which must be
                `Copyable`.
 
         Args:
             copy_value: The value to explicitly copy into the `OwnedPointer`.
         """
-        self._inner = UnsafePointer[T].alloc(1)
+        self._inner = UnsafePointer[_T].alloc(1)
         self._inner.init_pointee_copy(copy_value)
 
     fn __init__[
-        T: Copyable, U: NoneType = None
-    ](out self: OwnedPointer[T], value: T):
+        _T: Copyable, U: NoneType = None
+    ](out self: OwnedPointer[_T], value: _T):
         """Construct a new `OwnedPointer` by copying the passed value into a new backing allocation.
 
         Parameters:
-            T: The type of the data to store.
+            _T: The type of the data to store.
             U: A dummy type parameter, to lower the selection priority of this ctor.
 
         Args:
             value: The value to copy into the `OwnedPointer`.
         """
-        self._inner = UnsafePointer[T].alloc(1)
+        self._inner = UnsafePointer[_T].alloc(1)
         self._inner.init_pointee_copy(value)
 
     fn __init__[
-        T: Copyable
-    ](out self: OwnedPointer[T], *, other: OwnedPointer[T]):
+        _T: Copyable
+    ](out self: OwnedPointer[_T], *, other: OwnedPointer[_T]):
         """Construct a new `OwnedPointer` by explicitly copying the value from another `OwnedPointer`.
 
         Parameters:
-            T: The type of the data to store.
+            _T: The type of the data to store.
 
         Args:
             other: The `OwnedPointer` to copy.
         """
-        self = OwnedPointer[T](copy_value=other[])
+        self = OwnedPointer[_T](copy_value=other[])
 
     fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[T]):
         """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
@@ -149,12 +149,12 @@ struct OwnedPointer[T: AnyType]:
         """
         return self._inner
 
-    fn take[T: Movable](deinit self: OwnedPointer[T]) -> T:
+    fn take[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
         """Move the value within the `OwnedPointer` out of it, consuming the
         `OwnedPointer` in the process.
 
         Parameters:
-            T: The type of the data backing this `OwnedPointer`. `take()` only exists for `T: Movable`
+            _T: The type of the data backing this `OwnedPointer`. `take()` only exists for `T: Movable`
                 since this consuming operation only makes sense for types that you want to avoid copying.
                 For types that are `ImplicitlyCopyable` or `Copyable` but are not `Movable`, you can copy them through
                 `__getitem__` as in `var v = some_ptr_var[]`.

@@ -51,6 +51,7 @@ from sys import (
     align_of,
     bit_width_of,
     is_amd_gpu,
+    is_apple_gpu,
     is_big_endian,
     is_compile_time,
     is_gpu,
@@ -61,12 +62,11 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.info import (
+    _cdna_4_or_newer,
+    _is_amd_mi300x,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
-    _is_amd_mi300x,
-    _cdna_4_or_newer,
 )
-
 from sys.intrinsics import _type_is_eq
 
 from bit import bit_width, byte_swap, pop_count
@@ -76,7 +76,7 @@ from builtin.format_int import _try_write_int
 from builtin.math import Powable
 from documentation import doc_private
 from memory import bitcast, memcpy
-from python import ConvertibleToPython, PythonObject, Python
+from python import ConvertibleToPython, Python, PythonObject
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -211,10 +211,6 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
         dtype is not DType.invalid, "simd type cannot be DType.invalid"
     ]()
     constrained[size.is_power_of_two(), "simd width must be power of 2"]()
-    constrained[
-        not (dtype is DType.bfloat16 and CompilationTarget.has_neon()),
-        "bf16 is not supported for ARM architectures",
-    ]()
     # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
     # a limit of 2^15 for the number of operands of the instruction.
     # NOTE: Even after the limit increases in LLVM, compile time might be 3x
@@ -1323,16 +1319,10 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] == rhs[i]`.
         """
 
-        # TODO(KERN-228): support BF16 on neon systems.
-        # As a workaround, we roll our own implementation
-        @parameter
-        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
-            return self.to_bits().eq(rhs.to_bits())
-        else:
-            var res = __mlir_op.`pop.cmp`[
-                pred = __mlir_attr.`#pop<cmp_pred eq>`
-            ](self._mlir_value, rhs._mlir_value)
-            return Self._Mask(mlir_value=res)
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
+            self._mlir_value, rhs._mlir_value
+        )
+        return Self._Mask(mlir_value=res)
 
     @always_inline("nodebug")
     fn ne(self, rhs: Self) -> Self._Mask:
@@ -1346,16 +1336,10 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] != rhs[i]`.
         """
 
-        # TODO(KERN-228): support BF16 on neon systems.
-        # As a workaround, we roll our own implementation.
-        @parameter
-        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
-            return self.to_bits().ne(rhs.to_bits())
-        else:
-            var res = __mlir_op.`pop.cmp`[
-                pred = __mlir_attr.`#pop<cmp_pred ne>`
-            ](self._mlir_value, rhs._mlir_value)
-            return Self._Mask(mlir_value=res)
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+            self._mlir_value, rhs._mlir_value
+        )
+        return Self._Mask(mlir_value=res)
 
     @always_inline("nodebug")
     fn gt(self, rhs: Self) -> Self._Mask:
@@ -2148,13 +2132,6 @@ struct SIMD[dtype: DType, size: Int](
             return _convert_float8_to_f32(self).cast[target]()
 
         @parameter
-        if CompilationTarget.has_neon() and (
-            dtype is DType.bfloat16 or target is DType.bfloat16
-        ):
-            # TODO(KERN-228): support BF16 on neon systems.
-            return SIMD[target, size]()
-
-        @parameter
         if dtype is DType.bool:
             return self.select[target](1, 0)
         elif target is DType.bool:
@@ -2234,31 +2211,31 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     fn to_bits[
-        dtype: DType = _uint_type_of_width[dtype.bit_width()]()
-    ](self) -> SIMD[dtype, size]:
+        _dtype: DType = _uint_type_of_width[dtype.bit_width()]()
+    ](self) -> SIMD[_dtype, size]:
         """Bitcasts the SIMD vector to an integer SIMD vector.
 
         Parameters:
-            dtype: The integer type to cast to.
+            _dtype: The integer type to cast to.
 
         Returns:
             An integer representation of the floating-point value.
         """
         constrained[
-            dtype.is_unsigned(),
+            _dtype.is_unsigned(),
             "the target type must be unsigned integral",
         ]()
         constrained[
-            dtype.bit_width() >= Self.dtype.bit_width(),
+            _dtype.bit_width() >= dtype.bit_width(),
             "the target type must be at least as wide as the source type",
         ]()
 
         @parameter
-        if Self.dtype is DType.bool:
-            return self.cast[DType.uint8]().to_bits[dtype]()
+        if dtype is DType.bool:
+            return self.cast[DType.uint8]().to_bits[_dtype]()
         else:
-            alias uint = _unsigned_integral_type_of[Self.dtype]()
-            return bitcast[uint, size](self).cast[dtype]()
+            alias uint = _unsigned_integral_type_of[dtype]()
+            return bitcast[uint, size](self).cast[_dtype]()
 
     @always_inline
     fn _to_bits_signed(self) -> SIMD[_integral_type_of[dtype](), size]:
@@ -2323,14 +2300,6 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if dtype.is_integral() or dtype is DType.bool:
             return self
-        elif CompilationTarget.has_neon() and dtype is DType.bfloat16:
-            # TODO(KERN-228): support BF16 on neon systems.
-            # As a workaround, we cast to float32.
-            return (
-                self.cast[DType.float32]()
-                ._floor_ceil_trunc_impl[intrinsic]()
-                .cast[dtype]()
-            )
         else:
             return llvm_intrinsic[intrinsic, Self, has_side_effect=False](self)
 
@@ -2619,6 +2588,10 @@ struct SIMD[dtype: DType, size: Int](
             return slice_body()
 
         if is_compile_time():
+            return slice_body()
+
+        @parameter
+        if is_apple_gpu():
             return slice_body()
 
         return llvm_intrinsic[
@@ -3020,17 +2993,17 @@ struct SIMD[dtype: DType, size: Int](
     # TODO (7748): always_inline required to WAR LLVM codegen bug
     @always_inline("nodebug")
     fn select[
-        dtype: DType
+        _dtype: DType
     ](
         self,
-        true_case: SIMD[dtype, size],
-        false_case: SIMD[dtype, size],
-    ) -> SIMD[dtype, size]:
+        true_case: SIMD[_dtype, size],
+        false_case: SIMD[_dtype, size],
+    ) -> SIMD[_dtype, size]:
         """Selects the values of the `true_case` or the `false_case` based on
         the current boolean values of the SIMD vector.
 
         Parameters:
-            dtype: The element type of the input and output SIMD vectors.
+            _dtype: The element type of the input and output SIMD vectors.
 
         Args:
             true_case: The values selected if the positional value is True.
@@ -3692,11 +3665,6 @@ fn _convert_f32_to_float8_ue8m0[
 fn _bfloat16_to_f32_scalar(
     val: BFloat16,
 ) -> Float32:
-    @parameter
-    if CompilationTarget.has_neon():
-        # TODO(KERN-228): support BF16 on neon systems.
-        return SIMD[DType.float32, 1]()
-
     # For bfloat16, we can just do a memcpy to perform the cast to float32.
     @parameter
     if is_nvidia_gpu():
@@ -3714,11 +3682,6 @@ fn _bfloat16_to_f32_scalar(
 fn _bfloat16_to_f32[
     size: Int
 ](val: SIMD[DType.bfloat16, size]) -> SIMD[DType.float32, size]:
-    @parameter
-    if CompilationTarget.has_neon():
-        # TODO(KERN-228): support BF16 on neon systems.
-        return SIMD[DType.float32, size]()
-
     @always_inline
     @parameter
     fn wrapper_fn[
@@ -3742,10 +3705,6 @@ alias _f32_bf16_mantissa_diff = (
 fn _f32_to_bfloat16[
     width: Int, //
 ](f32: SIMD[DType.float32, width]) -> SIMD[DType.bfloat16, width]:
-    @parameter
-    if CompilationTarget.has_neon():
-        # TODO(KERN-228): support BF16 on neon systems.
-        return SIMD[DType.bfloat16, width]()
     var f32_bits = f32.to_bits[DType.uint32]()
     var lsb = (f32_bits >> _f32_bf16_mantissa_diff) & 1
     var rounding_bias = 0x7FFF + lsb

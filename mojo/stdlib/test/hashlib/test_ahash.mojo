@@ -14,13 +14,11 @@
 from hashlib._ahash import AHasher
 
 from memory import memset_zero
-from testing import assert_equal, assert_not_equal, assert_true
-
 from test_utils import (
-    dif_bits,
-    gen_word_pairs,
     assert_dif_hashes,
     assert_fill_factor,
+    dif_bits,
+    gen_word_pairs,
     words_ar,
     words_el,
     words_en,
@@ -28,9 +26,9 @@ from test_utils import (
     words_lv,
     words_pl,
     words_ru,
-    dif_bits,
+    TestSuite,
 )
-
+from testing import assert_equal, assert_not_equal, assert_true
 
 alias hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 alias hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
@@ -217,8 +215,12 @@ def test_hash_simd_values():
 
 
 def main():
-    test_hash_byte_array()
-    test_avalanche()
-    test_trailing_zeros()
-    test_fill_factor()
-    test_hash_simd_values()
+    var suite = TestSuite()
+
+    suite.test[test_hash_byte_array]()
+    suite.test[test_avalanche]()
+    suite.test[test_trailing_zeros]()
+    suite.test[test_fill_factor]()
+    suite.test[test_hash_simd_values]()
+
+    suite^.run()

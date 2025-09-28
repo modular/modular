@@ -72,7 +72,6 @@ methods.
 
 from collections.string.string import _chr_ascii
 
-
 from utils import Variant
 
 # TODO: _FormatCurlyEntry and _FormatSpec should be public in the future for

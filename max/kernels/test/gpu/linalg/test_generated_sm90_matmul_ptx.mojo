@@ -14,35 +14,32 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import size_of
-from testing import assert_true
+
 from gpu.globals import WARPGROUP_SIZE
-from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.host.compile import _compile_code
 from gpu.host.info import H100
 from layout import Layout
-from linalg.matmul_tile_scheduler import MatmulSchedule
-from stdlib.bit import log2_floor
-
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
-
+from layout.tma_async import _tma_desc_tile_layout
+from linalg.matmul.gpu.sm90.matmul import (
+    _get_c_smem_layout,
+    _get_grid_shape,
+    _is_valid_grid_shape,
+    tma_wgmma_warp_specialized_gemm_kernel,
+    tma_wgmma_warp_specialized_gemm_kernel_persistent,
+)
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.utils_gpu import (
-    MatmulConfig,
-)
-from layout.tma_async import _tma_desc_tile_layout
+from linalg.utils_gpu import MatmulConfig
+from stdlib.bit import log2_floor
+from testing import assert_true
 
-from linalg.matmul_sm90 import (
-    _is_valid_grid_shape,
-    _get_grid_shape,
-    _get_c_smem_layout,
-    tma_wgmma_warp_specialized_gemm_kernel,
-    tma_wgmma_warp_specialized_gemm_kernel_persistent,
-)
+from utils.index import Index, IndexList
+from utils.static_tuple import StaticTuple
 
 
 fn compile_sm90_matmul_ptx[

@@ -28,7 +28,7 @@ from max.nn import (
     RotaryEmbedding,
     VocabParallelEmbedding,
 )
-from max.nn.kv_cache import FetchPagedKVCacheCollection, KVCacheStrategy
+from max.nn.kv_cache import KVCacheStrategy
 
 logger = logging.getLogger("max.pipelines")
 
@@ -119,9 +119,6 @@ class DistributedMistral(DistributedTransformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=FetchPagedKVCacheCollection(
-                config.kv_params, num_layers=config.num_hidden_layers
-            ),
             devices=config.devices,
             rope=rope,
             return_logits=config.return_logits,

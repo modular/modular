@@ -19,7 +19,7 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple
@@ -51,8 +51,8 @@ fn bench_concat[
     var size = shape.flattened_length()
     var input0_ptr = ctx.enqueue_create_buffer[type](size)
     inputs[0] = LayoutTensor[type, layout](
-        input0_ptr.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
-    )
+        input0_ptr, RuntimeLayout[layout].row_major(shape)
+    ).origin_cast[True, MutableAnyOrigin]()
     inputs_host[0] = LayoutTensor[type, layout, MutableAnyOrigin](
         UnsafePointer[Scalar[type]].alloc(size),
         RuntimeLayout[layout].row_major(shape),
@@ -66,7 +66,7 @@ fn bench_concat[
     size = shape.flattened_length()
     var input1_ptr = ctx.enqueue_create_buffer[type](size)
     inputs[1] = LayoutTensor[type, layout, MutableAnyOrigin](
-        input1_ptr.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+        input1_ptr, RuntimeLayout[layout].row_major(shape)
     )
     inputs_host[1] = LayoutTensor[type, layout, MutableAnyOrigin](
         UnsafePointer[Scalar[type]].alloc(size),
@@ -84,7 +84,7 @@ fn bench_concat[
         out_shape.flattened_length()
     )
     var output = LayoutTensor[type, layout](
-        output_ptr.unsafe_ptr(), RuntimeLayout[layout].row_major(out_shape)
+        output_ptr, RuntimeLayout[layout].row_major(out_shape)
     )
     var output_host = LayoutTensor[type, layout](
         UnsafePointer[Scalar[type]].alloc(output.size()),
@@ -100,7 +100,9 @@ fn bench_concat[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _concat_gpu_elementwise[epilogue_fn=None](output, axis, inputs, ctx)
+            _concat_gpu_elementwise[epilogue_fn=None](
+                output.origin_cast[True, MutableAnyOrigin](), axis, inputs, ctx
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -133,10 +135,6 @@ fn bench_concat[
 
         elementwise[check, 1](input.runtime_layout.shape.value)
         offset += input.runtime_layout.shape.value[axis]
-
-    __ownership_keepalive(
-        input0_ptr, input1_ptr, output_ptr, output, axis, inputs, output_host
-    )
 
 
 fn main() raises:

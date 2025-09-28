@@ -34,7 +34,6 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
-    Pipeline,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
@@ -42,7 +41,11 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence, KVCacheManager
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheInputsSequence,
+    PagedKVCacheManager,
+)
 from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
@@ -54,6 +57,7 @@ from .pipeline import (
     ModelInputs,
     ModelOutputs,
     PipelineModel,
+    TextGenerationPipelineType,
     upper_bounded_default,
 )
 from .ragged_token_merger import ragged_token_merger
@@ -142,10 +146,7 @@ class SpeculativeDecodingMetrics:
 
 @final
 class SpeculativeDecodingTextGenerationPipeline(
-    Pipeline[
-        TextGenerationInputs[TextContext],
-        TextGenerationOutput,
-    ],
+    TextGenerationPipelineType[TextContext],
     GenerateMixin[TextContext, TextGenerationRequest],
 ):
     """Generalized token generator pipeline with speculative decoding."""
@@ -413,7 +414,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[KVCacheManager[TextContext]]:
+    ) -> list[PagedKVCacheManager]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @traced

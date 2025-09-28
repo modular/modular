@@ -11,47 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import size_of, argv
 from hashlib import default_comp_time_hasher
+from math import align_up
+from sys import argv, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import block_rank_in_cluster, cluster_sync, elect_one_sync
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
+from gpu.id import block_id_in_cluster, block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, fence_async_view_proxy
+from gpu.mma import st_matrix
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from gpu.mma import st_matrix
-from layout import (
-    Layout,
-    RuntimeLayout,
-    RuntimeTuple,
-    LayoutTensor,
-    IntTuple,
-    UNKNOWN_VALUE,
-)
-from layout.swizzle import make_swizzle
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    st_matrix_n_layout,
-)
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import (
-    elect_one_sync,
-    block_rank_in_cluster,
-    cluster_sync,
-)
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg import vendor_blas
-from linalg.mmaop_sm100 import MmaOpSM100_SS
-
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -60,6 +35,27 @@ from internal_utils import (
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
+from layout import (
+    UNKNOWN_VALUE,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+)
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.swizzle import make_swizzle
+from layout.tensor_core_async import (
+    st_matrix_n_layout,
+    tile_layout_k_major,
+    tile_layout_mn_major,
+)
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from linalg.arch.sm100 import MmaOpSM100_SS
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -512,12 +508,10 @@ fn blackwell_kernel_5[
     alias MMA_K = umma_shape[2]
 
     a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM // cluster_shape[1], 64), swizzle_mode=a_swizzle
+        Index(BM // cluster_shape[1], 64), swizzle_mode=a_swizzle
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(
             BN // (cluster_shape[0] // cta_group), 64
         ) if transpose_b else Index(64, BN // (cluster_shape[0] // cta_group)),

@@ -11,36 +11,39 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
+from math import ceildiv
+from math.constants import log2e
+from sys import size_of
+
+import gpu.warp as warp
 from algorithm.functional import unswitch
 from buffer import NDBuffer
-from collections import OptionalReg
-from gpu import thread_idx, block_idx
+from builtin.variadics import VariadicOf
+from gpu import block_idx, thread_idx
 from gpu.globals import WARPGROUP_SIZE
-from gpu.mma import st_matrix
 from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace, bitcast
+from gpu.mma import st_matrix
 from gpu.sync import async_copy_arrive
-import gpu.warp as warp
 from layout.int_tuple import IntTuple
-from layout.layout import Layout, UNKNOWN_VALUE
+from layout.layout import UNKNOWN_VALUE, Layout
 from layout.layout_tensor import (
     LayoutTensor,
+    copy_local_to_shared,
     cp_async_k_major,
     cp_async_mn_major,
-    copy_local_to_shared,
 )
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from layout.swizzle import Swizzle
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
+from layout.swizzle import Swizzle
+from layout.tensor_core_async import st_matrix_n_layout, tile_layout_k_major
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMANestedTensorTile,
     create_nested_tma_tile,
 )
-from layout.tensor_core_async import tile_layout_k_major, st_matrix_n_layout
-from math import ceildiv
-from math.constants import log2e
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
@@ -59,9 +62,8 @@ from nn.mha_utils import (
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
-from builtin.variadics import VariadicOf
+
 from utils.index import Index, IndexList
-from sys import size_of
 
 
 @register_passable("trivial")

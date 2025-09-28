@@ -36,7 +36,8 @@ from gpu.random import Random
 ```
 """
 
-from math import sqrt, cos, sin, log
+from math import cos, log, sin, sqrt
+
 from memory import bitcast
 
 from .intrinsics import mulwide

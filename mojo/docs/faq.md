@@ -264,8 +264,7 @@ any Python or Conda package manager. For details, see the
 
 ### Is the Mojo Playground still available?
 
-Not for long. The [Mojo Playground](https://developer.modular.com/playground)
-is deprecated and will be shut down with the v25.6 release.
+No. We shut it down with the v25.6 release.
 
 Here's the story: When we announced Mojo in May, 2023, Mojo wasn't
 available in an SDK; it was available only in web-hosted a JupyterLab
@@ -289,12 +288,20 @@ Mac and Linux. For details, see the
 
 ### Is there IDE Integration?
 
-Yes, we've published an official [Mojo language extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
-for VS Code.
-
-The extension supports various features including syntax highlighting, code
+Yes, we've published an official Mojo language extension for
+[Visual Studio Code](https://code.visualstudio.com/) and other editors that
+support VS Code extensions (such as [Cursor](https://cursor.com/home)). The
+extension supports various features including syntax highlighting, code
 completion, formatting, hover, etc. It works seamlessly with remote-ssh and dev
 containers to enable remote development in Mojo.
+
+You can obtain the extension from either the
+[Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+or the
+[Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+See
+[Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension) for
+more information.
 
 ### Does the Mojo SDK collect telemetry?
 

@@ -16,12 +16,12 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import Semaphore, block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext, DeviceBuffer
-from linalg.matmul_gpu import matmul_kernel_naive
+from gpu.host import DeviceBuffer, DeviceContext
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn swizzle_tile(
@@ -458,13 +458,13 @@ fn run_matmul_stream_k[
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
     var a_buf = NDBuffer[dtype, 2, _, a_shape](
-        a_device._unsafe_ptr(), Index(M, K)
+        a_device.unsafe_ptr(), Index(M, K)
     )
     var b_buf = NDBuffer[dtype, 2, _, b_shape](
-        b_device._unsafe_ptr(), Index(K, N)
+        b_device.unsafe_ptr(), Index(K, N)
     )
     var c_buf = NDBuffer[dtype, 2, _, c_shape](
-        c_device._unsafe_ptr(), Index(M, N)
+        c_device.unsafe_ptr(), Index(M, N)
     )
 
     var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
@@ -489,7 +489,7 @@ fn run_matmul_stream_k[
 
     alias BLOCK_DIM = 16
 
-    var c_buf_n = NDBuffer[dtype, 2](c_device_n._unsafe_ptr(), Index(M, N))
+    var c_buf_n = NDBuffer[dtype, 2](c_device_n.unsafe_ptr(), Index(M, N))
 
     var c_tensor = from_ndbuffer_row_major(c_buf_n)
     var a_tensor = from_ndbuffer_row_major(a_buf)

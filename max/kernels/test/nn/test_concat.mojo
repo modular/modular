@@ -12,14 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.concat import (
-    _concat_parallel,
-    _concat_serial,
-    concat,
-)
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from nn.concat import _concat_parallel, _concat_serial, concat
 
-from utils import IndexList, Index, StaticTuple
+from utils import Index, IndexList, StaticTuple
 
 
 fn _tuple_to_list[

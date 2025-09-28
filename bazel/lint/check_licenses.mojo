@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import sys
-from pathlib import Path
 from collections import Set
+from pathlib import Path
 from subprocess import run
 
 # We can't check much more than this at the moment, because the license year

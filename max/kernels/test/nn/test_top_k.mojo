@@ -16,12 +16,12 @@ from math import iota
 from random import rand, seed
 
 from layout import (
+    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from nn.topk import _top_k_cpu, _top_k_sampling
@@ -41,9 +41,11 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
 
     fn to_layout_tensor(
         ref self,
-    ) -> LayoutTensor[dtype, Layout.row_major[rank](), __origin_of(self)]:
+    ) -> LayoutTensor[
+        dtype, Layout.row_major[rank](), __origin_of(self.storage)
+    ]:
         return {
-            self.storage.unsafe_ptr(),
+            Span[Scalar[dtype]](self.storage),
             RuntimeLayout[Layout.row_major[rank]()].row_major(self.shape),
         }
 

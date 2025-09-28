@@ -17,10 +17,11 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
+from os import abort
+
+from gpu import block_dim, block_idx, global_idx
 from shmem import *
 from testing import assert_equal
-from gpu import global_idx, block_dim, block_idx
-from os import abort
 
 
 fn set_and_shift_kernel(

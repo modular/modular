@@ -60,16 +60,13 @@ from max.interfaces import (
     PipelineTokenizer,
     RequestID,
     RequestType,
-    TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.nn.kv_cache import (
-    KVCacheAwareContext,
     KVCacheInputs,
     KVCacheInputsSequence,
-    KVCacheManager,
     KVCacheParams,
     MultiPagedKVCacheManager,
     PagedKVCacheManager,
@@ -78,6 +75,7 @@ from max.nn.kv_cache import (
 from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, PreTrainedTokenizerFast
+from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -442,10 +440,10 @@ class PipelineModel(ABC, Generic[T]):
 
 
 @runtime_checkable
-class KVCacheMixin(Protocol[T]):
+class KVCacheMixin(Protocol):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager[T]:
+    ) -> PagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -496,7 +494,7 @@ class KVCacheMixin(Protocol[T]):
 
 def get_paged_manager(
     pipeline: Pipeline[Any, Any],
-) -> PagedKVCacheManager[Any] | None:
+) -> PagedKVCacheManager | None:
     if (
         hasattr(pipeline, "_pipeline_model")
         and hasattr(pipeline._pipeline_model, "kv_manager")
@@ -524,7 +522,7 @@ class BatchInfo:
 @runtime_checkable
 class _TextGenerationProtocol(Protocol, Generic[T, RequestType]):
     @property
-    def kv_managers(self) -> list[KVCacheManager[T]]: ...
+    def kv_managers(self) -> list[PagedKVCacheManager]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...
@@ -607,7 +605,6 @@ class GenerateMixin(
             )
             batches = [{} for _ in range(data_parallel_degree)]
             for context in context_batch:
-                assert isinstance(context, KVCacheAwareContext)
                 replica_idx = kv_manager.get_or_recommend_replica(context)
                 kv_manager.external_claim_for_replica(
                     replica_idx, context.request_id
@@ -619,7 +616,6 @@ class GenerateMixin(
                 {context.request_id: context for context in context_batch}
             ]
             for context in context_batch:
-                assert isinstance(context, KVCacheAwareContext)
                 for kv_manager in self.kv_managers:
                     kv_manager.external_claim(context.request_id)
                 batches[0][context.request_id] = context
@@ -663,24 +659,27 @@ class GenerateMixin(
                     self.release(request_id)
 
 
+TextGenerationPipelineType: TypeAlias = Pipeline[
+    TextGenerationInputs[T], TextGenerationOutput
+]
+
+
 class TextGenerationPipeline(
-    Pipeline[
-        TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
-    ],
-    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
-    Generic[TextGenerationContextType],
+    TextGenerationPipelineType[T],
+    GenerateMixin[T, TextGenerationRequest],
+    Generic[T],
 ):
     """Generalized token generator pipeline."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[TextGenerationContextType]],
+        pipeline_model: type[PipelineModel[T]],
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
-            TextGenerationContextType,
+            T,
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
@@ -817,20 +816,22 @@ class TextGenerationPipeline(
     def tokenizer(
         self,
     ) -> PipelineTokenizer[
-        TextGenerationContextType,
+        T,
         npt.NDArray[np.integer[Any]],
         TextGenerationRequest,
     ]:
         return self._tokenizer
 
     @property
-    def kv_managers(self) -> list[KVCacheManager[TextGenerationContextType]]:
+    def kv_managers(
+        self,
+    ) -> list[PagedKVCacheManager]:
         return [self._pipeline_model.kv_manager]
 
     def calculate_num_steps(
         self,
         num_steps: int,
-        context: TextGenerationContextType,
+        context: T,
     ) -> int:
         max_seq_len = self._pipeline_model.max_seq_len
         num_available_steps = context.compute_num_available_steps(max_seq_len)
@@ -845,7 +846,7 @@ class TextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[list[TextGenerationContextType]],
+        batches: list[list[T]],
         num_steps: int,
     ) -> tuple[ModelInputs, int, npt.NDArray[np.int32] | None]:
         tracer: Tracer = Tracer("prepare_batch")
@@ -903,7 +904,6 @@ class TextGenerationPipeline(
                             self._pipeline_model.kv_manager,
                             MultiPagedKVCacheManager,
                         )
-                        assert isinstance(context, KVCacheAwareContext)
                         self._pipeline_model.kv_manager.external_claim_for_replica(
                             replica_idx, context.request_id
                         )
@@ -943,7 +943,7 @@ class TextGenerationPipeline(
         )
 
     @traced
-    def _maybe_sort_loras(self, batch: dict[str, TextGenerationContextType]):
+    def _maybe_sort_loras(self, batch: dict[str, T]):
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
         to be adjacent to each other.
@@ -986,7 +986,7 @@ class TextGenerationPipeline(
     @traced
     def execute(
         self,
-        inputs: TextGenerationInputs[TextGenerationContextType],
+        inputs: TextGenerationInputs[T],
     ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.

@@ -13,15 +13,11 @@
 
 from math import align_down, ceildiv, sqrt
 from sys._build import is_debug_build
-from sys.info import (
-    CompilationTarget,
-    simd_width_of,
-    size_of,
-)
+from sys.info import CompilationTarget, simd_width_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from layout import LayoutTensor, Layout
+from layout import Layout, LayoutTensor
 from linalg.utils import partition_work
 
 from utils.index import Index, IndexList

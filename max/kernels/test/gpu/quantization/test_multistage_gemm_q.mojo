@@ -29,10 +29,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.intrinsics import lop
-from gpu.memory import (
-    AddressSpace,
-    external_memory,
-)
+from gpu.memory import AddressSpace, external_memory
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -44,21 +41,12 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import (
-    LayoutTensor,
-    copy_dram_to_sram,
-)
-from layout.tensor_builder import LayoutTensorBuild as tb
-from linalg.matmul_gpu import _matmul_gpu
-from linalg.utils_gpu import (
-    MatmulKernels,
-)
+from layout.layout_tensor import LayoutTensor, Layout, copy_dram_to_sram
+from linalg.matmul.gpu import _matmul_gpu
+from linalg.utils_gpu import MatmulKernels
 from memory.unsafe import bitcast
 from quantization import Q4sym
-from quantization.qmatmul_gpu import (
-    multistage_gemm_q,
-    pack_Q_tile,
-)
+from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
 
 from utils import StaticTuple
 from utils.index import Index
@@ -321,10 +309,13 @@ fn create_ref_b[
     ](0, warp_x)
     alias smem_reg_scales_layout = Layout.row_major(8, 4)
     var scales_reg_tiles = (
-        tb[scales_type]()
-        .row_major[repack_tile[0] // 8, 1]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            scales_type,
+            Layout.row_major(repack_tile[0] // 8, 1),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .vectorize[1, 1]()
     )
     # load scales
@@ -535,7 +526,7 @@ fn test_repack_Q4_0_for_sm8x(
         repacked_b_device.buffer,
     )
     var repacked_dequan_tensor = repacked_dequan_tensor_type(
-        repacked_dequan_device.buffer._unsafe_ptr(),
+        repacked_dequan_device.buffer.unsafe_ptr(),
         RuntimeLayout[
             repack_dequan_layout,
             element_type = repacked_dequan_tensor_type.layout_int_type,

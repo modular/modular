@@ -14,12 +14,10 @@
 from math import isqrt
 from sys import simd_width_of
 
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.normalization import *
 from testing import assert_almost_equal, assert_true
-
-from gpu.host import get_gpu_target
 
 from utils.index import Index, IndexList
 
@@ -79,13 +77,13 @@ fn run_group_norm_gpu[
     alias layout = Layout.row_major[rank]()
     alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
     var data_buf = LayoutTensor[dtype, layout](
-        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+        data_d, RuntimeLayout[layout].row_major(shape)
     )
     var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var beta = LayoutTensor[dtype, layout_1d](
-        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
     )
     var epsilon = Scalar[dtype](1e-5)
 

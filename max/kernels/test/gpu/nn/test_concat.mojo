@@ -15,7 +15,7 @@ from collections import OptionalReg
 from sys import size_of
 
 from gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from nn.concat import (
     _concat_gpu,
@@ -77,19 +77,19 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     alias layout = Layout.row_major[rank]()
     var input_0_device_ref = LayoutTensor[dtype, layout](
-        input_0_device._unsafe_ptr(),
+        input_0_device,
         RuntimeLayout[layout].row_major(input_shape),
     )
     var input_1_device_ref = LayoutTensor[dtype, layout](
-        input_1_device._unsafe_ptr(),
+        input_1_device,
         RuntimeLayout[layout].row_major(input_shape),
     )
     var input_2_device_ref = LayoutTensor[dtype, layout](
-        input_2_device._unsafe_ptr(),
+        input_2_device,
         RuntimeLayout[layout].row_major(input_shape),
     )
     var input_3_device_ref = LayoutTensor[dtype, layout](
-        input_3_device._unsafe_ptr(),
+        input_3_device,
         RuntimeLayout[layout].row_major(input_shape),
     )
 
@@ -101,7 +101,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var total_size_outp: Int = product(output_shape)
     var output_device = ctx.enqueue_create_buffer[dtype](total_size_outp)
     var output_device_ref = LayoutTensor[dtype, layout](
-        output_device._unsafe_ptr(),
+        output_device,
         RuntimeLayout[layout].row_major(output_shape),
     )
 
@@ -140,12 +140,12 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     @parameter
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function_checked[kernel, kernel](
-            output_device_ref,
+            output_device_ref.origin_cast[True, MutableAnyOrigin](),
             StaticTuple[LayoutTensor[dtype, layout, MutableAnyOrigin], 4](
-                input_0_device_ref,
-                input_1_device_ref,
-                input_2_device_ref,
-                input_3_device_ref,
+                input_0_device_ref.origin_cast[True, MutableAnyOrigin](),
+                input_1_device_ref.origin_cast[True, MutableAnyOrigin](),
+                input_2_device_ref.origin_cast[True, MutableAnyOrigin](),
+                input_3_device_ref.origin_cast[True, MutableAnyOrigin](),
             ),
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
@@ -218,13 +218,13 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 epilogue_plus_one
             ) if test_epilogue else None
         ](
-            output_device_ref,
+            output_device_ref.origin_cast[True, MutableAnyOrigin](),
             4,
             StaticTuple[LayoutTensor[dtype, layout, MutableAnyOrigin], 4](
-                input_0_device_ref,
-                input_1_device_ref,
-                input_2_device_ref,
-                input_3_device_ref,
+                input_0_device_ref.origin_cast[True, MutableAnyOrigin](),
+                input_1_device_ref.origin_cast[True, MutableAnyOrigin](),
+                input_2_device_ref.origin_cast[True, MutableAnyOrigin](),
+                input_3_device_ref.origin_cast[True, MutableAnyOrigin](),
             ),
             ctx,
         )

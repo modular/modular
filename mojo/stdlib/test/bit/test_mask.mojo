@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
-from bit._mask import is_negative, splat
 from sys.info import bit_width_of
+
+from bit._mask import is_negative, splat
+from testing import assert_equal
 
 
 def test_is_negative():

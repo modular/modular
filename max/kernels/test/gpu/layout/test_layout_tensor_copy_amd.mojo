@@ -24,7 +24,6 @@ from layout.layout_tensor import (
     copy_dram_to_local,
     copy_dram_to_sram,
 )
-from layout.tensor_builder import LayoutTensorBuild as tb
 
 from utils import IndexList
 
@@ -51,7 +50,10 @@ fn copy_dram_to_sram_buffer_load_kernel[
         input_ptr.address_space_cast[AddressSpace.GLOBAL](),
         runtime_layout,
     )
-    var smem = tb[dtype]().row_major[BM, BN]().shared().alloc()
+    alias layout_bmn = Layout.row_major(BM, BN)
+    var smem = LayoutTensor[
+        dtype, layout_bmn, MutableAnyOrigin, address_space = AddressSpace.SHARED
+    ].stack_allocation()
     if thread_idx.x == 0:
         _ = smem.fill(-1)
     barrier()
@@ -84,7 +86,11 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 
     alias thread_layout = Layout.row_major(4, 2)
-    var input_tensor = tb[DType.bfloat16]().row_major[4, 16]().alloc()
+    alias layout = Layout.row_major(4, 16)
+    var stack = InlineArray[Scalar[DType.bfloat16], layout.size()](
+        uninitialized=True
+    )
+    var input_tensor = LayoutTensor[DType.bfloat16, layout](stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
         input_tensor.layout.size()
@@ -130,12 +136,15 @@ fn copy_dram_to_local_buffer_load_kernel[
 
     var q_gmem_iter = q_tile.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    var a_reg_tile = (
-        tb[dtype]()
-        .row_major[(BM * BN) // thread_layout.size() // 2, 2]()
-        .local()
-        .alloc()
+    alias a_reg_layout = Layout.row_major(
+        (BM * BN) // thread_layout.size() // 2, 2
     )
+    var a_reg_tile = LayoutTensor[
+        dtype,
+        a_reg_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
 
     @parameter
     for i in range(BN // BK):
@@ -173,7 +182,11 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: tid = 14 reg = [0.0, 0.0, 0.0, 0.0]
     # CHECK: tid = 15 reg = [0.0, 0.0, 0.0, 0.0]
     alias thread_layout = Layout.row_major(4, 4)
-    var input_tensor = tb[DType.bfloat16]().row_major[4, 16]().alloc()
+    alias input_layout = Layout.row_major(4, 16)
+    var input_stack = InlineArray[Scalar[DType.bfloat16], input_layout.size()](
+        uninitialized=True
+    )
+    var input_tensor = LayoutTensor[DType.bfloat16, input_layout](input_stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
         input_tensor.layout.size()

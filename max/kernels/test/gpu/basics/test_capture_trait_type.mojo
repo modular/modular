@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer, DimList
+from buffer import DimList, NDBuffer
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer

@@ -60,11 +60,12 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
+from iter import _Zip2
 from memory import memcpy
 from memory.pointer import _GPUAddressSpace
-from iter import _Zip2
 
 from utils.numerics import max_finite
+from utils import IndexList
 
 alias INT_TUPLE_VALIDATION = False
 
@@ -379,15 +380,15 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @staticmethod
     @always_inline("nodebug")
     fn elements_size[
-        origin: ImmutableOrigin
-    ](elements: VariadicListMem[IntTuple[origin]]) -> Int:
+        _origin: ImmutableOrigin
+    ](elements: VariadicListMem[IntTuple[_origin]]) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
         integer values and nested sub-tuples.
 
         Parameters:
-            origin: Origin of the elements in the `IntTuple`.
+            _origin: Origin of the elements in the `IntTuple`.
 
         Args:
             elements: List of `IntTuple` elements to measure.
@@ -404,15 +405,15 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @staticmethod
     @always_inline("nodebug")
     fn elements_size[
-        origin: ImmutableOrigin, n: Int
-    ](elements: InlineArray[Pointer[IntTuple, origin], n], idx: Int) -> Int:
+        _origin: ImmutableOrigin, n: Int
+    ](elements: InlineArray[Pointer[IntTuple, _origin], n], idx: Int) -> Int:
         """Calculate the total storage size needed for IntTuples at a specific index.
 
         Computes the sum of sizes for all elements at the given index in an array
         of `IntTuple` pointers.
 
         Parameters:
-            origin: Origin tracking for memory safety.
+            _origin: Origin tracking for memory safety.
             n: Size of the inline array.
 
         Args:
@@ -2848,3 +2849,24 @@ fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
 
     # Re-nest the result according to original shape's structure
     return to_nest(shape, flat_result)
+
+
+fn to_index_list[rank: Int](t: IntTuple) -> IndexList[rank]:
+    """
+    Converts an IntTuple to a flattened IndexList with the same values.
+
+    Parameters:
+        rank: The rank of the resulting IndexList.
+
+    Args:
+        t: The `IntTuple` defining the values.
+
+    Returns:
+        An IndexList filled with the values of t.
+    """
+    var res = IndexList[rank]()
+    var flattened_t = t.flatten()
+    for i in range(len(t)):
+        res[i] = Int(flattened_t[i])
+
+    return res

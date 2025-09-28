@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceBuffer, DeviceContext
 from memory import OwnedPointer
 from testing import *
 

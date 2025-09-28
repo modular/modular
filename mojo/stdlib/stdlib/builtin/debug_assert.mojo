@@ -16,18 +16,16 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from os import abort
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, is_apple_gpu
-from sys._build import is_debug_build
-from sys.intrinsics import block_idx, thread_idx, assume
-from sys.param_env import env_get_string
-from io.write import _WriteBufferHeap
 from io.io import _printf
-from sys import is_compile_time
-from sys._amdgpu import printf_begin, printf_append_string_n, printf_append_args
+from io.write import _WriteBufferHeap
+from os import abort
+from sys import is_amd_gpu, is_apple_gpu, is_compile_time, is_gpu, is_nvidia_gpu
+from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
+from sys._build import is_debug_build
+from sys.intrinsics import assume, block_idx, thread_idx
+from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
-
 
 alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 
@@ -66,7 +64,7 @@ fn debug_assert[
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
-](*messages: *Ts):
+](*messages: *Ts, location: Optional[_SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -147,6 +145,7 @@ fn debug_assert[
     Args:
         messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
             arguments to convert to a `String` message.
+        location: The location of the error (defaults to `__call_location`).
     """
 
     @parameter
@@ -162,7 +161,9 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(message.data, message.pos, __call_location())
+        _debug_assert_msg(
+            message.data, message.pos, location.or_else(__call_location())
+        )
 
 
 @always_inline
@@ -171,7 +172,7 @@ fn debug_assert[
     *Ts: Writable,
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
-](cond: Bool, *messages: *Ts):
+](cond: Bool, *messages: *Ts, location: Optional[_SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -255,6 +256,7 @@ fn debug_assert[
         cond: The bool value to assert.
         messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
             arguments to convert to a `String` message.
+        location: The location of the error (defaults to `__call_location`).
     """
 
     @parameter
@@ -270,7 +272,9 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(message.data, message.pos, __call_location())
+        _debug_assert_msg(
+            message.data, message.pos, location.or_else(__call_location())
+        )
 
     elif _use_compiler_assume:
         assume(cond)
@@ -281,7 +285,12 @@ fn debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
-](cond: Bool, message: StringLiteral):
+](
+    cond: Bool,
+    message: StringLiteral,
+    *,
+    location: Optional[_SourceLocation] = None,
+):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -362,6 +371,7 @@ fn debug_assert[
     Args:
         cond: The bool value to assert.
         message: A static string message.
+        location: The location of the error (defaults to `__call_location`).
     """
 
     @parameter
@@ -371,7 +381,7 @@ fn debug_assert[
         _debug_assert_msg(
             message.unsafe_cstr_ptr().bitcast[Byte](),
             len(message) + 1,  # include null terminator
-            __call_location(),
+            location.or_else(__call_location()),
         )
     elif _use_compiler_assume:
         assume(cond)

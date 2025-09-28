@@ -11,68 +11,62 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys.info import (
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    simd_width_of,
+)
+
 from compiler_internal import register
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_dim,
     block_idx,
+    lane_id,
     thread_idx,
     warp_id,
-    lane_id,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import async_copy_wait_all, AddressSpace
+from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import AMDScheduleBarrierMask
 from gpu.sync import schedule_barrier as amd_schedule_barrier
 from gpu.sync import schedule_group_barrier
-from layout import IntTuple
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-    ThreadScope,
-    UNKNOWN_VALUE,
-    copy_dram_to_sram,
-    copy_dram_to_sram_async,
-    copy_dram_to_local,
-    copy_local_to_shared,
-    copy_local_to_dram,
-)
-from layout.math import outer_product_acc
-
-from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import TensorCore
-from layout.layout import blocked_product
-
-
-from layout.swizzle import Swizzle
-
-from math import ceildiv
-from memory import UnsafePointer
-from runtime.asyncrt import DeviceContextPtr
-from sys.info import (
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-    simd_width_of,
-)
-from tensor_internal import (
-    InputTensor,
-    ManagedTensorSlice,
-    OutputTensor,
-)
-from utils import StaticTuple
-from utils.index import Index, IndexList
 
 # Import AMD helper functions and structs from the kernels subdirectory
 from kernels.amd_helpers import (
-    compare_equal,
-    amd_scheduling_hints,
     AMD_MMA,
     MMATileBuffers,
-    mma,
+    amd_scheduling_hints,
+    compare_equal,
     copy_local_to_dram_32_32_8,
+    mma,
 )
+from layout import IntTuple
+from layout.layout import blocked_product
+from layout.layout_tensor import (
+    UNKNOWN_VALUE,
+    Layout,
+    LayoutTensor,
+    ThreadScope,
+    copy_dram_to_local,
+    copy_dram_to_sram,
+    copy_dram_to_sram_async,
+    copy_local_to_dram,
+    copy_local_to_shared,
+)
+from layout.math import outer_product_acc
+from layout.swizzle import Swizzle
+from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.tensor_core import TensorCore
+from memory import UnsafePointer
+from runtime.asyncrt import DeviceContextPtr
+from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+
+from utils import StaticTuple
+from utils.index import Index, IndexList
 
 
 @compiler.register("tensor_core_mma")
@@ -170,21 +164,22 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias native_kernel = naive_tensor[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        naive_tensor[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        native_kernel, native_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -205,21 +200,22 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias basic_shared_mem_kernel = basic_shared_mem[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        basic_shared_mem[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        basic_shared_mem_kernel, basic_shared_mem_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -242,23 +238,24 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias multi_block_tiled_kernel = multi_block_tiled[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        multi_block_tiled[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        multi_block_tiled_kernel, multi_block_tiled_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -281,23 +278,24 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias scheduler_hints_kernel = scheduler_hints[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        scheduler_hints[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        scheduler_hints_kernel, scheduler_hints_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -320,23 +318,24 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     alias MMA_K = 8
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias double_buffer_kernel = double_buffer[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        double_buffer[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        double_buffer_kernel, double_buffer_kernel
                     ](
                         a_layout,
                         b_layout,
@@ -361,24 +360,25 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    alias mma_tile_buffers_kernel = mma_tile_buffers[
+                        a.dtype,
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout_transposed.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        WK,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
 
-                    gpu_ctx.enqueue_function[
-                        mma_tile_buffers[
-                            a.dtype,
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout_transposed.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            WK,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    gpu_ctx.enqueue_function_checked[
+                        mma_tile_buffers_kernel, mma_tile_buffers_kernel
                     ](
                         a_layout,
                         b_layout_transposed,
@@ -409,21 +409,22 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 alias MMA_K = 16
                 alias NUM_WARPS = (BM // WM) * (BN // WN)
                 alias NUM_THREADS = NUM_WARPS * WARP_SIZE
+                alias naive_tensor_kernel = naive_tensor[
+                    a.dtype,
+                    output.dtype,
+                    a_layout.layout,
+                    b_layout.layout,
+                    out_layout.layout,
+                    BM,
+                    BN,
+                    BK,
+                    MMA_M,
+                    MMA_N,
+                    MMA_K,
+                ]
 
-                gpu_ctx.enqueue_function[
-                    naive_tensor[
-                        a.dtype,
-                        output.dtype,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                        BK,
-                        MMA_M,
-                        MMA_N,
-                        MMA_K,
-                    ]
+                gpu_ctx.enqueue_function_checked[
+                    naive_tensor_kernel, naive_tensor_kernel
                 ](
                     a_layout,
                     b_layout,

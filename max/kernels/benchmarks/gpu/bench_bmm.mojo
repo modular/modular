@@ -17,11 +17,12 @@ from sys import (
     env_get_dtype,
     env_get_int,
     has_nvidia_gpu_accelerator,
-    size_of,
     simd_width_of,
+    size_of,
 )
 
-import linalg.vendor_blas
+import linalg.matmul.vendor.blas as vendor_blas
+from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext, get_gpu_target
@@ -30,16 +31,14 @@ from internal_utils._utils import (
     InitializationType,
     ValOrDim,
     dynamic,
+    init_vector_launch,
     initialize,
     random,
     static,
-    init_vector_launch,
 )
 from linalg.bmm import _batched_matmul_gpu
 
 from utils import Index, IndexList
-
-from algorithm.functional import elementwise
 
 
 fn _get_run_name[
@@ -161,13 +160,13 @@ fn bench_bmm[
 
     var a_device = NDBuffer[
         dtype, 3, MutableAnyOrigin, batch_static_a_shape, _
-    ](a_device_buffer._unsafe_ptr(), batch_dynamic_a_shape)
+    ](a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape)
     var b_device = NDBuffer[
         dtype, 3, MutableAnyOrigin, batch_static_b_shape, _
-    ](b_device_buffer._unsafe_ptr(), batch_dynamic_b_shape)
+    ](b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape)
     var c_device = NDBuffer[
         dtype, 3, MutableAnyOrigin, batch_static_c_shape, _
-    ](c_device_buffer._unsafe_ptr(), batch_dynamic_c_shape)
+    ](c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape)
 
     # Initialize data on the device
 

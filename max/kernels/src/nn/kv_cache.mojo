@@ -25,7 +25,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -45,7 +45,10 @@ from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor_internal import ManagedTensorSlice, trace_slice_arg
 
 from utils import Index, IndexList
-
+from tensor_internal import InputTensor
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputTensor as MutableInputTensor,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (padded)
@@ -524,8 +527,41 @@ fn _flash_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         if is_cpu[target]():
+            alias q_layout = Layout.row_major[q.rank](q.shape)
+            alias output_layout = Layout.row_major[output.rank](output.shape)
+            var sink_weights_lt: OptionalReg[
+                LayoutTensor[
+                    dtype,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ]
+            ] = None
+            if sink_weights:
+                var sw = sink_weights.value()
+                sink_weights_lt = sink_weights_lt.T(
+                    sw.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(sw))
+                    ),
+                )
             return flash_attention_kv_cache_cpu(
-                q, k, v, mask, scale, output, sink_weights
+                LayoutTensor[q.type, q_layout](
+                    q.data,
+                    RuntimeLayout[q_layout].row_major(
+                        q.dynamic_shape.canonicalize()
+                    ),
+                ),
+                k,
+                v,
+                mask,
+                scale,
+                LayoutTensor[output.type, output_layout](
+                    output.data,
+                    RuntimeLayout[output_layout].row_major(
+                        output.dynamic_shape.canonicalize()
+                    ),
+                ),
+                sink_weights_lt,
             )
         else:
             alias use_score_mod = not _type_is_eq[
@@ -578,8 +614,43 @@ fn _flash_attention_dispatch_materialized_mask[
         fn call_flash_attention[sink: Bool]() raises:
             @parameter
             if is_cpu[target]():
+                alias q_layout = Layout.row_major[q.rank](q.shape)
+                alias output_layout = Layout.row_major[output.rank](
+                    output.shape
+                )
+                var sink_weights_lt: OptionalReg[
+                    LayoutTensor[
+                        dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ] = None
+                if sink_weights:
+                    var sw = sink_weights.value()
+                    sink_weights_lt = sink_weights_lt.T(
+                        sw.data,
+                        RuntimeLayout[
+                            Layout.row_major(UNKNOWN_VALUE)
+                        ].row_major(IndexList[1](len(sw))),
+                    )
                 return flash_attention_kv_cache_cpu(
-                    q, k, v, mask, scale, output, sink_weights
+                    LayoutTensor[q.type, q_layout](
+                        q.data,
+                        RuntimeLayout[q_layout].row_major(
+                            q.dynamic_shape.canonicalize()
+                        ),
+                    ),
+                    k,
+                    v,
+                    mask,
+                    scale,
+                    LayoutTensor[output.type, output_layout](
+                        output.data,
+                        RuntimeLayout[output_layout].row_major(
+                            output.dynamic_shape.canonicalize()
+                        ),
+                    ),
+                    sink_weights_lt,
                 )
             else:
                 alias use_score_mod = not _type_is_eq[
@@ -1286,6 +1357,35 @@ fn generic_get_continuous_cache[
 ) -> ContinuousBatchingKVCacheCollection[dtype, kv_params]:
     return _continuous_batch_kv_cache_collection[kv_params](
         blocks, cache_lengths, lookup_table, max_lengths
+    )
+
+
+fn generic_get_paged_cache[
+    dtype: DType
+](
+    blocks: MutableInputTensor[dtype=dtype, rank=6],
+    cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+    lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+    max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+    out result: PagedKVCacheCollection[
+        dtype,
+        KVCacheStaticParams(
+            UInt(blocks.static_spec.shape.get[4]()),
+            UInt(blocks.static_spec.shape.get[5]()),
+        ),
+        blocks.static_spec.shape.get[3](),
+    ],
+):
+    alias page_size = blocks.static_spec.shape.get[3]()
+    alias head_dim = blocks.static_spec.shape.get[5]()
+    alias num_heads = blocks.static_spec.shape.get[4]()
+    return generic_get_paged_cache[
+        dtype, KVCacheStaticParams(UInt(num_heads), UInt(head_dim)), page_size
+    ](
+        managed_tensor_slice_to_ndbuffer(blocks),
+        managed_tensor_slice_to_ndbuffer(cache_lengths),
+        managed_tensor_slice_to_ndbuffer(lookup_table),
+        managed_tensor_slice_to_ndbuffer(max_lengths),
     )
 
 

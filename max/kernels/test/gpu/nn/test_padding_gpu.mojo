@@ -14,7 +14,7 @@
 
 from gpu import *
 from gpu.host import DeviceContext
-from layout import LayoutTensor, RuntimeLayout, Layout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
 from testing import assert_equal
@@ -76,9 +76,9 @@ fn test_pad_constant_gpu[
     var constant = Scalar[dtype](5)
 
     pad_constant(
-        out_device._unsafe_ptr(),
+        out_device.unsafe_ptr(),
         output_shape,
-        in_device._unsafe_ptr(),
+        in_device.unsafe_ptr(),
         input_shape,
         paddings.ptr,
         constant,

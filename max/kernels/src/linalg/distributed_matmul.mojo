@@ -14,11 +14,13 @@
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from comm.allreduce import MAX_GPUS, Signal, allreduce
+from gpu.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
 from gpu.host import DeviceContext
-from linalg.matmul_gpu import _matmul_gpu
-from utils import IndexList
-from gpu.grid_controls import PDLLevel, _SUPPORT_PDL_LAUNCH
 from internal_utils._utils import ValOrDim, dynamic, static
+
+from utils import IndexList
+
+from .matmul.gpu import _matmul_gpu
 
 alias elementwise_epilogue_type = fn[
     input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int

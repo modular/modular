@@ -10,40 +10,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from logger import Logger
 from collections import OptionalReg
-from sys import size_of, align_of
 from math import ceildiv, gcd
+from sys import align_of, size_of
+
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.id import warp_id as get_warp_id
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
+from gpu.id import warp_id as get_warp_id
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
-from layout.int_tuple import IntTuple
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from gpu.cluster import block_rank_in_cluster
+from layout.int_tuple import IntTuple
+from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from linalg.mmaop_sm100 import MmaOpSM100_SS
+from logger import Logger
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from layout.runtime_layout import RuntimeTuple, RuntimeLayout, UNKNOWN_VALUE
-from .utils import elementwise_epilogue_type
-from buffer.buffer import NDBuffer
-from linalg.matmul_sm100_blockwise_fp8 import (
+
+from .arch.sm100 import MmaOpSM100_SS
+from .matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
+from .utils import elementwise_epilogue_type
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -570,9 +568,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # LayoutTensors are already in the right format for TMA operations
-    a_tma_op = create_tma_tile[
-        a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
-    ](ctx, a)
+    a_tma_op = create_tma_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
 
     b_2d = LayoutTensor[
         b_type,
@@ -581,8 +577,6 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         address_space = b.address_space,
     ](b.ptr)
     b_tma_op = create_tma_tile[
-        b_type,
-        2,
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b_2d)

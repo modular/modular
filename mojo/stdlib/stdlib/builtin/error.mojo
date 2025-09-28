@@ -17,11 +17,11 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from collections.string.format import _CurlyEntryFormattable
-from sys import external_call, is_gpu, _libc
+from io.write import _WriteBufferStack
+from sys import _libc, external_call, is_gpu
 from sys.ffi import c_char
 
-from memory import memcpy, ArcPointer
-from io.write import _WriteBufferStack
+from memory import ArcPointer, memcpy
 
 
 # ===-----------------------------------------------------------------------===#

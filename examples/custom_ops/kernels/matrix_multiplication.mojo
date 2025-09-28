@@ -13,38 +13,28 @@
 
 # DOC: max/tutorials/custom-ops-matmul.mdx
 
+from math import ceildiv
+from sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
+
 import compiler
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_dim,
     block_idx,
     thread_idx,
     warp_id,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceBuffer
 from gpu.memory import async_copy_wait_all
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-    copy_dram_to_sram_async,
-)
+from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from math import ceildiv
 from runtime.asyncrt import DeviceContextPtr
-from sys.info import (
-    has_accelerator,
-    has_amd_gpu_accelerator,
-    simd_width_of,
-)
-from tensor_internal import (
-    InputTensor,
-    ManagedTensorSlice,
-    OutputTensor,
-)
+from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+
 from utils import StaticTuple
 from utils.index import Index
 
@@ -850,16 +840,15 @@ struct MatrixMultiplication[algorithm: StaticString]:
             if algorithm == "naive":
                 alias BM = 16
                 alias BN = 16
-                gpu_ctx.enqueue_function[
-                    naive_matrix_multiplication[
-                        output.dtype,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                    ]
-                ](
+                alias matmul_kernel = naive_matrix_multiplication[
+                    output.dtype,
+                    a_layout.layout,
+                    b_layout.layout,
+                    out_layout.layout,
+                    BM,
+                    BN,
+                ]
+                gpu_ctx.enqueue_function_checked[matmul_kernel, matmul_kernel](
                     a_layout,
                     b_layout,
                     out_layout,
@@ -869,15 +858,16 @@ struct MatrixMultiplication[algorithm: StaticString]:
             elif algorithm == "coalescing":
                 alias BM = OPTIMIZED_BLOCK_SIZE
                 alias BN = OPTIMIZED_BLOCK_SIZE
-                gpu_ctx.enqueue_function[
-                    coalescing_matrix_multiplication[
-                        output.dtype,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                    ]
+                alias coalescing_matmul_kernel = coalescing_matrix_multiplication[
+                    output.dtype,
+                    a_layout.layout,
+                    b_layout.layout,
+                    out_layout.layout,
+                    BM,
+                    BN,
+                ]
+                gpu_ctx.enqueue_function_checked[
+                    coalescing_matmul_kernel, coalescing_matmul_kernel
                 ](
                     a_layout,
                     b_layout,
@@ -890,17 +880,18 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias BN = OPTIMIZED_BLOCK_SIZE
                 alias BK = OPTIMIZED_BLOCK_SIZE
                 alias NUM_THREADS = BM * BN
-                gpu_ctx.enqueue_function[
-                    tiled_matrix_multiplication[
-                        output.dtype,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                        BK,
-                        NUM_THREADS,
-                    ]
+                alias tiled_matmul_kernel = tiled_matrix_multiplication[
+                    output.dtype,
+                    a_layout.layout,
+                    b_layout.layout,
+                    out_layout.layout,
+                    BM,
+                    BN,
+                    BK,
+                    NUM_THREADS,
+                ]
+                gpu_ctx.enqueue_function_checked[
+                    tiled_matmul_kernel, tiled_matmul_kernel
                 ](
                     a_layout,
                     b_layout,
@@ -914,18 +905,19 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias BK = 8
                 alias TM = 16
                 alias NUM_THREADS = (BM * BN) // TM
-                gpu_ctx.enqueue_function[
-                    tiled_register_matrix_multiplication[
-                        output.dtype,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                        BK,
-                        TM,
-                        NUM_THREADS,
-                    ]
+                alias tiled_register_matmul_kernel = tiled_register_matrix_multiplication[
+                    output.dtype,
+                    a_layout.layout,
+                    b_layout.layout,
+                    out_layout.layout,
+                    BM,
+                    BN,
+                    BK,
+                    TM,
+                    NUM_THREADS,
+                ]
+                gpu_ctx.enqueue_function_checked[
+                    tiled_register_matmul_kernel, tiled_register_matmul_kernel
                 ](
                     a_layout,
                     b_layout,
@@ -940,19 +932,20 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias TM = 8
                 alias TN = 8
                 alias NUM_THREADS = (BM * BN) // (TM * TN)
-                gpu_ctx.enqueue_function[
-                    block_tiled_matrix_multiplication[
-                        output.dtype,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                        BK,
-                        TM,
-                        TN,
-                        NUM_THREADS,
-                    ]
+                alias block_tiled_matmul_kernel = block_tiled_matrix_multiplication[
+                    output.dtype,
+                    a_layout.layout,
+                    b_layout.layout,
+                    out_layout.layout,
+                    BM,
+                    BN,
+                    BK,
+                    TM,
+                    TN,
+                    NUM_THREADS,
+                ]
+                gpu_ctx.enqueue_function_checked[
+                    block_tiled_matmul_kernel, block_tiled_matmul_kernel
                 ](
                     a_layout,
                     b_layout,
@@ -967,19 +960,21 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias TM = 8
                 alias TN = 8
                 alias NUM_THREADS = (BM * BN) // (TM * TN)
-                gpu_ctx.enqueue_function[
-                    block_tiled_vectorized_matrix_multiplication[
-                        output.dtype,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                        BK,
-                        TM,
-                        TN,
-                        NUM_THREADS,
-                    ]
+                alias block_tiled_vectorized_matmul_kernel = block_tiled_vectorized_matrix_multiplication[
+                    output.dtype,
+                    a_layout.layout,
+                    b_layout.layout,
+                    out_layout.layout,
+                    BM,
+                    BN,
+                    BK,
+                    TM,
+                    TN,
+                    NUM_THREADS,
+                ]
+                gpu_ctx.enqueue_function_checked[
+                    block_tiled_vectorized_matmul_kernel,
+                    block_tiled_vectorized_matmul_kernel,
                 ](
                     a_layout,
                     b_layout,
@@ -1002,21 +997,22 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     alias MMA_N = 16 if has_amd_gpu_accelerator() else 8
                     alias MMA_K = 4
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
-                    gpu_ctx.enqueue_function[
-                        tensor_core_matrix_multiplication[
-                            output.dtype,
-                            a_layout.layout,
-                            b_layout.layout,
-                            out_layout.layout,
-                            BM,
-                            BN,
-                            BK,
-                            WM,
-                            WN,
-                            MMA_M,
-                            MMA_N,
-                            MMA_K,
-                        ]
+                    alias tensor_core_matmul_kernel = tensor_core_matrix_multiplication[
+                        output.dtype,
+                        a_layout.layout,
+                        b_layout.layout,
+                        out_layout.layout,
+                        BM,
+                        BN,
+                        BK,
+                        WM,
+                        WN,
+                        MMA_M,
+                        MMA_N,
+                        MMA_K,
+                    ]
+                    gpu_ctx.enqueue_function_checked[
+                        tensor_core_matmul_kernel, tensor_core_matmul_kernel
                     ](
                         a_layout,
                         b_layout,

@@ -43,19 +43,19 @@ from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
+
 from .hf_utils import download_weight_files
 from .pipeline import PipelineModel
 
 logger = logging.getLogger("max.pipelines")
 
+EmbeddingsPipelineType = Pipeline[
+    EmbeddingsGenerationInputs, EmbeddingsGenerationOutput
+]
+
 
 @final
-class EmbeddingsPipeline(
-    Pipeline[
-        EmbeddingsGenerationInputs[EmbeddingsGenerationContextType],
-        EmbeddingsGenerationOutput,
-    ]
-):
+class EmbeddingsPipeline(EmbeddingsPipelineType):
     """Generalized token generator pipeline."""
 
     def __init__(
@@ -116,7 +116,7 @@ class EmbeddingsPipeline(
     @traced
     def execute(
         self,
-        inputs: EmbeddingsGenerationInputs[EmbeddingsGenerationContextType],
+        inputs: EmbeddingsGenerationInputs,
     ) -> dict[RequestID, EmbeddingsGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.

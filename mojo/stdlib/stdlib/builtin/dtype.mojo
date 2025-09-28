@@ -21,7 +21,6 @@ from os import abort
 from sys import CompilationTarget, bit_width_of, size_of
 from sys.intrinsics import _type_is_eq
 
-
 alias _mIsSigned = UInt8(1)
 alias _mIsInteger = UInt8(1 << 7)
 alias _mIsNotInteger = UInt8(~(1 << 7))
@@ -101,14 +100,6 @@ struct DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
     )
     """Represents a boolean data type."""
-
-    # TODO(MSTDL-1851): Remove
-    @deprecated("Use `DType.int` instead.")
-    alias index = DType(
-        mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
-    )
-    """Represents an integral type whose bitwidth is the maximum integral value
-    on the system."""
 
     alias int = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
@@ -307,8 +298,6 @@ struct DType(
             return Self._from_str(str.removeprefix("DType."))
         elif str == "bool":
             return DType.bool
-        elif str == "index":  # TODO(MSTDL-1851): Remove
-            return DType.int
         elif str == "int":
             return DType.int
         elif str == "uint":

@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import Layout, LayoutTensor
-from runtime.asyncrt import DeviceContextPtr
 from nn.gather_scatter import scatter_set_constant
+from runtime.asyncrt import DeviceContextPtr
 
 
 fn test_scatter_set_constant() raises:
