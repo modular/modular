@@ -53,7 +53,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _is_amd_rdna, _is_amd_cdna
+from sys.info import _is_amd_rdna, _is_amd_rdna1, _is_amd_rdna2, _is_amd_rdna3, _is_amd_cdna
 
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
@@ -1027,6 +1027,10 @@ struct TensorCore[
                         )
                     )
             elif in_type.is_float8():
+                constrained[
+                    _has_native_f8_support(),
+                    "float8 formats are only supported in SM90+",
+                ]()
 
                 @parameter
                 for i in range(num_frags):
@@ -1382,12 +1386,21 @@ fn get_mma_shape[
         @parameter
         if _is_amd_rdna():
             @parameter
+            if _is_amd_rdna2() or _is_amd_rdna1():
+                constrained[
+                    False,
+                    "RDNA2 and earlier tensor core support requires fallback paths (not yet implemented)"
+                ]()
+                return shape_null
+
+            @parameter
             if accum_type is DType.float32 and input_type is DType.float32:
                 return shape_16x16x16
             elif accum_type is DType.float32 and input_type.is_half_float():
                 return shape_16x16x16
             elif accum_type is DType.float32 and input_type.is_float8():
-                return shape_16x16x32
+                constrained[False, "FP8 is not supported on RDNA GPUs."]()
+                return shape_null
             else:
                 constrained[False, "Unsupported RDNA mma shape."]()
                 return shape_null
