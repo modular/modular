@@ -584,7 +584,36 @@ def test_paged_scheduler_tg_preemption_basic() -> None:
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_paged_scheduler_oom() -> None:
+def test_paged_scheduler_oom_ce() -> None:
+    prompt_len = 200
+    output_tokens = 1
+    page_size = 10
+    num_blocks = 10
+    scheduler, request_queue = create_paged_scheduler(
+        num_blocks=num_blocks,
+        page_size=page_size,
+    )
+
+    enqueue_request(
+        request_queue,
+        prompt_len=prompt_len,
+        max_seq_len=prompt_len + output_tokens,
+    )
+
+    actual: list[BatchInfo] = []
+    with pytest.raises(RuntimeError) as e:
+        run_until_completion(scheduler, output_list=actual)
+
+    # The error message should be informative:
+    assert (
+        "Insufficient KV pages for a single request with 200 tokens.\n"
+        "The KVCache has 10 blocks with block size 10. This is only enough to support 100 tokens.\n"
+        "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
+        in str(e.value)
+    )
+
+
+def test_paged_scheduler_oom_tg() -> None:
     num_prompts = 2
     # one req is 110 tokens
     prompt_len = 10
@@ -627,8 +656,8 @@ def test_paged_scheduler_oom() -> None:
     ]
     # The error message should be informative:
     assert (
-        "Insufficient KV pages to run token generation on a single request with 101 tokens.\n"
-        "The KVCache has 10 pages with page size 10. This is only enough to support 100 tokens.\n"
+        "Insufficient KV pages for a single request with 101 tokens.\n"
+        "The KVCache has 10 blocks with block size 10. This is only enough to support 100 tokens.\n"
         "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         in str(e.value)
     )
