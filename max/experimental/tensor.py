@@ -6,9 +6,8 @@
 
 """Provides experimental tensor operations with eager execution capabilities.
 
-.. warning::
-    This module contains experimental APIs that are subject to change or
-    removal in future versions. Use with caution in production environments.
+**Warning:** This module contains experimental APIs that are subject to change
+or removal in future versions. Use with caution in production environments.
 
 This module provides the :class:`~max.experimental.tensor` class which supports
 eager execution of tensor operations, complementing the graph-based execution
@@ -22,7 +21,7 @@ and execute using the MAX runtime.
 - **Lazy evaluation**: Tensors may be computed lazily until their values are needed.
 - **NumPy compatibility**: Supports common NumPy-like operations and indexing.
 
-Create and manipulate tensors with automatic compilation and optimization::
+Create and manipulate tensors with automatic compilation and optimization:
 
 .. code-block:: python
 
@@ -169,21 +168,26 @@ class Tensor(DLPackArray, HasTensorValue):
     Tensors unify the graph concepts of TensorValue and BufferValue.
     Given `x: Tensor`:
 
-    | - If `x` is realized, it will be backed by a BufferValue input
-    |   to the graph.
-    | - If `x` is unrealized
-    |     - It will be backed by a BufferValue if the op that created it
-    |       returned a buffer _or_ if BufferValue(x) is ever called
-    |     - Otherwise it will be backed by a TensorValue
-    | - `x` may _always_ be loaded into a TensorValue via `TensorValue(x)`
-    |     - If `x` is backed by a BufferValue, this will do a "load".
-    |       The load is for operation ordering and will be optimized away.
-    | - `x` may _always_ be loaded into a BufferValue via `BufferValue(x)`
-    |     - Afterwards, `x` will always be unrealized, since it may now
-    |       have been passed into side-effecting ops.
-    |     - If `x` was backed by a TensorValue, it will now be backed
-    |       by a new BufferValue from `ops.buffer_create` containing
-    |       the same data.
+    - If `x` is realized, it will be backed by a BufferValue input
+      to the graph.
+    - If `x` is unrealized:
+
+      - It will be backed by a BufferValue if the op that created it
+        returned a buffer _or_ if BufferValue(x) is ever called
+      - Otherwise it will be backed by a TensorValue
+
+    - `x` may _always_ be loaded into a TensorValue via `TensorValue(x)`:
+
+      - If `x` is backed by a BufferValue, this will do a "load".
+        The load is for operation ordering and will be optimized away.
+
+    - `x` may _always_ be loaded into a BufferValue via `BufferValue(x)`:
+
+      - Afterwards, `x` will always be unrealized, since it may now
+        have been passed into side-effecting ops.
+      - If `x` was backed by a TensorValue, it will now be backed
+        by a new BufferValue from `ops.buffer_create` containing
+        the same data.
 
     This allows Tensors to be transparently treated as being mutable
     buffers or immutable tensors while encoding only the necessary
