@@ -42,7 +42,7 @@ from .audio_generation_scheduler import (
     AudioGenerationScheduler,
     AudioGenerationSchedulerConfig,
 )
-from .base import PrefillRequest, PrefillResponse
+from .base import CancelRequest, PrefillRequest, PrefillResponse
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
 from .lora_scheduler_utils import (
@@ -56,6 +56,7 @@ from .text_generation_scheduler import load_text_generation_scheduler
 __all__ = [
     "AudioGenerationScheduler",
     "AudioGenerationSchedulerConfig",
+    "CancelRequest",
     "EmbeddingsScheduler",
     "EmbeddingsSchedulerConfig",
     "PrefillRequest",

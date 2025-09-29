@@ -30,7 +30,11 @@ from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.queue.zmq_queue import ClientIdentity
-from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import (
+    CancelRequest,
+    PrefillRequest,
+    PrefillResponse,
+)
 from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
 from max.serve.scheduler.text_batch_constructor import (
     TextBatchConstructor,
@@ -80,9 +84,9 @@ class PrefillScheduler(Scheduler):
         self.dispatcher = dispatcher
 
     @traced
-    def handle_cancel_request(self, message: RequestID) -> None:
+    def handle_cancel_request(self, message: CancelRequest) -> None:
         """Handles a cancel request by adding the request ID to the set of outstanding cancelled requests."""
-        self.outstanding_cancelled_requests.add(message)
+        self.outstanding_cancelled_requests.add(message.id)
 
     @traced
     def handle_transfer_engine_request(
@@ -226,7 +230,7 @@ class PrefillScheduler(Scheduler):
                 request, identity = self.dispatcher.recv_request_nowait()
             except queue.Empty:
                 break
-            if isinstance(request, RequestID):
+            if isinstance(request, CancelRequest):
                 self.handle_cancel_request(request)
             elif isinstance(request, KVTransferEngineMetadata):
                 self.handle_transfer_engine_request(request, identity)

@@ -39,7 +39,11 @@ from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
-from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import (
+    CancelRequest,
+    PrefillRequest,
+    PrefillResponse,
+)
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
@@ -227,7 +231,9 @@ class DecodeScheduler(Scheduler):
                         del self.prefill_reqs[request_id]
 
                         # Send a cancel request to the prefill node
-                        self.dispatcher.send_request_nowait(request_id)
+                        self.dispatcher.send_request_nowait(
+                            CancelRequest(id=request_id)
+                        )
 
                         # Send the cancelled result back to the response q
                         self.response_queue.put_nowait(

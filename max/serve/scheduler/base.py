@@ -78,3 +78,17 @@ class PrefillResponse(
     id: RequestID
     generated_token_id: int
     transfer_metadata: XferReqData
+
+
+class CancelRequest(msgspec.Struct, tag=True, omit_defaults=True, kw_only=True):
+    """A request to cancel an ongoing request.
+
+    Used to signal that a specific request should be cancelled and its resources
+    should be freed. This is typically used to cancel prefill or decode requests
+    that are no longer needed.
+
+    Attributes:
+        id: Unique identifier of the request to cancel
+    """
+
+    id: RequestID
