@@ -29,8 +29,7 @@ class MockLoRARequestProcessor:
     def __init__(
         self,
         manager: LoRAManager,
-        zmq_request_endpoint: str,
-        zmq_response_endpoint: str,
+        zmq_endpoint_base: str,
     ) -> None:
         self.manager = manager
 
@@ -86,6 +85,7 @@ def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
         config=config,
         base_model_path="/mock/path",
         base_dtype=DType.float32,
+        zmq_endpoint_base="fake",
     )
 
     manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
@@ -358,6 +358,7 @@ def test_lora_bias_config_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
                 config=config,
                 base_model_path="/mock/path",
                 base_dtype=DType.float32,
+                zmq_endpoint_base="fake",
             )
 
             manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
@@ -417,6 +418,7 @@ def test_lora_bias_none_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
             config=config,
             base_model_path="/mock/path",
             base_dtype=DType.float32,
+            zmq_endpoint_base="fake",
         )
 
         # Mock path validation to pass initial checks
