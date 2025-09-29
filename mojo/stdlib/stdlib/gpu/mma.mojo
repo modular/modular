@@ -262,12 +262,10 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     @parameter
     if a.size == 2 and b.size == 2 and c.size == 8 and d.size == 8:
         # Cross-architecture fallback: CDNA dimensions (16,16,4) on RDNA hardware
-        # Use simple software implementation since this shouldn't actually run
-        var result = c
-        for i in range(2):
-            for j in range(8):
-                result[j] += a[i].cast[c.dtype]() * b[i].cast[c.dtype]()
-        d = rebind[__type_of(d)](result)
+        # This case only exists for cross-compilation compatibility
+        # On properly configured systems, this path should never execute
+        # Return accumulator unchanged to avoid incorrect computation
+        d = rebind[__type_of(d)](c)
     elif a.size == 8 and b.size == 8 and c.size == 8 and d.size == 8:
         # RDNA Wave32 mode - single WMMA operation with 8 accumulator registers
         alias intrinsic_name = get_intrinsic_name()
