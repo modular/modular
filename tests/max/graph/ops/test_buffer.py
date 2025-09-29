@@ -12,16 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 """mutable ops tests."""
 
+import os
+from pathlib import Path
+
+import numpy as np
 import pytest
 from conftest import buffer_types, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max._core.dialects import mo
+from max.driver import CPU, Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import (
     BufferType,
     BufferValue,
+    DeviceRef,
     Graph,
     TensorType,
     TensorValue,
@@ -35,6 +42,13 @@ shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
 tensor_type = tensor_types(shapes=shared_shapes, dtypes=shared_dtypes)
 buffer_type = buffer_types(shapes=shared_shapes, dtypes=shared_dtypes)
+
+
+def _custom_ops_path() -> Path:
+    path = os.getenv("CUSTOM_OPS_PATH")
+    if path is None:
+        pytest.skip("CUSTOM_OPS_PATH is not set; custom ops unavailable")
+    return Path(path)
 
 
 @given(buffer_type=...)
@@ -321,5 +335,43 @@ def test_prints_with_buffer_ops(
         assert chain_2 != chain_3
 
 
-# TODO(MSDK-960): test that the chain is working correctly.
-# TODO(MSDK-960): test load -> element-wise ops -> store.
+def test_buffer_ops_sequence_after_inplace_custom() -> None:
+    """Buffer ops observe effects of preceding inplace_custom on same device."""
+    custom_ops_path = _custom_ops_path()
+    buffer_type = BufferType(
+        DType.float32,
+        shape=[4],
+        device=DeviceRef.CPU(),
+    )
+
+    with Graph(
+        "buffer_device_chain_merge",
+        input_types=[buffer_type],
+        custom_extensions=[custom_ops_path],
+    ) as graph:
+        buffer = graph.inputs[0].buffer
+
+        # @compiler.register("mutable_test_op") increments the first element.
+        ops.inplace_custom(
+            "mutable_test_op",
+            device=buffer.device,
+            values=[buffer],
+        )
+
+        tensor = ops.buffer_load(buffer)
+        ops.buffer_store(buffer, tensor)
+
+        graph.output(buffer)
+
+    session = InferenceSession(devices=[CPU()])
+    model = session.load(graph)
+
+    input_buffer = Tensor.from_numpy(np.zeros((4,), dtype=np.float32)).to(
+        model.input_devices[0]
+    )
+    (result,) = model.execute(input_buffer)
+    assert isinstance(result, Tensor)
+    np.testing.assert_allclose(
+        result.to_numpy(),
+        np.array([1, 0, 0, 0], dtype=np.float32),
+    )

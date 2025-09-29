@@ -540,10 +540,11 @@ class Graph:
     def _update_chain(self, new_chain: _ChainValue) -> None:
         self._current_chain = new_chain
 
-    def _merge_chains(self, chains: Sequence[_ChainValue]) -> None:
+    def _merge_chains(self, chains: Sequence[_ChainValue]) -> _ChainValue:
         chain = self._add_op(mo.chain_create, chains)[0]
         assert isinstance(chain, _ChainValue)
         self._current_chain = chain
+        return self._current_chain
 
     def _add_chain_block_arg(self) -> _ChainValue:
         """Add a new chain as a graph block argument."""
