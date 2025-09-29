@@ -1728,4 +1728,73 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
   let genVerifyDecl = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// LLVMBitcodeLibAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_LLVMBitcodeLibAttr : KGENAttr<"LLVMBitcodeLib", "llvm.bitcode.lib"> {
+  let summary = "LLVM bitcode library attribute.";
+  let description = [{
+    The `#kgen.llvm.bitcode.lib` attribute represents a single LLVM bitcode
+    library with usage tracking. It contains:
+    - `used`: A boolean flag indicating whether this library was used
+    - `library`: The actual bitcode library, which can be either:
+      - StringAttr: For bitcode libraries passed via command line
+      - DenseResourceElementsAttr: For bitcode libraries from packages
+
+    Example:
+    ```mlir
+    #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
+    #kgen.llvm.bitcode.lib<used = true, library = dense_resource<data> : ...>
+    ```
+  }];
+
+  let parameters = (ins "BoolAttr":$used, "Attribute":$library);
+
+  let assemblyFormat =
+    "`<` `used` `=` $used `,` `library` `=` $library `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "bool":$used,
+                                        "Attribute":$library), [{
+      return $_get(library.getContext(),
+                   BoolAttr::get(library.getContext(), used),
+                   library);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "BoolAttr":$used,
+                                        "Attribute":$library), [{
+      return $_get(used.getContext(), used, library);
+    }]>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// LLVMBitcodeLibArrayAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_LLVMBitcodeLibArrayAttr : ArrayOfAttr<KGENDialect,
+  "LLVMBitcodeLibArray", "llvm.bitcode.libs", "LLVMBitcodeLibAttr"> {
+  let summary = "Array of LLVM bitcode library attributes.";
+  let description = [{
+    The `#kgen.llvm.bitcode.libs` attribute represents an array of LLVM
+    bitcode libraries, each with their own usage tracking. This is typically
+    attached to ModuleOp to store all bitcode libraries that should be
+    linked during compilation.
+  }];
+
+  let extraClassDeclaration = [{
+    /// This is the attribute name of the `#kgen.llvm.bitcode.libs` attribute
+    /// attached to ModuleOp.
+    static llvm::StringLiteral getBitcodeLibsAttrName() {
+      return "kgen.llvm.bitcode.libs";
+    }
+
+    /// Populate the given vector with this array attribute in native format.
+    void externalize
+      (llvm::SmallVector<std::pair<bool, mlir::Attribute>> &result) const;
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

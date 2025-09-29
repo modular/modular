@@ -355,12 +355,37 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   if (!module)
     return Error("failed to parse the provided Mojo source module");
 
-  // Extract external LLVM bitcode modules from imported packages
+  // Create LLVMBitcodeLibAttr instances from command line and package bitcode
+  // libraries.
+  SmallVector<LLVMBitcodeLibAttr> bitcodeLibAttrs;
+
+  // Add command line bitcode libraries as StringAttr.
+  for (const std::string &libPath : compilationOptions.bitcodeLibs) {
+    StringAttr pathAttr = StringAttr::get(ctx, libPath);
+    LLVMBitcodeLibAttr libAttr = LLVMBitcodeLibAttr::get(false, pathAttr);
+    bitcodeLibAttrs.push_back(libAttr);
+  }
+
+  // Extract external LLVM bitcode modules from imported packages and add as
+  // DenseResourceElementsAttr.
   module->walk([&](LIT::PackageOp packageOp) {
-    if (auto bitcodeModules = packageOp.getExternLLVMBitcodeModulesAttr())
-      for (auto bitcodeAttr : bitcodeModules)
-        compilationOptions.packageBitcodeModules.push_back(bitcodeAttr);
+    if (auto bitcodeModules = packageOp.getExternLLVMBitcodeModulesAttr()) {
+      for (auto bitcodeAttr : bitcodeModules) {
+        LLVMBitcodeLibAttr libAttr =
+            LLVMBitcodeLibAttr::get(false, bitcodeAttr);
+        bitcodeLibAttrs.push_back(libAttr);
+      }
+    }
   });
+
+  // Set the LLVMBitcodeLibArrayAttr on the ModuleOp if there are any bitcode
+  // libraries.
+  if (!bitcodeLibAttrs.empty()) {
+    LLVMBitcodeLibArrayAttr arrayAttr =
+        LLVMBitcodeLibArrayAttr::get(ctx, bitcodeLibAttrs);
+    (*module)->setAttr(LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName(),
+                       arrayAttr);
+  }
 
   // Tag the module with the environment, which includes any definitions the
   // user may have specified on the command line.

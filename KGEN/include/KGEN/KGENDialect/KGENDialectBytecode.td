@@ -263,6 +263,15 @@ def ConstraintAttr : DialectAttribute<(attr
   ConcreteOptionalAttribute<"StringAttr">:$errorMsg
 )>;
 
+def LLVMBitcodeLibAttr : DialectAttribute<(attr
+  ConcreteAttribute<"BoolAttr">:$used,
+  Attribute:$library
+)>;
+
+def LLVMBitcodeLibArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"LLVMBitcodeLibAttr">:$value
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -296,7 +305,9 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     PreservedAttr,
     ExportKindAttr,
     LinkDependencyArrayAttr,
-    TailKindAttr
+    TailKindAttr,
+    LLVMBitcodeLibAttr,
+    LLVMBitcodeLibArrayAttr
   ];
 }
 

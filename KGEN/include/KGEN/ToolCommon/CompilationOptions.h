@@ -113,15 +113,8 @@ public:
   std::string saveTempsPrefix = "";
   std::string searchPaths = "";
 
-  // External LLVM bitcode modules to link during compilation.
-  // These two fields represent the same data in different forms:
-  // - bitcodeLibs: File paths to external bitcode libraries specified via
-  // command line.
-  // - packageBitcodeModules: In-memory bitcode modules extracted from imported
-  // packages.
-  // Both are processed identically during LLVM lowering and linking.
+  // File paths to external bitcode libraries specified via command line.
   SmallVector<std::string> bitcodeLibs = {};
-  SmallVector<DenseResourceElementsAttr> packageBitcodeModules = {};
 
   bool verboseOutput = false;
 

@@ -17,6 +17,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/ModuleSummaryIndex.h"
 #include <filesystem>
 #include <string>
@@ -89,6 +90,11 @@ public:
   /// Get whether compilation is for JIT.
   bool getIsJIT() const { return isJIT; }
 
+  /// Get the bitcode libraries (mutable for usage tracking and modification).
+  SmallVector<std::pair<bool, Attribute>> &getBitcodeLibs() {
+    return bitcodeLibs;
+  }
+
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(
@@ -154,6 +160,10 @@ private:
 
   /// Name of the system linker.
   std::string linker;
+
+  /// Current bitcode libraries with usage tracking.
+  /// Each pair contains: (used_flag, library_attribute).
+  SmallVector<std::pair<bool, Attribute>> bitcodeLibs;
 };
 
 /// Setup the machine properties from the provided target.
