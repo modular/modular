@@ -12,6 +12,9 @@ from enum import Enum
 
 import msgspec
 
+LORA_REQUEST_ENDPOINT = "lora_request"
+LORA_RESPONSE_ENDPOINT = "lora_response"
+
 
 class LoRAType(Enum):
     """
