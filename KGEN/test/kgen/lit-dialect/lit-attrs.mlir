@@ -11,7 +11,14 @@
 // CHECK-SAME: pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
 "pog.metadata"() {
   pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
-  pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
+  pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>,
+  pog3 = #lit.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, {
+    <1, loc("file.mojo":10:5), "Constraint must hold">
+  }>,
+  pog4 = #lit.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, {
+    <1, loc("file.mojo":10:5), "Constraint must hold">,
+    <pog1, loc("file.mojo":11:5), "Another constraint must hold">
+  }>
 } : () -> ()
 
 // CHECK-LABEL: "pogs.with_defaults"

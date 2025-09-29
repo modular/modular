@@ -107,7 +107,8 @@ def SymbolAttr : DialectAttribute<(attr
 def PogMetadataAttr : DialectAttribute<(attr
   StringAttr:$name,
   EnumAttr<"PassingKind">:$passingKind,
-  EnumAttr<"VariadicKind">:$variadic
+  EnumAttr<"VariadicKind">:$variadic,
+  ConcreteAttrArray<"ConstraintAttr">:$constraints
 )>;
 
 def PogListAttr : DialectAttribute<(attr
