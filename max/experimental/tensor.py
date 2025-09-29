@@ -44,12 +44,14 @@ import gc
 import sys
 import warnings
 import weakref
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from itertools import chain
 from typing import Any, TypeVar
 
+import numpy as np
+import numpy.typing as npt
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
 
@@ -65,7 +67,6 @@ from ..graph import (
     ops,
 )
 from ..graph.graph import _location
-from ..graph.ops.constant import NestedArray, Number
 from . import functional as F
 
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
@@ -223,19 +224,25 @@ class Tensor(DLPackArray, HasTensorValue):
     @classmethod
     def constant(
         cls,
-        value: DLPackArray | NestedArray | Number,
+        value: npt.NDArray[np.number[Any]]
+        | int
+        | float
+        | Sequence[int | float],
         *,
         dtype: DType | None = None,
         device: Device | None = None,
     ) -> Tensor:
         dtype, device = defaults(dtype, device)
-        return F.constant(value, dtype, device)
+        if hasattr(value, "__iter__") and not isinstance(value, np.ndarray):
+            value = np.array(value, dtype.to_numpy())
+
+        return F.constant(value, dtype, graph.DeviceRef.from_device(device))
 
     @classmethod
     def full(
         cls,
         shape: ShapeLike,
-        value: Number,
+        value: int | float,
         *,
         dtype: DType | None = None,
         device: Device | None = None,
@@ -245,7 +252,7 @@ class Tensor(DLPackArray, HasTensorValue):
         )
 
     @classmethod
-    def full_like(cls, type: TensorType, value: Number) -> Tensor:
+    def full_like(cls, type: TensorType, value: int | float) -> Tensor:
         return cls.full(
             type.shape,
             value=value,
