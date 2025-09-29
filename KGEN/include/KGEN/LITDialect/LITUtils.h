@@ -91,6 +91,16 @@ void printOptionalParameterSpec(AsmPrinter &p,
                                 PogListAttr paramListAttr,
                                 ParameterEvaluator &evaluator);
 
+/// Parse a list of constraint attributes.
+ParseResult
+parseOptionalConstraintsList(AsmParser &p,
+                             SmallVectorImpl<ConstraintAttr> &constraints);
+
+/// Print a list of constraint attributes.
+void printOptionalConstraintsList(AsmPrinter &p,
+                                  ArrayRef<ConstraintAttr> constraints,
+                                  ParameterEvaluator *evaluator = nullptr);
+
 /// Parse an optional 'where' clause containing constraint attributes.
 ParseResult
 parseOptionalWhereClauses(AsmParser &p,

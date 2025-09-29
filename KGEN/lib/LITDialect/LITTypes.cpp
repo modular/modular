@@ -1003,7 +1003,8 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadics, origArgPackConvention,
-                       origVariadicConvention),
+                       origVariadicConvention,
+                       /*constraints=*/{}),
       numOriginDecls, captureOrigins, isNestedOriginExclusivityCheckingDisabled,
       constraints);
   signature =

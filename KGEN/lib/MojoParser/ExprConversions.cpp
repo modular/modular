@@ -262,13 +262,17 @@ static FnType getReducedFnType(FnType sig) {
   MLIRContext *ctx = sig.getContext();
 
   auto origPogListAttr = sig.getArgListAttrs();
+  ArrayRef<PogMetadataAttr> pogs = origPogListAttr.getPogs();
 
   SmallVector<PassingKind> passingKinds(sig.getNumArguments(),
                                         PassingKind::PosOnly);
   SmallVector<StringAttr> names(sig.getNumArguments(), StringAttr::get(ctx));
+  SmallVector<SmallVector<ConstraintAttr>> constraints;
   SmallVector<VariadicKind> variadics;
-  for (size_t i = 0; i < sig.getNumArguments(); i++)
+  for (size_t i = 0; i < sig.getNumArguments(); i++) {
     variadics.push_back(origPogListAttr.getVariadicKind(i));
+    constraints.emplace_back(pogs[i].getConstraints());
+  }
 
   // The passing kinds for results slots must be implicit;
   if (sig.hasMemoryOnlyResult())
@@ -276,10 +280,10 @@ static FnType getReducedFnType(FnType sig) {
   if (sig.isThrows())
     passingKinds.end()[-2] = PassingKind::Implicit;
 
-  auto newPogListAttr =
-      PogListAttr::get(ctx, names, passingKinds, {}, {}, variadics,
-                       origPogListAttr.getOrigPackConvention(),
-                       origPogListAttr.getOrigVariadicConvention());
+  auto newPogListAttr = PogListAttr::get(
+      ctx, names, passingKinds, {}, {}, variadics,
+      origPogListAttr.getOrigPackConvention(),
+      origPogListAttr.getOrigVariadicConvention(), constraints);
 
   auto metadata = FnMetadataAttr::get(
       newPogListAttr, sig.getNumImplicitOriginDecls(),

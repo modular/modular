@@ -160,6 +160,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   SmallVector<VariadicKind> argsVariadic;
   std::optional<ArgConvention> origPackConvention;
   std::optional<ArgConvention> origVariadicConvention;
+  SmallVector<SmallVector<ConstraintAttr>> constraints;
 
   bool foundPosDefault = false;
   bool foundKwOnlyDefault = false;
@@ -226,6 +227,11 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
                            "expected positional parameter with default value");
       }
     }
+
+    SmallVector<ConstraintAttr> &argConstraints = constraints.emplace_back();
+    if (failed(parseOptionalConstraintsList(p, argConstraints)))
+      return failure();
+
     return success();
   };
 
@@ -238,30 +244,49 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogListAttr::get(ctx, paramNames, paramPassingKinds,
-                                   defaultPosParams, defaultKwOnlyParams,
-                                   argsVariadic, std::move(origPackConvention),
-                                   std::move(origVariadicConvention));
+  paramListAttr = PogListAttr::get(
+      ctx, paramNames, paramPassingKinds, defaultPosParams, defaultKwOnlyParams,
+      argsVariadic, std::move(origPackConvention),
+      std::move(origVariadicConvention), constraints);
   return success();
+}
+
+ParseResult LIT::parseOptionalConstraintsList(
+    AsmParser &p, SmallVectorImpl<ConstraintAttr> &constraints) {
+  if (p.parseOptionalLBrace())
+    return success();
+  do {
+    auto constraint =
+        llvm::cast_if_present<ConstraintAttr>(ConstraintAttr::parse(p, {}));
+    if (!constraint)
+      return failure();
+    constraints.push_back(cast<ConstraintAttr>(constraint));
+  } while (succeeded(p.parseOptionalComma()));
+  if (p.parseRBrace())
+    return failure();
+  return success();
+}
+
+void LIT::printOptionalConstraintsList(AsmPrinter &p,
+                                       ArrayRef<ConstraintAttr> constraints,
+                                       ParameterEvaluator *evaluator) {
+  if (constraints.empty())
+    return;
+  p << " {";
+  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
+    if (evaluator)
+      constraint =
+          cast<ConstraintAttr>(evaluator->getReboundAttribute(constraint));
+    constraint.print(p);
+  });
+  p << "}";
 }
 
 ParseResult
 LIT::parseOptionalWhereClauses(AsmParser &p,
                                SmallVectorImpl<ConstraintAttr> &constraints) {
-  // Parse an optional 'requires' clause.
-  if (succeeded(p.parseOptionalKeyword("where"))) {
-    if (p.parseLBrace())
-      return failure();
-    do {
-      auto constraint =
-          llvm::cast_if_present<ConstraintAttr>(ConstraintAttr::parse(p, {}));
-      if (!constraint)
-        return failure();
-      constraints.push_back(cast<ConstraintAttr>(constraint));
-    } while (succeeded(p.parseOptionalComma()));
-    if (p.parseRBrace())
-      return failure();
-  }
+  if (succeeded(p.parseOptionalKeyword("where")))
+    return parseOptionalConstraintsList(p, constraints);
   return success();
 }
 
@@ -270,14 +295,8 @@ void LIT::printOptionalWhereClauses(AsmPrinter &p,
                                     ParameterEvaluator *evaluator) {
   if (constraints.empty())
     return;
-  p << " where {";
-  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
-    if (evaluator)
-      constraint =
-          cast<ConstraintAttr>(evaluator->getReboundAttribute(constraint));
-    constraint.print(p);
-  });
-  p << "}";
+  p << " where";
+  printOptionalConstraintsList(p, constraints, evaluator);
 }
 
 ParseResult LIT::parseConventionAndVariadicness(
@@ -355,6 +374,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   DefaultValueHandler defaultHandler(paramListAttr);
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
+  ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
   auto printWithDefault = [&](ParamDeclAttr decl) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
@@ -372,6 +392,8 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
       printParamValue(p, evaluator.getReboundAttribute(defaultOr));
     }
 
+    printOptionalConstraintsList(p, pogs[idx].getConstraints(), &evaluator);
+
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(idx++);
   };
@@ -388,6 +410,7 @@ ParseResult LIT::parseOptionalParamSignature(
   SmallVector<TypedAttr> defaultKwOnlyParams;
   SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origVariadicConvention;
+  SmallVector<SmallVector<ConstraintAttr>> constraints;
 
   // Parse the input parameter types and optional default values.
   llvm::SMLoc startLoc = p.getCurrentLocation();
@@ -424,6 +447,11 @@ ParseResult LIT::parseOptionalParamSignature(
       else
         defaultPosParams.emplace_back(defaultVal);
     }
+
+    SmallVector<ConstraintAttr> &argConstraints = constraints.emplace_back();
+    if (failed(parseOptionalConstraintsList(p, argConstraints)))
+      return failure();
+
     return success();
   };
 
@@ -436,10 +464,10 @@ ParseResult LIT::parseOptionalParamSignature(
   if (parseBody && failed(parseBody()))
     return failure();
 
-  paramListAttr =
-      PogListAttr::get(p.getContext(), paramNames, paramPassingKinds,
-                       defaultPosParams, defaultKwOnlyParams, argVariadics,
-                       std::nullopt, std::move(origVariadicConvention));
+  paramListAttr = PogListAttr::get(
+      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
+      defaultKwOnlyParams, argVariadics, std::nullopt,
+      std::move(origVariadicConvention), constraints);
   return success();
 }
 
