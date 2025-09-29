@@ -21,6 +21,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
     RaggedKVCacheInputs,
 )
+from max.nn.kv_cache.paged_cache.block_manager import InsufficientBlocksError
 from max.pipelines.core import TextContext
 from test_common.context_utils import create_text_context
 
@@ -206,7 +207,7 @@ async def test_prefix_caching_with_no_release() -> None:
 
     # Try to assign and release more than 128 blocks.
     # We expect to run out of blocks here.
-    with pytest.raises(RuntimeError):
+    with pytest.raises(InsufficientBlocksError):
         for _ in range(1000):
             prompt = gen_prompt(16)
             batch = [create_text_context(prompt)]
