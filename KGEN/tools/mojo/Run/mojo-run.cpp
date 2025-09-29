@@ -375,7 +375,7 @@ static int run(const State &subcommandState) {
 #ifdef KGEN_ENABLE_PASS_OPTIONS
   const char *cKGENOptions = "KGEN_OPTIONS";
   KGEN::KGENPassCLOptions::registerOptions();
-  llvm::cl::ParseCommandLineOptions(0, &cKGENOptions, "", nullptr,
+  llvm::cl::ParseCommandLineOptions(0, &cKGENOptions, "", nullptr, nullptr,
                                     cKGENOptions);
 #endif // KGEN_ENABLE_PASS_OPTIONS
 
