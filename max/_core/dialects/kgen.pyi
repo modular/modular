@@ -633,6 +633,53 @@ class GetWitnessAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class LLVMBitcodeLibArrayAttr(max._core.Attribute):
+    """
+    The `#kgen.llvm.bitcode.libs` attribute represents an array of LLVM
+    bitcode libraries, each with their own usage tracking. This is typically
+    attached to ModuleOp to store all bitcode libraries that should be
+    linked during compilation.
+    """
+
+    def __init__(self, value: Sequence[LLVMBitcodeLibAttr]) -> None: ...
+    @property
+    def value(self) -> Sequence[LLVMBitcodeLibAttr]: ...
+
+class LLVMBitcodeLibAttr(max._core.Attribute):
+    """
+    The `#kgen.llvm.bitcode.lib` attribute represents a single LLVM bitcode
+    library with usage tracking. It contains:
+    - `used`: A boolean flag indicating whether this library was used
+    - `library`: The actual bitcode library, which can be either:
+      - StringAttr: For bitcode libraries passed via command line
+      - DenseResourceElementsAttr: For bitcode libraries from packages
+
+    Example:
+    ```mlir
+    #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
+    #kgen.llvm.bitcode.lib<used = true, library = dense_resource<data> : ...>
+    ```
+    """
+
+    @overload
+    def __init__(self, used: bool, library: max._core.Attribute) -> None: ...
+    @overload
+    def __init__(
+        self,
+        used: max._core.dialects.builtin.BoolAttr,
+        library: max._core.Attribute,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        used: max._core.dialects.builtin.BoolAttr,
+        library: max._core.Attribute,
+    ) -> None: ...
+    @property
+    def used(self) -> max._core.dialects.builtin.BoolAttr: ...
+    @property
+    def library(self) -> max._core.Attribute | None: ...
+
 class LinkDependencyArrayAttr(max._core.Attribute):
     """
     The `#kgen.link.dependencies` attribute represents a list of link
