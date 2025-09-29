@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import has_nvidia_gpu_accelerator
+from sys.info import _is_amd_cdna, _is_amd_rdna
 
 from benchmark import Bench
 from buffer.dimlist import DimList
@@ -96,16 +97,19 @@ struct test_matmul[
         ctx.enqueue_copy(self.b_device_buffer, self.b_host.tensor.data)
         ctx.enqueue_memset(self.c_device_buffer_ref, 0)
 
-        run_cublas[dtype, enable_tc](
-            m,
-            ctx,
-            self.M,
-            self.N,
-            self.K,
-            self.a_device_buffer.unsafe_ptr(),
-            self.b_device_buffer.unsafe_ptr(),
-            self.c_device_buffer_ref.unsafe_ptr(),
-        )
+        # Skip hipblaslt comparison on RDNA (missing libraries)
+        @parameter
+        if not _is_amd_rdna():
+            run_cublas[dtype, enable_tc](
+                m,
+                ctx,
+                self.M,
+                self.N,
+                self.K,
+                self.a_device_buffer.unsafe_ptr(),
+                self.b_device_buffer.unsafe_ptr(),
+                self.c_device_buffer_ref.unsafe_ptr(),
+            )
 
         ctx.enqueue_copy(self.c_host_ref.tensor.data, self.c_device_buffer_ref)
 
@@ -142,12 +146,16 @@ struct test_matmul[
         gemm(m, ctx, a, b, c)
 
         ctx.enqueue_copy(self.c_host.tensor.data, self.c_device_buffer)
-        assert_almost_equal(
-            self.c_host_ref.tensor,
-            self.c_host.tensor,
-            atol=0.0001,
-            rtol=0.01,
-        )
+
+        # Only compare with reference if we ran cublas/hipblaslt
+        @parameter
+        if not _is_amd_rdna():
+            assert_almost_equal(
+                self.c_host_ref.tensor,
+                self.c_host.tensor,
+                atol=0.0001,
+                rtol=0.01,
+            )
 
 
 def main():
@@ -193,9 +201,10 @@ def main():
             DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
         ]
 
+        # MMA dimensions: NVIDIA (16x8x8), CDNA (16x16x4), RDNA WMMA (16x16x16)
         alias MMA_M = 16
         alias MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
-        alias MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
+        alias MMA_K = 8 if has_nvidia_gpu_accelerator() else (4 if _is_amd_cdna() else 16)
 
         alias k_tc = run_gemm_kernel_tc[
             DType.float32,
@@ -218,6 +227,10 @@ def main():
         test.run_test[k4](m)
         test.run_test[k5](m)
         test.run_test[k6](m)
-        test_tc.run_test[k_tc](m)
+
+        # Skip tensor core tests on RDNA (no float32 MMA support)
+        @parameter
+        if not _is_amd_rdna():
+            test_tc.run_test[k_tc](m)
 
     m.dump_report()
