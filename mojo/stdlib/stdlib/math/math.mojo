@@ -23,6 +23,7 @@ from sys import (
     CompilationTarget,
     bit_width_of,
     is_amd_gpu,
+    is_apple_gpu,
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
@@ -1527,6 +1528,10 @@ fn cos[
         return llvm_intrinsic["llvm.cos", __type_of(x), has_side_effect=False](
             x
         )
+    elif is_apple_gpu():
+        return llvm_intrinsic[
+            "llvm.air.cos", __type_of(x), has_side_effect=False
+        ](x)
     else:
         return _call_libm["cos"](x)
 
@@ -1569,6 +1574,10 @@ fn sin[
         return llvm_intrinsic["llvm.sin", __type_of(x), has_side_effect=False](
             x
         )
+    elif is_apple_gpu():
+        return llvm_intrinsic[
+            "llvm.air.cos", __type_of(x), has_side_effect=False
+        ](x)
     else:
         return _call_libm["sin"](x)
 
