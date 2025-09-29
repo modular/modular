@@ -505,7 +505,7 @@ static ParseResult parseLITFunctionSignature(
     return success();
   };
 
-  // Parse the parameter spec, which does NOT include requires clauses.
+  // Parse the parameter spec.
   PogListAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
@@ -587,7 +587,8 @@ static ParseResult parseLITFunctionSignature(
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds,
                        defaultPosArgs, defaultKwOnlyArgs, argVariadics,
-                       origArgPackConvention, origVariadicConvention),
+                       origArgPackConvention, origVariadicConvention,
+                       /*constraints=*/{}),
       originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled, constraints);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(

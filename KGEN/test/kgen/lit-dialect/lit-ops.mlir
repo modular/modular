@@ -589,3 +589,15 @@ lit.fn @has_where<x: index>() -> !kgen.none where {<ge(x, 2), #loc, "x must be g
   lit.return %none : !kgen.none
   lit.end_fn
 }
+
+// CHECK-LABEL: lit.fn @has_pogs_requires
+// CHECK-SAME: x {<ge(x, 2), #loc, "x must be greater than 2">},
+// CHECK-SAME: y {<lt(y, 10), #loc1>, <lt(x, 10), #loc1>}
+lit.fn @has_pogs_requires<
+  x: index {<ge(x, 2), #loc, "x must be greater than 2">},
+  y: index {<lt(y, 10), #loc1>, <lt(x, 10), #loc1>}
+>() -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_fn
+}

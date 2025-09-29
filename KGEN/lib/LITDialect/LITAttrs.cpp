@@ -77,10 +77,12 @@ PogListAttr PogListAttr::get(
     ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
     ArrayRef<TypedAttr> defaultKwOnly, ArrayRef<VariadicKind> argVariadics,
     std::optional<ArgConvention> origPackConvention,
-    std::optional<ArgConvention> origVariadicConvention) {
+    std::optional<ArgConvention> origVariadicConvention,
+    ArrayRef<SmallVector<ConstraintAttr>> constraints) {
   return PogListAttr::get(
-      context, toPogs(names, passingKinds, argVariadics), defaultPos,
-      defaultKwOnly, origPackConvention.value_or(ArgConvention::ByRefError),
+      context, toPogs(names, passingKinds, argVariadics, constraints),
+      defaultPos, defaultKwOnly,
+      origPackConvention.value_or(ArgConvention::ByRefError),
       origVariadicConvention.value_or(ArgConvention::ReadMem));
 }
 
@@ -214,18 +216,26 @@ size_t PogListAttr::getNumImplicit() const {
 SmallVector<PogMetadataAttr>
 PogListAttr::toPogs(ArrayRef<StringAttr> names,
                     ArrayRef<PassingKind> passingKinds,
-                    ArrayRef<VariadicKind> variadics) {
+                    ArrayRef<VariadicKind> variadics,
+                    ArrayRef<SmallVector<ConstraintAttr>> constraints) {
   SmallVector<VariadicKind> variadicTmp;
+  SmallVector<SmallVector<ConstraintAttr>> constraintTmp;
   // If no variadicness is specified, assume all args are non-variadic.
   if (variadics.empty()) {
     variadicTmp.resize(names.size(), VariadicKind::None);
     variadics = variadicTmp;
   }
+  // If no constraints are specified, expand to empty constraints.
+  if (constraints.empty()) {
+    constraintTmp.resize(names.size(), {});
+    constraints = constraintTmp;
+  }
 
   SmallVector<PogMetadataAttr> pogs;
-  for (auto [name, passingKind, variadic] :
-       llvm::zip(names, passingKinds, variadics))
-    pogs.push_back(PogMetadataAttr::get(name, passingKind, variadic));
+  for (auto [name, passingKind, variadic, argConstraints] :
+       llvm::zip(names, passingKinds, variadics, constraints))
+    pogs.push_back(
+        PogMetadataAttr::get(name, passingKind, variadic, argConstraints));
   return pogs;
 }
 

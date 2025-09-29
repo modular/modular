@@ -189,7 +189,8 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
                      "ArrayRef<VariadicKind>":$variadics,
                      "std::optional<ArgConvention>":$elementConventions,
-                     "std::optional<ArgConvention>":$origVariadicConvention)>
+                     "std::optional<ArgConvention>":$origVariadicConvention,
+                     "ArrayRef<SmallVector<ConstraintAttr>>":$constraints)>
   ];
 
   let extraClassDeclaration = [{
@@ -232,7 +233,8 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     /// and variadic indices.
     static SmallVector<PogMetadataAttr> toPogs(
       ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
-      ArrayRef<VariadicKind> variadics);
+      ArrayRef<VariadicKind> variadics,
+      ArrayRef<SmallVector<ConstraintAttr>> constraints);
 
     /// Get a new metadata attribute for a generator with the given number of
     /// positional input parameters prepended to the generator. An additional

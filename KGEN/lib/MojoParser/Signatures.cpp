@@ -915,10 +915,12 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 }
 
 PogListAttr TypeCheckedParamList::getParamListAttr() const {
-  return PogListAttr::get(
-      shared.getContext(),
-      PogListAttr::toPogs(names, passingKinds, variadicKinds), defaultPosParams,
-      defaultKwOnlyParams, ArgConvention::ByRefError, ArgConvention::ReadMem);
+  return PogListAttr::get(shared.getContext(),
+                          PogListAttr::toPogs(names, passingKinds,
+                                              variadicKinds,
+                                              /*constraints=*/{}),
+                          defaultPosParams, defaultKwOnlyParams,
+                          ArgConvention::ByRefError, ArgConvention::ReadMem);
 }
 
 //===----------------------------------------------------------------------===//
