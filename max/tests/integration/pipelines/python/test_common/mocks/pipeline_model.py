@@ -86,6 +86,7 @@ class MockPipelineModel(PipelineModel):
                 config=self.pipeline_config.lora_config,
                 base_model_path=pipeline_config.model_config.model_path,
                 base_dtype=self.encoding.dtype,
+                zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
             )
             if self.pipeline_config.lora_config
             and self.pipeline_config.lora_config.enable_lora
