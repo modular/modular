@@ -1275,6 +1275,19 @@ struct _GridDim(Defaultable):
                     return 2
 
             return _get_gcn_idx[_get_offset(), DType.uint32]()
+        elif is_apple_gpu():
+            alias intrinsic_name = "llvm.air.threads_per_grid." + dim
+            var gridDim = UInt(
+                Int(
+                    llvm_intrinsic[
+                        intrinsic_name, Int32, has_side_effect=False
+                    ]()
+                )
+            )
+            # Metal passes grid dimention as a gridDim.dim * blockDim.dim.
+            # To make things compatible with NVidia and AMDGPU, divide result
+            # by block_dim.dim
+            return gridDim // block_dim.__getattr__[dim]()
         else:
             return CompilationTarget.unsupported_target_error[
                 UInt,
