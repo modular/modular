@@ -34,7 +34,7 @@ from gpu.host import DeviceBuffer, HostBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import AMDBufferResource
-from gpu.memory import CacheEviction, Fill, async_copy
+from gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
@@ -6967,6 +6967,7 @@ fn _copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor,
     src: LayoutTensor,
@@ -7016,7 +7017,9 @@ fn _copy_dram_to_local[
                 alias dst_frag_idx = Layout.col_major(M, N)([i, j])
                 alias src_frag_idx = Int32(src_fragments.layout([i, j]))
                 dst[dst_frag_idx, 0] = rebind[dst.element_type](
-                    buffer.load[src.dtype, simd_width](
+                    buffer.load[
+                        src.dtype, simd_width, cache_policy=cache_policy
+                    ](
                         src_frag_offset,
                         scalar_offset=src_frag_idx,
                     )
@@ -7035,6 +7038,7 @@ fn copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor,
     src: LayoutTensor,
@@ -7065,6 +7069,8 @@ fn copy_dram_to_local[
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
         block_dim_count: The number of dimensions in the thread block.
+        cache_policy: The cache policy to use for the copy operation.
+            Defaults to `CacheOperation.ALWAYS`.
 
     Args:
         dst: The destination tensor in register memory (LOCAL address space).
@@ -7085,7 +7091,11 @@ fn copy_dram_to_local[
     var buffer = make_amd_buffer_resource(src_base)
 
     _copy_dram_to_local[
-        src_thread_layout, num_threads, thread_scope, block_dim_count
+        src_thread_layout,
+        num_threads,
+        thread_scope,
+        block_dim_count,
+        cache_policy,
     ](dst, src, buffer, offset)
 
 
@@ -7095,6 +7105,7 @@ fn _copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](dst: LayoutTensor, src_iter: LayoutTensorIter, buffer: AMDBufferResource):
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     var src_tensor = src_iter[].vectorize[
@@ -7102,7 +7113,11 @@ fn _copy_dram_to_local[
     ]()
 
     _copy_dram_to_local[
-        src_thread_layout, num_threads, thread_scope, block_dim_count
+        src_thread_layout,
+        num_threads,
+        thread_scope,
+        block_dim_count,
+        cache_policy,
     ](dst, src_tensor, buffer, UInt(src_iter.offset))
 
 
@@ -7112,6 +7127,7 @@ fn copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](dst: LayoutTensor, src_iter: LayoutTensorIter, bounds: UInt32):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
@@ -7132,6 +7148,8 @@ fn copy_dram_to_local[
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
         block_dim_count: The number of dimensions in the thread block.
+        cache_policy: The cache policy to use for the copy operation.
+            Defaults to `CacheOperation.ALWAYS`.
 
     Args:
         dst: The destination tensor in register memory (LOCAL address space).
@@ -7153,7 +7171,11 @@ fn copy_dram_to_local[
     var buffer = make_amd_buffer_resource(src_iter, Int(bounds))
 
     _copy_dram_to_local[
-        src_thread_layout, num_threads, thread_scope, block_dim_count
+        src_thread_layout,
+        num_threads,
+        thread_scope,
+        block_dim_count,
+        cache_policy,
     ](dst, src_iter, buffer)
 
 
