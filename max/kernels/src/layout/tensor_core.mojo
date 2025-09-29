@@ -1421,6 +1421,12 @@ fn get_mma_shape[
                 return shape_16x16x16
             elif accum_type is DType.float32 and input_type.is_float8():
                 return shape_16x16x32
+            elif accum_type is DType.int32 and (
+                input_type is DType.int8 or input_type is DType.uint8
+            ):
+                return shape_16x16x16
+            elif accum_type is DType.int32 and (input_type is DType._uint4):
+                return shape_16x16x16
             else:
                 constrained[False, "Unsupported RDNA mma shape."]()
                 return shape_null
