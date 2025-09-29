@@ -16,7 +16,10 @@ from max.nn.kv_cache.paged_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
 from max.serve.config import generate_zmq_ipc_path
 from max.serve.queue.zmq_queue import ClientIdentity
-from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import (
+    PrefillRequest,
+    PrefillResponse,
+)
 from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
     TokenGenerationSchedulerConfig,
