@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """ops.range tests."""
 
+import numpy as np
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
@@ -249,9 +250,11 @@ def test_range_non_scalar_inputs_specific_error() -> None:
         ValueError, match="range expected scalar values as inputs!"
     ):
         with Graph("range_non_scalar", input_types=()) as graph:
-            start_val = ops.constant([0], DType.int32, device=DeviceRef.CPU())
+            start_val = ops.constant(
+                np.array([0]), DType.int32, device=DeviceRef.CPU()
+            )  # Non-scalar
             out = ops.range(
-                start_val,  # shape [1], non-scalar
+                start_val,
                 5,
                 1,
                 out_dim=5,

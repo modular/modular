@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import numpy as np
 from max.dtype import DType
 from max.mlir.dialects import mo
 
@@ -45,11 +46,8 @@ def split(
         `axis`, where the size is given by the corresponding element in
         `split_sizes`.
     """
-    if not split_sizes:
-        return []  # op will assert on empty splits
-
     x = TensorValue(x)
-    sizes = [int(Dim(size)) for size in split_sizes]
+    split_sizes = [Dim(size) for size in split_sizes]
 
     if not (-x.rank <= axis < x.rank):
         raise IndexError(f"Axis out of range {axis=}, {x.rank=}")
@@ -57,27 +55,30 @@ def split(
     if axis < 0:
         axis += x.rank
 
-    if sum(sizes) != x.shape[axis]:
+    if sum(int(size) for size in split_sizes) != x.shape[axis]:
         raise ValueError(
             "Split sizes must sum to dimension value; "
-            f"{x.shape[axis]=} != sum({sizes=})"
+            f"{x.shape[axis]=} != sum({split_sizes=})"
         )
 
-    if any(size < 0 for size in sizes):
-        raise ValueError(f"Split sizes must be positive: {sizes=}")
+    if any(int(size) < 0 for size in split_sizes):
+        raise ValueError(f"Split sizes must be positive: {split_sizes=}")
 
-    def split_type(dim: int):
+    def split_type(dim: Dim):
         shape = Shape(x.shape)
-        shape[axis] = Dim(dim)
+        shape[axis] = dim
         return TensorType(x.dtype, shape, x.device)
 
-    result_types = [split_type(size) for size in sizes]
+    result_types = [split_type(Dim(size)) for size in split_sizes]
+
+    if not split_sizes:
+        return []  # op will assert on empty splits
 
     outputs = Graph.current._add_op(
         mo.split,
         result_types,
         x,
-        constant(sizes, DType.int64, DeviceRef.CPU()),
+        constant(np.array(split_sizes), DType.int64, DeviceRef.CPU()),
         constant(axis, DType.int64, DeviceRef.CPU()),
     )
     return [out.tensor for out in outputs]

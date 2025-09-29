@@ -14,171 +14,126 @@
 
 import numpy as np
 import pytest
-from conftest import (
-    float_dtypes,
-    int_value_in_range,
-    integral_dtypes,
-    value_in_range,
-    value_out_of_range,
-)
-from hypothesis import assume, given
+from hypothesis import event, given
 from hypothesis import strategies as st
-from max.driver import CPU, Tensor
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, dtype_promotion
-
-shared_dtypes = st.shared(st.from_type(DType))
-shared_float_dtypes = st.shared(float_dtypes())
-shared_integral_dtypes = st.shared(integral_dtypes())
+from max.graph import Graph, TensorType, dtype_promotion
 
 
-@given(dtype=integral_dtypes(), scalar=...)
-def test_promote_weak_dtypes__python_float__int_dtype(
-    dtype: DType, scalar: float
+@given(graph_type=..., scalar=...)
+def test_promote_weak_dtypes__python_float(
+    graph_type: TensorType, scalar: float
 ) -> None:
-    with Graph("promote_weak_dtypes"):
-        with pytest.raises(ValueError, match="Unsafe cast"):
-            _ = dtype_promotion._promote_to_strong(
-                scalar, dtype, DeviceRef.CPU()
+    with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
+        if graph_type.dtype in [
+            DType.bfloat16,
+            DType.float16,
+            DType.float32,
+            DType.float64,
+        ]:
+            # float to float will succeed.
+            v1, v2 = dtype_promotion._promote_weak_dtypes(
+                graph.inputs[0].tensor,
+                scalar,
             )
 
+            assert v1.dtype == graph_type.dtype
+            assert v2.dtype == graph_type.dtype
+        else:
+            # float to int will fail.
+            with pytest.raises(ValueError, match="Unsafe cast"):
+                v1, v2 = dtype_promotion._promote_weak_dtypes(
+                    graph.inputs[0].tensor,
+                    scalar,
+                )
 
-@given(dtype=float_dtypes(), scalar=...)
-def test_promote_weak_dtypes__python_float(dtype: DType, scalar: float) -> None:
-    with Graph("promote_weak_dtypes"):
-        result = dtype_promotion._promote_to_strong(
-            scalar, dtype, DeviceRef.CPU()
-        )
-        assert result.dtype == dtype
-        assert result.shape == []
 
-
-@given(dtype=shared_dtypes, scalar=shared_dtypes.flatmap(value_in_range))
-def test_promote_weak_dtypes__python_int__in_range(
-    dtype: DType, scalar: int
+@given(graph_type=..., scalar=...)
+def test_promote_weak_dtypes__python_int(
+    graph_type: TensorType, scalar: int
 ) -> None:
-    with Graph("promote_weak_dtypes"):
-        result = dtype_promotion._promote_to_strong(
-            scalar, dtype, DeviceRef.CPU()
-        )
-        assert result.dtype == dtype
-        assert result.shape == []
-
-
-@given(dtype=shared_dtypes, scalar=shared_dtypes.flatmap(value_out_of_range))
-def test_promote_weak_dtypes__python_int__out_of_range(
-    dtype: DType, scalar: int
-) -> None:
-    with Graph("promote_weak_dtypes"):
-        with pytest.raises(ValueError, match="Unsafe cast"):
-            _ = dtype_promotion._promote_to_strong(
-                scalar, dtype, DeviceRef.CPU()
+    with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
+        try:
+            v1, v2 = dtype_promotion._promote_weak_dtypes(
+                graph.inputs[0].tensor,
+                scalar,
             )
 
-
-@given(dtype=float_dtypes(), scalar=...)
-def test_promote_weak_dtypes__numpy_float(dtype: DType, scalar: float) -> None:
-    with Graph("promote_weak_dtypes"):
-        np_const = np.array(scalar)
-        result = dtype_promotion._promote_to_strong(
-            np_const, dtype, DeviceRef.CPU()
-        )
-        assert result.dtype == dtype
-        assert result.shape == []
+            assert v1.dtype == graph_type.dtype
+            assert v2.dtype == graph_type.dtype
+            event("types promote")
+        except ValueError as e:
+            assert "Unsafe cast" in str(e)
+            event("types don't promote")
 
 
-@given(dtype=integral_dtypes(), scalar=...)
-def test_promote_weak_dtypes__numpy_float_to_int(
-    dtype: DType, scalar: float
+# TODO: This should also sample from bfloat16, but numpy doesn't support bfloat16 arrays.
+float_dtype = st.sampled_from([DType.float16, DType.float32, DType.float64])
+
+
+@given(graph_type=..., np_dtype=float_dtype, value=...)
+def test_promote_weak_dtypes__np_float(
+    graph_type: TensorType, np_dtype: DType, value: float
 ) -> None:
-    with Graph("promote_weak_dtypes"):
-        np_const = np.array(scalar)
-        with pytest.raises(ValueError, match="Unsafe cast"):
-            _ = dtype_promotion._promote_to_strong(
-                np_const, dtype, DeviceRef.CPU()
+    with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
+        np_const = np.array(value).astype(np_dtype.to_numpy())
+        if graph_type.dtype in [
+            DType.bfloat16,
+            DType.float16,
+            DType.float32,
+            DType.float64,
+        ]:
+            # float to float will succeed.
+            v1, v2 = dtype_promotion._promote_weak_dtypes(
+                graph.inputs[0].tensor,
+                np_const,
             )
 
+            assert v1.dtype == graph_type.dtype
+            assert v2.dtype == graph_type.dtype
+        else:
+            # float to int will fail.
+            with pytest.raises(ValueError, match="Unsafe cast"):
+                v1, v2 = dtype_promotion._promote_weak_dtypes(
+                    graph.inputs[0].tensor,
+                    np_const,
+                )
 
-@given(dtype=shared_dtypes, scalar=shared_dtypes.flatmap(int_value_in_range))
-def test_promote_weak_dtypes__numpy_int__in_range(
-    dtype: DType, scalar: int
+
+int_dtype = st.sampled_from(
+    [
+        DType.bool,
+        DType.int8,
+        DType.int16,
+        DType.int32,
+        DType.int64,
+        DType.uint8,
+        DType.uint16,
+        DType.uint32,
+        DType.uint64,
+    ]
+)
+
+
+@given(
+    graph_type=...,
+    np_dtype=int_dtype,
+    value=st.integers(-(2**63), 2**63 - 1),
+)
+def test_promote_weak_dtypes__np_int(
+    graph_type: TensorType, np_dtype: DType, value: int
 ) -> None:
-    # Need to fit the value in a numpy array
-    assume(-(2**63) <= scalar < 2**63)
-    with Graph("promote_weak_dtypes"):
-        np_const = np.array(scalar, dtype=np.int64)
-        result = dtype_promotion._promote_to_strong(
-            np_const, dtype, DeviceRef.CPU()
-        )
-        assert result.dtype == dtype
-        assert result.shape == []
-
-
-@given(dtype=shared_dtypes, scalar=shared_dtypes.flatmap(value_out_of_range))
-def test_promote_weak_dtypes__numpy_int__out_of_range(
-    dtype: DType, scalar: int
-) -> None:
-    # Need to fit the value in a numpy array
-    assume(-(2**63) <= scalar < 2**63)
-    with Graph("promote_weak_dtypes"):
-        np_const = np.array(scalar, dtype=np.int64)
-        with pytest.raises(ValueError, match="Unsafe cast"):
-            _ = dtype_promotion._promote_to_strong(
-                np_const, dtype, DeviceRef.CPU()
+    with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
+        np_const = np.array(value).astype(np_dtype.to_numpy())
+        try:
+            v1, v2 = dtype_promotion._promote_weak_dtypes(
+                graph.inputs[0].tensor,
+                np_const,
             )
 
-
-@given(dtype=float_dtypes(), scalar=...)
-def test_promote_weak_dtypes__tensor_float(dtype: DType, scalar: float) -> None:
-    with Graph("promote_weak_dtypes"):
-        const = Tensor(DType.float64, [], CPU())
-        const[()] = scalar
-        result = dtype_promotion._promote_to_strong(
-            const, dtype, DeviceRef.CPU()
-        )
-        assert result.dtype == dtype
-        assert result.shape == []
-
-
-@given(dtype=integral_dtypes(), scalar=...)
-def test_promote_weak_dtypes__tensor_float_to_int(
-    dtype: DType, scalar: float
-) -> None:
-    with Graph("promote_weak_dtypes"):
-        const = Tensor(DType.float64, [], CPU())
-        const[()] = scalar
-        with pytest.raises(ValueError, match="Unsafe cast"):
-            _ = dtype_promotion._promote_to_strong(
-                const, dtype, DeviceRef.CPU()
-            )
-
-
-@given(dtype=shared_dtypes, scalar=shared_dtypes.flatmap(int_value_in_range))
-def test_promote_weak_dtypes__tensor_int__in_range(
-    dtype: DType, scalar: int
-) -> None:
-    # Need to fit the value in a tensor array
-    assume(-(2**63) <= scalar < 2**63)
-    with Graph("promote_weak_dtypes"):
-        const = Tensor(DType.int64, [], CPU())
-        const[()] = scalar
-        result = dtype_promotion._promote_to_strong(
-            const, dtype, DeviceRef.CPU()
-        )
-        assert result.dtype == dtype
-        assert result.shape == []
-
-
-@given(dtype=shared_dtypes, scalar=shared_dtypes.flatmap(value_out_of_range))
-def test_promote_weak_dtypes__tensor_int__out_of_range(
-    dtype: DType, scalar: int
-) -> None:
-    # Need to fit the value in a tensor array
-    assume(-(2**63) <= scalar < 2**63)
-    with Graph("promote_weak_dtypes"):
-        const = Tensor(DType.int64, [], CPU())
-        const[()] = scalar
-        with pytest.raises(ValueError, match="Unsafe cast"):
-            _ = dtype_promotion._promote_to_strong(
-                const, dtype, DeviceRef.CPU()
-            )
+            assert v1.dtype == graph_type.dtype
+            assert v2.dtype == graph_type.dtype
+            event("types promote")
+        except ValueError as e:
+            assert "Unsafe cast" in str(e)
+            event("types don't promote")

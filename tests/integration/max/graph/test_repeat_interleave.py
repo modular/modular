@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 import torch
 from max.driver import Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, StaticDim, ops
+from max.graph import DeviceRef, Graph, StaticDim, TensorType, ops
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
@@ -32,14 +30,14 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 )
 def test_repeat_interleave(
     session: InferenceSession,
-    input: list[int] | list[list[int]],
+    input: TensorType,
     repeats: int,
 ) -> None:
     with Graph(
         "repeat_interleave",
         input_types=[],
     ) as graph:
-        x = ops.constant(input, DType.int64, device=device_ref)
+        x = ops.constant(np.array(input), DType.int64, device=device_ref)
 
         output = ops.repeat_interleave(x, repeats)
         graph.output(output)
@@ -71,17 +69,16 @@ def test_repeat_interleave(
     ],
 )
 def test_repeat_interleave_vector(
-    session: InferenceSession,
-    input: list[int] | list[list[int]],
-    repeats: list[int],
-    axis: int,
+    session: InferenceSession, input: TensorType, repeats: list[int], axis: int
 ) -> None:
     with Graph(
         "repeat_interleave_vector",
         input_types=[],
     ) as graph:
-        x = ops.constant(input, DType.int64, device_ref)
-        repeat_vals = ops.constant(repeats, DType.int64, DeviceRef.CPU())
+        x = ops.constant(np.array(input), DType.int64, device_ref)
+        repeat_vals = ops.constant(
+            np.array(repeats), DType.int64, DeviceRef.CPU()
+        )
 
         if len(repeats) == 1:
             out_dim = x.shape[axis] * sum(repeats)
