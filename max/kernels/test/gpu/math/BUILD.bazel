@@ -9,7 +9,8 @@ load("//bazel:api.bzl", "mojo_test")
         target_compatible_with = [
             "//:amd_gpu",
             "//:nvidia_gpu",
-        ],  # FIXME: PRDT-506
+            "//:apple_gpu",
+        ],
         deps = [
             "@mojo//:stdlib",
         ],

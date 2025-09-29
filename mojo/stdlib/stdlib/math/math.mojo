@@ -1576,7 +1576,7 @@ fn sin[
         )
     elif is_apple_gpu():
         return llvm_intrinsic[
-            "llvm.air.cos", __type_of(x), has_side_effect=False
+            "llvm.air.sin", __type_of(x), has_side_effect=False
         ](x)
     else:
         return _call_libm["sin"](x)
