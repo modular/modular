@@ -220,6 +220,7 @@ def smoke_test(framework: str, model: str, output_file: Optional[Path]):
     venv_bin = os.path.abspath(".venv-serve/bin")
     env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
 
+    logger.info(f"Starting server with command:\n {cmd}")
     with Popen(cmd, start_new_session=True, env=env) as server_process:
         script_start_time = time.perf_counter()
         while not server_is_ready():
@@ -235,6 +236,7 @@ def smoke_test(framework: str, model: str, output_file: Optional[Path]):
 
         try:
             lm_eval_cmd = get_lm_eval_cmd(model, task)
+            logger.info(f"Starting lm-eval with command:\n {lm_eval_cmd}")
             with Popen(lm_eval_cmd, start_new_session=True) as lm_eval_process:
                 try:
                     rc = lm_eval_process.wait(600)
