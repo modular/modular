@@ -48,7 +48,7 @@ from ..cache_params import KVCacheParams
 from ..manager import RaggedKVCacheInputs
 from ..utils import build_max_lengths_tensor
 from .block_copy_engine import BlockCopyEngine
-from .block_manager import BlockManager, KVCacheMetrics
+from .block_manager import BlockManager, InsufficientBlocksError, KVCacheMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -436,7 +436,7 @@ class PagedKVCacheManager:
         # Allocating new blocks can fail if there are insufficient blocks.
         try:
             self.block_manager.allocate_new_blocks(data, num_steps)
-        except RuntimeError:
+        except InsufficientBlocksError:
             return False
         return True
 

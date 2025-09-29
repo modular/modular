@@ -44,6 +44,10 @@ from .block_utils import KVCacheBlock, hash_request_tokens
 logger = logging.getLogger("max.pipelines")
 
 
+class InsufficientBlocksError(Exception):
+    pass
+
+
 @dataclass
 class KVCacheMetrics:
     """Metrics for the KV cache."""
@@ -84,7 +88,7 @@ class BlockManager:
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
     ) -> None:
-        # The number of tokens in a single page.
+        self.total_num_blocks = total_num_blocks
         self.block_size = block_size
 
         # Whether to enable prefix caching.
@@ -428,9 +432,23 @@ class BlockManager:
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
 
         Raises:
-            RuntimeError: If there are insufficient free blocks to satisfy the allocation.
+            InsufficientBlocksError: If there are insufficient free blocks to satisfy the allocation.
+            RuntimeError: If the request has a prompt length that exceeds the total capacity of the KVCache.
             AssertionError: If the current blocks cannot accommodate the completed tokens.
         """
+
+        # It is impossible to schedule this request, even if it was the only req
+        # and could use the entire KV cache.
+        # This should literally never happen unless the user sets an absurdly
+        # large max seq len or the KV cache is very small.
+        total_kv_slots = self.total_num_blocks * self.block_size
+        if ctx.current_length > total_kv_slots:
+            raise RuntimeError(
+                f"Insufficient KV pages for a single request with {ctx.current_length} tokens.\n"
+                f"The KVCache has {self.total_num_blocks} blocks with block size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
+                "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
+            )
+
         # Update metrics.
         self._metrics.input_tokens += ctx.active_length
 
@@ -450,7 +468,7 @@ class BlockManager:
 
         # Check that we have enough free blocks to allocate the new blocks.
         if num_new_blocks > len(self.device_block_pool.free_block_queue):
-            raise RuntimeError(
+            raise InsufficientBlocksError(
                 f"Cannot get {num_new_blocks} free blocks from the free block queue (only {len(self.device_block_pool.free_block_queue)} available)"
             )
 
