@@ -52,6 +52,19 @@ fn color_to_grayscale(
         gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
+def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
+    """A helper function to print out the grayscale channel intensities."""
+    for row in range(HEIGHT):
+        for col in range(WIDTH):
+            var v = gray_tensor[row, col]
+            if v < 100:
+                print(" ", end="")
+                if v < 10:
+                    print(" ", end="")
+            print(v, " ", end="")
+        print("")
+
+
 fn main() raises:
     var ctx = create_test_device_context()
 
@@ -111,16 +124,3 @@ fn main() raises:
 
     _ = rgb_buffer
     _ = gray_buffer
-
-
-def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
-    """A helper function to print out the grayscale channel intensities."""
-    for row in range(HEIGHT):
-        for col in range(WIDTH):
-            var v = gray_tensor[row, col]
-            if v < 100:
-                print(" ", end="")
-                if v < 10:
-                    print(" ", end="")
-            print(v, " ", end="")
-        print("")
