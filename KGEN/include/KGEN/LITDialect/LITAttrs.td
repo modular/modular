@@ -70,28 +70,36 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
   let summary = "Metadata for a single Argument or parameter.";
   let description = [{
     The `#lit.pog_metadata` attribute contains metadata about an argument or
-    parameter of a function, including the name, passing kind, and variadicness
+    parameter of a function, including the name, passing kind, variadicness, and
+    any constraints on it.
 
     Example:
 
     ```mlir
-    #lit.pog_metadata<"some_keyword_param", pos_or_kw, false>
+    #lit.pog_metadata<"some_keyword_param", pos_or_kw, false, {
+      <1, loc("file.mojo":10:5), "Constraint must hold">
+    }>
     #lit.pog_metadata<"some_variadic_param", pos_or_kw, true>
     ```
   }];
 
   let parameters = (ins
-    "StringAttr":$name, "PassingKind":$passingKind, "VariadicKind":$variadic
+    "StringAttr":$name,
+    "PassingKind":$passingKind,
+    "VariadicKind":$variadic,
+    OptionalArrayRefParameter<"ConstraintAttr">:$constraints
   );
 
-  let assemblyFormat = "`<` $name `,` $passingKind `,` $variadic `>`";
+  let assemblyFormat =
+    "`<` $name `,` $passingKind `,` $variadic (`,` `{` $constraints^ `}`)? `>`";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
       "PassingKind":$passingKind,
-      CArg<"VariadicKind", "VariadicKind::None">:$variadic
+      CArg<"VariadicKind", "VariadicKind::None">:$variadic,
+      CArg<"ArrayRef<ConstraintAttr>", "{}">:$constraints
     ), [{
-      return $_get(name.getContext(), name, passingKind, variadic);
+      return $_get(name.getContext(), name, passingKind, variadic, constraints);
     }]>,
     AttrBuilder<(ins), [{
       return get(StringAttr::get($_ctxt), PassingKind::PosOrKw);
