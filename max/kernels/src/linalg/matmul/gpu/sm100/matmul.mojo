@@ -1395,7 +1395,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
     var mma_complete_mask = self_mask | peer_mask
 
-    var num_iters: UInt32 = mnk[2] // BK
+    var num_iters: UInt32 = ceildiv(mnk[2], BK)
 
     if WarpRole.is_main_load():
         var required_clc_query = True

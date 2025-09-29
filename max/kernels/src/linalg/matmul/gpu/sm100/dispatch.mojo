@@ -514,14 +514,9 @@ fn matmul_dispatch_sm100[
 
     # SM100 kernel requirements:
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
-    # 2. TODO: (KERN-2028) `K % BK == 0` SM100 kernel accuracy check fails when `K` is not a multiple of `BK`
-    # 3. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
+    # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
     @parameter
-    if (
-        c_type == DType.bfloat16
-        and static_N * size_of[c_type]() % 16 == 0
-        and static_K % BK == 0
-    ):
+    if c_type == DType.bfloat16 and static_N * size_of[c_type]() % 16 == 0:
         var status = DISPATCH_MISS
 
         @parameter
@@ -551,7 +546,7 @@ fn matmul_dispatch_sm100[
 
     # if it's not a hit to this point, then it means the shape is not tuned or supported for sm100 therefore we fallback to other options
     # NOTE:
-    # 1. On B200 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
+    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
     # 2. Our GEMV matmul dosen't support float8 yet.
     # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
     @parameter

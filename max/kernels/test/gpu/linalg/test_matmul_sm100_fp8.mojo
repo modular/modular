@@ -250,7 +250,7 @@ def main():
                         ctx,
                         dynamic(1000),
                         static[1024](),
-                        static[1024](),
+                        static[1024 + 16](),
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
