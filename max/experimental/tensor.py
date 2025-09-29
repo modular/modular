@@ -505,6 +505,9 @@ class Tensor(DLPackArray, HasTensorValue):
     def max(self) -> Tensor:
         return F.max(self)
 
+    def mean(self, axis: int = -1) -> Tensor:
+        return F.mean(self, axis=axis)
+
     def reshape(self, shape: ShapeLike) -> Tensor:
         return F.reshape(self, shape)
 
