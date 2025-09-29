@@ -233,10 +233,10 @@ static void developmentSignalHandler(void *context) {
   // Print Python stack trace if available using async-safe approach
   if (pythonStackTraceEnabled) {
     llvm::errs() << "Python stack trace:\n";
-    // Send SIGUSR2 to trigger faulthandler which is async signal safe
+    // Send SIGUSR2 to trigger faulthandler which is async signal safe.
+    // The std::raise call will not return until that signal handler
+    // is complete (if it is installed from the Python side).
     std::raise(SIGUSR2);
-    // Small delay to allow the faulthandler to execute
-    usleep(100000); // 100ms
     llvm::errs() << "\n";
   }
 
