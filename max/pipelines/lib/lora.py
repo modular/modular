@@ -476,16 +476,17 @@ class LoRAManager:
         config: LoRAConfig,
         base_model_path: str,
         base_dtype: DType,
+        zmq_endpoint_base: str,
     ):
         """
         Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
         Args:
+            config (LoRAConfig): The LoRA config.
             base_model_path (str): The name/path of the base model.
             base_dtype (DType): The base model dtype.
             max_num_loras (int): The maximum number of LoRA models to manage concurrently.
-            max_lora_rank (int): The maximum rank of all LoRAs loadable on the server.
-            lora_paths: (list[str]): An optional list of local LoRAs to load on initialization.
+            zmq_endpoint_base (str): The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
         """
         self.base_model_path = base_model_path
         self.base_dtype = base_dtype
@@ -497,11 +498,7 @@ class LoRAManager:
             max_size=self.max_num_loras
         )
 
-        self._request_processor = LoRARequestProcessor(
-            self,
-            config.lora_request_endpoint,
-            config.lora_response_endpoint,
-        )
+        self._request_processor = LoRARequestProcessor(self, zmq_endpoint_base)
 
         if config.lora_paths:
             self._load_adapters(config.lora_paths)

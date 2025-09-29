@@ -27,6 +27,7 @@ from typing import Any, Optional, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
 from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
@@ -153,6 +154,15 @@ class PipelineConfig(MAXConfig):
     - `folder/path/to/import:my_module`
 
     Each module must expose an `ARCHITECTURES` list of architectures to register.
+    """
+
+    zmq_endpoint_base: str = field(default_factory=generate_zmq_ipc_path)
+    """The prefix for the ZMQ endpoints used for IPC. This prefix ensures that the
+    ZMQ endpoints are unique across multiple MAX Serve instances running on the
+    same host. This should be randomly generated when the PipelineConfig is created.
+    Ex:
+    - lora_request_zmq_endpoint: f"{zmq_endpoint_base}-lora_request"
+    - lora_response_zmq_endpoint: f"{zmq_endpoint_base}-lora_response"
     """
 
     force: bool = field(default=False)

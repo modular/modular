@@ -222,6 +222,7 @@ class PipelineModel(ABC, Generic[T]):
                 pipeline_config.lora_config,
                 pipeline_config.model_config.model_name,
                 self.dtype,
+                pipeline_config.zmq_endpoint_base,
             )
             if pipeline_config.lora_config
             else None
