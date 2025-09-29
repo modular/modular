@@ -46,6 +46,13 @@ def test_max():
     assert result.real
 
 
+def test_mean():
+    tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
+    result = tensor.mean()
+    result._sync_realize()
+    assert result.real
+
+
 def test_reshape():
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor.reshape([6, 4])
