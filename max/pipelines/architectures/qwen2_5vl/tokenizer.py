@@ -32,6 +32,8 @@ from max.pipelines.lib.config import PipelineConfig
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
 
+from .nn.data_processing import get_rope_index
+
 logger = logging.getLogger("max.pipelines")
 
 
@@ -289,13 +291,15 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         vision_config = config.vision_config
         patch_size = getattr(vision_config, "patch_size", 14)
         temporal_patch_size = getattr(vision_config, "temporal_patch_size", 2)
-        spatial_merge_size = getattr(vision_config, "spatial_merge_size", 2)
+        self.spatial_merge_size = getattr(
+            vision_config, "spatial_merge_size", 2
+        )
 
         # Create custom image processor instead of AutoImageProcessor
         self.img_processor = Qwen2_5VLImageProcessor(
             patch_size=patch_size,
             temporal_patch_size=temporal_patch_size,
-            merge_size=spatial_merge_size,
+            merge_size=self.spatial_merge_size,
         )
 
         # Initialize EOS token IDs
@@ -321,6 +325,29 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             else:
                 raise ValueError(
                     "image_token_id not found in model_config config"
+                )
+
+            if video_token_id := getattr(
+                pipeline_config.model_config.huggingface_config,
+                "video_token_id",
+                None,
+            ):
+                self.video_token_id = video_token_id
+
+            if vision_start_token_id := getattr(
+                pipeline_config.model_config.huggingface_config,
+                "vision_start_token_id",
+                None,
+            ):
+                self.vision_start_token_id = vision_start_token_id
+
+            if vision_config := getattr(
+                huggingface_config, "vision_config", None
+            ):
+                self.tokens_per_second = vision_config.tokens_per_second
+            else:
+                raise ValueError(
+                    "vision_config must be provided in HuggingFace Config"
                 )
 
     def apply_chat_template(
@@ -525,6 +552,25 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                     extra_model_args["attention_mask"] = np.array(
                         attention_mask
                     )
+
+        # Calculate Rope Delta and position ids
+        temp_position_ids, rope_delta = get_rope_index(
+            spatial_merge_size=self.spatial_merge_size,
+            image_token_id=self.image_token_id,
+            video_token_id=self.video_token_id,
+            vision_start_token_id=self.vision_start_token_id,
+            tokens_per_second=self.tokens_per_second,
+            input_ids=encoded_prompt.reshape(1, -1),
+            image_grid_thw=image_grid_thw,
+            # This is never calculated prior to this.
+            video_grid_thw=None,
+            # This is never calculated prior to this.
+            second_per_grid_ts=None,
+            attention_mask=extra_model_args.get("attention_mask"),
+        )
+        temp_position_ids = temp_position_ids.squeeze(1)
+        extra_model_args["rope_delta"] = rope_delta
+        extra_model_args["temp_position_ids"] = temp_position_ids
 
         # Handle JSON schema if provided
         json_schema = (

@@ -63,7 +63,6 @@ from transformers import AutoConfig
 
 from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import (
-    get_rope_index,
     get_seqlens,
     get_window_index,
     mrope_pos_ids_3d,
@@ -696,6 +695,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         return graph
 
+    @traced
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
     ) -> dict[str, list[Tensor]] | None:
@@ -986,6 +986,10 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Extract individual vision input components
         tracer.next("_extra_inputs_from_vision_inputs")
+        assert kv_cache_inputs is not None, "KV cache inputs must be provided"
+
+        # Extract individual vision input components
+        tracer.next("_retrieve_vision_inputs_from_context")
         pixel_values = vision_inputs["pixel_values"] if vision_inputs else None
         window_index = vision_inputs["window_index"] if vision_inputs else None
         vision_position_ids = (
@@ -1005,7 +1009,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Create input_row_offsets for each device
-        tracer.next("calculate_input_row_offsets")
+        tracer.next("_calculate_input_row_offsets")
         input_row_offsets = np.cumsum(
             [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
         )
@@ -1015,39 +1019,18 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ]
 
         # Generate position_ids for the decoder using numpy get_rope_index we have in data_processing.py
-        tracer.next("calculate_decoder_position_ids")
+        tracer.next("_calculate_decoder_position_ids")
         assert self.model_config is not None, "Model config must be initialized"
 
         decoder_position_ids = []
         for ctx in context_batch:
-            if ctx.extra_model_args.get("rope_delta", None) is None:
-                extra_model_args = ctx.extra_model_args
-                image_grid_thw = extra_model_args.get("image_grid_thw", None)
-                video_grid_thw = extra_model_args.get("video_grid_thw", None)
-                second_per_grid_ts = extra_model_args.get(
-                    "second_per_grid_ts", None
+            # If its the first time, we can use the precomputed values
+            if "temp_position_ids" in ctx.extra_model_args:
+                decoder_position_ids.append(
+                    ctx.extra_model_args.pop("temp_position_ids")
                 )
-                attention_mask = extra_model_args.get("attention_mask", None)
-
-                temp_position_ids, rope_delta = get_rope_index(
-                    spatial_merge_size=self.model_config.spatial_merge_size,
-                    image_token_id=self.model_config.image_token_id,
-                    video_token_id=self.model_config.video_token_id,
-                    vision_start_token_id=self.model_config.vision_start_token_id,
-                    tokens_per_second=self.model_config.tokens_per_second,
-                    # get rope index expects a input_ids in this shape: [batch_size, seq_len] --> [1, seq_len]
-                    input_ids=ctx.next_tokens.reshape(1, -1),
-                    image_grid_thw=image_grid_thw,
-                    video_grid_thw=video_grid_thw,
-                    second_per_grid_ts=second_per_grid_ts,
-                    attention_mask=attention_mask,
-                )
-                # Store rope delta in extra_model_args, this is used later to
-                # compute the position ids for the next token.
-                ctx.extra_model_args["rope_delta"] = rope_delta
-                # the temp_position_ids is a 3D tensor, we need to flatten it to 2D
-                temp_position_ids = temp_position_ids.squeeze(1)
             else:
+                # Recompute this value on the fly.
                 context_seq_length = ctx.next_tokens.shape[0]
                 temp_position_ids = np.arange(context_seq_length)
                 temp_position_ids = temp_position_ids.reshape(1, 1, -1)
@@ -1058,7 +1041,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 )
                 temp_position_ids = temp_position_ids + delta
                 temp_position_ids = temp_position_ids.squeeze(1)
-            decoder_position_ids.append(temp_position_ids)
+                decoder_position_ids.append(temp_position_ids)
 
         tracer.next("_concatenate_decoder_position_ids")
         decoder_position_ids = np.concatenate(decoder_position_ids, axis=1)
@@ -1075,8 +1058,13 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ).to(self.devices[0])
 
         # Input IDs
+        tracer.next("concat_tokens")
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
         input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
+
+        # Batch image token indices, offsetting for position in the batch.
+        tracer.next("batch_image_token_indices")
+        image_token_indices = self._batch_image_token_indices(context_batch)
 
         # Mark that vision encoding is complete for all contexts in the batch.
         # This prevents re-encoding on subsequent calls.
