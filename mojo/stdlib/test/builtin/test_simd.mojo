@@ -2459,11 +2459,25 @@ def test_int_literal_init():
         assert_equal(Index(-9223372036854775809), Index(9223372036854775807))
         assert_equal(UIndex(0), UIndex(18446744073709551616))
         assert_equal(UIndex(-1), UIndex(18446744073709551615))
+
+        alias i1 = Index(-9223372036854775808)
+        alias i2 = Index(9223372036854775808)
+        assert_equal(i1, i2)
+        alias ui1 = UIndex(-1)
+        alias ui2 = UIndex(18446744073709551615)
+        assert_equal(ui1, ui2)
     else:
         assert_equal(Index(-2147483648), Index(2147483648))
         assert_equal(Index(-2147483649), Index(2147483647))
         assert_equal(UIndex(0), UIndex(4294967296))
         assert_equal(UIndex(-1), UIndex(4294967295))
+
+        alias i1 = Index(-2147483648)
+        alias i2 = Index(2147483648)
+        assert_equal(i1, i2)
+        alias ui1 = UIndex(-1)
+        alias ui2 = UIndex(4294967295)
+        assert_equal(ui1, ui2)
 
 
 def test_bool_init():
