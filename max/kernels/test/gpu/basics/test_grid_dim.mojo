@@ -17,11 +17,9 @@ from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from testing import assert_equal
 
-alias Float32 = DType.float32
-
 
 fn kernel(
-    output: UnsafePointer[Scalar[Float32]],
+    output: UnsafePointer[Float32],
     size: Int,
 ):
     var global_tid = global_idx.x
@@ -38,13 +36,12 @@ fn kernel(
 fn test_grid_dim(ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size
-    alias constant_add: Scalar[Float32] = 42
-    var output_host = UnsafePointer[Scalar[Float32]].alloc(buffer_size)
+    var output_host = UnsafePointer[Float32].alloc(buffer_size)
 
     for i in range(buffer_size):
         output_host[i] = -1.0
 
-    var output_buffer = ctx.enqueue_create_buffer[Float32](buffer_size)
+    var output_buffer = ctx.enqueue_create_buffer[DType.float32](buffer_size)
 
     ctx.enqueue_copy(output_buffer, output_host)
 
