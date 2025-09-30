@@ -1356,6 +1356,17 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
     // Import the main standard library package.
     impl->stdlibPackageState =
         &importModuleState("stdlib", impl->topLevelDecl, moduleDecl.getLoc());
+    ASTDecl *last = declResolver->getParsedDeclList().back();
+    if (last && last->isErroneous()) {
+      std::string stdmsg =
+          "'stdlib' is required for all normal mojo compiles.\n"
+          "If you see this either:\n"
+          "- Your mojo installation is broken and needs to be reinstalled or\n"
+          "- You are a 'stdlib' developer and are intentionally avoiding a "
+          "pre-built 'stdlib'";
+      emitError(last->loc, stdmsg);
+    }
+
     if (failed(declResolver->resolveBody(*impl->stdlibPackageState->decl,
                                          moduleDecl.getLoc())))
       return;
