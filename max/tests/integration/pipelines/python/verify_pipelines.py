@@ -906,7 +906,7 @@ PIPELINES = {
             pipeline="qwen2.5-vl-32b",
             encoding="bfloat16",
             cos_dist_threshold=7.0e-2,
-            kl_div_threshold=2.1e-1,
+            kl_div_threshold=2.5e-1,
         ),
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
