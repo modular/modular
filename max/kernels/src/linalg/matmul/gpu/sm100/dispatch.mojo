@@ -588,7 +588,6 @@ fn matmul_dispatch_sm100_fp8[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
     alias static_N = c.shape.get[1]()
     alias static_K = a.shape.get[1]()
 
