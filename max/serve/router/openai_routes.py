@@ -179,7 +179,7 @@ async def get_pipeline(
 
     if lora_queue := app_state.pipeline.lora_queue:
         lora_response = await lora_queue.get_response(
-            request.state.request_id, LoRARequest(LoRAOperation.LIST)
+            RequestID(request.state.request_id), LoRARequest(LoRAOperation.LIST)
         )
         models += lora_response.message
 
@@ -1042,7 +1042,7 @@ class OpenAICompletionResponseGenerator(
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
                 response = CompletionStreamResponse(
-                    id=request.request_id,
+                    id=request.request_id.value,
                     choices=choices,
                     created=int(datetime.now().timestamp()),
                     model=request.model_name,
@@ -1336,7 +1336,7 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 
     if lora_queue := request.app.state.pipeline.lora_queue:
         loras = await lora_queue.get_response(
-            request.state.request_id, LoRARequest(LoRAOperation.LIST)
+            RequestID(request.state.request_id), LoRARequest(LoRAOperation.LIST)
         )
         model_list += [
             Model(id=lora, object="model", created=None, owned_by="")
@@ -1442,7 +1442,7 @@ async def load_lora_adapter(
             )
 
         response = await app_state.pipeline.lora_queue.get_response(
-            request_id,
+            RequestID(request_id),
             LoRARequest(
                 LoRAOperation.LOAD,
                 load_request.lora_name,
@@ -1514,7 +1514,7 @@ async def unload_lora_adapter(
             )
 
         response = await app_state.pipeline.lora_queue.get_response(
-            request_id,
+            RequestID(request_id),
             LoRARequest(LoRAOperation.UNLOAD, unload_request.lora_name),
         )
 
