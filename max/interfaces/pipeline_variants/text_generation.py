@@ -112,7 +112,7 @@ class TextGenerationRequestMessage(TypedDict):
 
 @dataclass(frozen=True)
 class TextGenerationRequest(Request):
-    model_name: str
+    model_name: str = field()
     """
     The name of the model to be used for generating tokens. This should match
     the available models on the server and determines the behavior and

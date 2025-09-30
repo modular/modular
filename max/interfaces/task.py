@@ -73,11 +73,11 @@ class PipelineTask(str, Enum):
             PipelineTask.TEXT_GENERATION,
             PipelineTask.SPEECH_TOKEN_GENERATION,
         ]:
-            return dict[str, SchedulerResult[TextGenerationOutput]]
+            return dict[RequestID, SchedulerResult[TextGenerationOutput]]
         elif self == PipelineTask.EMBEDDINGS_GENERATION:
-            return dict[str, SchedulerResult[EmbeddingsGenerationOutput]]
+            return dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
         elif self == PipelineTask.AUDIO_GENERATION:
-            return dict[str, SchedulerResult[AudioGenerationOutput]]
+            return dict[RequestID, SchedulerResult[AudioGenerationOutput]]
         else:
             raise ValueError(
                 f"PipelineTask ({self}) does not have an output_type defined."

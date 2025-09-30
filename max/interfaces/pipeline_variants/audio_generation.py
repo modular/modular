@@ -26,7 +26,7 @@ from typing_extensions import TypeVar
 
 @dataclass(frozen=True)
 class AudioGenerationRequest(Request):
-    model: str
+    model: str = field()
     """The name of the model to be used for generating audio chunks. This should match
     the available models on the server and determines the behavior and
     capabilities of the response generation.
