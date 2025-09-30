@@ -7114,7 +7114,7 @@ struct Struct_kv_cache_store_paged:
         kv_cache_store_ragged[input_fn=input_fn, target=target](
             cache,
             inputs.shape(),
-            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            input_row_offsets.to_layout_tensor(),
             cuda_ctx,
         )
 
