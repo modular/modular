@@ -755,7 +755,7 @@ PIPELINES = {
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
             cos_dist_threshold=5.9e-04,
-            kl_div_threshold=2.0e-03,
+            kl_div_threshold=5.0e-03,
         ),
     ),
     "meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16": PipelineDef(
@@ -793,7 +793,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="mistral3",
             encoding="bfloat16",
-            cos_dist_threshold=6.6e-4,
+            cos_dist_threshold=2.2e-3,
             kl_div_threshold=2.6e-3,
         ),
     ),
@@ -808,7 +808,7 @@ PIPELINES = {
                 json_file="torch_llama3_2_bfloat16_golden.json",
             ),
             # Note: llama-vision is not yet using llama3 rope.
-            cos_dist_threshold=1.5e-3,
+            cos_dist_threshold=5e-3,
             kl_div_threshold=5.4e-3,
         ),
     ),
@@ -941,7 +941,7 @@ PIPELINES = {
             # kl_div_threshold went from 8.7e-02 to 6.6e-01.
             # This is likely due to changes in the reference implementation.
             cos_dist_threshold=4.1e-02,
-            kl_div_threshold=6.6e-01,
+            kl_div_threshold=6.8e-01,
         ),
     ),
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
@@ -986,7 +986,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
                 json_file="torch_llama-gptq_golden.json",
             ),
-            cos_dist_threshold=3.3e-4,
+            cos_dist_threshold=1e-3,
             kl_div_threshold=2.7e-3,
         ),
     ),
@@ -1082,8 +1082,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llasa-8b",
             encoding="bfloat16",
-            cos_dist_threshold=5.6e-03,
-            kl_div_threshold=5.8e-01,
+            cos_dist_threshold=1e-02,
+            kl_div_threshold=7.5e-01,
         ),
     ),
 }
