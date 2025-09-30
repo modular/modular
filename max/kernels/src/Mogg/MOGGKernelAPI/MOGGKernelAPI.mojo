@@ -3163,7 +3163,7 @@ struct Gather:
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype = output.dtype, *_],
-        indices: InputTensor,
+        indices: FusedInputTensor,
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
