@@ -58,6 +58,7 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
+from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
 from .model_config import Qwen2_5VLConfig
@@ -961,6 +962,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 logits=language_outputs[0],
             )
 
+    @traced
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextAndVisionContext],
@@ -968,12 +970,15 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""
+        tracer = Tracer("_prepare_initial_token_inputs")
         assert kv_cache_inputs is not None, "KV cache inputs must be provided"
 
         # Prepare vision inputs
+        tracer.next("_prepare_vision_inputs")
         vision_inputs = self._prepare_vision_inputs(context_batch)
 
         # Extract individual vision input components
+        tracer.next("_extra_inputs_from_vision_inputs")
         pixel_values = vision_inputs["pixel_values"] if vision_inputs else None
         window_index = vision_inputs["window_index"] if vision_inputs else None
         vision_position_ids = (
@@ -993,6 +998,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Create input_row_offsets for each device
+        tracer.next("calculate_input_row_offsets")
         input_row_offsets = np.cumsum(
             [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
         )
@@ -1002,6 +1008,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ]
 
         # Generate position_ids for the decoder using numpy get_rope_index we have in data_processing.py
+        tracer.next("calculate_decoder_position_ids")
         assert self.model_config is not None, "Model config must be initialized"
 
         decoder_position_ids = []
@@ -1046,8 +1053,14 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 temp_position_ids = temp_position_ids.squeeze(1)
             decoder_position_ids.append(temp_position_ids)
 
+        tracer.next("_concatenate_decoder_position_ids")
         decoder_position_ids = np.concatenate(decoder_position_ids, axis=1)
 
+        # Batch image token indices, offsetting for position in the batch.
+        tracer.next("_batch_image_token_indices")
+        image_token_indices = self._batch_image_token_indices(context_batch)
+
+        tracer.next("_prepare_remaining_inputs")
         # position_ids is a 2D tensor that is passed down to the 2D RoPE kernel in the decoder along with mrope_section
         # Convert to uint32 to match the expected dtype in the language model
         position_ids = Tensor.from_numpy(
@@ -1058,13 +1071,12 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
         input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
 
-        # Batch image token indices, offsetting for position in the batch.
-        image_token_indices = self._batch_image_token_indices(context_batch)
-
         # Mark that vision encoding is complete for all contexts in the batch.
         # This prevents re-encoding on subsequent calls.
         for ctx in context_batch:
             ctx.needs_vision_encoding = False
+
+        tracer.pop()
 
         return Qwen2_5VLInputs(
             input_ids=input_ids,
