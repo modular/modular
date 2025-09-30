@@ -60,10 +60,10 @@ class PrefillScheduler(Scheduler):
         self.paged_cache = paged_cache
         # Initialize Scheduler state.
         self.active_transfers: dict[
-            str, tuple[TextAndVisionContext | TextContext, XferReqData]
+            RequestID, tuple[TextAndVisionContext | TextContext, XferReqData]
         ] = {}
         self.request_id_to_reply_context: dict[
-            str, tuple[ClientIdentity, str, list[int]]
+            RequestID, tuple[ClientIdentity, str, list[int]]
         ] = {}
 
         # Create Transfer Engine

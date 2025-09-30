@@ -208,8 +208,8 @@ class SchedulerLogger:
 
 
 def add_newly_encoded_reqs_to_tg_batch(
-    batch: dict[str, TextContext],
-    responses: dict[str, TextGenerationOutput],
+    batch: dict[RequestID, TextContext],
+    responses: dict[RequestID, TextGenerationOutput],
     batch_constructor: TextBatchConstructor,
 ) -> None:
     # Only the last request in a batch could be chunked. We discard its response

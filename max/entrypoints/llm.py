@@ -19,7 +19,6 @@ import asyncio
 import dataclasses
 import queue
 import threading
-import uuid
 from collections.abc import Awaitable, Mapping, Sequence
 from threading import Thread
 from typing import Callable, TypeVar, cast
@@ -114,7 +113,7 @@ class LLM:
             prompts = (prompts,)
 
         request = _Request(
-            id=str(uuid.uuid4()),
+            id=RequestID(),
             prompts=prompts,
             max_new_tokens=max_new_tokens,
             use_tqdm=use_tqdm,
@@ -226,7 +225,7 @@ async def _async_worker(
                     max_new_tokens=request.max_new_tokens  # noqa: B023
                 )
                 gen_request = TextGenerationRequest(
-                    request_id=str(uuid.uuid4()),
+                    request_id=RequestID(),
                     model_name=model_name,
                     prompt=prompt,
                     sampling_params=sampling_params,

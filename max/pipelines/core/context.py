@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import math
 import time
-import uuid
 from typing import Any, Optional
 
 import llguidance
@@ -77,11 +76,9 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         _draft_offset: Offset for draft decoding
     """
 
-    request_id: RequestID = msgspec.field(
-        default_factory=lambda: str(uuid.uuid4())
-    )
     max_length: int
     tokens: npt.NDArray[np.integer[Any]]
+    request_id: RequestID = msgspec.field(default_factory=RequestID)
     eos_token_ids: set[int] = msgspec.field(default_factory=set)
     eos_sequences: list[list[int]] = msgspec.field(default_factory=list)
     log_probabilities: int = msgspec.field(default=0)

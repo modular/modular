@@ -944,7 +944,7 @@ class TextGenerationPipeline(
         )
 
     @traced
-    def _maybe_sort_loras(self, batch: dict[str, T]):
+    def _maybe_sort_loras(self, batch: dict[RequestID, T]):
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
         to be adjacent to each other.

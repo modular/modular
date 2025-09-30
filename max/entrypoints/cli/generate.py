@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import uuid
 from collections.abc import Iterable
 from typing import Any
 
@@ -29,6 +28,7 @@ from max.interfaces import (
     Pipeline,
     PipelineTokenizer,
     ProcessorInputs,
+    RequestID,
     SamplingParams,
     TextGenerationRequest,
 )
@@ -79,7 +79,7 @@ async def stream_text_to_console(
     )
 
     request = TextGenerationRequest(
-        request_id=str(uuid.uuid4()),
+        request_id=RequestID(),
         prompt=prompt,
         images=images,
         model_name=MODEL_NAME,

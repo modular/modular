@@ -42,6 +42,7 @@ from max.interfaces import (
     LoRARequest,
     LoRAStatus,
     PipelineTokenizer,
+    RequestID,
     SamplingParams,
     SamplingParamsInput,
     TextGenerationRequest,
@@ -267,7 +268,7 @@ class OpenAIChatResponseGenerator(
                 # Don't include usage in regular chunks when streaming
                 # https://platform.openai.com/docs/api-reference/chat/create#chat_create-stream_options
                 response = CreateChatCompletionStreamResponse(
-                    id=request.request_id,
+                    id=str(request.request_id),
                     choices=choices,
                     created=int(datetime.now().timestamp()),
                     model=request.model_name,
@@ -291,7 +292,7 @@ class OpenAIChatResponseGenerator(
                 )
 
                 final_response = CreateChatCompletionStreamResponse(
-                    id=request.request_id,
+                    id=str(request.request_id),
                     choices=[],
                     created=int(datetime.now().timestamp()),
                     model=request.model_name,
@@ -406,7 +407,7 @@ class OpenAIChatResponseGenerator(
                 )
 
             response = CreateChatCompletionResponse(
-                id=request.request_id,
+                id=str(request.request_id),
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
                 model=request.model_name,
@@ -787,7 +788,7 @@ async def openai_create_chat_completion(
             )
         )
         token_request = TextGenerationRequest(
-            request_id=request_id,
+            request_id=RequestID(request_id),
             model_name=completion_request.model,
             messages=request_messages,
             images=request_images,
@@ -933,7 +934,7 @@ async def openai_create_embeddings(
 
         embedding_requests = [
             TextGenerationRequest(
-                request_id=f"{request_id}_{idx}",
+                request_id=RequestID(f"{request_id}_{idx}"),
                 model_name=embeddings_request.model,
                 prompt=input_text,
                 timestamp_ns=request.state.request_timer.start_ns,
@@ -1132,7 +1133,7 @@ class OpenAICompletionResponseGenerator(
                 # CreateCompletionResponse.id refers to the http request, while
                 # request.request_id refers to the prompt. We don't have access to the
                 # http request id in this context, so use requests[0].request_id
-                id=requests[0].request_id,
+                id=str(requests[0].request_id),
                 choices=response_choices,
                 created=int(datetime.now().timestamp()),
                 model=requests[0].model_name,
@@ -1270,7 +1271,7 @@ async def openai_create_completion(
             )
             tgr = TextGenerationRequest(
                 # Generate a unique request_id for each prompt in the request
-                request_id=f"{http_req_id}_{i}",
+                request_id=RequestID(f"{http_req_id}_{i}"),
                 model_name=completion_request.model,
                 prompt=prompt,
                 timestamp_ns=request.state.request_timer.start_ns,

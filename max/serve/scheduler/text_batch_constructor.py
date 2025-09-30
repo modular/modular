@@ -329,7 +329,7 @@ class TextBatchConstructor:
     def _try_create_ce_batch(self) -> TextGenerationInputs[TextContext]:
         """Try to create a context encoding batch"""
 
-        ce_batch: dict[str, TextContext] = {}
+        ce_batch: dict[RequestID, TextContext] = {}
         input_tokens = 0
 
         if self.scheduler_config.enable_in_flight_batching and self.tg_reqs:

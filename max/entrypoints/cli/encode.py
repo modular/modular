@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from typing import cast
 
 from max.interfaces import (
@@ -25,6 +24,7 @@ from max.interfaces import (
     EmbeddingsGenerationOutput,
     PipelineTask,
     PipelineTokenizer,
+    RequestID,
     TextGenerationRequest,
 )
 from max.pipelines import (
@@ -47,13 +47,14 @@ async def _run_pipeline_encode(
     prompt: str,
     metrics: EmbeddingsMetrics | None = None,
 ) -> EmbeddingsGenerationOutput:
-    req_id = str(uuid.uuid4())
     context = await tokenizer.new_context(
         TextGenerationRequest(
-            request_id=req_id, prompt=prompt, model_name=MODEL_NAME
+            request_id=RequestID(), prompt=prompt, model_name=MODEL_NAME
         )
     )
-    pipeline_request = EmbeddingsGenerationInputs([{req_id: context}])
+    pipeline_request = EmbeddingsGenerationInputs(
+        [{context.request_id: context}]
+    )
 
     if metrics:
         metrics.prompt_size = context.current_length
@@ -63,7 +64,7 @@ async def _run_pipeline_encode(
 
     if metrics:
         metrics.signpost("end_encoding")
-    return response[req_id]
+    return response[context.request_id]
 
 
 def pipeline_encode(

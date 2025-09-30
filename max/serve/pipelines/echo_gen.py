@@ -138,7 +138,7 @@ class EchoTokenGenerator(TextGenerationPipelineType[TextContext]):
 
     def __init__(self) -> None:
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
-        self._echo_indices: dict[str, int] = {}
+        self._echo_indices: dict[RequestID, int] = {}
 
     def execute(
         self,

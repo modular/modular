@@ -33,7 +33,12 @@ from max.graph.type import DeviceRef, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.graph.weights.weights import _cast_to_dtype
-from max.interfaces import InputContext, LoRAStatus, LoRAType
+from max.interfaces import (
+    InputContext,
+    LoRAStatus,
+    LoRAType,
+    RequestID,
+)
 from max.interfaces.pipeline import (
     Pipeline,
     PipelineInputsType,
@@ -959,7 +964,9 @@ class LoRAManager:
                     lora_ids, lora_ranks, lora_grouped_offsets
                 )
 
-    def sort_lora_batch(self, context_batch: dict[str, T]) -> dict[str, T]:
+    def sort_lora_batch(
+        self, context_batch: dict[RequestID, T]
+    ) -> dict[RequestID, T]:
         """
         Sorts the LoRA batch by LRU cache id.
 
