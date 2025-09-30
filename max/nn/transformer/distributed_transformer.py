@@ -243,6 +243,13 @@ class DistributedTransformer(Module):
 
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
 
+        kv_cache_arguments = [
+            [kv_collection.kv_blocks for kv_collection in kv_collections],
+            [kv_collection.cache_lengths for kv_collection in kv_collections],
+            [kv_collection.lookup_table for kv_collection in kv_collections],
+            [kv_collection.max_lengths for kv_collection in kv_collections],
+        ]
+
         if self.use_subgraphs:
             subgraph_input_types: Sequence[Type[Any] | list[Type[Any]]] = [
                 TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
@@ -319,7 +326,7 @@ class DistributedTransformer(Module):
                         ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                         h,
                         signal_buffers,
-                        kv_collections,
+                        *kv_cache_arguments,
                         freqs_cis=freqs_cis,
                         input_row_offsets=input_row_offsets_,
                     )
@@ -329,7 +336,7 @@ class DistributedTransformer(Module):
                     ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                     h,
                     signal_buffers,
-                    kv_collections,
+                    *kv_cache_arguments,
                     freqs_cis=freqs_cis,
                     input_row_offsets=input_row_offsets_,
                 )
