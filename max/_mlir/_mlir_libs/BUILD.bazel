@@ -1,4 +1,5 @@
-load("//bazel:api.bzl", "copy_files", "modular_nanobind_extension", "modular_py_library")
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("//bazel:api.bzl", "copy_files", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -8,30 +9,14 @@ copy_files(
     outs = ["__init__.py"],
 )
 
-copy_files(
-    name = "_mlir_pyi",
-    srcs = ["@llvm-project//mlir/python:IRPyIFiles"],
-    outs = [
-        "_mlir/__init__.pyi",
-        "_mlir/ir.pyi",
-    ],
-)
-
-modular_py_library(
-    name = "_mlir_libs",
-    srcs = [":py_srcs"],
-    pyi_srcs = [":_mlir_pyi"],
-    tags = ["no-mypy"],  # Upstream files with violations
-    visibility = ["//visibility:public"],
-)
-
 modular_nanobind_extension(
-    name = "_mlir",
+    name = "_mlir.bindings",
     srcs = ["//:nanobind_mlir_srcs"],
     local_defines = [
         # Set definition used in Interop.h to prefix the MLIR package.
         "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
     ],
+    module_name = "_mlir",
     new_link_root = "../../../modular/lib",
     # Don't lint these files, they're from LLVM.
     tags = ["no-clang-tidy"],
@@ -39,4 +24,85 @@ modular_nanobind_extension(
         "//:MLIRBindingsPythonHeaders",
         "//SDK:max",
     ],
+)
+
+# Intermediate targets just for stubgen
+modular_py_library(
+    name = "_mlir.stubfile_generator_library",
+    data = [
+        ":_mlir.bindings",
+    ],
+    imports = ["../../.."],
+)
+
+modular_py_binary(
+    name = "_mlir.stubfile_generator",
+    srcs = ["@nanobind//:src/stubgen.py"],
+    main = "@nanobind//:src/stubgen.py",
+    tags = ["no-mypy"],
+    deps = ["_mlir.stubfile_generator_library"],
+)
+
+stubfiles = glob(["**/*.pyi"])
+
+modular_genrule(
+    name = "_mlir.stubfiles",
+    testonly = True,
+    srcs = [
+        # To ensure our linting + formatting aligns with the rest of our project
+        "//:pyproject.toml",
+    ],
+    outs = [("stubfiles/" + file) for file in stubfiles],
+    cmd = """
+    set -e
+    export BAZEL_TEST=1
+
+    export folder=$(dirname $(location stubfiles/_mlir/__init__.pyi))
+    $(execpath {stubgen}) -r -m max._mlir._mlir_libs._mlir -O $folder/.. --quiet
+
+    # Add copyright headers
+    header="
+# ===----------------------------------------------------------------------=== #
+# GENERATED FILE, DO NOT EDIT MANUALLY!
+# ===----------------------------------------------------------------------=== #
+"
+    for file in $(find $folder -name *.pyi); do
+        echo "$header\n$(cat $file)" > $file
+    done
+
+    # Lint and format the files
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) fix
+    """.format(
+        ruff = "//open-source/max/bazel/lint:ruff-wrapper",
+        stubgen = ":_mlir.stubfile_generator",
+    ),
+    tools = [
+        ":_mlir.stubfile_generator",
+        "//open-source/max/bazel/lint:ruff-wrapper",
+    ],
+)
+
+[
+    diff_test(
+        name = file + ".diff_test",
+        failure_message = """
+        {} is out of sync with its generated counterpart.
+        This is likely to occur when bumping LLVM, you can run
+        `./utils/sync-stubfiles.py` and commit the results.
+        """.format(file),
+        file1 = ":stubfiles/{}".format(file),
+        file2 = file,
+        tags = ["stubfiles"],
+    )
+    for file in stubfiles
+]
+
+modular_py_library(
+    name = "_mlir",
+    srcs = [":py_srcs"],
+    data = [":_mlir.bindings"],
+    imports = ["../../.."],
+    pyi_srcs = stubfiles,
+    tags = ["no-mypy"],  # Upstream files with violations
+    visibility = ["//visibility:public"],
 )

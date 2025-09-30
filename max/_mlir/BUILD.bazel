@@ -7,13 +7,6 @@ copy_files(
 )
 
 modular_py_library(
-    name = "_mlir_nanobind",
-    srcs = [],
-    data = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir"],
-    visibility = ["//visibility:public"],
-)
-
-modular_py_library(
     name = "_mlir",
     srcs = [
         ":ir_py",
@@ -22,7 +15,6 @@ modular_py_library(
     tags = ["no-mypy"],  # Upstream files with violations
     visibility = ["//visibility:public"],
     deps = [
-        ":_mlir_nanobind",
-        "//SDK/lib/API/python/max/_mlir/_mlir_libs",
+        "//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir",
     ],
 )
