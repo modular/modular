@@ -110,8 +110,8 @@ def custom(
             graph._context,
         )
 
-    custom_op.device = mlir.Attribute._CAPICreate(
-        device.to_mlir()._CAPIPtr  # type: ignore
+    custom_op.device = mlir.Attribute._CAPICreate(  # type: ignore
+        device.to_mlir()._CAPIPtr
     )
 
     # Call the verifier, will throw if the call is invalid.
@@ -182,8 +182,8 @@ def inplace_custom(
             graph._context,
         )
 
-    custom_op.device = mlir.Attribute._CAPICreate(
-        device.to_mlir()._CAPIPtr  # type: ignore
+    custom_op.device = mlir.Attribute._CAPICreate(  # type: ignore
+        device.to_mlir()._CAPIPtr
     )
 
     # Call the verifier, will throw if the call is invalid.

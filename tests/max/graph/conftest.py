@@ -34,7 +34,6 @@ from max.graph import (
     BufferType,
     DeviceRef,
     Dim,
-    DimLike,
     Graph,
     KernelLibrary,
     Shape,
@@ -130,7 +129,7 @@ def all_shapes(
     min_rank: int = 1,
     max_rank: int = 5,
     dims: st.SearchStrategy[Dim] = dims,
-    include_dims: Sequence[DimLike | st.SearchStrategy[Dim]] = (),
+    include_dims: Sequence[Dim | st.SearchStrategy[Dim]] = (),
     max_size: int = MAX_INT64,
 ) -> Shape:
     """A strategy to produce shapes whose product fits within an int64.
@@ -149,7 +148,7 @@ def all_shapes(
     generated_include_dims = draw(
         st.tuples(
             *(
-                dim if isinstance(dim, st.SearchStrategy) else st.just(dim)  # type: ignore
+                dim if isinstance(dim, st.SearchStrategy) else st.just(dim)
                 for dim in include_dims
             )
         )
@@ -358,7 +357,7 @@ def modular_path() -> Path:
 def mlir_context() -> Generator[mlir.Context]:
     """Set up the MLIR context by registering and loading Modular dialects."""
     with mlir.Context() as ctx, mlir.Location.unknown():
-        yield ctx
+        yield ctx  # type: ignore
 
 
 @pytest.fixture(scope="module")
