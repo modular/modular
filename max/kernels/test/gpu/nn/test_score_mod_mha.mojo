@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import exp2, iota, isqrt
+from math import exp2, iota, rsqrt
 from random import random_ui64, seed
 
 from bit import prev_power_of_two
@@ -287,7 +287,7 @@ def execute_flash_attention[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](valid_length_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
 
@@ -303,7 +303,7 @@ def execute_flash_attention[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](valid_length_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from random import random_ui64
 
 from buffer import Dim, DimList
@@ -212,7 +212,7 @@ def execute_ragged_flash_attention(
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](true_ce_row_offsets_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
     ctx.synchronize()
@@ -230,7 +230,7 @@ def execute_ragged_flash_attention(
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ](mixed_ce_row_offsets_device.tensor),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
     ctx.synchronize()

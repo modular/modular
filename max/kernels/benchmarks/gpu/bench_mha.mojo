@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import isclose, isqrt
+from math import isclose, rsqrt
 from random import rand
 from sys import env_get_dtype, env_get_int
 
@@ -48,7 +48,7 @@ fn run_mha[
     ctx: DeviceContext,
 ) raises:
     # Query, key, value dimensions.
-    alias scale = Float32(0.125)  # isqrt[type, 1](Float32(depth))
+    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
 
     # Q, K, V shapes.

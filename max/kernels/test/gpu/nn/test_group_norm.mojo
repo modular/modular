@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isqrt
+from math import rsqrt
 from sys import simd_width_of
 
 from gpu.host import DeviceContext, get_gpu_target
@@ -36,7 +36,7 @@ def compute_group_stats[
         sum_sq += vec[i][0] * vec[i][0]
     var mean = sum_val / size
     var variance = max((sum_sq / size) - (mean * mean), 0.0)
-    return (mean, isqrt(variance + eps))
+    return (mean, rsqrt(variance + eps))
 
 
 fn run_group_norm_gpu[

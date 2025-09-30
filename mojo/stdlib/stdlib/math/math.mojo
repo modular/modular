@@ -261,7 +261,7 @@ fn sqrt[
 
 
 @always_inline
-fn _isqrt_nvvm(x: SIMD, out res: __type_of(x)):
+fn _rsqrt_nvvm(x: SIMD, out res: __type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
@@ -277,7 +277,7 @@ fn _isqrt_nvvm(x: SIMD, out res: __type_of(x)):
 
 
 @always_inline
-fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Performs elementwise reciprocal square root on a SIMD vector.
 
     Parameters:
@@ -297,9 +297,9 @@ fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 
         @parameter
         if dtype in (DType.float16, DType.bfloat16):
-            return _isqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
+            return _rsqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
 
-        return _isqrt_nvvm(x)
+        return _rsqrt_nvvm(x)
     elif is_amd_gpu():
 
         @parameter
@@ -308,7 +308,7 @@ fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
                 String("llvm.amdgcn.rsq.", _get_amdgcn_type_suffix[dtype]())
             ](x)
 
-        return isqrt(x.cast[DType.float32]()).cast[dtype]()
+        return rsqrt(x.cast[DType.float32]()).cast[dtype]()
 
     return 1 / sqrt(x)
 

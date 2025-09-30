@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv, isqrt
+from math import align_down, ceildiv, rsqrt
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
@@ -310,7 +310,7 @@ fn layer_norm_gpu_warp_tiling[
         )
 
         var row_var = max(row_m2 / row_count, 0.0)
-        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         if idx < UInt(num_cols):
             var gamma_val = gamma_fn[simd_width](Index(idx))
@@ -391,7 +391,7 @@ fn layer_norm_gpu_block[
             )
 
         var row_var = max(row_m2 / row_count, 0)
-        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         # need a pass again to perform in place normalization
         for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
@@ -633,7 +633,7 @@ fn layer_norm_cpu[
         var var_val = variance[dtype, input_gen_wrapper](
             num_cols, mean_val, 0
         )  # use biased estimator
-        var norm_factor = isqrt(var_val + epsilon)
+        var norm_factor = rsqrt(var_val + epsilon)
 
         @__copy_capture(norm_factor, mean_val, row)
         @parameter
@@ -849,7 +849,7 @@ fn _rms_norm_warp_tiling_subkernel[
             thread_m2
         )
 
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon)
+    var norm_factor = rsqrt((row_m2 / num_cols) + epsilon)
     var norm_val: SIMD[dtype, simd_width] = 0
     if idx < num_cols:
         var gamma_idx = gamma.runtime_layout(
@@ -1021,7 +1021,7 @@ fn _rms_norm_gpu_block_subkernel[
     var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
         thread_m2
     )
-    var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
+    var norm_factor = rsqrt((row_m2 / num_cols) + eps_accum)
 
     # Need a pass again to perform in place normalization.
     for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
@@ -1271,7 +1271,7 @@ fn rms_norm_cpu[
             sum_val += input_fn[1](row, col).cast[intermediate_type]() ** 2
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
-        var norm_factor = isqrt(mean_val + epsilon.cast[intermediate_type]())
+        var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
         @__copy_capture(norm_factor, weight_offset)
         @parameter
@@ -2192,7 +2192,7 @@ fn group_norm_gpu_warp_tiling[
         )
 
         var row_var = row_m2 / row_count
-        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         if idx + simd_width <= UInt(group_size):
             var g = row % num_groups
@@ -2277,7 +2277,7 @@ fn group_norm_gpu_block[
         )
 
         var row_var = row_m2 / row_count
-        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+        var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         for x in range(ceildiv(group_size // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width

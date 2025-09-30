@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isqrt, sqrt
+from math import rsqrt, sqrt
 from sys import simd_width_of
 
 from algorithm.functional import elementwise
@@ -54,7 +54,7 @@ def run_elementwise[
         var idx = rebind[IndexList[1]](idx0)
 
         out_buffer.store[width=simd_width](
-            idx, isqrt(in_buffer.load[width=simd_width](idx))
+            idx, rsqrt(in_buffer.load[width=simd_width](idx))
         )
 
     elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
@@ -69,7 +69,7 @@ def run_elementwise[
             if dtype is DType.float32:
                 assert_almost_equal(
                     out_host[i],
-                    isqrt(in_host[i]),
+                    rsqrt(in_host[i]),
                     msg=msg,
                     atol=1e-08,
                     rtol=1e-05,
@@ -77,7 +77,7 @@ def run_elementwise[
             else:
                 assert_almost_equal(
                     out_host[i],
-                    isqrt(in_host[i]),
+                    rsqrt(in_host[i]),
                     msg=msg,
                     atol=1e-04,
                     rtol=1e-03,
@@ -89,6 +89,6 @@ def main():
         run_elementwise[DType.float16, sqrt](ctx)
         run_elementwise[DType.float32, sqrt](ctx)
         run_elementwise[DType.float64, sqrt](ctx)
-        run_elementwise[DType.float16, isqrt](ctx)
-        run_elementwise[DType.float32, isqrt](ctx)
-        run_elementwise[DType.float64, isqrt](ctx)
+        run_elementwise[DType.float16, rsqrt](ctx)
+        run_elementwise[DType.float32, rsqrt](ctx)
+        run_elementwise[DType.float64, rsqrt](ctx)

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import isqrt
+from math import rsqrt
 from random import random_ui64, seed
 from sys import env_get_dtype, env_get_int
 
@@ -232,7 +232,7 @@ def execute_kv_cache_ragged_flash_attention[
                         DType.uint32, 1
                     ].create_unknown(),
                 ](input_row_offsets_device.tensor),
-                isqrt(Float32(head_dim)),
+                rsqrt(Float32(head_dim)),
                 ctx,
             )
 

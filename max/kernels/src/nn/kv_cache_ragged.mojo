@@ -2230,7 +2230,7 @@ fn _flare_mla_decode_kv_cache_ragged[
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        scale: The scaled factor in scaled-dot product attention. Usually rsqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
         context: Pointer containing the runtime context for the target device.
@@ -2390,7 +2390,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        scale: The scaled factor in scaled-dot product attention. Usually rsqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (total_seq_len, num_heads, kv_head_size).
         softmax_info: NDBuffer with shape (total_seq_len, num_heads, 2).

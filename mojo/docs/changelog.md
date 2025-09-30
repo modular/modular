@@ -34,6 +34,9 @@ Literals now have a default type. For example, you can now bind
 
 - The deprecated `DType.index` is now removed in favor of the `DType.int`.
 
+- `math.isqrt` has been renamed to `rsqrt` since it performs reciprocal square
+  root functionality.
+
 ### Tooling changes
 
 ### ❌ Removed

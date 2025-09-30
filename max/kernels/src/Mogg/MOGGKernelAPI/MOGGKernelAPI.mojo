@@ -26,7 +26,7 @@ from math import (
     fma,
     gcd,
     iota,
-    isqrt,
+    rsqrt,
     log,
     log1p,
     sin,
@@ -760,7 +760,7 @@ struct Isqrt(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return isqrt(x)
+        return rsqrt(x)
 
 
 @compiler.register("mo.select")

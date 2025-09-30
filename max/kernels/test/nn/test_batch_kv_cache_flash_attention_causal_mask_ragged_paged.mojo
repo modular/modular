@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from random import random_ui64, seed
 
 from buffer import Dim, DimList
@@ -198,7 +198,7 @@ def execute_ragged_flash_attention[
         kv_collection_continuous.get_key_cache(layer_idx),
         kv_collection_continuous.get_value_cache(layer_idx),
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ref_output.to_layout_tensor(),
     )
 
@@ -211,7 +211,7 @@ def execute_ragged_flash_attention[
         kv_collection_paged.get_key_cache(layer_idx),
         kv_collection_paged.get_value_cache(layer_idx),
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         test_output.to_layout_tensor(),
     )
 

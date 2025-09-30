@@ -54,7 +54,7 @@ from .math import (
     hypot,
     iota,
     isclose,
-    isqrt,
+    rsqrt,
     j0,
     j1,
     lcm,

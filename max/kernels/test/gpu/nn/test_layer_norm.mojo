@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from sys import simd_width_of
 
 from gpu import WARP_SIZE
@@ -153,7 +153,7 @@ fn run_layer_norm_block[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -268,7 +268,7 @@ fn run_layer_norm_gpu[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -409,7 +409,7 @@ fn run_layer_norm_warp_tiling[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[

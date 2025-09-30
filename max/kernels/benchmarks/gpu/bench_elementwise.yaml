@@ -16,14 +16,14 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_elementwise.mojo
 
 params:
 # baby-replit-CE-kernels
-- $op: ["sqrt", "isqrt", "log", "sin", "tanh", "exp", "erf", "add_const", "copy"]
+- $op: ["sqrt", "rsqrt", "log", "sin", "tanh", "exp", "erf", "add_const", "copy"]
   rank: 3
   dims: 1x1024x3072
   aligned_memory_config: [0,1]
   emulate_graph_compiler: [0,1]
 
 # baby-replit-TG-kernels
-- $op: ["sqrt", "isqrt", "log", "sin", "tanh", "exp", "erf", "add_const", "copy"]
+- $op: ["sqrt", "rsqrt", "log", "sin", "tanh", "exp", "erf", "add_const", "copy"]
   rank: 5
   dims: 1x8x3x1025x128
   aligned_memory_config: [0,1]
