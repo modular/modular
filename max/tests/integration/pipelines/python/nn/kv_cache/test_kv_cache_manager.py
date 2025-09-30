@@ -9,6 +9,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.interfaces import RequestID
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -121,7 +122,7 @@ async def test_claim_and_release() -> None:
 
     # Release id that has not been claimed
     with pytest.raises(ValueError):
-        kv_manager.release("fake-request-id")
+        kv_manager.release(RequestID("fake-request-id"))
 
     # Release all ids
     for i, context in enumerate(contexts + contexts_2):

@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from max.interfaces import (
     GenerationStatus,
+    RequestID,
     SamplingParams,
     msgpack_eq,
     msgpack_numpy_decoder,
@@ -22,6 +23,7 @@ from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 
 def test_context__get_min_token_logit_mask() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
@@ -48,6 +50,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids() -> (
     None
 ):
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
@@ -74,6 +77,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
     None
 ):
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
@@ -97,6 +101,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
 
 def test_context__get_min_token_logit_mask_with_no_eos_token_ids() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         sampling_params=SamplingParams(min_new_tokens=3),
@@ -120,6 +125,7 @@ def test_context__get_min_token_logit_mask_with_no_eos_token_ids() -> None:
 
 def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4, 5},
@@ -143,6 +149,7 @@ def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
 
 def test_context__eos() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
@@ -157,6 +164,7 @@ def test_context__eos() -> None:
 
 def test_context__max_length() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=6,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -168,6 +176,7 @@ def test_context__max_length() -> None:
 
 def test_context__current_length() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -191,6 +200,7 @@ def test_context__current_length() -> None:
 
 def test_context__seq_len() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -205,6 +215,7 @@ def test_context__seq_len() -> None:
 
 def test_context__needs_ce() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -239,6 +250,7 @@ def test_context__needs_ce() -> None:
 
 def test_context__bump_token_indices() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -272,6 +284,7 @@ def test_context__update_beyond_chunk_size() -> None:
     # Before making changes to resize behaviour, ensure you
     # test with the server, not just the `generate` entrypoint.
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -283,6 +296,7 @@ def test_context__update_beyond_chunk_size() -> None:
 
 def test_context__reset() -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
@@ -310,6 +324,7 @@ def test_context_sampling_params_integration() -> None:
     )
 
     context = TextContext(
+        request_id=RequestID(),
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         sampling_params=custom_params,
@@ -331,6 +346,7 @@ def test_context_sampling_params_stop() -> None:
     custom_params = SamplingParams(stop=["This is a test"])
 
     context = TextContext(
+        request_id=RequestID(),
         max_length=50,
         tokens=np.array([0]),
         eos_sequences=[[1, 2]],
@@ -344,6 +360,7 @@ def test_context_sampling_params_stop() -> None:
     assert np.array_equal(context.generated_tokens, np.array([1, 2]))
 
     context = TextContext(
+        request_id=RequestID(),
         max_length=50,
         tokens=np.array([0]),
         eos_sequences=[[2], [3, 1]],
@@ -361,6 +378,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
     custom_params = SamplingParams(stop=["This is a test"])
 
     context = TextContext(
+        request_id=RequestID(),
         max_length=50,
         tokens=np.array([0]),
         eos_token_ids=set([5, 4, 2]),
@@ -373,6 +391,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
     assert np.array_equal(context.generated_tokens, np.array([1, 2]))
 
     context = TextContext(
+        request_id=RequestID(),
         max_length=50,
         tokens=np.array([0]),
         eos_token_ids=set([5, 4, 2]),
@@ -388,6 +407,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
 def test_context_serializable() -> None:
     # Test that we can encode a sample TextContext with Pickle
     original_context = TextContext(
+        request_id=RequestID(),
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
     )
@@ -412,6 +432,7 @@ def test_context_serializable() -> None:
 def test_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, TextContext) with Pickle
     original_context = TextContext(
+        request_id=RequestID(),
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
     )
@@ -602,6 +623,7 @@ def test_vision_context_reset() -> None:
 
 def test_text_context_repr(capsys: pytest.CaptureFixture) -> None:
     context = TextContext(
+        request_id=RequestID(),
         tokens=np.array([0, 1, 2, 3, 4]),
         max_length=5,
     )

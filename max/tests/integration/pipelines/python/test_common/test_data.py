@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from max.interfaces import SamplingParams, TextGenerationRequest
+from max.interfaces import RequestID, SamplingParams, TextGenerationRequest
 
 from .storage import load_bytes
 
@@ -66,7 +66,7 @@ class MockTextGenerationRequest:
         )
 
     def to_text_generation_request(
-        self, uuid: str, sampling_params: SamplingParams
+        self, request_id: RequestID, sampling_params: SamplingParams
     ) -> TextGenerationRequest:
         payload: dict[str, Any] = {}
         if self.messages:
@@ -77,7 +77,7 @@ class MockTextGenerationRequest:
                 load_bytes(image_url) for image_url in self.images
             ]
         return TextGenerationRequest(
-            request_id=uuid,
+            request_id=request_id,
             model_name="",
             sampling_params=sampling_params,
             **payload,

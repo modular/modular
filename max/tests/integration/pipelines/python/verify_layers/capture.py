@@ -23,7 +23,7 @@ from max._core.engine import PrintStyle
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorValue, ops
-from max.interfaces import SamplingParams, TextGenerationRequest
+from max.interfaces import RequestID, SamplingParams, TextGenerationRequest
 from max.nn.layer import Module
 from max.pipelines import TextGenerationPipeline
 from test_common.evaluate import ModelOutput
@@ -641,7 +641,7 @@ def capture_max_layer_outputs(
         # Run a single step of the pipeline
         sampling_params = SamplingParams(max_new_tokens=1, top_k=1)
         request = TextGenerationRequest(
-            request_id="test",
+            request_id=RequestID("test"),
             prompt=prompt,
             model_name=pipeline,
             sampling_params=sampling_params,

@@ -11,7 +11,11 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
+from max.interfaces import (
+    RequestID,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLTokenizer
 from PIL import Image
 from pytest_mock import MockerFixture
@@ -47,7 +51,7 @@ async def test_internvl_tokenizer_new_context_smoke(
 
     request = TextGenerationRequest(
         messages=[TextGenerationRequestMessage(role="user", content="test")],
-        request_id="test-id",
+        request_id=RequestID("test-id"),
         model_name="test-model",
     )
 
@@ -88,7 +92,7 @@ async def test_super_long(
 
     request = TextGenerationRequest(
         messages=[TextGenerationRequestMessage(role="user", content="test")],
-        request_id="test-id",
+        request_id=RequestID("test-id"),
         model_name="test-model",
     )
 
@@ -162,7 +166,7 @@ async def test_internvl_tokenizer_image_token_indices(
             )
         ],
         images=[test_image],
-        request_id="test-id",
+        request_id=RequestID("test-id"),
         model_name="test-model",
     )
 
@@ -236,7 +240,7 @@ async def test_internvl_tokenizer_image_placement(
             ),
         ],
         images=[test_image],
-        request_id="test-id",
+        request_id=RequestID("test-id"),
         model_name="test-model",
     )
 

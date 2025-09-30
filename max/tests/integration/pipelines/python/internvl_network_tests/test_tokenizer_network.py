@@ -7,11 +7,10 @@
 """Tests for InternVL tokenizer that require network access."""
 
 import io
-import uuid
 
 import pytest
 from max import pipelines
-from max.interfaces import TextGenerationRequest
+from max.interfaces import RequestID, TextGenerationRequest
 from max.pipelines import PipelineConfig
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from PIL import Image
@@ -46,14 +45,14 @@ async def test_internvl_tokenizer_with_image() -> None:
     # Compare text-only vs text+image tokenization
     text_context = await max_tokenizer.new_context(
         TextGenerationRequest(
-            request_id=str(uuid.uuid4()),
+            request_id=RequestID(),
             model_name=model_id,
             prompt=test_text,
         )
     )
     image_context = await max_tokenizer.new_context(
         TextGenerationRequest(
-            request_id=str(uuid.uuid4()),
+            request_id=RequestID(),
             model_name=model_id,
             prompt=test_text,
             images=[test_image],

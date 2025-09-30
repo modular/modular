@@ -6,13 +6,13 @@
 """Functions for running embeddings pipelines."""
 
 import asyncio
-import uuid
 from collections.abc import Iterable
 from typing import Any
 
 from max.interfaces import (
     EmbeddingsGenerationInputs,
     PipelineTokenizer,
+    RequestID,
     TextGenerationRequest,
 )
 from max.pipelines import EmbeddingsPipeline
@@ -43,7 +43,8 @@ async def encode_async(
     results: list[dict[str, Any]] = []
 
     def _encode_batch(
-        batch_prompts: dict[str, str], batch_contexts: dict[str, Any]
+        batch_prompts: dict[RequestID, str],
+        batch_contexts: dict[RequestID, Any],
     ) -> None:
         model_outputs = pipeline.execute(
             EmbeddingsGenerationInputs([batch_contexts])
@@ -60,10 +61,10 @@ async def encode_async(
     batch_prompts = {}
     batch_contexts = {}
     for prompt in prompts:
-        curr_req_id = str(uuid.uuid4())
+        curr_req_id = RequestID()
         context = await tokenizer.new_context(
             TextGenerationRequest(
-                request_id="",
+                request_id=curr_req_id,
                 prompt=prompt,
                 model_name=type(pipeline).__name__,
             )

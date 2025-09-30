@@ -31,9 +31,9 @@ class SpeculativeDecodingSetup:
     pipeline: SpeculativeDecodingTextGenerationPipeline
     context1: TextContext
     context2: TextContext
-    req_id1: str
-    req_id2: str
-    pipeline_request: dict[str, TextContext]
+    req_id1: RequestID
+    req_id2: RequestID
+    pipeline_request: dict[RequestID, TextContext]
     context_batch: list[TextContext]
     num_steps: int
 
@@ -61,15 +61,16 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
     assert isinstance(pipeline, SpeculativeDecodingTextGenerationPipeline)
 
     # Create contexts for two test prompts
-    req_id1 = "1"
+    req_id1 = RequestID()
     tokens1 = np.array([1, 450, 6593, 310, 2834, 338], dtype=np.int64)
 
     context1 = TextContext(
+        request_id=req_id1,
         tokens=tokens1,
         max_length=1024,
     )
 
-    req_id2 = "2"
+    req_id2 = RequestID()
     tokens2 = np.array(
         [
             1,
@@ -88,6 +89,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
         dtype=np.int64,
     )
     context2 = TextContext(
+        request_id=req_id2,
         tokens=tokens2,
         max_length=1024,
     )
@@ -370,9 +372,9 @@ def test_speculative_decoding_context_update(
     )
     context1: TextContext = setup_speculative_decoding_pipeline.context1
     context2: TextContext = setup_speculative_decoding_pipeline.context2
-    req_id1: str = context1.request_id
-    req_id2: str = context2.request_id
-    pipeline_request: dict[str, TextContext] = (
+    req_id1: RequestID = context1.request_id
+    req_id2: RequestID = context2.request_id
+    pipeline_request: dict[RequestID, TextContext] = (
         setup_speculative_decoding_pipeline.pipeline_request
     )
     context_batch: list[TextContext] = (
@@ -576,10 +578,10 @@ def test_kv_cache_claiming_protocol():
     assert isinstance(pipeline, SpeculativeDecodingTextGenerationPipeline)
 
     # Create a test context
-    req_id = "test_request"
     tokens = np.array([1, 450, 6593], dtype=np.int64)
-    context = TextContext(tokens=tokens, max_length=1024)
-    context.request_id = req_id
+    context = TextContext(
+        request_id=RequestID(), tokens=tokens, max_length=1024
+    )
     batch = [context]
 
     # Mock the KV cache manager to track method calls
@@ -626,8 +628,8 @@ def test_kv_cache_claiming_protocol():
             assert first_call[0] == "external_claim", (
                 f"First call should be external_claim, got {first_call[0]}"
             )
-            assert first_call[1] == req_id, (
-                f"external_claim should be called with request_id {req_id}, got {first_call[1]}"
+            assert first_call[1] == context.request_id, (
+                f"external_claim should be called with request_id {context.request_id}, got {first_call[1]}"
             )
 
             # Check that fetch was called after external_claim
@@ -635,4 +637,4 @@ def test_kv_cache_claiming_protocol():
             assert len(fetch_calls) > 0, "fetch should have been called"
 
             # Verify contains was called to check if request was already claimed
-            mock_kv_manager.contains.assert_called_with(req_id)
+            mock_kv_manager.contains.assert_called_with(context.request_id)

@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable, TypedDict
 
@@ -29,6 +28,7 @@ from max.interfaces import (
     LogitsProcessor,
     PipelineTokenizer,
     ProcessorInputs,
+    RequestID,
     SamplingParams,
 )
 from transformers import PreTrainedTokenizerBase
@@ -77,7 +77,7 @@ def run_model(
     hf_tokenizer = tokenizer.delegate
     assert isinstance(hf_tokenizer, PreTrainedTokenizerBase)
 
-    ids = [str(uuid.uuid4()) for _ in requests]
+    ids = [RequestID() for _ in requests]
     prompts_by_id = {id: request.prompt for id, request in zip(ids, requests)}
     stored_logits = StoreLogits(ids, tokenizer)
 
@@ -129,9 +129,9 @@ def run_model(
 
 class StoreLogits:
     def __init__(
-        self, ids: Sequence[str], tokenizer: PipelineTokenizer
+        self, ids: Sequence[RequestID], tokenizer: PipelineTokenizer
     ) -> None:
-        self.values: dict[str, list[TokenInfo]] = {id: [] for id in ids}
+        self.values: dict[RequestID, list[TokenInfo]] = {id: [] for id in ids}
         self.reached_eos = {id: False for id in ids}
         self.tokenizer = tokenizer
 
@@ -157,7 +157,9 @@ class StoreLogits:
 
 class ReplaceLogitsWithReference:
     def __init__(
-        self, devices: Sequence[Device], reference_by_id: dict[str, ModelOutput]
+        self,
+        devices: Sequence[Device],
+        reference_by_id: dict[RequestID, ModelOutput],
     ) -> None:
         self.reference_by_id = reference_by_id
         self.step_by_id = {id: 0 for id in reference_by_id}

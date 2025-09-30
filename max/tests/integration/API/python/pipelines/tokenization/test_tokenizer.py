@@ -13,6 +13,7 @@ import pytest
 import requests
 from max.driver import DeviceSpec, accelerator_count
 from max.interfaces import (
+    RequestID,
     SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestFunction,
@@ -70,7 +71,7 @@ def test_text_and_vision_tokenizer() -> None:
             filtered_imgs_list = [img for img in imgs_list if img is not None]
             assert len(filtered_imgs_list) == len(imgs_list)
             request = TextGenerationRequest(
-                request_id="request...",
+                request_id=RequestID("request..."),
                 model_name=repo_id,
                 messages=[
                     TextGenerationRequestMessage(
@@ -104,7 +105,7 @@ def test_text_tokenizer_with_tool_use(
     tokenizer = TextTokenizer(model_path)
 
     request = TextGenerationRequest(
-        request_id="request_with_tools",
+        request_id=RequestID("request_with_tools"),
         model_name=model_path,
         messages=[
             TextGenerationRequestMessage(
@@ -150,7 +151,7 @@ def test_tokenizer__truncates_to_max_length(
     )
 
     short_request = TextGenerationRequest(
-        request_id="request_with_short_message",
+        request_id=RequestID("request_with_short_message"),
         model_name=llama_3_1_8b_instruct_local_path,
         prompt="Short message",
     )
@@ -158,7 +159,7 @@ def test_tokenizer__truncates_to_max_length(
     assert context.current_length < 12
 
     long_request = TextGenerationRequest(
-        request_id="request_with_short_message",
+        request_id=RequestID("request_with_short_message"),
         model_name=llama_3_1_8b_instruct_local_path,
         prompt="Longer message with lots of text with more words than max length for sure.",
     )
@@ -179,7 +180,7 @@ def test_tokenizer__with_context_validation(
     )
 
     request = TextGenerationRequest(
-        request_id="request_with_short_message",
+        request_id=RequestID("request_with_short_message"),
         model_name=llama_3_1_8b_instruct_local_path,
         prompt="Short message",
     )
@@ -263,7 +264,7 @@ def test_text_tokenizer_with_constrained_decoding(
     """
 
     request = TextGenerationRequest(
-        request_id="request_with_tools",
+        request_id=RequestID("request_with_tools"),
         model_name=pipeline_config.model_config.model_path,
         messages=[
             TextGenerationRequestMessage(
@@ -302,7 +303,7 @@ def test_tokenizer_encode_stop_criteria(
     prompt = "hi my name is"
 
     request = TextGenerationRequest(
-        request_id="id_0",
+        request_id=RequestID("id_0"),
         model_name=llama_3_1_8b_instruct_local_path,
         messages=[
             TextGenerationRequestMessage(
@@ -337,7 +338,7 @@ def test_text_and_vision_tokenizer_forwards_sampling_params() -> None:
     )
 
     request = TextGenerationRequest(
-        request_id="test_request",
+        request_id=RequestID("test_request"),
         model_name=model_path,
         messages=[
             TextGenerationRequestMessage(
@@ -724,7 +725,7 @@ ASSISTANT: """
 
     # Create a request that will use the custom template
     request = TextGenerationRequest(
-        request_id="test_custom_template",
+        request_id=RequestID("test_custom_template"),
         model_name=model_name,
         messages=[
             TextGenerationRequestMessage(

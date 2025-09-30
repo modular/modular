@@ -11,6 +11,7 @@ from typing import Any
 import msgspec
 import numpy as np
 import numpy.typing as npt
+from max.interfaces import RequestID
 from max.interfaces.utils.serialization import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
@@ -22,13 +23,16 @@ class SampleData(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     array: npt.NDArray[np.integer[Any]]
     value: int
+    request_id: RequestID
 
 
 def test_msgpack_numpy_decoder_pickle_serialization():
     """Test that MsgpackNumpyDecoder can be pickled and unpickled successfully."""
     # Create test data with a numpy array
     original_array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
-    test_data = SampleData(array=original_array, value=42)
+    test_data = SampleData(
+        array=original_array, value=42, request_id=RequestID()
+    )
 
     # Encode the test data
     encoder = msgpack_numpy_encoder()
@@ -62,7 +66,9 @@ def test_msgpack_numpy_decoder_pickle_with_copy_false():
     """Test pickling decoder with copy=False parameter."""
     # Create test data
     original_array = np.array([1, 2, 3, 4, 5], dtype=np.int64)
-    test_data = SampleData(array=original_array, value=123)
+    test_data = SampleData(
+        array=original_array, value=123, request_id=RequestID()
+    )
 
     # Encode the test data
     encoder = msgpack_numpy_encoder()
@@ -112,7 +118,9 @@ def test_msgpack_numpy_encoder_pickle_serialization():
     """Test that MsgpackNumpyEncoder can be pickled and unpickled successfully."""
     # Create test data with a numpy array
     original_array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
-    test_data = SampleData(array=original_array, value=42)
+    test_data = SampleData(
+        array=original_array, value=42, request_id=RequestID()
+    )
 
     # Create an encoder
     original_encoder = msgpack_numpy_encoder()
@@ -148,7 +156,9 @@ def test_msgpack_numpy_encoder_pickle_with_shared_memory():
     """Test pickling encoder with shared memory parameters."""
     # Create test data
     original_array = np.array([1, 2, 3, 4, 5], dtype=np.int64)
-    test_data = SampleData(array=original_array, value=123)
+    test_data = SampleData(
+        array=original_array, value=123, request_id=RequestID()
+    )
 
     # Create an encoder with shared memory enabled
     original_encoder = msgpack_numpy_encoder(

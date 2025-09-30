@@ -35,6 +35,7 @@ from max.interfaces import (
     EmbeddingsGenerationInputs,
     PipelineTask,
     PipelineTokenizer,
+    RequestID,
     TextGenerationRequest,
 )
 from max.pipelines import (
@@ -118,9 +119,9 @@ class EmbeddingModel:
     async def batch_encode(self, sentences: Sequence[str]) -> list[np.ndarray]:
         pipeline_request = {}
         for n, sentence in enumerate(sentences):
-            pipeline_request[str(n)] = await self.tokenizer.new_context(
+            pipeline_request[RequestID()] = await self.tokenizer.new_context(
                 TextGenerationRequest(
-                    request_id=str(n),
+                    request_id=RequestID(str(n)),
                     prompt=sentence,
                     model_name=self.pipeline_config.model_config.model_path,
                 )
@@ -130,7 +131,7 @@ class EmbeddingModel:
         )
         results = []
         for n in range(len(sentences)):
-            embeddings = response[str(n)].embeddings
+            embeddings = response[list(pipeline_request.keys())[n]].embeddings
             results.append(embeddings)
         return results
 

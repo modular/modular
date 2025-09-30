@@ -9,6 +9,7 @@ import re
 
 import pytest
 from max.interfaces import (
+    RequestID,
     SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestFunction,
@@ -196,7 +197,7 @@ async def test_tool_calling_prompt_format(model_name: str) -> None:
 
     # Create a TextGenerationRequest with tools
     request = TextGenerationRequest(
-        request_id="test_tool_calling",
+        request_id=RequestID("test_tool_calling"),
         model_name=model_name,
         messages=messages,
         tools=tools,
@@ -285,7 +286,7 @@ async def test_tool_calling_no_tools_baseline(model_name: str) -> None:
 
     # Create a TextGenerationRequest without tools
     request = TextGenerationRequest(
-        request_id="test_no_tools",
+        request_id=RequestID("test_no_tools"),
         model_name=model_name,
         messages=messages,
         tools=None,  # No tools provided

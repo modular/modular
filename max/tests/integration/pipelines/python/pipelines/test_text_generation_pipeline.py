@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 import hf_repo_lock
 from max.driver import DeviceSpec
 from max.interfaces import (
+    RequestID,
     SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
@@ -44,7 +45,7 @@ def test_mock_text_tokenizer() -> None:
         model_path = REPO_ID
 
     request = TextGenerationRequest(
-        request_id="request_0",
+        request_id=RequestID("request_0"),
         model_name=model_path,
         prompt=test_prompt,
         messages=None,
@@ -101,7 +102,7 @@ def test_text_generation_pipeline(
         context_batch = {}
         max_new_tokens = {}
         for i, prompt in enumerate(prompts):
-            id = f"request_{i}"
+            id = RequestID(f"request_{i}")
             max_new_tokens[id] = _max_new_tokens[i]
             sampling_params = SamplingParams(max_new_tokens=max_new_tokens[id])
             request = TextGenerationRequest(
@@ -114,29 +115,32 @@ def test_text_generation_pipeline(
 
             context_batch[id] = asyncio.run(tokenizer.new_context(request))
 
-        length = [0 for _ in range(len(context_batch))]
+        length = {context.request_id: 0 for context in context_batch.values()}
         while True:
             # This will generate a list[dict[request_id, TextGenerationOutput]] for each step
             inputs = TextGenerationInputs(batches=[context_batch], num_steps=1)
             output = pipeline.execute(inputs)
             assert len(output) == len(context_batch)
 
-            for request_idx, response in output.items():
-                i = int(request_idx[len("request_") :])
-                length[i] += len(response.tokens)
+            for response in output.values():
+                length[response.request_id] = len(response.tokens)
                 # Check that we are not overrunning, the request max new tokens
-                if _max := max_new_tokens[request_idx]:
-                    assert length[i] <= _max
+                if _max := max_new_tokens[response.request_id]:
+                    assert length[response.request_id] <= _max
 
-                assert length[i] < max_length
+                assert length[response.request_id] < max_length
 
                 if response.is_done:
-                    del context_batch[request_idx]
+                    del context_batch[response.request_id]
 
             # Break
             if not context_batch:
                 break
 
         # These two prompts should generate the full max new tokens.
-        assert length[0] == _max_new_tokens[0]
-        assert length[1] == _max_new_tokens[1]
+        for response in output.values():
+            if max_new_tokens[response.request_id] is not None:
+                assert (
+                    length[response.request_id]
+                    == max_new_tokens[response.request_id]
+                )
