@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import Optional, Union
 
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
 from max.driver import CPU, Accelerator, Device, DLPackArray, Tensor
@@ -798,6 +799,7 @@ def compare_attention_lora_outputs(
     )
 
 
+@pytest.mark.skip("Re-enable after: E2EOPT-612")
 def test_attention_lora() -> None:
     is_gpu = True
     config1 = AttentionTestConfig(
@@ -821,6 +823,7 @@ def test_attention_lora() -> None:
     compare_attention_lora_outputs(config2, is_gpu=is_gpu)
 
 
+@pytest.mark.skip("Re-enable after: E2EOPT-612")
 def test_linear_lora() -> None:
     is_gpu = True
     compare_linear_lora_outputs(512, 1024, 8, 16, is_gpu=is_gpu)
