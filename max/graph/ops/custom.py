@@ -148,39 +148,30 @@ def inplace_custom(
     #
     # Until that switch is made check that at least one input to the custom op
     # is a BufferValue to provide some level of safety.
-    has_buffer_operand = any(isinstance(val, BufferValue) for val in values)
-    if not has_buffer_operand and not any(
-        isinstance(val, _OpaqueValue) for val in values
-    ):
-        raise TypeError(
+    if not any(isinstance(val, (BufferValue, _OpaqueValue)) for val in values):
+        msg = (
             "expected at least one BufferValue or _OpaqueValue as input to an "
             "in-place custom op"
         )
+        raise TypeError(msg)
 
     # Pass empty out_types if unspecified.
     out_mlir_types = [t.to_mlir() for t in out_types] if out_types else []
 
     graph = Graph.current
+    current_chain = graph._current_chain
 
     values = [
         TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
     ]
 
-    chain_operand = graph.device_chains[device]
-    if has_buffer_operand:
-        chain_operand = graph._merge_chains(
-            (graph._current_chain, chain_operand)
-        )
-
     (*results, out_chain), custom_op = graph._add_op_get_op_with_results(
         mo.custom,
         results_=[*out_mlir_types, _ChainType().to_mlir()],
-        operands_=[*values, chain_operand],
+        operands_=[*values, current_chain],
         symbol=StringAttr.get(name, graph._context),
     )
-    graph.device_chains[device] = out_chain
-    if has_buffer_operand:
-        graph._update_chain(out_chain)
+    graph._update_chain(out_chain)
 
     if parameters is not None:
         custom_op.parameters = DictAttr.get(
