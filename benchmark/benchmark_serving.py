@@ -40,8 +40,9 @@ from urllib.parse import urlparse
 import aiohttp
 import numpy as np
 import yaml
+from safetensors.numpy import save_file
 from tqdm.asyncio import tqdm
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
@@ -75,6 +76,7 @@ try:
     )
     from .metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
+        LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
@@ -103,6 +105,7 @@ except ImportError:
     )
     from metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
+        LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
@@ -130,7 +133,6 @@ class RequestFuncInput:
     max_tokens: int | None
     ignore_eos: bool
     model: str
-    lora: str
     session_id: str | None = None
     temperature: float = 0.0
     top_p: float = 1.0
@@ -284,9 +286,6 @@ async def async_request_openai_completions(
             "ignore_eos": request_func_input.ignore_eos,
         }
 
-        if request_func_input.lora is not None:
-            payload["lora"] = request_func_input.lora
-
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
 
@@ -390,9 +389,6 @@ async def async_request_openai_chat_completions(
             "ignore_eos": request_func_input.ignore_eos,
         }
 
-        if request_func_input.lora is not None:
-            payload["lora"] = request_func_input.lora
-
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
 
@@ -477,6 +473,302 @@ async def async_request_openai_chat_completions(
     if pbar:
         pbar.update(1)
     return output
+
+
+def generate_lora_adapter(
+    base_model_id: str,
+    output_dir: str,
+    target_modules: list[str],
+    lora_rank: int,
+    adapter_name: str,
+) -> None:
+    """Generate a minimal LoRA adapter for testing.
+
+    Args:
+        base_model_id: HuggingFace model ID to generate adapter for
+        output_dir: Directory to save the adapter files
+        lora_rank: LoRA rank (r parameter)
+        lora_alpha: LoRA alpha parameter for scaling
+        target_modules: List of module names to apply LoRA to (q, k, v, o)
+        adapter_name: Name for the adapter (used in metadata)
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Load base model config to get dimensions
+    config = AutoConfig.from_pretrained(base_model_id)
+
+    # Create adapter config
+    adapter_config: dict[str, Any] = {
+        "alpha_pattern": {},
+        "auto_mapping": None,
+        "base_model_name_or_path": base_model_id,
+        "bias": "none",
+        "fan_in_fan_out": False,
+        "inference_mode": True,
+        "init_lora_weights": True,
+        "layers_pattern": None,
+        "layers_to_transform": None,
+        "loftq_config": {},
+        "lora_alpha": 16,
+        "lora_dropout": 0.0,
+        "megatron_config": None,
+        "megatron_core": "megatron.core",
+        "modules_to_save": None,
+        "peft_type": "LORA",
+        "r": lora_rank,
+        "rank_pattern": {},
+        "revision": None,
+        "target_modules": target_modules,
+        "task_type": "CAUSAL_LM",
+        "use_dora": False,
+        "use_rslora": False,
+    }
+
+    # Save adapter config
+    with open(os.path.join(output_dir, "adapter_config.json"), "w") as f:
+        json.dump(adapter_config, f, indent=2)
+
+    # Generate minimal LoRA weights
+    lora_weights = {}
+
+    # For each layer and target module, create LoRA A and B matrices
+    num_layers = config.num_hidden_layers
+    hidden_size = config.hidden_size
+
+    # Handle grouped query attention - k_proj and v_proj have different dimensions
+    num_heads = config.num_attention_heads
+    num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
+    head_dim = hidden_size // num_heads
+
+    # Determine output dimensions for attention projection modules
+    attn_module_dims = {
+        "q_proj": hidden_size,  # hidden_size -> hidden_size
+        "k_proj": num_kv_heads * head_dim,  # hidden_size -> kv_hidden_size
+        "v_proj": num_kv_heads * head_dim,  # hidden_size -> kv_hidden_size
+        "o_proj": hidden_size,  # hidden_size -> hidden_size
+    }
+
+    for layer_idx in range(num_layers):
+        for module in target_modules:
+            # Validate that module is supported (attention only for now)
+            if module not in attn_module_dims:
+                raise ValueError(
+                    f"Unsupported target module '{module}'. "
+                    f"Only attention modules are currently supported: {list(attn_module_dims.keys())}"
+                )
+
+            # Get the output dimension for this module type
+            out_dim = attn_module_dims[module]
+            in_dim = (
+                hidden_size  # Input is always hidden_size for attention modules
+            )
+
+            # LoRA A: shape should be (lora_rank, in_dim)
+            lora_a_key = f"base_model.model.layers.{layer_idx}.self_attn.{module}.lora_A.weight"
+            lora_weights[lora_a_key] = (
+                np.random.randn(lora_rank, in_dim).astype(np.float32) * 0.01
+            )
+
+            # LoRA B: shape should be (out_dim, lora_rank)
+            lora_b_key = f"base_model.model.layers.{layer_idx}.self_attn.{module}.lora_B.weight"
+            lora_weights[lora_b_key] = np.zeros(
+                (out_dim, lora_rank), dtype=np.float32
+            )
+
+    # Save weights in safetensors format
+    save_file(
+        lora_weights, os.path.join(output_dir, "adapter_model.safetensors")
+    )
+
+
+def generate_loras(
+    model_id: str,
+    lora_rank: int,
+    num_loras: int,
+    lora_target_modules: list[str],
+    lora_paths: list[str],
+    lora_output_dir: str,
+    lora_server_path: str,
+) -> dict[str, str]:
+    # Generate test LoRA adapters if needed
+    lora_configs: dict[str, str] = {}
+
+    if lora_paths:
+        # Use provided LoRA paths
+        logger.info("Using provided LoRA paths")
+        for i, path in enumerate(lora_paths):
+            abs_path = os.path.abspath(path)
+            lora_configs[f"adapter_{i}"] = abs_path
+    else:
+        # Generate test LoRA adapters
+        logger.info(f"Preparing {num_loras} test LoRA adapters...")
+
+        # Use custom output directory if specified, otherwise use temp directory
+        base_output_dir = os.path.abspath(os.path.expanduser(lora_output_dir))
+        os.makedirs(base_output_dir, exist_ok=True)
+
+        for i in range(num_loras):
+            adapter_name = f"generated_adapter_{i}"
+            adapter_path = os.path.join(base_output_dir, adapter_name)
+
+            generate_lora_adapter(
+                base_model_id=model_id,
+                output_dir=adapter_path,
+                target_modules=lora_target_modules,
+                lora_rank=lora_rank,
+                adapter_name=adapter_name,
+            )
+
+            # Use server path if specified, otherwise use absolute local path
+            if lora_server_path:
+                relative_path = os.path.relpath(adapter_path, base_output_dir)
+                server_path = os.path.join(lora_server_path, relative_path)
+            else:
+                server_path = os.path.abspath(adapter_path)
+
+            lora_configs[adapter_name] = server_path
+    return lora_configs
+
+
+async def async_request_lora_load(
+    api_url: str, lora_name: str, lora_path: str
+) -> tuple[bool, float]:
+    """Load a LoRA adapter via the API.
+
+    Returns:
+        Tuple of (success, load_time_ms)
+    """
+    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+        payload = {"lora_name": lora_name, "lora_path": lora_path}
+        headers = {"Content-Type": "application/json"}
+        logger.debug(f"Loading LoRA '{lora_name}' from path: {lora_path}")
+
+        start_time = time.perf_counter()
+        try:
+            async with session.post(
+                url=f"{api_url}/v1/load_lora_adapter",
+                json=payload,
+                headers=headers,
+            ) as response:
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                if response.status == 200:
+                    logger.debug(
+                        f"Successfully loaded LoRA '{lora_name}' in {elapsed_ms:.2f}ms"
+                    )
+                    return True, elapsed_ms
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to load LoRA '{lora_name}': {error_text}"
+                    )
+                    return False, elapsed_ms
+        except Exception as e:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.exception(f"Exception loading LoRA '{lora_name}'")
+            return False, elapsed_ms
+
+
+async def async_request_lora_unload(
+    api_url: str, lora_name: str
+) -> tuple[bool, float]:
+    """Unload a LoRA adapter via the API.
+
+    Returns:
+        Tuple of (success, unload_time_ms)
+    """
+    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+        payload = {"lora_name": lora_name}
+        headers = {"Content-Type": "application/json"}
+
+        start_time = time.perf_counter()
+        try:
+            async with session.post(
+                url=f"{api_url}/v1/unload_lora_adapter",
+                json=payload,
+                headers=headers,
+            ) as response:
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                if response.status == 200:
+                    logger.debug(
+                        f"Successfully unloaded LoRA '{lora_name}' in {elapsed_ms:.2f}ms"
+                    )
+                    return True, elapsed_ms
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to unload LoRA '{lora_name}': {error_text}"
+                    )
+                    return False, elapsed_ms
+        except Exception as e:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.exception(f"Exception loading LoRA '{lora_name}'")
+            return False, elapsed_ms
+
+
+async def benchmark_lora_unloading(
+    api_url: str,
+    lora_configs: dict[str, str],
+    metrics: LoRAMetrics,
+    max_concurrent: int = 1,
+) -> None:
+    """Benchmark LoRA unloading performance.
+
+    Args:
+        api_url: Base API URL
+        lora_names: List of LoRA adapter names to unload
+        max_concurrent_unloads: Maximum concurrent unloading operations
+
+    Returns:
+        LoRAOperationMetrics with unloading performance data
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def unload_with_semaphore(name: str) -> None:
+        async with semaphore:
+            success, unload_time = await async_request_lora_unload(
+                api_url, name
+            )
+            if success:
+                metrics.unload_times_ms.append(unload_time)
+                metrics.total_unloads += 1
+            else:
+                logger.warning(f"Failed to unload LoRA '{name}'")
+
+    tasks = [unload_with_semaphore(name) for name in lora_configs]
+    await tqdm.gather(*tasks, desc="Unloading LoRAs...")
+
+
+async def benchmark_lora_loading(
+    api_url: str,
+    lora_configs: dict[str, str],  # List of (name, path) tuples
+    metrics: LoRAMetrics,
+    max_concurrent: int = 1,
+) -> None:
+    """Benchmark LoRA loading performance.
+
+    Args:
+        api_url: Base API URL
+        lora_configs: List of (name, path) tuples for LoRA adapters
+        max_concurrent_loads: Maximum concurrent loading operations
+        LoRAMetrics with loading performance data
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def load_with_semaphore(name: str, path: str) -> None:
+        async with semaphore:
+            success, load_time = await async_request_lora_load(
+                api_url, name, path
+            )
+            if success:
+                metrics.load_times_ms.append(load_time)
+                metrics.total_loads += 1
+            else:
+                logger.warning(f"Failed to load LoRA '{name}'")
+
+    tasks = [
+        load_with_semaphore(name, path) for name, path in lora_configs.items()
+    ]
+    await tqdm.gather(*tasks, desc="Loading LoRAs...")
 
 
 # Since vllm must support Python 3.8, we can't use str.removeprefix(prefix)
@@ -767,7 +1059,6 @@ def calculate_metrics(
 
 async def chat_session_driver(
     model_id: str,
-    lora_id: str,
     api_url: str,
     request_func: Callable[[RequestFuncInput], Awaitable[RequestFuncOutput]],
     request_counter: RequestCounter,
@@ -779,7 +1070,6 @@ async def chat_session_driver(
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
-        lora=lora_id,
         prompt=[],
         api_url=api_url,
         prompt_len=0,
@@ -858,8 +1148,8 @@ async def benchmark(
     backend: str,
     chat: bool,
     api_url: str,
+    base_url: str,
     model_id: str,
-    lora_id: str,
     tokenizer: PreTrainedTokenizerBase,
     input_requests: Sequence[SampledRequest],
     chat_sessions: Sequence[ChatSession],
@@ -883,12 +1173,28 @@ async def benchmark(
     warmup_delay_ms: float = 0,
     ignore_first_turn_stats: bool = False,
     timing_data: dict[str, list[float]] | None = None,
+    lora_request_ratio: float = 0.0,
+    lora_configs: dict[str, str] | None = None,
+    max_concurrent_lora_ops: int = 1,
 ):
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
             "--ignore-first-turn-stats and --skip-first-n-requests both set. Ignoring --skip-first-n-requests due to first turn in each chat already being ignored."
         )
         skip_first_n_requests = 0
+
+    # Initialize LoRA metrics
+    lora_metrics = LoRAMetrics()
+
+    # Benchmark LoRA loading if configs provided
+    if lora_configs:
+        logger.info("Starting LoRA loading benchmark...")
+        await benchmark_lora_loading(
+            api_url=base_url,
+            lora_configs=lora_configs,
+            metrics=lora_metrics,
+            max_concurrent=max_concurrent_lora_ops,
+        )
 
     # Handle backend construction: add "-chat" only if not already present
     # and if the resulting backend exists in ASYNC_REQUEST_FUNCS
@@ -943,7 +1249,6 @@ async def benchmark(
             max_tokens=test_max_tokens,
             ignore_eos=test_ignore_eos,
             img=test_img,
-            lora=lora_id,
             top_k=top_k,
         )
         test_output = await request_func(
@@ -1047,9 +1352,12 @@ async def benchmark(
                     (request.output_len, max_output_len)
                 )
 
+                lora_id = None
+                if lora_configs and random.random() < lora_request_ratio:
+                    lora_id = random.choice(list(lora_configs.keys()))
+
                 request_func_input = RequestFuncInput(
-                    model=model_id,
-                    lora=lora_id,
+                    model=model_id if lora_id is None else lora_id,
                     prompt=request.prompt_formatted,
                     api_url=api_url,
                     prompt_len=request.prompt_len,
@@ -1101,10 +1409,13 @@ async def benchmark(
             async def limited_chat_session_driver(
                 chat_session: ChatSession,
             ) -> list[RequestFuncOutput]:
+                lora_id = None
+                if lora_configs and random.random() < lora_request_ratio:
+                    lora_id = random.choice(list(lora_configs.keys()))
+
                 if semaphore is None:
                     return await chat_session_driver(
-                        model_id,
-                        lora_id,
+                        model_id if lora_id is None else lora_id,
                         api_url,
                         limited_request_func,
                         request_counter,
@@ -1116,8 +1427,7 @@ async def benchmark(
                     )
                 async with semaphore:
                     return await chat_session_driver(
-                        model_id,
-                        lora_id,
+                        model_id if lora_id is None else lora_id,
                         api_url,
                         limited_request_func,
                         request_counter,
@@ -1164,6 +1474,14 @@ async def benchmark(
                     "output": output.generated_text,
                 }
             )
+
+    if lora_configs:
+        await benchmark_lora_unloading(
+            api_url=base_url,
+            lora_configs=lora_configs,
+            metrics=lora_metrics,
+            max_concurrent=max_concurrent_lora_ops,
+        )
 
     gpu_metrics: list[dict[str, GPUStats]] | None = None
     if collect_gpu_stats and gpu_recorder is not None:
@@ -1293,6 +1611,86 @@ async def benchmark(
 
     print("=" * 50)
 
+    # Print LoRA benchmark results
+    if lora_configs:
+        print_section(title=" LoRA Adapter Benchmark Results ", char="=")
+        print(
+            "{:<40} {:<10}".format(
+                "Total LoRA loads:", lora_metrics.total_loads
+            )
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Total LoRA unloads:", lora_metrics.total_unloads
+            )
+        )
+
+        if lora_metrics.load_times_ms:
+            print_section(title="LoRA Load Times")
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Mean load time:",
+                    statistics.mean(lora_metrics.load_times_ms),
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Median load time:",
+                    statistics.median(lora_metrics.load_times_ms),
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Min load time:", min(lora_metrics.load_times_ms)
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Max load time:", max(lora_metrics.load_times_ms)
+                )
+            )
+            if len(lora_metrics.load_times_ms) > 1:
+                print(
+                    "{:<40} {:<10.2f}".format(
+                        "Std dev load time:",
+                        statistics.stdev(lora_metrics.load_times_ms),
+                    )
+                )
+
+        if lora_metrics.unload_times_ms:
+            print_section(title="LoRA Unload Times")
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Mean unload time:",
+                    statistics.mean(lora_metrics.unload_times_ms),
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Median unload time:",
+                    statistics.median(lora_metrics.unload_times_ms),
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Min unload time:", min(lora_metrics.unload_times_ms)
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Max unload time:", max(lora_metrics.unload_times_ms)
+                )
+            )
+            if len(lora_metrics.unload_times_ms) > 1:
+                print(
+                    "{:<40} {:<10.2f}".format(
+                        "Std dev unload time:",
+                        statistics.stdev(lora_metrics.unload_times_ms),
+                    )
+                )
+
+        print("=" * 50)
+
     result = {
         "duration": benchmark_duration,
         "completed": metrics.completed,
@@ -1347,6 +1745,16 @@ async def benchmark(
         "available_gpu_memory_mib": metrics.available_gpu_memory_mib,
         "gpu_utilization": metrics.gpu_utilization,
     }
+
+    # Add LoRA metrics to result if available
+    if lora_configs:
+        result["lora_metrics"] = {
+            "total_loads": lora_metrics.total_loads,
+            "total_unloads": lora_metrics.total_unloads,
+            "load_times_ms": lora_metrics.load_times_ms,
+            "unload_times_ms": lora_metrics.unload_times_ms,
+        }
+
     return result
 
 
@@ -1366,7 +1774,6 @@ def main(args: argparse.Namespace) -> None:
 
     backend = args.backend
     model_id = args.model
-    lora_id = args.lora
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
 
     if args.endpoint not in [
@@ -1378,9 +1785,11 @@ def main(args: argparse.Namespace) -> None:
     chat = args.endpoint == "/v1/chat/completions"
 
     if args.base_url is not None:
-        api_url = f"{args.base_url}{args.endpoint}"
+        base_url = args.base_url
     else:
-        api_url = f"http://{args.host}:{args.port}{args.endpoint}"
+        base_url = f"http://{args.host}:{args.port}"
+
+    api_url = f"{base_url}{args.endpoint}"
 
     logger.info(f"getting tokenizer. api url: {api_url}")
     tokenizer = get_tokenizer(
@@ -1566,14 +1975,27 @@ def main(args: argparse.Namespace) -> None:
                 }
             )
 
+    # Generate LoRA configurations if needed
+    lora_configs = None
+    if args.num_loras > 0 or args.lora_paths:
+        lora_configs = generate_loras(
+            model_id,
+            args.lora_rank,
+            args.num_loras,
+            args.lora_target_modules,
+            args.lora_paths,
+            args.lora_output_dir,
+            args.lora_server_path,
+        )
+
     logger.info("starting benchmark run")
     benchmark_result = asyncio.run(
         benchmark(
             backend=backend,
             chat=chat,
             api_url=api_url,
+            base_url=base_url,
             model_id=model_id,
-            lora_id=lora_id,
             tokenizer=tokenizer,
             input_requests=input_requests,
             chat_sessions=chat_sessions,
@@ -1596,6 +2018,9 @@ def main(args: argparse.Namespace) -> None:
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
             ignore_first_turn_stats=args.ignore_first_turn_stats,
+            lora_request_ratio=args.lora_request_ratio,
+            lora_configs=lora_configs,
+            max_concurrent_lora_ops=args.max_concurrent_lora_ops,
         )
     )
 
@@ -1651,6 +2076,10 @@ def main(args: argparse.Namespace) -> None:
 
         # Merge with benchmark result
         result_json = {**result_json, **benchmark_result}
+
+        # Add LoRA metrics if present
+        if "lora_metrics" in benchmark_result:
+            result_json["lora_metrics"] = benchmark_result["lora_metrics"]
 
         # Save to file
         if args.result_filename:

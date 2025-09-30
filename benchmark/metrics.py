@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -185,6 +185,20 @@ class StandardPercentileMetrics:
     def __str__(self) -> str:
         """Return a formatted string representation of standard percentile metrics in table format."""
         return self.format_with_prefix(prefix="metric")
+
+
+@dataclass
+class LoRAMetrics:
+    """Metrics specific to LoRA operations."""
+
+    load_times_ms: list[float] = field(default_factory=list)
+    unload_times_ms: list[float] = field(default_factory=list)
+    swap_times_ms: list[float] = field(default_factory=list)
+    cache_hits: int = 0
+    cache_misses: int = 0
+    total_loads: int = 0
+    total_unloads: int = 0
+    total_swaps: int = 0
 
 
 @dataclass

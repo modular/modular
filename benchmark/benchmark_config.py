@@ -458,6 +458,48 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Key-value pairs for metadata (format: ["key=value", ...])."""
 
+    num_loras: int = field(default=0, metadata={"group": "LoRA Configuration"})
+    """Number of LoRA adapters to test."""
+
+    lora_rank: int = field(default=16, metadata={"group": "LoRA Configuration"})
+    """LoRA rank for generated adapters."""
+
+    lora_output_dir: Optional[str] = field(
+        default="/tmp/loras", metadata={"group": "LoRA Configuration"}
+    )
+    """Directory to save generated LoRA adapters."""
+
+    lora_server_path: Optional[str] = field(
+        default="/tmp/loras", metadata={"group": "LoRA Configuration"}
+    )
+    """Path where a docker server can access LoRA adapters."""
+
+    lora_paths: list[str] = field(
+        default_factory=list, metadata={"group": "LoRA Configuration"}
+    )
+    """Paths to existing LoRA adapters."""
+
+    lora_request_ratio: float = field(
+        default=0.5, metadata={"group": "LoRA Configuration"}
+    )
+    """Ratio of requests to send as LoRAs (0-1)."""
+
+    max_concurrent_lora_ops: int = field(
+        default=1, metadata={"group": "LoRA Configuration"}
+    )
+    """Maximum concurrent LoRA loading/unloading operations."""
+
+    max_num_loras: int = field(
+        default=10, metadata={"group": "LoRA Configuration"}
+    )
+    """Maximum number of LoRA adapters cached on GPU.
+    ***This should match the server configuration.***"""
+
+    lora_target_modules: list[str] = field(
+        default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj"],
+        metadata={"group": "LoRA Configuration"},
+    )
+
     @staticmethod
     def help() -> dict[str, str]:
         """Documentation for serving benchmark config parameters.
@@ -510,6 +552,15 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "result_filename": "Custom filename (auto-generated if null).",
             "record_output_lengths": "Path to save output lengths in YAML format.",
             "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
+            "num_loras": "Number of LoRA adapters to test. If > 0, test LoRA adapters will be generated.",
+            "lora_rank": "LoRA rank (r parameter) for generated adapters. Controls the dimension of the low-rank decomposition.",
+            "lora_output_dir": "Directory to save generated LoRA adapters. Defaults to /tmp/loras.",
+            "lora_server_path": "Path where the server (e.g., docker container) can access LoRA adapters. Used when server has different filesystem view.",
+            "lora_paths": "Paths to existing LoRA adapters to use instead of generating new ones.",
+            "lora_request_ratio": "Ratio of requests to send with LoRA adapters (0.0-1.0). E.g., 0.5 means 50%% of requests use LoRA.",
+            "max_concurrent_lora_ops": "Maximum concurrent LoRA loading/unloading operations during benchmarking.",
+            "max_num_loras": "Maximum number of LoRA adapters cached on GPU. ***This should match the server configuration.***",
+            "lora_target_modules": "List of module names to apply LoRA to (e.g., q_proj, k_proj, v_proj, o_proj).",
         }
         return {**base_help, **serving_help}
 

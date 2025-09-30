@@ -89,3 +89,14 @@ benchmark_config:
   result_dir: null # Directory to save results
   result_filename: null  # Custom filename (auto-generated if null)
   metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
+
+  # LoRA-specific parameters (serving workloads)
+  num_loras: 0
+  lora_rank: 16
+  lora_output_dir: "/tmp/loras"
+  lora_server_path: "/tmp/loras"
+  lora_paths: []
+  lora_request_ratio: 0.5
+  max_concurrent_lora_ops: 1
+  max_num_loras: 10
+  lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
