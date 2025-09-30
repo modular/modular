@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.norm import LayerNorm
+from max.nn.norm import ConstantLayerNorm, LayerNorm
 
 from .norm_test_utils import (
     COMMON_NORM_TEST_SHAPES,
@@ -81,4 +81,18 @@ def test_layer_norm_shapes(shape, dim) -> None:  # noqa: ANN001
     )
 
     # Verify the graph contains a layer_norm op.
+    assert_single_op(g, "mo.layer_norm")
+
+
+def test_constant_layer_norm_basic() -> None:
+    """Tests basic ConstantLayerNorm functionality."""
+    norm = ConstantLayerNorm(
+        dims=64, device=DeviceRef.CPU(), dtype=DType.float32
+    )
+    g = Graph(
+        "test",
+        forward=norm,
+        input_types=[TensorType(DType.float32, (2, 10, 64), DeviceRef.CPU())],
+    )
+
     assert_single_op(g, "mo.layer_norm")
