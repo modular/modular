@@ -106,7 +106,6 @@ Attribute MetadataConverter::convertAttrImpl(DIAttr attr) {
 LLVM::DICompileUnitAttr
 MetadataConverter::convertAttrImpl(DICompileUnitAttr attr) {
   return LLVM::DICompileUnitAttr::get(
-      attr.getContext(),
       mlir::DistinctAttr::create(mlir::UnitAttr::get(attr.getContext())),
       attr.getSourceLanguage(), convertAttr(attr.getFile()), attr.getProducer(),
       attr.getIsOptimized(),
