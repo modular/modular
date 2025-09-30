@@ -35,6 +35,7 @@ def test_pipelines_multi_gpu_smoke(capsys: pytest.CaptureFixture[str]) -> None:
                 "--max-batch-size=1",
                 "--max-new-tokens=32",
                 "--max-num-steps=1",
+                "--no-use-subgraphs",
                 "--max-length=512",
                 "--huggingface-model-revision",
                 REVISION,
