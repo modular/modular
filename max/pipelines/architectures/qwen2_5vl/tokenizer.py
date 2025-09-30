@@ -517,6 +517,11 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         else:
             eos_token_ids = self._default_eos_token_ids
 
+        if self.max_length and encoded_prompt.shape[0] > self.max_length:
+            raise ValueError(
+                "encoded_prompt is greater than the max_length of the tokenizer"
+            )
+
         # Create and return context
         context = TextAndVisionContext(
             request_id=request.request_id,
