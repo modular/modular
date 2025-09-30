@@ -104,6 +104,7 @@ def create_mock_request(
     tokens = np.ones(seq_len, dtype=np.int32)
     assert len(tokens) == seq_len
     context = TextContext(
+        request_id=RequestID(),
         max_length=100,
         tokens=tokens,
     )
@@ -180,7 +181,7 @@ def test_scheduler_handle_terminated_responses() -> None:
     scheduler.batch_constructor.tg_reqs = OrderedDict(batch_executed)
 
     num_terminated_reqs = release_terminated_requests(
-        cast(dict[str, TextGenerationOutput], batch_responses),
+        cast(dict[RequestID, TextGenerationOutput], batch_responses),
         scheduler.pipeline,
         scheduler.batch_constructor.tg_reqs,
     )
@@ -208,7 +209,7 @@ def test_scheduler_handle_chunked_requests() -> None:
 
     add_newly_encoded_reqs_to_tg_batch(
         batch_executed,
-        cast(dict[str, TextGenerationOutput], batch_responses),
+        cast(dict[RequestID, TextGenerationOutput], batch_responses),
         scheduler.batch_constructor,
     )
 
@@ -243,7 +244,7 @@ def test_schedule_ce() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    batch_to_execute: dict[str, TextContext] = {
+    batch_to_execute: dict[RequestID, TextContext] = {
         mock_request.request_id: mock_request
     }
     inputs = TextGenerationInputs(
@@ -341,7 +342,7 @@ def test_schedule_tg() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    batch_to_execute: dict[str, TextContext] = {
+    batch_to_execute: dict[RequestID, TextContext] = {
         mock_request.request_id: mock_request
     }
     inputs = TextGenerationInputs(

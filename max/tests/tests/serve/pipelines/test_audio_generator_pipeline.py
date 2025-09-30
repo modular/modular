@@ -16,6 +16,7 @@ from max.interfaces import (
     AudioGenerationOutput,
     AudioGenerationRequest,
     GenerationStatus,
+    RequestID,
 )
 from max.serve.pipelines.llm import AudioGeneratorPipeline
 
@@ -43,7 +44,7 @@ class MockAudioGeneratorPipeline(AudioGeneratorPipeline):
 def create_test_request() -> AudioGenerationRequest:
     """Create a test AudioGenerationRequest."""
     return AudioGenerationRequest(
-        request_id="test-request-1",
+        request_id=RequestID("test-request-1"),
         input="Hello, this is a test prompt",
         model="test-model",
         audio_prompt_tokens=[1, 2, 3],

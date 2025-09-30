@@ -17,7 +17,13 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.interfaces import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus
+from max.interfaces import (
+    LoRAOperation,
+    LoRARequest,
+    LoRAResponse,
+    LoRAStatus,
+    RequestID,
+)
 from max.pipelines.lib.lora import LoRAManager
 from max.pipelines.lib.lora_config import LoRAConfig
 from safetensors.numpy import save_file
@@ -285,9 +291,9 @@ def test_lru_cache_manual_activation(
         mock_contexts.append(ctx)
 
     batch = {
-        "req1": mock_contexts[0],
-        "req2": mock_contexts[1],
-        "req3": mock_contexts[2],
+        RequestID(): mock_contexts[0],
+        RequestID(): mock_contexts[1],
+        RequestID(): mock_contexts[2],
     }
 
     _sorted_batch = lora_manager.sort_lora_batch(batch)

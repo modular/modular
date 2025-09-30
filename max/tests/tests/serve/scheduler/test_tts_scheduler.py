@@ -53,6 +53,7 @@ def create_text_context(
         tokens = np.concatenate([shared_prefix, rand(rem_tokens)])
 
     return TTSContext(
+        request_id=RequestID(),
         max_length=max_seq_len,
         tokens=tokens,
         streaming=False,
@@ -350,6 +351,7 @@ def enqueue_request_with_prompt(
     max_seq_len: int,
 ) -> None:
     context = TTSContext(
+        request_id=RequestID(),
         max_length=max_seq_len,
         tokens=tokens,
         streaming=False,

@@ -107,6 +107,7 @@ def create_lora_context(
     """Create a TextContext with optional LoRA model name."""
     tokens = np.ones(seq_len, dtype=np.int32)
     context = TextContext(
+        request_id=RequestID(),
         max_length=100,
         tokens=tokens,
     )

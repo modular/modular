@@ -50,6 +50,7 @@ def create_text_context(
         tokens = np.concatenate([shared_prefix, rand(rem_tokens)])
 
     return TextContext(
+        request_id=RequestID(),
         max_length=max_seq_len,
         tokens=tokens,
     )
@@ -305,6 +306,7 @@ def enqueue_request_with_prompt(
     max_seq_len: int,
 ) -> None:
     context = TextContext(
+        request_id=RequestID(),
         max_length=max_seq_len,
         tokens=tokens,
     )

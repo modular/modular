@@ -6,11 +6,11 @@
 
 import queue
 import time
-import uuid
 
 import numpy as np
 import pytest
 from max.interfaces import (
+    RequestID,
     SharedMemoryArray,
     msgpack_eq,
     msgpack_numpy_decoder,
@@ -27,18 +27,22 @@ from max.serve.queue.zmq_queue import (
 
 def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
     test_address = generate_zmq_ipc_path()
-    push_socket = ZmqPushSocket[tuple[str, TextContext]](
-        endpoint=test_address, payload_type=tuple[str, TextContext]
+    push_socket = ZmqPushSocket[tuple[RequestID, TextContext]](
+        endpoint=test_address, payload_type=tuple[RequestID, TextContext]
     )
 
-    pull_socket = ZmqPullSocket[tuple[str, TextContext]](
+    pull_socket = ZmqPullSocket[tuple[RequestID, TextContext]](
         endpoint=test_address,
-        payload_type=tuple[str, TextContext],
+        payload_type=tuple[RequestID, TextContext],
     )
 
     context = (
-        str(uuid.uuid4()),
-        TextContext(max_length=15, tokens=np.ones(5, dtype=np.int32)),
+        RequestID(),
+        TextContext(
+            request_id=RequestID(),
+            max_length=15,
+            tokens=np.ones(5, dtype=np.int32),
+        ),
     )
 
     push_socket.put_nowait(context)
@@ -57,7 +61,7 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     img = np.random.rand(*shape).astype(np.float32)
 
     context = TextAndVisionContext(
-        request_id="test-request",
+        request_id=RequestID("test-request"),
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=(img,),  # Only one image supported
@@ -99,7 +103,7 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
 
     # Create a new context for second test
     context2 = TextAndVisionContext(
-        request_id="test-request-2",
+        request_id=RequestID("test-request-2"),
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=(img,),
@@ -131,7 +135,9 @@ def test_zmq_push_pull_queue_basic_functionality() -> None:
 def test_zmq_push_pull_queue_with_complex_data() -> None:
     """Test queue with complex data structures using pickle serialization."""
 
-    context = TextContext(max_length=15, tokens=np.array([1, 1, 1, 1, 1]))
+    context = TextContext(
+        request_id=RequestID(), max_length=15, tokens=np.array([1, 1, 1, 1, 1])
+    )
     test_data = ("test_id", context)
 
     push_queue, pull_queue = ZmqConfig[tuple[str, TextContext]](
@@ -148,11 +154,13 @@ def test_zmq_push_pull_queue_with_complex_data() -> None:
 
 def test_zmq_push_pull_queue_with_custom_serialization() -> None:
     """Test queue with custom msgpack serialization."""
-    context = TextContext(max_length=10, tokens=np.array([1, 2, 3, 4, 5]))
-    test_data = (str(uuid.uuid4()), context)
+    context = TextContext(
+        request_id=RequestID(), max_length=10, tokens=np.array([1, 2, 3, 4, 5])
+    )
+    test_data = (context.request_id, context)
 
-    push_queue, pull_queue = ZmqConfig[tuple[str, TextContext]](
-        tuple[str, TextContext]
+    push_queue, pull_queue = ZmqConfig[tuple[RequestID, TextContext]](
+        tuple[RequestID, TextContext]
     ).pair()
 
     try:
@@ -223,7 +231,7 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     img = np.random.rand(*shape).astype(np.float32)
 
     context = TextAndVisionContext(
-        request_id="test-vision-request",
+        request_id=RequestID("test-vision-request"),
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         pixel_values=(img,),

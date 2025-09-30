@@ -18,6 +18,7 @@ from max.interfaces import (
     AudioGenerationOutput,
     AudioGenerationRequest,
     GenerationStatus,
+    RequestID,
     SamplingParams,
 )
 from max.serve.pipelines.llm import AudioGeneratorPipeline
@@ -47,7 +48,7 @@ class MockAudioGeneratorPipelineWithSamplingParams(AudioGeneratorPipeline):
 
 
 def create_test_request_with_sampling_params(
-    sampling_params: SamplingParams, id: str = "test-request-sampling"
+    sampling_params: SamplingParams, id: RequestID
 ) -> AudioGenerationRequest:
     """Create a test AudioGenerationRequest with specific SamplingParams."""
     return AudioGenerationRequest(
@@ -85,7 +86,9 @@ def test_pipeline_receives_sampling_params() -> None:
 
     # Create mock pipeline
     pipeline = MockAudioGeneratorPipelineWithSamplingParams(chunks)
-    request = create_test_request_with_sampling_params(custom_params)
+    request = create_test_request_with_sampling_params(
+        custom_params, RequestID()
+    )
 
     # Execute the pipeline.
     result = asyncio.run(pipeline.generate_full_audio(request))
@@ -115,7 +118,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
 
     # Create request without explicit sampling_params (should use defaults).
     request = AudioGenerationRequest(
-        request_id="test-request-default",
+        request_id=RequestID("test-request-default"),
         input="Default sampling params test",
         model="test-model",
         audio_prompt_tokens=[1, 2, 3],
@@ -171,7 +174,7 @@ def test_multiple_requests_different_sampling_params() -> None:
         # Create fresh pipeline for each test
         pipeline = MockAudioGeneratorPipelineWithSamplingParams(chunks)
         request = create_test_request_with_sampling_params(
-            params, id=f"test-request-{i}"
+            params, id=RequestID(f"test-request-{i}")
         )
 
         # Execute the pipeline
