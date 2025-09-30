@@ -924,6 +924,17 @@ fn lane_id() -> UInt:
             )
         )
 
+    elif is_apple_gpu():
+        return UInt(
+            Int(
+                llvm_intrinsic[
+                    "llvm.air.thread_index_in_simdgroup",
+                    Int32,
+                    has_side_effect=False,
+                ]().cast[DType.uint32]()
+            )
+        )
+
     else:
         return CompilationTarget.unsupported_target_error[
             UInt,
