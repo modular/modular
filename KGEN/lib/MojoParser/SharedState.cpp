@@ -316,12 +316,12 @@ struct SharedState::Impl {
   /// The closure wrapper types that have already been generated, keyed off
   /// signature and module.
   DenseMap<std::pair<GeneratorType, ASTDecl *>, StructDeclOp> closureWrappers;
-  /// A parametric closure wrapper is a parametric struct with a single
-  /// parametric field. This field conforms to a trait specific to the signature
-  /// of the closure's call signature.
-  DenseMap<std::pair<GeneratorType, ASTDecl *>,
-           std::pair<StructDeclOp, TraitDeclOp>>
-      parametricClosureWrappers;
+  /// Closure traits have a unique generator type and are global to the module.
+  /// Cache previously built traits.
+  DenseMap<GeneratorType, ASTDecl *> closureTraits;
+  /// Closure wrappers are unique to their trait signatures and local to a file
+  /// module. Cache previously built wrappers.
+  DenseMap<std::pair<TraitType, ASTDecl *>, ASTDecl *> unifiedClosureWrappers;
 
   /// The capture values and decls associated with their enclosing nested
   /// function. This data structure is populated during the parsing of the FnOp
@@ -1945,18 +1945,35 @@ SharedState::getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
   return existing;
 }
 
-std::pair<StructDeclOp, TraitDeclOp>
-SharedState::getOrCreateParametricClosureWrapper(SMLoc loc,
-                                                 FuncTypeGeneratorType sig,
-                                                 ASTDecl *moduleDecl,
-                                                 InlineLevel inlineLevel) {
-  auto ptr = impl->parametricClosureWrappers.find({sig, moduleDecl});
-  if (ptr == impl->parametricClosureWrappers.end()) {
+ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
+                                              FnTypeGeneratorType sig,
+                                              InlineLevel inlineLevel) {
+  auto ptr = impl->closureTraits.find(sig);
+  if (ptr == impl->closureTraits.end()) {
     std::string name = ASTType(sig).getAsString(/*diags=*/this);
-    auto result = closureEmitter->createParametricClosureWrapperStructDecl(
-        *moduleDecl, StringAttr::get(getContext(), name), sig, loc,
-        inlineLevel);
-    impl->parametricClosureWrappers.insert({{sig, moduleDecl}, result});
+    auto result = closureEmitter->createClosureTrait(
+        moduleDecl, StringAttr::get(getContext(), name), sig, loc, inlineLevel);
+    impl->closureTraits.insert({sig, result});
+    return result;
+  }
+  return ptr->second;
+}
+
+ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
+    SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl,
+    InlineLevel inlineLevel) {
+  // create the trait type
+  ASTDecl *traitDecl =
+      getOrCreateClosureTrait(loc, *moduleDecl, sig, inlineLevel);
+  TraitType traitType =
+      dyn_cast<TraitType>(traitDecl->getTypeDeclSelf().getMetaType());
+  assert(traitType && "expected traits self type to be a trait type");
+  auto ptr = impl->unifiedClosureWrappers.find({traitType, moduleDecl});
+  if (ptr == impl->unifiedClosureWrappers.end()) {
+    std::string name = ASTType(sig).getAsString(/*diags=*/this);
+    ASTDecl *result = closureEmitter->createStructWrapper(
+        *moduleDecl, name, *traitDecl, loc, sig.isRegisterPassable());
+    impl->unifiedClosureWrappers.insert({{traitType, moduleDecl}, result});
     return result;
   }
   return ptr->second;

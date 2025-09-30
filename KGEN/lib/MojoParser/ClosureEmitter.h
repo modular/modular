@@ -44,9 +44,10 @@ public:
   /// Generate a Parametric Closure Wrapper Struct, a struct that contains a
   /// parametric field. Both the field and the struct must conform to the
   /// associated closure trait characterized by the signature of the closure.
-  std::pair<StructDeclOp, TraitDeclOp> createParametricClosureWrapperStructDecl(
-      ASTDecl &moduleDecl, StringAttr name, FnTypeGeneratorType signatureType,
-      SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel);
+  ASTDecl *createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
+                              FnTypeGeneratorType signatureType,
+                              SMLoc nestedFunctionOrTypeLocation,
+                              InlineLevel inlineLevel);
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
@@ -72,6 +73,24 @@ public:
                                   ASTDecl *signatureDecl = nullptr);
   ASTDecl *getOrCreateClosureTrait(FnTypeGeneratorType key,
                                    llvm::function_ref<ASTDecl *()> creation);
+  /// Given a name and a trait decl, generate a struct that conforms to the
+  /// trait and has a single field that also conforms to that same trait. For
+  /// example, if the trait is:
+  /// trait MyTrait:
+  ///    fn doSomething(self, x:Int):
+  ///       ...
+  /// This method will generate a struct:
+  /// struct MyTraitWrapper[T: MyTraitWrapper](MyTraitWrapper):
+  ///    var field: T
+  ///    fn doSomething(self, x:Int):
+  ///       self.field.doSomething(x)
+  /// This is useful in the context of emitting closures because in the case of
+  /// closures "T" is an abstract type (ClosureType). Wrapping the closure
+  /// instance in a struct renders it eligible to be handled properly by our
+  /// check-lifetimes pass.
+  ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
+                               ASTDecl &traitDecl, SMLoc location,
+                               bool isRegisterPassable);
 
 private:
   MLIRContext *ctx;
@@ -99,24 +118,7 @@ private:
                     ASTDecl &traitDecl,
                     DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
                     populateTrait);
-  /// Given a name and a trait decl, generate a struct that conforms to the
-  /// trait and has a single field that also conforms to that same trait. For
-  /// example, if the trait is:
-  /// trait MyTrait:
-  ///    fn doSomething(self, x:Int):
-  ///       ...
-  /// This method will generate a struct:
-  /// struct MyTraitWrapper[T: MyTraitWrapper](MyTraitWrapper):
-  ///    var field: T
-  ///    fn doSomething(self, x:Int):
-  ///       self.field.doSomething(x)
-  /// This is useful in the context of emitting closures because in the case of
-  /// closures "T" is an abstract type (ClosureType). Wrapping the closure
-  /// instance in a struct renders it eligible to be handled properly by our
-  /// check-lifetimes pass.
-  StructDeclOp createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
-                                   ASTDecl &traitDecl, SMLoc location,
-                                   TypeConvention typeConvention);
+
   /// Generate a witness table for a closure op.
   TypedAttr addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc,
                                       FnOp parent, ClosureType closureType,

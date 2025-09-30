@@ -35,6 +35,7 @@ class ExprNode;
 struct Operand;
 class FileModuleOp;
 class FnOp;
+class FnTypeGeneratorType;
 class LookupResult;
 class LookupAllResult;
 class PackageOp;
@@ -477,19 +478,24 @@ public:
   /// the provided module if one does not already exist.
   StructDeclOp getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
                                          ASTDecl *moduleDecl);
-  /// Given a signature [Int](y:Int) -> Int for example, return the struct
-  /// definition wrapper. If there is not a wrapper already generated, the
-  /// compiler will generate the following:
+  /// Given a signature [Int](y:Int) -> Int for example, return the trait. If
+  /// there is not a trait already generated, the compiler will generate the
+  /// following:
   ///  trait Closure_Int_yInt_Int(Movable, AnyType):
   ///      fn __call__(mut self, y: Int) -> Int:
   ///         ...
+  ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
+                                   FnTypeGeneratorType sig,
+                                   InlineLevel inlineLevel);
+  /// Given a signature [Int](y:Int) -> Int for example, return the struct
+  /// definition wrapper. If there is not a wrapper already generated, the
+  /// compiler will generate the following:
   ///  struct Impl[T : Closure_Int_yInt_Int](Closure_Int_yInt_Int):
   ///     var impl: T
   /// ... and return the StructDeclOp for "Impl".
-  std::pair<StructDeclOp, TraitDeclOp>
-  getOrCreateParametricClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
-                                      ASTDecl *moduleDecl,
-                                      InlineLevel inlineLevel);
+  ASTDecl *getOrCreateUnifiedClosureWrapper(SMLoc loc, FnTypeGeneratorType sig,
+                                            ASTDecl *moduleDecl,
+                                            InlineLevel inlineLevel);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
