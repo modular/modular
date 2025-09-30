@@ -624,6 +624,49 @@ fn matmul_dispatch_sm100_bf16[
     alias MMA_K = 16
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
+    @parameter
+    fn matmul_swapab[static_m: Int]() raises -> Int:
+        constrained[
+            static_m % 2 == 0,
+            "static_m must be even",
+        ]()
+        alias block_tile_shape = Index(128, static_m // 2, BK)
+        alias umma_shape = Index(
+            block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+        )
+        alias cluster_shape = Index(2, 1, 1)
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            block_tile_shape=block_tile_shape,
+            mma_shape=umma_shape,
+            cluster_shape=cluster_shape,
+        )
+        _matmul_dispatch_sm100_seperate_epilogue[
+            transpose_b=transpose_b,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+            swapAB=True,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
+
+    @parameter
+    if (
+        c_type == DType.bfloat16
+        # these are the profitable shapes that gemma-3-27b models might execute
+        and static_N in (4096, 8192, 43008, 5376)
+        and static_K in (4096, 5376, 21504)
+    ):
+        if m <= 128 and m * size_of[c_type]() % 16 == 0:
+            if m <= 16:
+                return matmul_swapab[16]()
+            elif m <= 32:
+                return matmul_swapab[32]()
+            elif m <= 64:
+                return matmul_swapab[64]()
+            else:
+                return matmul_swapab[128]()
+
     # gemma-3-27b-it-prefill
     @parameter
     if static_N == 8192 and static_K == 5376:
@@ -1128,6 +1171,7 @@ fn _matmul_dispatch_sm100_seperate_epilogue[
     block_swizzle_size: Int = 0,  # (KERN-2026) block_swizzle_size=8 fails for some special cases, so we use 0 here.
     cta_group: Int = 2,
     num_pipeline_stages: Optional[UInt] = None,
+    swapAB: Bool = False,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -1161,6 +1205,7 @@ fn _matmul_dispatch_sm100_seperate_epilogue[
             block_swizzle_size=block_swizzle_size,
             num_pipeline_stages=num_pipeline_stages,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            swapAB=swapAB,
         ](c_tensor, a_tensor, b_tensor, ctx)
         return
 
@@ -1199,6 +1244,7 @@ fn _matmul_dispatch_sm100_seperate_epilogue[
                 cta_group=cta_group,
                 block_swizzle_size=block_swizzle_size,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                swapAB=swapAB,
             ](c_tensor, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
@@ -1223,6 +1269,7 @@ fn _matmul_dispatch_sm100_seperate_epilogue[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
             num_pipeline_stages=num_pipeline_stages,
+            swapAB=swapAB,
         ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^
