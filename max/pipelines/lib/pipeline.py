@@ -1037,9 +1037,19 @@ class TextGenerationPipeline(
             tracer.push(f"step_{i}")
 
             # Execute the model and get next tokens.
-            model_outputs = self._pipeline_model.execute(
-                model_inputs=curr_step_inputs
-            )
+            try:
+                model_outputs = self._pipeline_model.execute(
+                    model_inputs=curr_step_inputs
+                )
+            except Exception:
+                batch_size = len(context_batch)
+                cache_tokens = sum(ctx.start_idx for ctx in context_batch)
+                input_tokens = sum(ctx.active_length for ctx in context_batch)
+                logger.error(
+                    "Encountered an exception while executing batch: "
+                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
+                )
+                raise  # re-raise the original exception
 
             # Sample next token.
             tracer.next("sample_next_token")
