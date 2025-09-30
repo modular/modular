@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import concurrent.futures
+import sys
 import threading
+from importlib import reload
 from unittest import mock
 
 import numpy as np
@@ -332,3 +334,36 @@ def test_model_compilation_race(op_library: CustomOpLibrary) -> None:
 # This just gut-checks that we run other tests without an active MLIR context
 def test_GEX_2285(op_library: CustomOpLibrary) -> None:
     assert not mlir.Context.current
+
+
+def test_dtype_torch_import_exception_handling() -> None:
+    """Tests that non-import exceptions just disable torch, don't fail outright.
+
+    This can happen for example when having an invalid torch package that is
+    importable but not usable.
+    """
+    # Temporarily mock torch to raise a non-ImportError exception.
+    original_torch = sys.modules.get("torch")
+
+    class MockTorchModule:
+        def __getattr__(self, name: str):
+            raise RuntimeError("Simulated torch initialization error")
+
+    # Replace torch with our mock.
+    sys.modules["torch"] = MockTorchModule()  # type: ignore[assignment]
+
+    # Force reload of max.dtype to trigger the exception handling.
+    import max.dtype.dtype as dtype_module
+
+    reload(dtype_module)
+
+    # Verify that _to_torch and _from_torch are defined but raise the caught
+    # exception.
+    assert hasattr(dtype_module, "_to_torch")
+    assert hasattr(dtype_module, "_from_torch")
+
+    # Calling these should raise the caught exception.
+    with pytest.raises(
+        RuntimeError, match="Simulated torch initialization error"
+    ):
+        dtype_module._to_torch(DType.float32)
