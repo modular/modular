@@ -64,9 +64,9 @@ def hann_window(
     if window_length < 0:
         raise ValueError("window_length must be non-negative")
     if window_length == 0:
-        return constant(np.array([], dtype=np.float32), dtype, device)
+        return constant([], dtype, device)
     elif window_length == 1:
-        return constant(np.array([1.0], dtype=np.float32), dtype, device)
+        return constant([1], dtype, device)
 
     if periodic:
         window_length += 1

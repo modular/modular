@@ -65,15 +65,9 @@ def test_masked_scatter(
     expected: list[list[int]],
 ) -> None:
     with Graph("masked_scatter", input_types=[]) as graph:
-        input_val = ops.constant(
-            np.array(input), DType.int32, device=DeviceRef.CPU()
-        )
-        mask_val = ops.constant(
-            np.array(mask), DType.bool, device=DeviceRef.CPU()
-        )
-        updates_val = ops.constant(
-            np.array(updates), DType.int32, device=DeviceRef.CPU()
-        )
+        input_val = ops.constant(input, DType.int32, device=DeviceRef.CPU())
+        mask_val = ops.constant(mask, DType.bool, device=DeviceRef.CPU())
+        updates_val = ops.constant(updates, DType.int32, device=DeviceRef.CPU())
         out = ops.masked_scatter(
             input_val, mask_val, updates_val, out_dim="masked"
         )

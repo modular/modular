@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for transpose."""
 
-import numpy as np
 from max._core.dialects import kgen, rmo
 from max.dtype import DType
 
@@ -59,7 +58,7 @@ def transpose(x: TensorValueLike, axis_1: int, axis_2: int) -> TensorValue:
         axis_2 += rank
 
     new_shape = v.shape
-    indices = np.array(range(len(new_shape)))
+    indices = list(range(len(new_shape)))
 
     # Only change the shape for non-zero rank tensors.
     if rank > 0:
