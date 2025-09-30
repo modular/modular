@@ -57,6 +57,49 @@ async def test_internvl_tokenizer_new_context_smoke(
 
 
 @pytest.mark.asyncio
+async def test_super_long(
+    mocker: MockerFixture,
+) -> None:
+    """Test to ensure new_context() raises if prompt is too long"""
+    # Create minimal mocks
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.eos_token_id = 2
+    mock_tokenizer.model_max_length = 5
+    mock_tokenizer.encode.return_value = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    mock_tokenizer.apply_chat_template.return_value = "test prompt"
+
+    mocker.patch(
+        "max.pipelines.architectures.internvl.tokenizer.AutoTokenizer.from_pretrained",
+        return_value=mock_tokenizer,
+    )
+    mocker.patch(
+        "max.pipelines.architectures.internvl.tokenizer.AutoConfig.from_pretrained",
+        return_value=MagicMock(),
+    )
+
+    tokenizer = InternVLTokenizer("test-model")
+
+    # Mock the processor to return expected format
+    tokenizer.processor = MagicMock()
+    tokenizer.processor.return_value = {
+        "input_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    }
+    tokenizer.processor.apply_chat_template.return_value = "test prompt"
+
+    request = TextGenerationRequest(
+        messages=[TextGenerationRequestMessage(role="user", content="test")],
+        request_id="test-id",
+        model_name="test-model",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="encoded_prompt is greater than the max_length of the tokenizer",
+    ):
+        _ = await tokenizer.new_context(request)
+
+
+@pytest.mark.asyncio
 async def test_internvl_tokenizer_image_token_indices(
     mocker: MockerFixture,
 ) -> None:

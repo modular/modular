@@ -66,12 +66,6 @@ class MockTextTokenizer(
             msg = "either prompt or messages must be provided."
             raise ValueError(msg)
 
-        max_new_tokens = None
-        if request.sampling_params.max_new_tokens is not None:
-            max_new_tokens = request.sampling_params.max_new_tokens
-        elif self.max_new_tokens != -1:
-            max_new_tokens = self.max_new_tokens
-
         prompt: Union[str, Sequence[int]]
         if request.prompt is None and request.messages is not None:
             prompt = ".".join(
