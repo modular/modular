@@ -15,6 +15,7 @@ from sys.info import bit_width_of
 
 from bit._mask import is_negative, splat
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 def test_is_negative():
@@ -103,6 +104,10 @@ def test_compare():
 
 
 def main():
-    test_is_negative()
-    test_splat()
-    test_compare()
+    var suite = TestSuite()
+
+    suite.test[test_is_negative]()
+    suite.test[test_splat]()
+    suite.test[test_compare]()
+
+    suite^.run()

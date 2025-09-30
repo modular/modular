@@ -29,6 +29,7 @@ from bit import (
     rotate_bits_right,
 )
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 def test_count_leading_zeros():
@@ -635,25 +636,29 @@ def test_log2_ceil_int32():
 
 
 def main():
-    test_rotate_bits_int()
-    test_rotate_bits_simd()
-    test_next_power_of_two()
-    test_next_power_of_two_simd()
-    test_prev_power_of_two()
-    test_prev_power_of_two_simd()
-    test_bit_width()
-    test_bit_width_simd()
-    test_count_leading_zeros()
-    test_count_leading_zeros_simd()
-    test_count_trailing_zeros()
-    test_count_trailing_zeros_simd()
-    test_bit_reverse()
-    test_bit_reverse_simd()
-    test_byte_swap()
-    test_byte_swap_simd()
-    test_pop_count()
-    test_pop_count_simd()
-    test_bit_not_simd()
-    test_log2_floor()
-    test_log2_ceil()
-    test_log2_ceil_int32()
+    var suite = TestSuite()
+
+    suite.test[test_rotate_bits_int]()
+    suite.test[test_rotate_bits_simd]()
+    suite.test[test_next_power_of_two]()
+    suite.test[test_next_power_of_two_simd]()
+    suite.test[test_prev_power_of_two]()
+    suite.test[test_prev_power_of_two_simd]()
+    suite.test[test_bit_width]()
+    suite.test[test_bit_width_simd]()
+    suite.test[test_count_leading_zeros]()
+    suite.test[test_count_leading_zeros_simd]()
+    suite.test[test_count_trailing_zeros]()
+    suite.test[test_count_trailing_zeros_simd]()
+    suite.test[test_bit_reverse]()
+    suite.test[test_bit_reverse_simd]()
+    suite.test[test_byte_swap]()
+    suite.test[test_byte_swap_simd]()
+    suite.test[test_pop_count]()
+    suite.test[test_pop_count_simd]()
+    suite.test[test_bit_not_simd]()
+    suite.test[test_log2_floor]()
+    suite.test[test_log2_ceil]()
+    suite.test[test_log2_ceil_int32]()
+
+    suite^.run()

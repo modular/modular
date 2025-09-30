@@ -13,6 +13,7 @@
 
 from algorithm._sorting_network import _sort
 from testing import assert_true
+from test_utils import TestSuite
 
 alias sizes = [
     2,
@@ -79,5 +80,9 @@ def test_all_sizes_reverse():
 
 
 def main():
-    test_all_sizes()
-    test_all_sizes_reverse()
+    var suite = TestSuite()
+
+    suite.test[test_all_sizes]()
+    suite.test[test_all_sizes_reverse]()
+
+    suite^.run()
