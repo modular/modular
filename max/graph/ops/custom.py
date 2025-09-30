@@ -161,7 +161,6 @@ def inplace_custom(
     out_mlir_types = [t.to_mlir() for t in out_types] if out_types else []
 
     graph = Graph.current
-    current_chain = graph._current_chain
 
     values = [
         TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
