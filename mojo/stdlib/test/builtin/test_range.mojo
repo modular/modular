@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 
 def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
@@ -342,14 +343,23 @@ def test_range_iterable():
 
 
 def main():
-    test_range_len()
-    test_range_len_uint()
-    test_range_len_uint_maxuint()
-    test_range_len_uint_empty()
+    var suite = TestSuite()
 
-    test_range_int_bounds()
-    test_range_uint_bounds()
-    test_larger_than_int_max_bounds()
+    suite.test[test_range_len]()
+    suite.test[test_range_len_uint]()
+    suite.test[test_range_len_uint_maxuint]()
+    suite.test[test_range_len_uint_empty]()
+    suite.test[test_range_int_bounds]()
+    suite.test[test_range_uint_bounds]()
+    suite.test[test_larger_than_int_max_bounds]()
+    suite.test[test_range_getitem]()
+    suite.test[test_range_getitem_uint]()
+    suite.test[test_range_reversed]()
+    suite.test[test_indexing]()
+    suite.test[test_range_bounds]()
+    suite.test[test_scalar_range]()
+    suite.test[test_range_compile_time]()
+    suite.test[test_range_iterable]()
 
     alias dtypes = [
         DType.int8,
@@ -367,10 +377,4 @@ def main():
         test_range_len_scalar[dtype]()
         test_range_scalar_bounds[dtype]()
 
-    test_range_getitem()
-    test_range_getitem_uint()
-    test_range_reversed()
-    test_indexing()
-    test_range_bounds()
-    test_range_compile_time()
-    test_range_iterable()
+    suite^.run()

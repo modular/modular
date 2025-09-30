@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_tuple_contains():
@@ -117,5 +118,9 @@ def test_tuple_unpack():
 
 
 def main():
-    test_tuple_contains()
-    test_tuple_unpack()
+    var suite = TestSuite()
+
+    suite.test[test_tuple_contains]()
+    suite.test[test_tuple_unpack]()
+
+    suite^.run()

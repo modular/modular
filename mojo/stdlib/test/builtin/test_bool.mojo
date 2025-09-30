@@ -13,6 +13,7 @@
 
 from python import PythonObject
 from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_default():
@@ -150,13 +151,17 @@ def test_float_conversion():
 
 
 def main():
-    test_default()
-    test_min_max()
-    test_bool_cast_to_int()
-    test_bool_none()
-    test_convert_from_implicitly_boolable()
-    test_bool_representation()
-    test_bitwise()
-    test_indexer()
-    test_comparisons()
-    test_float_conversion()
+    var suite = TestSuite()
+
+    suite.test[test_default]()
+    suite.test[test_min_max]()
+    suite.test[test_bool_cast_to_int]()
+    suite.test[test_bool_none]()
+    suite.test[test_convert_from_implicitly_boolable]()
+    suite.test[test_bool_representation]()
+    suite.test[test_bitwise]()
+    suite.test[test_indexer]()
+    suite.test[test_comparisons]()
+    suite.test[test_float_conversion]()
+
+    suite^.run()

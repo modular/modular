@@ -14,6 +14,7 @@
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __call_location, _SourceLocation
+from test_utils import TestSuite
 
 from utils import IndexList
 
@@ -133,6 +134,10 @@ def test_print_sep():
 
 
 def main():
-    test_print()
-    test_print_end()
-    test_print_sep()
+    var suite = TestSuite()
+
+    suite.test[test_print]()
+    suite.test[test_print_end]()
+    suite.test[test_print_sep]()
+
+    suite^.run()

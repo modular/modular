@@ -22,7 +22,7 @@ from builtin.sort import (
     _small_sort,
     _stable_sort,
 )
-from test_utils import CopyCounter
+from test_utils import CopyCounter, TestSuite
 from testing import assert_equal, assert_false, assert_true
 
 
@@ -106,7 +106,7 @@ fn test_sort_small_5() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort0():
+def test_sort0():
     var list = List[Int]()
 
     sort(list)
@@ -682,36 +682,39 @@ def test_ensure_no_copies():
     verify_list(list)
 
 
-def main():
-    test_sort_small_3()
-    test_sort_small_5()
-    test_sort0()
-    test_sort2()
-    test_sort3()
-    test_sort3_dupe_elements()
-    test_sort4()
-    test_sort5()
-    test_sort_reverse()
-    test_sort_semi_random()
-    test_sort9()
-    test_sort103()
-    test_sort_any_103()
-    test_quick_sort_repeated_val()
-
-    test_sort_stress()
-    test_stable_sort_stress()
-
-    test_sort_custom()
-
+def test_partition():
     test_partition_top_k(7, 5)
     test_partition_top_k(11, 2)
     test_partition_top_k(4, 1)
 
-    test_sort_string_small_list()
-    test_sort_string_big_list()
-    test_sort_strings()
-    test_sort_comparamble_elements_list()
-    test_sort_empty_comparable_elements_list()
 
-    test_sort_scalar()
-    test_ensure_no_copies()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_sort_small_3]()
+    suite.test[test_sort_small_5]()
+    suite.test[test_sort0]()
+    suite.test[test_sort2]()
+    suite.test[test_sort3]()
+    suite.test[test_sort3_dupe_elements]()
+    suite.test[test_sort4]()
+    suite.test[test_sort5]()
+    suite.test[test_sort_reverse]()
+    suite.test[test_sort_semi_random]()
+    suite.test[test_sort9]()
+    suite.test[test_sort103]()
+    suite.test[test_sort_any_103]()
+    suite.test[test_quick_sort_repeated_val]()
+    suite.test[test_sort_stress]()
+    suite.test[test_stable_sort_stress]()
+    suite.test[test_sort_custom]()
+    suite.test[test_partition]()
+    suite.test[test_sort_string_small_list]()
+    suite.test[test_sort_string_big_list]()
+    suite.test[test_sort_strings]()
+    suite.test[test_sort_comparamble_elements_list]()
+    suite.test[test_sort_empty_comparable_elements_list]()
+    suite.test[test_sort_scalar]()
+    suite.test[test_ensure_no_copies]()
+
+    suite^.run()

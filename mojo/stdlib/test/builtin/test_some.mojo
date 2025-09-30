@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 @fieldwise_init
@@ -66,7 +67,11 @@ def test_closure():
 
 
 def main():
-    test_some_arg()
-    test_some_param()
-    test_some_return()
-    test_closure()
+    var suite = TestSuite()
+
+    suite.test[test_some_arg]()
+    suite.test[test_some_param]()
+    suite.test[test_some_return]()
+    suite.test[test_closure]()
+
+    suite^.run()

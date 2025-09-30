@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal
+from test_utils import TestSuite
 
 from utils.numerics import isnan
 
@@ -133,10 +134,14 @@ def test_isnan():
 
 
 def main():
-    test_abs()
-    test_divmod()
-    test_max()
-    test_min()
-    test_round()
-    test_pow()
-    test_isnan()
+    var suite = TestSuite()
+
+    suite.test[test_abs]()
+    suite.test[test_divmod]()
+    suite.test[test_max]()
+    suite.test[test_min]()
+    suite.test[test_round]()
+    suite.test[test_pow]()
+    suite.test[test_isnan]()
+
+    suite^.run()

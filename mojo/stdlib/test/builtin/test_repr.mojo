@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 @fieldwise_init
@@ -47,6 +48,10 @@ def test_none_representation():
 
 
 def main():
-    test_explicit_conformance()
-    test_implicit_conformance()
-    test_none_representation()
+    var suite = TestSuite()
+
+    suite.test[test_explicit_conformance]()
+    suite.test[test_implicit_conformance]()
+    suite.test[test_none_representation]()
+
+    suite^.run()

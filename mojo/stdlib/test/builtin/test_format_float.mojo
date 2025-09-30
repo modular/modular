@@ -13,6 +13,7 @@
 
 from builtin._format_float import _write_float
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 def test_float64():
@@ -189,5 +190,9 @@ def test_float32():
 
 
 def main():
-    test_float64()
-    test_float32()
+    var suite = TestSuite()
+
+    suite.test[test_float64]()
+    suite.test[test_float32]()
+
+    suite^.run()

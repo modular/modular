@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_true
+from test_utils import TestSuite
 
 
 def test_none_end_folds():
@@ -135,8 +136,12 @@ def test_slice_indices():
 
 
 def main():
-    test_none_end_folds()
-    test_sliceable()
-    test_slice_stringable()
-    test_slice_eq()
-    test_slice_indices()
+    var suite = TestSuite()
+
+    suite.test[test_none_end_folds]()
+    suite.test[test_sliceable]()
+    suite.test[test_slice_stringable]()
+    suite.test[test_slice_eq]()
+    suite.test[test_slice_indices]()
+
+    suite^.run()

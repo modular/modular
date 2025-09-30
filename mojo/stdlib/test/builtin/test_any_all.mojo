@@ -14,6 +14,7 @@
 from collections.set import Set
 
 from testing import assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_list_any():
@@ -149,12 +150,13 @@ def test_simd_all():
 
 
 def main():
-    # any
-    test_list_any()
-    test_set_any()
-    test_simd_any()
+    var suite = TestSuite()
 
-    # all
-    test_list_all()
-    test_set_all()
-    test_simd_all()
+    suite.test[test_list_any]()
+    suite.test[test_set_any]()
+    suite.test[test_simd_any]()
+    suite.test[test_list_all]()
+    suite.test[test_set_all]()
+    suite.test[test_simd_all]()
+
+    suite^.run()

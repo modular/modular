@@ -13,6 +13,7 @@
 
 from builtin.format_int import _format_int
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 fn test_format_int() raises:
@@ -164,12 +165,17 @@ def test_different_prefix():
 
 
 def main():
-    test_format_int()
-    test_hex()
-    test_bin_scalar()
-    test_bin_int()
-    test_bin_bool()
-    test_intable()
-    test_oct_scalar()
-    test_oct_bool()
-    test_oct_int()
+    var suite = TestSuite()
+
+    suite.test[test_format_int]()
+    suite.test[test_hex]()
+    suite.test[test_bin_scalar]()
+    suite.test[test_bin_int]()
+    suite.test[test_bin_bool]()
+    suite.test[test_intable]()
+    suite.test[test_oct_scalar]()
+    suite.test[test_oct_bool]()
+    suite.test[test_oct_int]()
+    suite.test[test_different_prefix]()
+
+    suite^.run()
