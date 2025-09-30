@@ -4,7 +4,7 @@ mojo_library(
     name = "test_user_op",
     testonly = True,
     srcs = glob(["Inputs/test_user_op/*.mojo"]),
-    visibility = [":__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/mojo/max/tensor",
         "@mojo//:compiler",
