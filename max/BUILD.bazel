@@ -84,7 +84,7 @@ modular_py_library(
     srcs = glob(["_core_types/*.py"]),
     data = [":_core.bindings"],
     imports = [".."],
-    pyi_srcs = glob(["_core/**/*.pyi"]),
+    pyi_srcs = stubfiles,
     deps = [
         "//SDK/lib/API/python/max/mlir",
         requirement("numpy"),
@@ -106,7 +106,7 @@ modular_py_library(
         When you modify a .cpp file in the _core/src directory, you can run
         `./utils/sync-stubfiles.py` and commit the results.
         """.format(file),
-        file1 = "//SDK/lib/API/python/max:stubfiles/{}".format(file),
+        file1 = ":stubfiles/{}".format(file),
         file2 = file,
         tags = ["stubfiles"],
     )
