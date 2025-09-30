@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Callable
 
 from max.dtype import DType
@@ -54,6 +54,7 @@ class MoEGate(Module):
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
+        self.dtype = dtype
 
         self.gate_score = Linear(
             in_dim=hidden_dim,
@@ -78,6 +79,55 @@ class MoEGate(Module):
         )
 
         return topk_indices, topk_scores
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the sharding strategy for the module."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the module."""
+        if strategy.is_replicate:
+            self._sharding_strategy = strategy
+            self.gate_score.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+        else:
+            raise ValueError(
+                "Only replicate sharding strategy is supported for MoEGate."
+            )
+
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[MoEGate]:
+        """Create sharded views of this MoEGate module across multiple devices.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded MoEGate instances, one for each device."""
+        if not self._sharding_strategy:
+            raise ValueError(
+                "MoEGate module cannot be sharded because no sharding strategy was provided."
+            )
+
+        # Get sharded weights
+        gate_score_shards = self.gate_score.shard(devices)
+
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            sharded = MoEGate(
+                devices=[device],
+                hidden_dim=self.hidden_dim,
+                num_experts=self.num_experts,
+                num_experts_per_token=self.num_experts_per_token,
+                dtype=self.dtype,
+            )
+
+            # Replace the weights with sharded versions.
+            sharded.gate_score = gate_score_shards[shard_idx]
+            shards.append(sharded)
+        return shards
 
 
 class MoE(Module, Shardable):
@@ -173,7 +223,7 @@ class MoE(Module, Shardable):
         """Set the sharding strategy for the module."""
         if strategy.is_tensor_parallel:
             self._sharding_strategy = strategy
-            self.gate.gate_score.sharding_strategy = ShardingStrategy.replicate(
+            self.gate.sharding_strategy = ShardingStrategy.replicate(
                 strategy.num_devices
             )
             if self.has_shared_experts:
@@ -200,7 +250,7 @@ class MoE(Module, Shardable):
             )
 
         # Get sharded weights
-        gate_score_shards = self.gate.gate_score.shard(devices)
+        gate_shards = self.gate.shard(devices)
 
         if self.has_shared_experts:
             shared_experts_shards = self.shared_experts.shard(devices)
@@ -225,8 +275,8 @@ class MoE(Module, Shardable):
                 apply_router_weight_first=self.apply_router_weight_first,
             )
 
-            # Replace the weights with sharded versions.
-            sharded.gate.gate_score = gate_score_shards[shard_idx]
+            # Replace layers and weights with sharded versions.
+            sharded.gate = gate_shards[shard_idx]
             if self.has_shared_experts:
                 sharded.shared_experts = shared_experts_shards[shard_idx]
 

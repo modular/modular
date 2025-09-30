@@ -585,11 +585,6 @@ class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         num_devices = len(self.devices)
-        if not self.devices or num_devices < 2:
-            raise ValueError(
-                f"Must provide at least 2 devices to `DistributedLatentAttentionWithRope`, got {self.devices}"
-            )
-
         self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
         self.allreduce = Allreduce(num_devices)
 
@@ -601,7 +596,7 @@ class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
         xs: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedCacheValues],
-        freqs_cis: TensorValue,
+        freqs_cis: list[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
         if not self.devices:
