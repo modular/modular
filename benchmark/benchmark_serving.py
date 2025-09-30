@@ -34,7 +34,7 @@ from collections.abc import AsyncGenerator, Awaitable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import urlparse
 
 import aiohttp
@@ -123,18 +123,18 @@ logger = logging.getLogger("benchmark_serving")
 
 @dataclass
 class RequestFuncInput:
-    prompt: Union[str, list[dict[str, Any]]]
-    img: Optional[OpenAIImage]
+    prompt: str | list[dict[str, Any]]
+    img: OpenAIImage | None
     api_url: str
     prompt_len: int
-    max_tokens: Optional[int]
+    max_tokens: int | None
     ignore_eos: bool
     model: str
     lora: str
-    session_id: Optional[str] = None
+    session_id: str | None = None
     temperature: float = 0.0
     top_p: float = 1.0
-    top_k: Optional[int] = None
+    top_k: int | None = None
 
 
 @dataclass
@@ -180,7 +180,7 @@ class RequestCounter:
             return True
 
 
-def min_ignore_none(x: Sequence[Optional[int]]) -> Optional[int]:
+def min_ignore_none(x: Sequence[int | None]) -> int | None:
     filtered = [elem for elem in x if elem is not None]
     return min(filtered, default=None)
 
@@ -197,8 +197,7 @@ def compute_output_len(
 
 
 async def async_request_trt_llm(
-    request_func_input: RequestFuncInput,
-    pbar: Optional[tqdm] = None,
+    request_func_input: RequestFuncInput, pbar: tqdm | None = None
 ) -> RequestFuncOutput:
     api_url = request_func_input.api_url
     assert api_url.endswith("generate_stream")
@@ -267,8 +266,7 @@ async def async_request_trt_llm(
 
 
 async def async_request_openai_completions(
-    request_func_input: RequestFuncInput,
-    pbar: Optional[tqdm] = None,
+    request_func_input: RequestFuncInput, pbar: tqdm | None = None
 ) -> RequestFuncOutput:
     api_url = request_func_input.api_url
     assert api_url.endswith(("completions", "profile")), (
@@ -367,8 +365,7 @@ async def async_request_openai_completions(
 
 
 async def async_request_openai_chat_completions(
-    request_func_input: RequestFuncInput,
-    pbar: Optional[tqdm] = None,
+    request_func_input: RequestFuncInput, pbar: tqdm | None = None
 ) -> RequestFuncOutput:
     api_url = request_func_input.api_url
     assert api_url.endswith("chat/completions"), (
@@ -492,9 +489,9 @@ def remove_prefix(text: str, prefix: str) -> str:
 
 def get_tokenizer(
     pretrained_model_name_or_path: str,
-    model_max_length: Optional[int],
+    model_max_length: int | None,
     trust_remote_code: bool,
-) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
+) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
     return AutoTokenizer.from_pretrained(
         pretrained_model_name_or_path,
         model_max_length=model_max_length,
@@ -604,7 +601,7 @@ def calculate_metrics(
     gpu_metrics: list[dict[str, GPUStats]] | None,
     cpu_metrics: dict[str, Any],
     skip_first_n_requests: int,
-    max_concurrency: Optional[int],
+    max_concurrency: int | None,
     collect_gpu_stats: bool,
 ) -> tuple[BenchmarkMetrics, list[int]]:
     actual_output_lens: list[int] = []
@@ -772,15 +769,12 @@ async def chat_session_driver(
     model_id: str,
     lora_id: str,
     api_url: str,
-    request_func: Callable[
-        [RequestFuncInput],
-        Awaitable[RequestFuncOutput],
-    ],
+    request_func: Callable[[RequestFuncInput], Awaitable[RequestFuncOutput]],
     request_counter: RequestCounter,
     chat_session: ChatSession,
     max_chat_len: int,
-    delay_between_chat_turns: Optional[int],
-    skip_session_count: Optional[int] = None,
+    delay_between_chat_turns: int | None,
+    skip_session_count: int | None = None,
     ignore_first_turn_stats: bool = False,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
@@ -871,24 +865,24 @@ async def benchmark(
     chat_sessions: Sequence[ChatSession],
     request_rate: float,
     burstiness: float,
-    max_concurrency: Optional[int],
+    max_concurrency: int | None,
     disable_tqdm: bool,
     do_test_prompt: bool,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
     print_inputs_and_outputs: bool,
     max_requests: int,
-    num_chat_sessions: Optional[int],
-    delay_between_chat_turns: Optional[int],
+    num_chat_sessions: int | None,
+    delay_between_chat_turns: int | None,
     skip_first_n_requests: int,
-    max_output_len: Optional[int],
+    max_output_len: int | None,
     temperature: float,
     top_p: float,
-    top_k: Optional[int],
-    max_benchmark_duration_s: Optional[int],
+    top_k: int | None,
+    max_benchmark_duration_s: int | None,
     warmup_delay_ms: float = 0,
     ignore_first_turn_stats: bool = False,
-    timing_data: Optional[dict[str, list[float]]] = None,
+    timing_data: dict[str, list[float]] | None = None,
 ):
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
@@ -915,7 +909,7 @@ async def benchmark(
 
     if do_test_prompt:
         logger.info("Starting initial single prompt test run...")
-        test_prompt: Union[str, list[dict[str, Any]]]
+        test_prompt: str | list[dict[str, Any]]
         if num_chat_sessions:
             test_question = chat_sessions[0].messages[0]
             test_answer = chat_sessions[0].messages[1]
@@ -928,7 +922,7 @@ async def benchmark(
                 }
             ]
             test_prompt_len = test_question.num_tokens
-            test_max_tokens: Optional[int] = test_answer.num_tokens
+            test_max_tokens: int | None = test_answer.num_tokens
             test_ignore_eos = True
             test_img = None
         else:

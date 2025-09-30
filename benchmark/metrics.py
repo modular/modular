@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -51,7 +51,7 @@ class PercentileMetrics:
     p90: float
     p95: float
     p99: float
-    unit: Optional[str] = None
+    unit: str | None = None
 
     def __str__(self) -> str:
         """Return a formatted string representation of the metrics in table format."""
@@ -64,9 +64,7 @@ class PercentileMetrics:
         lines.append("{:<40} {:<10.2f}".format("P99:", self.p99))
         return "\n".join(lines)
 
-    def format_with_prefix(
-        self, prefix: str, unit: Optional[str] = None
-    ) -> str:
+    def format_with_prefix(self, prefix: str, unit: str | None = None) -> str:
         """Return formatted metrics with a custom prefix for labels."""
         # Use passed unit, or fall back to self.unit
         effective_unit = unit or self.unit
@@ -97,7 +95,7 @@ class ThroughputMetrics:
         self,
         data: list[float],
         scale_factor: float = 1.0,
-        unit: Optional[str] = None,
+        unit: str | None = None,
     ) -> None:
         """
         Initialize throughput metrics with automatic percentile calculations.
@@ -114,9 +112,7 @@ class ThroughputMetrics:
         percentiles = self._calculate_throughput_percentiles(data, scale_factor)
 
         self._metrics = PercentileMetrics(
-            unit=unit,
-            **basic_stats,
-            **percentiles,
+            unit=unit, **basic_stats, **percentiles
         )
 
     @staticmethod
@@ -151,7 +147,7 @@ class StandardPercentileMetrics:
         self,
         data: list[float],
         scale_factor: float = 1.0,
-        unit: Optional[str] = None,
+        unit: str | None = None,
     ) -> None:
         """
         Initialize standard percentile metrics with automatic calculations.
@@ -168,9 +164,7 @@ class StandardPercentileMetrics:
         percentiles = self._calculate_standard_percentiles(data, scale_factor)
 
         self._metrics = PercentileMetrics(
-            unit=unit,
-            **basic_stats,
-            **percentiles,
+            unit=unit, **basic_stats, **percentiles
         )
 
     @staticmethod
