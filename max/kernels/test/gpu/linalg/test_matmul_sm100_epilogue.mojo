@@ -48,6 +48,7 @@ def test_matmul_sm100_epilogue[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
     test_lambda_fn: Bool = False,
+    register_based_epilogue: Bool = False,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -154,6 +155,7 @@ def test_matmul_sm100_epilogue[
         config=matmul_config,
         cta_group=2,
         elementwise_compute_lambda_fn=optional_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
     ](
         c_device.to_layout_tensor(),
         a_device.to_layout_tensor(),
@@ -265,92 +267,100 @@ def main():
                     128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                 )
 
-                test_matmul_sm100_epilogue[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                    test_lambda_fn=True,
-                ](
-                    ctx,
-                    dynamic(1000),
-                    static[1024](),
-                    static[1024](),
-                )
+                @parameter
+                for register_based_epilogue in [True, False]:
+                    test_matmul_sm100_epilogue[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                    ](
+                        ctx,
+                        dynamic(1000),
+                        static[1024](),
+                        static[1024](),
+                    )
 
-                test_matmul_sm100_epilogue[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                    test_lambda_fn=True,
-                ](
-                    ctx,
-                    dynamic(512),
-                    static[4096](),
-                    static[1024](),
-                )
+                    test_matmul_sm100_epilogue[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                    ](
+                        ctx,
+                        dynamic(512),
+                        static[4096](),
+                        static[1024](),
+                    )
 
-                test_matmul_sm100_epilogue[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                    test_lambda_fn=True,
-                ](
-                    ctx,
-                    dynamic(500),
-                    static[2048](),
-                    static[4096](),
-                )
+                    test_matmul_sm100_epilogue[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                    ](
+                        ctx,
+                        dynamic(500),
+                        static[2048](),
+                        static[4096](),
+                    )
 
-                test_matmul_sm100_epilogue[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
-                    test_lambda_fn=True,
-                ](
-                    ctx,
-                    dynamic(1024),
-                    static[256](),
-                    static[128](),
-                )
+                    test_matmul_sm100_epilogue[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                    ](
+                        ctx,
+                        dynamic(1024),
+                        static[256](),
+                        static[128](),
+                    )
 
-                test_matmul_sm100_epilogue[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
-                    test_lambda_fn=True,
-                ](
-                    ctx,
-                    static[1024](),
-                    static[1024](),
-                    static[2048](),
-                )
+                    test_matmul_sm100_epilogue[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                    ](
+                        ctx,
+                        static[1024](),
+                        static[1024](),
+                        static[2048](),
+                    )
 
-                test_matmul_sm100_epilogue[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                    test_lambda_fn=True,
-                ](
-                    ctx,
-                    dynamic(8192),
-                    static[2560](),
-                    static[8192](),
-                )
+                    test_matmul_sm100_epilogue[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        test_lambda_fn=True,
+                        register_based_epilogue=register_based_epilogue,
+                    ](
+                        ctx,
+                        dynamic(8192),
+                        static[2560](),
+                        static[8192](),
+                    )

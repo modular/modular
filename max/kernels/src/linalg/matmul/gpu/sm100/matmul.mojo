@@ -56,7 +56,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import blocked_product
 from layout.layout_tensor import LayoutTensorIter
-from layout.runtime_tuple import idx2crd
+from layout.runtime_tuple import idx2crd, crd2idx
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
@@ -377,7 +377,7 @@ fn stsm_helper[
 
 
 @always_inline
-fn elementwise_helper[
+fn shared_memory_epilogue[
     MMA_M: UInt,
     data_paths: UInt,
     num_stages: UInt,
@@ -561,6 +561,156 @@ fn elementwise_helper[
 
 
 @always_inline
+fn _compute_register_lambda_fn[
+    accum_type: DType,
+    frag_size: UInt,
+    inc: UInt,
+    offset: UInt,
+    compute_lambda_fn: elementwise_compute_lambda_type,
+](
+    top_coord: StaticTuple[Scalar[DType.uint32], 2],
+    bottom_coord: StaticTuple[Scalar[DType.uint32], 2],
+    mut frag: SIMD[accum_type, frag_size],
+    staged_c_row: UInt32,
+    staged_c_col: UInt32,
+):
+    # update local coordinates w/ global memory offsets
+    var top_frag_upper_coord = StaticTuple[Scalar[DType.uint32], 2](
+        staged_c_row + top_coord[0], staged_c_col + top_coord[1] + inc
+    )
+
+    var bottom_frag_upper_coord = StaticTuple[Scalar[DType.uint32], 2](
+        staged_c_row + bottom_coord[0], staged_c_col + bottom_coord[1] + inc
+    )
+
+    # slice the fragment to get the current repeat top and bottom fragments
+    var simd_top = frag.slice[2, offset=offset]()
+    var simd_bottom = frag.slice[2, offset = offset + 2]()
+
+    simd_top = compute_lambda_fn(
+        IndexList[2](
+            Int(top_frag_upper_coord[0]), Int(top_frag_upper_coord[1])
+        ),
+        simd_top,
+    )
+
+    simd_bottom = compute_lambda_fn(
+        IndexList[2](
+            Int(bottom_frag_upper_coord[0]), Int(bottom_frag_upper_coord[1])
+        ),
+        simd_bottom,
+    )
+
+    # store the results back into the fragment
+    frag[offset] = simd_top[0]
+    frag[offset + 1] = simd_top[1]
+    frag[offset + 2] = simd_bottom[0]
+    frag[offset + 3] = simd_bottom[1]
+
+
+@always_inline
+fn register_epilogue[
+    MMA_M: UInt,
+    data_paths: UInt,
+    num_stages: UInt,
+    bits: UInt,
+    stage: UInt,
+    stageN: UInt,
+    compute_lambda_fn: elementwise_compute_lambda_type,
+    num_output_warps: UInt,
+    accum_type: DType,
+    frag_size: UInt,
+    repeats: UInt,
+](
+    mut upper_frag: SIMD[accum_type, frag_size],
+    mut lower_frag: SIMD[accum_type, frag_size],
+    c_row: UInt32,
+    c_col: UInt32,
+    N: UInt32,
+):
+    constrained[
+        bits == 256 and data_paths == 16,
+        "Only 16x256b tensor memory load is supported",
+    ]()
+
+    alias load_width = 2
+
+    var warp_id = get_warp_id()
+
+    # get global memory offset based on tile coordinates
+
+    # we update the column offset to include the current stage
+    var staged_c_col = c_col + stage * stageN
+    var staged_c_row = c_row
+
+    @parameter
+    if MMA_M == 256:
+        # based on https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-a
+        staged_c_row += warp_id * 32
+    else:
+        # based on https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-data-path-layout-b
+        staged_c_row += (warp_id % 2) * 32
+        staged_c_col += (warp_id // 2) * num_stages * stageN
+
+    # this is the tensor memory layout
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-matrix-fragments-shape-16256b
+    # we use it to figure out the starting coordinate
+    alias threads_per_row = stageN // repeats // load_width
+    var top_frag_upper_coord_left = StaticTuple[Scalar[DType.uint32], 2](
+        lane_id() // threads_per_row, lane_id() % threads_per_row * load_width
+    )
+
+    # getting the other 3 coordinates is straightforward. Each fragment is spaced out by 16 rows
+    # and within each fragment the elements are spaced out by 8 rows(this can be seen by the tv layout).
+    var bottom_frag_upper_coord_left = StaticTuple[Scalar[DType.uint32], 2](
+        top_frag_upper_coord_left[0] + 8, top_frag_upper_coord_left[1]
+    )
+
+    var top_frag_lower_coord_left = StaticTuple[Scalar[DType.uint32], 2](
+        top_frag_upper_coord_left[0] + 16, top_frag_upper_coord_left[1]
+    )
+
+    var bottom_frag_lower_coord_left = StaticTuple[Scalar[DType.uint32], 2](
+        top_frag_lower_coord_left[0] + 8, top_frag_lower_coord_left[1]
+    )
+
+    @parameter
+    for i in range(repeats):
+        # each tensor memory load (16x256b) may be repeated based on our desired size.
+        # if thats the case our fragment will be repeated as well. So process it in chunks i.e
+        # one 16x256b at a time.
+        # inc represents the shift in global memory offset for each chunk, based on the repeat, and
+        # offset represents the offset into the fragment for each chunk.
+
+        alias inc = i * 8
+        alias offset = i * 4
+
+        alias helper = _compute_register_lambda_fn[
+            accum_type=accum_type,
+            frag_size=frag_size,
+            compute_lambda_fn=compute_lambda_fn,
+            inc=inc,
+            offset=offset,
+        ]
+
+        helper(
+            top_frag_upper_coord_left,
+            bottom_frag_upper_coord_left,
+            upper_frag,
+            staged_c_row,
+            staged_c_col,
+        )
+
+        helper(
+            top_frag_lower_coord_left,
+            bottom_frag_lower_coord_left,
+            lower_frag,
+            staged_c_row,
+            staged_c_col,
+        )
+
+
+@always_inline
 fn multi_stage_store_C[
     c_type: DType,
     c_smem_layout: Layout,
@@ -580,6 +730,7 @@ fn multi_stage_store_C[
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
+    register_based_epilogue: Bool = True,  # if false it will perform epilogue on data in shared memory
     transpose_c: Bool = False,
 ](
     c_iter: LayoutTensorIter[
@@ -633,6 +784,9 @@ fn multi_stage_store_C[
     # every element in tmem is 4 bytes, so bits being 256 means 8 elements stored across N
     # repeated 4 times is 8*4 = 32, enough to move elements into the width of our 128x32 tile
     alias rep = stageN // (bits // 32)  # repetitions per stage
+    # typically repeated 4 times to get the desired 32 elements
+
+    # stageN is how many elements we want to load at once
 
     # stmatrix related
     alias st_matrix_swizzle = c_swizzle
@@ -680,6 +834,25 @@ fn multi_stage_store_C[
         if stage == num_stages - 1:
             umma_arrive_leader_cta(accum_empty_mbar + index)
 
+        @parameter
+        if elementwise_compute_lambda_fn:
+
+            @parameter
+            if register_based_epilogue:
+                register_epilogue[
+                    MMA_M,
+                    data_paths,
+                    num_stages,
+                    bits,
+                    stage,
+                    stageN,
+                    elementwise_compute_lambda_fn.value(),
+                    num_output_warps,
+                    accum_type,
+                    upper_frag.size,
+                    rep,
+                ](upper_frag, lower_frag, c_row, c_col, N)
+
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
 
@@ -709,28 +882,31 @@ fn multi_stage_store_C[
 
             @parameter
             if elementwise_compute_lambda_fn:
-                elementwise_helper[
-                    MMA_M,
-                    data_paths,
-                    num_stages,
-                    stage,
-                    stageN,
-                    c_smem_warp_tile_upper.dtype,
-                    c_smem_tile.shape[1](),
-                    simd_size,
-                    c_smem_warp_tile_upper.layout,
-                    c_smem_warp_tile_lower.layout,
-                    swizzle,
-                    elementwise_compute_lambda_fn.value(),
-                    num_output_warps,
-                ](
-                    M,
-                    N,
-                    c_col,
-                    c_row,
-                    c_smem_warp_tile_upper,
-                    c_smem_warp_tile_lower,
-                )
+
+                @parameter
+                if not register_based_epilogue:
+                    shared_memory_epilogue[
+                        MMA_M,
+                        data_paths,
+                        num_stages,
+                        stage,
+                        stageN,
+                        c_smem_warp_tile_upper.dtype,
+                        c_smem_tile.shape[1](),
+                        simd_size,
+                        c_smem_warp_tile_upper.layout,
+                        c_smem_warp_tile_lower.layout,
+                        swizzle,
+                        elementwise_compute_lambda_fn.value(),
+                        num_output_warps,
+                    ](
+                        M,
+                        N,
+                        c_col,
+                        c_row,
+                        c_smem_warp_tile_upper,
+                        c_smem_warp_tile_lower,
+                    )
         else:
             var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
 
@@ -752,28 +928,31 @@ fn multi_stage_store_C[
 
             @parameter
             if elementwise_compute_lambda_fn:
-                elementwise_helper[
-                    MMA_M,
-                    data_paths,
-                    num_stages,
-                    stage,
-                    stageN,
-                    c_smem_warp_tile_upper.dtype,
-                    c_smem_tile.shape[1](),
-                    simd_size,
-                    c_smem_warp_tile_upper.layout,
-                    c_smem_warp_tile_lower.layout,
-                    swizzle,
-                    elementwise_compute_lambda_fn.value(),
-                    num_output_warps,
-                ](
-                    M,
-                    N,
-                    c_col,
-                    c_row,
-                    c_smem_warp_tile_upper,
-                    c_smem_warp_tile_lower,
-                )
+
+                @parameter
+                if not register_based_epilogue:
+                    shared_memory_epilogue[
+                        MMA_M,
+                        data_paths,
+                        num_stages,
+                        stage,
+                        stageN,
+                        c_smem_warp_tile_upper.dtype,
+                        c_smem_tile.shape[1](),
+                        simd_size,
+                        c_smem_warp_tile_upper.layout,
+                        c_smem_warp_tile_lower.layout,
+                        swizzle,
+                        elementwise_compute_lambda_fn.value(),
+                        num_output_warps,
+                    ](
+                        M,
+                        N,
+                        c_col,
+                        c_row,
+                        c_smem_warp_tile_upper,
+                        c_smem_warp_tile_lower,
+                    )
 
         var lane = lane_id()
 
@@ -1130,6 +1309,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     ] = None,
     block_swizzle_size: Int = 0,
     rasterize_order: RasterOrder = RasterOrder.AlongM,
+    register_based_epilogue: Bool = True,
     transpose_c: Bool = False,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
@@ -1554,6 +1734,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 num_output_warps=num_output_warps,
                 max_tmem_cols=max_tmem_cols,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                register_based_epilogue=register_based_epilogue,
                 transpose_c=transpose_c,
             ](
                 c_smem_iter,
@@ -1597,6 +1778,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     num_pipeline_stages: Optional[UInt] = None,
+    register_based_epilogue: Bool = True,
     swapAB: Bool = False,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
@@ -1628,6 +1810,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             block_swizzle_size=block_swizzle_size,
             rasterize_order=rasterize_order,
+            register_based_epilogue=register_based_epilogue,
             transpose_c=True,
         ](c_device, b_device, a_device, ctx)
     else:
@@ -1645,6 +1828,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             block_swizzle_size=block_swizzle_size,
             rasterize_order=rasterize_order,
+            register_based_epilogue=register_based_epilogue,
             transpose_c=False,
         ](c_device, a_device, b_device, ctx)
 
@@ -1667,6 +1851,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     num_pipeline_stages: Optional[UInt] = None,
+    register_based_epilogue: Bool = True,
     transpose_c: Bool = False,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
@@ -1855,6 +2040,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         block_swizzle_size=block_swizzle_size,
         rasterize_order=rasterize_order,
+        register_based_epilogue=register_based_epilogue,
         transpose_c=transpose_c,
     ]
 
