@@ -35,7 +35,7 @@ class LoRAConfig(MAXConfig):
     max_lora_rank: int = 16
     """Maximum rank of all possible LoRAs"""
 
-    max_num_loras: int = 100
+    max_num_loras: int = 1
     """The maximum number of active LoRAs in a batch"""
 
     _config_file_section_name: str = "lora_config"
@@ -55,5 +55,5 @@ class LoRAConfig(MAXConfig):
             "enable_lora": "Enables LoRA on the server",
             "lora_paths": "List of paths to the LoRAs.",
             "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16. Default is 16.",
-            "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 100.",
+            "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 1.",
         }
