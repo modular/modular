@@ -6,16 +6,13 @@ load("//bazel:api.bzl", "mojo_test")
         size = "large",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = [
-            "//:amd_gpu",
-            "//:nvidia_gpu",
-            "//:apple_gpu",
-        ],
+        target_compatible_with = ["//:has_gpu"],
         deps = [
             "@mojo//:stdlib",
+            "@mojo//:test_utils",
         ],
     )
-    for src in glob(["**/*.mojo"])
+    for src in glob(["*.mojo"])
 ]
 
 filegroup(
