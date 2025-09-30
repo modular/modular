@@ -16,10 +16,8 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Sequence
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
-import numpy as np
-import numpy.typing as npt
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
@@ -27,6 +25,7 @@ from max.nn import (
     MLP,
     AttentionWithRope,
     AttentionWithRopeAndLoRA,
+    ConstantLayerNorm,
     Embedding,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
@@ -80,43 +79,6 @@ class StackedMLP(Module):
         up_states = up_states[:, up_states.shape.static_dims[0] // 2 :]
 
         return self.down_proj(ops.silu(gate) * up_states)
-
-
-class ConstantLayerNorm(Module):
-    """Layer normalization block with constant gamma and beta values."""
-
-    gamma: npt.NDArray[np.floating[Any]]
-    beta: npt.NDArray[np.floating[Any]]
-    eps: float = 1e-5
-    device: DeviceRef
-    dtype: DType
-
-    def __init__(
-        self,
-        dims: int | tuple[int, ...],
-        device: DeviceRef,
-        dtype: DType,
-        eps: float = 1e-5,
-    ) -> None:
-        super().__init__()
-        self.gamma = np.ones(dims)
-        self.beta = np.zeros(dims)
-        self.eps = eps
-        self.device = device
-        self.dtype = dtype
-
-    def __call__(self, input: TensorValue) -> TensorValue:
-        gamma = ops.constant(self.gamma, self.dtype, self.device)
-        beta = ops.constant(self.beta, self.dtype, self.device)
-        return ops.cast(
-            ops.layer_norm(
-                ops.cast(input, DType.float32),
-                gamma=gamma,
-                beta=beta,
-                epsilon=self.eps,
-            ),
-            input.dtype,
-        )
 
 
 class Llama3(Transformer):

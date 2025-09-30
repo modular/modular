@@ -48,6 +48,7 @@ from .linear import (
 )
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .norm import (
+    ConstantLayerNorm,
     GroupNorm,
     LayerNorm,
     LayerNormV1,
@@ -85,6 +86,7 @@ __all__ = [
     "AttentionWithRopeQKV",
     "AttentionWithRopeV1",
     "ColumnParallelLinear",
+    "ConstantLayerNorm",
     "Conv1D",
     "Conv1DV1",
     "Conv2d",
