@@ -550,14 +550,7 @@ struct Span[
 
         Safety:
             - Both `a` and `b` must be in: [0, len(self)).
-            - `a` cannot be equal to `b`.
         """
-        debug_assert(
-            a != b,
-            "`a` cannot be equal to `b`: ",
-            a,
-            location=__call_location(),
-        )
         debug_assert(
             0 <= a < len(self),
             "Index `a` out of bounds: ",
@@ -571,9 +564,9 @@ struct Span[
             location=__call_location(),
         )
         var ptr = self.unsafe_ptr()
-        var tmp = ptr.offset(a).take_pointee()
-        ptr.offset(a).init_pointee_move_from(ptr.offset(b))
-        ptr.offset(b).init_pointee_move(tmp^)
+
+        # `a` and `b` may be equal, so we cannot use `swap` directly.
+        ptr.offset(a).swap_pointees(ptr.offset(b))
 
     fn swap_elements(self: Span[mut=True, T], a: Int, b: Int) raises:
         """
@@ -586,9 +579,6 @@ struct Span[
         Raises:
             If a or b are larger than the length of the span.
         """
-        if a == b:
-            return
-
         var length = UInt(len(self))
         if a > length or b > length:
             raise Error(

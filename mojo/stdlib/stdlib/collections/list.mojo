@@ -1180,8 +1180,8 @@ struct List[T: Copyable & Movable](
                 " [0, len(List)-1]"
             ),
         )
-        if elt_idx_1 != elt_idx_2:
-            swap((self._data + elt_idx_1)[], (self._data + elt_idx_2)[])
+        var ptr = self._data
+        ptr.offset(elt_idx_1).swap_pointees(ptr.offset(elt_idx_2))
 
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //

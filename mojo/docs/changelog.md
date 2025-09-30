@@ -37,6 +37,9 @@ Literals now have a default type. For example, you can now bind
 - `math.isqrt` has been renamed to `rsqrt` since it performs reciprocal square
   root functionality.
 
+- Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
+  when the pointers may potentially alias each other.
+
 ### Tooling changes
 
 ### ❌ Removed

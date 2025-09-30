@@ -19,7 +19,9 @@ from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
 from builtin.simd import _simd_construction_checks
+from memory import memcpy
 from memory.memory import _free, _malloc
+from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from python import PythonObject
 
 # ===----------------------------------------------------------------------=== #
@@ -550,6 +552,60 @@ struct UnsafePointer[
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    @always_inline("nodebug")
+    fn swap_pointees[
+        U: Movable
+    ](
+        self: UnsafePointer[U, mut=True, origin=_],
+        other: UnsafePointer[U, mut=True, origin=_],
+    ):
+        """Swap the values at the pointers.
+
+        This function assumes that `self` and `other` _may_ overlap in memory.
+        If that is not the case, or when references are available, you should
+        use `builtin.swap` instead.
+
+        Parameters:
+            U: The type the pointers point to, which must be `Movable`.
+
+        Args:
+            other: The other pointer to swap with.
+
+        Safety:
+            - `self` and `other` must both point to valid, initialized instances
+              of `T`.
+        """
+
+        @parameter
+        if U.__moveinit__is_trivial:
+            # If `moveinit` is trivial, we can avoid the branch introduced from
+            # checking if the pointers are equal by using temporary stack
+            # values.
+            #
+            # Since `lhs` may overlap with `rhs` we need two temporary stack
+            # values since we cannot call `memcpy` with the potentially
+            # overlapping pointers.
+            #
+            # Even if they are not overlapping, this also produces better llvm
+            # code with only 2 loads and 2 stores. Whereas with only 1 temporary
+            # and a memcpy between the pointers it produces 3 load and 3 stores.
+
+            var self_tmp = UnsafeMaybeUninitialized[U]()
+            var other_tmp = UnsafeMaybeUninitialized[U]()
+            memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
+            memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
+
+            memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
+            memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
+        else:
+            # If `moveinit` is NOT trivial, we need to check if the pointers are
+            # the same to avoid undefined behavior when moving from rhs to lhs.
+            if self == other:
+                return
+            var tmp = self.take_pointee()
+            self.init_pointee_move_from(other)
+            other.init_pointee_move(tmp^)
 
     @always_inline("nodebug")
     fn as_noalias_ptr(self) -> Self:

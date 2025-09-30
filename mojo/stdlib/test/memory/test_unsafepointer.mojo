@@ -372,6 +372,42 @@ def test_merge():
     assert_equal(b, [4, 5, 6, 8])
 
 
+def test_swap_pointees_trivial_move():
+    var a = 42
+    UnsafePointer(to=a).origin_cast[True, MutableAnyOrigin]().swap_pointees(
+        UnsafePointer(to=a).origin_cast[True, MutableAnyOrigin]()
+    )
+    assert_equal(a, 42)
+
+    var x = 1
+    var y = 2
+    UnsafePointer(to=x).swap_pointees(UnsafePointer(to=y))
+    assert_equal(x, 2)
+    assert_equal(y, 1)
+
+
+def test_swap_pointees_non_trivial_move():
+    var counter = MoveCounter[Int](42)
+    UnsafePointer(to=counter).origin_cast[
+        True, MutableAnyOrigin
+    ]().swap_pointees(
+        UnsafePointer(to=counter).origin_cast[True, MutableAnyOrigin]()
+    )
+    # Pointers point to the same object, so no move should be performed
+    assert_equal(counter.value, 42)
+    assert_equal(counter.move_count, 0)
+
+    var counterA = MoveCounter[Int](1)
+    var counterB = MoveCounter[Int](2)
+    UnsafePointer(to=counterA).swap_pointees(UnsafePointer(to=counterB))
+
+    assert_equal(counterA.value, 2)
+    assert_equal(counterA.move_count, 1)
+
+    assert_equal(counterB.value, 1)
+    assert_equal(counterB.move_count, 2)
+
+
 def main():
     var suite = TestSuite()
 
@@ -398,5 +434,7 @@ def main():
     suite.test[test_load_and_store_simd]()
     suite.test[test_volatile_load_and_store_simd]()
     suite.test[test_merge]()
+    suite.test[test_swap_pointees_trivial_move]()
+    suite.test[test_swap_pointees_non_trivial_move]()
 
     suite^.run()
