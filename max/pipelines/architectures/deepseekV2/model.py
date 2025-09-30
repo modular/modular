@@ -455,7 +455,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
 
         # Build Graph
         nn_model: Module
-        if len(self.devices) > 0:
+        if len(self.devices) > 1:
             nn_model = DistributedDeepseekV2(model_config)
             nn_model.load_state_dict(
                 state_dict, weight_alignment=1, strict=False

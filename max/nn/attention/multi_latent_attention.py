@@ -596,7 +596,7 @@ class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
         xs: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedCacheValues],
-        freqs_cis: list[TensorValue],
+        freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
         if not self.devices:
