@@ -138,7 +138,7 @@ struct UInt(
         Args:
             value: The init value.
         """
-        self = UInt(mlir_value=value.__index__())
+        self = UInt(mlir_value=value.__mlir_index__())
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -709,7 +709,7 @@ struct UInt(
         return self != 0
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

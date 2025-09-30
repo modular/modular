@@ -441,7 +441,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             The value as an integer of platform-specific width.
         """
-        return Int(mlir_value=self.__index__())
+        return Int(mlir_value=self.__mlir_index__())
 
     @always_inline("builtin")
     fn __as_int__(self) -> Int:
@@ -521,7 +521,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert from IntLiteral to index.
 
         Returns:

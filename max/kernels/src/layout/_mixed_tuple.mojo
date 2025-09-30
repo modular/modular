@@ -358,7 +358,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         var storage_ptr = UnsafePointer(to=self.storage).address
 
         # Get pointer to the element
-        var elt_ptr = __mlir_op.`kgen.pack.gep`[index = idx.__index__()](
+        var elt_ptr = __mlir_op.`kgen.pack.gep`[index = idx.__mlir_index__()](
             storage_ptr
         )
         # Return as reference, propagating mutability

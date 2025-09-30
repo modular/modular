@@ -561,7 +561,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index = index.__index__()
+            index = index.__mlir_index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 

@@ -299,7 +299,7 @@ struct Bool(
         return self.__int__()
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

@@ -99,7 +99,7 @@ struct Axis(Indexer, Intable):
         return self.axis
 
     @always_inline("nodebug")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
