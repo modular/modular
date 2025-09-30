@@ -1698,7 +1698,7 @@ CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
       return cvalue;
 
   ValueDest dest(context);
-  return emitNamedMethodCall("__index__", {value}, dest,
+  return emitNamedMethodCall("__mlir_index__", {value}, dest,
                              CallSyntax::kMethodCall, value.expr);
 }
 

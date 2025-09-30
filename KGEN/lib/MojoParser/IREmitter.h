@@ -579,12 +579,12 @@ public:
   /// on error.
   RValue emitExprI1(const ExprNode *condExpr, ExprContext context);
 
-  /// Given a value, emit it into an MLIR value by invoking its `__index__`
+  /// Given a value, emit it into an MLIR value by invoking its `__mlir_index__`
   /// method.
   CValue emitIndex(ASTExprAnd<AnyValue> value, ExprContext context);
 
   /// Emit the specified expression, converting it into an MLIR value by convert
-  /// it to an index value and then invoking `__index__` method.
+  /// it to an index value and then invoking `__mlir_index__` method.
   CValue emitIndex(const ExprNode *expr, ExprContext context);
 
   /// Emit a `Bool`-typed value from an `i1` value.

@@ -350,7 +350,7 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable):
         return not (self == 0)
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         return self._mlir_value
 
     @always_inline("builtin")
@@ -841,7 +841,7 @@ struct AddressSpace:
     alias GENERIC = AddressSpace(0)
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         return self._value._mlir_value
 
 
