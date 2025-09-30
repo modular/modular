@@ -1188,8 +1188,11 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
         [inType](const APSInt &in) -> std::optional<int64_t> {
-          if (in.getSignificantBits() > 64)
-            return {};
+          if (in.getSignificantBits() > 64) {
+            auto truncated = in.trunc(64);
+            return inType->isSInt() ? truncated.getSExtValue()
+                                    : truncated.getZExtValue();
+          }
           return inType->isSInt() ? in.getSExtValue() : in.getZExtValue();
         },
         [](const APFloat &in) -> std::optional<int64_t> {

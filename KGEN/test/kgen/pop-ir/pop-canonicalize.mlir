@@ -771,47 +771,57 @@ kgen.func @pointer_bitcast_of_bitcast(%arg0: !kgen.pointer<si32>) -> !kgen.point
 
 // CHECK-LABEL: @cast
 kgen.func @cast() -> (
-    !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>,
-    !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>,
-    !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>,
-    !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>) {
+    !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>,
+    !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>,
+    !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>,
+    !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>) {
   // CHECK-DAG: %[[C0:.*]] = kgen{{.*}}<"10.125">
   // CHECK-DAG: %[[C1:.*]] = kgen{{.*}}<"500">
   // CHECK-DAG: %[[C2:.*]] = kgen{{.*}}<"1">
-  // CHECK-DAG: %[[C3:.*]] = kgen{{.*}}ui8{{.*}}<10>
-  // CHECK-DAG: %[[C4:.*]] = kgen{{.*}}ui8{{.*}}<244>
-  // CHECK-DAG: %[[C5:.*]] = kgen{{.*}}ui8{{.*}}<1>
+  // CHECK-DAG: %[[C3:.*]] = kgen{{.*}}<"+Inf">
+  // CHECK-DAG: %[[C4:.*]] = kgen{{.*}}ui8{{.*}}<10>
+  // CHECK-DAG: %[[C5:.*]] = kgen{{.*}}ui8{{.*}}<244>
+  // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}ui8{{.*}}<1>
+  // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}ui8{{.*}}<255>
   // CHECK-DAG: %[[TRUE:.*]] = kgen{{.*}}<true>
-  // CHECK-DAG: %[[C6:.*]] = kgen{{.*}}index{{.*}}<10>
-  // CHECK-DAG: %[[C7:.*]] = kgen{{.*}}index{{.*}}<500>
-  // CHECK-DAG: %[[C8:.*]] = kgen{{.*}}index{{.*}}<1>
-  %0 = kgen.param.constant: scalar<bf16> = <"10.125">
-  %1 = kgen.param.constant: scalar<si32> = <500>
-  %2 = kgen.param.constant: scalar<bool> = <true>
+  // CHECK-DAG: %[[C8:.*]] = kgen{{.*}}index{{.*}}<10>
+  // CHECK-DAG: %[[C9:.*]] = kgen{{.*}}index{{.*}}<500>
+  // CHECK-DAG: %[[C10:.*]] = kgen{{.*}}index{{.*}}<1>
+  // CHECK-DAG: %[[C11:.*]] = kgen{{.*}}index{{.*}}<-1>
+  %c0 = kgen.param.constant: scalar<bf16> = <"10.125">
+  %c1 = kgen.param.constant: scalar<si32> = <500>
+  %c2 = kgen.param.constant: scalar<bool> = <true>
+  %c3 = kgen.param.constant: scalar<si128> = <18446744073709551615>
 
-  %3 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<f16>
-  %4 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<f16>
-  %5 = pop.cast %2 : !pop.scalar<bool> to !pop.scalar<f16>
+  %0 = pop.cast %c0 : !pop.scalar<bf16> to !pop.scalar<f16>
+  %1 = pop.cast %c1 : !pop.scalar<si32> to !pop.scalar<f16>
+  %2 = pop.cast %c2 : !pop.scalar<bool> to !pop.scalar<f16>
+  %3 = pop.cast %c3 : !pop.scalar<si128> to !pop.scalar<f16>
 
-  %6 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<ui8>
-  %7 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<ui8>
-  %8 = pop.cast %2 : !pop.scalar<bool> to !pop.scalar<ui8>
+  %4 = pop.cast %c0 : !pop.scalar<bf16> to !pop.scalar<ui8>
+  %5 = pop.cast %c1 : !pop.scalar<si32> to !pop.scalar<ui8>
+  %6 = pop.cast %c2 : !pop.scalar<bool> to !pop.scalar<ui8>
+  %7 = pop.cast %c3 : !pop.scalar<si128> to !pop.scalar<ui8>
 
-  %9 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<bool>
-  %10 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<bool>
-  %11 = pop.cast %2 : !pop.scalar<bool> to !pop.scalar<bool>
+  %8 = pop.cast %c0 : !pop.scalar<bf16> to !pop.scalar<bool>
+  %9 = pop.cast %c1 : !pop.scalar<si32> to !pop.scalar<bool>
+  %10 = pop.cast %c2 : !pop.scalar<bool> to !pop.scalar<bool>
+  %11 = pop.cast %c3 : !pop.scalar<si128> to !pop.scalar<bool>
 
-  %12 = pop.cast %0 : !pop.scalar<bf16> to !pop.scalar<index>
-  %13 = pop.cast %1 : !pop.scalar<si32> to !pop.scalar<index>
-  %14 = pop.cast %2 : !pop.scalar<bool> to !pop.scalar<index>
+  %12 = pop.cast %c0 : !pop.scalar<bf16> to !pop.scalar<index>
+  %13 = pop.cast %c1 : !pop.scalar<si32> to !pop.scalar<index>
+  %14 = pop.cast %c2 : !pop.scalar<bool> to !pop.scalar<index>
+  %15 = pop.cast %c3 : !pop.scalar<si128> to !pop.scalar<index>
 
-  // CHECK-NEXT: return %[[C0]], %[[C1]], %[[C2]], %[[C3]], %[[C4]], %[[C5]], %[[TRUE]], %[[TRUE]], %[[TRUE]]
-  // CHECK-SAME: %[[C6]], %[[C7]], %[[C8]]
-  kgen.return %3, %4, %5, %6, %7, %8, %9, %10, %11, %12, %13, %14 :
-    !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>,
-    !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>,
-    !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>,
-    !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>
+  // CHECK-NEXT: return %[[C0]], %[[C1]], %[[C2]], %[[C3]],
+  // CHECK-SAME: %[[C4]], %[[C5]], %[[C6]], %[[C7]],
+  // CHECK-SAME: %[[TRUE]], %[[TRUE]], %[[TRUE]], %[[TRUE]],
+  // CHECK-SAME: %[[C8]], %[[C9]], %[[C10]], %[[C11]]
+  kgen.return %0, %1, %2, %3, %4, %5, %6, %7, %8, %9, %10, %11, %12, %13, %14, %15 :
+    !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>,
+    !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>, !pop.scalar<ui8>,
+    !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>, !pop.scalar<bool>,
+    !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>, !pop.scalar<index>
 }
 
 // CHECK-LABEL: @cast_si64_ui64_index
