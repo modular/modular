@@ -73,7 +73,7 @@ import test_package
 
 fn assignPackageModule():
   # FIXME: This error isn't great.
-  # expected-error @below {{cannot implicitly materialize compile-time value of type 'test_package'to runtime because it is not 'ImplicitlyCopyable'}}
+  # expected-error @below {{cannot implicitly materialize compile-time value of type 'test_package' to runtime because it is not 'ImplicitlyCopyable'}}
   # expected-note @below {{use 'materialize' to explicitly materialize the value.}}
   test_package = test_package
 
