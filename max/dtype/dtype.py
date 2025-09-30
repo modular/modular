@@ -146,19 +146,27 @@ try:
 
     _TORCH_TO_DTYPE = {v: k for k, v in _DTYPE_TO_TORCH.items()}
 
-    def _to_torch(dtype: DType) -> torch.dtype:
+    def _to_torch(dtype: DType, _error: Exception | None = None) -> torch.dtype:
         return _DTYPE_TO_TORCH[dtype]
 
-    def _from_torch(dtype: torch.dtype) -> DType:
+    def _from_torch(
+        dtype: torch.dtype, _error: Exception | None = None
+    ) -> DType:
         return _TORCH_TO_DTYPE[dtype]
 
-except ImportError as e:
+except Exception as e:
+    # Continue with torch disabled if there's any issue with the torch
+    # installation.
 
-    def _to_torch(dtype: DType) -> torch.dtype:
-        raise e
+    def _to_torch(dtype: DType, _error: Exception | None = e) -> torch.dtype:
+        raise RuntimeError(
+            f"torch integration unavailable: {_error}"
+        ) from _error
 
-    def _from_torch(dtype: torch.dtype) -> DType:
-        raise e
+    def _from_torch(dtype: torch.dtype, _error: Exception | None = e) -> DType:
+        raise RuntimeError(
+            f"torch integration unavailable: {_error}"
+        ) from _error
 
 
 DType._missing_ = _missing  # type: ignore[method-assign]
