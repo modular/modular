@@ -14,8 +14,17 @@
 from sys.compile import DebugLevel, OptimizationLevel
 
 from testing import assert_equal
+from test_utils import TestSuite
+
+
+def test_compile_debug_options():
+    assert_equal(Int(OptimizationLevel), 0)
+    assert_equal(String(DebugLevel), "none")
 
 
 def main():
-    assert_equal(Int(OptimizationLevel), 0)
-    assert_equal(String(DebugLevel), "none")
+    var suite = TestSuite()
+
+    suite.test[test_compile_debug_options]()
+
+    suite^.run()

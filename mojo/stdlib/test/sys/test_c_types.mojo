@@ -15,6 +15,7 @@ from sys.ffi import c_int, c_long, c_long_long, c_ulong, c_ulong_long
 from sys.info import CompilationTarget, is_64bit
 
 from testing import assert_equal, assert_true
+from test_utils import TestSuite
 
 #
 # Reference:
@@ -64,6 +65,10 @@ def test_c_long_long_types():
 
 
 def main():
-    test_c_int_type()
-    test_c_long_types()
-    test_c_long_long_types()
+    var suite = TestSuite()
+
+    suite.test[test_c_int_type]()
+    suite.test[test_c_long_types]()
+    suite.test[test_c_long_long_types]()
+
+    suite^.run()

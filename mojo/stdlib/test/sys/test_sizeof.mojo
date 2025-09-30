@@ -14,9 +14,10 @@
 from sys import size_of
 
 from testing import assert_equal
+from test_utils import TestSuite
 
 
-def main():
+def test_size_of_dtypes():
     assert_equal(size_of[DType.int8](), 1)
     assert_equal(size_of[DType.int16](), 2)
     assert_equal(size_of[DType.int32](), 4)
@@ -32,3 +33,11 @@ def main():
     assert_equal(size_of[DType.bfloat16](), 2)
     assert_equal(size_of[DType.float16](), 2)
     assert_equal(size_of[DType.invalid](), 0)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_size_of_dtypes]()
+
+    suite^.run()

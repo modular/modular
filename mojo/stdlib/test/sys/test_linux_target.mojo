@@ -18,6 +18,7 @@
 from sys import CompilationTarget
 
 from testing import assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_os_query():
@@ -26,4 +27,8 @@ def test_os_query():
 
 
 def main():
-    test_os_query()
+    var suite = TestSuite()
+
+    suite.test[test_os_query]()
+
+    suite^.run()

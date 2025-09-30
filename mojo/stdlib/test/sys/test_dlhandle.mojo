@@ -15,6 +15,7 @@ from pathlib import Path
 from sys import DLHandle
 
 from testing import assert_raises
+from test_utils import TestSuite
 
 
 def check_invalid_dlhandle():
@@ -28,5 +29,9 @@ def check_invalid_dlhandle_path():
 
 
 def main():
-    check_invalid_dlhandle()
-    check_invalid_dlhandle_path()
+    var suite = TestSuite()
+
+    suite.test[check_invalid_dlhandle]()
+    suite.test[check_invalid_dlhandle_path]()
+
+    suite^.run()

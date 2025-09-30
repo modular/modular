@@ -15,6 +15,7 @@ from sys import simd_bit_width
 from sys.info import CompilationTarget
 
 from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_arch_query():
@@ -26,4 +27,8 @@ def test_arch_query():
 
 
 def main():
-    test_arch_query()
+    var suite = TestSuite()
+
+    suite.test[test_arch_query]()
+
+    suite^.run()

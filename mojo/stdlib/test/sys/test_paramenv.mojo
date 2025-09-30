@@ -14,6 +14,7 @@
 from sys import env_get_bool, env_get_int, env_get_string, is_defined
 
 from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_is_defined():
@@ -42,7 +43,11 @@ def test_env_get_bool():
 
 
 def main():
-    test_is_defined()
-    test_get_string()
-    test_env_get_int()
-    test_env_get_bool()
+    var suite = TestSuite()
+
+    suite.test[test_is_defined]()
+    suite.test[test_get_string]()
+    suite.test[test_env_get_int]()
+    suite.test[test_env_get_bool]()
+
+    suite^.run()

@@ -16,6 +16,7 @@ from sys.ffi import ErrNo, get_errno, set_errno
 from sys.info import CompilationTarget
 
 from testing import assert_equal, assert_raises
+from test_utils import TestSuite
 
 alias error_message_linux: List[Tuple[ErrNo, String]] = [
     (ErrNo.SUCCESS, "Success"),
@@ -305,5 +306,9 @@ def test_errno():
 
 
 def main():
-    test_errno()
-    test_errno_message()
+    var suite = TestSuite()
+
+    suite.test[test_errno]()
+    suite.test[test_errno_message]()
+
+    suite^.run()
