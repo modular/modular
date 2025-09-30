@@ -1340,6 +1340,11 @@ async def benchmark(
             async for request in get_request(
                 input_requests, request_rate, timing_data, burstiness
             ):
+                # If we've hit the time limit, then don't issue any more rquests
+                if benchmark_should_end_time is not None:
+                    if time.perf_counter_ns() >= benchmark_should_end_time:
+                        break
+
                 # If the request length is pinned, then we use ignore_eos+max_tokens
                 # to force the model's hand into the given request length. Otherwise,
                 # we run until the model generates EOS. Letting the model choose
