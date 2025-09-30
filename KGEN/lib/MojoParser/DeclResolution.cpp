@@ -1034,12 +1034,18 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
   auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
       nestedFn.getFuncTypeGenerator());
-  auto [closureWrapper, trait] = shared.getOrCreateParametricClosureWrapper(
+
+  ASTDecl *closureTrait = shared.getOrCreateClosureTrait(
+      loc, *moduleDecl, wrapperSig, nestedFn.getInlineLevel());
+
+  ASTDecl *closureWrapper = shared.getOrCreateUnifiedClosureWrapper(
       loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel());
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
   Value wrapperInstance = emitter.emitClosureOp(
-      *moduleDecl, nestedFnDecl, captures, closureWrapper, trait, mlirLoc);
+      *moduleDecl, nestedFnDecl, captures,
+      cast<StructDeclOp>(closureWrapper->getIfOperation()),
+      cast<TraitDeclOp>(closureTrait->getIfOperation()), mlirLoc);
 
   nestedFnDecl.getIfOperation()->erase();
   nestedFnDecl.setIRValue(nullptr);
@@ -2167,12 +2173,12 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
         p.emitError(loc)
             << "inheriting from a parameter expression is not allowed";
       } else if (auto fnType = dyn_cast<FnTypeGeneratorType>(type)) {
-        auto wrapperAndTrait = shared.getOrCreateParametricClosureWrapper(
-            p.getTokenLocOrEndOfPreviousLineIfOnNewLine(), fnType,
-            decl.getNearestDeclOfType<FileModuleOp>(), InlineLevel::Automatic);
-        SymbolRefAttr symbol =
-            getFullyResolvedSymbolRef(cast<mlir::SymbolOpInterface>(
-                wrapperAndTrait.second.getOperation()));
+        ASTDecl *closureTrait = shared.getOrCreateClosureTrait(
+            p.getTokenLocOrEndOfPreviousLineIfOnNewLine(),
+            *decl.getNearestDeclOfType<FileModuleOp>(), fnType,
+            InlineLevel::Automatic);
+        SymbolRefAttr symbol = getFullyResolvedSymbolRef(
+            cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation()));
         traitType = TraitType::get(shared.getContext(), symbol);
       } else {
         p.emitError(loc) << "don't know how to inherit from this type";

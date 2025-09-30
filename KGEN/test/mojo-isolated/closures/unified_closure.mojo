@@ -252,10 +252,11 @@ fn take_closures[
 
 # CHECK: lit.fn @"nested[{{.*}})"
 # CHECK-SAME: <x: !Int, +>[imm *"[[L0:.*]]"]
-# CHECK-SAME: (%impl: !lit.ref<:!Int x, imm *"[[L0]]"> read_mem) -> !kgen.none
+# CHECK-SAME: (%impl: !lit.ref<:!Int x, imm *"[[L0]]"> read_mem
+# TODO: remove the 'do_not_dce_int' argument (MOCO 2461)
 fn nested[
     x: fn[y: fn (z: Int) unified -> Int] (impl: y, u: Int) unified -> Int, //
-](impl: x):
+](impl: x, do_not_dce_int: Int):
     pass
 
 

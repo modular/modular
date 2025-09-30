@@ -494,10 +494,14 @@ getUnwrappedOperands(ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
   }
 }
 
-StructDeclOp
-ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
-                                    ASTDecl &traitDecl, SMLoc smLocation,
-                                    TypeConvention typeConvention) {
+ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
+                                             StringRef baseName,
+                                             ASTDecl &traitDecl,
+                                             SMLoc smLocation,
+                                             bool isRegisterPassable) {
+  TypeConvention typeConvention = isRegisterPassable
+                                      ? TypeConvention::RegisterPassable
+                                      : TypeConvention::MemoryOnly;
   StringRef implName = "impl";
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
@@ -747,7 +751,7 @@ ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
                         operands);
   IREmitter::emitNormalReturn(b);
   declOp.setCanonicalTrait(traitType);
-  return declOp;
+  return &structDecl;
 }
 
 ASTDecl *ClosureEmitter::getOrCreateClosureTrait(
@@ -763,12 +767,11 @@ ASTDecl *ClosureEmitter::getOrCreateClosureTrait(
   return traitDecl;
 }
 
-std::pair<StructDeclOp, TraitDeclOp>
-ClosureEmitter::createParametricClosureWrapperStructDecl(
-    ASTDecl &moduleDecl, StringAttr name,
-    FnTypeGeneratorType dependentSignatureType,
-    SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel) {
-  bool isRegisterPassable = dependentSignatureType.isRegisterPassable();
+ASTDecl *
+ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
+                                   FnTypeGeneratorType dependentSignatureType,
+                                   SMLoc nestedFunctionOrTypeLocation,
+                                   InlineLevel inlineLevel) {
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
   SmallVector<StringRef> parents{"Movable", "AnyType"};
@@ -807,16 +810,7 @@ ClosureEmitter::createParametricClosureWrapperStructDecl(
         moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
     return traitDecl;
   };
-  ASTDecl *traitDecl =
-      getOrCreateClosureTrait(dependentSignatureType, createTraitFn);
-  TraitDeclOp closureTrait = cast<TraitDeclOp>(traitDecl->getIfOperation());
-  // Now create a wrapper struct that conforms to the trait we created.
-  return {createStructWrapper(moduleDecl, name.getValue(), *traitDecl,
-                              nestedFunctionOrTypeLocation,
-                              isRegisterPassable
-                                  ? TypeConvention::RegisterPassable
-                                  : TypeConvention::MemoryOnly),
-          closureTrait};
+  return getOrCreateClosureTrait(dependentSignatureType, createTraitFn);
 }
 
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(

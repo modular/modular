@@ -831,13 +831,11 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
       auto fnType = dyn_cast<FnTypeGeneratorType>(type);
       if (fnType && fnType.isUnified()) {
-        auto [wrapperOp, traitOp] =
-            result.shared.getOrCreateParametricClosureWrapper(
-                declScope.getLoc(), fnType,
-                declScope.getNearestDeclOfType<FileModuleOp>(),
-                InlineLevel::Automatic);
+        ASTDecl *closureTrait = result.shared.getOrCreateClosureTrait(
+            declScope.getLoc(), *declScope.getNearestDeclOfType<FileModuleOp>(),
+            fnType, InlineLevel::Automatic);
         type = TraitType::get(getFullyResolvedSymbolRef(
-            cast<mlir::SymbolOpInterface>(traitOp.getOperation())));
+            cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
       }
       type =
           addImplicitTypeParams(result.shared, type, result, /*append=*/false);
