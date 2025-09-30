@@ -111,12 +111,6 @@ inline StreamT &operator<<(StreamT &os, FnEffects effects) {
   return os;
 }
 
-namespace impl {
-inline FnEffects operator|=(FnEffects &lhs, FnEffects rhs) {
-  return lhs = lhs | rhs;
-}
-} // namespace impl
-
 //===----------------------------------------------------------------------===//
 // ArgConvention
 //===----------------------------------------------------------------------===//

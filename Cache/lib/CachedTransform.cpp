@@ -258,9 +258,8 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
     // Read in the cached diagnostics encoded after the bytecode. The footer
     // of the buffer contains the size of the bytecode section.
     uint64_t bytecodeSize =
-        llvm::support::endian::read<uint64_t, llvm::endianness::little,
-                                    llvm::support::unaligned>(buffer.end() -
-                                                              sizeof(uint64_t));
+        llvm::support::endian::read<uint64_t, llvm::support::unaligned>(
+            buffer.end() - sizeof(uint64_t), llvm::endianness::little);
     StringRef bytecodeBuffer = buffer.take_front(bytecodeSize);
     buffer = buffer.drop_front(bytecodeSize);
 
