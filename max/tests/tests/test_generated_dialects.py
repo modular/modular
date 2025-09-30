@@ -71,11 +71,14 @@ def test_builtin_integerattr(mlir_context) -> None:  # noqa: ANN001
 
 
 def test_builtin_moduleop(mlir_context) -> None:  # noqa: ANN001
-    op = builtin.ModuleOp(mlir.Location.current)
+    loc = mlir.Location.current
+    assert loc
+    op = builtin.ModuleOp(loc)
 
 
 def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
+    assert loc
 
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
@@ -88,6 +91,7 @@ def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
 
 def test_regions_and_blocks(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
+    assert loc
 
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
@@ -135,6 +139,7 @@ def test_arrayview_dead_array_reference(mlir_context) -> None:  # noqa: ANN001
 
 def test_discardable_attributes(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
+    assert loc
 
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
@@ -181,6 +186,7 @@ def test_discardable_attributes(mlir_context) -> None:  # noqa: ANN001
 
 def test_discardable_attrs__op_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
+    assert loc
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
     graph = mo.GraphOp(builder, loc, "hello", [], [])
@@ -194,6 +200,7 @@ def test_discardable_attrs__op_deleted(mlir_context) -> None:  # noqa: ANN001
 
 def test_discardable_attrs__dict_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
+    assert loc
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
     graph = mo.GraphOp(builder, loc, "hello", [], [])
@@ -211,6 +218,7 @@ def test_discardable_attrs__dict_deleted(mlir_context) -> None:  # noqa: ANN001
 
 def test_discardable_attrs__attr_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
+    assert loc
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
     graph = mo.GraphOp(builder, loc, "hello", [], [])
@@ -226,6 +234,7 @@ def test_discardable_attrs__attr_deleted(mlir_context) -> None:  # noqa: ANN001
 
 def test_discardable_attrs__concurrent_modification(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
+    assert loc
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
     graph = mo.GraphOp(builder, loc, "hello", [], [])
@@ -298,5 +307,6 @@ def test_construct_pass_with_options(mlir_context) -> None:  # noqa: ANN001
 
 def test_get_context_from_cpp(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
+    assert loc
     module = builtin.ModuleOp(loc)
     assert module.context is mlir_context

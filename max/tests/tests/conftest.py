@@ -16,4 +16,4 @@ from max import mlir
 def mlir_context() -> Generator[mlir.Context]:
     """Set up the MLIR context by registering and loading Modular dialects."""
     with mlir.Context() as ctx, mlir.Location.unknown():
-        yield ctx
+        yield ctx  # type: ignore
