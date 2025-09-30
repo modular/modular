@@ -2,9 +2,23 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Callable
 from typing import overload
 
 import max._mlir.ir
+
+class PatternRewriter:
+    pass
+
+class PDLResultList:
+    @overload
+    def append(self, value: max._mlir.ir.Value): ...
+    @overload
+    def append(self, op: max._mlir.ir.Operation): ...
+    @overload
+    def append(self, type: max._mlir.ir.Type): ...
+    @overload
+    def append(self, attr: max._mlir.ir.Attribute): ...
 
 class PDLModule:
     @overload
@@ -14,6 +28,12 @@ class PDLModule:
     @overload
     def __init__(self, module: max._mlir.ir.Module) -> None: ...
     def freeze(self) -> FrozenRewritePatternSet: ...
+    def register_rewrite_function(
+        self, arg0: str, arg1: Callable, /
+    ) -> None: ...
+    def register_constraint_function(
+        self, arg0: str, arg1: Callable, /
+    ) -> None: ...
 
 class FrozenRewritePatternSet:
     pass
