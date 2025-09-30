@@ -398,7 +398,7 @@ class MaxOp:
         """Builds and registers a PyTorch custom operation with this MAX graph."""
         # This will hold the compiled model once the registered fake tensor function
         # is invoked for the first time.
-        model_cache: dict[CompiledModelKey, futures.Future[Model]] = {}
+        model_cache: dict[str, futures.Future[Model]] = {}
         model_cache_lock = threading.Lock()
         executor = futures.ThreadPoolExecutor()
 
@@ -406,18 +406,28 @@ class MaxOp:
         mutated_args = list(signature.parameters.keys())[: self.num_outputs]
 
         # Compile the model if it has not been compiled already.
-        def compiled_model(*args: torch.Tensor) -> Model:
-            arg_types = tuple(max_tensor_type(arg) for arg in args)
+        def compiled_model(args: tuple[torch.Tensor, ...]) -> Model:
             # args are destination-passing-style
-            output_types = self.output_types or arg_types[: self.num_outputs]
-            input_types = self.input_types or arg_types[self.num_outputs :]
+            output_key = self.output_types or args[: self.num_outputs]
+            input_key = self.input_types or args[self.num_outputs :]
 
-            # Creating types requires an MLIR context
-            key = (input_types, output_types)
+            key = ",".join(
+                f"{tensor.dtype} {tensor.shape} {tensor.device}"
+                for tensor in (output_key + input_key)
+            )
 
             # Only one thread can schedule model compilation for a given key
             with model_cache_lock:
                 if not (model_future := model_cache.get(key)):
+                    arg_types = tuple(max_tensor_type(arg) for arg in args)
+                    # args are destination-passing-style
+                    output_types = (
+                        self.output_types or arg_types[: self.num_outputs]
+                    )
+                    input_types = (
+                        self.input_types or arg_types[self.num_outputs :]
+                    )
+
                     graph = self.graph(input_types, output_types)
                     model_cache[key] = model_future = executor.submit(
                         self.library._session.load, graph
@@ -450,8 +460,8 @@ class MaxOp:
             # In eager mode, the fake_tensor function will not be called,
             # so we call it here.
             # registered_fake with real inputs will create buffers for the outputs
-            model = compiled_model(*args)
-            converted = map(fast_from_dlpack, args)
+            model = compiled_model(args)
+            converted = [fast_from_dlpack(arg) for arg in args]
             model.execute(*converted)
 
         name = f"max::torch.{self.name}"
