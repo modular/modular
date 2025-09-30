@@ -51,7 +51,13 @@ from memory.unsafe import bitcast
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from ._utils import to_i16, to_i32, to_llvm_ptr, to_llvm_shared_mem_ptr
+from ._utils import (
+    to_i16,
+    to_i32,
+    to_llvm_ptr,
+    to_llvm_shared_mem_ptr,
+    to_llvm_shared_cluster_mem_ptr,
+)
 from .intrinsics import Scope
 
 # ===-----------------------------------------------------------------------===#
@@ -1069,10 +1075,16 @@ fn cp_async_bulk_tensor_shared_cluster_global[
 
         @parameter
         if cta_group == 1:
+            # We added the intrinsic before the SHARED_CLUSTER address space was
+            # introduced. Cast the address space here to avoid modifying all the
+            # callsites that use the old SHARED address space.
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_i32(coords[1]),
@@ -1096,10 +1108,13 @@ fn cp_async_bulk_tensor_shared_cluster_global[
 
         @parameter
         if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_i32(coords[1]),
@@ -1121,10 +1136,13 @@ fn cp_async_bulk_tensor_shared_cluster_global[
 
         @parameter
         if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_llvm_shared_mem_ptr(mem_bar),
@@ -1209,10 +1227,13 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
 
         @parameter
         if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_i32(coords[1]),
@@ -1236,10 +1257,13 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
 
         @parameter
         if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                GPUAddressSpace.SHARED_CLUSTER
+            ]()
             __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
                 _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
             ](
-                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
                 to_i32(coords[0]),
                 to_llvm_shared_mem_ptr(mem_bar),

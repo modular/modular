@@ -42,11 +42,11 @@ fn test_async_copy_asm():
         ],
         *coords: Int32,
     ):
-        # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes
+        # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
         cp_async_bulk_tensor_shared_cluster_global(
             dst_mem, tma_descriptor, mem_bar, Index(coords[0], coords[1])
         )
-        # CHECK: cp.async.bulk.tensor.1d.shared::cluster.global.mbarrier::complete_tx::bytes
+        # CHECK: cp.async.bulk.tensor.1d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
         cp_async_bulk_tensor_shared_cluster_global(
             dst_mem, tma_descriptor, mem_bar, Index(coords[0])
         )

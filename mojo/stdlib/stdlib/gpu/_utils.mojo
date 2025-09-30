@@ -22,6 +22,24 @@ from .memory import AddressSpace as GPUAddressSpace
 
 
 @always_inline
+fn to_llvm_shared_cluster_mem_ptr[
+    type: AnyType
+](
+    ptr: UnsafePointer[
+        type, address_space = GPUAddressSpace.SHARED_CLUSTER, **_
+    ]
+) -> __mlir_type.`!llvm.ptr<7>`:
+    """Cast shared cluster memory pointer to LLVMPointer Type.
+
+    Args:
+        ptr: Shared cluster memory pointer.
+    """
+    return __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type = __mlir_type.`!llvm.ptr<7>`
+    ](ptr)
+
+
+@always_inline
 fn to_llvm_shared_mem_ptr[
     type: AnyType
 ](
