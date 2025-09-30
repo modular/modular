@@ -42,7 +42,7 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
-        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: <ticket>
+        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: E2EOPT-613
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],

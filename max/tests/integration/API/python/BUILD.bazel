@@ -185,7 +185,7 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"] + select({
-        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: <ticket>
+        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: E2EOPT-613
         "//conditions:default": [],
     }),
     tags = ["gpu"],
