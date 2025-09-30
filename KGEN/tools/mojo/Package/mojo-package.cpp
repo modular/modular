@@ -288,7 +288,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 /// Reads an LLVM bitcode file and returns it as a DenseResourceElementsAttr.
 /// Returns nullptr on failure.
 static DenseResourceElementsAttr
-writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, const std::string &bitcodeFile) {
+writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, StringRef bitcodeFile) {
   // Read the bitcode file
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> bufferOr =
       llvm::MemoryBuffer::getFile(bitcodeFile);
@@ -308,6 +308,32 @@ writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, const std::string &bitcodeFile) {
   // Create the resource attribute
   return createResourceAttr(ctx, ArrayRef<char>(data.data(), data.size()),
                             resourceName);
+}
+
+static ErrorOrSuccess
+internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr,
+                       ModuleOp module) {
+  SmallVector<LLVMBitcodeLibAttr> bitcodeAttrs;
+
+  for (const LLVMBitcodeLibAttr &bitcodeLibAttr : bitcodeLibsAttr.getValue()) {
+    if (auto stringAttr = dyn_cast<StringAttr>(bitcodeLibAttr.getLibrary())) {
+      DenseResourceElementsAttr bitcodeAttr = writeLLVMBitcodeToDenseAttr(
+          module.getContext(), stringAttr.getValue());
+      if (!bitcodeAttr)
+        return Error("failed to load bitcode library: " +
+                     stringAttr.getValue());
+      // An internalized bitcode library is always used.
+      bitcodeAttrs.push_back(LLVMBitcodeLibAttr::get(true, bitcodeAttr));
+    } else {
+      bitcodeAttrs.push_back(bitcodeLibAttr);
+    }
+  }
+
+  // Set the bitcode libraries on the module.
+  module->setAttr(
+      LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName(),
+      LLVMBitcodeLibArrayAttr::get(module->getContext(), bitcodeAttrs));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -452,10 +478,6 @@ static int package(const State &subcommandState) {
   }
 
   if (args.hasArg(options::OPT_bitcode_libs)) {
-    if (isKgenModule)
-      return state.reportError(
-          "bitcode libraries are not supported for kgen modules");
-
     packageArgs.compileOptions.bitcodeLibs = llvm::to_vector_of<std::string>(
         args.getAllArgValues(options::OPT_bitcode_libs));
   }
@@ -480,6 +502,15 @@ static int package(const State &subcommandState) {
     KGENCompiler compiler(*(*module)->getContext(), packageArgs.compileOptions);
     if (failed(compiler.runGenerateLibraryPipeline(**module)))
       return state.reportError("compilation failed");
+
+    if (auto bitcodeLibArrayAttr =
+            (*module)->getOperation()->getAttrOfType<LLVMBitcodeLibArrayAttr>(
+                LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName())) {
+      ErrorOrSuccess res =
+          internalizeBitcodeLibs(bitcodeLibArrayAttr, **module);
+      if (failed(res))
+        return state.reportError(res.getError());
+    }
 
     if (failed(mlir::writeBytecodeToFile(**module, out->os())))
       return state.reportError("serialization failed");
