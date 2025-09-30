@@ -1114,7 +1114,7 @@ fn multistage_gemm_split_k_kernel[
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     work_space: NDBuffer[work_space_type, 3, MutableAnyOrigin],
-    num_partitions: UInt,
+    num_partitions: Int,
 ):
     var M = c.dim[0]()
     alias N = b.shape[0]() if transpose_b else b.shape[1]()

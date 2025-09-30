@@ -1089,19 +1089,19 @@ fn _vendor_blas_matmul_sm100[
             var a_layout_tensor = from_ndbuffer_row_major(a)
             var b_layout_tensor = from_ndbuffer_row_major(b)
 
-            ctx.enqueue_function[
-                matmul_kernel_naive[
-                    c_type,
-                    a_type,
-                    b_type,
-                    c_layout_tensor.layout,
-                    a_layout_tensor.layout,
-                    b_layout_tensor.layout,
-                    BLOCK_DIM,
-                    transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ]
-            ](
+            alias kernel = matmul_kernel_naive[
+                c_type,
+                a_type,
+                b_type,
+                c_layout_tensor.layout,
+                a_layout_tensor.layout,
+                b_layout_tensor.layout,
+                BLOCK_DIM,
+                transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ]
+
+            ctx.enqueue_function_checked[kernel, kernel](
                 c_layout_tensor,
                 a_layout_tensor,
                 b_layout_tensor,

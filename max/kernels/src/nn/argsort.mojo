@@ -122,9 +122,14 @@ fn _argsort_gpu_impl[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
-    fn bitonic_sort_step(
-        indices: LayoutTensor[mut=True, indices.dtype, indices.layout],
-        input: LayoutTensor[mut=True, input.dtype, input.layout],
+    fn bitonic_sort_step[
+        indices_dtype: DType,
+        input_dtype: DType,
+        indices_layout: Layout,
+        input_layout: Layout,
+    ](
+        indices: LayoutTensor[indices_dtype, indices_layout, MutableAnyOrigin],
+        input: LayoutTensor[input_dtype, input_layout, MutableAnyOrigin],
         n: Int,
         step: Int,
         stage: Int,
@@ -168,7 +173,10 @@ fn _argsort_gpu_impl[
         var j = k // 2
         while j > 0:
             # Launch GPU kernel for each stage of the bitonic sort
-            ctx.enqueue_function[bitonic_sort_step](
+            alias kernel = bitonic_sort_step[
+                indices.dtype, input.dtype, indices.layout, input.layout
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 indices,
                 input,
                 n,

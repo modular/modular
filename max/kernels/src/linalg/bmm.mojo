@@ -878,7 +878,7 @@ fn _batched_matmul_gpu[
 
         var grid_dim = kernels.ampere_128x128_4.grid_dim(UInt(m), UInt(n))
 
-        ctx.enqueue_function[batched_matmul_type](
+        ctx.enqueue_function_checked[batched_matmul_type, batched_matmul_type](
             c_tensor_reshaped,
             a_tensor_reshaped,
             b_tensor_reshaped,
@@ -914,7 +914,7 @@ fn _batched_matmul_gpu[
             elementwise_epilogue_fn,
         ]
 
-        ctx.enqueue_function[batched_matmul_type](
+        ctx.enqueue_function_checked[batched_matmul_type, batched_matmul_type](
             c_tensor_reshaped,
             a_tensor_reshaped,
             b_tensor_reshaped,
@@ -948,7 +948,7 @@ fn _batched_matmul_gpu[
             b_tensor_reshaped.layout,
             elementwise_epilogue_fn,
         ]
-        ctx.enqueue_function[bmm](
+        ctx.enqueue_function_checked[bmm, bmm](
             c_tensor_reshaped,
             a_tensor_reshaped,
             b_tensor_reshaped,

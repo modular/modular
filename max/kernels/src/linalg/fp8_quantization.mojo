@@ -696,7 +696,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c,
         a,
         b,

@@ -17,6 +17,7 @@ from io.io import _snprintf
 from math import ceildiv
 from random import rand, random_float64
 from sys import argv, env_get_string
+from builtin.device_passable import DevicePassable
 
 from benchmark import (
     Bench,
@@ -273,13 +274,29 @@ struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
         return DynamicTensor[dtype, rank](self.ndbuffer)
 
 
-struct InitializationType(EqualityComparable, ImplicitlyCopyable, Movable):
+@register_passable("trivial")
+struct InitializationType(
+    DevicePassable, EqualityComparable, ImplicitlyCopyable, Movable
+):
     var _value: Int
     alias zero = InitializationType(0)
     alias one = InitializationType(1)
     alias uniform_distribution = InitializationType(2)
     alias arange = InitializationType(3)
     alias fill = InitializationType(4)
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "InitializationType"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -791,7 +808,8 @@ fn init_vector_launch[
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
 
-    context.enqueue_function[init_vector_gpu[dtype]](
+    alias kernel = init_vector_gpu[dtype]
+    context.enqueue_function_checked[kernel, kernel](
         out_device,
         length,
         init_type,
