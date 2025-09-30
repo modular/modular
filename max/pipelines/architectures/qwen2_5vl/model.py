@@ -859,14 +859,21 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         assert self.model_config is not None, "Model config must be initialized"
 
         for ctx in context_batch:
-            input_ids = ctx.next_tokens
-            # make sure image_token_id is correct in model config
-            special_image_token_mask = (
-                input_ids == self.model_config.image_token_id
-            )
-            indices = np.where(special_image_token_mask)[0].tolist()
+            if "image_token_indices" in ctx.extra_model_args:
+                # We have to pop this, as we can only compute it once for CE in advance.
+                indices = ctx.extra_model_args.pop("image_token_indices")
+                indices_and_offsets.append(indices + batch_offset)
+            else:
+                input_ids = ctx.next_tokens
+                # make sure image_token_id is correct in model config
+                special_image_token_mask = (
+                    input_ids == self.model_config.image_token_id
+                )
+                indices = np.where(special_image_token_mask)[0].tolist()
+                indices_and_offsets.append(
+                    [idx + batch_offset for idx in indices]  # type: ignore
+                )
 
-            indices_and_offsets.append([idx + batch_offset for idx in indices])
             batch_offset += ctx.active_length
 
         if not indices_and_offsets:
