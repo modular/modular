@@ -19,12 +19,22 @@ Full integration tests with actual kernel execution are located in:
 SDK/integration-test/API/python/graph/test_custom_op_*.py
 """
 
+import os
+from pathlib import Path
+
 import pytest
 from conftest import GraphBuilder, buffer_types, dtypes, shapes, tensor_types
 from hypothesis import given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, ops
+
+
+def _custom_ops_path() -> Path:
+    path = os.getenv("CUSTOM_OPS_PATH")
+    if path is None:
+        pytest.skip("CUSTOM_OPS_PATH is not set; custom ops unavailable")
+    return Path(path)
 
 
 class TestCustomOp:
@@ -286,6 +296,58 @@ class TestInplaceCustomOp:
                 or "find" in error_msg
                 or "register" in error_msg
             )
+
+    def test_inplace_custom__per_device_chain_tracking(
+        self,
+        graph_builder: GraphBuilder,
+    ) -> None:
+        """Test that inplace_custom advances only the targeted device chain."""
+        custom_ops_path = _custom_ops_path()
+
+        cpu0 = DeviceRef.CPU(0)
+        cpu1 = DeviceRef.CPU(1)
+        buffer_cpu0 = BufferType(DType.float32, (4,), cpu0)
+        buffer_cpu1 = BufferType(DType.float32, (4,), cpu1)
+
+        with graph_builder(
+            input_types=[buffer_cpu0, buffer_cpu1],
+            custom_extensions=[custom_ops_path],
+        ) as graph:
+            chain_cpu0_before = graph.device_chains[cpu0]
+            chain_cpu1_before = graph.device_chains[cpu1]
+
+            result_cpu0 = ops.inplace_custom(
+                name="foo",
+                device=cpu0,
+                values=[graph.inputs[0]],
+            )
+            assert result_cpu0 == []
+
+            chain_cpu0_after_first = graph.device_chains[cpu0]
+            chain_cpu1_after_first = graph.device_chains[cpu1]
+
+            assert chain_cpu0_after_first is not chain_cpu0_before
+            assert chain_cpu1_after_first is chain_cpu1_before
+
+            result_cpu1 = ops.inplace_custom(
+                name="bar",
+                device=cpu1,
+                values=[graph.inputs[1]],
+            )
+            assert result_cpu1 == []
+
+            chain_cpu0_after_second = graph.device_chains[cpu0]
+            chain_cpu1_after_second = graph.device_chains[cpu1]
+
+            assert chain_cpu0_after_second is chain_cpu0_after_first
+            assert chain_cpu1_after_second is not chain_cpu1_after_first
+
+            graph.output()
+
+        ir_text = str(graph)
+        assert "mo.custom" in ir_text
+        assert 'symbol = "foo"' in ir_text
+        assert 'symbol = "bar"' in ir_text
 
     def test_inplace_custom__with_outputs_and_chain(
         self,
