@@ -56,6 +56,41 @@ def test_cast():
     assert_equal(Float16(33.0).cast[DType.float32]().cast[DType.float16](), 33)
     assert_equal(Float64(33.0).cast[DType.float32]().cast[DType.float16](), 33)
 
+    # Test with a number right on the boundary of 32 bit and 64 bit, to make
+    # sure the compiler can cast between the platform dependent types.
+    alias u1 = Scalar[DType.uint](4294967296)
+    alias i1 = Scalar[DType.int](4294967296)
+    alias uc1 = i1.cast[DType.uint]()
+    alias ic1 = u1.cast[DType.int]()
+    assert_equal(uc1, u1)
+    assert_equal(ic1, i1)
+
+    @parameter
+    if is_64bit():
+        assert_equal(
+            Scalar[DType.uint](18446744073709551615).cast[DType.int](),
+            Scalar[DType.int](-1),
+        )
+
+        alias u2 = Scalar[DType.uint](18446744073709551615)
+        alias i2 = Scalar[DType.int](-1)
+        alias uc2 = i2.cast[DType.uint]()
+        alias ic2 = u2.cast[DType.int]()
+        assert_equal(uc2, u2)
+        assert_equal(ic2, i2)
+    else:
+        assert_equal(
+            Scalar[DType.uint](4294967295).cast[DType.int](),
+            Scalar[DType.int](-1),
+        )
+
+        alias u3 = Scalar[DType.uint](4294967295)
+        alias i3 = Scalar[DType.int](-1)
+        alias uc3 = i3.cast[DType.uint]()
+        alias ic3 = u3.cast[DType.int]()
+        assert_equal(uc3, u3)
+        assert_equal(ic3, i3)
+
 
 def test_list_literal_ctor():
     var s: SIMD[DType.uint8, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
