@@ -190,8 +190,6 @@ static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
       if constexpr (isOptional)
         if (!result32.has_value())
           return {};
-      if constexpr (foldType == k32BitResult)
-        return unwrap(result32);
       // Compare the results. Return the index value if the fold results match.
       // If the result type isn't an index represented as an APSInt, just
       // compare the results directly.
@@ -1187,7 +1185,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     // Cast to index like it's a 64-bit integer. Address is handled like index.
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
-        [inType](const APSInt &in) -> std::optional<int64_t> {
+        [inType](const APSInt &in) -> int64_t {
           if (in.getSignificantBits() > 64) {
             auto truncated = in.trunc(64);
             return inType->isSInt() ? truncated.getSExtValue()
