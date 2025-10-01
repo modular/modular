@@ -37,20 +37,10 @@ except ImportError:
 
 logger = logging.getLogger("max.benchmark")
 
-# Workaround for when we don't have max.pipelines installed. This assumes that
-# we copied the max_config.py file to the current directory.
-try:
-    from max.pipelines.lib import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        MAXConfig,
-        deep_merge_max_configs,
-    )
-except (ImportError, ModuleNotFoundError):
-    logger.warning(
-        "max.pipelines.lib not found, using max_config.py from current directory"
-    )
-    # Also type: ignore because we don't want mypy to trigger on this since
-    # it's intentional anyway.
-    from max_config import MAXConfig, deep_merge_max_configs  # type: ignore
+from max.pipelines.lib import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    MAXConfig,
+    deep_merge_max_configs,
+)
 
 
 class Backend(str, enum.Enum):
