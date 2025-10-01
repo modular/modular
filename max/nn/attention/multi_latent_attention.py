@@ -576,10 +576,10 @@ class LatentAttentionWithRope(Module, Shardable):
         return self.o_proj(attn_out)
 
 
-class DistributedLatentAttentionWithRope(LatentAttentionWithRope):
-    """Distributed implementation of the Latent Attention with Rope. Note that
-    using tensor parallelism for MLA will cause KV-cache to be duplicated across
-    devices, which is not efficient.
+class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
+    """Distributed tensor parallel implementation of the Latent Attention with
+    Rope. Note that using tensor parallelism for MLA will cause the KV-cache to
+    be duplicated across all devices, which is not efficient.
     """
 
     def __init__(self, **kwargs) -> None:

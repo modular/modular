@@ -41,7 +41,7 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.attention.multi_latent_attention import (
-    DistributedLatentAttentionWithRope,
+    TensorParallelLatentAttentionWithRope,
 )
 from max.nn.comm.allreduce import Allreduce
 from max.nn.kv_cache import (
@@ -75,7 +75,7 @@ class DeepseekV3DecoderLayer(Module):
         num_devices = len(config.devices)
 
         # Create self-attention layer
-        self.self_attn = DistributedLatentAttentionWithRope(
+        self.self_attn = TensorParallelLatentAttentionWithRope(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,

@@ -32,8 +32,8 @@ from .mask_config import (
     PositionalEncodingVariant,
 )
 from .multi_latent_attention import (
-    DistributedLatentAttentionWithRope,
     LatentAttentionWithRope,
+    TensorParallelLatentAttentionWithRope,
 )
 from .multihead_attention import MultiheadAttention
 from .ragged_attention import RaggedAttention
@@ -47,7 +47,6 @@ __all__ = [
     "AttentionWithRopeV1",
     "DistributedAttentionImpl",
     "DistributedAttentionWithRope",
-    "DistributedLatentAttentionWithRope",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "LatentAttentionWithRope",
@@ -56,4 +55,5 @@ __all__ = [
     "MultiheadAttention",
     "PositionalEncodingVariant",
     "RaggedAttention",
+    "TensorParallelLatentAttentionWithRope",
 ]
