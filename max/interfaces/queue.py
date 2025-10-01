@@ -9,6 +9,8 @@ import queue
 import time
 from typing import Generic, Protocol, TypeVar, runtime_checkable
 
+from max.profiler import traced
+
 PushItemType = TypeVar("PushItemType", contravariant=True)
 """Type variable for items accepted by a push queue (contravariant).
 
@@ -83,6 +85,7 @@ class MAXPullQueue(Protocol, Generic[PullItemType]):
         ...
 
 
+@traced
 def drain_queue(pull_queue: MAXPullQueue[PullItemType]) -> list[PullItemType]:
     """
     Remove and return all items from the queue without blocking.
