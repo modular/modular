@@ -1684,6 +1684,14 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
       emitNamedMethodCall("__mlir_i1__", {{{value.ir, value.expr}}}, boolDest,
                           CallSyntax::kMethodCall, value.expr);
 
+  // If we got back a sugared PValue call to the method, then drop the sugar.
+  // This reduces the size of the printed IR, making it easier to read, and the
+  // user never wants to see a call to this function in a diagnostic anyway.
+  if (auto pvalue = litBoolCall.getIfPValue())
+    if (auto sugar = llvm::dyn_cast_or_null<SugarAttr>(pvalue.get()))
+      if (sugar.getKind() == SugarKind::AlwaysInlineBuiltin)
+        litBoolCall = sugar.getOriginal();
+
   return emitRValue({litBoolCall, value.expr}, context);
 }
 
@@ -1698,8 +1706,18 @@ CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
       return cvalue;
 
   ValueDest dest(context);
-  return emitNamedMethodCall("__mlir_index__", {value}, dest,
-                             CallSyntax::kMethodCall, value.expr);
+  auto result = emitNamedMethodCall("__mlir_index__", {value}, dest,
+                                    CallSyntax::kMethodCall, value.expr);
+
+  // If we got back a sugared PValue call to the method, then drop the sugar.
+  // This reduces the size of the printed IR, making it easier to read, and the
+  // user never wants to see a call to this function in a diagnostic anyway.
+  if (auto pvalue = result.getIfPValue())
+    if (auto sugar = llvm::dyn_cast_or_null<SugarAttr>(pvalue.get()))
+      if (sugar.getKind() == SugarKind::AlwaysInlineBuiltin)
+        result = sugar.getOriginal();
+
+  return result;
 }
 
 CValue IREmitter::emitIndex(const ExprNode *expr, ExprContext context) {

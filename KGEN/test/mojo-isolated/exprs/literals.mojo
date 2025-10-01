@@ -35,7 +35,7 @@ fn var_let_decls():
     alias il = 43
 
     # CHECK: %yy = lit.var.decl "yy" var
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: !FloatDyn = <{:scalar<f64> "1"}>
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !FloatDyn = <{{.*}}{:scalar<f64> "1"}
     # CHECK: lit.ref.store [[TMP]], %yy
     var yy = 1.0
 

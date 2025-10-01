@@ -113,12 +113,13 @@ bool ASTType::isEqualCanon(ASTType other) const {
   // We have no type sugar yet so we can just do pointer equality tests.
   if (mlirType == other.mlirType)
     return true;
-  // Types with the same metatype are always equal. This is used to detect when
-  // two type aliases refer to the same underlying type.
+  // Struct types with the same metatype are always equal. This is used to
+  // detect when two type aliases refer to the same underlying type.
   if (auto meta = dyn_cast_or_null<StructMetaType>(getMetaType()))
     if (meta == other.getMetaType())
       return true;
-  return false;
+
+  return getCanonicalType(*this) == getCanonicalType(other);
 }
 
 /// Return true if this is the same as another ASTType are the same, or if they

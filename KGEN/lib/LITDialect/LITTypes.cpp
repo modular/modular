@@ -238,11 +238,20 @@ LIT::StructType LIT::StructType::get(SymbolRefAttr name,
                                      TypeSignatureType signature) {
   auto nameSym = SymbolAttr::get(name);
 
-  auto canSignature = cast<TypeSignatureType>(getCanonicalType(signature));
-  bool anyDifferent = canSignature != signature;
+  // The signature is always canonical because the types need to match the
+  // declared types of the struct parameters, even if those types are
+  // non-canonical.  As such, we don't have to canonicalize it.
+  bool anyDifferent = false;
 
+#if 0
+  // Parameters can have dependent values, and canonicalizing one parameter may
+  // change the type of later ones, for example, canonicaling something of type
+  // T[Sugar(1), value: Foo[Sugar(1))] -> T[1, value: Foo[1]].
+#endif
   SmallVector<TypedAttr> canParams;
   canParams.reserve(paramValues.size());
+
+  // Canonicalize the parameter values, but don't change their ultimate type.
   for (auto param : paramValues) {
     canParams.push_back(getCanonicalAttr(param));
     anyDifferent |= canParams.back() != param;
@@ -251,11 +260,24 @@ LIT::StructType LIT::StructType::get(SymbolRefAttr name,
   // This is canonical if all the parameters and signature are canonical. The
   // SymbolRefAttr is always canonical.
   StructType canonical;
-  if (anyDifferent)
-    canonical = get(name.getContext(), nameSym, canParams, canSignature,
-                    /*canonical*/ {});
+  if (anyDifferent) {
+    canonical = Base::get(name.getContext(), nameSym, canParams, signature,
+                          /*canonical*/ StructType());
+  }
 
-  return get(name.getContext(), nameSym, paramValues, signature, canonical);
+  return Base::get(name.getContext(), nameSym, paramValues, signature,
+                   canonical);
+}
+
+LIT::StructType LIT::StructType::get(MLIRContext *context, SymbolAttr name,
+                                     ArrayRef<TypedAttr> paramValues,
+                                     TypeSignatureType signature,
+                                     StructType canonical) {
+  // This method gets called by client doing general structural replacements,
+  // e.g. a parameter with an arbitrary attribute.  This can turn canonical
+  // forms to non-canonical and visa-versa, so always recompute the canonical
+  // pointer.
+  return get(name.getValue(), paramValues, signature);
 }
 
 LIT::StructType LIT::StructType::get(SymbolRefAttr name,

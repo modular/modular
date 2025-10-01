@@ -270,7 +270,7 @@ fn math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
 
 # CHECK-LABEL: lit.fn @"useIt
 fn useIt(a: __mlir_type.index) -> __mlir_type.index:
-    # CHECK: %index3 = kgen.param.constant = <3>
+    # CHECK: %index = kgen.param.constant = <{{.*}}, 1, 2), 3>>
     # CHECK: %0 = lit.call @decls::@"math(
     # CHECK: lit.return %0 : index
     return math(
@@ -384,7 +384,7 @@ alias mname1 = _get_kgen_string[alias_parametric_fn()]()
 
 # TODO: Figure out how to get the value of the alias.
 # CHECK-SAME: LLVMMetadataArray = [
-# CHECK-SAME: #kgen.param.expr<data_to_str, {{.*}}alias_parametric_fn
+# CHECK-SAME: data_to_str({{.*}}alias_parametric_fn
 # CHECK-SAME: #kgen.unknown : !lit.struct<#IntLiteral <:!pop.int_literal 128>>
 @__llvm_metadata(mname1=128)
 fn kernel3[x: Int]():
@@ -548,7 +548,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.fn @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int = {_mlir_value = add(#lit.struct.extract<:!Int p, "_mlir_value">, 87)})
+# CHECK-SAME: (%a: !Int = {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int p, "_mlir_value">, 87)}
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 

@@ -30,7 +30,8 @@ alias myDefaultAdd[x: Int, y: Int = 1] = x + y
 # CHECK: lit.alias.decl *"myDependentDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = *(0,0)>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}
 alias myDependentDefaultAdd[x: Int, y: Int = x] = x + y
 
-# CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), #lit.struct.extract<:!Int *(0,2), "_mlir_value">)}
+# CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<
+# CHECK-SAME: {_mlir_value = add(#lit.struct.extract<:!Int *(0,2), "_mlir_value">, {{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)
 alias myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
 
@@ -128,9 +129,9 @@ fn test_type_inference():
 
 # CHECK-LABEL: fn @"partial_binding()"
 fn partial_binding():
-    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), 3)}
+    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}, 3)}
     alias myIntMulPlus3 = myIntFMA[z=3]
-    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2), 3)}
+    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2){{.*}}, 3)}
     alias myIntMul2Plus3 = myIntMulPlus3[y=2]
     # CHECK: lit.alias.decl *"myEleven{{.*}}": !Int = <{11}>
     alias myEleven = myIntMul2Plus3[x=4]
