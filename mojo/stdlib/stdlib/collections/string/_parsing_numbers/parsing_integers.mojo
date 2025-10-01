@@ -25,7 +25,9 @@ fn standardize_string_slice(
     var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
-    memcpy(std_x_ptr + CONTAINER_SIZE - x_len, x.unsafe_ptr(), x_len)
+    memcpy(
+        dest=std_x_ptr + CONTAINER_SIZE - x_len, src=x.unsafe_ptr(), count=x_len
+    )
     return standardized_x
 
 

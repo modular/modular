@@ -58,7 +58,7 @@ fn memcpy_or_fuse[
 ) raises:
     @parameter
     if not epilogue_fn:
-        memcpy(dest_data.offset(out_byte_offset), src_data, n)
+        memcpy(dest=dest_data.offset(out_byte_offset), src=src_data, count=n)
     else:
         alias func = epilogue_fn.value()
         alias simd_width = simd_width_of[dtype]()

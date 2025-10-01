@@ -135,7 +135,7 @@ fn tile[
                     var dst_ptr = output.ptr.offset(
                         output_src_index + rep * output_src_stride
                     )
-                    memcpy(dst_ptr, src_ptr, count)
+                    memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the second lowest dimension (if tensor rank >= 2).
     # Continuing with the example above, this will handle the 'X's, which
@@ -171,7 +171,7 @@ fn tile[
                     var dst_ptr = output.ptr.offset(
                         src_index + (rep + 1) * src_index_stride
                     )
-                    memcpy(dst_ptr, src_ptr, count)
+                    memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
     @parameter
@@ -199,7 +199,7 @@ fn tile[
                 var dst_ptr = output.ptr.offset(
                     src_index + (rep + 1) * src_index_stride
                 )
-                memcpy(dst_ptr, src_ptr, count)
+                memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the fourth dimension from the end(if tensor rank >= 3)
     @parameter
@@ -222,7 +222,7 @@ fn tile[
             var dst_ptr = output.ptr.offset(
                 src_index + (rep + 1) * src_index_stride
             )
-            memcpy(dst_ptr, src_ptr, count)
+            memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
 
 @always_inline

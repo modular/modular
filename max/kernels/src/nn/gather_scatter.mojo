@@ -940,7 +940,11 @@ fn scatter_nd_generator[
 
         @parameter
         if is_cpu[target]():
-            memcpy(output_flat.data, data_flat.data, len(output_flat))
+            memcpy(
+                dest=output_flat.data,
+                src=data_flat.data,
+                count=len(output_flat),
+            )
 
         if updates.num_elements() == 0:
             # Nothing to update.
@@ -1279,7 +1283,9 @@ fn scatter_elements[
     var axis = _axis if _axis >= 0 else _axis + rank
 
     # Do serial or parallel memcpy depending on output size.
-    parallel_memcpy(output.unsafe_ptr(), input.unsafe_ptr(), output.size())
+    parallel_memcpy(
+        dest=output.unsafe_ptr(), src=input.unsafe_ptr(), count=output.size()
+    )
 
     var input_ax_dim = input.dim_size(axis)
 

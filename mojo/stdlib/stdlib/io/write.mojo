@@ -195,7 +195,9 @@ struct _WriteBufferHeap(Writable, Writer):
                 " HEAP_BUFFER_BYTES=4096`\n"
             ]()
             abort()
-        memcpy(self.data + self.pos, bytes.unsafe_ptr(), len_bytes)
+        memcpy(
+            dest=self.data + self.pos, src=bytes.unsafe_ptr(), count=len_bytes
+        )
         self.pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
@@ -263,7 +265,11 @@ struct _WriteBufferStack[
         elif self.pos + len_bytes > Int(stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
-        memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
+        memcpy(
+            dest=self.data.unsafe_ptr() + self.pos,
+            src=bytes.unsafe_ptr(),
+            count=len_bytes,
+        )
         self.pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):

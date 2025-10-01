@@ -1404,20 +1404,28 @@ def test_reserve():
 def test_uninit_ctor():
     var hello_len = len("hello")
     var s = String(unsafe_uninit_length=UInt(hello_len))
-    memcpy(s.unsafe_ptr(), StaticString("hello").unsafe_ptr(), hello_len)
+    memcpy(
+        dest=s.unsafe_ptr(),
+        src=StaticString("hello").unsafe_ptr(),
+        count=hello_len,
+    )
     assert_equal(s, "hello")
 
     # Resize with uninitialized memory.
     var s2 = String()
     s2.resize(unsafe_uninit_length=UInt(hello_len))
-    memcpy(s2.unsafe_ptr_mut(), StaticString("hello").unsafe_ptr(), hello_len)
+    memcpy(
+        dest=s2.unsafe_ptr_mut(),
+        src=StaticString("hello").unsafe_ptr(),
+        count=hello_len,
+    )
     assert_equal(s2, "hello")
     assert_equal(s2._is_inline(), True)
 
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
     s3.resize(unsafe_uninit_length=len(long))
-    memcpy(s3.unsafe_ptr_mut(), long.unsafe_ptr(), len(long))
+    memcpy(dest=s3.unsafe_ptr_mut(), src=long.unsafe_ptr(), count=len(long))
     assert_equal(s3, long)
     assert_equal(s3._is_inline(), False)
 

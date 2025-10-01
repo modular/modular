@@ -260,7 +260,7 @@ struct IntArray(ImplicitlyCopyable):
             source: Source array to copy from.
             size: Number of elements to copy.
         """
-        memcpy(self._data.offset(offset), source._data, size)
+        memcpy(dest=self._data.offset(offset), src=source._data, count=size)
 
     @always_inline("nodebug")
     fn copy_from(
@@ -275,7 +275,9 @@ struct IntArray(ImplicitlyCopyable):
             size: Number of elements to copy.
         """
         memcpy(
-            self._data.offset(dst_offset), source._data.offset(src_offset), size
+            dest=self._data.offset(dst_offset),
+            src=source._data.offset(src_offset),
+            count=size,
         )
 
 

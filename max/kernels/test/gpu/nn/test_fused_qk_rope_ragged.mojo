@@ -164,9 +164,9 @@ def execute_fused_qk_rope_ragged(
         )
 
         memcpy(
-            mixed_ce_offset,
-            true_ce_offset,
-            mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
+            dest=mixed_ce_offset,
+            src=true_ce_offset,
+            count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
         )
 
     mixed_ce_q_ragged_device = mixed_ce_q_ragged_host.copy_to_device(ctx)
@@ -437,13 +437,13 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     for seq_idx in range(seq_len):
         for head_idx in range(num_q_heads):
             memcpy(
-                q_ragged_host_64.tensor._offset(
+                dest=q_ragged_host_64.tensor._offset(
                     IndexList[3](seq_idx, head_idx, 0)
                 ),
-                q_ragged_host.tensor._offset(
+                src=q_ragged_host.tensor._offset(
                     IndexList[3](seq_idx, head_idx, q_head_size - rope_dim)
                 ),
-                rope_dim,
+                count=rope_dim,
             )
     var q_ragged_device_64 = q_ragged_host_64.copy_to_device(ctx)
 
@@ -480,7 +480,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                 for tok_idx in range(page_size):
                     for head_idx in range(kv_params.num_heads):
                         memcpy(
-                            kv_block_paged_host_64.tensor._offset(
+                            dest=kv_block_paged_host_64.tensor._offset(
                                 IndexList[6](
                                     page_idx,
                                     kv_idx,
@@ -490,7 +490,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                     0,
                                 )
                             ),
-                            kv_block_paged_host.tensor._offset(
+                            src=kv_block_paged_host.tensor._offset(
                                 IndexList[6](
                                     page_idx,
                                     kv_idx,
@@ -500,7 +500,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                     kv_params.head_size - rope_dim,
                                 )
                             ),
-                            rope_dim,
+                            count=rope_dim,
                         )
     var kv_block_paged_device_64 = kv_block_paged_host_64.copy_to_device(ctx)
 

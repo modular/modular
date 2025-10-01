@@ -240,10 +240,28 @@ fn _memcpy_impl(
     vectorize[copy, 32](n)
 
 
+@doc_private
+@always_inline
+@deprecated(
+    "`memcpy` without keyword arguments is deprecated. Please use the"
+    " keyword-only arguments version instead."
+)
+fn memcpy[
+    T: AnyType,
+    __disambiguate: NoneType = None,
+](
+    dest: UnsafePointer[T, mut=True, origin=_],
+    src: UnsafePointer[T, mut=False, origin=_],
+    count: Int,
+):
+    memcpy(dest=dest, src=src, count=count)
+
+
 @always_inline
 fn memcpy[
     T: AnyType
 ](
+    *,
     dest: UnsafePointer[T, mut=True, origin=_],
     src: UnsafePointer[T, mut=False, origin=_],
     count: Int,

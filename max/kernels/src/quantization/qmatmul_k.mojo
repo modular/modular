@@ -467,9 +467,9 @@ fn _pack_block_Q4_K[
 
     # Scales are not currently transformed.
     memcpy(
-        q_scales_reorder_buf,
-        q_scales_buf.unsafe_ptr(),
-        group_count * block_n,
+        dest=q_scales_reorder_buf,
+        src=q_scales_buf.unsafe_ptr(),
+        count=group_count * block_n,
     )
 
     # Minimums are row interleaved with a stride to enable use of int16->int32

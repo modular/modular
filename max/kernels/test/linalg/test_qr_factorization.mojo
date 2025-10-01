@@ -127,7 +127,7 @@ def main():
     seed(123)
     rand[DType.float32](a_ptr, m * n)
     var a = create_tensor[DType.float32, a_layout](m, n, a_ptr)
-    memcpy(a_ptr_copy, a_ptr, m * n)
+    memcpy(dest=a_ptr_copy, src=a_ptr, count=m * n)
     # factorize
     var a_copy = create_tensor[DType.float32, a_layout](m, n, a_ptr_copy)
     var v = create_vector[DType.float32, v_layout](min_mn, v_ptr)

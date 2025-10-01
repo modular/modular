@@ -1308,9 +1308,9 @@ fn _transpose_4d_swap_middle_helper[
                     var in_off = l * M * N * K + m * N * K + n * K
                     var out_off = l * M * N * K + n * M * K + m * K
                     memcpy(
-                        dst_ptr.offset(out_off),
-                        src_ptr.offset(in_off),
-                        K,
+                        dest=dst_ptr.offset(out_off),
+                        src=src_ptr.offset(in_off),
+                        count=K,
                     )
         return
     else:
@@ -1335,9 +1335,9 @@ fn _transpose_4d_swap_middle_helper[
                 var in_off = l * M * N * K + m * N * K + n * K
                 var out_off = l * M * N * K + n * M * K + m * K
                 memcpy(
-                    dst_ptr.offset(out_off),
-                    src_ptr.offset(in_off),
-                    K,
+                    dest=dst_ptr.offset(out_off),
+                    src=src_ptr.offset(in_off),
+                    count=K,
                 )
 
         sync_parallelize[_parallel_copy](num_tasks)
@@ -1445,7 +1445,7 @@ fn transpose_trivial_memcpy[
     var total_size = output.size()
 
     if total_size <= min_work_for_parallel:
-        memcpy(dst_ptr, src_ptr, total_size)
+        memcpy(dest=dst_ptr, src=src_ptr, count=total_size)
 
     else:
         var work_units = ceildiv(total_size, min_work_per_task)
@@ -1453,11 +1453,11 @@ fn transpose_trivial_memcpy[
         var work_block_size = ceildiv(work_units, num_tasks)
 
         parallel_memcpy(
-            dst_ptr,
-            src_ptr,
-            total_size,
-            work_block_size * min_work_per_task,
-            num_tasks,
+            dest=dst_ptr,
+            src=src_ptr,
+            count=total_size,
+            count_per_task=work_block_size * min_work_per_task,
+            num_tasks=num_tasks,
         )
 
 
@@ -1499,7 +1499,7 @@ fn _copy_with_strides[
         var src_ptr = input.offset(input_offset)
         var dst_ptr = output.data.offset(output_offset)
         if input_axis_stride == 1 and output_axis_stride == 1:
-            memcpy(dst_ptr, src_ptr, axis_dim)
+            memcpy(dest=dst_ptr, src=src_ptr, count=axis_dim)
         else:
 
             @always_inline

@@ -100,9 +100,9 @@ def execute_ragged_flash_attention[
             IndexList[3](ragged_start_idx, 0, 0)
         )
         memcpy(
-            padded_ptr,
-            ragged_ptr,
-            unpadded_seq_len * num_q_heads * kv_params.head_size,
+            dest=padded_ptr,
+            src=ragged_ptr,
+            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
         )
 
     # initialize reference output

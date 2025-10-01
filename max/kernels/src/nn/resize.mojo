@@ -330,7 +330,7 @@ fn _resize[
     ) == rebind[IndexList[input.rank]](
         output.runtime_layout.shape.value.canonicalize()
     ):
-        return memcpy(output.ptr, input.ptr, input.size())
+        return memcpy(dest=output.ptr, src=input.ptr, count=input.size())
     var scales = StaticTuple[Float32, input.rank]()
     var resize_dims = List[Int](capacity=input.rank)
     var tmp_dims = IndexList[input.rank](0)

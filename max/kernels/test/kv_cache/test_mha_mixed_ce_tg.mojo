@@ -117,9 +117,9 @@ def execute_ragged_flash_attention():
         )
 
         memcpy(
-            mixed_ce_offset,
-            true_ce_offset,
-            mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
+            dest=mixed_ce_offset,
+            src=true_ce_offset,
+            count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
         )
 
     # initialize reference output

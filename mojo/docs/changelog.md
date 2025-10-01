@@ -40,6 +40,8 @@ Literals now have a default type. For example, you can now bind
 - Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
   when the pointers may potentially alias each other.
 
+- `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
+
 ### Tooling changes
 
 ### ❌ Removed

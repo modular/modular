@@ -792,7 +792,7 @@ fn mgp_buffer_device_to_device[
             ),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
-        memcpy(dst_buf.data, src_buf.data, src_buf.size())
+        memcpy(dest=dst_buf.data, src=src_buf.data, count=src_buf.size())
     else:
         raise Error(
             "mgp.buffer.device_to_device can be scheduled between same device"

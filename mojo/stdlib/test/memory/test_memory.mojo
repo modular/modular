@@ -45,7 +45,7 @@ def test_memcpy():
     # UnsafePointer test
     pair2.lo = 0
     pair2.hi = 0
-    memcpy(dest, src, 1)
+    memcpy(dest=dest, src=src, count=1)
 
     assert_equal(pair2.lo, 1)
     assert_equal(pair2.hi, 2)
@@ -60,7 +60,7 @@ def test_memcpy():
             buf[i] = src[i] = 2
             dst[i] = 0
 
-        memcpy(dst, src, size)
+        memcpy(dest=dst, src=src, count=size)
         var err = memcmp(dst, buf, size)
 
         assert_equal(err, 0)
@@ -92,7 +92,7 @@ def test_memcpy_dtype():
     assert_equal(b[2], -1)
     assert_equal(b[3], -1)
 
-    memcpy(b, a, 4)
+    memcpy(dest=b, src=a, count=4)
 
     assert_equal(b[0], 0)
     assert_equal(b[1], 1)

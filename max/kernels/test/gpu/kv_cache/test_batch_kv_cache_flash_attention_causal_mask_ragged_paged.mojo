@@ -178,8 +178,8 @@ def execute_ragged_flash_attention[
                 )
                 n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
                 memcpy(
-                    paged_ptr,
-                    kv_block_continuous_host.tensor._offset(
+                    dest=paged_ptr,
+                    src=kv_block_continuous_host.tensor._offset(
                         IndexList[6](
                             continuous_idx,
                             kv_idx,
@@ -189,7 +189,7 @@ def execute_ragged_flash_attention[
                             0,
                         )
                     ),
-                    n_cpy,
+                    count=n_cpy,
                 )
                 if block_sz < page_size:
                     memset_zero(

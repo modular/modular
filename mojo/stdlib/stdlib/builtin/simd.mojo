@@ -2286,7 +2286,11 @@ struct SIMD[dtype: DType, size: Int](
 
         var ptr = UnsafePointer(to=value)
         var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
-        memcpy(array.unsafe_ptr(), ptr.bitcast[Byte](), size_of[Self]())
+        memcpy(
+            dest=array.unsafe_ptr(),
+            src=ptr.bitcast[Byte](),
+            count=size_of[Self](),
+        )
         return array^
 
     fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:

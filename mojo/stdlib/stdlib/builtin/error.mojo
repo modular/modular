@@ -69,7 +69,7 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
 
         var ptr = UnsafePointer[UInt8]().alloc(num_bytes)
         self.value = ArcPointer[UnsafePointer[UInt8]](ptr)
-        memcpy(self.value[], buffer, num_bytes)
+        memcpy(dest=self.value[], src=buffer, count=num_bytes)
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         _libc.free(buffer.bitcast[NoneType]())
 
@@ -158,7 +158,7 @@ struct Error(
         """
         var length = src.byte_length()
         var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest, src.unsafe_ptr(), length)
+        memcpy(dest=dest, src=src.unsafe_ptr(), count=length)
         dest[length] = 0
         self.data = dest
         self.loaded_length = -length
@@ -173,7 +173,7 @@ struct Error(
         """
         var length = src.byte_length()
         var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest, src.unsafe_ptr(), length)
+        memcpy(dest=dest, src=src.unsafe_ptr(), count=length)
         dest[length] = 0
         self.data = dest
         self.loaded_length = -length
@@ -219,7 +219,7 @@ struct Error(
         if existing.loaded_length < 0:
             var length = -existing.loaded_length
             var dest = UnsafePointer[UInt8].alloc(length + 1)
-            memcpy(dest, existing.data, length)
+            memcpy(dest=dest, src=existing.data, count=length)
             dest[length] = 0
             self.data = dest
         else:

@@ -165,10 +165,10 @@ def execute_ragged_flash_attention[
 
             for kv_idx in range(2):
                 memcpy(
-                    kv_block_paged.tensor._offset(
+                    dest=kv_block_paged.tensor._offset(
                         IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
                     ),
-                    kv_block_continuous.tensor._offset(
+                    src=kv_block_continuous.tensor._offset(
                         IndexList[6](
                             continuous_idx,
                             kv_idx,
@@ -178,7 +178,7 @@ def execute_ragged_flash_attention[
                             0,
                         )
                     ),
-                    page_size * kv_params.num_heads * kv_params.head_size,
+                    count=page_size * kv_params.num_heads * kv_params.head_size,
                 )
 
     kv_collection_paged = PagedKVCacheCollection[dtype, kv_params, page_size](

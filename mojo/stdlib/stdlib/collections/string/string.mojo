@@ -243,7 +243,7 @@ struct String(
         """
         var length = len(bytes)
         self = Self(unsafe_uninit_length=UInt(length))
-        memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
+        memcpy(dest=self.unsafe_ptr_mut(), src=bytes.unsafe_ptr(), count=length)
 
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.
@@ -842,8 +842,8 @@ struct String(
 
         var result = String(unsafe_uninit_length=UInt(lhs_len + rhs_len))
         var result_ptr = result.unsafe_ptr_mut()
-        memcpy(result_ptr, lhs.unsafe_ptr(), lhs_len)
-        memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
+        memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
+        memcpy(dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len)
         return result^
 
     fn __add__(self, other: StringSlice) -> String:
@@ -887,9 +887,9 @@ struct String(
         var old_len = self.byte_length()
         var new_len = old_len + other_len
         memcpy(
-            self.unsafe_ptr_mut(UInt(new_len)) + old_len,
-            other.unsafe_ptr(),
-            other_len,
+            dest=self.unsafe_ptr_mut(UInt(new_len)) + old_len,
+            src=other.unsafe_ptr(),
+            count=other_len,
         )
         self.set_byte_length(new_len)
         self._clear_nul_terminator()
@@ -1855,7 +1855,7 @@ struct String(
         var old_ptr = self.unsafe_ptr()
         var new_capacity = (max(capacity, self.capacity() * 2) + 7) >> 3
         var new_ptr = self._alloc(new_capacity << 3)
-        memcpy(new_ptr, old_ptr, byte_len)
+        memcpy(dest=new_ptr, src=old_ptr, count=byte_len)
         # If mutable buffer drop the ref count
         self._drop_ref()
         self._len_or_data = byte_len
