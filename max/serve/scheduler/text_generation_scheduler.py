@@ -77,7 +77,10 @@ class TokenGenerationScheduler(Scheduler):
 
     @traced
     def _retrieve_pending_requests(self) -> None:
-        new_contexts = drain_queue(self.request_queue)
+        new_contexts = drain_queue(
+            self.request_queue,
+            max_items=self.scheduler_config.max_batch_size_ce,
+        )
         for context in new_contexts:
             self.batch_constructor.ce_reqs[context.request_id] = context
 
