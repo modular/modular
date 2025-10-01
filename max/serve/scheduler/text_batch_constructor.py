@@ -199,6 +199,7 @@ class TextBatchConstructor:
 
         return True
 
+    @traced
     def _create_tg_batch(self) -> TextGenerationInputs[TextContext]:
         """Creates a non empty token generation batch"""
 
@@ -326,6 +327,7 @@ class TextBatchConstructor:
         )
         raise RuntimeError(msg)
 
+    @traced
     def _try_create_ce_batch(self) -> TextGenerationInputs[TextContext]:
         """Try to create a context encoding batch"""
 
@@ -417,6 +419,7 @@ class TextBatchConstructor:
             num_steps=1,
         )
 
+    @traced
     def construct_batch(self) -> TextGenerationInputs[TextContext]:
         if self._should_schedule_ce():
             ce_batch = self._try_create_ce_batch()

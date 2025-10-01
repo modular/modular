@@ -720,8 +720,9 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return None
 
         # Stack pixel values and image_grid_thw
-        stacked_pixel_values = np.concatenate(pixel_values_list, axis=0)
-        stacked_image_grid_thw = np.concatenate(image_grid_thw, axis=0)
+        with Tracer("stacking image pixels"):
+            stacked_pixel_values = np.concatenate(pixel_values_list, axis=0)
+            stacked_image_grid_thw = np.concatenate(image_grid_thw, axis=0)
 
         pixel_values_tensor = Tensor.from_numpy(stacked_pixel_values)
 

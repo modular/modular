@@ -17,8 +17,10 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max.profiler import traced
 
 
+@traced
 def mrope_pos_ids_3d(
     grid_thw: npt.NDArray[np.integer[Any]], spatial_merge_size: int
 ) -> npt.NDArray[np.integer[Any]]:
@@ -52,6 +54,7 @@ def mrope_pos_ids_3d(
     return np.concatenate(pos_ids, axis=0)
 
 
+@traced
 def get_window_index(
     grid_thw: npt.NDArray[np.integer[Any]],
     window_size: int,
@@ -133,6 +136,7 @@ def get_window_index(
     return np.concatenate(window_index, axis=0), np.array(cu_window_seqlens)
 
 
+@traced
 def get_seqlens(
     grid_thw: npt.NDArray[np.integer[Any]],
     cu_win_seqlens: npt.NDArray[np.integer[Any]],
@@ -177,6 +181,7 @@ def get_seqlens(
     )
 
 
+@traced
 def get_rope_index(
     spatial_merge_size: int,
     image_token_id: int,

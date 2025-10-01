@@ -30,7 +30,7 @@ from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
 from max.pipelines.lib.pipeline import get_paged_manager
-from max.profiler import Tracer
+from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
 from .data_parallelism_utils import split_by_replica_idx
@@ -75,11 +75,13 @@ class TokenGenerationScheduler(Scheduler):
         )
         self.scheduler_logger = SchedulerLogger()
 
+    @traced
     def _retrieve_pending_requests(self) -> None:
         new_contexts = drain_queue(self.request_queue)
         for context in new_contexts:
             self.batch_constructor.ce_reqs[context.request_id] = context
 
+    @traced
     def run_iteration(self) -> SchedulerProgress:
         """The Scheduler routine that creates batches and schedules them on GPU
 
