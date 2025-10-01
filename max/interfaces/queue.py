@@ -86,15 +86,28 @@ class MAXPullQueue(Protocol, Generic[PullItemType]):
 
 
 @traced
-def drain_queue(pull_queue: MAXPullQueue[PullItemType]) -> list[PullItemType]:
+def drain_queue(
+    pull_queue: MAXPullQueue[PullItemType], max_items: int | None = None
+) -> list[PullItemType]:
     """
-    Remove and return all items from the queue without blocking.
+    Remove and return items from the queue without blocking.
 
     This method is expected to return an empty list if the queue is empty.
+    If max_items is specified, at most that many items will be returned.
+
+    Args:
+        pull_queue: The queue to drain items from.
+        max_items: Maximum number of items to return. If None, returns all items.
+
+    Returns:
+        List of items removed from the queue, limited by max_items if specified.
     """
 
-    output = []
+    output: list[PullItemType] = []
     while True:
+        if max_items is not None and len(output) >= max_items:
+            break
+
         try:
             output.append(pull_queue.get_nowait())
         except queue.Empty:
