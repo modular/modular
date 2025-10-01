@@ -3699,6 +3699,22 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
   // figure out the self type they can use.
   decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structDeclOp));
 
+  // Parse inheritance list using the target struct's scope (which has the
+  // generic parameters) This allows the inheritance list to reference the
+  // struct's generic parameters.
+  DenseSet<SymbolRefAttr> immediateParents;
+  if (failed(parseOptionalInheritanceList(p, *structAstDecl, decl,
+                                          extensionDeclOp.getSymName(), shared,
+                                          immediateParents)))
+    return failure();
+
+  // Store the immediate parent traits in the extension
+  SmallVector<SymbolRefAttr> immediateParentsVec(immediateParents.begin(),
+                                                 immediateParents.end());
+  sortAndDeduplicateSymbols(immediateParentsVec);
+  extensionDeclOp.setImmediateParents(
+      SymbolRefArrayAttr::get(getContext(), immediateParentsVec));
+
   shared.notifyListenerOnTraitDecl(decl, identifierLoc);
 
   if (p.consumeIf(Token::l_square)) {
