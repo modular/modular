@@ -562,7 +562,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 
 # Convenience functions for loading specific configuration types
 def load_base_benchmark_config(
-    config_file: str = "base_config.yaml",
+    config_file: str = "configs/base_config.yaml",
     overrides: Optional[dict[str, Any]] = None,
 ) -> BaseBenchmarkConfig:
     """Load base benchmark configuration with optional overrides.
@@ -582,7 +582,7 @@ def load_base_benchmark_config(
 
 
 def load_serving_benchmark_config(
-    config_file: str = "serving_config.yaml",
+    config_file: str = "configs/serving_config.yaml",
     overrides: Optional[dict[str, Any]] = None,
 ) -> ServingBenchmarkConfig:
     """Load serving benchmark configuration with optional overrides.
