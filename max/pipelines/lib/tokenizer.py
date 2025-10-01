@@ -190,15 +190,14 @@ class TextTokenizer(
                 model_max_length=max_length,
             )
         except Exception as e:
-            msg = (
+            raise ValueError(
                 f"Failed to load tokenizer from {model_path}. "
                 "This can happen if:\n"
                 "- The model is not fully supported by the transformers python package\n"
                 "- Required configuration files are missing\n"
                 "- The model path is incorrect\n"
                 "- '--trust-remote-code' is needed but not set\n"
-            )
-            raise ValueError(msg) from e
+            ) from e
 
         # Override chat template if provided
         # This will be used by the delegate's apply_chat_template method automatically
@@ -655,8 +654,7 @@ class TextAndVisionTokenizer(
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:
-            msg = f"{request} does not provide messages or prompt."
-            raise ValueError(msg)
+            raise ValueError(f"{request} does not provide messages or prompt.")
 
         # Load images.
         images = (
@@ -677,8 +675,9 @@ class TextAndVisionTokenizer(
         )
 
         if "input_ids" not in processed_inputs:
-            msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-            raise ValueError(msg)
+            raise ValueError(
+                "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+            )
 
         # TODO: This is a hack to support both LlamaVision, Pixtral and InternVL.
         if isinstance(processed_inputs["input_ids"][0], int):
@@ -700,8 +699,9 @@ class TextAndVisionTokenizer(
 
         if images is not None:
             if "pixel_values" not in processed_inputs:
-                msg = "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-                raise ValueError(msg)
+                raise ValueError(
+                    "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+                )
             pixel_values = processed_inputs["pixel_values"][0]
             if isinstance(pixel_values, list):
                 pixel_values = tuple(pixel_values)

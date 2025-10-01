@@ -388,8 +388,9 @@ class SpeculativeDecodingTextGenerationPipeline(
             self.pipeline_config, target_config
         )
         if draft_seq_len != target_seq_len:
-            msg = f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
-            raise ValueError(msg)
+            raise ValueError(
+                f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
+            )
 
         self._ragged_token_merger = target_session.load(
             ragged_token_merger(

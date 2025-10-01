@@ -262,12 +262,11 @@ class PipelineModel(ABC, Generic[T]):
                             default=pipeline_config.max_length,
                         )
                     except ValueError as e:
-                        msg = (
+                        raise ValueError(
                             "Unable to infer max_length for Mistral, the provided "
                             f"max_length ({pipeline_config.max_length}) exceeds the "
                             f"model's max_seq_len ({huggingface_config.max_seq_len})."
-                        )
-                        raise ValueError(msg) from e
+                        ) from e
 
         Args:
             pipeline_config: Configuration for the pipeline.
@@ -867,8 +866,9 @@ class TextGenerationPipeline(
                 # Initialize a matcher if needed
                 if context.json_schema and context.matcher is None:
                     if not self._pipeline_config.sampling_config.enable_structured_output:
-                        msg = "json_schema provided but constrained decoding is not enabled."
-                        raise ValueError(msg)
+                        raise ValueError(
+                            "json_schema provided but constrained decoding is not enabled."
+                        )
 
                     try:
                         serialized_grammar = LLMatcher.grammar_from_json_schema(

@@ -275,17 +275,15 @@ class GGUFWeights(Weights):
                 )
 
         if shape is not None and weight_unpacked_shape != expected_shape:
-            msg = (
+            raise ValueError(
                 f"Value provided to weight '{self.name}' had different shape"
                 f" (expected={expected_shape}, actual={weight_unpacked_shape})"
             )
-            raise ValueError(msg)
         if dtype is not None and weight.dtype != dtype:
-            msg = (
+            raise ValueError(
                 f"Value provided to weight '{self.name}' had different dtype"
                 f" (expected={dtype}, actual={weight.dtype})"
             )
-            raise ValueError(msg)
 
         # GGUF checkpoints can be mixed precision, so we don't check if the
         # quantization encoding matches exactly.

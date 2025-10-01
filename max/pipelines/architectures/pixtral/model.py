@@ -293,13 +293,12 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
-            msg = (
+            raise ValueError(
                 "Unable to infer max_length for Pixtral, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.text_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+            ) from e
 
     def load_kv_manager(
         self,
@@ -509,8 +508,9 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         session: InferenceSession,
     ) -> Model:
         if self.pipeline_config.enable_echo:
-            msg = "Pixtral model does not currently implement enable echo."
-            raise ValueError(msg)
+            raise ValueError(
+                "Pixtral model does not currently implement enable echo."
+            )
 
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
@@ -522,8 +522,9 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         ).to(self.devices[0])
 
         if not isinstance(self.weights, SafetensorWeights):
-            msg = "only safetensors weights are currently supported in Pixtral models."
-            raise ValueError(msg)
+            raise ValueError(
+                "only safetensors weights are currently supported in Pixtral models."
+            )
 
         logger.info("Building and compiling model...")
         before = time.perf_counter()

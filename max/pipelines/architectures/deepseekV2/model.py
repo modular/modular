@@ -108,8 +108,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
         if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():
-            msg = "DeepseekV2 currently only supported on gpu."
-            raise ValueError(msg)
+            raise ValueError("DeepseekV2 currently only supported on gpu.")
 
         super().__init__(
             pipeline_config,
@@ -253,13 +252,12 @@ class DeepseekV2Model(PipelineModel[TextContext]):
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
-            msg = (
+            raise ValueError(
                 "Unable to infer max_length for DeepseekV2, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_seq_len "
                 f"({huggingface_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+            ) from e
 
     def load_kv_manager(
         self,
@@ -380,8 +378,9 @@ class DeepseekV2Model(PipelineModel[TextContext]):
     def _build_graph(self) -> Graph:
         # Read in weights.
         if not isinstance(self.weights, SafetensorWeights):
-            msg = "only safetensors weights supported in DeepseekV2."
-            raise ValueError(msg)
+            raise ValueError(
+                "only safetensors weights supported in DeepseekV2."
+            )
 
         pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config

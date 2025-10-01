@@ -83,8 +83,9 @@ def get_pipeline_for_task(
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
     else:
-        msg = f"PipelineTask ({task}) does not have supported Pipeline"
-        raise ValueError(msg)
+        raise ValueError(
+            f"PipelineTask ({task}) does not have supported Pipeline"
+        )
 
 
 @dataclass(frozen=False)
@@ -198,8 +199,9 @@ class PipelineRegistry:
         """Add new architecture to registry."""
         if architecture.name in self.architectures:
             if not allow_override:
-                msg = f"Refusing to override existing architecture for '{architecture.name}'"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"Refusing to override existing architecture for '{architecture.name}'"
+                )
             logger.warning(
                 f"Overriding existing architecture for '{architecture.name}'"
             )
@@ -446,8 +448,9 @@ class PipelineRegistry:
         )
 
         if tokenizer.eos is None:
-            msg = "tokenizer.eos value is None, tokenizer configuration is incomplete."
-            raise ValueError(msg)
+            raise ValueError(
+                "tokenizer.eos value is None, tokenizer configuration is incomplete."
+            )
 
         return tokenizer, pipeline_factory
 

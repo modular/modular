@@ -217,13 +217,12 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
-            msg = (
+            raise ValueError(
                 "Unable to infer max_length for Llama3, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+            ) from e
 
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     @staticmethod

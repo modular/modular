@@ -196,9 +196,10 @@ class MAXModelConfig(MAXModelConfigBase):
         # Validate that the device_specs provided are available
         if not devices_exist(self.device_specs):
             available_devices = scan_available_devices()
-            msg = f"device specs provided ({self.device_specs}) do not exist."
-            msg += f"\navailable devices: {available_devices}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"device specs provided ({self.device_specs}) do not exist.\n"
+                f"available devices: {available_devices}"
+            )
 
         self.weight_path, self._weights_repo_id = WeightPathParser.parse(
             self.model_path, self.weight_path
@@ -511,8 +512,9 @@ class MAXModelConfig(MAXModelConfigBase):
                     )
                 # For cases where they do not match but with allow_safetensors_weights_fp32_bf6_bidirectional_cast set to False, we raise an error.
                 elif file_encoding != self.quantization_encoding:
-                    msg = f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
-                    raise ValueError(msg)
+                    raise ValueError(
+                        f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
+                    )
         else:
             if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:
                 # Check if the repo only has one quantization_encoding.
@@ -545,8 +547,9 @@ class MAXModelConfig(MAXModelConfigBase):
                     encoding=self.quantization_encoding
                 )
                 if not weight_files:
-                    msg = f"quantization_encoding '{self.quantization_encoding}' is not supported by the repo '{self.huggingface_weight_repo.repo_id}'"
-                    raise ValueError(msg)
+                    raise ValueError(
+                        f"quantization_encoding '{self.quantization_encoding}' is not supported by the repo '{self.huggingface_weight_repo.repo_id}'"
+                    )
 
     def _validate_and_resolve_without_given_quantization_encoding(
         self,
@@ -565,8 +568,9 @@ class MAXModelConfig(MAXModelConfigBase):
             if os.path.exists(self.weight_path[0]):
                 # Not currently supported. Infer encoding from local path.
                 if self.weight_path[0].suffix == ".safetensors":
-                    msg = "If a local safetensors file is provided, please provide a quantization_encoding."
-                    raise ValueError(msg)
+                    raise ValueError(
+                        "If a local safetensors file is provided, please provide a quantization_encoding."
+                    )
 
                 if encoding := SupportedEncoding.parse_from_file_name(
                     str(self.weight_path[0])
@@ -583,8 +587,9 @@ class MAXModelConfig(MAXModelConfigBase):
                     logger.debug(msg)
                     self.quantization_encoding = encoding
                 else:
-                    msg = f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explicitly."
-                    raise ValueError(msg)
+                    raise ValueError(
+                        f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explicitly."
+                    )
         else:
             # Check if the repo only has one quantization_encoding.
             supported_encodings = (
@@ -635,15 +640,13 @@ class MAXModelConfig(MAXModelConfigBase):
         # devices.
         for device_spec in self.device_specs:
             if not self.quantization_encoding.supported_on(device_spec):
-                msg = (
+                raise ValueError(
                     f"The encoding '{self.quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
                     f"You have two options to resolve this:\n"
                     f"1. Use a different device\n"
                     f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in supported_encodings_list)})\n\n"
                     f"Please use the --help flag for more information."
                 )
-
-                raise ValueError(msg)
 
     def _resolve_weight_path(
         self, default_weights_format: WeightsFormat
@@ -681,8 +684,9 @@ class MAXModelConfig(MAXModelConfigBase):
                 self.weight_path = next(iter(weight_files.values()))
 
         if not self.weight_path:
-            msg = f"compatible weights cannot be found for '{self.quantization_encoding}', in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
-            raise ValueError(msg)
+            raise ValueError(
+                f"compatible weights cannot be found for '{self.quantization_encoding}', in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
+            )
 
     def _resolve_kv_cache_strategy(
         self,
@@ -746,12 +750,11 @@ class MAXModelConfig(MAXModelConfigBase):
             elif repo.repo_type == RepoType.online:
                 # Verify that it exists on Huggingface.
                 if not repo.file_exists(path_str):
-                    msg = (
+                    raise ValueError(
                         f"weight_path: '{path_str}' does not exist locally or in cache,"
                         f" and '{repo.repo_id}/{path_str}' does"
                         " not exist on HuggingFace."
                     )
-                    raise ValueError(msg)
             else:
                 raise RuntimeError(
                     f"unexpected repository type: {repo.repo_type}"

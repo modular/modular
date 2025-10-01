@@ -67,23 +67,28 @@ class TokenGenerationSchedulerConfig:
 
     def __post_init__(self) -> None:
         if self.max_batch_size_tg <= 0:
-            msg = f"`max_batch_size_tg` must be greater than 0, found {self.max_batch_size_tg}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"`max_batch_size_tg` must be greater than 0, found {self.max_batch_size_tg}"
+            )
         if self.max_batch_size_ce <= 0:
-            msg = f"`max_batch_size_ce` must be greater than 0, found {self.max_batch_size_ce}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"`max_batch_size_ce` must be greater than 0, found {self.max_batch_size_ce}"
+            )
         if self.target_tokens_per_batch_ce <= 0:
-            msg = f"`target_tokens_per_batch_ce` must be greater than 0, found {self.target_tokens_per_batch_ce}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"`target_tokens_per_batch_ce` must be greater than 0, found {self.target_tokens_per_batch_ce}"
+            )
         if (
             self.enable_chunked_prefill
             and self.target_tokens_per_batch_ce is None
         ):
-            msg = "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
-            raise ValueError(msg)
+            raise ValueError(
+                "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
+            )
         if self.max_forward_steps_tg <= 0:
-            msg = f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
+            )
 
     @classmethod
     def from_pipeline_config(
@@ -320,12 +325,11 @@ class TextBatchConstructor:
         page_size = self.paged_cache.page_size
         total_num_blocks = self.paged_cache.total_num_pages
         max_seq_len = total_num_blocks * page_size
-        msg = (
+        raise RuntimeError(
             f"Insufficient KV pages to run token generation on a single request with {current_len} tokens.\n"
             f"The KVCache has {total_num_blocks} pages with page size {page_size}. This is only enough to support {max_seq_len} tokens.\n"
             "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         )
-        raise RuntimeError(msg)
 
     @traced
     def _try_create_ce_batch(self) -> TextGenerationInputs[TextContext]:

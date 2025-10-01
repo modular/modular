@@ -495,13 +495,15 @@ class LlamaVisionInputs(ModelInputs):
                     self.pixel_row_offsets,
                 )
             ):
-                msg = "provide all or none of Llama Vision vision model inputs"
-                raise ValueError(msg)
+                raise ValueError(
+                    "provide all or none of Llama Vision vision model inputs"
+                )
         else:
             for field_name in ("_aspect_ratio_ids", "_aspect_ratio_mask"):
                 if getattr(self, field_name) is not None:
-                    msg = f"{field_name} must be None if _pixel_values is None"
-                    raise ValueError(msg)
+                    raise ValueError(
+                        f"{field_name} must be None if _pixel_values is None"
+                    )
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -596,8 +598,9 @@ class LlamaVisionModel(Layer):
         aspect_ratio_mask: TensorValue,
     ) -> TensorValue:
         if aspect_ratio_ids is None:
-            msg = "`aspect_ratio_ids` must be provided if `pixel_values` is provided"
-            raise ValueError(msg)
+            raise ValueError(
+                "`aspect_ratio_ids` must be provided if `pixel_values` is provided"
+            )
 
         # Get vision tokens from vision model.
         vision_outputs = self.vision_model(
@@ -827,13 +830,12 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
-            msg = (
+            raise ValueError(
                 "Unable to infer max_length for Llama Vision, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.text_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+            ) from e
 
     def _llama3_vision_language_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
@@ -954,12 +956,14 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             images.append(image)
 
             if "aspect_ratio_ids" not in context.extra_model_args:
-                msg = "aspect_ratio_ids is required for image / vision model input"
-                raise ValueError(msg)
+                raise ValueError(
+                    "aspect_ratio_ids is required for image / vision model input"
+                )
 
             if "aspect_ratio_mask" not in context.extra_model_args:
-                msg = "aspect_ratio_mask is required for image / vision model input"
-                raise ValueError(msg)
+                raise ValueError(
+                    "aspect_ratio_mask is required for image / vision model input"
+                )
 
             aspect_ratio_ids_list.append(
                 context.extra_model_args["aspect_ratio_ids"]
@@ -996,24 +1000,23 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
         if self.kv_cache_config.cache_strategy != KVCacheStrategy.PAGED:
-            msg = "Llama Vision only supports paged cache strategy"
-            raise ValueError(msg)
+            raise ValueError("Llama Vision only supports paged cache strategy")
 
         has_images = any(ctx.needs_vision_encoding for ctx in context_batch)
         if has_images and not all(
             ctx.needs_vision_encoding for ctx in context_batch
         ):
-            msg = (
+            raise RuntimeError(
                 "expected context batch to all have images, or no images at all"
             )
-            raise RuntimeError(msg)
 
         def initial_prompt_missing_image(ctx: TextAndVisionContext) -> bool:
             return ctx.is_initial_prompt and not ctx.pixel_values
 
         if any(initial_prompt_missing_image(ctx) for ctx in context_batch):
-            msg = "The Llama Vision model currently requires a prompt with an image. Consider using the regular text-only models for non-image prompts"
-            raise RuntimeError(msg)
+            raise RuntimeError(
+                "The Llama Vision model currently requires a prompt with an image. Consider using the regular text-only models for non-image prompts"
+            )
 
         # Prepare vision inputs if applicable.
         pixel_values = None

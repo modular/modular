@@ -255,8 +255,7 @@ def expand_ellipsis(indices: SliceIndices, input_rank: int) -> SliceIndices:
     """
     num_ellipsis = indices.count(Ellipsis)
     if num_ellipsis > 1:
-        msg = f"more than one Ellipsis in slice indices {indices}"
-        raise ValueError(msg)
+        raise ValueError(f"more than one Ellipsis in slice indices {indices}")
 
     # Handle Ellipsis by expanding remaining indices with slice(None).
     ellipsis_index = (
@@ -292,12 +291,11 @@ def slice_arguments(
     steps: list[int] = []
     for i, subslice in enumerate(not_none_indices):
         if not isinstance(subslice, (slice, int)):
-            msg = (
+            raise TypeError(
                 f"slice of tensor with symbolic shape {input_shape} "
                 f"unsupported with indices {indices}. Currently, only slices "
                 "and integers are supported"
             )
-            raise TypeError(msg)
 
         if isinstance(subslice, int):
             # Create a single-element slice that will be squeezed later.
@@ -308,8 +306,7 @@ def slice_arguments(
         step = subslice.step if subslice.step is not None else 1
         if not isinstance(step, int) or step <= 0:
             # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
-            msg = f"expected positive integer step but got {step}"
-            raise ValueError(msg)
+            raise ValueError(f"expected positive integer step but got {step}")
 
         # Handle setting default start and stop depending on sign of step.
         if step < 0:
@@ -372,11 +369,10 @@ def _slice_symbolic_tensor(
         [i for i in indices if i is not None and i is not Ellipsis]
     )
     if num_regular_indices > x.rank:
-        msg = (
+        raise ValueError(
             f"expected slice indices length {len(indices)} to be less than or "
             f"equal to input rank {x.rank}"
         )
-        raise ValueError(msg)
 
     indices = expand_ellipsis(indices, x.rank)
 

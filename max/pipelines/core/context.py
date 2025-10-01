@@ -125,8 +125,9 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             ValueError: If tokens array is not one-dimensional
         """
         if self.tokens.ndim != 1:
-            msg = f"tokens must be one dimensional array: got shape '{self.tokens.shape}'"
-            raise ValueError(msg)
+            raise ValueError(
+                f"tokens must be one dimensional array: got shape '{self.tokens.shape}'"
+            )
 
         if self._size == -1:
             self._size = int(
@@ -275,18 +276,16 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         new_end_idx = end_idx if end_idx is not None else self._end_idx
 
         if new_start_idx >= new_active_idx:
-            msg = f"""
+            raise ValueError(f"""
             active_idx must always be greater than start_idx, unable to bump token indices
             as new start_idx ({new_start_idx}) is greater than new active_idx ({new_active_idx}).
-            """
-            raise ValueError(msg)
+            """)
 
         if new_active_idx > new_end_idx:
-            msg = f"""
+            raise ValueError(f"""
             end_idx must always be greater than active_idx, unable to bump token indices
             as new active_idx ({new_active_idx}) is greater than new end_idx ({new_end_idx}).
-            """
-            raise ValueError(msg)
+            """)
 
         self._start_idx = new_start_idx
         self._active_idx = new_active_idx

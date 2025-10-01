@@ -54,12 +54,12 @@ def collate_batch(
         NotImplementedError: if the batch contains anything other than vectors.
     """
     if not batch:
-        msg = "Must provide at least one batch item."
-        raise ValueError(msg)
+        raise ValueError("Must provide at least one batch item.")
 
     if not all(a.ndim == 1 for a in batch):
-        msg = "Collate only supports rank 1 tensors for now."
-        raise NotImplementedError(msg)
+        raise NotImplementedError(
+            "Collate only supports rank 1 tensors for now."
+        )
 
     max_len = max((len(a) for a in batch), default=0)
     pad_to = max_len

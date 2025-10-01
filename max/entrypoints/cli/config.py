@@ -77,11 +77,10 @@ class JSONType(click.ParamType):
 def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
     interior_args = set(get_args(type_hint)) - set([type(None)])
     if len(interior_args) > 1:
-        msg = (
+        raise ValueError(
             "Parsing does not currently supported Union type, with more than"
             f" one non-None type: {type_hint}"
         )
-        raise ValueError(msg)
 
     return get_args(type_hint)[0]
 
@@ -112,8 +111,7 @@ def validate_field_type(field_type: Any) -> bool:
         if get_origin(valid_type) is None and inspect.isclass(test_type):
             if issubclass(test_type, valid_type):
                 return True
-    msg = f"type '{test_type}' not supported in config."
-    raise ValueError(msg)
+    raise ValueError(f"type '{test_type}' not supported in config.")
 
 
 def get_field_type(field_type: Any):

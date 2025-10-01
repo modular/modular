@@ -56,33 +56,37 @@ def rope_no_opaque(
     """
     # Input validation
     if input_row_offsets.dtype != DType.uint32:
-        msg = (
+        raise ValueError(
             "expected input_row_offsets to have dtype uint32, was"
             f" {input_row_offsets.dtype}"
         )
-        raise ValueError(msg)
 
     if start_pos.dtype != DType.uint32:
-        msg = f"expected start_pos to have dtype uint32, was {start_pos.dtype}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected start_pos to have dtype uint32, was {start_pos.dtype}"
+        )
 
     # Validate tensor ranks
     input_rank_expected = 3
     if input.rank != input_rank_expected:
-        msg = f"expected input to have rank {input_rank_expected}, was {input.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        )
 
     if input_row_offsets.rank != 1:
-        msg = f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        )
 
     if start_pos.rank != 1:
-        msg = f"expected start_pos to have rank 1, was {start_pos.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected start_pos to have rank 1, was {start_pos.rank}"
+        )
 
     if freqs_cis.rank != 2:
-        msg = f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
 
     # Set up parameters for the kernel
     parameters: dict[str, bool | int | str | DType] = {
@@ -171,46 +175,53 @@ def _store_cache_common(
     """
     # Input validation
     if input_row_offsets.dtype != DType.uint32:
-        msg = (
+        raise ValueError(
             "expected input_row_offsets to have dtype uint32, was"
             f" {input_row_offsets.dtype}"
         )
-        raise ValueError(msg)
 
     if layer_idx.dtype != DType.uint32:
-        msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
 
     # Validate tensor ranks
     x_cache_rank_expected = 3
     if x_cache.rank != x_cache_rank_expected:
-        msg = f"expected x_cache to have rank {x_cache_rank_expected}, was {x_cache.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected x_cache to have rank {x_cache_rank_expected}, was {x_cache.rank}"
+        )
 
     if input_row_offsets.rank != 1:
-        msg = f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        )
 
     if kv_collection.blocks.rank != 6:
-        msg = f"expected blocks to have rank 6, was {kv_collection.blocks.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected blocks to have rank 6, was {kv_collection.blocks.rank}"
+        )
 
     if kv_collection.cache_lengths.rank != 1:
-        msg = f"expected cache_lengths to have rank 1, was {kv_collection.cache_lengths.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected cache_lengths to have rank 1, was {kv_collection.cache_lengths.rank}"
+        )
 
     if kv_collection.lookup_table.rank != 2:
-        msg = f"expected lookup_table to have rank 2, was {kv_collection.lookup_table.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected lookup_table to have rank 2, was {kv_collection.lookup_table.rank}"
+        )
 
     if kv_collection.max_lengths.rank != 2:
-        msg = f"expected max_lengths to have rank 2, was {kv_collection.max_lengths.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected max_lengths to have rank 2, was {kv_collection.max_lengths.rank}"
+        )
 
     # Validate scalar layer_idx
     if layer_idx.rank != 0:
-        msg = f"expected layer_idx to be a scalar (rank 0), was rank {layer_idx.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected layer_idx to be a scalar (rank 0), was rank {layer_idx.rank}"
+        )
 
     # Set up parameters for the kernel
     parameters: dict[str, int | str | DType] = {

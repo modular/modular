@@ -336,11 +336,10 @@ class LoRAModel:
         if unsupported_modules:
             supported_list = ", ".join(sorted(supported_modules))
             unsupported_list = ", ".join(unsupported_modules)
-            msg = (
+            raise ValueError(
                 f"LoRA adapter contains unsupported target modules: {unsupported_list}. "
                 f"Currently supported modules are: {supported_list}."
             )
-            raise ValueError(msg)
 
     def _normalize_lora_key(self, key: str) -> str:
         """

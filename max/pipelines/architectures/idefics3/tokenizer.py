@@ -163,8 +163,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
         else:
-            msg = f"{request} does not provide messages or prompt."
-            raise ValueError(msg)
+            raise ValueError(f"{request} does not provide messages or prompt.")
 
         # Convert image bytes to PIL Image objects.
         if request.images is not None and len(request.images) > 0:
@@ -194,8 +193,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         )
 
         if "input_ids" not in processed_inputs:
-            msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-            raise ValueError(msg)
+            raise ValueError(
+                "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+            )
 
         if isinstance(processed_inputs["input_ids"][0], int):
             encoded_prompt = np.array(processed_inputs["input_ids"])
@@ -218,8 +218,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
 
         if images is not None:
             if "pixel_values" not in processed_inputs:
-                msg = "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
-                raise ValueError(msg)
+                raise ValueError(
+                    "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+                )
             pixel_values = processed_inputs["pixel_values"]
 
             if isinstance(pixel_values, list):

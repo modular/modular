@@ -53,8 +53,9 @@ def _parameter_attribute(
         attr = builtin.TypeAttr(dtype)
         return mlir.Attribute._CAPICreate(attr._CAPIPtr)  # type: ignore
     else:
-        msg = f"unsupported parameter type {type(param)} for custom op"
-        raise TypeError(msg)
+        raise TypeError(
+            f"unsupported parameter type {type(param)} for custom op"
+        )
 
 
 def custom(
@@ -87,11 +88,10 @@ def custom(
     device = DeviceRef.from_device(device)
 
     if any(isinstance(val, (BufferValue, _OpaqueValue)) for val in values):
-        msg = (
+        raise TypeError(
             "custom ops that take buffers or opaque values to do in-place "
             "updates should use ops.inplace_custom instead"
         )
-        raise TypeError(msg)
 
     values = [
         TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values

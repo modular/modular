@@ -105,8 +105,9 @@ class Signals:
         # Convert the iterable to a list since we iterate over it twice.
         devices = list(devices)
         if not all(dev.device_type == DeviceKind.GPU for dev in devices):
-            msg = "peer-to-peer signals should be constructed for accelerators"
-            raise TypeError(msg)
+            raise TypeError(
+                "peer-to-peer signals should be constructed for accelerators"
+            )
 
         self.devices = devices
 

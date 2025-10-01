@@ -135,8 +135,7 @@ class Llama3(Transformer):
                 Linear, float8_config=config.float8_config
             )
         if config.stacked_mlp and config.float8_config:
-            msg = "StackedMLP and float8 are not compatible"
-            raise ValueError(msg)
+            raise ValueError("StackedMLP and float8 are not compatible")
         mlp_cls = (
             StackedMLP
             if config.stacked_mlp

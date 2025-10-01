@@ -498,8 +498,7 @@ def _value_to_attribute(param: OpaqueParameter) -> Attribute:
         dtype = _graph.dtype_to_type(param)
         return builtin.TypeAttr(dtype)
 
-    msg = f"unsupported parameter type {type(param)} for custom op"
-    raise TypeError(msg)
+    raise TypeError(f"unsupported parameter type {type(param)} for custom op")
 
 
 def _attribute_to_value(value: Attribute) -> OpaqueParameter:

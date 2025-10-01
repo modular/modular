@@ -50,11 +50,10 @@ def sum(
     inputs = list(inputs)
     signal_buffers = list(signal_buffers)
     if len(inputs) != len(signal_buffers):
-        msg = (
+        raise ValueError(
             f"expected number of inputs ({len(inputs)}) and number of "
             f"signal buffers ({len(signal_buffers)}) to match"
         )
-        raise ValueError(msg)
 
     shape = None
     devices = []
@@ -63,23 +62,20 @@ def sum(
         if not shape:
             shape = input.shape
         if input.shape != shape:
-            msg = (
+            raise ValueError(
                 "allreduce.sum operation must have the same shape across all"
                 " input tensors."
             )
-            raise ValueError(msg)
         if not input.device:
-            msg = (
+            raise ValueError(
                 f"allreduce.sum operation input = {input} needs to have an"
                 " explicit device."
             )
-            raise ValueError(msg)
         if input.device in devices:
-            msg = (
+            raise ValueError(
                 "allreduce.sum operation must have unique devices across its"
                 " input tensors."
             )
-            raise ValueError(msg)
         devices.append(input.device)
 
     # Per-device execution model:

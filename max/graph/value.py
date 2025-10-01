@@ -131,8 +131,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, BufferValue):
             return self
 
-        msg = f"Value is not a BufferValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not a BufferValue, was '{type(self).__name__}'"
+        )
 
     @property
     def tensor(self) -> TensorValue:
@@ -143,8 +144,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, TensorValue):
             return self
 
-        msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not a TensorValue, was '{type(self).__name__}'"
+        )
 
     @property
     def opaque(self) -> _OpaqueValue:
@@ -155,8 +157,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, _OpaqueValue):
             return self
 
-        msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not an _OpaqueValue, was '{type(self).__name__}'"
+        )
 
     @property
     def type(self) -> Type[MlirType]:

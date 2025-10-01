@@ -173,8 +173,7 @@ class MistralModel(PipelineModel[TextContext]):
     ) -> MistralInputs:
         if not self.kv_cache_config.cache_strategy.uses_opaque():
             # TODO(MODELS-407): Consider deleting the padded path entirely.
-            msg = "Mistral unsupported for padded token batches"
-            raise ValueError(msg)
+            raise ValueError("Mistral unsupported for padded token batches")
 
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
@@ -212,8 +211,7 @@ class MistralModel(PipelineModel[TextContext]):
 
         if not self.kv_cache_config.cache_strategy.uses_opaque():
             # TODO(MODELS-407): Consider deleting the padded path entirely.
-            msg = "multistep unsupported for padded token batches"
-            raise ValueError(msg)
+            raise ValueError("multistep unsupported for padded token batches")
 
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
@@ -255,13 +253,12 @@ class MistralModel(PipelineModel[TextContext]):
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
-            msg = (
+            raise ValueError(
                 "Unable to infer max_length for Mistral, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+            ) from e
 
     def load_kv_manager(
         self,
@@ -513,8 +510,9 @@ class MistralModel(PipelineModel[TextContext]):
         session: InferenceSession,
     ) -> Model:
         if self.pipeline_config.enable_echo:
-            msg = "Mistral model does not currently implement enable echo."
-            raise ValueError(msg)
+            raise ValueError(
+                "Mistral model does not currently implement enable echo."
+            )
 
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
@@ -526,8 +524,9 @@ class MistralModel(PipelineModel[TextContext]):
         ).to(self.devices[0])
 
         if not isinstance(self.weights, SafetensorWeights):
-            msg = "only safetensors weights are currently supported in Mistral models."
-            raise ValueError(msg)
+            raise ValueError(
+                "only safetensors weights are currently supported in Mistral models."
+            )
 
         logger.info("Building and compiling model...")
         before = time.perf_counter()

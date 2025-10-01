@@ -85,8 +85,7 @@ class Dim:
         elif isinstance(value, kgen.ParamOperatorAttr):
             return super().__new__(AlgebraicDim)
 
-        msg = f"Unsupported dimension type {value} ({type(value)})"
-        raise TypeError(msg)
+        raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
 
     def __index__(self) -> int:
         """Converts this dim to an index as used by indexing and slicing.
@@ -100,11 +99,10 @@ class Dim:
         integer or None.
         Related MyPy discussion: https://github.com/python/mypy/issues/2410
         """
-        msg = (
+        raise TypeError(
             "when using dims to index into a list or NumPy array, explicitly "
             "convert to int with int(dim)"
         )
-        raise TypeError(msg)
 
     def __int__(self) -> int:
         """Conversion to an int only supported for static dims."""

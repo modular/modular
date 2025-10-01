@@ -366,11 +366,10 @@ class Module(Layer, ABC):
                     f"Unexpected keys in state_dict: {', '.join(sorted(list(unused_keys)))}"
                 )
 
-            msg = (
+            raise ValueError(
                 "load_state_dict() strict=True validation failed. "
                 + "; ".join(parts)
             )
-            raise ValueError(msg)
 
     def state_dict(
         self, auto_initialize: bool = True
@@ -472,11 +471,10 @@ def _array_from_weight_loader(
         # Treat the data as if it has the correct shape.
         data.shape = Shape(weight._shape)
     elif weight.shape != data.shape:
-        msg = (
+        raise ValueError(
             f"Value provided to weight '{name}' had different shape"
             f" (expected={weight.shape}, actual={data.shape})"
         )
-        raise ValueError(msg)
 
     if weight.quantization_encoding != data.quantization_encoding:
         if (
@@ -490,11 +488,10 @@ def _array_from_weight_loader(
         # quantization label)
 
     if weight.dtype != data.dtype:
-        msg = (
+        raise ValueError(
             f"Value provided to weight '{name}' had different dtype"
             f" (expected={weight.dtype}, actual={data.dtype})"
         )
-        raise ValueError(msg)
 
     return data
 
