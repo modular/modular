@@ -509,8 +509,6 @@ void ParsedConstraint::print(raw_indented_ostream &os) const {
   os << "loc: " << loc.getPointer() << "\n";
   os << "propExpr: ";
   printNullableExpr(os, propExpr);
-  if (errorMsg)
-    os << "errorMsg: \"" << errorMsg.getValue() << "\"\n";
   os.unindent() << "}\n";
 }
 

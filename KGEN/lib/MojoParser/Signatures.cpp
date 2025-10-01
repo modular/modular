@@ -939,14 +939,6 @@ ParseResult ParsedConstraint::parse(ParserBase &p) {
   if (p.parseExpression(propExpr))
     return failure();
 
-  // Check for optional error message
-  if (p.getToken().is(Token::string)) {
-    std::string value =
-        Lexer::getStringLiteralValue(p.getToken().getSpelling());
-    errorMsg = StringAttr::get(p.getContext(), value);
-    p.consumeToken();
-  }
-
   return success();
 }
 
@@ -2012,8 +2004,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     }
 
     constraints.push_back(
-        ConstraintAttr::get(propVal, shared.translateLocation(constraint.loc),
-                            constraint.errorMsg));
+        ConstraintAttr::get(propVal, shared.translateLocation(constraint.loc)));
   }
 }
 
