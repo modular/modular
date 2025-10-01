@@ -1566,22 +1566,22 @@ fn _load_impl[
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0], res[1], res[2], res[3])
         return SIMD[dtype, width](tmp[0], tmp[1], tmp[2], tmp[3])
-
-    var lhs = _load_impl[
-        width = width // 2,
-        prefetch_size=prefetch_size,
-        cache_policy=cache_policy,
-        eviction_policy=eviction_policy,
-        alignment=alignment,
-    ](ptr)
-    var rhs = _load_impl[
-        width = width // 2,
-        prefetch_size=prefetch_size,
-        cache_policy=cache_policy,
-        eviction_policy=eviction_policy,
-        alignment=alignment,
-    ](ptr + width // 2)
-    return lhs.join(rhs)._refine[new_size=width]()
+    else:
+        var lhs = _load_impl[
+            width = width // 2,
+            prefetch_size=prefetch_size,
+            cache_policy=cache_policy,
+            eviction_policy=eviction_policy,
+            alignment=alignment,
+        ](ptr)
+        var rhs = _load_impl[
+            width = width // 2,
+            prefetch_size=prefetch_size,
+            cache_policy=cache_policy,
+            eviction_policy=eviction_policy,
+            alignment=alignment,
+        ](ptr + width // 2)
+        return lhs.join(rhs)._refine[new_size=width]()
 
 
 @always_inline

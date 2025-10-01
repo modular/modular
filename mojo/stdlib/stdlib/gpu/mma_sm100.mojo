@@ -707,25 +707,23 @@ struct UMMAInsDescriptor[
                 | transpose_bit
             )
 
-        @parameter
-        if mma_kind == UMMAKind.KIND_F16:
+        elif mma_kind == UMMAKind.KIND_F16:
             return Self(
                 desc
                 | Self._create_f16_desc[d_type, a_type, b_type]()
                 | transpose_bit
             )
 
-        @parameter
-        if mma_kind == UMMAKind.KIND_F8F6F4:
+        elif mma_kind == UMMAKind.KIND_F8F6F4:
             return Self(
                 desc
                 | Self._create_f8f6f4_desc[d_type, a_type, b_type]()
                 | transpose_bit
             )
 
-        constrained[False, String("Unsupported UMMA kind: ", mma_kind)]()
-
-        return Self(0x0)
+        else:
+            constrained[False, String("Unsupported UMMA kind: ", mma_kind)]()
+            return Self(0x0)
 
 
 # ===----------------------------------------------------------------------=== #

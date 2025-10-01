@@ -1292,6 +1292,9 @@ struct PyObjectFunction[
                 return rebind[Self._0e](self._func)()
             elif self._has_type[Self._0]():
                 return rebind[Self._0](self._func)()
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(1):
             check_arguments_arity(1, py_args)
             var arg0 = py_args[0]
@@ -1305,6 +1308,9 @@ struct PyObjectFunction[
                 return rebind[Self._1e](self._func)(arg0)
             elif self._has_type[Self._1]():
                 return rebind[Self._1](self._func)(arg0)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(2):
             check_arguments_arity(2, py_args)
             var arg0 = py_args[0]
@@ -1319,6 +1325,9 @@ struct PyObjectFunction[
                 return rebind[Self._2e](self._func)(arg0, arg1)
             elif self._has_type[Self._2]():
                 return rebind[Self._2](self._func)(arg0, arg1)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(3):
             check_arguments_arity(3, py_args)
             var arg0 = py_args[0]
@@ -1334,6 +1343,9 @@ struct PyObjectFunction[
                 return rebind[Self._3e](self._func)(arg0, arg1, arg2)
             elif self._has_type[Self._3]():
                 return rebind[Self._3](self._func)(arg0, arg1, arg2)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(4):
             check_arguments_arity(4, py_args)
             var arg0 = py_args[0]
@@ -1350,6 +1362,9 @@ struct PyObjectFunction[
                 return rebind[Self._4e](self._func)(arg0, arg1, arg2, arg3)
             elif self._has_type[Self._4]():
                 return rebind[Self._4](self._func)(arg0, arg1, arg2, arg3)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(5):
             check_arguments_arity(5, py_args)
             var arg0 = py_args[0]
@@ -1373,6 +1388,9 @@ struct PyObjectFunction[
                 )
             elif self._has_type[Self._5]():
                 return rebind[Self._5](self._func)(arg0, arg1, arg2, arg3, arg4)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(6):
             check_arguments_arity(6, py_args)
             var arg0 = py_args[0]
@@ -1399,9 +1417,12 @@ struct PyObjectFunction[
                 return rebind[Self._6](self._func)(
                     arg0, arg1, arg2, arg3, arg4, arg5
                 )
-
-        constrained[False, "unsupported arity or signature"]()
-        return PO()
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
+        else:
+            constrained[False, "unsupported arity"]()
+            return PO()
 
     @always_inline("nodebug")
     fn _call_func(self, py_args: PO, py_kwargs: PO) raises -> PO:
@@ -1423,6 +1444,9 @@ struct PyObjectFunction[
                 return rebind[Self._0e_kwargs](self._func)(kwargs)
             elif self._has_type[Self._0_kwargs]():
                 return rebind[Self._0_kwargs](self._func)(kwargs)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(1):
             check_arguments_arity(1, py_args)
             var arg0 = py_args[0]
@@ -1436,6 +1460,9 @@ struct PyObjectFunction[
                 return rebind[Self._1e_kwargs](self._func)(arg0, kwargs)
             elif self._has_type[Self._1_kwargs]():
                 return rebind[Self._1_kwargs](self._func)(arg0, kwargs)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(2):
             check_arguments_arity(2, py_args)
             var arg0 = py_args[0]
@@ -1450,6 +1477,9 @@ struct PyObjectFunction[
                 return rebind[Self._2e_kwargs](self._func)(arg0, arg1, kwargs)
             elif self._has_type[Self._2_kwargs]():
                 return rebind[Self._2_kwargs](self._func)(arg0, arg1, kwargs)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(3):
             check_arguments_arity(3, py_args)
             var arg0 = py_args[0]
@@ -1473,6 +1503,9 @@ struct PyObjectFunction[
                 return rebind[Self._3_kwargs](self._func)(
                     arg0, arg1, arg2, kwargs
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(4):
             check_arguments_arity(4, py_args)
             var arg0 = py_args[0]
@@ -1497,6 +1530,9 @@ struct PyObjectFunction[
                 return rebind[Self._4_kwargs](self._func)(
                     arg0, arg1, arg2, arg3, kwargs
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(5):
             check_arguments_arity(5, py_args)
             var arg0 = py_args[0]
@@ -1522,6 +1558,9 @@ struct PyObjectFunction[
                 return rebind[Self._5_kwargs](self._func)(
                     arg0, arg1, arg2, arg3, arg4, kwargs
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(6):
             check_arguments_arity(6, py_args)
             var arg0 = py_args[0]
@@ -1548,9 +1587,12 @@ struct PyObjectFunction[
                 return rebind[Self._6_kwargs](self._func)(
                     arg0, arg1, arg2, arg3, arg4, arg5, kwargs
                 )
-
-        constrained[False, "unsupported arity or signature"]()
-        return PO()
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
+        else:
+            constrained[False, "unsupported arity"]()
+            return PO()
 
     @always_inline("nodebug")
     fn _call_method(self, py_self: PO, py_args: PO) raises -> PO:
@@ -1581,6 +1623,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._1_self]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._1_self](self._func)(self_arg)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(2):
             check_arguments_arity(1, py_args)
             var arg0 = py_args[0]
@@ -1606,6 +1651,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._2_self]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._2_self](self._func)(self_arg, arg0)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(3):
             check_arguments_arity(2, py_args)
             var arg0 = py_args[0]
@@ -1632,6 +1680,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._3_self]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._3_self](self._func)(self_arg, arg0, arg1)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(4):
             check_arguments_arity(3, py_args)
             var arg0 = py_args[0]
@@ -1667,6 +1718,9 @@ struct PyObjectFunction[
                 return rebind[Self._4_self](self._func)(
                     self_arg, arg0, arg1, arg2
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(5):
             check_arguments_arity(4, py_args)
             var arg0 = py_args[0]
@@ -1711,6 +1765,9 @@ struct PyObjectFunction[
                 return rebind[Self._5_self](self._func)(
                     self_arg, arg0, arg1, arg2, arg3
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(6):
             check_arguments_arity(5, py_args)
             var arg0 = py_args[0]
@@ -1756,9 +1813,12 @@ struct PyObjectFunction[
                 return rebind[Self._6_self](self._func)(
                     self_arg, arg0, arg1, arg2, arg3, arg4
                 )
-
-        constrained[False, "unsupported arity or signature"]()
-        return PO()
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
+        else:
+            constrained[False, "unsupported arity"]()
+            return PO()
 
     @always_inline("nodebug")
     fn _call_method(self, py_self: PO, py_args: PO, py_kwargs: PO) raises -> PO:
@@ -1799,6 +1859,9 @@ struct PyObjectFunction[
             elif self._has_type[Self._1_self_kwargs]():
                 var self_arg = Self._get_self_arg(py_self)
                 return rebind[Self._1_self_kwargs](self._func)(self_arg, kwargs)
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(2):
             check_arguments_arity(1, py_args)
             var arg0 = py_args[0]
@@ -1838,6 +1901,9 @@ struct PyObjectFunction[
                 return rebind[Self._2_self_kwargs](self._func)(
                     self_arg, arg0, kwargs
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(3):
             check_arguments_arity(2, py_args)
             var arg0 = py_args[0]
@@ -1880,6 +1946,9 @@ struct PyObjectFunction[
                 return rebind[Self._3_self_kwargs](self._func)(
                     self_arg, arg0, arg1, kwargs
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(4):
             check_arguments_arity(3, py_args)
             var arg0 = py_args[0]
@@ -1923,6 +1992,9 @@ struct PyObjectFunction[
                 return rebind[Self._4_self_kwargs](self._func)(
                     self_arg, arg0, arg1, arg2, kwargs
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(5):
             check_arguments_arity(4, py_args)
             var arg0 = py_args[0]
@@ -1967,6 +2039,9 @@ struct PyObjectFunction[
                 return rebind[Self._5_self_kwargs](self._func)(
                     self_arg, arg0, arg1, arg2, arg3, kwargs
                 )
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
         elif Self._has_arity(6):
             check_arguments_arity(5, py_args)
             var arg0 = py_args[0]
@@ -2012,6 +2087,9 @@ struct PyObjectFunction[
                 return rebind[Self._6_self_kwargs](self._func)(
                     self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
                 )
-
-        constrained[False, "unsupported arity or signature"]()
-        return PO()
+            else:
+                constrained[False, "unsupported signature"]()
+                return PO()
+        else:
+            constrained[False, "unsupported arity"]()
+            return PO()

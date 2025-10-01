@@ -789,7 +789,6 @@ struct _FlashAttention[
                         return IndexList[mask_rank](x, y)
                     else:
                         return IndexList[mask_rank]()
-                    constrained[False, "unsupported mask rank"]()
 
                 var count_m = min(Self._config.block_m, seq_len - m)
                 var count_n = min(Self._config.o_block_n, depth_dim - n)

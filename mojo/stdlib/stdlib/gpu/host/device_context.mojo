@@ -2031,37 +2031,33 @@ struct DeviceFunction[
             if _is_bool_like[env_val]():
                 alias env_bool_val = env_get_bool[env_var]()
                 return env_bool_val, _DumpPath(env_bool_val)
-
-            @parameter
-            if _is_path_like(env_val):
+            elif _is_path_like(env_val):
                 return True, _DumpPath(Path(env_val))
+            else:
+                constrained[
+                    False,
+                    "the environment variable '",
+                    env_var,
+                    (
+                        "' is not a valid value. The value should either be"
+                        " a boolean value or a path like value, but got '"
+                    ),
+                    env_val,
+                    "'",
+                ]()
+                return False, val
 
-            constrained[
-                False,
-                "the environment variable '",
-                env_var,
-                (
-                    "' is not a valid value. The value should either be"
-                    " a boolean value or a path like value, but got '"
-                ),
-                env_val,
-                "'",
-            ]()
-            return False, val
-
-        @parameter
-        if val.isa[Bool]():
+        elif val.isa[Bool]():
             return val.unsafe_get[Bool](), val
 
-        @parameter
-        if val.isa[Path]():
+        elif val.isa[Path]():
             return val.unsafe_get[Path]() != Path(""), val
 
-        @parameter
-        if val.isa[StaticString]():
+        elif val.isa[StaticString]():
             return val.unsafe_get[StaticString]() != "", val
 
-        return val.isa[fn () capturing -> Path](), val
+        else:
+            return val.isa[fn () capturing -> Path](), val
 
     @staticmethod
     fn _cleanup_asm(s: StringSlice) -> String:

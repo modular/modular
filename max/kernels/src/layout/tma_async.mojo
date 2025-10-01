@@ -107,21 +107,21 @@ fn _tma_desc_tile_layout[
             return Layout.row_major(
                 dim0, swizzle_mode.bytes() // dtype.size_of()
             )
+        else:
+            constrained[
+                swizzle_mode == TensorMapSwizzle.SWIZZLE_128B,
+                "Only support 128B swizzle for mn-major.",
+            ]()
 
-        constrained[
-            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B,
-            "Only support 128B swizzle for mn-major.",
-        ]()
-
-        # This is inefficient when MN_dim = swizzle_mode.bytes() because we can copy
-        # by MN x BK. The better solution to follow cutlass using `tile_to_shape` and
-        # automatically set the max descriptor layout.
-        # Note that our input is row_major(K, MN) for MN-major, the descriptor tile's
-        # dimensions are also ordered by (K, MN).
-        alias core_matrix_num_rows = 8
-        return Layout.row_major(
-            core_matrix_num_rows, swizzle_mode.bytes() // dtype.size_of()
-        )
+            # This is inefficient when MN_dim = swizzle_mode.bytes() because we can copy
+            # by MN x BK. The better solution to follow cutlass using `tile_to_shape` and
+            # automatically set the max descriptor layout.
+            # Note that our input is row_major(K, MN) for MN-major, the descriptor tile's
+            # dimensions are also ordered by (K, MN).
+            alias core_matrix_num_rows = 8
+            return Layout.row_major(
+                core_matrix_num_rows, swizzle_mode.bytes() // dtype.size_of()
+            )
 
     else:
         alias dim0 = tile_shape[0]
