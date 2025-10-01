@@ -182,38 +182,38 @@ class Accelerator(Device):
         """
         Creates an accelerator device with the specified ID and memory limit.
 
-          Provides access to GPU or other hardware accelerators in the system.
+                Provides access to GPU or other hardware accelerators in the system.
 
-          Repeated instantiations with a previously-used device-id will still
-          refer to the first such instance that was created. This is especially
-          important when providing a different memory limit: only the value
-          (implicitly or explicitly) provided in the first such instantiation
-          is effective.
+                Repeated instantiations with a previously-used device-id will still
+                refer to the first such instance that was created. This is especially
+                important when providing a different memory limit: only the value
+                (implicitly or explicitly) provided in the first such instantiation
+                is effective.
 
-        .. code-block:: python
+                .. code-block:: python
 
-              from max import driver
-              # Create default accelerator (usually first available GPU)
-              device = driver.Accelerator()
-              # Or specify GPU id
-              device = driver.Accelerator(id=0)  # First GPU
-              device = driver.Accelerator(id=1)  # Second GPU
-              # Get device id
-              device_id = device.id
-              # Optionally specify memory limit
-              device = driver.Accelerator(id=0, device_memory_limit=256*MB)
-              device2 = driver.Accelerator(id=0, device_memory_limit=512*MB)
-              # ... device2 will use the memory limit of 256*MB
+                  from max import driver
+                  # Create default accelerator (usually first available GPU)
+                  device = driver.Accelerator()
+                  # Or specify GPU id
+                  device = driver.Accelerator(id=0)  # First GPU
+                  device = driver.Accelerator(id=1)  # Second GPU
+                  # Get device id
+                  device_id = device.id
+                  # Optionally specify memory limit
+                  device = driver.Accelerator(id=0, device_memory_limit=256*MB)
+                  device2 = driver.Accelerator(id=0, device_memory_limit=512*MB)
+                  # ... device2 will use the memory limit of 256*MB
 
-          Args:
-              id (int, optional): The device ID to use. Defaults to -1, which selects
-                  the first available accelerator.
-              device_memory_limit (int, optional): The maximum amount of memory
-                  in bytes that can be allocated on the device. Defaults to 99%
-                  of free memory.
+                Args:
+                    id (int, optional): The device ID to use. Defaults to -1, which selects
+                        the first available accelerator.
+                    device_memory_limit (int, optional): The maximum amount of memory
+                        in bytes that can be allocated on the device. Defaults to 99%
+                        of free memory.
 
-          Returns:
-              Accelerator: A new Accelerator device object.
+                Returns:
+                    Accelerator: A new Accelerator device object.
         """
 
 class CPU(Device):
