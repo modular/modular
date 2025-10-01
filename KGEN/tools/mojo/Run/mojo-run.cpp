@@ -233,23 +233,6 @@ static ErrorOrSuccess executeMain(ExecutionEngine &engine,
   return engine.runProgram("exec", "main", runFn);
 }
 
-/// Inserts the `M::Context` in the KGEN globals table so that Mojo code can
-/// pass this `M::Context` to the `EngineContext`.
-static ErrorOrSuccess insertMaxContextInGlobals(ExecutionEngine &engine,
-                                                M::Context &maxContext) {
-  // Get the insertion function from the KGENCompilerRT JIT Dylib.
-  auto insertGlobalFnOr = engine.lookup("KGEN_CompilerRT_InsertGlobal");
-  if (insertGlobalFnOr.isError())
-    return insertGlobalFnOr.takeError();
-  CompiledFunc &insertGlobalFn = *insertGlobalFnOr;
-
-  // Call the function to insert the `M::Context`.
-  insertGlobalFn.invoke<void, StringRef, void *>(StringRef("MaxContext"),
-                                                 (void *)&maxContext);
-
-  return M::success();
-}
-
 /// Ensures that the context's profiler, if there is one, copies any outstanding
 /// references into its own arena so that the profiler is fully self-contained.
 static void internTimeTraceProfile(M::Context &maxContext) {
@@ -321,11 +304,6 @@ static int executeModule(const State &state, AsyncRT::Runtime &runtime,
   if (failed(execEngineOr))
     return state.reportError(execEngineOr.getError());
   ExecutionEngine &engine = **execEngineOr;
-
-  // Insert the `M::Context` into the KGENCompilerRT globals.
-  // The MAX engine uses this mechanism to share globals with Mojo code.
-  if (auto errOr = insertMaxContextInGlobals(engine, maxContext))
-    return state.reportError(errOr.getError());
 
   // Load the compiled archive into the execution engine.
   if (ErrorOrSuccess err =
