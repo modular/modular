@@ -185,6 +185,9 @@ def test_memcmp_simd():
     c = memcmp(p2, p1, length)
     assert_equal(c, -1, "[..., 0, 120, 90] is smaller than [..., 120, 100]")
 
+    p1.free()
+    p2.free()
+
 
 def test_memcmp_extensive[
     dtype: DType, extermes: StaticString = ""
@@ -766,6 +769,8 @@ def test_indexing():
 
     assert_equal(ptr[Int(2)], 2)
     assert_equal(ptr[1], 1)
+
+    ptr.free()
 
 
 def main():
