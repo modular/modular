@@ -428,6 +428,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Step 2: Process images with custom image processor (if any)
         processed_images = {}
+        image_grid_thw = None
         if image_inputs:
             processed_images = self.img_processor(
                 images=image_inputs, return_tensors="pt"
