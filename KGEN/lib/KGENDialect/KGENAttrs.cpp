@@ -3375,8 +3375,7 @@ Type ToStringDeferredAttr::getType() const {
 
 LogicalResult
 ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr proposition, LocationAttr loc,
-                       StringAttr errorMsg) {
+                       TypedAttr proposition, LocationAttr loc) {
   // Verify that the proposition has i1 type
   if (!proposition.getType().isSignlessInteger(1)) {
     return emitError() << "constraint proposition must have i1 type, but got '"

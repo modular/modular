@@ -317,9 +317,9 @@ fn always_inline_builtin_4(a: Bool):
 # expected-note @+1 {{function declared here}}
 fn simple_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here}}
-  where x > 1 "x must be greater than 1"
+  where x > 1
   # expected-note @+1 {{constraint declared here}}
-  where y < 10 "y must be less than 10":
+  where y < 10:
     pass
 
 fn unfoldable_predicate(y: Int) -> Bool:
@@ -328,20 +328,20 @@ fn unfoldable_predicate(y: Int) -> Bool:
 # expected-note @+1 {{function declared here}}
 fn unprovable_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here}}
-  where x > 1 "x must be greater than 1"
+  where x > 1
   # expected-note @+1 {{constraint declared here}}
-  where unfoldable_predicate(y) "y must satisfy predicate":
+  where unfoldable_predicate(y):
     pass
 
 fn test_constraints():
-  # expected-error @+1 {{violated constraint 'x must be greater than 1'}}
+  # expected-error @+1 {{violated constraint}}
   simple_constraints[0, 0]()
-  # expected-error @+1 {{violated constraint 'y must be less than 10'}}
+  # expected-error @+1 {{violated constraint}}
   simple_constraints[2, 11]()
-  # expected-error @+1 {{violated multiple constraints}}
+  # expected-error @+1 {{violated constraints}}
   simple_constraints[0, 11]()
 
-  # expected-error @+1 {{violated constraint 'x must be greater than 1'}}
+  # expected-error @+1 {{violated constraint}}
   unprovable_constraints[0, 0]()
   # expected-error @+1 {{unable to satisfy constraint}}
   unprovable_constraints[2, 0]()

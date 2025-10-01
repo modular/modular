@@ -259,8 +259,7 @@ def TailKindAttr : DialectAttribute<(attr
 
 def ConstraintAttr : DialectAttribute<(attr
   TypedAttr:$prop,
-  ConcreteAttribute<"LocationAttr">:$loc,
-  ConcreteOptionalAttribute<"StringAttr">:$errorMsg
+  ConcreteAttribute<"LocationAttr">:$loc
 )>;
 
 def LLVMBitcodeLibAttr : DialectAttribute<(attr

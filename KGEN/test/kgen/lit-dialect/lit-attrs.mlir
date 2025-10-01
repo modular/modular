@@ -13,11 +13,11 @@
   pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
   pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>,
   pog3 = #lit.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, {
-    <1, loc("file.mojo":10:5), "Constraint must hold">
+    <1, loc("file.mojo":10:5)>
   }>,
   pog4 = #lit.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, {
-    <1, loc("file.mojo":10:5), "Constraint must hold">,
-    <pog1, loc("file.mojo":11:5), "Another constraint must hold">
+    <1, loc("file.mojo":10:5)>,
+    <pog1, loc("file.mojo":11:5)>
   }>
 } : () -> ()
 
@@ -78,24 +78,24 @@
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata5"
-// CHECK-SAME: 2 where {<1, #[[LOC1]], "First constraint">, <0, #[[LOC2]], "Second constraint">}
+// CHECK-SAME: 2 where {<1, #[[LOC1]]>, <0, #[[LOC2]]>}
 "some.metadata5"() {metadata = #lit.fn_metadata<
   <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
-  2 where {<1, #loc1, "First constraint">, <0, #loc2, "Second constraint">}
+  2 where {<1, #loc1>, <0, #loc2>}
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata6"
-// CHECK-SAME: 2, false where {<1, #[[LOC1]], "First constraint">, <0, #[[LOC2]], "Second constraint">}
+// CHECK-SAME: 2, false where {<1, #[[LOC1]]>, <0, #[[LOC2]]>}
 "some.metadata6"() {metadata = #lit.fn_metadata<
   <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
-  2, false where {<1, #loc1, "First constraint">, <0, #loc2, "Second constraint">}
+  2, false where {<1, #loc1>, <0, #loc2>}
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata7"
-// CHECK-SAME: 2, {mut lt} where {<1, #[[LOC1]], "First constraint">, <0, #[[LOC2]], "Second constraint">}
+// CHECK-SAME: 2, {mut lt} where {<1, #[[LOC1]]>, <0, #[[LOC2]]>}
 "some.metadata7"() {metadata = #lit.fn_metadata<
   <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
-  2, {mut lt} where {<1, #loc1, "First constraint">, <0, #loc2, "Second constraint">}
+  2, {mut lt} where {<1, #loc1>, <0, #loc2>}
 >} : () -> ()
 
 // CHECK-LABEL: "none.type"

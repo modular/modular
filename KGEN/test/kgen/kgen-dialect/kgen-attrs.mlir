@@ -196,8 +196,8 @@ kgen.generator @closureSymbol(){
 
 "some.op"() {
   a = 5 : index,
-  // CHECK: constraint1 = #kgen.constraint<1, #[[LOC_C1]], "Basic constraint must hold">
-  constraint1 = #kgen.constraint<1, loc("test.mojo":10:5), "Basic constraint must hold">,
+  // CHECK: constraint1 = #kgen.constraint<1, #[[LOC_C1]]>
+  constraint1 = #kgen.constraint<1, loc("test.mojo":10:5)>,
   // CHECK-SAME: constraint2 = #kgen.constraint<ge(a, 4), #[[LOC_C2]]>
   constraint2 = #kgen.constraint<ge(a, 4), loc("test.mojo":15:10)>
 } : () -> ()

@@ -132,7 +132,6 @@ struct ParsedArgument {
 
 struct ParsedConstraint {
   SMLoc loc;
-  StringAttr errorMsg;
   ExprNode *propExpr;
 
   ParseResult parse(ParserBase &p);

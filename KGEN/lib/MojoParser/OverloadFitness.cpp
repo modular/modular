@@ -903,13 +903,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       },
       /*emitConstraintViolations=*/
       [&](ArrayRef<ConstraintAttr> constraints) {
-        if (constraints.size() == 1) {
-          diag << "violated constraint";
-          if (auto errorMsg = constraints[0].getErrorMsg())
-            diag << ' ' << errorMsg;
-        } else {
-          diag << "violated multiple constraints";
-        }
+        diag << "violated constraint" << plural(constraints.size());
         for (auto constraint : constraints)
           diag.attachNote(constraint.getLoc()) << "constraint declared here";
       },
