@@ -1898,8 +1898,10 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Parameters form a meta-value.
   if (auto aliasDeclOpParam =
           dyn_cast_or_null<AliasDeclOp>(memberDecl.getIfOperation())) {
-    // Case: Accessing an alias of a statically-known struct type.
-    if (isa_and_nonnull<StructDeclOp>(typeDecl->getIfOperation())) {
+    // Handle accessing an alias in a struct or an extension.
+    if (isa_and_nonnull<StructDeclOp>(typeDecl->getIfOperation()) ||
+        isa_and_nonnull<ExtensionDeclOp>(
+            memberDecl.getParentDecl()->getIfOperation())) {
       PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
                                             baseRVType.getParamBindings(),
                                             getLoc(), emitter);
@@ -1909,7 +1911,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // If we get here, we're accessing an alias in a trait.
     assert((isa_and_nonnull<TraitDeclOp>(typeDecl->getIfOperation()) ||
             isa<TraitType>(typeDecl->getIfTypeValue())) &&
-           "Alias's parent should be struct or trait");
+           "Alias's parent should be struct, trait, or extension");
     PValue basePValue = baseVal.getIfPValue();
     if (!basePValue) {
       emitter.emitError(getLoc(), "can't access '")
