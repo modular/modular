@@ -97,7 +97,6 @@ _FILECHECK_TESTS = [
     "test_block_swizzle.mojo",
     "test_matmul_selection_heuristic.mojo",
     "test_matmul_tile_scheduler.mojo",
-    "test_gemv.mojo",  # TODO: Remove filecheck usage
     "test_matmul_tile_scheduler_sm100.mojo",
 ]
 
