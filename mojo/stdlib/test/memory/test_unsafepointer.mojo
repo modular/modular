@@ -258,6 +258,8 @@ def test_indexing():
     assert_equal(ptr[Int(1)], 1)
     assert_equal(ptr[3], 3)
 
+    ptr.free()
+
 
 def test_indexing_simd():
     var ptr = UnsafePointer[Int].alloc(4)
@@ -280,6 +282,8 @@ def test_indexing_simd():
     assert_equal(ptr[Int32(3)], 3)
     assert_equal(ptr[Int64(1)], 1)
     assert_equal(ptr[Int64(3)], 3)
+
+    ptr.free()
 
 
 def test_bool():
@@ -333,12 +337,14 @@ def test_load_and_store_simd():
     for i in range(0, 16, 4):
         var vec = ptr.load[width=4](i)
         assert_equal(vec, SIMD[DType.int8, 4](i, i + 1, i + 2, i + 3))
+    ptr.free()
 
     var ptr2 = UnsafePointer[Int8].alloc(16)
     for i in range(0, 16, 4):
         ptr2.store(i, SIMD[DType.int8, 4](i))
     for i in range(16):
         assert_equal(ptr2[i], i // 4 * 4)
+    ptr2.free()
 
 
 def test_volatile_load_and_store_simd():
@@ -348,12 +354,14 @@ def test_volatile_load_and_store_simd():
     for i in range(0, 16, 4):
         var vec = ptr.load[width=4, volatile=True](i)
         assert_equal(vec, SIMD[DType.int8, 4](i, i + 1, i + 2, i + 3))
+    ptr.free()
 
     var ptr2 = UnsafePointer[Int8].alloc(16)
     for i in range(0, 16, 4):
         ptr2.store[volatile=True](i, SIMD[DType.int8, 4](i))
     for i in range(16):
         assert_equal(ptr2[i], i // 4 * 4)
+    ptr2.free()
 
 
 # Test pointer merging with ternary operation.
