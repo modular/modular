@@ -51,8 +51,9 @@ class DeviceSpec:
 
     def __post_init__(self) -> None:
         if self.device_type == "gpu" and self.id < 0:
-            msg = f"id provided {self.id} for accelerator must always be greater than 0"
-            raise ValueError(msg)
+            raise ValueError(
+                f"id provided {self.id} for accelerator must always be greater than 0"
+            )
 
     @staticmethod
     def cpu(id: int = -1):
@@ -74,12 +75,13 @@ def load_devices(device_specs: list[DeviceSpec]) -> list[Device]:
             devices.append(CPU(device_spec.id))
         else:
             if device_spec.id >= num_devices_available:
-                msg = f"Device {device_spec.id} was requested but "
                 if num_devices_available == 0:
-                    msg += "no devices were found."
+                    reason = "no devices were found."
                 else:
-                    msg += f"only found {num_devices_available} devices."
-                raise ValueError(msg)
+                    reason = f"only found {num_devices_available} devices."
+                raise ValueError(
+                    f"Device {device_spec.id} was requested but {reason}"
+                )
 
             devices.append(Accelerator(device_spec.id))
 

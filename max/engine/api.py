@@ -494,9 +494,10 @@ class InferenceSession:
         if not isinstance(precision, SplitKReductionPrecision):
             try:
                 precision = SplitKReductionPrecision[precision]
-            except:
-                msg = f"Invalid precision ({precision}). Please use one of: {[x.name for x in SplitKReductionPrecision]}"
-                raise TypeError(msg)  # noqa: B904
+            except Exception as e:
+                raise TypeError(
+                    f"Invalid precision ({precision}). Please use one of: {[x.name for x in SplitKReductionPrecision]}"
+                ) from e
 
         self._set_mojo_define("SPLITK_REDUCTION_SCHEME", precision)
 
@@ -505,9 +506,10 @@ class InferenceSession:
         if not isinstance(level, LogLevel):
             try:
                 level = LogLevel[level]
-            except:
-                msg = f"Invalid log level ({level}). Please use one of: {[x.name for x in LogLevel]}"
-                raise TypeError(msg)  # noqa: B904
+            except Exception as e:
+                raise TypeError(
+                    f"Invalid log level ({level}). Please use one of: {[x.name for x in LogLevel]}"
+                ) from e
 
         self._set_mojo_define("LOGGING_LEVEL", level)
 
@@ -516,9 +518,10 @@ class InferenceSession:
         if not isinstance(level, AssertLevel):
             try:
                 level = AssertLevel[level]
-            except:
-                msg = f"Invalid assert level ({level}). Please use one of: {[x.name for x in AssertLevel]}"
-                raise TypeError(msg)  # noqa: B904
+            except Exception as e:
+                raise TypeError(
+                    f"Invalid assert level ({level}). Please use one of: {[x.name for x in AssertLevel]}"
+                ) from e
 
         self._set_mojo_define("ASSERT", level)
 
@@ -545,8 +548,9 @@ class InferenceSession:
         """Level of overlap of kernel launch."""
         if not isinstance(level, PdlLevel):
             if level not in {"0", "1", "2"}:
-                msg = f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PdlLevel]}"
-                raise TypeError(msg)
+                raise TypeError(
+                    f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PdlLevel]}"
+                )
 
         self._set_mojo_define("PDL_LEVEL", int(level))
 
