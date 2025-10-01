@@ -44,6 +44,9 @@ Literals now have a default type. For example, you can now bind
 
 ### Tooling changes
 
+- Error messages now preserve symbolic calls to `always_inline("builtin")`
+  functions rather than inlining them into the error message.
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
