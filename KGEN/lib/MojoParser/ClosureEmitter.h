@@ -107,22 +107,6 @@ private:
   /// function pointer of the same function signature.
   void synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
                                   FnTypeGeneratorType sig);
-  /// Given a name, a list of builtin parent traits (like "Movable" for
-  /// example), a location, and a populate method, return a trait declaration
-  /// that inherits from the parent and contains the methods added to the
-  /// function list populated by the populate method.
-  std::pair<TraitDeclOp, ASTDecl *>
-  createTraitOp(ASTDecl &moduleDecl, StringAttr name,
-                ArrayRef<StringRef> parents, SMLoc nestedFunctionOrTypeLocation,
-                llvm::function_ref<void(
-                    ASTDecl &traitDecl,
-                    DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
-                    populateTrait);
-
-  /// Generate a witness table for a closure op.
-  TypedAttr addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc,
-                                      FnOp parent, ClosureType closureType,
-                                      TraitDeclOp trait);
 
 public:
   /// If the wrapper conforms to a trait that is compatible with the desired
@@ -134,10 +118,18 @@ public:
   LogicalResult augmentWitnessTablesToConformTo(ASTType structType,
                                                 ASTDecl *closureTrait);
   struct ClosureParent {
-    ClosureParent(StringRef name, StringRef fnName)
-        : traitName(name), traitFnName(fnName) {}
+    ClosureParent(StringRef name, StringRef fnName, ClosureMethod closureMethod)
+        : traitName(name), traitFnName(fnName), closureMethod(closureMethod) {}
+    ClosureParent(TraitDeclOp trait, FnOp definingOp,
+                  ClosureMethod closureMethod)
+        : traitFnName(*definingOp.getSourceName()), trait(trait),
+          definingFn(definingOp), closureMethod(closureMethod) {}
     TraitDeclOp getTrait(ASTDecl &moduleDecl);
     FnOp getDefiningOp(ASTDecl &moduleDecl);
+    SymbolRefAttr getSymbolRef(ASTDecl &moduleDecl);
+    StringRef getDefiningOpName() const { return traitFnName; }
+    StringAttr getFullSymbolName(ASTDecl &moduleDecl);
+    ClosureMethod getClosureMethod() const { return closureMethod; }
 
   private:
     StringRef traitName;
@@ -146,7 +138,31 @@ public:
     TraitDeclOp trait;
     /// all closure parents have a single defining function.
     FnOp definingFn;
+    /// symbol of the trait.
+    SymbolRefAttr sym;
+    /// full symbol name as string
+    StringAttr fullSymbolName;
+    /// closure method tag corresponding to the method this parent represents.
+    ClosureMethod closureMethod;
   };
+
+private:
+  /// Given a name, a list of builtin parent traits (like "Movable" for
+  /// example), a location, and a populate method, return a trait declaration
+  /// that inherits from the parent and contains the methods added to the
+  /// function list populated by the populate method.
+  std::pair<TraitDeclOp, ASTDecl *> createTraitOp(
+      ASTDecl &moduleDecl, StringAttr name, SmallVector<ClosureParent> &parents,
+      SMLoc nestedFunctionOrTypeLocation,
+      llvm::function_ref<
+          void(ASTDecl &traitDecl,
+               DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
+          populateTrait);
+  /// Generate a witness table for a closure op.
+  TypedAttr
+  addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent,
+                            ClosureType closureType,
+                            SmallVector<ClosureParent> &closureParents);
   /// Movable trait is a parent of all closures. Cache its defining op.
   ClosureParent moveParent;
   /// Anytype trait is a parent of all closures. Cache its defining op.

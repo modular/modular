@@ -83,7 +83,8 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
-      moveParent("Movable", "__moveinit__"), anyParent("AnyType", "__del__") {}
+      moveParent("Movable", "__moveinit__", ClosureMethod::MOVE),
+      anyParent("AnyType", "__del__", ClosureMethod::DEL) {}
 
 TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
   if (trait)
@@ -115,6 +116,24 @@ FnOp ClosureEmitter::ClosureParent::getDefiningOp(ASTDecl &moduleDecl) {
     return definingFn;
   getTrait(moduleDecl);
   return definingFn;
+}
+
+SymbolRefAttr ClosureEmitter::ClosureParent::getSymbolRef(ASTDecl &moduleDecl) {
+  if (sym)
+    return sym;
+  sym = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(getTrait(moduleDecl).getOperation()));
+  return sym;
+}
+
+StringAttr
+ClosureEmitter::ClosureParent::getFullSymbolName(ASTDecl &moduleDecl) {
+  if (fullSymbolName)
+    return fullSymbolName;
+  SymbolRefAttr parentSymbol = getSymbolRef(moduleDecl);
+  fullSymbolName = StringAttr::get(parentSymbol.getContext(),
+                                   getFlattenedSymbolName(parentSymbol));
+  return fullSymbolName;
 }
 
 static StructFieldOp addFieldOpAndDecl(StringAttr name, Type type,
@@ -374,7 +393,8 @@ struct ParamIndexRefReplacer
 } // namespace
 
 std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
-    ASTDecl &moduleDecl, StringAttr name, ArrayRef<StringRef> parentNames,
+    ASTDecl &moduleDecl, StringAttr name,
+    SmallVector<ClosureParent> &closureParents,
     SMLoc nestedFunctionOrTypeLocation,
     llvm::function_ref<
         void(ASTDecl &traitDecl,
@@ -397,20 +417,21 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
   closureTrait.setDefinesClosure(true);
   // Populate the trait with parent and self methods.
   SmallVector<SymbolRefAttr> parents;
-  for (StringRef parent : parentNames) {
-    if (auto anyType = shared.lookupBuiltinTrait(parent, &moduleDecl,
-                                                 nestedFunctionOrTypeLocation))
-      parents.push_back(anyType->getSymbolRef());
-  }
-
   DenseSet<SymbolRefAttr> immediateParents;
-  for (auto p : parents)
-    immediateParents.insert(p);
+  for (ClosureParent &p : closureParents) {
+    SymbolRefAttr sym = p.getSymbolRef(moduleDecl);
+    immediateParents.insert(sym);
+    parents.push_back(sym);
+  }
   (void)shared.declResolver->addSelfTypeToTrait(closureTrait, traitDecl,
                                                 parents, immediateParents);
   DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
   populateTrait(traitDecl, existingFns);
   shared.declResolver->addParentDeclsToTrait(closureTrait, traitDecl);
+  /// Force synthesis of the anytype and movable members in the closure trait.
+  for (const ClosureParent &p : closureParents)
+    shared.lookupAndResolveDecl(p.getDefiningOpName(), traitDecl.getLoc(),
+                                traitDecl, /*searchParentScopes=*/false);
   return std::pair<TraitDeclOp, ASTDecl *>(closureTrait, &traitDecl);
 }
 
@@ -494,6 +515,19 @@ getUnwrappedOperands(ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
   }
 }
 
+static TraitType
+getTraitType(SmallVector<ClosureEmitter::ClosureParent> &closureParents,
+             ASTDecl &moduleDecl) {
+  SmallVector<SymbolRefAttr> symbols;
+  llvm::append_range(
+      symbols, llvm::map_to_vector(closureParents,
+                                   [&](ClosureEmitter::ClosureParent &parent) {
+                                     return parent.getSymbolRef(moduleDecl);
+                                   }));
+  // TODO: this should be all symbols
+  return TraitType::get(moduleDecl.getContext(), symbols.front());
+}
+
 ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
                                              StringRef baseName,
                                              ASTDecl &traitDecl,
@@ -506,16 +540,6 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
 
-  auto parentTraitForSourceName = [&](StringRef name) {
-    if (name == "__call__")
-      return trait;
-    if (name == "__moveinit__")
-      return moveParent.getTrait(moduleDecl);
-    assert(name == "__del__" &&
-           "closures only have three methods: call, move, del.");
-    return anyParent.getTrait(moduleDecl);
-  };
-
   auto module = cast<FileModuleOp>(moduleDecl.getIfOperation());
   Location location = shared.diags.translateLocation(smLocation);
   ImplicitLocOpBuilder b =
@@ -527,8 +551,11 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   SmallVector<FlatSymbolRefAttr> path(
       moduleDecl.getSymbolRef().getNestedReferences());
   path.push_back(FlatSymbolRefAttr::get(trait.getSymNameAttr()));
-  SymbolRefAttr symbol = traitDecl.getSymbolRef();
-  TraitType traitType = TraitType::get(ctx, symbol);
+  SmallVector<ClosureParent> closureParents{
+      ClosureParent(trait, getFnOpNamed(trait, "__call__"),
+                    ClosureMethod::CALL),
+      moveParent, anyParent};
+  TraitType traitType = getTraitType(closureParents, moduleDecl);
 
   // Give the struct a parameter "impl" of metatype trait.
   SmallVector<ParamDeclAttr> implParameters;
@@ -554,7 +581,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   StructFieldOp wrappedField = *declOp.getFieldDecls().begin();
 
   // Populate the wrapper methods with a call to the result of a witness lookup.
-  auto populateTraitFn = [&](FnOp traitFnOp) -> FnOp {
+  auto populateTraitFn = [&](ClosureParent &closureParent) -> FnOp {
+    FnOp traitFnOp = closureParent.getDefiningOp(moduleDecl);
     b.setInsertionPointToEnd(&declOp.getFields().front());
     FnTypeGeneratorType wrappedSignature =
         specializeSignature(traitFnOp, selfType, *shared.declResolver);
@@ -609,12 +637,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
       explicitParameters.insert(explicitParam.getName().getValue());
     getUnwrappedOperands(b, op, wrapperType, wrappedField, explicitParameters,
                          operands, origins);
-    TraitDeclOp parentTrait =
-        parentTraitForSourceName(*traitFnOp.getSourceName());
-    SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
-        cast<mlir::SymbolOpInterface>(parentTrait.getOperation()));
-    StringAttr parentName =
-        StringAttr::get(ctx, getFlattenedSymbolName(parentSymbol));
+    StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
     TypedAttr symbol = GetWitnessAttr::get(
         ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
         parentName, op.getSourceNameAttr(), wrappedSignature);
@@ -632,18 +655,15 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
     return op;
   };
   DenseMap<StringRef, FnOp> nameToImpl;
-  for (auto decls : traitDecl.getDeclsInScope()) {
-    for (auto method : decls.second) {
-      auto fnOp = dyn_cast_or_null<FnOp>(method->getIfOperation());
-      if (!fnOp)
-        continue;
-
-      assert(succeeded(shared.declResolver->resolveSignature(
-                 *method, method->getLoc())) &&
-             "builtin trait nested decls should not fail signature resolution");
-      nameToImpl.insert({fnOp.getSourceName().value(), populateTraitFn(fnOp)});
-    }
-  }
+  SmallVector<FnOp> traitMethods;
+  llvm::append_range(
+      traitMethods,
+      llvm::map_to_vector(closureParents, [&](ClosureParent &parent) {
+        return parent.getDefiningOp(moduleDecl);
+      }));
+  for (ClosureParent &closureParent : closureParents)
+    nameToImpl.insert(
+        {closureParent.getDefiningOpName(), populateTraitFn(closureParent)});
   // Emit conformance tables
   StringAttr moveParentStrAttr;
   auto addWitnessEntry = [&](TraitDeclOp traitParent, FnOp fnOp) {
@@ -688,11 +708,9 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
         SymbolConstantAttr::get(ctx, implSymbol, params, baseSigGen);
     b.create<WitnessOp>(StringAttr::get(ctx, name), symbolConstant);
   };
-  addWitnessEntry(trait, getFnOpNamed(trait, "__call__"));
-  addWitnessEntry(moveParent.getTrait(moduleDecl),
-                  moveParent.getDefiningOp(moduleDecl));
-  addWitnessEntry(anyParent.getTrait(moduleDecl),
-                  anyParent.getDefiningOp(moduleDecl));
+  for (ClosureParent &closureParent : closureParents)
+    addWitnessEntry(closureParent.getTrait(moduleDecl),
+                    closureParent.getDefiningOp(moduleDecl));
 
   assert(moveParentStrAttr && "closures are expected to conform to move");
   auto initName = StringAttr::get(ctx, "__init__");
@@ -727,14 +745,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   // Generate the body of the constructor, which should contain a call to the
   // move constructor.
   StringAttr moveName = StringAttr::get("__moveinit__", StringType::get(ctx));
-  FnOp moveFn;
-  for (auto fnOp : trait.getFields().getOps<FnOp>()) {
-    if (fnOp.getSourceName() == "__moveinit__") {
-      moveFn = fnOp;
-      break;
-    }
-  }
-  assert(moveFn && "closures are movable but cannot find the move function.");
+  FnOp moveFn = moveParent.getDefiningOp(moduleDecl);
   FnTypeGeneratorType moveSignature =
       specializeSignature(moveFn, paramType, *shared.declResolver);
   b.setInsertionPointToStart(&initFnOp.getBodyRegion().front());
@@ -774,7 +785,7 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
                                    InlineLevel inlineLevel) {
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
-  SmallVector<StringRef> parents{"Movable", "AnyType"};
+  SmallVector<ClosureParent> parents{moveParent, anyParent};
   auto populate = [&](ASTDecl &decl,
                       DenseSet<std::pair<StringAttr, StringAttr>> &functions) {
     TraitDeclOp closureTrait = cast<TraitDeclOp>(decl.getIfOperation());
@@ -1610,10 +1621,9 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
   return init;
 }
 
-TypedAttr ClosureEmitter::addWitnessTablesToClosure(ASTDecl &moduleDecl,
-                                                    SMLoc smLoc, FnOp parent,
-                                                    ClosureType closureType,
-                                                    TraitDeclOp trait) {
+TypedAttr ClosureEmitter::addWitnessTablesToClosure(
+    ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent, ClosureType closureType,
+    SmallVector<ClosureParent> &closureParents) {
   // create kgen.struct.generator
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
@@ -1635,37 +1645,26 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(ASTDecl &moduleDecl,
       &cast<ModuleOp>(shared.getTopLevelDecl().getIfOperation())
            .getBodyRegion()
            .front());
-  TraitType traitType = TraitType::get(getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(trait.getOperation())));
+  TraitType traitType = getTraitType(closureParents, moduleDecl);
   auto structGen = builder.create<StructGeneratorOp>(symName, parameters,
                                                      closureType, traitType);
   Block *structGenBody = builder.createBlock(&structGen.getRegion());
 
   // Emit the conformance ops into the struct gen body by finding the closure
   // method and FnOp associated with the parent trait.
-  auto addWitnessTable = [&](TraitDeclOp traitParent, FnOp fnOp) {
-    ClosureMethod method;
-    StringRef sourceName = *fnOp.getSourceName();
-    if (sourceName == "__moveinit__")
-      method = ClosureMethod::MOVE;
-    else if (sourceName == "__call__")
-      method = ClosureMethod::CALL;
-    else if (sourceName == "__del__")
-      method = ClosureMethod::DEL;
-    else
-      assert(false && "closures should only define del, call, and move but "
-                      "trait specifies unrecognized method");
+  auto addWitnessTable = [&](ClosureParent &closureParent) {
+    ClosureMethod method = closureParent.getClosureMethod();
+    TraitDeclOp traitParent = closureParent.getTrait(moduleDecl);
     builder.setInsertionPointToStart(structGenBody);
     SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
-    SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
-        cast<mlir::SymbolOpInterface>(traitParent.getOperation()));
-    StringAttr parentName =
-        builder.getStringAttr(getFlattenedSymbolName(parentSymbol));
+    SymbolRefAttr parentSymbol = closureParent.getSymbolRef(moduleDecl);
+    StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
     ConformanceOp witnessTable = builder.create<ConformanceOp>(
         parentName, parentSymbol, immediateParents);
     Block &block = witnessTable.getBody().emplaceBlock();
     builder.setInsertionPointToStart(&block);
 
+    FnOp fnOp = closureParent.getDefiningOp(moduleDecl);
     FnTypeGeneratorType sig =
         specializeSignature(fnOp, closureType, *shared.declResolver);
     SmallVector<TypedAttr> paramValues;
@@ -1685,11 +1684,8 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(ASTDecl &moduleDecl,
         ClosureMethodAttr::get(ctx, method), paramValues, sig);
     builder.create<WitnessOp>(fnOp.getSourceNameAttr(), symbol);
   };
-  addWitnessTable(trait, getFnOpNamed(trait, "__call__"));
-  addWitnessTable(moveParent.getTrait(moduleDecl),
-                  moveParent.getDefiningOp(moduleDecl));
-  addWitnessTable(anyParent.getTrait(moduleDecl),
-                  anyParent.getDefiningOp(moduleDecl));
+  for (ClosureParent &closureParent : closureParents)
+    addWitnessTable(closureParent);
 
   // create a SymbolRefAttr from the StructGeneratorOp
   SymbolRefAttr structGenSymbolRef = getFullyResolvedSymbolRef(
@@ -1839,8 +1835,12 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   }
   StringAttr originAttr =
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue());
+  SmallVector<ClosureParent> closureParents{
+      ClosureParent(trait, getFnOpNamed(trait, "__call__"),
+                    ClosureMethod::CALL),
+      moveParent, anyParent};
   TypedAttr witnessTable = addWitnessTablesToClosure(
-      moduleDecl, nestedFnDecl.getLoc(), parent, closureType, trait);
+      moduleDecl, nestedFnDecl.getLoc(), parent, closureType, closureParents);
   ParamDeclAttr origin =
       ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
   auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));

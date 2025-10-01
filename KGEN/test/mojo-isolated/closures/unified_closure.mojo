@@ -35,10 +35,12 @@
 # CHECK-NEXT:  lit.return [[RES]]
 # CHECK-NEXT:  lit.end_fn
 # CHECK-NEXT: }
-# CHECK: lit.fn @"__del__({{.*}})"[mut *"[[L1:.*]]`"](%self: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> owned_in_mem, |) -> !kgen.none
-# CHECK: lit.ownership.mark_destroyed %self
+
 # CHECK: lit.fn @"__moveinit__({{.*}})"[mut *"[[L2:.*]]`", mut *"[[L3:.*]]`"](%existing: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L2]]`"> owned_in_mem, |, ?, %self: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L3]]`"> byref_result) -> !kgen.none
 # CHECK: lit.ownership.mark_destroyed %existing
+
+# CHECK: lit.fn @"__del__({{.*}})"[mut *"[[L1:.*]]`"](%self: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> owned_in_mem, |) -> !kgen.none
+# CHECK: lit.ownership.mark_destroyed %self
 
 
 fn make_closure(x: Int):
@@ -97,7 +99,7 @@ struct Foo[T: Movable, b: T]:
     pass
 
 
-# CHECK-DAG: [[TRAIT:!None.*]] = !lit.trait<@"fn[T: MyInterface, b: T, c: Foo[T, b]](a: T) -> None">
+# CHECK: [[TRAIT:!None.*]] = !lit.trait<@"fn[T: MyInterface, b: T, c: Foo[T, b]](a: T) -> None">
 # CHECK: lit.trait.decl @"fn[T: MyInterface, b: T, c: Foo[T, b]](a: T) -> None"<?, *"_Self`{{.*}}": [[TRAIT]]>(!{{.*}}) unspecified attributes {{{.*}}} {
 # CHECK: lit.fn @"__call__{{.*}}"<T: !MyInterface, b: !kgen.param<:!MyInterface T>, c: @{{.*}}::@Foo<:!Movable {{.*}}, :!kgen.param<:!MyInterface T> b>>
 # CHECK-SAME: [mut *"self`", imm *"[[L1:.*]]`"](%0[*""]: !lit.ref<:[[TRAIT]] *"_Self`{{.*}}", mut *"self`"> read_mem, |, %a: !lit.ref<:!MyInterface T, imm *"[[L1]]`"> read_mem) -> !kgen.none
@@ -116,7 +118,7 @@ fn make_closure(x: Int) -> Int:
 
 # CHECK: [[TRAIT:!None.*]] = !lit.trait<@"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None">
 
-# CHECK-LABEL: lit.struct.decl @"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper"
+# CHECK: lit.struct.decl @"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper"
 # CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>([[TRAIT]]) attributes {synthetic} {
 # CHECK-NEXT: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: origin<1>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper"
