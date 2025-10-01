@@ -222,9 +222,7 @@ struct Span[
         # TODO: Introduce a new slice type that just has a start+end but no
         # step.  Mojo supports slice type inference that can express this in the
         # static type system instead of debug_assert.
-        debug_assert(
-            step == 1, "Slice step must be 1", location=__call_location()
-        )
+        debug_assert(step == 1, "Slice step must be 1")
 
         return Self(
             ptr=(self._data + start), length=UInt(len(range(start, end, step)))
@@ -421,7 +419,6 @@ struct Span[
             0 <= index(idx) < len(self),
             "Index out of bounds: ",
             index(idx),
-            location=__call_location(),
         )
         return self._data[idx]
 
@@ -463,7 +460,6 @@ struct Span[
         debug_assert(
             len(self) == len(other),
             "Spans must be of equal length",
-            location=__call_location(),
         )
         for i in range(len(self)):
             self[i] = other[i].copy()
@@ -555,13 +551,11 @@ struct Span[
             0 <= a < len(self),
             "Index `a` out of bounds: ",
             a,
-            location=__call_location(),
         )
         debug_assert(
             0 <= b < len(self),
             "Index `b` out of bounds: ",
             b,
-            location=__call_location(),
         )
         var ptr = self.unsafe_ptr()
 
@@ -776,11 +770,9 @@ struct Span[
             0 <= offset < len(self),
             "offset out of bounds: ",
             offset,
-            location=__call_location(),
         )
         debug_assert(
             0 <= offset + length <= len(self),
             "subspan out of bounds.",
-            location=__call_location(),
         )
         return Self(ptr=self._data + offset, length=length)
