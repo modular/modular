@@ -4,7 +4,10 @@ modular_py_library(
     name = "benchmark_serving_lib",
     srcs = glob(
         ["*.py"],
-        exclude = ["serve_replay.py"],
+        exclude = [
+            "serve_replay.py",
+            "benchmark_throughput.py",
+        ],
     ),
     data = [
         ":benchmark_config_yaml_files",
@@ -93,6 +96,34 @@ modular_py_library(
         requirement("numpy"),
         requirement("msgspec"),
         requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
+    name = "benchmark_throughput",
+    srcs = [
+        "benchmark_throughput.py",
+    ],
+    data = [
+        ":yaml_files",
+        # TODO: Why do we need these?
+        "//KGEN/tools/mojo",
+        "//SDK:max",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":benchmark_config",
+        ":benchmark_datasets",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/serve",
+        requirement("click"),
+        requirement("msgspec"),
+        requirement("pyarrow"),
+        requirement("pyyaml"),
         requirement("transformers"),
     ],
 )
