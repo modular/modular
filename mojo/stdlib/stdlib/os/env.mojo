@@ -40,11 +40,6 @@ fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
       False if the name is empty or contains an `=` character. In any other
       case, True is returned.
     """
-
-    @parameter
-    if CompilationTarget.is_windows():
-        return False
-
     var status = external_call["setenv", Int32](
         name.unsafe_cstr_ptr(),
         value.unsafe_cstr_ptr(),
@@ -62,11 +57,6 @@ fn unsetenv(var name: String) -> Bool:
     Returns:
         True if unsetting the variable succeeded. Otherwise, False is returned.
     """
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
-
     return external_call["unsetenv", c_int](name.unsafe_cstr_ptr()) == 0
 
 
@@ -85,11 +75,6 @@ fn getenv(var name: String, default: String = "") -> String:
     Returns:
       The value of the environment variable.
     """
-
-    @parameter
-    if CompilationTarget.is_windows():
-        return default
-
     var ptr = external_call["getenv", UnsafePointer[UInt8]](
         name.unsafe_cstr_ptr()
     )

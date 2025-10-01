@@ -62,15 +62,8 @@ def test_empty_path():
     _splitroot_test("", "", "", "")
 
 
-def test_windows_directory():
-    _splitroot_test("c:/a/b", "", "", "c:/a/b")
-    _splitroot_test("\\/a/b", "", "", "\\/a/b")
-    _splitroot_test("\\a\\b", "", "", "\\a\\b")
-
-
 def main():
     test_absolute_path()
     test_relative_path()
     test_root_directory()
     test_empty_path()
-    test_windows_directory()

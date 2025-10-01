@@ -34,11 +34,6 @@ from ._macos import _stat as _stat_macos
 # ===----------------------------------------------------------------------=== #
 # Utilities
 # ===----------------------------------------------------------------------=== #
-fn _constrain_unix():
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -210,7 +205,6 @@ fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     Returns:
       Returns the stat_result on the path.
     """
-    _constrain_unix()
     var fspath = path.__fspath__()
 
     @parameter
@@ -238,7 +232,6 @@ fn lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     Returns:
       Returns the stat_result on the path.
     """
-    _constrain_unix()
     var fspath = path.__fspath__()
 
     @parameter

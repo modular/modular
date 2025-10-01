@@ -29,7 +29,7 @@ from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "\\" if CompilationTarget.is_windows() else "/"
+alias sep = "/"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -91,11 +91,6 @@ struct _DirHandle:
         Args:
           path: The path to open.
         """
-        constrained[
-            not CompilationTarget.is_windows(),
-            "operation is only available on unix systems",
-        ]()
-
         if not isdir(path):
             raise Error("the directory '", path, "' does not exist")
 
@@ -188,10 +183,6 @@ fn getuid() -> Int:
     Constraints:
         This function is constrained to run on Linux or macOS operating systems only.
     """
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
     return Int(external_call["getuid", UInt32]())
 
 

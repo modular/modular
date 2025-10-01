@@ -95,27 +95,16 @@ def test_read_write_bytes():
 
 
 fn get_user_path() -> Path:
-    @parameter
-    if CompilationTarget.is_windows():
-        return Path("C:") / "Users" / "user"
     return Path("/home/user")
 
 
 fn get_current_home() -> String:
-    @parameter
-    if CompilationTarget.is_windows():
-        return os.env.getenv("USERPROFILE")
     return os.env.getenv("HOME")
 
 
 def set_home(path: Path):
     path_str = String(path)
-
-    @parameter
-    if CompilationTarget.is_windows():
-        _ = os.env.setenv("USERPROFILE", path_str)
-    else:
-        _ = os.env.setenv("HOME", path_str)
+    _ = os.env.setenv("HOME", path_str)
 
 
 # More elaborate tests in `os/path/test_expanduser.mojo`

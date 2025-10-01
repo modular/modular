@@ -34,11 +34,6 @@ struct _POpenHandle:
           cmd: The command to open.
           mode: The mode to open the file in (the mode can be "r" or "w").
         """
-        constrained[
-            not CompilationTarget.is_windows(),
-            "popen is only available on unix systems",
-        ]()
-
         if mode != "r" and mode != "w":
             raise Error("the mode specified `", mode, "` is not valid")
 

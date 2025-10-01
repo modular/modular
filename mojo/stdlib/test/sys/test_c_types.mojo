@@ -25,9 +25,7 @@ from test_utils import TestSuite
 
 def test_c_int_type():
     if is_64bit() and (
-        CompilationTarget.is_macos()
-        or CompilationTarget.is_linux()
-        or CompilationTarget.is_windows()
+        CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
         # `int` is always 32 bits on the modern 64-bit OSes.
         assert_equal(c_int.dtype, DType.int32)
@@ -42,19 +40,13 @@ def test_c_long_types():
         # `long` is 64 bits on macOS and Linux.
         assert_equal(c_long.dtype, DType.int64)
         assert_equal(c_ulong.dtype, DType.uint64)
-    elif is_64bit() and CompilationTarget.is_windows():
-        # `long` is 32 bits only on Windows.
-        assert_equal(c_long.dtype, DType.int32)
-        assert_equal(c_ulong.dtype, DType.uint32)
     else:
         assert_true(False, "platform c_long and c_ulong size is untested")
 
 
 def test_c_long_long_types():
     if is_64bit() and (
-        CompilationTarget.is_macos()
-        or CompilationTarget.is_linux()
-        or CompilationTarget.is_windows()
+        CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
         assert_equal(c_long_long.dtype, DType.int64)
         assert_equal(c_ulong_long.dtype, DType.uint64)

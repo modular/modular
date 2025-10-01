@@ -25,7 +25,6 @@ from test_utils import TestSuite
 fn test_os_query() raises:
     assert_true(CompilationTarget.is_macos())
     assert_false(CompilationTarget.is_linux())
-    assert_false(CompilationTarget.is_windows())
 
     # The mac systems are either arm64 or intel, so they are always little
     # endian at the moment.

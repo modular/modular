@@ -93,10 +93,6 @@ fn getpwuid(uid: Int) raises -> Passwd:
         This function is constrained to run on Linux or macOS operating systems
         only.
     """
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
 
     @parameter
     if CompilationTarget.is_macos():
@@ -125,10 +121,6 @@ fn getpwnam(var name: String) raises -> Passwd:
         This function is constrained to run on Linux or macOS operating systems
         only.
     """
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
 
     @parameter
     if CompilationTarget.is_macos():

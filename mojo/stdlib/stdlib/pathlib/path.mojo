@@ -21,7 +21,7 @@ from sys.ffi import c_char
 
 from builtin._location import __call_location
 
-alias DIR_SEPARATOR = "\\" if CompilationTarget.is_windows() else "/"
+alias DIR_SEPARATOR = "/"
 
 
 fn cwd() raises -> Path:
@@ -249,8 +249,8 @@ struct Path(
         return os.path.exists(self)
 
     fn expanduser(self) raises -> Path:
-        """Expands a prefixed `~` with `$HOME` on posix or `$USERPROFILE` on
-        windows. If environment variables are not set or the `path` is not
+        """Expands a prefixed `~` with `$HOME` on posix
+        If environment variables are not set or the `path` is not
         prefixed with `~`, returns the `path` unmodified.
 
         Returns:
@@ -260,8 +260,8 @@ struct Path(
 
     @staticmethod
     fn home() raises -> Path:
-        """Returns `$HOME` on posix or `$USERPROFILE` on windows. If environment
-        variables are not set it returns `~`.
+        """Returns `$HOME` on posix.
+        If environment variables are not set it returns `~`.
 
         Returns:
             Path to user home directory.

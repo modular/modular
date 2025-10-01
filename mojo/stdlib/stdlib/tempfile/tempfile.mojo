@@ -44,10 +44,6 @@ fn _candidate_tempdir_list() -> List[String]:
     """Generate a list of candidate temporary directories which
     _get_default_tempdir will try."""
 
-    constrained[
-        not CompilationTarget.is_windows(), "windows not supported yet"
-    ]()
-
     var dirlist = List[String]()
     var possible_env_vars = List[StaticString]("TMPDIR", "TEMP", "TMP")
     var dirname: String
