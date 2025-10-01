@@ -74,7 +74,15 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
             "16384",
         ],
         "max": [*interpreter, "max.entrypoints.pipelines", "serve"],
-        "max-ci": ["./bazelw", "run", "--config=ci", "max", "--", "serve"],
+        "max-ci": [
+            "./bazelw",
+            "run",
+            "--config=ci",
+            "--config=disable-mypy",
+            "max",
+            "--",
+            "serve",
+        ],
     }
     return commands[framework] + [
         "--port",
