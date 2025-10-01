@@ -615,7 +615,7 @@ fn _cdna_version() -> Int:
 @always_inline("nodebug")
 fn _cdna_3_or_newer() -> Bool:
     @parameter
-    if is_amd_gpu():
+    if _is_amd_cdna():
         return _cdna_version() >= 3
     return False
 
@@ -623,7 +623,7 @@ fn _cdna_3_or_newer() -> Bool:
 @always_inline("nodebug")
 fn _cdna_4_or_newer() -> Bool:
     @parameter
-    if is_amd_gpu():
+    if _is_amd_cdna():
         return _cdna_version() >= 4
     return False
 
