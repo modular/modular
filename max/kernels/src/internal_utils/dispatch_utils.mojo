@@ -98,22 +98,21 @@ struct Table[type: TuningConfig](Stringable):
     fn query_values[
         ret_type: Comparable & ImplicitlyCopyable & Movable,
         rule: fn (type) capturing -> ret_type,
-        idx_list: List[Int] = List[Int](),
+        domain: List[Int] = List[Int](),
     ](self) -> List[ret_type]:
         var result = List[ret_type]()
 
         @always_inline
         @parameter
-        fn _get_search_idx_list() -> List[Int]:
-            @parameter
-            if idx_list:
-                return materialize[idx_list]()
+        fn _get_search_domain() -> List[Int]:
+            if len(materialize[domain]()):
+                return materialize[domain]()
             else:
                 return [idx for idx in range(self.num_configs)]
 
-        var search_idx_list = _get_search_idx_list()
+        var search_domain = _get_search_domain()
 
-        for idx in search_idx_list:
+        for idx in search_domain:
             value = rule(self.configs[idx])
             if value not in result:
                 result.append(value)
