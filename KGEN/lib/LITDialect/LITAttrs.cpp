@@ -1197,6 +1197,10 @@ bool RefPackAttr::isConstant() const {
 /// Return true if the specified result doesn't need to be sugared with a
 /// SugarAttr when always_inline("builtin") is used.
 static bool canElideSugaredBuiltinApply(TypedAttr attr) {
+  // If we folded this to a reference to another declaration, just use it.
+  if (isa<ParamDeclRefAttr>(attr))
+    return true;
+
   StringRef typeName;
   if (auto structType = dyn_cast<LIT::StructType>(attr.getType()))
     typeName = structType.getSymbol().getLeafReference().strref();
@@ -1211,8 +1215,8 @@ static bool canElideSugaredBuiltinApply(TypedAttr attr) {
     // If the struct has a single element, elide the braces.
     if (structAttr.getValues().size() == 1) {
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
-      if (typeName == "Int" || typeName == "Bool" || typeName == "DType" ||
-          typeName == "_AddressSpace") {
+      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
+          typeName == "DType" || typeName == "_AddressSpace") {
         if (isa<IntegerAttr, AnyOriginAttr, DTypeConstantAttr>(elt))
           return true;
       }

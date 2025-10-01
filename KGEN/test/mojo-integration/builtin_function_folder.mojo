@@ -33,8 +33,7 @@ struct UIntT[x: UInt](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"fold_select_op
 fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
-    # TODO(Should fold).
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@IntT<:!Int #lit<sugar aibuiltin, !Int, apply(:!lit.generator<("condition": !Bool, "lhs": !Int, "rhs": !Int) -> !Int> @stdlib::@utils::@_select::@"_select_register_value[AnyTrivialRegType](::Bool,$0,$0)"<:type !Int>, {:i1 1}, B, C), B>>, mut *"a`1">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@IntT<:!Int B>, mut *"a`1">
     var a = IntT[select(True, B, C)]()
     return a
 
@@ -48,7 +47,6 @@ fn fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
 fn fold_index_ceildiv() -> UIntT[2]:
     alias A: UInt = 5
     alias B: UInt = 3
-    # TODO(Should fold).
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UIntT<:!UInt #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<("self": !UInt, "denominator": !UInt) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__ceildiv__(::UInt,::UInt)", #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<("value": !lit.struct<#IntLiteral <:!pop.int_literal 5>>) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__init__[__mlir_type.!pop.int_literal](::IntLiteral[$0])"<:!pop.int_literal 5>, *?), #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<(*, "mlir_value": index) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__init__(__mlir_type.index)", 5), {5}>>, #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<("value": !lit.struct<#IntLiteral <:!pop.int_literal 3>>) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__init__[__mlir_type.!pop.int_literal](::IntLiteral[$0])"<:!pop.int_literal 3>, *?), #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<(*, "mlir_value": index) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__init__(__mlir_type.index)", 3), {3}>>), {_mlir_value = ceil_div_u(#lit.struct.extract<:!UInt #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<("value": !lit.struct<#IntLiteral <:!pop.int_literal 5>>) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__init__[__mlir_type.!pop.int_literal](::IntLiteral[$0])"<:!pop.int_literal 5>, *?), #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<(*, "mlir_value": index) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__init__(__mlir_type.index)", 5), {5}>>, "_mlir_value">, #lit.struct.extract<:!UInt #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<("value": !lit.struct<#IntLiteral <:!pop.int_literal 3>>) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__init__[__mlir_type.!pop.int_literal](::IntLiteral[$0])"<:!pop.int_literal 3>, *?), #lit<sugar aibuiltin, !UInt, apply(:!lit.generator<(*, "mlir_value": index) -> !UInt> @stdlib::@builtin::@uint::@UInt::@"__init__(__mlir_type.index)", 3), {3}>>, "_mlir_value">)}>>, mut *"a`3">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<@builtin_function_folder::@UIntT<:!UInt {2}>, mut *"a`3">
     var a = UIntT[A.__ceildiv__(B)]()
     return a
