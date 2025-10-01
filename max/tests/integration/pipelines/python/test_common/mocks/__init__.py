@@ -47,8 +47,9 @@ def retrieve_mock_text_generation_pipeline(
     device_specs: Optional[list[DeviceSpec]] = None,
 ) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
     if eos_token > vocab_size:
-        msg = f"eos_token provided '{eos_token}' must be less than vocab_size provided '{vocab_size}'"
-        raise ValueError(msg)
+        raise ValueError(
+            f"eos_token provided '{eos_token}' must be less than vocab_size provided '{vocab_size}'"
+        )
 
     if not device_specs:
         device_specs = scan_available_devices()

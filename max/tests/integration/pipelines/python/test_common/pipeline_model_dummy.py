@@ -264,13 +264,12 @@ class DummyLlamaPipelineModel(DummyPipelineModel):
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
-            msg = (
+            raise ValueError(
                 "Unable to infer max_length for DummyModel, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+            ) from e
 
 
 DUMMY_LLAMA_ARCH = SupportedArchitecture(

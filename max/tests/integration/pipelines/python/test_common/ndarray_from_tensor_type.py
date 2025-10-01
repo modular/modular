@@ -26,8 +26,7 @@ def _static_dim_from_dim(
         # Return the dim since it's already static.
         return int(dim)
 
-    msg = "algebraic dims unsupported in ndarray_from_tensor_type"
-    raise TypeError(msg)
+    raise TypeError("algebraic dims unsupported in ndarray_from_tensor_type")
 
 
 def ndarray_from_tensor_type(

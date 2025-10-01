@@ -1317,13 +1317,12 @@ def generate_llm_logits(
             encoding=encoding_name,
             device_spec=device_spec,
         ):
-            msg = (
+            raise ValueError(
                 f"Unsupported combination of encoding '{encoding_name}' and "
                 f"device '{device_spec.device_type}'. For pipeline "
                 f"'{pipeline_name}', supported combinations are: "
                 f"{pipeline_oracle.device_encoding_map}"
             )
-            raise ValueError(msg)
 
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name}"
     with github_log_group(title):

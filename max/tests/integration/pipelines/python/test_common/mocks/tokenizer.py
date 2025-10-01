@@ -63,8 +63,7 @@ class MockTextTokenizer(
         self.i += 1
 
         if request.prompt is None and request.messages is None:
-            msg = "either prompt or messages must be provided."
-            raise ValueError(msg)
+            raise ValueError("either prompt or messages must be provided.")
 
         prompt: Union[str, Sequence[int]]
         if request.prompt is None and request.messages is not None:
@@ -75,8 +74,7 @@ class MockTextTokenizer(
             assert request.prompt is not None
             prompt = request.prompt
         else:
-            msg = "either prompt or messages must be provided."
-            raise ValueError(msg)
+            raise ValueError("either prompt or messages must be provided.")
 
         if isinstance(prompt, str):
             encoded = await self.encode(prompt)
@@ -85,8 +83,9 @@ class MockTextTokenizer(
 
         if self.max_length:
             if len(encoded) > self.max_length:
-                msg = "encoded is greater than the max_length of the tokenizer"
-                raise ValueError(msg)
+                raise ValueError(
+                    "encoded is greater than the max_length of the tokenizer"
+                )
 
         if request.sampling_params.max_new_tokens:
             max_length = len(encoded) + request.sampling_params.max_new_tokens
