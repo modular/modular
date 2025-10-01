@@ -68,13 +68,13 @@ struct UInt(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = UInt(DType.int.bit_width())
+    alias BITWIDTH = UInt(DType.uint.bit_width())
     """The bit width of the integer type."""
 
-    alias MAX = UInt((1 << Self.BITWIDTH) - 1)
+    alias MAX = UInt(Scalar[DType.uint].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = UInt(0)
+    alias MIN = UInt(Scalar[DType.uint].MIN)
     """Returns the minimum value of type."""
 
     # ===------------------------------------------------------------------=== #
