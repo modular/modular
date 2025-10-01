@@ -136,8 +136,7 @@ def lib2to3_parse(src_txt: str, target_versions: Iterable[TargetVersion] = ()) -
             src_txt, pygram.python_grammar_no_print_statement
         ):
             original_msg = exc.args[0]
-            msg = f"{original_msg}\n{PY2_HINT}"
-            raise InvalidInput(msg) from None
+            raise InvalidInput(f"{original_msg}\n{PY2_HINT}") from None
 
         raise exc from None
 
