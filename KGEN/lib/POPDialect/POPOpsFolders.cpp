@@ -1182,6 +1182,23 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
         [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
   }
   if (dtype->isIndex() || dtype->isUIndex() || dtype->isAddress()) {
+    // The folding infra ensures that platform-dependent types are only folded
+    // if the folding result is the same on 32 and 64 bit platforms. This is the
+    // right thing to do for most operations, but casting can be safely allowed
+    // between platform-dependent types.
+    if (inType->isIndex() || inType->isUIndex() || inType->isAddress()) {
+      return ::Detail::foldSIMDOpImpl(
+          std::make_index_sequence<1>(), adaptor.getOperands(),
+          [inType](const APSInt &in) -> int64_t {
+            return inType->isSInt() ? in.getSExtValue() : in.getZExtValue();
+          },
+          *dtype,
+          [](DTypeValue val) {
+            return APSInt(APInt(64, val.getIndexVal()),
+                          /*isUnsigned=*/!val.getDType().isIndex());
+          });
+    }
+
     // Cast to index like it's a 64-bit integer. Address is handled like index.
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
