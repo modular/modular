@@ -36,6 +36,9 @@ from os import abort
 
 from utils import Variant
 
+from builtin.device_passable import DevicePassable
+from compile import get_type_name
+
 
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
@@ -447,7 +450,7 @@ struct Optional[T: Copyable & Movable](
 
 
 @register_passable("trivial")
-struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
+struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register
@@ -460,6 +463,19 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
     # Fields
     alias _mlir_type = __mlir_type[`!kgen.variant<`, T, `, i1>`]
     var _value: Self._mlir_type
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String("OptionalReg[", get_type_name[T](), "]")
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

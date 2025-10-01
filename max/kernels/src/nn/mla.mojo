@@ -36,7 +36,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from gpu.host import DeviceContext, FuncAttribute, get_gpu_target, DeviceBuffer
 from gpu.host.info import A100, H100
 from gpu.memory import (
     AddressSpace,
@@ -368,6 +368,8 @@ fn flare_mla_decoding_dispatch[
         output.dtype,
         mask_t,
         score_mod_t,
+        valid_length.shape,
+        valid_length.strides,
         BM = UInt(BM),
         BN = UInt(BN),
         BK = UInt(BK),
@@ -388,13 +390,18 @@ fn flare_mla_decoding_dispatch[
     alias nullptr = UnsafePointer[Scalar[accum_type]]()
 
     var num_partitions_value: Int = 1
+    var q_device = DeviceBuffer[q.dtype](ctx, q.data, q.size(), owning=False)
+    var output_device = DeviceBuffer[output.dtype](
+        ctx, output.data, output.size(), owning=False
+    )
+    var nullptr_device = DeviceBuffer[accum_type](ctx, nullptr, 0, owning=False)
 
-    ctx.enqueue_function[kernel](
-        q.data,
+    ctx.enqueue_function_checked[kernel, kernel](
+        q_device,
         k,
-        output.data,
-        nullptr,
-        nullptr,
+        output_device,
+        nullptr_device,
+        nullptr_device,
         scale,
         batch_size,
         num_partitions_value,
@@ -420,6 +427,8 @@ fn mla_decoding[
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
+    valid_length_shape: DimList,
+    valid_length_stride: DimList,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -446,7 +455,11 @@ fn mla_decoding[
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
     valid_length: NDBuffer[
-        DType.uint32, 1, MutableAnyOrigin
+        DType.uint32,
+        1,
+        MutableAnyOrigin,
+        valid_length_shape,
+        valid_length_stride,
     ],  # valid length per batch
     mask: mask_t,
     score_mod: score_mod_t,
@@ -1437,15 +1450,34 @@ fn flare_mla_prefill_dispatch[
             Scalar[softmax_type]
         ]()
     )
+    var softmax_info_size = softmax_info.value().size() if softmax_info else 0
     var prev_output_ptr = (
         prev_output.value().data if prev_output else UnsafePointer[
             Scalar[output_type]
         ]()
     )
+    var prev_output_size = prev_output.value().size() if prev_output else 0
     var prev_softmax_info_ptr = (
         prev_softmax_info.value().data if prev_softmax_info else UnsafePointer[
             Scalar[softmax_type]
         ]()
+    )
+    var prev_softmax_info_size = (
+        prev_softmax_info.value().size() if prev_softmax_info else 0
+    )
+
+    var q_device = DeviceBuffer[q.dtype](ctx, q.data, q.size(), owning=False)
+    var output_device = DeviceBuffer[output.dtype](
+        ctx, output.data, output.size(), owning=False
+    )
+    var softmax_info_device = DeviceBuffer[softmax_type](
+        ctx, softmax_info_ptr, softmax_info_size, owning=False
+    )
+    var prev_output_device = DeviceBuffer[output_type](
+        ctx, prev_output_ptr, prev_output_size, owning=False
+    )
+    var prev_softmax_info_device = DeviceBuffer[softmax_type](
+        ctx, prev_softmax_info_ptr, prev_softmax_info_size, owning=False
     )
 
     alias kernel = mla_prefill[
@@ -1457,6 +1489,8 @@ fn flare_mla_prefill_dispatch[
         softmax_type,
         mask_t,
         score_mod_t,
+        valid_length.shape,
+        valid_length.strides,
         config,
         group=group,
         use_score_mod=use_score_mod,
@@ -1466,15 +1500,15 @@ fn flare_mla_prefill_dispatch[
         use_cascade_attention=use_cascade_attention,
         _ndbuffer_mha_operand=_ndbuffer_mha_operand,
     ]
-    ctx.enqueue_function[kernel](
-        q.data,
+    ctx.enqueue_function_checked[kernel, kernel](
+        q_device,
         k,
         v,
         k_rope,
-        output.data,
-        softmax_info_ptr,
-        prev_output_ptr,
-        prev_softmax_info_ptr,
+        output_device,
+        softmax_info_device,
+        prev_output_device,
+        prev_softmax_info_device,
         scale,
         batch_size,
         max_prompt_len,
@@ -1505,6 +1539,8 @@ fn mla_prefill[
     softmax_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
+    valid_length_shape: DimList,
+    valid_length_stride: DimList,
     config: MHAConfig,
     group: Int = 128,
     q_depth: Int = 192,
@@ -1525,7 +1561,13 @@ fn mla_prefill[
     scale: Float32,
     batch_size: Int,
     seq_len_arg: Int,
-    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    valid_length: NDBuffer[
+        DType.uint32,
+        1,
+        MutableAnyOrigin,
+        valid_length_shape,
+        valid_length_stride,
+    ],
     cache_offsets: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]],
     mask: mask_t,
     score_mod: score_mod_t,
@@ -2541,11 +2583,18 @@ fn mla_prefill_plan[
     var batch_size: Int = input_row_offsets.dim[0]() - 1
 
     alias kernel = mla_prefill_plan_kernel[
+        buffer_row_offsets.shape,
+        buffer_row_offsets.strides,
+        cache_offsets.shape,
+        cache_offsets.strides,
         buffer_lengths.shape,
+        buffer_lengths.strides,
+        input_row_offsets.shape,
+        input_row_offsets.strides,
         cache_t,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         buffer_row_offsets,
         cache_offsets,
         buffer_lengths,
@@ -2559,15 +2608,44 @@ fn mla_prefill_plan[
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
 fn mla_prefill_plan_kernel[
+    buffer_row_offsets_shape: DimList,
+    buffer_row_offsets_stride: DimList,
+    cache_offsets_shape: DimList,
+    cache_offsets_stride: DimList,
     buffer_lengths_shape: DimList,
+    buffer_lengths_stride: DimList,
+    input_row_offsets_shape: DimList,
+    input_row_offsets_stride: DimList,
     cache_t: KVCacheT,
 ](
-    buffer_row_offsets: NDBuffer[mut=True, DType.uint32, 2, MutableAnyOrigin],
-    cache_offsets: NDBuffer[mut=True, DType.uint32, 2, MutableAnyOrigin],
-    buffer_lengths: NDBuffer[
-        mut=True, DType.int32, 1, MutableAnyOrigin, buffer_lengths_shape
+    buffer_row_offsets: NDBuffer[
+        DType.uint32,
+        2,
+        MutableAnyOrigin,
+        buffer_row_offsets_shape,
+        buffer_row_offsets_stride,
     ],
-    input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    cache_offsets: NDBuffer[
+        DType.uint32,
+        2,
+        MutableAnyOrigin,
+        cache_offsets_shape,
+        cache_offsets_stride,
+    ],
+    buffer_lengths: NDBuffer[
+        DType.int32,
+        1,
+        MutableAnyOrigin,
+        buffer_lengths_shape,
+        buffer_lengths_stride,
+    ],
+    input_row_offsets: NDBuffer[
+        DType.uint32,
+        1,
+        MutableAnyOrigin,
+        input_row_offsets_shape,
+        input_row_offsets_stride,
+    ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
 ):

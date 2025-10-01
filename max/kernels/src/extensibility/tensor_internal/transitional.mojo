@@ -22,25 +22,19 @@ from tensor_internal.managed_tensor_slice import ManagedTensorSlice
 @always_inline
 fn managed_tensor_slice_to_ndbuffer[
     spec: StaticTensorSpec, //
-](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
-    spec.dtype,
-    spec.rank,
-    MutableAnyOrigin,
-    spec.shape,
-    spec.strides,
-    alignment2 = spec.alignment,
-    address_space = spec.address_space,
-    exclusive = spec.exclusive,
-]:
-    constrained[not tensor.io_spec.input == IO.FusedInput]()
-    var ptr = tensor._ptr.address_space_cast[spec.address_space]()
-    return NDBuffer[
+](
+    tensor: ManagedTensorSlice[static_spec=spec],
+    out result: NDBuffer[
         spec.dtype,
         spec.rank,
-        _,
+        MutableAnyOrigin,
         spec.shape,
         spec.strides,
-        alignment2 = spec.alignment,
+        # alignment2 = spec.alignment,
         address_space = spec.address_space,
-        exclusive = spec.exclusive,
-    ](ptr, tensor.shape(), tensor._runtime_strides)
+        # exclusive = spec.exclusive,
+    ],
+):
+    constrained[not tensor.io_spec.input == IO.FusedInput]()
+    var ptr = tensor._ptr.address_space_cast[spec.address_space]()
+    return __type_of(result)(ptr, tensor.shape(), tensor._runtime_strides)

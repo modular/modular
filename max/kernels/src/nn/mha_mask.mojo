@@ -18,6 +18,7 @@ from sys import is_nvidia_gpu
 from buffer import DimList, NDBuffer
 
 from utils.index import IndexList
+from builtin.device_passable import DevicePassable
 
 # ===-----------------------------------------------------------------------===#
 # MaskName
@@ -110,7 +111,7 @@ struct TileMaskStatus(
 
 
 @register_passable("trivial")
-trait MHAMask(Copyable):
+trait MHAMask(Copyable, DevicePassable):
     """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
     """
 
@@ -174,6 +175,19 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
     alias mask_out_of_bound: Bool = is_nvidia_gpu()
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = False
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "CausalMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -260,6 +274,19 @@ struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = False
 
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "NullMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
     @always_inline
     fn mask[
         dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
@@ -316,6 +343,19 @@ struct ChunkedMask[local_window_size: Int](
     alias mask_out_of_bound: Bool = True
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = True
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "ChunkedMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -430,6 +470,19 @@ struct SlidingWindowCausalMask[window_size: Int](
     alias mask_out_of_bound: Bool = True
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = True
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "SlidingWindowCausalMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -551,6 +604,19 @@ struct MaterializedMask[dtype_: DType, rank_: Int, shape_: DimList](
     var start_pos: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
     var is_multiple_of_2: Bool
 
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "MaterializedMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
     fn __init__(
         out self,
         mask_tensor: Self.MaskType,
@@ -650,6 +716,19 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
     alias check_mask_during_decoding: Bool = T.check_mask_during_decoding and S.check_mask_during_decoding
 
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "AndMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
     @always_inline
     fn mask[
         dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
@@ -700,6 +779,19 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     alias mask_out_of_bound: Bool = T.mask_out_of_bound and S.mask_out_of_bound
     alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
     alias check_mask_during_decoding: Bool = T.check_mask_during_decoding or S.check_mask_during_decoding
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "OrMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn mask[

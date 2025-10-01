@@ -30,6 +30,7 @@ from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
 
 from utils import Index, IndexList
+from builtin.device_passable import DevicePassable
 
 
 @parameter
@@ -111,7 +112,7 @@ struct KVCacheStaticParams(EqualityComparable, ImplicitlyCopyable, Movable):
 
 
 @register_passable("trivial")
-trait KVCacheT(ImplicitlyCopyable, Movable):
+trait KVCacheT(DevicePassable, ImplicitlyCopyable, Movable):
     """Trait for different KVCache types and implementations.
 
     Represents a single (key or value) cache.
@@ -259,6 +260,19 @@ struct ContinuousBatchingKVCache[
     # This is effectively:
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "ContinuousBatchingKVCache"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn _get_idx_tuple(
@@ -491,6 +505,19 @@ struct PagedKVCache[
     # This is effectively:
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "PagedKVCache"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(
         out self,

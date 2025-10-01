@@ -21,9 +21,11 @@ from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
 
 from utils import Index, IndexList, StaticTuple
 
+from builtin.device_passable import DevicePassable
+
 
 @register_passable("trivial")
-trait MHAOperand:
+trait MHAOperand(DevicePassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
     alias dtype: DType
@@ -85,6 +87,19 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
 
     alias dtype = cache_t.dtype
     var cache: cache_t
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "KVCacheMHAOperand"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(out self, cache: cache_t):
         self.cache = cache
@@ -150,6 +165,19 @@ struct NDBufferMHAOperand[
 
     alias dtype = dtype_
     var buffer: NDBuffer[Self.dtype, rank, MutableAnyOrigin, shape, stride]
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "NDBufferMHAOperand"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(
         out self,
@@ -237,6 +265,19 @@ struct RaggedMHAOperand[
     alias dtype = dtype_
     var buffer: NDBuffer[Self.dtype, rank, MutableAnyOrigin, shape, stride]
     var cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_]
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "RaggedMHAOperand"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(
         out self,
