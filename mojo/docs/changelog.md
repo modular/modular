@@ -50,3 +50,6 @@ Literals now have a default type. For example, you can now bind
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- The `math.cos` and `math.sin` function can now be evaluated at compile time
+  (fixes #5111).

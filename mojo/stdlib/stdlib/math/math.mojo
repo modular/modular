@@ -1514,26 +1514,30 @@ fn cos[
         The `cos` of the input.
     """
 
+    @always_inline
+    fn llvm_cos(v: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return llvm_intrinsic["llvm.cos", __type_of(v), has_side_effect=False](
+            v
+        )
+
     @parameter
-    if is_nvidia_gpu() and size_of[dtype]() <= size_of[DType.float32]():
+    if size_of[dtype]() < size_of[DType.float32]():
+        return cos(x.cast[DType.float32]()).cast[dtype]()
 
-        @parameter
-        if size_of[dtype]() < size_of[DType.float32]():
-            return cos(x.cast[DType.float32]()).cast[dtype]()
+    if is_compile_time():
+        return llvm_cos(x)
 
+    @parameter
+    if is_nvidia_gpu() and dtype is DType.float32:
         return _call_ptx_intrinsic[
             instruction="cos.approx.ftz.f32", constraints="=f,f"
         ](x)
-    elif is_amd_gpu():
-        return llvm_intrinsic["llvm.cos", __type_of(x), has_side_effect=False](
-            x
-        )
     elif is_apple_gpu():
         return llvm_intrinsic[
             "llvm.air.cos", __type_of(x), has_side_effect=False
         ](x)
     else:
-        return _call_libm["cos"](x)
+        return llvm_cos(x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1560,26 +1564,30 @@ fn sin[
         The `sin` of the input.
     """
 
+    @always_inline
+    fn llvm_sin(v: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return llvm_intrinsic["llvm.sin", __type_of(v), has_side_effect=False](
+            v
+        )
+
     @parameter
-    if is_nvidia_gpu() and size_of[dtype]() <= size_of[DType.float32]():
+    if size_of[dtype]() < size_of[DType.float32]():
+        return sin(x.cast[DType.float32]()).cast[dtype]()
 
-        @parameter
-        if size_of[dtype]() < size_of[DType.float32]():
-            return sin(x.cast[DType.float32]()).cast[dtype]()
+    if is_compile_time():
+        return llvm_sin(x)
 
+    @parameter
+    if is_nvidia_gpu() and dtype is DType.float32:
         return _call_ptx_intrinsic[
             instruction="sin.approx.ftz.f32", constraints="=f,f"
         ](x)
-    elif is_amd_gpu():
-        return llvm_intrinsic["llvm.sin", __type_of(x), has_side_effect=False](
-            x
-        )
     elif is_apple_gpu():
         return llvm_intrinsic[
             "llvm.air.sin", __type_of(x), has_side_effect=False
         ](x)
     else:
-        return _call_libm["sin"](x)
+        return llvm_sin(x)
 
 
 # ===----------------------------------------------------------------------=== #

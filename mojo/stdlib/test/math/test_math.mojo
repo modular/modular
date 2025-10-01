@@ -36,6 +36,7 @@ from math import (
     sqrt,
     trunc,
     ulp,
+    pi,
 )
 from sys import CompilationTarget
 
@@ -48,11 +49,41 @@ from utils.numerics import inf, isinf, isnan, nan, neg_inf
 fn test_sin() raises:
     assert_almost_equal(sin(Float32(1.0)), 0.841470956802)
 
+    alias s_45 = sin(pi / 4)
+    assert_almost_equal(s_45, 0.7071067811865475)
+
+    alias s_30 = sin(pi / 6)
+    assert_almost_equal(s_30, 0.5)
+
+    alias s_60 = sin(pi / 3)
+    assert_almost_equal(s_60, 0.8660254037844387)
+
+    # Compare the compile time values against the runtime values to make sure
+    # they align.
+    assert_almost_equal(s_45, sin(pi / 4))
+    assert_almost_equal(s_30, sin(pi / 6))
+    assert_almost_equal(s_60, sin(pi / 3))
+
 
 fn test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
 
     assert_equal(cos(BFloat16(2.0)), -0.416015625)
+
+    alias c_45 = cos(pi / 4)
+    assert_almost_equal(c_45, 0.7071067811865476)
+
+    alias c_30 = cos(pi / 6)
+    assert_almost_equal(c_30, 0.8660254037844386)
+
+    alias c_60 = cos(pi / 3)
+    assert_almost_equal(c_60, 0.4999999999999999)
+
+    # Compare the compile time values against the runtime values to make sure
+    # they align.
+    assert_almost_equal(c_45, cos(pi / 4))
+    assert_almost_equal(c_30, cos(pi / 6))
+    assert_almost_equal(c_60, cos(pi / 3))
 
 
 fn test_factorial() raises:
