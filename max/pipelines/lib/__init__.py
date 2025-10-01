@@ -70,8 +70,6 @@ __all__ = [
     "MEMORY_ESTIMATOR",
     "PIPELINE_REGISTRY",
     "AudioGenerationConfig",
-    "AudioGeneratorPipeline",
-    "AudioGeneratorPipelineType",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "HuggingFaceRepo",
