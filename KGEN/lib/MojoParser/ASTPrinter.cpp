@@ -703,8 +703,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (auto structType = dyn_cast<StructType>(structAttr.getType()))
         typeName = structType.getSymbol().getLeafReference().strref();
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
-      if (typeName == "Int" || typeName == "Bool" || typeName == "Origin" ||
-          typeName == "DType") {
+      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
+          typeName == "Origin" || typeName == "DType") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
           elt = extract.getStructValue();
         printParam(os, elt, diagShared);
