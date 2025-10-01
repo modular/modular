@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -reorder-param-decls -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -reorder-param-ops -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: @simple
 kgen.generator @simple() {
@@ -32,5 +32,46 @@ kgen.generator @nestedRegions() {
   }
 
   kgen.param.declare cond_var = <32>
+  kgen.return
+}
+
+// CHECK-LABEL: @reorder_asserts
+kgen.generator @reorder_asserts() {
+  // COM: reorder param decl to before use.
+  // CHECK: kgen.param.declare q
+  // CHECK-NEXT: kgen.param.assert <ne(q, 0)>
+  // CHECK-NEXT: kgen.param.declare w
+  // CHECK-NEXT: kgen.param.assert <ne(w, 0)>
+  // CHECK-NEXT: kgen.param.assert <gt(w, q)>
+  // CHECK-NEXT: kgen.param.assert <lt(q, w)>
+  // CHECK-NEXT: kgen.call @g2
+  kgen.param.assert <ne(q, 0)>, "q is not 0"
+  %0 = kgen.call @g2<q, w>() : () -> index
+  kgen.param.declare q = <3>
+  kgen.param.assert <ne(w, 0)>, "w is not 0"
+  kgen.param.assert <gt(w, q)>, "w is greater than q"
+  kgen.param.declare w = <5>
+  kgen.param.assert <lt(q, w)>, "q is less than w"
+
+  // CHECK: kgen.param.if
+  %1 = kgen.param.if <lt(q, w)> -> index {
+    // CHECK-NEXT: kgen.param.assert <ge(q, 3)>
+    // CHECK-NEXT: kgen.param.declare next_lt
+    // CHECK-NEXT: kgen.param.assert <lt(next_lt, q)>
+    // CHECK-NEXT: "produce.value"
+    %2 = "produce.value"() : () -> index
+    kgen.param.declare next_lt = <add(q, 10)>
+    kgen.param.assert <lt(next_lt, q)>, "next_lt is less than q"
+    kgen.param.assert <ge(q, 3)>, "q is no less than 3"
+    kgen.param.yield %2 : index
+  } else {
+    // CHECK: kgen.param.declare next_gt
+    // CHECK-NEXT: kgen.param.assert <lt(next_gt, w)>
+    // CHECK-NEXT: "produce.value"
+    %3 = "produce.value"() : () -> index
+    kgen.param.assert <lt(next_gt, w)>, "next_gt is less than w"
+    kgen.param.declare next_gt = <add(w, 20)>
+    kgen.param.yield %3 : index
+  }
   kgen.return
 }
