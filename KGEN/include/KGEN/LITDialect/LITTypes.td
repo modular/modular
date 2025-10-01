@@ -198,12 +198,19 @@ def LIT_StructType : LITType<"Struct", "struct", [
         (`,` $signature^)? `>`
   }];
 
+  let skipDefaultBuilders = 1;
   let builders = [
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
                                         "TypeSignatureType":$signature)>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
                                         "ArrayRef<TypedAttr>":$paramValues,
-                                        "TypeSignatureType":$signature)>
+                                        "TypeSignatureType":$signature)>,
+    // Override the default builder used by the generated parser so we can
+    // make sure the canonical field is set right when the elements are changed.
+    AttrBuilder<(ins "SymbolAttr":$name,
+                     "ArrayRef<TypedAttr>":$paramValues,
+                     "TypeSignatureType":$signature,
+                     "StructType":$canonical)>
   ];
 
   let extraClassDeclaration = [{

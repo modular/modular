@@ -824,7 +824,7 @@ struct HasIntParam[p: Int]:
 
 # expected-note @below {{function declared here}}
 fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]):
-  # expected-error @below {{cannot be converted from 'HasIntParam[(x.value * 4)]' to 'HasIntParam[(x.value * 4)]'}}
+  # expected-error @below {{cannot be converted from 'HasIntParam[(x.value * 4)]' to 'HasIntParam[(x * 4)]'}}
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 fn test_signature():

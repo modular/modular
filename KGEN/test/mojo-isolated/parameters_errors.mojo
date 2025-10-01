@@ -614,6 +614,10 @@ fn test_param_call():
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     takes4(HasSize[HoldsInt.get_int()]())
 
+@always_inline("builtin")
+fn complex(a: Int) -> Int:
+  return a*a if a < 42 else a-1
+
 # Make sure error messages include scope for auto parameters.
 # MOCO-970: "can't convert type to type" error stripped off full parameter name.
 struct TestAutoParams[f1: HasSize]:
@@ -624,9 +628,10 @@ struct TestAutoParams[f1: HasSize]:
         takes4(HasSize[f2.size]())
         # expected-error @+1 {{cannot be converted from 'HasSize[f3.size]' to 'HasSize[4]'}}
         takes4(HasSize[f3.size]())
-        # expected-error @+1 {{converted from 'HasSize[(div_s f3.size._mlir_value, 4)]' to 'HasSize[4]'}}
+        # expected-error @+1 {{converted from 'HasSize[f3.size._positive_div(4)]' to 'HasSize[4]'}}
         takes4(HasSize[f3.size._positive_div(4)]())
-
+        # expected-error @below {{converted from 'HasSize[complex((f3.size * 1234))]' to 'HasSize[4]'}}
+        takes4(HasSize[complex(f3.size*1234)]())
 
 struct TakeAnything[T: AnyType, //, a: T]:
     fn __init__(out self): pass

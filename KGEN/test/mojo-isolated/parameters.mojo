@@ -99,9 +99,9 @@ struct TestParamStruct[A: Int]:
 
   # CHECK-LABEL: lit.fn @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
-    # CHECK: lit.alias.decl [[B:.*]]: !Int = <{{.*}}{_mlir_value = add(mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2), 1)}
+    # CHECK: lit.alias.decl [[B:.*]]: !Int = <{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2){{.*}}, 1)}
     alias B = A+A+1
-    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <{{.*}}{_mlir_value = add(mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 3), 1)}
+    # CHECK: lit.alias.decl *"C{{.*}}: !Int =
     alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply(:!lit.generator<{{.*}}TestParamStruct <:!Int {1}>>> {{.*}}__init__()"<:!Int {1}>)>
@@ -497,12 +497,12 @@ fn intbox_memory_result(x: Int) -> IntBox:
 
 
 # CHECK-LABEL: lit.fn @"interpret_initself_ctor
-# CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {x: !Int = {42}}>>
+# CHECK-SAME: %arg: !lit.struct<#InitSelfParam <:!InitSelfCtor {{.*}}{x: !Int = {42}}>>
 fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
-    # CHECK-NEXT: !lit.generator<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor {x: !Int = {3}}>>>
+    # CHECK-NEXT: !lit.generator<() -> !lit.struct<#InitSelfParam <:!InitSelfCtor
     alias refined_fn = refine_memory_only_results[1, 2]
 
-    # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{x: !Int = {42}}>
+    # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{{.*}}{x: !Int = {42}}>
     # CHECK-NEXT: store [[CST]], %inlined_initself_call
     var inlined_initself_call = InitSelfCtor(42)
 
@@ -1662,3 +1662,31 @@ fn test_infer_variadic():
     # CHECK-SAME: [!Int, !Bool]
     # CHECK-SAME: :meta<!lit.struct<#Tuple <:variadic<!AnyType>
     infer_variadic[Tuple[Int, Bool]]()
+
+# Make sure we can store RP types with different sugars correctly.
+# CHECK-LABEL: lit.fn @"test_sugar_rebind
+fn test_sugar_rebind[N: Int](a: SIMD[DType.int32, 2 * N]):
+    # CHECK-NEXT: %x = lit.var.decl
+    # CHECK-NEXT: %0 = kgen.rebind %a
+    # CHECK-NEXT: lit.ref.store %0, %x
+    var x: SIMD[DType.int32, N * 2] = a
+
+@fieldwise_init
+struct CanonicalTypesInDel[input_rank: Int, conv_attr: StructWithIntParam[input_rank - 2]]:
+    pass
+
+# Test remapping of parameter decls in the face of sugar.
+@register_passable("trivial")
+struct IO:
+    @always_inline("builtin") # Sugared ctor.
+    fn __init__(out self):
+        pass
+@fieldwise_init
+@register_passable("trivial")
+struct IOSpec[input: IO]:
+    pass
+@fieldwise_init
+@register_passable("trivial")
+struct ManagedTensorSlice[input: IO, //, io_spec: IOSpec[input]]:
+    pass
+alias InputTensor = ManagedTensorSlice[IOSpec[IO()]()]

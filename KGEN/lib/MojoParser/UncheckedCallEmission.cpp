@@ -1110,9 +1110,14 @@ TypedAttr CallEmitter::emitCallInParamContext(
   // lit.fn of the callee.  We require knowing the inline level because we have
   // to recursively resolve the body of the function, which we don't want to do
   // unilaterally.
-  if (auto result = emitter.shared.foldInlineBuiltinFunction(operands, loc,
-                                                             /*isError*/ false))
-    return result;
+  if (auto result =
+          emitter.shared.foldInlineBuiltinFunction(operands, loc,
+                                                   /*isError*/ false)) {
+    // Maintain sugar so diagnostics don't show the inlined function call.
+    Type resultType = boundSigType.getResults().front();
+    auto sugaredCall = ParamOperatorAttr::get(POC::Apply, operands, resultType);
+    return SugarAttr::get(SugarKind::AlwaysInlineBuiltin, sugaredCall, result);
+  }
 
   TypedAttr result;
   if (!boundSigType.hasMemoryOnlyResult()) {

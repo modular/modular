@@ -1194,6 +1194,47 @@ bool RefPackAttr::isConstant() const {
 // SugarAttr
 //===----------------------------------------------------------------------===//
 
+/// Return true if the specified result doesn't need to be sugared with a
+/// SugarAttr when always_inline("builtin") is used.
+static bool canElideSugaredBuiltinApply(TypedAttr attr) {
+  StringRef typeName;
+  if (auto structType = dyn_cast<LIT::StructType>(attr.getType()))
+    typeName = structType.getSymbol().getLeafReference().strref();
+
+  if (typeName == "Origin" || typeName == "Bool")
+    return true; // FIXME: Not principled.
+
+  /// A StructAttr is due to an inline @always_inline("builtin") initializer.
+  /// Elide it if we have the default type with a literal so we don't print
+  /// Int(42), but print it if it is something weird like IntLiteral(42)
+  if (auto structAttr = dyn_cast<LITStructAttr>(attr)) {
+    // If the struct has a single element, elide the braces.
+    if (structAttr.getValues().size() == 1) {
+      TypedAttr elt = std::get<1>(structAttr.getValues().front());
+      if (typeName == "Int" || typeName == "Bool" || typeName == "DType" ||
+          typeName == "_AddressSpace") {
+        if (isa<IntegerAttr, AnyOriginAttr, DTypeConstantAttr>(elt))
+          return true;
+      }
+
+      if (typeName == "AddressSpace" && canElideSugaredBuiltinApply(elt))
+        return true;
+    }
+  }
+
+  if (isa<UnknownAttr>(attr)) {
+    if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
+        typeName == "StringLiteral")
+      return true;
+  }
+
+#if 0
+    // FIXME: Remove this as we get a chance to make this cleaner.
+  llvm::errs() << "NOT FOLDING: " << attr << "\n";
+#endif
+  return false;
+}
+
 static ParseResult parseSugarAttr(AsmParser &p, TypedAttr &sugared,
                                   TypedAttr &original, TypedAttr &canonical) {
   Type type;
@@ -1218,6 +1259,12 @@ static void printSugarAttr(AsmPrinter &p, TypedAttr sugared, TypedAttr original,
 
 TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
                          TypedAttr original) {
+  // If we shouldn't maintain type sugar for this, then just return the
+  // original.
+  if (kind == SugarKind::AlwaysInlineBuiltin &&
+      canElideSugaredBuiltinApply(original))
+    return original;
+
   auto canonical = getCanonicalAttr(original);
   return Base::get(sugared.getContext(), kind, sugared, original, canonical,
                    sugared.getType());
@@ -1240,6 +1287,10 @@ static Attribute getLocalCanonical(Attribute attr) {
   return {};
 }
 static Type getLocalCanonical(Type type) {
+  // FIXME: Why is this getting called with null types?
+  if (!type)
+    return {};
+
   // Struct type has a canonical type cache to cut recursive walks.
   if (auto structType = dyn_cast<LIT::StructType>(type)) {
     if (auto can = structType.getCanonical())

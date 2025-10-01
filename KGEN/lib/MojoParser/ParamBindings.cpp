@@ -209,24 +209,14 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
     return PValue(UnboundAttr::get(expectedType));
 
   // If the parameter already has the right type, then we're good.
-  if (expectedType.isEqualCanon(bindingVal.getType())) {
-    if (expectedType.mlirType != bindingVal.getType())
-      bindingVal =
-          ParamOperatorAttr::get(POC::Rebind, {bindingVal}, expectedType);
+  if (expectedType.isEqualCanon(bindingVal.getType()))
     return bindingVal;
-  }
 
   // If the parameter can be implicitly converted, do so.
   if (IREmitter::canImplicitlyConvertToType(
           {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
     numImplicitConversions += 2;
     bindingVal = emitter.emitPValue(binding, EC_CallParamValue, expectedType);
-    if (!bindingVal)
-      return {};
-
-    if (expectedType.mlirType != bindingVal.getType())
-      bindingVal =
-          ParamOperatorAttr::get(POC::Rebind, {bindingVal}, expectedType);
     return bindingVal;
   }
 
@@ -331,7 +321,10 @@ ParamBindings::verifyBindingsImpl(
 
   // This lambda installs the decl's value in the parameter evaluator and new
   // binding array.
-  auto setParamValue = [&](TypedAttr value) {
+  auto setParamValue = [&](TypedAttr value, Type requestedType) {
+    // The canonical types must match, now make sure sugar aligns.
+    if (value.getType() != requestedType)
+      value = ParamOperatorAttr::get(POC::Rebind, {value}, requestedType);
     evaluator.appendIndexBinding(value);
     newBindings.push_back(value);
   };
@@ -433,7 +426,7 @@ ParamBindings::verifyBindingsImpl(
         if (!partial && isa<UnboundAttr>(bindingVal.get())) {
           if (PValue value =
                   fulfillValue(requestedType, PassingKind::Inferred)) {
-            setParamValue(value);
+            setParamValue(value, requestedType);
             ++posBindingIdx;
             continue;
           }
@@ -445,7 +438,7 @@ ParamBindings::verifyBindingsImpl(
 
         // Otherwise if it's prechecked, consume directly.
         if (posBindingIdx < numPreTypeChecked) {
-          setParamValue(bindingVal);
+          setParamValue(bindingVal, requestedType);
           ++posBindingIdx;
           continue;
         }
@@ -461,12 +454,12 @@ ParamBindings::verifyBindingsImpl(
       if (posBindingIdx >= numBindings || !operands[posBindingIdx].keyword ||
           operands[posBindingIdx].keyword != pog.getName()) {
         if (PValue value = inferParameter(requestedType)) {
-          setParamValue(value);
+          setParamValue(value, requestedType);
           continue;
         }
         // If this context allows partial binding, leave the value as unbound.
         if (partial) {
-          setParamValue(UnboundAttr::get(requestedType));
+          setParamValue(UnboundAttr::get(requestedType), requestedType);
           continue;
         }
         // Otherwise, emit an inference failure.
@@ -485,8 +478,7 @@ ParamBindings::verifyBindingsImpl(
           diagEmitter->emitTypeMismatch(idx, binding, expectedType);
         return {{}, fitness};
       }
-
-      setParamValue(pValue);
+      setParamValue(pValue, requestedType);
       ++posBindingIdx;
       continue;
     }
@@ -513,28 +505,28 @@ ParamBindings::verifyBindingsImpl(
             diagEmitter->emitTypeMismatch(idx, *binding, expectedType);
           return {{}, fitness};
         }
-        setParamValue(pValue);
+        setParamValue(pValue, requestedType);
         continue;
       }
 
       // If we couldn't find a keyword binding for this parameter, then we must
       // be able to infer it or otherwise provide a default value.
       if (PValue value = fulfillValue(requestedType, passingKind)) {
-        setParamValue(value);
+        setParamValue(value, requestedType);
         continue;
       }
 
       // If this is a partial binding context, then we don't have a full binding
       // list. Allow parameters to be missing.
       if (partial) {
-        setParamValue(UnboundAttr::get(requestedType));
+        setParamValue(UnboundAttr::get(requestedType), requestedType);
         continue;
       }
 
       if (passingKind == PassingKind::KwOnly) {
         // If this is a missing keyword-only, we collect them. We put pretend
         // this is implicitly unbound, so we can error out in the end.
-        setParamValue(UnboundAttr::get(requestedType));
+        setParamValue(UnboundAttr::get(requestedType), requestedType);
         kwDiagNames.push_back(paramName);
         continue;
       }
@@ -552,7 +544,7 @@ ParamBindings::verifyBindingsImpl(
     assert(bindingVal && "Parameters are always PValues");
     if (!partial && isa<UnboundAttr>(bindingVal.get())) {
       if (PValue value = fulfillValue(requestedType, passingKind)) {
-        setParamValue(value);
+        setParamValue(value, requestedType);
         ++posBindingIdx;
         continue;
       }
@@ -565,7 +557,7 @@ ParamBindings::verifyBindingsImpl(
     // If this value was already bound and checked, use it.
     /// FIXME: Remove this, why is this needed?
     if (posBindingIdx < numPreTypeChecked) {
-      setParamValue(bindingVal);
+      setParamValue(bindingVal, requestedType);
       ++posBindingIdx;
       continue;
     }
@@ -607,7 +599,7 @@ ParamBindings::verifyBindingsImpl(
       PValue paramValue = handlePosBinding(idx, binding, expectedType);
       if (!paramValue)
         return {{}, fitness};
-      setParamValue(paramValue);
+      setParamValue(paramValue, expectedType);
       ++posBindingIdx;
       continue;
     }
@@ -623,7 +615,7 @@ ParamBindings::verifyBindingsImpl(
           idx, {PValue(unpacked.getValue()), binding.expr}, requestedType);
       if (!paramValue)
         return {{}, fitness};
-      setParamValue(paramValue);
+      setParamValue(paramValue, requestedType);
       ++posBindingIdx;
       continue;
     }
@@ -637,6 +629,11 @@ ParamBindings::verifyBindingsImpl(
       PValue pValue = handlePosBinding(idx, binding, expectedType);
       if (!pValue)
         return {{}, fitness};
+
+      // Realign sugar.
+      if (pValue.getType().mlirType != expectedType)
+        pValue = ParamOperatorAttr::get(POC::Rebind, {pValue}, expectedType);
+
       elements.emplace_back(pValue);
       // Passing `_` to a variadic is not allowed. Users should pass `*_` to
       // unbind a variadic parameter.
@@ -648,7 +645,7 @@ ParamBindings::verifyBindingsImpl(
     } while (posBindingIdx != numBindings);
 
     auto varType = VariadicType::get(evaluator.getReboundType(expectedType));
-    setParamValue(VariadicAttr::get(elements, varType));
+    setParamValue(VariadicAttr::get(elements, varType), varType);
   }
 
   // Complain if we collected any missing keyword-only parameters.
