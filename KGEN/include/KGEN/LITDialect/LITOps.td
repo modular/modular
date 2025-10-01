@@ -584,7 +584,13 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
     SymbolNameAttr:$sym_name,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
-    OptionalAttr<SymbolRefAttr>:$targetStruct
+    OptionalAttr<SymbolRefAttr>:$targetStruct,
+    // Direct parent traits this extension adds (first level only).
+    // Used for extension trait conformance checking.
+    DefaultValuedAttr<M_SymbolRefArrayAttr, "ArrayRef<SymbolRefAttr>{}">:$immediateParents,
+    // Canonical trait containing flattened hierarchy of all traits this extension adds.
+    // Computed during extension signature resolution and used for conformance checking.
+    OptionalAttr<TypeAttrOf<LIT_TraitType>>:$canonicalTrait
     // TODO(MOCO-522): Support doc strings, deprecation warnings.
   );
 

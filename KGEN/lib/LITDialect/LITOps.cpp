@@ -1240,7 +1240,9 @@ void ExtensionDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}),
-        /*targetStruct=*/{});
+        /*targetStruct=*/{},
+        /*immediateParents=*/SymbolRefArrayAttr::get(ctx, {}),
+        /*canonicalTrait=*/{});
   result.regions[0]->push_back(new Block());
 }
 
