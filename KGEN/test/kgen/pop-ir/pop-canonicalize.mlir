@@ -812,6 +812,18 @@ kgen.func @cast_si128() -> (!pop.scalar<f16>, !pop.scalar<ui8>, !pop.scalar<bool
   kgen.return %0, %1, %2, %3 : !pop.scalar<f16>, !pop.scalar<ui8>, !pop.scalar<bool>, !pop.scalar<index>
 }
 
+// CHECK-LABEL: @cast_uindex_index
+kgen.func @cast_uindex_index() -> (!pop.scalar<index>, !pop.scalar<uindex>) {
+  // CHECK-DAG: %[[C0:.*]] = kgen{{.*}}index{{.*}}<4294967296>
+  // CHECK-DAG: %[[C1:.*]] = kgen{{.*}}uindex{{.*}}<4294967297>
+  %cu = kgen.param.constant: scalar<uindex> = <4294967296>
+  %ci = kgen.param.constant: scalar<index> = <4294967297>
+  %0 = pop.cast %cu : !pop.scalar<uindex> to !pop.scalar<index>
+  %1 = pop.cast %ci : !pop.scalar<index> to !pop.scalar<uindex>
+  // CHECK-NEXT: return %[[C0]], %[[C1]]
+  kgen.return %0, %1 : !pop.scalar<index>, !pop.scalar<uindex>
+}
+
 // CHECK-LABEL: @cast_si64_ui64_index
 kgen.func @cast_si64_ui64_index(%in : !pop.scalar<si64>) -> !pop.scalar<index> {
   // CHECK-NEXT: pop.cast {{.*}} !pop.scalar<si64> to !pop.scalar<ui64>
