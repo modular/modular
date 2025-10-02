@@ -164,6 +164,11 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
                     f"target_endpoint must contain a port: {self.target_endpoint}"
                 )
 
+        # Ensure the array is writable even when copy=False
+        # This is necessary because frombuffer creates read-only arrays
+        if not self.tokens.flags.writeable:
+            self.tokens = self.tokens.copy()
+
         # Resize Data Up
         # Ensure the tokens array is at least self._size
         if self._end_idx < self._size:
