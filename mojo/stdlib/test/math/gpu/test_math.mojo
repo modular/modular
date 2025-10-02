@@ -132,7 +132,7 @@ def main():
             cos,
             # acos,
             tanh,
-            # atanh,
+            atanh,
             exp,
             erf,
             floor_fn,
