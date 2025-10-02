@@ -313,6 +313,8 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
             ](x)
 
         return rsqrt(x.cast[DType.float32]()).cast[dtype]()
+    elif is_apple_gpu():
+        return llvm_intrinsic["llvm.air.rsqrt", __type_of(x)](x)
 
     return 1 / sqrt(x)
 
