@@ -17,6 +17,7 @@ from math import (
     acos,
     asin,
     atanh,
+    cbrt,
     ceil,
     ceildiv,
     clamp,
@@ -696,6 +697,17 @@ def test_asin():
         )
 
 
+def test_cbrt():
+    alias n = 1_0000
+    for i in range(n):
+        var val = Float32(i) / (n * Float32(2) / 10) - 10
+        assert_almost_equal(
+            cbrt(val),
+            _call_libm["cbrt"](val),
+            msg=String("mismatch for the value = ", val, " at index = ", i),
+        )
+
+
 def test_acos():
     alias n = 1_000
     for i in range(n):
@@ -736,5 +748,6 @@ def main():
     suite.test[test_atanh]()
     suite.test[test_asin]()
     suite.test[test_acos]()
+    suite.test[test_cbrt]()
 
     suite^.run()

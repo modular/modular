@@ -2083,6 +2083,168 @@ fn logb[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
+fn _ilogb[
+    width: Int
+](x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
+    """Extract binary exponent from floating-point number.
+
+    Args:
+        x: Input floating-point value.
+
+    Returns:
+        Integer binary exponent of x.
+    """
+
+    @always_inline
+    fn extract(x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
+        """Internal helper function to extract binary exponent from float.
+
+        Args:
+            x: Input floating-point value (assumed positive).
+
+        Returns:
+            Unbiased binary exponent as integer.
+        """
+        # Check if d is subnormal (very small, < 2^-64 ≈ 5.421010862427522e-20)
+        var is_subnormal_mask = x.lt(5.421010862427522e-20)
+        var d = is_subnormal_mask.select(
+            x * 1.8446744073709552e19,  # Scale by 2^64
+            x,
+        )
+
+        # Extract exponent bits from IEEE 754 representation
+        # Step 1: Reinterpret float as 32-bit integer
+        var bits = rebind[SIMD[DType.int32, width]](d._to_bits_signed())
+
+        # Step 2: Right shift by 23 to move exponent to lower bits
+        # This moves bits [30:23] to positions [7:0]
+        var exponent_bits = (bits >> 23) & 0xFF  # Mask to get 8 bits
+
+        # Step 3: Remove bias to get true exponent
+        # IEEE 754 bias for single precision is 127 (0x7f)
+        # If subnormal path was taken, also subtract 64 to compensate for scaling
+
+        return is_subnormal_mask.select(
+            exponent_bits - (64 + 0x7F),  # Remove bias and scaling offset
+            exponent_bits - 0x7F,  # Remove bias only
+        )
+
+    alias FP_ILOGB0 = (-2147483647 - 1)
+    alias FP_ILOGBNAN = 2147483647
+
+    # Extract the binary exponent from |x|
+    # For x = m × 2^e where m ∈ [1, 2), this returns e
+    var e = extract(abs(x))
+
+    @parameter
+    for i in range(width):
+        var d = x[i]
+
+        # Special case: ilogb(±0) returns FP_ILOGB0
+        if d == 0.0:
+            e[i] = FP_ILOGB0
+
+        # Special case: ilogb(NaN) returns FP_ILOGBNAN
+        if isnan(d):
+            e[i] = FP_ILOGBNAN
+
+        # Special case: ilogb(±∞) returns Int32.MAX
+        if isinf(d):
+            e[i] = Int32.MAX
+
+    return e
+
+
+fn _cbrtf(x: Float32) -> Float32:
+    """Compute the cube root of a 32-bit floating-point number.
+
+    This function implements an efficient algorithm for computing the cube root (∛x)
+    of a single-precision floating-point value. The algorithm works by:
+
+    1. Extracting the binary exponent `e` from the input `x` such that x = 2^e * mantissa.
+    2. Normalizing the input by scaling `x` by 2^(-e) to obtain a mantissa in [0.5, 1).
+    3. Dividing the exponent `e` by 3 to obtain the cube root exponent, and computing the remainder.
+    4. Applying a correction factor based on the remainder to improve accuracy.
+    5. Reconstructing the result by scaling the cube root of the mantissa by 2^(e/3) and the correction factor.
+
+    Args:
+        x: Input value (Float32) for which to compute the cube root.
+
+    Returns:
+        The cube root of `x` as a Float32.
+    """
+    # Initialize correction factor q (may be adjusted based on exponent remainder)
+    var q = Float32(1.0)
+
+    # Extract exponent e such that x = 2^e * mantissa
+    # Add 1 to exponent for normalization purposes
+    var e = _ilogb(abs(x)) + 1  # Get binary exponent
+
+    # Normalize input: scale x by 2^(-e) to get mantissa in [0.5, 1)
+    var d = ldexp(x, -e)
+
+    # Compute exponent division by 3 with remainder
+    # We need to split e into: e = 3*qu + re where re ∈ {0, 1, 2}
+    # Add offset 6144 to ensure positive values for easier integer division
+    var t = Float32(e) + 6144.0
+    var qu = Int(t / 3.0)  # Quotient: e // 3
+    var re = Int(t - Float32(qu) * 3.0)  # Remainder: e % 3
+
+    alias CBRT_2 = 1.2599210498948731647672106
+    alias CBRT_4 = 1.5874010519681994747517056
+
+    # Apply correction factors based on remainder
+    # If e % 3 == 1: need to multiply by 2^(1/3) = cbrt(2)
+    if re == 1:
+        q = CBRT_2
+    # If e % 3 == 2: need to multiply by 2^(2/3) = cbrt(4)
+    elif re == 2:
+        q = CBRT_4
+
+    # Scale q by 2^(qu - 2048) to reconstruct proper exponent
+    # Subtract 2048 to compensate for the 6144 offset used earlier
+    q = ldexp(q, qu - 2048)
+
+    # Apply sign to correction factor (cube root preserves sign)
+    q = copysign(q, x)
+
+    # Work with absolute value for polynomial approximation
+    d = abs(d)
+
+    # Polynomial approximation for cbrt(d) where d ∈ [0.5, 1)
+    # Using Horner's method for efficient evaluation
+    var poly = polynomial_evaluate[
+        List[Scalar[x.dtype]](
+            2.2241256237030029296875,
+            -3.8095417022705078125,
+            5.898262500762939453125,
+            -5.532182216644287109375,
+            2.8208892345428466796875,
+            -0.601564466953277587890625,
+        )
+    ](d)
+
+    # Newton-Raphson refinement step
+    # Formula: y_new = y - (y³ - d) / (3y²)
+    # Rearranged as: y_new = (2y³ + d) / (3y²)
+    var y = d * poly * poly  # d * (poly ** 2), where poly ≈ cbrt(d)
+
+    # Apply Newton iteration: y = y - (2/3) * y * (y*x - 1)
+    # This refines the approximation
+    y = y - (2.0 / 3.0) * y * (y * poly - 1.0)
+
+    # Multiply by the correction factor q to get final result
+    y = y * q
+
+    # Handle special cases
+    if isinf(x):
+        y = copysign(Float32.MAX, x)  # cbrt(±∞) = ±∞
+    if x == 0.0:
+        y = copysign(Float32(0.0), x)  # cbrt(±0) = ±0
+
+    return y
+
+
 fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `cbrt` of the inputs.
 
@@ -2099,7 +2261,23 @@ fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `cbrt` of the input.
     """
-    return _call_libm["cbrt"](x)
+
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]():
+        return cbrt(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float64:
+        return _call_libm["cbrt"](x)
+
+    var result = SIMD[DType.float32, width]()
+
+    for i in range(width):
+        result[i] = _cbrtf(rebind[Float32](x[i]))
+
+    return rebind[__type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #

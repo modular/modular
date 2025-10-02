@@ -115,7 +115,7 @@ def main():
             log10,
             log1p,
             # logb,
-            # cbrt,
+            cbrt,
             # hypot_fn,
             # erfc,
             # lgamma,
