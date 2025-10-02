@@ -14,6 +14,7 @@
 from math import (
     align_down,
     align_up,
+    asin,
     atanh,
     ceil,
     ceildiv,
@@ -38,6 +39,7 @@ from math import (
     ulp,
     pi,
 )
+from math.math import _call_libm
 from sys import CompilationTarget
 
 from test_utils import TestSuite
@@ -682,6 +684,17 @@ def test_atanh():
     )
 
 
+def test_asin():
+    alias n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            asin(val),
+            _call_libm["asin"](val),
+            msg=String("mismatch for the value = ", val),
+        )
+
+
 def main():
     var suite = TestSuite()
 
@@ -709,5 +722,6 @@ def main():
     suite.test[test_align_up]()
     suite.test[test_clamp]()
     suite.test[test_atanh]()
+    suite.test[test_asin]()
 
     suite^.run()

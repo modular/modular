@@ -1419,7 +1419,55 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `asin` of the input.
     """
-    return _call_libm["asin"](x)
+
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]():
+        return asin(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float64:
+        return llvm_intrinsic["llvm.asin", __type_of(x), has_side_effect=False](
+            x
+        )
+
+    # For F32 types, use the Remez approximation found in Sleef with range splitting
+    # to get good accuracy.
+
+    # Domain split to use a different approximation outside the domain of
+    # -0.5 <= x <= 0.5
+    var x_abs = abs(x)
+    var directed_polynomial_mask = x_abs.lt(0.5)
+
+    # Compute d² for polynomial evaluation:
+    #  - For |x| < 0.5: d² = x²
+    #  - For |x| >= 0.5: d² = (1 - |x|) / 2  (for identity transformation)
+    var d2 = directed_polynomial_mask.select(x * x, (1 - x_abs) * 0.5)
+
+    # Compute d for evaluation:
+    # - For |x| < 0.5: d = |x|
+    # - For |x| >= 0.5: d = sqrt((1-|x|)/2)
+    #   (using identity: asin(d) = π/2 - 2*asin(sqrt((1-d)/2)))
+    var d = directed_polynomial_mask.select(x_abs, sqrt(d2))
+
+    # Evaluate Remez polynomial approximation using Horner's method
+    # This approximates the series: asin(x)/x ≈ 1 + x²/6 + 3x⁴/40 + ...
+    var poly = polynomial_evaluate[
+        List[Scalar[x.dtype]](
+            0.1666677296e0,
+            0.7495029271e-1,
+            0.4547423869e-1,
+            0.2424046025e-1,
+            0.4197454825e-1,
+        )
+    ](d2)
+
+    # Final polynomial evaluation: poly*x*x² + x = x*(poly*x² + 1)
+    poly = poly.fma(d * d2, d)
+
+    # Compute final result based on domain:
+    # - For |x| < 0.5: result = poly  (direct approximation)
+    # - For |x| >= 0.5: result = π/2 - 2*poly  (using identity)
+    var res = directed_polynomial_mask.select(poly, pi / 2 - 2 * poly)
+
+    return copysign(res, x)
 
 
 # ===----------------------------------------------------------------------=== #

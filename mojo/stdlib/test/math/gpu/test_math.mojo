@@ -128,7 +128,7 @@ def main():
             # scalb_fn,
             gcd_fn,
             sin,
-            # asin,
+            asin,
             cos,
             # acos,
             tanh,
