@@ -109,6 +109,9 @@ cast = functional(ops.cast)
 #: Splits a tensor into chunks along a dimension.
 #: See :func:`max.graph.ops.chunk` for details.
 chunk = functional(ops.chunk)
+#: Concatenates a list of tensors along an axis.
+#: See :func:`max.graph.ops.concat` for details.
+concat = functional(ops.concat)
 #: Creates a constant tensor.
 #: See :func:`max.graph.ops.constant` for details.
 constant = functional(ops.constant)
