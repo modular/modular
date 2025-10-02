@@ -9,6 +9,7 @@ import time
 
 import numpy as np
 import pytest
+import zmq
 from max.interfaces import (
     RequestID,
     SharedMemoryArray,
@@ -217,11 +218,35 @@ def test_zmq_push_pull_queue_closed_state() -> None:
 
 def test_zmq_push_pull_queue_endpoint_validation() -> None:
     """Test that invalid endpoints raise ValueError."""
-    with pytest.raises(ValueError, match="Invalid endpoint"):
+    with pytest.raises(
+        ValueError,
+        match="ZMQ address must start with tcp://, ipc://, or inproc://. Found: invalid://endpoint",
+    ):
         ZmqPushSocket(endpoint="invalid://endpoint", payload_type=int)
 
-    with pytest.raises(ValueError, match="Invalid endpoint"):
+    with pytest.raises(
+        ValueError,
+        match="ZMQ address must start with tcp://, ipc://, or inproc://. Found: ",
+    ):
         ZmqPullSocket(endpoint="", payload_type=int)
+
+    # OK
+    ZmqPullSocket(
+        endpoint="ipc://" + "a" * zmq.IPC_PATH_MAX_LEN, payload_type=int
+    )
+    # Not OK because path is empty
+    with pytest.raises(
+        ValueError,
+        match="ZMQ IPC requires a path after the protocol. Found: ipc://",
+    ):
+        ZmqPullSocket(endpoint="ipc://", payload_type=int)
+
+    # Not OK because too long
+    with pytest.raises(ValueError, match="ZMQ IPC path is too long: ipc://"):
+        ZmqPullSocket(
+            endpoint="ipc://" + ("a" * (zmq.IPC_PATH_MAX_LEN + 1)),
+            payload_type=int,
+        )
 
 
 def test_zmq_push_pull_queue_with_vision_context() -> None:
