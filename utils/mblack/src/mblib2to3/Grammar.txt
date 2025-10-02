@@ -31,7 +31,8 @@ decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | simple_stmt)
 async_funcdef: ASYNC funcdef
-funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [global_effects] [unified_capture] ['->' result_type] ':' suite
+where_clause: WHERE top_test
+funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [global_effects] [unified_capture] ['->' result_type] (where_clause)* ':' suite
 global_effects: global_effect_keyword*
 global_effect_keyword: 'raises' | 'escaping' | 'capturing'
 unified_capture: UNIFIED [effect_list] [captures]
