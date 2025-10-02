@@ -2335,6 +2335,130 @@ fn hypot[
 # ===----------------------------------------------------------------------=== #
 
 
+fn _erfcf(x: Float32) -> Float32:
+    """Fast single-precision complementary error function (erfc) approximation.
+
+    The complementary error function is defined as:
+    erfc(x) = 1 - erf(x) = (2/√π) ∫[x,∞] e^(-t²) dt
+
+    Uses domain splitting with different rational approximations for accuracy:
+    - Domain 1: |x| < 1.0  - Direct polynomial for erfc
+    - Domain 2: 1.0 ≤ |x| < 2.2 - Polynomial approximation
+    - Domain 3: 2.2 ≤ |x| < 4.3 - Scaled rational approximation with 1/x
+    - Domain 4: 4.3 ≤ |x| < 10.1 - Further scaled rational approximation
+    - Domain 5: |x| ≥ 10.1 - Returns 0 (underflow)
+
+    Each domain uses optimized polynomial coefficients to minimize error.
+
+
+    Args:
+        x: Input value, any real number.
+
+    Returns:
+        Complementary error function erfc(x), range [0, 2].
+    """
+
+    # Handle NaN input
+    if isnan(x):
+        return x
+
+    # Save original input for sign handling
+    var s = x
+
+    # Work with absolute value for domain classification
+    var a = abs(x)
+
+    # Domain classification based on input magnitude
+    var o0 = a < 1.0  # Small values: direct approximation
+    var o1 = a < 2.2  # Medium-small values
+    var o2 = a < 4.3  # Medium values
+    var o3 = a < 10.1  # Medium-large values
+    # o3 false means a >= 10.1: very large values (return 0)
+
+    # Choose transformation: u = a for small values, u = 1/a for large values
+    # This improves numerical stability in different regions
+    var u: Float32
+    if o1:
+        u = a  # Direct evaluation for a < 2.2
+    else:
+        u = 1.0 / a  # Use reciprocal for a >= 2.2
+
+    # Coefficients are domain-specific for optimal accuracy
+    alias coeffs0: List[Float32] = [
+        -0.112837917790537404939545770596e1,
+        -0.636619483208481931303752546439e0,
+        -0.102775359343930288081655368891e0,
+        0.1914106123e-1,
+        0.1795156277e-3,
+        -0.1665703603e-2,
+        0.6000166177e-3,
+        -0.8638041618e-4,
+    ]
+    alias coeffs1: List[Float32] = [
+        -0.112855987376668622084547028949e1,
+        -0.635609463574589034216723775292e0,
+        -0.105247583459338632253369014063e0,
+        0.2260518074e-1,
+        -0.2851036377e-2,
+        0.6002851478e-5,
+        0.5749821503e-4,
+        -0.6236977242e-5,
+    ]
+    alias coeffs2: List[Float32] = [
+        -0.572319781150472949561786101080e0,
+        -0.134450203224533979217859332703e-2,
+        -0.482365310333045318680618892669e0,
+        -0.1328857988e0,
+        0.1249150872e1,
+        -0.1816803217e1,
+        0.1288077235e1,
+        -0.3869504035e0,
+    ]
+    alias coeffs3: List[Float32] = [
+        -0.572364030327966044425932623525e0,
+        -0.471199543422848492080722832666e-4,
+        -0.498961546254537647970305302739e0,
+        -0.1262947265e-1,
+        0.7155663371e0,
+        -0.3667259514e0,
+        -0.9454904199e0,
+        0.1115344167e1,
+    ]
+
+    # Evaluate polynomial using Horner's method
+    var d: Float32
+    if o0:
+        d = polynomial_evaluate[coeffs0](u)
+    elif o1:
+        d = polynomial_evaluate[coeffs1](u)
+    elif o2:
+        d = polynomial_evaluate[coeffs2](u)
+    else:
+        d = polynomial_evaluate[coeffs3](u)
+
+    # Compute argument for exponential
+    # For small a: x = d * a (using original a value)
+    # For large a: x = -a² + d
+    var exp_arg = d * a if o1 else (-a * a) + d
+
+    # Compute exponential: exp(exp_arg)
+    var result = exp(exp_arg)
+
+    # For large a, multiply by u = 1/a
+    if not o1:
+        result *= u
+
+    # Return 0 for very large values (a >= 10.1)
+    if not o3:
+        result = 0.0
+
+    # Apply symmetry: erfc(-x) = 2 - erfc(x)
+    if s < 0:
+        result = 2.0 - result
+
+    return result
+
+
 fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `erfc` of the inputs.
 
@@ -2351,7 +2475,22 @@ fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `erfc` of the input.
     """
-    return _call_libm["erfc"](x)
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]():
+        return erfc(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float64:
+        return _call_libm["erfc"](x)
+
+    var result = SIMD[DType.float32, width]()
+
+    for i in range(width):
+        result[i] = _erfcf(rebind[Float32](x[i]))
+
+    return rebind[__type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #

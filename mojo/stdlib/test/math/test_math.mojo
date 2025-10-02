@@ -23,6 +23,7 @@ from math import (
     clamp,
     copysign,
     cos,
+    erfc,
     exp2,
     factorial,
     floor,
@@ -697,6 +698,16 @@ def test_asin():
         )
 
 
+def test_erfc():
+    alias n = 10_000
+    for i in range(n):
+        var val = Float32(i) / (n * Float32(2) / 10) - 10
+        assert_almost_equal(
+            erfc(val),
+            _call_libm["erfc"](val),
+        )
+
+
 def test_cbrt():
     alias n = 1_0000
     for i in range(n):
@@ -747,6 +758,7 @@ def main():
     suite.test[test_clamp]()
     suite.test[test_atanh]()
     suite.test[test_asin]()
+    suite.test[test_erfc]()
     suite.test[test_acos]()
     suite.test[test_cbrt]()
 

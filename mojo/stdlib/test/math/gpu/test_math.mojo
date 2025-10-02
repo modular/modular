@@ -103,7 +103,7 @@ def main():
                 run_func[DType.float16, kernel_fn[]](ctx)
 
         # Anything that's commented does not work atm and needs to be
-        # implemented. This list is also not exhastive and needs to be
+        # implemented. This list is also not exhaustive and needs to be
         # expanded.
         test[
             sqrt_fn,
@@ -117,7 +117,7 @@ def main():
             # logb,
             cbrt,
             # hypot_fn,
-            # erfc,
+            erfc,
             # lgamma,
             # gamma,
             # remainder_fn,
