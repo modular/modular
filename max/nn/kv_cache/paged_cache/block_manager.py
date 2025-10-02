@@ -542,6 +542,13 @@ class BlockManager:
         """Get the block ids for a request."""
         return [block.bid for block in self.req_to_blocks[request_id]]
 
+    @traced
+    def reset_prefix_cache(self) -> None:
+        """Reset the prefix cache."""
+        self.device_block_pool.reset_prefix_cache()
+        if self.host_block_pool is not None:
+            self.host_block_pool.reset_prefix_cache()
+
     @property
     def metrics(self) -> KVCacheMetrics:
         return copy.copy(self._metrics)

@@ -24,11 +24,8 @@ from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import (
-    PipelinesFactory,
-    PipelineTask,
-    PipelineTokenizer,
-)
+from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.nn.kv_cache.paged_cache import ResetPrefixCacheFrontend
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
@@ -227,6 +224,25 @@ def fastapi_app(
 
     app.add_api_route("/version", version)
     app.add_api_route("/health", health)
+
+    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
+        serving_settings.pipeline_config.zmq_endpoint_base
+    )
+
+    async def reset_prefix_cache() -> Response:
+        """Reset the prefix cache."""
+        if not serving_settings.pipeline_config.model_config.kv_cache_config.enable_prefix_caching:
+            return Response(
+                status_code=400,
+                content="Prefix caching is not enabled. Ignoring request",
+            )
+
+        reset_prefix_cache_frontend.enqueue_reset_prefix_cache()
+        return Response(status_code=200, content="Success")
+
+    app.add_api_route(
+        "/reset_prefix_cache", reset_prefix_cache, methods=["POST"]
+    )
 
     for api_type in settings.api_types:
         app.include_router(ROUTES[api_type].router)

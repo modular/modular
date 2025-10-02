@@ -17,6 +17,8 @@ from .paged_cache import (
     PagedCacheInputSymbols,
     PagedCacheValues,
     PagedKVCacheManager,
+    ResetPrefixCacheBackend,
+    ResetPrefixCacheFrontend,
 )
 from .transfer_engine import (
     KVTransferEngine,
@@ -32,6 +34,8 @@ __all__ = [
     "PagedCacheInputSymbols",
     "PagedCacheValues",
     "PagedKVCacheManager",
+    "ResetPrefixCacheBackend",
+    "ResetPrefixCacheFrontend",
     "XferReqData",
     "available_port",
 ]

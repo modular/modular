@@ -400,3 +400,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
                 )
             start_idx += len(devices)
         return kv_cache_inputs
+
+    def reset_prefix_cache(self) -> None:
+        for manager in self._replica_managers:
+            manager.reset_prefix_cache()

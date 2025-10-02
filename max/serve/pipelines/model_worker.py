@@ -31,7 +31,8 @@ from max.interfaces import (
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.nn.kv_cache.paged_cache import ResetPrefixCacheBackend
+from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_cuda_oom
@@ -143,6 +144,17 @@ class ModelWorker:
                 scheduler_zmq_configs,
             )
 
+            # Retrieve Paged Manager.
+            paged_cache = get_paged_manager(pipeline)
+            reset_prefix_cache_backend: ResetPrefixCacheBackend | None = None
+            if (
+                paged_cache is not None
+                and pipeline_config.zmq_endpoint_base is not None
+            ):
+                reset_prefix_cache_backend = ResetPrefixCacheBackend(
+                    pipeline_config.zmq_endpoint_base
+                )
+
             # Maybe retrieve LoRA manager.
             lora_manager = None
             pipeline_model = get_pipeline_model(pipeline)
@@ -162,6 +174,13 @@ class ModelWorker:
                     # Checks for new LoRA requests and processes them.
                     if lora_manager is not None:
                         lora_manager.process_lora_requests()
+                    # Check for request to reset prefix cache.
+                    if (
+                        reset_prefix_cache_backend is not None
+                        and reset_prefix_cache_backend.should_reset_prefix_cache()
+                    ):
+                        assert paged_cache is not None
+                        paged_cache.reset_prefix_cache()
                     # This method must terminate in a reasonable amount of time
                     # so that the ProcessMonitor heartbeat is periodically run.
                     progress = scheduler.run_iteration()
