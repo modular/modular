@@ -51,6 +51,12 @@ Type ASTType::getMetaType() const {
     return TypeType::get(closureType.getContext());
   if (auto module = dyn_cast<ModuleType>(mlirType))
     return module; // Module's are their own metatype.
+
+  // Look through sugar.
+  ASTType stripped = stripTopLevelSugar();
+  if (stripped.mlirType != mlirType)
+    return stripped.getMetaType();
+
   // This is some generic MLIR type.
   return {};
 }
@@ -61,7 +67,7 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
   // We get the declaration from the metatype of the type.  For example, if we
   // have a parametric type like "T" where "T: AnyType", we can know that T has
   // AnyType bound.
-  Type type = getMetaType();
+  Type type = ASTType(getMetaType()).stripTopLevelSugar();
   if (!type)
     return nullptr;
 
@@ -90,7 +96,8 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 }
 
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
-  if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(getMetaType()))
+  Type metatype = ASTType(getMetaType()).stripTopLevelSugar();
+  if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(metatype))
     return metaType.getParamValues();
   return {};
 }
@@ -105,6 +112,12 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (StructMetaType metaType = dyn_cast_or_null<StructMetaType>(mlirType))
     return MetaType::get(
         ASTType(metaType.getType()).getWithoutParameters(shared));
+
+  // Look through sugar.
+  ASTType stripped = stripTopLevelSugar();
+  if (stripped.mlirType != mlirType)
+    return stripped.getWithoutParameters(shared);
+
   // Not parameterized.
   return *this;
 }
@@ -120,6 +133,15 @@ bool ASTType::isEqualCanon(ASTType other) const {
       return true;
 
   return getCanonicalType(*this) == getCanonicalType(other);
+}
+
+/// Remove any top-level sugar nodes from this type, but don't fully
+/// canonicalize it.
+ASTType ASTType::stripTopLevelSugar() const {
+  if (auto paramRef = dyn_cast_or_null<ParamType>(mlirType))
+    if (auto sugar = dyn_cast<SugarAttr>(paramRef.getParam()))
+      return ASTType(sugar.getOriginal()).stripTopLevelSugar();
+  return *this;
 }
 
 /// Return true if this is the same as another ASTType are the same, or if they
@@ -147,11 +169,13 @@ bool ASTType::isEqualAllowingUnknownAttr(ASTType other,
 }
 
 /// Return true if this is a None type.
-bool ASTType::isNoneType() const { return isa<KGEN::NoneType>(mlirType); }
+bool ASTType::isNoneType() const {
+  return isa<KGEN::NoneType>(stripTopLevelSugar().mlirType);
+}
 
 /// Return true if this is a TypeCheckError type.
 bool ASTType::isTypeCheckErrorType() const {
-  return isa<TypeCheckErrorType>(mlirType);
+  return isa<TypeCheckErrorType>(stripTopLevelSugar().mlirType);
 }
 
 /// Return the nonmaterializable decorator target for the type, or null if there
@@ -270,7 +294,7 @@ bool ASTType::hasNontrivialDestructor(llvm::SMLoc loc,
     return false;
 
   // Generic types are assumed to have a destructor unless they are trivial.
-  if (isa<TraitType>(getMetaType())) {
+  if (isa<TraitType>(ASTType(getMetaType()).stripTopLevelSugar())) {
     return getRegisterPassability(loc, shared) !=
            TypeConvention::RegisterPassableTrivial;
   }
@@ -363,13 +387,14 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
 /// if the current type isn't a reference.
 ///
 ASTType ASTType::getReferenceElementType() const {
-  return ASTType(cast<RefType>(mlirType).getElementType());
+  return ASTType(cast<RefType>(stripTopLevelSugar().mlirType).getElementType());
 }
 
 /// Given a VariadicType, return the element as an ASTType.  This aborts if
 /// the current type isn't a VariadicType.
 ASTType ASTType::getVariadicElementType() const {
-  return ASTType(cast<VariadicType>(mlirType).getElementType());
+  return ASTType(
+      cast<VariadicType>(stripTopLevelSugar().mlirType).getElementType());
 }
 
 /// Return the RefPackType that corresponds to the VariadicPack instance.
@@ -469,7 +494,7 @@ RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
 ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
   // If this is a struct type, try unbinding just the parameters that have
   // parameter references in it.
-  if (auto drt = dyn_cast<StructType>(*this)) {
+  if (auto drt = dyn_cast<StructType>(stripTopLevelSugar())) {
     ParamIndexRefAttrFinder finder;
 
     // Otherwise, check each bound parameter to see if it is unknown.  If so,
@@ -511,7 +536,8 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
 ///   var runtime_ptr = ptr
 ///
 bool ASTType::containsUnmaterializableOrigins(SharedState &shared) const {
-  for (auto o : shared.cachedOriginFinder.findOriginsIn(mlirType)) {
+  for (auto o :
+       shared.cachedOriginFinder.findOriginsIn(getCanonicalType(mlirType))) {
     // Ignore field sensitivity.
     while (auto field = dyn_cast<OriginFieldAttr>(o))
       o = field.getBase();

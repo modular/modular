@@ -954,8 +954,11 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (isa<StructExtractAttr, ParamIndexRefAttr>(param))
+  if (isa<StructExtractAttr, ParamIndexRefAttr, ParamOperatorAttr>(param))
     return printParam(os, param, diagShared);
+
+  if (auto sugar = dyn_cast<SugarAttr>(param))
+    return printOriginParam(os, sugar.getSugared(), diagShared);
 
   param.dump();
   llvm_unreachable("unknown origin parameter");
