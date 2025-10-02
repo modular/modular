@@ -598,6 +598,10 @@ struct String(
         return self._capacity_or_data << 3
 
     @always_inline("nodebug")
+    fn _set_nul_terminated(mut self):
+        self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
+
+    @always_inline("nodebug")
     fn _has_nul_terminator(self) -> Bool:
         return Bool(self._capacity_or_data & Self.FLAG_HAS_NUL_TERMINATOR)
 

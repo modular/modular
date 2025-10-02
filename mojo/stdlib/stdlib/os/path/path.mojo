@@ -265,34 +265,21 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     Returns:
         A String of the resolved path.
     """
-    # Leave room for initializing the refcount into the header.
-    alias capacity = MAX_PATH + String.REF_COUNT_SIZE
-    var ptr = UnsafePointer[c_char].alloc(capacity)
+    var string = String(capacity=MAX_PATH)
 
-    # Initialize the Atomic refcount into the header.
-    __get_address_as_uninit_lvalue(
-        ptr.bitcast[Atomic[DType.int]]().address
-    ) = Atomic[DType.int](1)
-
-    # Offset the pointer to after the refcount.
     var returned_path_ptr = libc_realpath(
         path.__fspath__().unsafe_ptr().bitcast[c_char](),
-        ptr + String.REF_COUNT_SIZE,
+        string._ptr_or_data.bitcast[Int8](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())
 
-    # Caller is responsible for freeing the pointer, safe to store in String.
-    var string = String()
-    # Store the already offset pointer, pointing the the first char.
-    var byte_ptr = returned_path_ptr.bitcast[Byte]()
-    string._ptr_or_data = byte_ptr
-    string._len_or_data = _unsafe_strlen(byte_ptr)
-    # capacity >> 3 can only be lower, so will realloc safely if required
-    string._capacity_or_data = UInt(capacity >> 3)
-    string._set_ref_counted()
+    # We wrote the data directly into the String buffer
+    # now we need to figure out the length
+    string.set_byte_length(_unsafe_strlen(string._ptr_or_data))
+    string._set_nul_terminated()
 
-    return string
+    return string^
 
 
 # ===----------------------------------------------------------------------=== #
