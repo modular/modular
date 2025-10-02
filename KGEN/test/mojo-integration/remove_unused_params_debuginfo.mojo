@@ -22,14 +22,14 @@ fn agnostic_user[
 fn main():
     var x: Int = 8
     var y: Float64 = 42.5
-    var d: Scalar[DType.uint8] = 9
+    var d: UInt8 = 9
     agnostic_user[Int, DType.uint8](
         UnsafePointer[Int](to=x),
-        UnsafePointer[Scalar[DType.uint8]](to=d),
+        UnsafePointer[UInt8](to=d),
     )
     agnostic_user[Float64, DType.uint8](
         UnsafePointer[Float64](to=y),
-        UnsafePointer[Scalar[DType.uint8]](to=d),
+        UnsafePointer[UInt8](to=d),
     )
 
 
