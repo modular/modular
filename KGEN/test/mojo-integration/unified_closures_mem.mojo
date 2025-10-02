@@ -23,6 +23,23 @@ struct Mem(Copyable, ImplicitlyCopyable):
         return self.str1 + self.str2
 
 
+struct MovableMem(Copyable, ImplicitlyCopyable, Movable):
+    var str1: String
+    var str2: String
+
+    fn __init__(out self, str1: String, str2: String):
+        self.str1 = str1
+        self.str2 = str2
+
+    fn __copyinit__(out self, other: Self):
+        self.str1 = other.str1
+        self.str2 = other.str2
+        print("copied mem")
+
+    fn to_string(self) -> String:
+        return self.str1 + self.str2
+
+
 fn takeIt[T: fn () unified -> String](state: T):
     print("captures: ", state())
 
@@ -71,3 +88,16 @@ def main():
 
     # CHECK: captures:  foofoo
     takeIt(myclosure)
+    var movableMem = MovableMem(x, x)
+
+    # COM: Copyable closures
+    @no_inline
+    fn copyMem() unified {var ^}:
+        print(movableMem.to_string())
+
+    # CHECK: copied mem
+    var copyOfClosure = copyMem
+    # CHECK: foofoo
+    copyMem()
+    # CHECK: foofoo
+    copyOfClosure()

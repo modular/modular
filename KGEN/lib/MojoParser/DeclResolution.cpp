@@ -1022,6 +1022,23 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   return {std::move(captured), unbound};
 }
 
+static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
+                        SMLoc loc) {
+  for (const Capture &capture : captures) {
+    switch (capture.getCaptureConvention()) {
+    case CaptureConvention::kConventionCopy:
+    case CaptureConvention::kConventionTrivialCopy:
+    case CaptureConvention::kConventionRead:
+    case CaptureConvention::kConventionMut:
+      continue;
+    default:
+      if (!capture.getValue().getRValueType().isCopyable(loc, shared, true))
+        return false;
+    }
+  }
+  return true;
+}
+
 static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
                                           ASTDecl &nestedFnDecl,
                                           SharedState &shared) {
@@ -1034,18 +1051,18 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
   auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
       nestedFn.getFuncTypeGenerator());
-
   ASTDecl *closureTrait = shared.getOrCreateClosureTrait(
       loc, *moduleDecl, wrapperSig, nestedFn.getInlineLevel());
+  bool isCopyable = allCopyable(captures, shared, loc);
 
   ASTDecl *closureWrapper = shared.getOrCreateUnifiedClosureWrapper(
-      loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel());
+      loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel(), isCopyable);
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
   Value wrapperInstance = emitter.emitClosureOp(
       *moduleDecl, nestedFnDecl, captures,
       cast<StructDeclOp>(closureWrapper->getIfOperation()),
-      cast<TraitDeclOp>(closureTrait->getIfOperation()), mlirLoc);
+      cast<TraitDeclOp>(closureTrait->getIfOperation()), mlirLoc, isCopyable);
 
   nestedFnDecl.getIfOperation()->erase();
   nestedFnDecl.setIRValue(nullptr);
@@ -3267,7 +3284,6 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
           //
           // TODO: Should we just set sourceNameAttr during parseDefFnStmt?
           func.setSourceNameAttr(name);
-
           addDecl(func, decl->getLoc(), name, &traitDecl, LexerCursor(),
                   LexerCursor(), -1);
         }

@@ -84,7 +84,9 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
       opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
       moveParent("Movable", "__moveinit__", ClosureMethod::MOVE),
-      anyParent("AnyType", "__del__", ClosureMethod::DEL) {}
+      anyParent("AnyType", "__del__", ClosureMethod::DEL),
+      copyParent("Copyable", "__copyinit__", ClosureMethod::COPY),
+      implicitlyCopyableParent("ImplicitlyCopyable", "", ClosureMethod::NONE) {}
 
 TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
   if (trait)
@@ -106,6 +108,9 @@ TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
     }
   }
   trait = dyn_cast_or_null<TraitDeclOp>(traitDeclParent->getIfOperation());
+  // If the trait does not define any methods, do not try and resolve anything.
+  if (traitFnName.empty())
+    return trait;
   definingFn = getFnOpNamed(trait, traitFnName);
   assert(definingFn && "missing function in builtin trait");
   return trait;
@@ -524,15 +529,13 @@ getTraitType(SmallVector<ClosureEmitter::ClosureParent> &closureParents,
                                    [&](ClosureEmitter::ClosureParent &parent) {
                                      return parent.getSymbolRef(moduleDecl);
                                    }));
-  // TODO: this should be all symbols
-  return TraitType::get(moduleDecl.getContext(), symbols.front());
+  return TraitType::get(moduleDecl.getContext(), symbols);
 }
 
-ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
-                                             StringRef baseName,
-                                             ASTDecl &traitDecl,
-                                             SMLoc smLocation,
-                                             bool isRegisterPassable) {
+ASTDecl *
+ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
+                                    ASTDecl &traitDecl, SMLoc smLocation,
+                                    bool isRegisterPassable, bool isCopyable) {
   TypeConvention typeConvention = isRegisterPassable
                                       ? TypeConvention::RegisterPassable
                                       : TypeConvention::MemoryOnly;
@@ -547,14 +550,15 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   b.setInsertionPointAfter(trait);
   MLIRContext *ctx = b.getContext();
 
-  // Create the trait type.
-  SmallVector<FlatSymbolRefAttr> path(
-      moduleDecl.getSymbolRef().getNestedReferences());
-  path.push_back(FlatSymbolRefAttr::get(trait.getSymNameAttr()));
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
                     ClosureMethod::CALL),
       moveParent, anyParent};
+  if (isCopyable) {
+    closureParents.push_back(copyParent);
+    closureParents.push_back(implicitlyCopyableParent);
+  }
+
   TraitType traitType = getTraitType(closureParents, moduleDecl);
 
   // Give the struct a parameter "impl" of metatype trait.
@@ -568,10 +572,11 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   ASTType selfType(paramType);
 
   // Create a struct with a single field of type "impl".
-  std::pair<ASTDecl &, StructDeclOp> pair =
-      createStruct(shared, moduleDecl,
-                   StringAttr::get(b.getContext(), baseName + "_wrapper"),
-                   implParameters, smLocation);
+  std::pair<ASTDecl &, StructDeclOp> pair = createStruct(
+      shared, moduleDecl,
+      StringAttr::get(b.getContext(),
+                      baseName + "_wrapper" + (isCopyable ? "_copyable" : "")),
+      implParameters, smLocation);
   ASTDecl &structDecl = pair.first;
   StructDeclOp declOp = pair.second;
   declOp.setConvention(typeConvention);
@@ -655,15 +660,12 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
     return op;
   };
   DenseMap<StringRef, FnOp> nameToImpl;
-  SmallVector<FnOp> traitMethods;
-  llvm::append_range(
-      traitMethods,
-      llvm::map_to_vector(closureParents, [&](ClosureParent &parent) {
-        return parent.getDefiningOp(moduleDecl);
-      }));
-  for (ClosureParent &closureParent : closureParents)
-    nameToImpl.insert(
-        {closureParent.getDefiningOpName(), populateTraitFn(closureParent)});
+  for (ClosureParent &closureParent : closureParents) {
+    if (!closureParent.isEmpty())
+      nameToImpl.insert(
+          {closureParent.getDefiningOpName(), populateTraitFn(closureParent)});
+  }
+
   // Emit conformance tables
   StringAttr moveParentStrAttr;
   auto addWitnessEntry = [&](TraitDeclOp traitParent, FnOp fnOp) {
@@ -708,9 +710,13 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
         SymbolConstantAttr::get(ctx, implSymbol, params, baseSigGen);
     b.create<WitnessOp>(StringAttr::get(ctx, name), symbolConstant);
   };
-  for (ClosureParent &closureParent : closureParents)
-    addWitnessEntry(closureParent.getTrait(moduleDecl),
-                    closureParent.getDefiningOp(moduleDecl));
+
+  for (ClosureParent &closureParent : closureParents) {
+    if (!closureParent.isEmpty()) {
+      addWitnessEntry(closureParent.getTrait(moduleDecl),
+                      closureParent.getDefiningOp(moduleDecl));
+    }
+  }
 
   assert(moveParentStrAttr && "closures are expected to conform to move");
   auto initName = StringAttr::get(ctx, "__init__");
@@ -1684,8 +1690,11 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
         ClosureMethodAttr::get(ctx, method), paramValues, sig);
     builder.create<WitnessOp>(fnOp.getSourceNameAttr(), symbol);
   };
-  for (ClosureParent &closureParent : closureParents)
-    addWitnessTable(closureParent);
+
+  for (ClosureParent &closureParent : closureParents) {
+    if (!closureParent.isEmpty())
+      addWitnessTable(closureParent);
+  }
 
   // create a SymbolRefAttr from the StructGeneratorOp
   SymbolRefAttr structGenSymbolRef = getFullyResolvedSymbolRef(
@@ -1704,7 +1713,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
 Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                     ArrayRef<Capture> captures,
                                     StructDeclOp wrapper, TraitDeclOp trait,
-                                    Location location) {
+                                    Location location, bool isCopyable) {
   // (1) Create the closure instance.
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   FnOp parent = nestedFn->getParentOfType<FnOp>();
@@ -1720,9 +1729,9 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       break;
     symbolParent = symbolParent->getParentDecl();
   } while (symbolParent);
-  // The location of the closure init op should have its parent's subprogram as
-  // a scope. We will also store an independent scope on the op to validate the
-  // nested ops.
+  // The location of the closure init op should have its parent's subprogram
+  // as a scope. We will also store an independent scope on the op to validate
+  // the nested ops.
   Location fileOnlyLoc = DebugInfo::extractSourceLoc(location);
   Location opLoc = FusedLoc::get(
       ctx, fileOnlyLoc,
@@ -1839,6 +1848,11 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
                     ClosureMethod::CALL),
       moveParent, anyParent};
+  if (isCopyable) {
+    closureParents.push_back(copyParent);
+    closureParents.push_back(implicitlyCopyableParent);
+  }
+
   TypedAttr witnessTable = addWitnessTablesToClosure(
       moduleDecl, nestedFnDecl.getLoc(), parent, closureType, closureParents);
   ParamDeclAttr origin =
@@ -1947,10 +1961,10 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   CaptureConvention convention;
   /// The captureValue is a map of the valueInParent. For example, the
   /// valueInParent may be an immutable borrowed value. If this value is
-  /// captured by copy the capturedValue in the body of the closure is a mutable
-  /// owned value. Since the captured value does not exist until later, we have
-  /// to create a temporary value to represent the change in the properties of
-  /// the value in the body of the closure.
+  /// captured by copy the capturedValue in the body of the closure is a
+  /// mutable owned value. Since the captured value does not exist until
+  /// later, we have to create a temporary value to represent the change in
+  /// the properties of the value in the body of the closure.
   CValue captureValue;
   // Switch the DI Scope to the enclosing function before emitting the
   // load so the debug information is accurate.
@@ -1984,8 +1998,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     if (originalType.isTrivial(closure.getLoc(), shared)) {
       // Remap to trivial copy convention to avoid storing symbols.
       convention = CaptureConvention::kConventionTrivialCopy;
-      // if we are capturing by mutable copy and its trivial do not capture the
-      // reference.
+      // if we are capturing by mutable copy and its trivial do not capture
+      // the reference.
       if (isa<RefType>(valueInParent.getType())) {
         SyntheticNode node(result->getLoc());
         ValueDest dest(EC_Capture);
@@ -2021,7 +2035,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   case CaptureConvention::kConventionMut: {
     convention = parsedConvention;
     captureValue = valueInParent;
-    // Ensure we are not capturing an immutable reference by mutable reference.
+    // Ensure we are not capturing an immutable reference by mutable
+    // reference.
     if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {
       OriginType originType = refType.getOriginType();
       if (originType.isMutableKnown(false)) {

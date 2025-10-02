@@ -63,7 +63,7 @@ public:
                                  StructDeclOp closureImpl, SMLoc location);
   Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                       ArrayRef<Capture> captures, StructDeclOp wrapper,
-                      TraitDeclOp trait, Location location);
+                      TraitDeclOp trait, Location location, bool isCopyable);
   static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
                                   StringRef name, SMLoc location);
 
@@ -90,7 +90,7 @@ public:
   /// check-lifetimes pass.
   ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
                                ASTDecl &traitDecl, SMLoc location,
-                               bool isRegisterPassable);
+                               bool isRegisterPassable, bool isCopyable);
 
 private:
   MLIRContext *ctx;
@@ -129,6 +129,7 @@ public:
     SymbolRefAttr getSymbolRef(ASTDecl &moduleDecl);
     StringRef getDefiningOpName() const { return traitFnName; }
     StringAttr getFullSymbolName(ASTDecl &moduleDecl);
+    bool isEmpty() const { return closureMethod == ClosureMethod::NONE; }
     ClosureMethod getClosureMethod() const { return closureMethod; }
 
   private:
@@ -167,7 +168,11 @@ private:
   ClosureParent moveParent;
   /// Anytype trait is a parent of all closures. Cache its defining op.
   ClosureParent anyParent;
-
+  /// Copy trait is a parent of some closures. Cache its defining op.
+  ClosureParent copyParent;
+  /// ImplicitlyCopyable trait is a parent of some closures. It has no defining
+  /// methods.
+  ClosureParent implicitlyCopyableParent;
   /// Closure traits live in the top level module. This cache guards against
   /// emitting duplicates.
   DenseMap<Type, ASTDecl *> closureTraitCache;
