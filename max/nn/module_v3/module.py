@@ -25,7 +25,7 @@ from rich.pretty import pretty_repr
 from typing_extensions import Self, dataclass_transform
 
 from ... import graph
-from ...driver import DLPackArray
+from ...driver import Device, DLPackArray
 from ...experimental import functional as F
 from ...experimental.tensor import Tensor, _session
 from ...graph import Graph
@@ -312,6 +312,27 @@ class Module:
         new = copy.deepcopy(self)
         new.apply_to_parameters(f)
         return new
+
+    def to(self, device: Device) -> Self:
+        """Updates the module's parameters, transferring them to the specified device.
+
+        .. code-block:: python
+
+            from max.driver import CPU
+            from max.nn.module_v3 import Linear
+
+            model = Linear(2, 3)
+            model.to(CPU())
+
+        Args:
+            device: The device to which all model parameters will be transferred.
+
+        Returns:
+            A reference to the model. The transfer is applied mutably; internal
+            parameters are updated to be transferred to the specified device.
+        """
+        self.apply_to_parameters(lambda _, t: t.to(device))
+        return self
 
     @contextlib.contextmanager
     def _mapped_parameters(self, f: Callable[[str, Tensor], Tensor]):
