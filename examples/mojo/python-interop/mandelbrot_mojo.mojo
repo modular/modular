@@ -15,7 +15,7 @@ from math import ceildiv
 from os import abort
 from sys import has_accelerator
 
-from complex import ComplexSIMD
+from complex import ComplexSIMD, ComplexScalar
 from gpu import global_idx
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
