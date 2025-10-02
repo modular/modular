@@ -42,6 +42,9 @@ Literals now have a default type. For example, you can now bind
 
 - `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
 
+- The `math` package now has a mojo native implementation of `acos`, `asin`,
+  `cbrt`, and `erfc`.
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
