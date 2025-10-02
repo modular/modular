@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 import pytest
+from max.driver import CPU, Accelerator, accelerator_count
 from max.experimental import random
 from max.experimental.tensor import Tensor, TensorType, defaults
 from max.nn.module_v3.module import Module, module_dataclass
@@ -246,6 +247,14 @@ def test_load_state_dict_nonstrict(test_module: TestModule):
     test_module.load_state_dict(weights, strict=False)
     assert test_module.a.item() == 5
     assert test_module.sub.b.item() == 6
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires multiple devices")
+def test_to(test_module: TestModule):
+    assert all(t.device == Accelerator() for _, t in test_module.parameters)
+    module = test_module.to(CPU())
+    assert module is test_module
+    assert all(t.device == CPU() for _, t in test_module.parameters)
 
 
 def test_compile(test_module: TestModule):
