@@ -3768,6 +3768,13 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
         capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
     return emitter.emitResult(ASTType(selfType), this, dest);
   }
+  if (argList.effects.isUnified()) {
+    ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
+        getLoc(), *emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>(),
+        signature, InlineLevel::Automatic);
+    Type traitType = trait->getTypeDeclSelf().getMetaType();
+    return emitter.emitResult(ASTType(traitType), this, dest);
+  }
   return emitter.emitResult(ASTType(signature), this, dest);
 }
 
