@@ -516,6 +516,11 @@ class LineGenerator(Visitor[Line]):
         from mblib2to3.pgen2 import token as mtoken
         self.visit_alias = partial(v, keywords={"alias"}, parens=set())
 
+    def visit_where_clause(self, node: Node) -> Iterator[Line]:
+        normalize_invisible_parens(node, parens_after={"where"}, preview=self.mode.preview)
+        for child in node.children:
+            yield from self.visit_default(child)
+
 
 def transform_line(
     line: Line, mode: Mode, features: Collection[Feature] = ()

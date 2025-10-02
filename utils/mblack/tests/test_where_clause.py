@@ -1,0 +1,92 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+import pytest
+
+import mblack
+from tests.util import assert_mojo_format
+
+
+def test_simple_where_clause():
+    source = f"fn where_simple[x: Bool]() where x: pass"
+    expected = (
+        f"fn where_simple[x: Bool]() where x:\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_composite_where_clause_with_return():
+    source = f"fn where_composite[x: Bool]() -> Int where x and y + z: pass"
+    expected = (
+        f"fn where_composite[x: Bool]() -> Int where x and y + z:\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_long_where_clause():
+    source = (
+        "fn where_long[x: Bool, y: Int, z: Int](\n"
+        "    a: Int, b: Int, c: Int\n"
+        f") where x and   y + z and a == b and c   == d and (e == f or  g):\n"
+        "    pass\n"
+    )
+    expected = (
+        "fn where_long[\n"
+        "    x: Bool, y: Int, z: Int\n"
+        "](a: Int, b: Int, c: Int) where (\n"
+        "    x and y + z and a == b and c == d and (e == f or g)\n"
+        "):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_very_long_where_clause_with_return():
+    source = (
+        "fn where_very_long() -> (Int, Int, String) where (\n"
+        "    x and y + z and a == b and c == d and (e == f or g) and xx == yy and zz == aa or (ds or dd)\n"
+        "):\n"
+        "    pass\n"
+    )
+    expected = (
+        "fn where_very_long() -> (\n"
+        "    Int,\n"
+        "    Int,\n"
+        "    String,\n"
+        ") where (\n"
+        "    x\n"
+        "    and y + z\n"
+        "    and a == b\n"
+        "    and c == d\n"
+        "    and (e == f or g)\n"
+        "    and xx == yy\n"
+        "    and zz == aa\n"
+        "    or (ds or dd)\n"
+        "):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_multiple_where_clauses():
+    source = (
+        "fn where_multiple[x: Bool, y: Int]() "
+        "where x and y + z and a == b "
+        "where c == d and (e == f or g) and xx == yy "
+        "where zz == aa or (ds or dd):\n"
+        "    pass\n"
+    )
+    expected = (
+        "fn where_multiple[\n"
+        "    x: Bool, y: Int\n"
+        "]() where x and y + z and a == b where (\n"
+        "    c == d and (e == f or g) and xx == yy\n"
+        ") where zz == aa or (ds or dd):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
