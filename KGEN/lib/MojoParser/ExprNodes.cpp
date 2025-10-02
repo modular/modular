@@ -3033,32 +3033,29 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
       return {};
   }
 
-  // Detect unreachable code and warn about it.
+  // Detect unreachable code and warn about it. This is called after both arms
+  // are emitted.
   auto deadCodeCheck = [&]() {
-    if (lhsI1PVal) {
-      IntegerAttr asIntAttr = dyn_cast<IntegerAttr>(lhsI1PVal.get());
-      if (!asIntAttr)
-        return;
-      bool isZero = asIntAttr.getValue().isZero();
-      bool deadElse = false;
-      if (kind == kBoolOr && !isZero) {
-        deadElse = true;
-        emitter.emitWarning(this->getLoc())
-            << "unreachable code on right side of 'True or ...'";
-      } else if (kind == kBoolAnd && isZero) {
-        deadElse = true;
-        emitter.emitWarning(this->getLoc())
-            << "unreachable code on right side of 'False and ...'";
-      } else {
-        // This has no dead code, but let's still warn about a constant branch
-        // condition.
-        emitter.emitWarning(this->getLoc())
-            << "constant value on left side of '" << (isZero ? "False" : "True")
-            << " " << (kind == kBoolOr ? "or" : "and") << " ...'";
-      }
-      // Eliminate the dead code.
-      if (deadElse)
-        markRegionUnreachable(&ifOp.getElseRegion(), ifOp.getLoc());
+    if (!lhsI1PVal)
+      return;
+    IntegerAttr asIntAttr = dyn_cast<IntegerAttr>(lhsI1PVal.get());
+    if (!asIntAttr)
+      return;
+    bool isZero = asIntAttr.getValue().isZero();
+    if (kind == kBoolOr && !isZero) {
+      emitter.emitWarning(this->getLoc())
+          << "unreachable code on right side of 'True or ...'";
+      markRegionUnreachable(&ifOp.getElseRegion(), ifOp.getLoc());
+    } else if (kind == kBoolAnd && isZero) {
+      emitter.emitWarning(this->getLoc())
+          << "unreachable code on right side of 'False and ...'";
+      markRegionUnreachable(&ifOp.getThenRegion(), ifOp.getLoc());
+    } else {
+      // This has no dead code, but let's still warn about a constant branch
+      // condition.
+      emitter.emitWarning(this->getLoc())
+          << "constant value on left side of '" << (isZero ? "False" : "True")
+          << " " << (kind == kBoolOr ? "or" : "and") << " ...'";
     }
   };
 

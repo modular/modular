@@ -370,6 +370,18 @@ fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
     _ = Int() if cond else {}
     _ = {} if cond else Int()
 
+    # https://github.com/modular/modular/issues/5380
+    # CHECK: hlcf.elif {
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[COND:%.*]] = hlcf.if [[FALSE]]
+    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   = kgen.param.constant: !Bool = <{:i1 0}>
+    # CHECK-NEXT:   hlcf.yield
+    # CHECK-NEXT: }
+    if False and cond: # expected-warning {{unreachable code on right side of 'False and ...'}}
+        pass
+
 
 ##===----------------------------------------------------------------------===##
 # Chained comparisons.
