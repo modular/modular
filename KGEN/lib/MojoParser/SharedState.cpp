@@ -226,6 +226,15 @@ private:
 };
 } // namespace
 
+/// ClosureWrappers is a data structure used to cache wrappers that conform to a
+/// particular closure trait. Currently there can be two wrappers, but a more
+/// scalable approach is to use the TraitType as the key. Because there are only
+/// two today, the overhead of a hash table probably is not worth it.
+struct ClosureWrappers {
+  ASTDecl *copyable = nullptr;
+  ASTDecl *noncopyable = nullptr;
+};
+
 //===----------------------------------------------------------------------===//
 // SharedState
 //===----------------------------------------------------------------------===//
@@ -321,7 +330,8 @@ struct SharedState::Impl {
   DenseMap<GeneratorType, ASTDecl *> closureTraits;
   /// Closure wrappers are unique to their trait signatures and local to a file
   /// module. Cache previously built wrappers.
-  DenseMap<std::pair<TraitType, ASTDecl *>, ASTDecl *> unifiedClosureWrappers;
+  DenseMap<std::pair<TraitType, ASTDecl *>, ClosureWrappers>
+      unifiedClosureWrappers;
 
   /// The capture values and decls associated with their enclosing nested
   /// function. This data structure is populated during the parsing of the FnOp
@@ -1970,24 +1980,30 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
   return ptr->second;
 }
 
-ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
-    SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl,
-    InlineLevel inlineLevel) {
-  // create the trait type
+ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(SMLoc loc,
+                                                       FnTypeGeneratorType sig,
+                                                       ASTDecl *moduleDecl,
+                                                       InlineLevel inlineLevel,
+                                                       bool isCopyable) {
   ASTDecl *traitDecl =
       getOrCreateClosureTrait(loc, *moduleDecl, sig, inlineLevel);
   TraitType traitType =
       dyn_cast<TraitType>(traitDecl->getTypeDeclSelf().getMetaType());
   assert(traitType && "expected traits self type to be a trait type");
   auto ptr = impl->unifiedClosureWrappers.find({traitType, moduleDecl});
-  if (ptr == impl->unifiedClosureWrappers.end()) {
-    std::string name = ASTType(sig).getAsString(/*diags=*/this);
-    ASTDecl *result = closureEmitter->createStructWrapper(
-        *moduleDecl, name, *traitDecl, loc, sig.isRegisterPassable());
-    impl->unifiedClosureWrappers.insert({{traitType, moduleDecl}, result});
-    return result;
-  }
-  return ptr->second;
+  if (ptr == impl->unifiedClosureWrappers.end())
+    ptr = impl->unifiedClosureWrappers
+              .insert({{traitType, moduleDecl}, ClosureWrappers()})
+              .first;
+  ClosureWrappers &wrappers = ptr->second;
+  ASTDecl *&targetWrapper =
+      isCopyable ? wrappers.copyable : wrappers.noncopyable;
+  if (!targetWrapper)
+    targetWrapper = closureEmitter->createStructWrapper(
+        *moduleDecl, ASTType(sig).getAsString(/*diags=*/this), *traitDecl, loc,
+        sig.isRegisterPassable(), isCopyable);
+
+  return targetWrapper;
 }
 
 FnOp SharedState::getOrCreateFunctionThunk(Attribute key,
