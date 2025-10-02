@@ -309,7 +309,7 @@ def test_apply():
         # twice only even numbers
         twice = items.copy()
         span = Span(twice)
-        span.apply[func = _twice[D], where = _where[D]]()
+        span.apply[func = _twice[D], cond = _where[D]]()
         for i, item in enumerate(items):
             if item % 2 == 0:
                 assert_true(span[i] == item * 2)
