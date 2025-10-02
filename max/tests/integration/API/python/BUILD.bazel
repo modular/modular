@@ -185,7 +185,7 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"] + select({
-        "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: E2EOPT-613
+        "//:amd_gpu": ["@platforms//:incompatible"],  # TODO(GEX-2637): Enable AMD multi-GPU tests once flakes are resolved.
         "//conditions:default": [],
     }),
     tags = ["gpu"],
