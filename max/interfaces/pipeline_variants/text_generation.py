@@ -12,11 +12,9 @@ from typing import (
     Any,
     Generic,
     Literal,
-    Optional,
     Protocol,
     TypedDict,
     TypeVar,
-    Union,
     runtime_checkable,
 )
 
@@ -75,7 +73,7 @@ class TextGenerationRequestMessage(TypedDict):
     The role of the message sender, indicating whether the message is from the system, user, or assistant.
     """
 
-    content: Union[str, list[dict[str, Any]]]
+    content: str | list[dict[str, Any]]
     """
     Content can be a simple string or a list of message parts of different modalities.
 
@@ -118,32 +116,32 @@ class TextGenerationRequest(Request):
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
-    prompt: Union[str, Sequence[int], None] = None
+    prompt: str | Sequence[int] | None = None
     """
     The prompt to be processed by the model. This field supports legacy
     completion APIs and can accept either a string or a sequence of integers
     representing token IDs. If not provided, the model may generate output
     based on the messages field.
     """
-    messages: Optional[list[TextGenerationRequestMessage]] = None
+    messages: list[TextGenerationRequestMessage] | None = None
     """
     A list of messages for chat-based interactions. This is used in chat
     completion APIs, where each message represents a turn in the conversation.
     If provided, the model will generate responses based on these messages.
     """
-    images: Optional[list[bytes]] = None
+    images: list[bytes] | None = None
     """
     A list of image byte arrays that can be included as part of the request.
     This field is optional and may be used for multimodal inputs where images
     are relevant to the prompt or task.
     """
-    tools: Optional[list[TextGenerationRequestTool]] = None
+    tools: list[TextGenerationRequestTool] | None = None
     """
     A list of tools that can be invoked during the generation process. This
     allows the model to utilize external functionalities or APIs to enhance its
     responses.
     """
-    response_format: Optional[TextGenerationResponseFormat] = None
+    response_format: TextGenerationResponseFormat | None = None
     """
     Specifies the desired format for the model's output. When set, it enables
     structured generation, which adheres to the json_schema provided.
@@ -170,11 +168,11 @@ class TextGenerationRequest(Request):
     generated output. This can be useful for debugging or when you want to see how
     the input relates to the output.
     """
-    stop: Optional[Union[str, list[str]]] = None
+    stop: str | list[str] | None = None
     """
     Optional list of stop expressions (see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
     """
-    chat_template_options: Optional[dict[str, Any]] = None
+    chat_template_options: dict[str, Any] | None = None
     """
     Optional dictionary of options to pass when applying the chat template.
     """
@@ -182,7 +180,7 @@ class TextGenerationRequest(Request):
     sampling_params: SamplingParams = field(default_factory=SamplingParams)
     """Token sampling configuration parameters for the request."""
 
-    target_endpoint: Optional[str] = None
+    target_endpoint: str | None = None
     """
     Optional target endpoint identifier for routing the request to a specific
     service or model instance. This should be used in disaggregate serving
@@ -212,7 +210,7 @@ class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
     final_status: GenerationStatus
     """The final status of the generation process."""
 
-    log_probabilities: Optional[list[LogProbabilities]] = None
+    log_probabilities: list[LogProbabilities] | None = None
     """Optional list of log probabilities for each token."""
 
     @property
@@ -340,26 +338,26 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def next_tokens(self) -> npt.NDArray[Any]:
         """The tokens to be processed in the next model iteration.
 
         This array contains the tokens that will be fed to the model in the
         upcoming forward pass. The length should match ``active_length``.
 
         Returns:
-            A 1D NumPy array of token IDs with length equal to ``active_length``.
+            A 1D NumPy array of int32 token IDs with length equal to ``active_length``.
         """
         ...
 
     @property
-    def tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def tokens(self) -> npt.NDArray[Any]:
         """The complete token array including preallocated slots.
 
         This includes all tokens (completed, active, and preallocated empty slots).
         For most use cases, prefer ``all_tokens`` to get only the active tokens.
 
         Returns:
-            A 1D NumPy array containing all tokens including padding.
+            A 1D NumPy array of int32 values containing all tokens including padding.
         """
         ...
 
@@ -383,9 +381,9 @@ class TextGenerationContext(BaseContext, Protocol):
 
     def set_token_indices(
         self,
-        start_idx: Optional[int] = None,
-        active_idx: Optional[int] = None,
-        end_idx: Optional[int] = None,
+        start_idx: int | None = None,
+        active_idx: int | None = None,
+        end_idx: int | None = None,
     ) -> None:
         """Set token indices to specific absolute values.
 
@@ -462,38 +460,38 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def all_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def all_tokens(self) -> npt.NDArray[Any]:
         """All active tokens in the context (prompt and generated).
 
         This property returns only the meaningful tokens, excluding any
         preallocated but unused slots in the token array.
 
         Returns:
-            A 1D NumPy array containing all prompt and generated tokens.
+            A 1D NumPy array of int32 values containing all prompt and generated tokens.
         """
         return self.tokens[: self.end_idx]
 
     @property
-    def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def prompt_tokens(self) -> npt.NDArray[Any]:
         """The original prompt tokens for this context.
 
         These are the input tokens that were provided to start the generation
         process, before any tokens were generated by the model.
 
         Returns:
-            A 1D NumPy array containing the original prompt token IDs.
+            A 1D NumPy array of int32 values containing the original prompt token IDs.
         """
         ...
 
     @property
-    def generated_tokens(self) -> npt.NDArray[np.integer[Any]]:
+    def generated_tokens(self) -> npt.NDArray[Any]:
         """All tokens generated by the model for this context.
 
         This excludes the original prompt tokens and includes only tokens
         that have been produced during the generation process.
 
         Returns:
-            A 1D NumPy array containing generated token IDs.
+            A 1D NumPy array of int32 values containing generated token IDs.
         """
         ...
 
@@ -535,7 +533,7 @@ class TextGenerationContext(BaseContext, Protocol):
     def update(
         self,
         new_token: int,
-        log_probabilities: Optional[LogProbabilities] = None,
+        log_probabilities: LogProbabilities | None = None,
     ) -> None:
         """Update the context with a newly generated token.
 
@@ -562,20 +560,25 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def matcher(self) -> Optional[Any]:
+    def matcher(self) -> Any | None:
         """The grammar matcher for structured output generation, if configured.
 
         The matcher enforces structural constraints (like JSON schema) during
         generation to ensure valid formatted output.
 
         Returns:
-            The grammar matcher instance, or ``None`` if no structured generation
+            The grammar matcher instance, or None if no structured generation
             is configured for this context.
+
+        Note:
+            The matcher type depends on the structured generation backend used
+            (e.g., outlines, guidance, etc.). In the future, this should be
+            replaced with a Protocol for better type safety.
         """
         ...
 
     @property
-    def json_schema(self) -> Optional[str]:
+    def json_schema(self) -> str | None:
         """The JSON schema for constrained decoding, if configured.
 
         When set, this schema constrains token generation to produce valid JSON

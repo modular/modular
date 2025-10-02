@@ -3,11 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
+
 import logging
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
-from typing import Any, Optional, Protocol, TypeVar, Union, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
@@ -29,21 +31,21 @@ class SamplingParamsInput:
     the flexibility to specify only the parameters you want to override.
     """
 
-    top_k: Optional[int] = None
-    top_p: Optional[float] = None
-    min_p: Optional[float] = None
-    temperature: Optional[float] = None
-    frequency_penalty: Optional[float] = None
-    presence_penalty: Optional[float] = None
-    repetition_penalty: Optional[float] = None
-    max_new_tokens: Optional[int] = None
-    min_new_tokens: Optional[int] = None
-    ignore_eos: Optional[bool] = None
-    stop: Optional[Optional[list[str]]] = None
-    stop_token_ids: Optional[Optional[list[int]]] = None
-    detokenize: Optional[bool] = None
-    seed: Optional[int] = None
-    logits_processors: Optional[Sequence[LogitsProcessor]] = None
+    top_k: int | None = None
+    top_p: float | None = None
+    min_p: float | None = None
+    temperature: float | None = None
+    frequency_penalty: float | None = None
+    presence_penalty: float | None = None
+    repetition_penalty: float | None = None
+    max_new_tokens: int | None = None
+    min_new_tokens: int | None = None
+    ignore_eos: bool | None = None
+    stop: list[str] | None = None
+    stop_token_ids: list[int] | None = None
+    detokenize: bool | None = None
+    seed: int | None = None
+    logits_processors: Sequence[LogitsProcessor] | None = None
 
 
 @dataclass(frozen=False)
@@ -78,10 +80,13 @@ class SamplingParams:
     that have already appeared in the generated text at least once by dividing the logits by the
     repetition penalty."""
 
-    max_new_tokens: Union[int, None] = None
-    """The maximum number of new tokens to generate in the response. If not set,
-    the model may generate tokens until it reaches its internal limits or based
-    on other stopping criteria."""
+    max_new_tokens: int | None = None
+    """The maximum number of new tokens to generate in the response.
+
+    When set to an integer value, generation will stop after this many tokens.
+    When None (default), the model may generate tokens until it reaches its
+    internal limits or other stopping criteria are met.
+    """
 
     min_new_tokens: int = 0
     """The minimum number of tokens to generate in the response."""
@@ -90,10 +95,10 @@ class SamplingParams:
     """If True, the response will ignore the EOS token, and continue to
     generate until the max tokens or a stop string is hit."""
 
-    stop: Optional[list[str]] = None
+    stop: list[str] | None = None
     """A list of detokenized sequences that can be used as stop criteria when generating a new sequence."""
 
-    stop_token_ids: Optional[list[int]] = None
+    stop_token_ids: list[int] | None = None
     """A list of token ids that are used as stopping criteria when generating a new sequence."""
 
     detokenize: bool = True
@@ -102,12 +107,12 @@ class SamplingParams:
     seed: int = field(default_factory=lambda: secrets.randbits(32))
     """The seed to use for the random number generator. Defaults to a cryptographically secure random value."""
 
-    logits_processors: Optional[Sequence[LogitsProcessor]] = None
+    logits_processors: Sequence[LogitsProcessor] | None = None
     """Callables to post-process the model logits.
     See :obj:`~max.interfaces.logit_processors_type.LogitsProcessor` for examples."""
 
     @classmethod
-    def from_input(cls, input_params: SamplingParamsInput) -> "SamplingParams":
+    def from_input(cls, input_params: SamplingParamsInput) -> SamplingParams:
         """Create a SamplingParams instance from a dataclass input, using defaults for None values.
 
         This method allows you to pass a dataclass with some parameters set to None,
@@ -357,14 +362,14 @@ class InputContext(BaseContext, Protocol):
         ...
 
     @property
-    def max_length(self) -> Optional[int]:
+    def max_length(self) -> int | None:
         """The maximum allowed length for this sequence.
 
         When set, generation will stop when this length is reached, regardless
         of other stopping criteria.
 
         Returns:
-            The maximum sequence length limit, or ``None`` if no limit is set.
+            The maximum sequence length limit, or None if no limit is set.
         """
         ...
 
@@ -427,7 +432,7 @@ class InputContext(BaseContext, Protocol):
         upcoming forward pass. The length should match ``active_length``.
 
         Returns:
-            A 1D NumPy array of token IDs with length equal to ``active_length``.
+            A 1D NumPy array of int32 token IDs with length equal to ``active_length``.
         """
         ...
 
@@ -439,7 +444,7 @@ class InputContext(BaseContext, Protocol):
         For most use cases, prefer ``all_tokens`` to get only the active tokens.
 
         Returns:
-            A 1D NumPy array containing all tokens including padding.
+            A 1D NumPy array of int32 values containing all tokens including padding.
         """
         ...
 
@@ -451,7 +456,7 @@ class InputContext(BaseContext, Protocol):
         preallocated but unused slots in the token array.
 
         Returns:
-            A 1D NumPy array containing all prompt and generated tokens.
+            A 1D NumPy array of int32 values containing all prompt and generated tokens.
         """
         return self.tokens[: self.end_idx]
 
@@ -463,7 +468,7 @@ class InputContext(BaseContext, Protocol):
         process, before any tokens were generated by the model.
 
         Returns:
-            A 1D NumPy array containing the original prompt token IDs.
+            A 1D NumPy array of int32 values containing the original prompt token IDs.
         """
         ...
 
@@ -475,7 +480,7 @@ class InputContext(BaseContext, Protocol):
         that have been produced during the generation process.
 
         Returns:
-            A 1D NumPy array containing generated token IDs.
+            A 1D NumPy array of int32 values containing generated token IDs.
         """
         ...
 
@@ -509,7 +514,7 @@ class InputContext(BaseContext, Protocol):
     def update(
         self,
         new_token: int,
-        log_probabilities: Optional[LogProbabilities] = None,
+        log_probabilities: LogProbabilities | None = None,
     ) -> None:
         """Update the context with a newly generated token.
 
@@ -555,9 +560,9 @@ class InputContext(BaseContext, Protocol):
 
     def set_token_indices(
         self,
-        start_idx: Optional[int] = None,
-        active_idx: Optional[int] = None,
-        end_idx: Optional[int] = None,
+        start_idx: int | None = None,
+        active_idx: int | None = None,
+        end_idx: int | None = None,
     ) -> None:
         """Set token indices to specific absolute values.
 
@@ -572,27 +577,32 @@ class InputContext(BaseContext, Protocol):
         ...
 
     @property
-    def matcher(self) -> Optional[Any]:
+    def matcher(self) -> Any | None:
         """The grammar matcher for structured output generation, if configured.
 
         The matcher enforces structural constraints (like JSON schema) during
         generation to ensure valid formatted output.
 
         Returns:
-            The grammar matcher instance, or ``None`` if no structured generation
+            The grammar matcher instance, or None if no structured generation
             is configured for this context.
+
+        Note:
+            The matcher type depends on the structured generation backend used
+            (e.g., outlines, guidance, etc.). In the future, this should be
+            replaced with a Protocol for better type safety.
         """
         ...
 
     @property
-    def json_schema(self) -> Optional[str]:
+    def json_schema(self) -> str | None:
         """The JSON schema for constrained decoding, if configured.
 
         When set, this schema constrains token generation to produce valid JSON
         output that conforms to the specified structure.
 
         Returns:
-            The JSON schema string, or ``None`` if no schema constraint is active.
+            The JSON schema string, or None if no schema constraint is active.
         """
         ...
 

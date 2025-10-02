@@ -12,7 +12,7 @@ responses, including status tracking and audio data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Optional, Union
+from typing import Any, Generic
 
 import msgspec
 import numpy as np
@@ -32,7 +32,7 @@ class AudioGenerationRequest(Request):
     capabilities of the response generation.
     """
 
-    input: Optional[str] = None
+    input: str | None = None
     """The text to generate audio for. The maximum length is 4096 characters.
     """
 
@@ -49,7 +49,7 @@ class AudioGenerationRequest(Request):
     """(ONLY FOR BENCHMARKING PURPOSES) An assistant message that replaces the
     speech token pattern."""
 
-    prompt: Optional[list[int] | str] = field(default=None)
+    prompt: list[int] | str | None = field(default=None)
     """Optionally provide a preprocessed list of token ids or a prompt string to pass as input directly into the model.
     This replaces automatically generating TokenGeneratorRequestMessages given the input, audio prompt tokens,
     audio prompt transcription fields."""
@@ -93,18 +93,18 @@ class AudioGenerationMetadata(
         echo: Echo of the input prompt or identifier for verification.
     """
 
-    sample_rate: Optional[int] = None
-    duration: Optional[float] = None
-    chunk_id: Optional[int] = None
-    timestamp: Optional[str] = None
-    final_chunk: Optional[bool] = None
-    model_name: Optional[str] = None
-    request_id: Optional[RequestID] = None
-    tokens_generated: Optional[int] = None
-    processing_time: Optional[float] = None
-    echo: Optional[str] = None
+    sample_rate: int | None = None
+    duration: float | None = None
+    chunk_id: int | None = None
+    timestamp: str | None = None
+    final_chunk: bool | None = None
+    model_name: str | None = None
+    request_id: RequestID | None = None
+    tokens_generated: int | None = None
+    processing_time: float | None = None
+    echo: str | None = None
 
-    def to_dict(self) -> dict[str, Union[int, float, str, bool]]:
+    def to_dict(self) -> dict[str, int | float | str | bool]:
         """
         Convert the metadata to a dictionary format.
 
