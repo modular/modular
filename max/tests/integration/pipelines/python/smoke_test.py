@@ -99,8 +99,8 @@ def safe_model_name(model: str) -> str:
 
 def get_lm_eval_cmd(model: str, task: str) -> list[str]:
     max_gen_toks = {
-        "unsloth/gpt-oss-20b-BF16": ",max_gen_toks=50000",
-        "Qwen/Qwen3-8B": ",max_gen_toks=4096",
+        "unsloth/gpt-oss-20b-bf16": ",max_gen_toks=50000",
+        "qwen/qwen3-8b": ",max_gen_toks=4096",
     }.get(model, "")
 
     return [
@@ -206,7 +206,7 @@ def build_eval_summary(
     "--model",
     type=str,
     required=True,
-    help="huggingface model path, for example: unsloth/gpt-oss-20b-BF16",
+    help="huggingface model path, for example: unsloth/gpt-oss-20b-bf16",
 )
 @click.option(
     "--output-file",
@@ -215,6 +215,7 @@ def build_eval_summary(
     help="If provided, write the summary of the smoke test to this file",
 )
 def smoke_test(framework: str, model: str, output_file: Optional[Path]):
+    model = model.lower().strip()
     cmd = get_server_cmd(framework, model)
 
     # TODO Refactor this to a model list/matrix specfying type of model
