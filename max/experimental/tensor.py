@@ -54,7 +54,13 @@ from rich.pretty import pretty_repr
 
 from .. import _core, driver, engine, graph, mlir
 from .._core.dialects import builtin, kgen, mo
-from ..driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
+from ..driver import (
+    CPU,
+    Accelerator,
+    Device,
+    DLPackArray,
+    accelerator_count,
+)
 from ..dtype import DType
 from ..graph import (
     ShapeLike,
@@ -310,6 +316,18 @@ class Tensor(DLPackArray, HasTensorValue):
             device=device,
         )
 
+    @classmethod
+    def range_like(cls, type: TensorType) -> Tensor:
+        dim = type.shape[-1]
+        range = F.range(
+            start=0,
+            stop=dim,
+            out_dim=dim,
+            dtype=type.dtype,
+            device=type.device.to_device(),
+        )
+        return F.broadcast_to(range, type.shape)
+
     @property
     def type(self) -> graph.TensorType:
         type = self._value.type
@@ -492,11 +510,11 @@ class Tensor(DLPackArray, HasTensorValue):
     def to(self, device: Device) -> Tensor:
         return F.transfer_to(self, device)
 
-    def argmax(self) -> Tensor:
-        return F.argmax(self)
+    def argmax(self, axis: int = -1) -> Tensor:
+        return F.argmax(self, axis=axis)
 
-    def max(self) -> Tensor:
-        return F.max(self)
+    def max(self, axis: int = -1) -> Tensor:
+        return F.max(self, axis=axis)
 
     def mean(self, axis: int = -1) -> Tensor:
         return F.mean(self, axis=axis)
