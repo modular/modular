@@ -126,6 +126,7 @@ struct _fdopen[mode: StaticString = "a"]:
         """
         # getdelim will allocate the buffer using malloc().
         var buffer = UnsafePointer[UInt8]()
+        var n = UInt64(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
         var bytes_read = external_call[
@@ -137,7 +138,7 @@ struct _fdopen[mode: StaticString = "a"]:
             OpaquePointer,
         ](
             UnsafePointer(to=buffer),
-            UnsafePointer(to=UInt64(0)),
+            UnsafePointer(to=n),
             ord(delimiter),
             self.handle,
         )

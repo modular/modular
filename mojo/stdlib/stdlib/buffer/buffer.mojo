@@ -1351,7 +1351,7 @@ struct NDBuffer[
             dtype,
             alignment=alignment,
             address_space=address_space,
-        ]()
+        ]().origin_cast[mut, origin]()
         return Self(data_pointer)
 
     @always_inline

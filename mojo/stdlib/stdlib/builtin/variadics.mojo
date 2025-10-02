@@ -306,7 +306,8 @@ struct VariadicListMem[
         @parameter
         if is_owned:
             for i in reversed(range(len(self))):
-                UnsafePointer(to=self[i]).destroy_pointee()
+                # Safety: We own the elements in this list.
+                UnsafePointer(to=self[i]).origin_cast[True]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn (idx: Int, var elt: element_type) capturing
@@ -494,7 +495,8 @@ struct VariadicPack[
 
             @parameter
             for i in reversed(range(Self.__len__())):
-                UnsafePointer(to=self[i]).destroy_pointee()
+                # Safety: We own the elements in this pack.
+                UnsafePointer(to=self[i]).origin_cast[True]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing

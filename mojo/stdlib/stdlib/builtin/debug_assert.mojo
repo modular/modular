@@ -377,7 +377,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[Byte], length: Int, loc: _SourceLocation
+    message: UnsafePointer[Byte, mut=False], length: Int, loc: _SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 

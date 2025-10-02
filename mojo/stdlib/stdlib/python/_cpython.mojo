@@ -1834,7 +1834,7 @@ struct CPython(Defaultable, Movable):
     fn PyErr_SetString(
         self,
         type: PyObjectPtr,
-        message: UnsafePointer[c_char],
+        message: UnsafePointer[c_char, mut=False],
     ):
         """This is the most common way to set the error indicator. The first
         argument specifies the exception type; it is normally one of the

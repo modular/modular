@@ -109,7 +109,7 @@ struct Error(
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var data: UnsafePointer[UInt8]
+    var data: UnsafePointer[UInt8, mut=False]
     """A pointer to the beginning of the string data being referenced."""
 
     var loaded_length: Int
@@ -208,7 +208,9 @@ struct Error(
     fn __del__(deinit self):
         """Releases memory if allocated."""
         if self.loaded_length < 0:
-            self.data.free()
+            # Safety: if loaded_length < 0, we own the data allowing us to
+            # safely free (and mutate) it.
+            self.data.origin_cast[True]().free()
 
     fn __copyinit__(out self, existing: Self):
         """Creates a deep copy of an existing error.
@@ -284,7 +286,7 @@ struct Error(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char]:
+    fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char, mut=False]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be NUL terminated, and not null.

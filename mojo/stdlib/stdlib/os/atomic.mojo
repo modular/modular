@@ -497,7 +497,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
     ](
-        ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
+        ptr: UnsafePointer[Scalar[dtype], mut=False, **_],
         mut expected: Scalar[dtype],
         desired: Scalar[dtype],
     ) -> Bool:
@@ -522,7 +522,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
         if is_compile_time():
             if ptr[] == expected:
-                ptr[] = desired
+                # Safety: This is at compile-time so data races will not happen.
+                ptr.origin_cast[True]()[] = desired
                 return True
             expected = ptr[]
             return False

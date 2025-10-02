@@ -1393,7 +1393,9 @@ struct PythonObject(
                 return UnsafePointer(to=obj.mojo_value)
         return None
 
-    fn unchecked_downcast_value_ptr[T: AnyType](self) -> UnsafePointer[T]:
+    fn unchecked_downcast_value_ptr[
+        mut: Bool, origin: Origin[mut], //, T: AnyType
+    ](ref [origin]self) -> UnsafePointer[T, mut=mut, origin=origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
         This function assumes that this Python object was allocated as an
@@ -1401,19 +1403,22 @@ struct PythonObject(
         initialized.
 
         Parameters:
+            mut: The mutability of self.
+            origin: The origin of self.
             T: The type of the Mojo value stored in this object.
 
         Returns:
             A pointer to the inner Mojo value.
 
-        # Safety
+        Safety:
 
         The user must be certain that this Python object type matches the bound
         Python type object for `T`.
         """
         ref obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
         # TODO(MSTDL-950): Should use something like `addr_of!`
-        return UnsafePointer(to=obj.mojo_value)
+        # Safety: The mutability matches that of `self`.
+        return UnsafePointer(to=obj.mojo_value).origin_cast[mut, origin]()
 
 
 # ===-----------------------------------------------------------------------===#
