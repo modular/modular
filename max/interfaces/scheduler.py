@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Generic, Optional
+from typing import Generic
 
 import msgspec
 
@@ -45,7 +45,7 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
     is_done: bool
     """The current status of the pipeline operation from the scheduler's perspective."""
 
-    result: Optional[PipelineOutputType]
+    result: PipelineOutputType | None
     """The pipeline output data, if any. May be None for cancelled operations or during intermediate states of streaming operations."""
 
     @classmethod

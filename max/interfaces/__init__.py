@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
-from typing import Any, Callable
+from typing import Callable
 
 from .context import (
     BaseContext,
@@ -64,9 +64,21 @@ from .utils import (
 )
 
 PipelinesFactory = Callable[
-    # TODO(GENAI-245): Use of Any here is not safe.
-    [], Pipeline[Any, Any]
+    [], Pipeline[PipelineInputsType, PipelineOutputType]
 ]
+"""
+Type alias for factory functions that create pipeline instances.
+
+Factory functions should return a Pipeline with properly typed inputs and outputs
+that are bound to the PipelineInputs and PipelineOutput base classes respectively.
+This ensures type safety while maintaining flexibility for different pipeline implementations.
+
+Example:
+    def create_text_pipeline() -> Pipeline[TextGenerationInputs, TextGenerationOutput]:
+        return MyTextGenerationPipeline()
+
+    factory: PipelinesFactory = create_text_pipeline
+"""
 
 __all__ = [
     "AudioGenerationContextType",
