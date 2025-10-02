@@ -649,9 +649,14 @@ fn matmul_dispatch_sm100_bf16[
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
+    alias use_experimental_kernel = env_get_bool[
+        "USE_EXPERIMENTAL_KERNELS", False
+    ]()
+
     @parameter
     if (
-        c_type == DType.bfloat16
+        use_experimental_kernel
+        and c_type == DType.bfloat16
         # these are the profitable shapes that gemma-3-27b models might execute
         and static_N in (4096, 8192, 43008, 5376)
         and static_K in (4096, 5376, 21504)
