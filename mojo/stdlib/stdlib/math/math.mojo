@@ -1603,9 +1603,9 @@ fn atan2[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](y, x)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](y, x)
     else:
-        return _simd_apply[_float32_dispatch, dtype, width](y, x)
+        return _simd_apply[_float32_dispatch, result_dtype=dtype](y, x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2326,8 +2326,8 @@ fn hypot[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](arg0, arg1)
-    return _simd_apply[_float32_dispatch, dtype, width](arg0, arg1)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
+    return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2592,8 +2592,8 @@ fn remainder[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](x, y)
-    return _simd_apply[_float32_dispatch, dtype, width](x, y)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](x, y)
+    return _simd_apply[_float32_dispatch, result_dtype=dtype](x, y)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2741,8 +2741,8 @@ fn scalb[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](arg0, arg1)
-    return _simd_apply[_float32_dispatch, dtype, width](arg0, arg1)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
+    return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
 
 
 # ===----------------------------------------------------------------------=== #

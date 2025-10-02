@@ -3429,7 +3429,7 @@ fn _convert_float8_to_f32[
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
             return _convert_float8_to_f32_scalar[result_dtype](val)
 
-        return _simd_apply[wrapper_fn, DType.float32, size](val)
+        return _simd_apply[wrapper_fn, result_dtype = DType.float32](val)
 
 
 @always_inline
@@ -3484,7 +3484,7 @@ fn _convert_f32_to_float8[
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
             return _convert_f32_to_float8_scalar[result_dtype](val)
 
-        return _simd_apply[wrapper_fn, target, size](val)
+        return _simd_apply[wrapper_fn, result_dtype=target](val)
 
 
 @always_inline
@@ -3657,7 +3657,7 @@ fn _convert_f32_to_float8_ue8m0[
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
             return _convert_f32_to_float8_ue8m0_scalar[result_dtype](val)
 
-        return _simd_apply[wrapper_fn, target, size](val)
+        return _simd_apply[wrapper_fn, result_dtype=target](val)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3695,7 +3695,7 @@ fn _bfloat16_to_f32[
             val._refine[DType.bfloat16](),
         )._refine[result_dtype]()
 
-    return _simd_apply[wrapper_fn, DType.float32, size](val)
+    return _simd_apply[wrapper_fn, result_dtype = DType.float32](val)
 
 
 alias _f32_bf16_mantissa_diff = (
@@ -3726,20 +3726,22 @@ fn _f32_to_bfloat16[
 
 @always_inline
 fn _simd_apply[
+    input_dtype: DType,
+    simd_width: Int, //,
     func: fn[input_dtype: DType, result_dtype: DType] (
         Scalar[input_dtype]
     ) capturing -> Scalar[result_dtype],
-    result_dtype: DType,
-    simd_width: Int,
-](x: SIMD[_, simd_width]) -> SIMD[result_dtype, simd_width]:
+    *,
+    result_dtype: DType = input_dtype,
+](x: SIMD[input_dtype, simd_width]) -> SIMD[result_dtype, simd_width]:
     """Returns a value whose elements corresponds to applying `func` to each
     element in the vector.
 
     Parameter:
-      simd_width: Width of the input and output SIMD vectors.
       input_dtype: Type of the input to func.
-      result_dtype: Result type of func.
+      simd_width: Width of the input and output SIMD vectors.
       func: Function to apply to the SIMD vector.
+      result_dtype: Result type of func.
 
     Args:
       x: the input value.
@@ -3751,18 +3753,19 @@ fn _simd_apply[
 
     @parameter
     for i in range(simd_width):
-        result[i] = func[x.dtype, result_dtype](x[i])
+        result[i] = func[input_dtype, result_dtype](x[i])
 
     return result
 
 
 @always_inline
 fn _simd_apply[
+    simd_width: Int, //,
     func: fn[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType] (
         Scalar[lhs_dtype], Scalar[rhs_dtype]
     ) capturing -> Scalar[result_dtype],
+    *,
     result_dtype: DType,
-    simd_width: Int,
 ](x: SIMD[_, simd_width], y: SIMD[_, simd_width]) -> SIMD[
     result_dtype, simd_width
 ]:
@@ -3771,9 +3774,8 @@ fn _simd_apply[
 
     Parameter:
       simd_width: Width of the input and output SIMD vectors.
-      input_dtype: Type of the input to func.
-      result_dtype: Result type of func.
       func: Function to apply to the SIMD vector.
+      result_dtype: Result type of func.
 
     Args:
       x: the lhs input value.
