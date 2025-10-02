@@ -251,6 +251,10 @@ fn sqrt[
         if dtype in (DType.float16, DType.bfloat16):
             return _sqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
         return _sqrt_nvvm(x)
+    elif is_apple_gpu():
+        return llvm_intrinsic[
+            "llvm.air.sqrt", __type_of(x), has_side_effect=False
+        ](x)
 
     return llvm_intrinsic["llvm.sqrt", __type_of(x), has_side_effect=False](x)
 
