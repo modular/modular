@@ -24,8 +24,8 @@ from max.interfaces import (
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    drain_queue,
 )
+from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
@@ -60,6 +60,7 @@ class TokenGenerationScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager | None = None,
+        offload_queue_draining: bool = True,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -75,13 +76,45 @@ class TokenGenerationScheduler(Scheduler):
         )
         self.scheduler_logger = SchedulerLogger()
 
+        # We are parameterizing the offload of queue draining to allow for
+        # the use case where we want to drain the queue in the main thread.
+        # This is useful for debugging and testing purposes.
+        self._queue_drainer: (
+            BackgroundQueueDrainer[Union[TextContext, TextAndVisionContext]]
+            | None
+        ) = None
+        if offload_queue_draining:
+            # I am setting this to drain at max batch size ce * 2, to ensure we do not drain
+            # forever, but have more than enough to form full batches.
+            self._queue_drainer = BackgroundQueueDrainer[
+                Union[TextContext, TextAndVisionContext]
+            ](
+                self.request_queue,
+                max_items_per_drain=self.scheduler_config.max_batch_size_ce * 2,
+            )
+
     @traced
     def _retrieve_pending_requests(self) -> None:
-        new_contexts = drain_queue(
-            self.request_queue,
-            max_items=self.scheduler_config.max_batch_size_ce,
-        )
-        for context in new_contexts:
+        """
+        Initiates retrieval of pending requests from the request queue.
+
+        If a background retrieval task is already running, this method returns immediately.
+        Otherwise, it submits a background task to drain the request queue and processes
+        any contexts that have already been retrieved and are pending.
+
+        This method is responsible for ensuring that new requests are continuously
+        fetched and made available for batching and scheduling.
+        """
+        if self._queue_drainer is not None:
+            self._queue_drainer.start_draining()
+            items = self._queue_drainer.retrieve_items()
+        else:
+            items = drain_queue(
+                self.request_queue,
+                max_items=self.scheduler_config.max_batch_size_ce * 2,
+            )
+
+        for context in items:
             self.batch_constructor.ce_reqs[context.request_id] = context
 
     @traced

@@ -17,6 +17,7 @@ import queue
 import time
 import uuid
 from collections import OrderedDict
+from typing import Union
 
 from max.interfaces import (
     MAXPullQueue,
@@ -27,7 +28,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.interfaces.queue import drain_queue
+from max.interfaces.queue import BackgroundQueueDrainer
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -108,6 +109,14 @@ class DecodeScheduler(Scheduler):
         # TODO: delete the default destination address.
         self.remote_endpoints: set[str | None] = set()
 
+        # Initialize the background queue drainer
+        self._queue_drainer = BackgroundQueueDrainer[
+            Union[TextContext, TextAndVisionContext]
+        ](
+            self.request_queue,
+            max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
+        )
+
     @traced
     def handle_transfer_engine_response(
         self, message: KVTransferEngineMetadata
@@ -175,8 +184,9 @@ class DecodeScheduler(Scheduler):
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        new_contexts = drain_queue(self.request_queue)
-        for context in new_contexts:
+        self._queue_drainer.start_draining()
+        items = self._queue_drainer.retrieve_items()
+        for context in items:
             self.pending_reqs[context.request_id] = context
 
         while (

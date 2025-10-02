@@ -19,12 +19,14 @@ from max.interfaces import (
     EmbeddingsGenerationContextType,
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
+    InputContext,
     MAXPullQueue,
     MAXPushQueue,
     RequestID,
     Scheduler,
     SchedulerResult,
 )
+from max.interfaces.queue import BackgroundQueueDrainer
 from max.pipelines.lib import EmbeddingsPipelineType
 from max.profiler import traced
 
@@ -58,6 +60,12 @@ class EmbeddingsScheduler(Scheduler):
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
 
+        # Initialize the background queue drainer
+        self._queue_drainer = BackgroundQueueDrainer[InputContext](
+            self.request_queue,
+            max_items_per_drain=self.scheduler_config.max_batch_size * 2,
+        )
+
     @traced
     def _create_batch_to_execute(
         self,
@@ -65,14 +73,20 @@ class EmbeddingsScheduler(Scheduler):
         max_batch_size_to_create = self.scheduler_config.max_batch_size
 
         batch: dict[RequestID, EmbeddingsGenerationContextType] = {}
-        try:
-            while max_batch_size_to_create > 0:
-                data = self.request_queue.get_nowait()
-                req_id = data.request_id
-                batch[req_id] = data
-                max_batch_size_to_create -= 1
-        except queue.Empty:
-            pass
+
+        # Start draining the queue in the background
+        self._queue_drainer.start_draining()
+
+        # Process items from the drainer
+        while True:
+            if len(batch) < max_batch_size_to_create:
+                try:
+                    item = self._queue_drainer.retrieve_item()
+                    batch[item.request_id] = item
+                except queue.Empty:
+                    break
+            else:
+                break
 
         return batch
 
