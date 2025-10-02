@@ -40,6 +40,22 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+/// If the given ASTDecl represents an extension, return the ASTDecl for its
+/// target struct. If the given ASTDecl represents a struct, return the struct
+/// itself. Returns nullptr if this is neither a struct nor an extension.
+static ASTDecl *getStructOrTargetStruct(ASTDecl &decl,
+                                        DeclResolver &declResolver) {
+  if (auto extensionOp =
+          dyn_cast_or_null<ExtensionDeclOp>(decl.getIfOperation())) {
+    auto targetStructRefMaybe = extensionOp.getTargetStruct();
+    if (targetStructRefMaybe)
+      return &declResolver.getDeclForTypeSymbol(*targetStructRefMaybe);
+  } else if (isa_and_nonnull<StructDeclOp>(decl.getIfOperation())) {
+    return &decl;
+  }
+  return nullptr;
+}
+
 /// Parse an expression and immediately resolve it to a type.  This returns
 /// failure on parse error.
 static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
@@ -3723,6 +3739,13 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
   extensionDeclOp.setImmediateParents(
       SymbolRefArrayAttr::get(getContext(), immediateParentsVec));
 
+  // Compute canonicalTrait for the extension (flattened trait hierarchy)
+  if (!immediateParentsVec.empty()) {
+    SmallVector<SymbolRefAttr> canonicalSymbols(immediateParentsVec);
+    TraitType canonicalTrait = getCanonicalTrait(canonicalSymbols);
+    extensionDeclOp.setCanonicalTrait(canonicalTrait);
+  }
+
   shared.notifyListenerOnTraitDecl(decl, identifierLoc);
 
   if (p.consumeIf(Token::l_square)) {
@@ -3795,6 +3818,49 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
         extensionMemberDecl->setErroneous();
       }
       return failure();
+    }
+  }
+
+  // Generate conformance tables for the extension's traits that the struct
+  // doesn't already have. Use set difference to avoid duplicate conformances
+  // between struct and extension. Extensions might have no canonical trait.
+  if (extensionDeclOp.getCanonicalTrait()) {
+    Block *extensionBody = extensionDeclOp.getBody();
+    ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
+        extensionDeclOp.getLoc(), extensionBody);
+
+    // Get the target struct's existing conformances
+    SmallVector<SymbolRefAttr> structConformances(
+        structDeclOp.getCanonicalTrait().getSymbols().begin(),
+        structDeclOp.getCanonicalTrait().getSymbols().end());
+
+    // Compute set difference: extension traits - struct traits
+    SmallVector<SymbolRefAttr> extensionOnlyTraits;
+    for (SymbolRefAttr extensionTrait :
+         extensionDeclOp.getCanonicalTrait()->getSymbols()) {
+      if (!llvm::is_contained(structConformances, extensionTrait))
+        extensionOnlyTraits.push_back(extensionTrait);
+    }
+
+    // Create conformances only for extension-specific traits
+    for (SymbolRefAttr parent : extensionOnlyTraits) {
+      StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
+      ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
+      SymbolRefArrayAttr immediateParents =
+          cast_or_null<TraitDeclOp>(parentDecl.getIfOperation())
+              .getImmediateParentsAttr();
+      ConformanceOp witnessTable =
+          b.create<ConformanceOp>(name, parent, immediateParents);
+      witnessTable.getBody().push_back(new Block());
+      ASTDecl &decl = addDecl(witnessTable, extensionDecl.getLoc(), name,
+                              &extensionDecl, {}, {}, -1);
+      decl.resolvedness = DeclResolvedness::signature;
+      // Conformances are always created as signature-resolved because there's
+      // no less-resolved state for it (see CALROC for more).
+
+      // Extension conformance verification follows the same pattern as structs
+      // and is handled in verifyAndBuildConformance() during ConformanceOp body
+      // resolution. The trait body will be resolved there.
     }
   }
 
@@ -3921,8 +3987,15 @@ ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
   decl.resolvedness = DeclResolvedness::body;
   // Verify conformance explicitly.
   std::optional<InflightDiag> diag;
-  if (failed(verifyAndBuildConformance(*decl.getParentDecl(),
-                                       op.getTraitRefAttr(), diag, op)))
+
+  // For extension conformances, we need to pass the target struct, not the
+  // extension
+  ASTDecl *declToVerify = getStructOrTargetStruct(*decl.getParentDecl(), *this);
+  assert(declToVerify &&
+         "ConformanceOps are only created inside structs or extensions");
+
+  if (failed(verifyAndBuildConformance(*declToVerify, op.getTraitRefAttr(),
+                                       diag, op)))
     return failure();
 
   return success();

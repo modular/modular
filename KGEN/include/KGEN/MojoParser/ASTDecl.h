@@ -144,6 +144,13 @@ public:
   /// Helper for clients that don't care about the diagnostic.
   bool doesNominalTypeConformTo(TraitType trait);
 
+  /// Find all extensions in this scope that target a specific struct.
+  /// If filterTrait is provided, only returns extensions that implement that
+  /// specific trait.
+  void findExtensionsInScopeForStruct(
+      SymbolRefAttr targetStruct, llvm::SmallPtrSetImpl<ASTDecl *> &results,
+      std::optional<SymbolRefAttr> filterTrait = std::nullopt);
+
   /// Collect all declarations that could contribute to a type's namespace.
   /// Examples:
   /// - If there's a struct Spaceship with two extensions, this will return all
