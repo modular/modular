@@ -14,6 +14,7 @@
 from math import (
     align_down,
     align_up,
+    acos,
     asin,
     atanh,
     ceil,
@@ -695,6 +696,17 @@ def test_asin():
         )
 
 
+def test_acos():
+    alias n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            acos(val),
+            _call_libm["acos"](val),
+            msg=String("mismatch for the value = ", val),
+        )
+
+
 def main():
     var suite = TestSuite()
 
@@ -723,5 +735,6 @@ def main():
     suite.test[test_clamp]()
     suite.test[test_atanh]()
     suite.test[test_asin]()
+    suite.test[test_acos]()
 
     suite^.run()

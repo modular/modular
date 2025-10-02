@@ -1395,7 +1395,65 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `acos` of the input.
     """
-    return _call_libm["acos"](x)
+
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]():
+        return acos(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float64:
+        return llvm_intrinsic["llvm.acos", __type_of(x), has_side_effect=False](
+            x
+        )
+
+    # For F32 types, use the Remez approximation found in Sleef with range
+    # splitting to improve accuracy.
+
+    # Determine which approximation method to use based on domain.
+    var x_abs = clamp(abs(x), 0, 1)
+    var directed_polynomial_mask = x_abs.lt(0.5)
+
+    # Compute x² for polynomial evaluation
+    # Small domain: x² = x²
+    # Large domain: x² = (1 - |x|) / 2 for identity transformation
+    var x_squared = directed_polynomial_mask.select(x * x, (1.0 - x_abs) * 0.5)
+
+    # Compute d for evaluation
+    # Small domain: d = |x|
+    # Large domain: d = sqrt((1-|x|)/2) using the identity
+    var d = directed_polynomial_mask.select(abs(x), sqrt(x_squared))
+
+    # Special case: handle |x| = 1 to avoid numerical instability
+    d = x_abs.eq(1).select(__type_of(x)(0.0), d)
+
+    # Evaluate Remez polynomial using Horner's method
+    # Coefficients derived to minimize maximum absolute error
+    var poly = polynomial_evaluate[
+        List[Scalar[x.dtype]](
+            0.1666677296e0,
+            0.7495029271e-1,
+            0.4547423869e-1,
+            0.2424046025e-1,
+            0.4197454825e-1,
+        )
+    ](x_squared)
+
+    # Final polynomial term: poly * x² * d
+    poly *= x_squared * d
+
+    # Small domain: compute π/2 - asin(x) where asin(x) = d + poly with sign.
+    var y = (pi / 2.0) - (copysign(d, x) + copysign(poly, x))
+
+    # Large domain: compute 2 * asin(sqrt((1-|x|)/2)) = 2 * (d + poly)
+    var d_plus_poly = d + poly
+
+    # Select result based on domain
+    var result = directed_polynomial_mask.select(y, 2 * d_plus_poly)
+
+    # Large domain with negative x: apply π - result transformation.
+    return (~directed_polynomial_mask & x.lt(0)).select(pi - result, result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1420,6 +1478,10 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         The `asin` of the input.
     """
 
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
         return asin(x.cast[DType.float32]()).cast[dtype]()
@@ -1428,8 +1490,8 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
             x
         )
 
-    # For F32 types, use the Remez approximation found in Sleef with range splitting
-    # to get good accuracy.
+    # For F32 types, use the Remez approximation found in Sleef with range
+    # splitting to improve accuracy.
 
     # Domain split to use a different approximation outside the domain of
     # -0.5 <= x <= 0.5
@@ -1465,9 +1527,9 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     # Compute final result based on domain:
     # - For |x| < 0.5: result = poly  (direct approximation)
     # - For |x| >= 0.5: result = π/2 - 2*poly  (using identity)
-    var res = directed_polynomial_mask.select(poly, pi / 2 - 2 * poly)
+    var result = directed_polynomial_mask.select(poly, pi / 2 - 2 * poly)
 
-    return copysign(res, x)
+    return copysign(result, x)
 
 
 # ===----------------------------------------------------------------------=== #
