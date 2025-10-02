@@ -1526,6 +1526,8 @@ class ClosureMethod(enum.Enum):
 
     copy = 3
 
+    none = 4
+
 class ExportKind(enum.Enum):
     not_exported = 0
 
