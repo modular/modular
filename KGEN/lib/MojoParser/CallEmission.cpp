@@ -858,32 +858,58 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
 
   SMLoc callLoc = expr->getLoc();
 
-  // First perform a lookup to see if there are any candidates.
-  auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type,
-                                                  /*searchParentScopes=*/false);
-  // If an error was already reported, propagate it.
-  if (lookupResult.isErroneous()) {
-    result.erroneous = true;
-    return result;
-  }
-
-  // If we have candidates directly on the receiver, add them.
-  if (lookupResult.isSuccess()) {
-    ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
-    assert(!resultDecls.empty() && "We know this succeeded");
-
-    // If we find a vardecl or any other thing, then fail to find anything
-    // because it cannot be called.
-    if (!isa<FnOp>(resultDecls[0]->getIfOperation()))
-      // FIXME: This seems wrong. why aren't we emitting an error??
+  // For struct types, we need to look in both the struct and its extensions.
+  if (isa<LIT::StructType>(type.mlirType)) {
+    SmallVector<ASTDecl *, 4> structAndExtensions =
+        declScope.collectTypeAndExtensions(type, callLoc);
+    for (ASTDecl *containerDecl : structAndExtensions) {
+      LookupResult lookup =
+          shared.lookupAndResolveDecl(methodName, callLoc, *containerDecl,
+                                      /*searchParentScopes=*/false);
+      if (lookup.isErroneous()) {
+        result.erroneous = true;
+        return result;
+      }
+      if (lookup.isSuccess()) {
+        ArrayRef<ASTDecl *> foundDecls = lookup.getIfSuccess();
+        for (ASTDecl *decl : foundDecls) {
+          if (!isa_and_nonnull<FnOp>(decl->getIfOperation()))
+            continue;
+          if (isDisabledFunction(decl))
+            continue;
+          result.fnDecls.push_back(decl);
+        }
+      }
+    }
+  } else {
+    // For non-struct types, we can just look up in the target's ASTDecl.
+    LookupResult lookupResult =
+        shared.lookupAndResolveDecl(methodName, callLoc, type,
+                                    /*searchParentScopes=*/false);
+    // If an error was already reported, propagate it.
+    if (lookupResult.isErroneous()) {
+      result.erroneous = true;
       return result;
+    }
 
-    assert(result.fnDecls.empty() && "Already have entries");
+    // If we have candidates directly on the receiver, add them.
+    if (lookupResult.isSuccess()) {
+      ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
+      assert(!resultDecls.empty() && "We know this succeeded");
 
-    // Filter out disabled functions to avoid multiple definition conflicts
-    SmallVector<ASTDecl *> filteredDecls;
-    for (ASTDecl *decl : resultDecls) {
-      if (!isDisabledFunction(decl)) {
+      // If we find a vardecl or any other thing, then fail to find anything
+      // because it cannot be called.
+      if (!isa<FnOp>(resultDecls[0]->getIfOperation())) {
+        // FIXME: This seems wrong. why aren't we emitting an error??
+        return result;
+      }
+
+      assert(result.fnDecls.empty() && "Already have entries");
+
+      // Filter out disabled functions to avoid multiple definition conflicts
+      for (ASTDecl *decl : resultDecls) {
+        if (isDisabledFunction(decl))
+          continue;
         result.fnDecls.push_back(decl);
       }
     }
@@ -899,8 +925,9 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
   if (ASTType nmTarget = type.getNonmaterializableTarget(shared)) {
     if (syntax != CallSyntax::kTypeCall &&
         syntax != CallSyntax::kImplicitConvert) {
-      lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, nmTarget,
-                                                 /*searchParentScopes=*/false);
+      LookupResult lookupResult =
+          shared.lookupAndResolveDecl(methodName, callLoc, nmTarget,
+                                      /*searchParentScopes=*/false);
       if (lookupResult.isSuccess()) {
         ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
         assert(!resultDecls.empty() && "We know this succeeded");
@@ -912,10 +939,10 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
           return result;
 
         // Filter out disabled functions to avoid multiple definition conflicts
-        SmallVector<ASTDecl *> filteredDecls;
         for (ASTDecl *decl : resultDecls) {
-          if (!isDisabledFunction(decl))
-            result.fnDecls.push_back(decl);
+          if (isDisabledFunction(decl))
+            continue;
+          result.fnDecls.push_back(decl);
         }
       }
     }

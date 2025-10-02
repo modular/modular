@@ -83,6 +83,43 @@ __extension Spaceship:
 
 # // -----
 
+
+# Tests we can call a constructor defined in an extension.
+
+# CHECK-LABEL: lit.struct.decl @PlainStruct
+struct PlainStruct:
+    pass
+
+# CHECK-LABEL: lit.extension.decl @"extension:PlainStruct"
+# CHECK-SAME: targetStruct = @struct_extensions::@PlainStruct
+__extension PlainStruct:
+   # CHECK-LABEL: lit.fn @"__init__
+   fn __init__(out self):
+       pass
+
+# CHECK-LABEL: lit.fn @"zork
+fn zork():
+    # CHECK: lit.call {{.*}}@"__init__
+    var z = PlainStruct()
+
+
+# // -----
+
+# Test we can overload between struct and extension..
+
+struct BaseStruct:
+    fn same_name(self):
+        pass
+
+__extension BaseStruct:
+    fn same_name(self, i: __mlir_type.index):
+        pass
+
+fn test_overloads(s: BaseStruct):
+    var result = s.same_name()
+
+# // -----
+
 # Tests a struct extension with a trait
 
 alias int = __mlir_type.index

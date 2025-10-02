@@ -144,6 +144,18 @@ public:
   /// Helper for clients that don't care about the diagnostic.
   bool doesNominalTypeConformTo(TraitType trait);
 
+  /// Collect all declarations that could contribute to a type's namespace.
+  /// Examples:
+  /// - If there's a struct Spaceship with two extensions, this will return all
+  ///   three of those declarations.
+  /// - If there's a trait Sporkable with two extensions, this will return all
+  ///   three of those declarations.
+  /// This is useful for collecting declarations in which we can search for
+  /// methods for a given type, e.g. `my_ship.some_method()`, since the method
+  /// might be in any of those declarations.
+  llvm::SmallVector<ASTDecl *, 4> collectTypeAndExtensions(ASTType type,
+                                                           llvm::SMLoc callLoc);
+
   /// If this is a method of a struct or trait, return the decl for the struct
   /// or trait.
   ASTDecl *tryGetMethodParentDecl() const;
