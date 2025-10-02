@@ -827,19 +827,21 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """
 
     @parameter
-    if is_nvidia_gpu():
-        alias ln2 = 0.69314718055966295651160180568695068359375
+    if size_of[dtype]() < size_of[DType.float32]():
+        return log(x.cast[DType.float32]()).cast[dtype]()
 
-        @parameter
-        if size_of[dtype]() < size_of[DType.float32]():
-            return log(x.cast[DType.float32]()).cast[dtype]()
-        elif dtype is DType.float32:
-            return (
-                _call_ptx_intrinsic[
-                    instruction="lg2.approx.f32", constraints="=f,f"
-                ](x)
-                * ln2
-            )
+    if is_compile_time():
+        return _log_base[27](x)
+
+    @parameter
+    if is_nvidia_gpu() and dtype is DType.float32:
+        alias ln2 = 0.69314718055966295651160180568695068359375
+        return (
+            _call_ptx_intrinsic[
+                instruction="lg2.approx.f32", constraints="=f,f"
+            ](x)
+            * ln2
+        )
 
     return _log_base[27](x)
 
