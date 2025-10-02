@@ -11,14 +11,18 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
+from fastapi import FastAPI
 from max.interfaces import (
     GenerationStatus,
+    PipelinesFactory,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -70,19 +74,20 @@ class MockTokenizer(IdentityPipelineTokenizer[str]):
 
 
 @pytest.fixture
-def token_generator(request):  # noqa: ANN001
+def model_factory(request: pytest.FixtureRequest) -> PipelinesFactory:
     """Fixture for a pipeline's generator
     This is bound indirectly - hence the request.param pattern.
     See https://docs.pytest.org/en/7.1.x/example/parametrize.html
     """
-    token_generator_params = request.param
-    return token_generator_params
+    return request.param
 
 
 @pytest.fixture(scope="function")
-def app(token_generator, mock_pipeline_config: PipelineConfig):  # noqa: ANN001
+def app(
+    model_factory: PipelinesFactory,
+    mock_pipeline_config: PipelineConfig,
+) -> Generator[FastAPI, None, None]:
     """Fixture for a FastAPI app using a given pipeline."""
-    _, model_factory = token_generator
     serving_settings = ServingTokenGeneratorSettings(
         model_factory=model_factory,
         pipeline_config=mock_pipeline_config,
@@ -109,21 +114,23 @@ def reset_sse_starlette_appstatus_event() -> None:
 
 
 @pytest_asyncio.fixture
-async def test_client(app):  # noqa: ANN001
+async def test_client(app: FastAPI) -> AsyncGenerator[TestClient, None]:
     """Fixture for a asgi TestClient using a given FastAPI app."""
     async with TestClient(app) as client:
         yield client
 
 
-@pytest.mark.parametrize(
-    "token_generator", [("test", EchoTokenGenerator)], indirect=True
-)
+@pytest.mark.parametrize("model_factory", [EchoTokenGenerator], indirect=True)
 @pytest.mark.parametrize(
     "request_url", ["/v1/chat/completions", "/v1/completions"]
 )
 @pytest.mark.parametrize("request_json", [None, "{{}"])
 @pytest.mark.asyncio
-async def test_llm_json_missing(test_client, request_url, request_json) -> None:  # noqa: ANN001
+async def test_llm_json_missing(
+    test_client: TestClient,
+    request_url: str,
+    request_json: dict[str, Any] | None,
+) -> None:
     """Test the server's response to malformed JSON."""
     logger.info("Test: Running Client: %s", request_url)
     response = await test_client.post(request_url, json=request_json)
@@ -132,13 +139,15 @@ async def test_llm_json_missing(test_client, request_url, request_json) -> None:
 
 @pytest.mark.skip("TODO(ylou): Restore!!")
 @pytest.mark.parametrize(
-    "token_generator", [("test", MockValueErrorTokenGenerator)], indirect=True
+    "model_factory", [MockValueErrorTokenGenerator], indirect=True
 )
 @pytest.mark.parametrize(
     "request_url", ["/v1/chat/completions", "/v1/completions"]
 )
 @pytest.mark.asyncio
-async def test_llm_new_context_value_error(test_client, request_url) -> None:  # noqa: ANN001
+async def test_llm_new_context_value_error(
+    test_client: TestClient, request_url: str
+) -> None:
     """Test the server's response to a value error when calling new context."""
     request_json = {
         "model": "test",
@@ -153,15 +162,15 @@ async def test_llm_new_context_value_error(test_client, request_url) -> None:  #
 
 @pytest.mark.skip("TODO(ylou): Restore!!")
 @pytest.mark.parametrize(
-    "token_generator", ["test", MockValueErrorTokenGenerator], indirect=True
+    "model_factory", [MockValueErrorTokenGenerator], indirect=True
 )
 @pytest.mark.parametrize(
     "request_url", ["/v1/chat/completions", "/v1/completions"]
 )
 @pytest.mark.asyncio
 async def test_llm_new_context_value_error_stream(
-    test_client,  # noqa: ANN001
-    request_url,  # noqa: ANN001
+    test_client: TestClient,
+    request_url: str,
 ) -> None:
     """Test the server's response to a value error when calling new context while streaming."""
     MAX_CHUNK_TO_READ_BYTES = 10 * 1024
