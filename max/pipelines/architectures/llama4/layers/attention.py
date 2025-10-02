@@ -97,7 +97,7 @@ class _Llama4TextAttention(Module):
             attn_scale: Float, used with `attn_temperature_tuning`.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.

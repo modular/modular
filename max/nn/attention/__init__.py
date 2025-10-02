@@ -16,9 +16,9 @@ from .attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeQKV,
     AttentionWithRopeV1,
-    DistributedAttentionWithRope,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
+    TensorParallelAttentionWithRope,
 )
 from .interfaces import (
     AttentionImpl,
@@ -46,7 +46,6 @@ __all__ = [
     "AttentionWithRopeQKV",
     "AttentionWithRopeV1",
     "DistributedAttentionImpl",
-    "DistributedAttentionWithRope",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "LatentAttentionWithRope",
@@ -55,5 +54,6 @@ __all__ = [
     "MultiheadAttention",
     "PositionalEncodingVariant",
     "RaggedAttention",
+    "TensorParallelAttentionWithRope",
     "TensorParallelLatentAttentionWithRope",
 ]

@@ -36,7 +36,6 @@ from max.nn import (
     MLP,
     Allreduce,
     ColumnParallelLinear,
-    DistributedAttentionWithRope,
     DynamicRotaryEmbedding,
     LayerList,
     LayerNorm,
@@ -44,6 +43,7 @@ from max.nn import (
     Module,
     RMSNorm,
     Shardable,
+    TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
 from max.nn.attention.mask_config import MHAMaskVariant
@@ -109,7 +109,7 @@ class InternVLDecoderLayer(Module):
         llm_config = config.llm_config
         devices = config.devices
 
-        self.self_attn = DistributedAttentionWithRope(
+        self.self_attn = TensorParallelAttentionWithRope(
             stacked_qkv=llm_config.stacked_qkv,
             scale=llm_config.attention_multiplier,
             clip_qkv=llm_config.clip_qkv,

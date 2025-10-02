@@ -190,7 +190,7 @@ class AttentionWithRope(Module):
             dtype: DType of the QKV and output projection weights.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             stacked_qkv: Whether the weights are stacked together.
@@ -527,7 +527,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             dtype: DType of the weights, should always be uint8.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             quantization_encoding: Quantization encoding of the weights.
             linear_cls: Linear class to use for the outputs dense layer.
@@ -871,7 +871,9 @@ def distribute_value(
     return [v.to(device) for device in devices]
 
 
-class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
+class TensorParallelAttentionWithRope(
+    AttentionWithRope, DistributedAttentionImpl
+):
     def __init__(
         self,
         *,
@@ -889,7 +891,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         float8_config: Float8Config | None = None,
         clip_qkv: float | None = None,
     ) -> None:
-        """Initializes the distributed attention layer.
+        """Initializes the distributed (tensor parallel) attention layer.
 
         Args:
             rope: The rope layer to borrow the freqs_cis value from.
@@ -898,7 +900,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
             devices: Device to place the weights and run the computation. Must
-                provide at least 2 devices for distributed attention.
+                provide at least 2 devices for tensor parallel attention.
             dtype: DType of the QKV and output projection weights.
             linear_cls: Linear class to use for the outputs dense layer.
             stacked_qkv: Whether the weights are stacked together.
@@ -925,7 +927,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         )
         if DeviceRef.CPU() in self.devices:
             raise ValueError(
-                "DistributedAttentionWithRope does not support CPU devices"
+                "TensorParallelAttentionWithRope does not support CPU devices"
             )
         # Shard weights into separate AttentionWithRope layers.
         num_devices = len(self.devices)
@@ -1136,7 +1138,7 @@ class AttentionWithRopeNoOpaque(Module):
             dtype: DType of the QKV and output projection weights.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.

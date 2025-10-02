@@ -69,7 +69,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             dtype: DType of the QKV and output projection weights.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             stacked_qkv: Whether the weights are stacked together.

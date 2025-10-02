@@ -119,7 +119,7 @@ with Graph("layernorm") as g:
 |---------------------|-----------|--------------|-------|
 | `nn.MultiheadAttention` | `max.nn.MultiheadAttention` | Multiple ops | Full attention implementation |
 | Attention with RoPE | `max.nn.AttentionWithRope` | - | Rotary position embeddings |
-| Distributed Attention | `max.nn.DistributedAttentionWithRope` | - | Multi-GPU attention |
+| Distributed Attention | `max.nn.TensorParallelAttentionWithRope` | - | Multi-GPU attention |
 | Quantized Attention | `max.nn.GPTQAttentionWithRope` | - | GPTQ quantized attention |
 
 **Attention Implementation with Graph Ops:**

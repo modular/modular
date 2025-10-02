@@ -21,11 +21,11 @@ import logging
 from max.nn import (
     MLP,
     ColumnParallelLinear,
-    DistributedAttentionWithRope,
     DistributedTransformer,
     DistributedTransformerBlock,
     RMSNorm,
     RotaryEmbedding,
+    TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import KVCacheStrategy
@@ -61,7 +61,7 @@ class DistributedMistral(DistributedTransformer):
         layers = [
             DistributedTransformerBlock(
                 devices=config.devices,
-                attention=DistributedAttentionWithRope(
+                attention=TensorParallelAttentionWithRope(
                     rope=rope,
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
