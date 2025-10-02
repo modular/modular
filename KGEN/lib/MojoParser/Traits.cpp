@@ -29,6 +29,27 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+/// Collect all declarations with a given name from both the struct and
+/// relevant extensions. This is a type-agnostic multi-scope lookup helper;
+/// the caller is responsible for filtering/checking declaration types.
+/// TODO(MOCO-522): See if we can consolidate logic in an ASTDecl method, or
+/// consolidate with the collectTypeAndExtensionDecls usage in ExprNodes.cpp.
+static llvm::SmallVector<ASTDecl *>
+collectMethodsWithNameFromDecls(ASTDecl &structDecl, StringAttr methodName,
+                                ArrayRef<ASTDecl *> relevantExtensions) {
+  // Look for declarations in the struct first
+  ArrayRef<ASTDecl *> structDecls = structDecl.lookupInCurrentScope(methodName);
+  llvm::SmallVector<ASTDecl *> allDecls(structDecls.begin(), structDecls.end());
+
+  // Also look for declarations in relevant extensions
+  for (ASTDecl *extDecl : relevantExtensions) {
+    ArrayRef<ASTDecl *> extDecls = extDecl->lookupInCurrentScope(methodName);
+    allDecls.insert(allDecls.end(), extDecls.begin(), extDecls.end());
+  }
+
+  return allDecls;
+}
+
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
@@ -309,11 +330,35 @@ LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
   auto &shared = structDecl.getShared();
   auto structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
 
+  // Find extensions that target this struct and implement this trait.
+  // This implements a form of the orphan rule: extensions can be defined either
+  // in the same file as the struct or in the same file as the trait. This
+  // ensures that extensions/conformances are local to either the struct or the
+  // trait, preventing conflicting implementations across different files.
+  // TODO(MOCO-522): Turn this into arcana docs!
+  llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
+
+  // Search for extensions in the struct's file scope
+  if (ASTDecl *structFileScope =
+          structDecl.getNearestDeclOfType<FileModuleOp>()) {
+    structFileScope->findExtensionsInScopeForStruct(structDecl.getSymbolRef(),
+                                                    uniqueExtensions, parent);
+  }
+
+  // Search for extensions in the trait's file scope
+  ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(parent);
+  if (ASTDecl *traitFileScope =
+          traitDecl.getNearestDeclOfType<FileModuleOp>()) {
+    traitFileScope->findExtensionsInScopeForStruct(structDecl.getSymbolRef(),
+                                                   uniqueExtensions, parent);
+  }
+
+  llvm::SmallVector<ASTDecl *> relevantExtensions(uniqueExtensions.begin(),
+                                                  uniqueExtensions.end());
+
   bool hadErrors = false;
   IREmitter emitter(structDecl, EC_Trait);
   ASTType selfType = structDecl.getTypeDeclSelf();
-
-  ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(parent);
   TraitDeclOp traitDeclOp = cast<TraitDeclOp>(*traitDecl.getIfOperation());
 
   // Make sure to fully resolve the trait first.
@@ -390,9 +435,11 @@ LogicalResult LIT::verifyAndBuildConformance(ASTDecl &structDecl,
     if (traitFn.getInheritedFrom())
       return success();
 
-    ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
-    if (decls.empty() ||
-        !isa_and_nonnull<FnOp>(decls.front()->getIfOperation())) {
+    // Collect all method declarations from struct and extensions
+    llvm::SmallVector<ASTDecl *> decls =
+        collectMethodsWithNameFromDecls(structDecl, name, relevantExtensions);
+
+    if (decls.empty()) {
       diag->attachNote(traitFnDecl->getLoc())
           << "required function '" + name.str() + "' is not implemented";
       return failure(); // Stop the outer loop.

@@ -283,3 +283,41 @@ Type ASTDecl::computeSelfTypeForTrait(TraitDeclOp traitOp) {
   // gets instantiated) resolves to the final type the trait is instantiated on.
   return ASTType(ParamDeclRefAttr::get(traitOp.getParamsAttr().back()));
 }
+
+void ASTDecl::findExtensionsInScopeForStruct(
+    SymbolRefAttr targetStruct, llvm::SmallPtrSetImpl<ASTDecl *> &results,
+    std::optional<SymbolRefAttr> filterTrait) {
+  for (auto &[name, decls] : getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      if (auto extOp =
+              dyn_cast_or_null<ExtensionDeclOp>(decl->getIfOperation())) {
+        // Check if this extension targets our struct
+        if (extOp.getTargetStructAttr() &&
+            extOp.getTargetStructAttr() == targetStruct) {
+          // If no trait filter specified, add this extension
+          if (!filterTrait.has_value()) {
+            results.insert(decl);
+            continue;
+          }
+
+          // Check if this extension implements our trait or any trait that
+          // inherits from it
+          if (!extOp.getCanonicalTrait()) {
+            // Extension doesn't have canonicalTrait computed yet - skip it
+            // This happens during error conditions or early parsing phases
+            continue;
+          }
+
+          // Use the extension's canonicalTrait (flattened hierarchy) to check
+          TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
+          for (SymbolRefAttr symbol : extCanonicalTrait.getSymbols()) {
+            if (symbol == filterTrait.value()) {
+              results.insert(decl);
+              break; // Found it, no need to check more symbols
+            }
+          }
+        }
+      }
+    }
+  }
+}
