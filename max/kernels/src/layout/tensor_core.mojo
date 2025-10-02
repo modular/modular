@@ -1146,9 +1146,7 @@ struct TensorCore[
         alias repack_tile = Index(64, 16)
 
         @always_inline
-        fn int4tobf16(
-            i4: Int32, scale: Scalar[DType.bfloat16]
-        ) -> SIMD[DType.bfloat16, 2]:
+        fn int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[DType.bfloat16, 2]:
             alias MASK: Int32 = 0x000F000F
             alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 

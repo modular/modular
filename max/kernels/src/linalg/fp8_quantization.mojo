@@ -304,7 +304,7 @@ fn matmul_dynamic_scaled_fp8[
         var c_dummy = NDBuffer[
             DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
         ](
-            UnsafePointer[Scalar[DType.float32]](),
+            UnsafePointer[Float32](),
             IndexList[2](M, N),
         )
 

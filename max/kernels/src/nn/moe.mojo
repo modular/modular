@@ -460,7 +460,7 @@ fn moe_create_indices[
             DType.uint32
         ](2).enqueue_fill(0)
         cuda_ctx.enqueue_copy[DType.uint32](
-            rebind[UnsafePointer[Scalar[DType.uint32]]](expert_usage_stats.ptr),
+            rebind[UnsafePointer[UInt32]](expert_usage_stats.ptr),
             expert_usage_stats_host,
         )
 

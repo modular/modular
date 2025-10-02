@@ -103,9 +103,9 @@ struct UnsafePointer[
     Element-wise store and load (width = 1):
 
     ```mojo
-    var p = UnsafePointer[Scalar[DType.float32]].alloc(4)
+    var p = UnsafePointer[Float32].alloc(4)
     for i in range(4):
-        p.store(i, Scalar[DType.float32](Float32(i)))
+        p.store(i, Float32(i))
     var v = p.load(2)
     print(v[0])  # => 2.0
     p.free()
@@ -114,7 +114,7 @@ struct UnsafePointer[
     Vectorized store and load (width = 4):
 
     ```mojo
-    var p = UnsafePointer[Scalar[DType.int32]].alloc(8)
+    var p = UnsafePointer[Int32].alloc(8)
     var vec = SIMD[DType.int32, 4](1, 2, 3, 4)
     p.store(0, vec)
     var out = p.load[width=4](0)
@@ -259,10 +259,10 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Scalar[DType.int32]].alloc(4)
-        p.store(0, Scalar[DType.int32](42))
-        p.store(1, Scalar[DType.int32](7))
-        p.store(2, Scalar[DType.int32](9))
+        var p = UnsafePointer[Int32].alloc(4)
+        p.store(0, Int32(42))
+        p.store(1, Int32(7))
+        p.store(2, Int32(9))
         var a = p.load(0)
         print(a[0], p.load(1)[0], p.load(2)[0])
         p.free()
@@ -640,7 +640,7 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Scalar[DType.int32]].alloc(8)
+        var p = UnsafePointer[Int32].alloc(8)
         p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
         var v = p.load[width=4]()
         print(v)  # => [1, 2, 3, 4]
@@ -855,7 +855,7 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Scalar[DType.float32]].alloc(4)
+        var p = UnsafePointer[Float32].alloc(4)
         var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
         p.store(vec)
         var out = p.load[width=4]()

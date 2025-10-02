@@ -63,7 +63,7 @@ fn apply_penalties_to_logits[
         var frequency_penalty_val = frequency_penalty[batch_id][0]
         # skip padding tokens
         if token >= 0:
-            var count = rebind[Scalar[DType.int32]](
+            var count = rebind[Int32](
                 compressed_frequency_data[idx[0], 1]
             ).cast[logit_type]()
 

@@ -101,7 +101,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
             gpu_ctx = ctx.get_device_context()
 
-            var b_ptr_to_use: UnsafePointer[Scalar[DType.float16]]
+            var b_ptr_to_use: UnsafePointer[Float16]
 
             # Only transpose the B matrix if we are validating the results,
             # otherwise we can pretend the matrix is already transposed

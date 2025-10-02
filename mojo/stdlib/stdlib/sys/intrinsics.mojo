@@ -911,8 +911,8 @@ fn lane_id() -> UInt:
         )
 
     elif is_amd_gpu():
-        alias none = Scalar[DType.int32](-1)
-        alias zero = Scalar[DType.int32](0)
+        alias none = Int32(-1)
+        alias zero = Int32(0)
         var t = llvm_intrinsic[
             "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
         ](none, zero)

@@ -1013,7 +1013,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[Scalar[DType.uint8]](),
+        alignment = align_of[UInt8](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -1215,7 +1215,7 @@ fn repack_GPTQ_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[Scalar[DType.uint8]](),
+        alignment = align_of[UInt8](),
     ]()
     var weights_smem = LayoutTensor[
         DType.uint8,

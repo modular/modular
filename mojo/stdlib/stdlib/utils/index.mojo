@@ -769,7 +769,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Gets device_type's name. For example, because DeviceBuffer's
         device_type is UnsafePointer, DeviceBuffer[DType.float32]'s
         get_device_type_name() should return something like
-        "UnsafePointer[Scalar[DType.float32]]". This is used for error messages
+        "UnsafePointer[Float32]". This is used for error messages
         when passing types to the device.
         TODO: This method will be retired soon when better kernel call error
         messages arrive.

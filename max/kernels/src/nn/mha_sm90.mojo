@@ -123,7 +123,7 @@ fn mha_sm90_dispatch[
     num_rows_q: Int,
     mask_functor: MaskType,
     score_mod: ScoreModType,
-    valid_length: UnsafePointer[Scalar[DType.uint32]],
+    valid_length: UnsafePointer[UInt32],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -394,7 +394,7 @@ fn _mha_sm90_sink_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[Scalar[DType.uint32]],
+    valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
@@ -533,7 +533,7 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[Scalar[DType.uint32]],
+    valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
@@ -670,7 +670,7 @@ fn _mha_sm90_valid_length_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: UnsafePointer[Scalar[DType.uint32]],
+    valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: KVRowOffsetsType,
     sink_weights: SinkType,
     partition: PartitionType,

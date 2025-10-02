@@ -60,7 +60,7 @@ fn kernel_lds[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
 
 # Assembly test kernels for different cache policies
 fn cache_policy_kernel_always():
-    var dummy_ptr = UnsafePointer[Scalar[DType.float32]]()
+    var dummy_ptr = UnsafePointer[Float32]()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[DType.float32, 4, cache_policy = CacheOperation.ALWAYS](
@@ -72,7 +72,7 @@ fn cache_policy_kernel_always():
 
 
 fn cache_policy_kernel_streaming():
-    var dummy_ptr = UnsafePointer[Scalar[DType.float32]]()
+    var dummy_ptr = UnsafePointer[Float32]()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[
@@ -84,7 +84,7 @@ fn cache_policy_kernel_streaming():
 
 
 fn cache_policy_kernel_global():
-    var dummy_ptr = UnsafePointer[Scalar[DType.float32]]()
+    var dummy_ptr = UnsafePointer[Float32]()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[DType.float32, 4, cache_policy = CacheOperation.GLOBAL](
@@ -96,7 +96,7 @@ fn cache_policy_kernel_global():
 
 
 fn cache_policy_kernel_volatile():
-    var dummy_ptr = UnsafePointer[Scalar[DType.float32]]()
+    var dummy_ptr = UnsafePointer[Float32]()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[

@@ -568,18 +568,18 @@ fn _compute_register_lambda_fn[
     offset: UInt,
     compute_lambda_fn: elementwise_compute_lambda_type,
 ](
-    top_coord: StaticTuple[Scalar[DType.uint32], 2],
-    bottom_coord: StaticTuple[Scalar[DType.uint32], 2],
+    top_coord: StaticTuple[UInt32, 2],
+    bottom_coord: StaticTuple[UInt32, 2],
     mut frag: SIMD[accum_type, frag_size],
     staged_c_row: UInt32,
     staged_c_col: UInt32,
 ):
     # update local coordinates w/ global memory offsets
-    var top_frag_upper_coord = StaticTuple[Scalar[DType.uint32], 2](
+    var top_frag_upper_coord = StaticTuple[UInt32, 2](
         staged_c_row + top_coord[0], staged_c_col + top_coord[1] + inc
     )
 
-    var bottom_frag_upper_coord = StaticTuple[Scalar[DType.uint32], 2](
+    var bottom_frag_upper_coord = StaticTuple[UInt32, 2](
         staged_c_row + bottom_coord[0], staged_c_col + bottom_coord[1] + inc
     )
 
@@ -656,21 +656,21 @@ fn register_epilogue[
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-matrix-fragments-shape-16256b
     # we use it to figure out the starting coordinate
     alias threads_per_row = stageN // repeats // load_width
-    var top_frag_upper_coord_left = StaticTuple[Scalar[DType.uint32], 2](
+    var top_frag_upper_coord_left = StaticTuple[UInt32, 2](
         lane_id() // threads_per_row, lane_id() % threads_per_row * load_width
     )
 
     # getting the other 3 coordinates is straightforward. Each fragment is spaced out by 16 rows
     # and within each fragment the elements are spaced out by 8 rows(this can be seen by the tv layout).
-    var bottom_frag_upper_coord_left = StaticTuple[Scalar[DType.uint32], 2](
+    var bottom_frag_upper_coord_left = StaticTuple[UInt32, 2](
         top_frag_upper_coord_left[0] + 8, top_frag_upper_coord_left[1]
     )
 
-    var top_frag_lower_coord_left = StaticTuple[Scalar[DType.uint32], 2](
+    var top_frag_lower_coord_left = StaticTuple[UInt32, 2](
         top_frag_upper_coord_left[0] + 16, top_frag_upper_coord_left[1]
     )
 
-    var bottom_frag_lower_coord_left = StaticTuple[Scalar[DType.uint32], 2](
+    var bottom_frag_lower_coord_left = StaticTuple[UInt32, 2](
         top_frag_lower_coord_left[0] + 8, top_frag_lower_coord_left[1]
     )
 

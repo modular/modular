@@ -566,7 +566,7 @@ fn _top_k_sampling[
 
     # Sample from the top K elements
     for batch in range(internal_bs):
-        var temperature_val = Scalar[DType.float32](1.0)
+        var temperature_val = Float32(1.0)
         if temperature:
             temperature_val = temperature.value()[batch][0]
 
@@ -804,7 +804,7 @@ fn _topk_stage1[
     out_idx_type: DType,
     largest: Bool = True,
 ](
-    K: UnsafePointer[Scalar[DType.int64]],
+    K: UnsafePointer[Int64],
     max_k: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
@@ -925,7 +925,7 @@ fn _topk_stage2[
     sampling: Bool = True,
     largest: Bool = True,
 ](
-    K: UnsafePointer[Scalar[DType.int64]],
+    K: UnsafePointer[Int64],
     max_k: Int,
     num_blocks_per_input: Int,
     local_topk_vals: UnsafePointer[
@@ -940,9 +940,9 @@ fn _topk_stage2[
     global_topk_idxs: UnsafePointer[
         Scalar[out_idx_type]
     ],  # sampling ? sampled token : Output array of size K
-    temperature: UnsafePointer[Scalar[DType.float32]],
-    top_p: UnsafePointer[Scalar[DType.float32]],
-    seed: UnsafePointer[Scalar[DType.uint64]],
+    temperature: UnsafePointer[Float32],
+    top_p: UnsafePointer[Float32],
+    seed: UnsafePointer[UInt64],
 ):
     """
     Computes the global Top-K elements from the local Top-K results produced by stage 1.
@@ -1076,7 +1076,7 @@ fn _topk_stage2[
                 if sampling:
                     batch_i_topk_vals[k] = total.u
                     s_id[k] = total.p
-                    var temp_val = Scalar[DType.float32](1.0)
+                    var temp_val = Float32(1.0)
                     if temperature:
                         temp_val = temperature[batch_id]
                     total.u = exp(
@@ -1246,11 +1246,11 @@ fn _topk_gpu[
     var block_dim_stage1 = Dim(block_size)
 
     # Handle optional k parameter
-    var k_ptr: UnsafePointer[Scalar[DType.int64]]
+    var k_ptr: UnsafePointer[Int64]
     if k:
-        k_ptr = rebind[UnsafePointer[Scalar[DType.int64]]](k.value().ptr)
+        k_ptr = rebind[UnsafePointer[Int64]](k.value().ptr)
     else:
-        k_ptr = UnsafePointer[Scalar[DType.int64]]()  # null pointer
+        k_ptr = UnsafePointer[Int64]()  # null pointer
 
     # Enqueue the first kernel (stage 1)
     ctx.enqueue_function[_topk_stage1[dtype, out_idx_type, largest]](
@@ -1289,29 +1289,25 @@ fn _topk_gpu[
     var block_dim_stage2 = Dim(block_size)
 
     # Handle optional temperature parameter
-    var temp_ptr: UnsafePointer[Scalar[DType.float32]]
+    var temp_ptr: UnsafePointer[Float32]
     if temperature:
-        temp_ptr = rebind[UnsafePointer[Scalar[DType.float32]]](
-            temperature.value().ptr
-        )
+        temp_ptr = rebind[UnsafePointer[Float32]](temperature.value().ptr)
     else:
-        temp_ptr = UnsafePointer[Scalar[DType.float32]]()  # null pointer
+        temp_ptr = UnsafePointer[Float32]()  # null pointer
 
     # Handle optional top_p parameter
-    var top_p_ptr: UnsafePointer[Scalar[DType.float32]]
+    var top_p_ptr: UnsafePointer[Float32]
     if top_p:
-        top_p_ptr = rebind[UnsafePointer[Scalar[DType.float32]]](
-            top_p.value().ptr
-        )
+        top_p_ptr = rebind[UnsafePointer[Float32]](top_p.value().ptr)
     else:
-        top_p_ptr = UnsafePointer[Scalar[DType.float32]]()  # null pointer
+        top_p_ptr = UnsafePointer[Float32]()  # null pointer
 
     # Handle optional seed parameter
-    var seed_ptr: UnsafePointer[Scalar[DType.uint64]]
+    var seed_ptr: UnsafePointer[UInt64]
     if seed:
-        seed_ptr = rebind[UnsafePointer[Scalar[DType.uint64]]](seed.value().ptr)
+        seed_ptr = rebind[UnsafePointer[UInt64]](seed.value().ptr)
     else:
-        seed_ptr = UnsafePointer[Scalar[DType.uint64]]()  # null pointer
+        seed_ptr = UnsafePointer[UInt64]()  # null pointer
 
     # Enqueue the second kernel (stage 2)
     ctx.enqueue_function[_topk_stage2[dtype, out_idx_type, sampling, largest]](

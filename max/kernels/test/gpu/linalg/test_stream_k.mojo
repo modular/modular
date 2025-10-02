@@ -438,11 +438,11 @@ fn run_matmul_stream_k[
     var rand_max = rng_width
 
     for i in range(M * K):
-        var val = Scalar[DType.float32](i % 20)
+        var val = Float32(i % 20)
         a_host[i] = val.cast[dtype]()
 
     for i in range(K * N):
-        var val = Scalar[DType.float32](i % 20)
+        var val = Float32(i % 20)
         b_host[i] = val.cast[dtype]()
 
     for i in range(M * N):

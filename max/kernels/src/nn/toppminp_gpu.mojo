@@ -150,9 +150,9 @@ fn topk_wrapper[
 
 
 @always_inline
-fn normalize(value: BFloat16) -> Scalar[DType.uint16]:
+fn normalize(value: BFloat16) -> UInt16:
     @always_inline
-    fn reinterpret(value: BFloat16) -> Scalar[DType.uint16]:
+    fn reinterpret(value: BFloat16) -> UInt16:
         # For unsigned integral types: No conversion needed, return as-is
         return bitcast[DType.uint16, 1](value)
 
@@ -190,7 +190,7 @@ fn normalize(value: Int32) -> UInt32:
 
 
 @always_inline
-fn normalize(value: Scalar[DType.uint16]) -> Scalar[DType.uint16]:
+fn normalize(value: UInt16) -> UInt16:
     return value
 
 
@@ -230,9 +230,7 @@ fn normalize(
         return normalize(rebind[Float32](value)).cast[result.dtype]()
     # TODO: These below don't return uint32 so must generalize and fix
     elif dtype is DType.uint16:
-        return normalize(rebind[Scalar[DType.uint16]](value)).cast[
-            result.dtype
-        ]()
+        return normalize(rebind[UInt16](value)).cast[result.dtype]()
     elif dtype is DType.float16:
         return normalize(rebind[Float16](value)).cast[result.dtype]()
     elif dtype is DType.bfloat16:

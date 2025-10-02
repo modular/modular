@@ -62,11 +62,11 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
 
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
         for i in range(length):
-            var expected_value: Scalar[DType.float32]
+            var expected_value: Float32
 
             @parameter
             if do_bfloat_exp:
-                expected_value = in_host[i] ** Scalar[DType.float32](exponent)
+                expected_value = in_host[i] ** Float32(exponent)
             else:
                 expected_value = in_host[i] ** exponent
 

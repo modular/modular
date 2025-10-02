@@ -27,7 +27,7 @@ fn test_runtime_and_compile_time_dim_and_stride(
     alias layout = Layout.row_major[2](static_shape)
 
     var tensor = LayoutTensor[DType.float32, layout,](
-        UnsafePointer[Scalar[DType.float32]](),
+        UnsafePointer[Float32](),
         RuntimeLayout[layout].row_major(dynamic_shape),
     )
 

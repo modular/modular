@@ -25,7 +25,7 @@ fn copy1(
     b: UnsafePointer[Float32],
     n: Int,
 ):
-    var tmp = Scalar[DType.float32]()
+    var tmp = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
     ):
@@ -45,7 +45,7 @@ fn copy2(
     d: UnsafePointer[Float32],
     n: Int,
 ):
-    var result = Scalar[DType.float32]()
+    var result = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
     ):
@@ -64,7 +64,7 @@ fn copy1_n(
     b: UnsafePointer[Float32],
     n: Int,
 ):
-    var tmp = Scalar[DType.float32]()
+    var tmp = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
     ):
@@ -82,7 +82,7 @@ fn copy2_n(
     d: UnsafePointer[Float32],
     n: Int,
 ):
-    var result = Scalar[DType.float32]()
+    var result = Float32()
     for i in range(
         block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
     ):

@@ -24,7 +24,7 @@ fn test_scatter_set_constant() raises:
     ](data_ptr,).fill(0.0)
 
     var indices = LayoutTensor[DType.int32, Layout.row_major(4, 2)](
-        InlineArray[Scalar[DType.int32], 4 * 2](uninitialized=True),
+        InlineArray[Int32, 4 * 2](uninitialized=True),
     )
 
     indices[0, 0] = 0

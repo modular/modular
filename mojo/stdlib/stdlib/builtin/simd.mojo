@@ -3632,7 +3632,7 @@ fn _convert_f32_to_float8_ue8m0[
             for i in range(0, size, 2):
                 var f8x2_f32x2 = inlined_assembly[
                     asm_prefix + " $0, $1, $2;",
-                    Scalar[DType.uint16],
+                    UInt16,
                     constraints="=h,f,f",
                     has_side_effect=False,
                 ](val[i + 1], val[i])
@@ -3642,7 +3642,7 @@ fn _convert_f32_to_float8_ue8m0[
         else:
             var f8x2_f32x2 = inlined_assembly[
                 asm_prefix + " $0, $1, $2;",
-                Scalar[DType.uint16],
+                UInt16,
                 constraints="=h,f,f",
                 has_side_effect=False,
             ](Float32(0.0), val[0])

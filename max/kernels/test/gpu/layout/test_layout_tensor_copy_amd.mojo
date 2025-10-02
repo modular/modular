@@ -89,9 +89,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
 
     alias thread_layout = Layout.row_major(4, 2)
     alias layout = Layout.row_major(4, 16)
-    var stack = InlineArray[Scalar[DType.bfloat16], layout.size()](
-        uninitialized=True
-    )
+    var stack = InlineArray[BFloat16, layout.size()](uninitialized=True)
     var input_tensor = LayoutTensor[DType.bfloat16, layout](stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
@@ -185,7 +183,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: tid = 15 reg = [0.0, 0.0, 0.0, 0.0]
     alias thread_layout = Layout.row_major(4, 4)
     alias input_layout = Layout.row_major(4, 16)
-    var input_stack = InlineArray[Scalar[DType.bfloat16], input_layout.size()](
+    var input_stack = InlineArray[BFloat16, input_layout.size()](
         uninitialized=True
     )
     var input_tensor = LayoutTensor[DType.bfloat16, input_layout](input_stack)
@@ -208,9 +206,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
 
 
 fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
-    fn kernel[
-        cache_policy: CacheOperation
-    ](ptr: UnsafePointer[Scalar[DType.bfloat16]]):
+    fn kernel[cache_policy: CacheOperation](ptr: UnsafePointer[BFloat16]):
         alias simd_width = simd_width_of[DType.bfloat16]()
         var global_tensor = LayoutTensor[
             DType.bfloat16,

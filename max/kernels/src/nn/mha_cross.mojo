@@ -186,7 +186,7 @@ fn _bmm1_bs[
     var kv_head = Int(head // group)
     var output = output_ptr + Int(output_offset)
 
-    var accum = Scalar[DType.float32](0.0)
+    var accum = Float32(0.0)
 
     for i in range(cur_kv_len + v_cache.cache_length(batch)):
         var v_ptr = v_cache.block_paged_ptr[tile_size=1](batch, i, kv_head, x)

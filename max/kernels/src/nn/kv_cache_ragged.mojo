@@ -1685,7 +1685,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
     # The CPU matmul codepath uses the C buffer as a workspace
     # even if an epilogue is provided, here we just allocate
     # something to ensure we don't segfault.
-    var c_ptr = UnsafePointer[Scalar[DType.float32]].alloc(TOTAL_SEQ_LEN * N)
+    var c_ptr = UnsafePointer[Float32].alloc(TOTAL_SEQ_LEN * N)
 
     c_nd = {c_ptr, IndexList[2](TOTAL_SEQ_LEN, N)}
 

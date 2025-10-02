@@ -69,7 +69,7 @@ fn wgmma_kernel_ss[
     ].stack_allocation()
 
     alias num_output_regs = WMMA_M * WMMA_N // 128
-    var c_reg = StaticTuple[Scalar[DType.float32], num_output_regs](0)
+    var c_reg = StaticTuple[Float32, num_output_regs](0)
 
     alias M = a_layout.shape[0].value()
     alias K = a_layout.shape[1].value()

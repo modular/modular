@@ -5117,7 +5117,7 @@ struct MaskedFlashAttentionGPU:
         k: InputTensor[rank=rank],
         v: InputTensor[rank=rank],
         mask: InputTensor,
-        scale: Scalar[dtype = DType.float32],
+        scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         """`masked_flash_attention_gpu` is a hand-fused operator which does

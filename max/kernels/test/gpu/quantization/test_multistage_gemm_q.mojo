@@ -135,7 +135,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[Scalar[DType.uint8]](),
+        alignment = align_of[UInt8](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -335,9 +335,7 @@ fn create_ref_b[
     var vec = bitcast[DType.int32, 4](warp_q_tile.vectorize[1, 4]()[0, lane_id])
 
     @always_inline
-    fn int4tobf16(
-        i4: Int32, scale: Scalar[DType.bfloat16]
-    ) -> SIMD[DType.bfloat16, 2]:
+    fn int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[DType.bfloat16, 2]:
         alias MASK: Int32 = 0x000F000F
         alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
         alias lut: Int32 = (0xF0 & 0xCC) | 0xAA

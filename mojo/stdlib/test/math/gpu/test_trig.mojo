@@ -48,19 +48,19 @@ fn run_func[
 
 def main():
     @parameter
-    fn cos_fn(val: Scalar[DType.float16]) -> Scalar[DType.float16]:
+    fn cos_fn(val: Float16) -> Float16:
         return cos(val)
 
     @parameter
-    fn cos_fn(val: Scalar[DType.float32]) -> Scalar[DType.float32]:
+    fn cos_fn(val: Float32) -> Float32:
         return cos(val)
 
     @parameter
-    fn sin_fn(val: Scalar[DType.float16]) -> Scalar[DType.float16]:
+    fn sin_fn(val: Float16) -> Float16:
         return sin(val)
 
     @parameter
-    fn sin_fn(val: Scalar[DType.float32]) -> Scalar[DType.float32]:
+    fn sin_fn(val: Float32) -> Float32:
         return sin(val)
 
     with DeviceContext() as ctx:
