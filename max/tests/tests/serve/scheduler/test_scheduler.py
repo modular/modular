@@ -87,6 +87,7 @@ def create_scheduler() -> tuple[
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
+        offload_queue_draining=False,
     )
 
     return (

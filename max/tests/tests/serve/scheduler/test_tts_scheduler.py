@@ -172,6 +172,7 @@ def create_paged_scheduler(
         response_queue=response_queue,
         cancel_queue=cancel_queue,
         paged_manager=paged_manager,
+        offload_queue_draining=False,
     )
 
     return scheduler, request_queue
