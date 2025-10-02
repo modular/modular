@@ -238,3 +238,10 @@ kgen.generator @lifetime_union<x: !lit.origin<0>, y: !lit.origin<0>>() {
 
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @test_origin
+kgen.generator @test_origin<x: i1>() {
+  // CHECK-NEXT: kgen.param.constant: origin<0> = <rebind(:i1 x)>
+  kgen.param.constant: origin<0> = <rebind(:i1 x)>
+  kgen.return
+}
