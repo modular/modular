@@ -66,6 +66,7 @@ benchmark_config:
   random_coefficient_of_variation: "0.3,0.7"
   random_distribution_type: "normal"  # choices: uniform, normal
   random_first_turn_ratio: 1.0
+  random_image_count: 0
   random_image_size: ""
   random_input_len: 1024
   random_max_num_unique_sys_prompt: 1

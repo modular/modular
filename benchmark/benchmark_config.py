@@ -369,6 +369,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     random_first_turn_ratio: float = field(
         default=1.0, metadata={"group": "Dataset-Specific Parameters"}
     )
+    random_image_count: int = field(
+        default=0, metadata={"group": "Dataset-Specific Parameters"}
+    )
     random_image_size: str = field(
         default="", metadata={"group": "Dataset-Specific Parameters"}
     )

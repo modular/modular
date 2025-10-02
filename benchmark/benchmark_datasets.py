@@ -48,7 +48,7 @@ class SampledRequest:
     prompt_formatted: str
     prompt_len: int
     output_len: int | None
-    encoded_img: OpenAIImage | None
+    encoded_images: list[OpenAIImage]
 
 
 MessageSource = Literal["user", "assistant"]
@@ -351,8 +351,8 @@ class BenchmarkDataset(ABC):
         # If we have a dataset_path but no dataset_name, we can't determine the subclass
         if not dataset_name:
             raise ValueError(
-                "dataset_name is required to determine the appropriate dataset subclass. "
-                "Cannot infer subclass from dataset_path alone."
+                "dataset_name is required to determine the appropriate dataset"
+                " subclass. Cannot infer subclass from dataset_path alone."
             )
 
         # Get the dataset class based on dataset_name
@@ -609,7 +609,8 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
             ):
                 # Prune too long sequences.
                 print(
-                    f"Skip too long sequences ({prompt_len} > {model_max_length})..."
+                    f"Skip too long sequences ({prompt_len} >"
+                    f" {model_max_length})..."
                 )
                 continue
             filtered_dataset.append(
@@ -617,7 +618,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     prompt_formatted=prompt,
                     prompt_len=prompt_len,
                     output_len=output_len,
-                    encoded_img=None,
+                    encoded_images=[],
                 )
             )
 
@@ -729,7 +730,7 @@ class ShareGPTBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     prompt_formatted=prompt,
                     prompt_len=prompt_len,
                     output_len=output_len,
-                    encoded_img=None,
+                    encoded_images=[],
                 )
             )
 
@@ -837,6 +838,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         min_input_len = kwargs.get("min_input_len", 4)
         min_output_len = kwargs.get("min_output_len", 1)
         image_size = kwargs.get("image_size", "")
+        image_count = kwargs.get("image_count", 0)
 
         # Validate required parameters
         if input_len is None:
@@ -847,7 +849,13 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             )
         if coefficient_of_variation is None:
             raise ValueError(
-                "coefficient_of_variation is required for RandomBenchmarkDataset"
+                "coefficient_of_variation is required for"
+                " RandomBenchmarkDataset"
+            )
+        if (image_size and not image_count) or (not image_size and image_count):
+            raise ValueError(
+                "both image_size and image_count are required when generating"
+                " an image benchmark"
             )
 
         logger.info(f"Random samples in {distribution_type} distribution")
@@ -869,7 +877,8 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 image_width, image_height = map(int, image_size.split(","))
             else:
                 raise ValueError(
-                    f"Expected image size to be 2 ints separated by a comma, instead got: {image_size}"
+                    "Expected image size to be 2 ints separated by a comma,"
+                    f" instead got: {image_size}"
                 )
 
         if distribution_type == "normal":
@@ -932,18 +941,18 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             ]
             prompt = tokenizer.decode(prompt_ids)
 
-            image = None
+            images = []
             image_token_len = 0
-            if image_size:
+            for _ in range(image_count):
                 assert image_height is not None
                 assert image_width is not None
                 raw_image = self._generate_random_image(
                     image_height, image_width
                 )
-                image = encode_image(raw_image)
+                images.append(encode_image(raw_image))
                 # TODO: figure out how to account for image tokens and chat prompts in this length.
                 # For now, just hardcoding to the internvl 512x512 image token count.
-                image_token_len = 256
+                image_token_len += 256
 
             # We change to use the tokenizer to count the actual number of
             # input tokens encoded on the serving backends instead of looking at
@@ -958,7 +967,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     prompt_formatted=prompt,
                     prompt_len=input_len_actual,
                     output_len=int(output_lens[i]),
-                    encoded_img=image,
+                    encoded_images=images,
                 )
             )
 
@@ -1104,7 +1113,7 @@ class SonnetBenchmarkDataset(LocalBenchmarkDataset):
                     prompt_formatted=prompt_out,
                     prompt_len=prompt_len,
                     output_len=output_len,
-                    encoded_img=None,
+                    encoded_images=[],
                 )
             )
 
@@ -1196,7 +1205,7 @@ class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
                     prompt_formatted=prompt,
                     prompt_len=prompt_len,
                     output_len=output_len,
-                    encoded_img=None,
+                    encoded_images=[],
                 )
             )
         return sampled_requests
@@ -1229,7 +1238,7 @@ class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
             # is not indexable)
             item = dataset[len(sampled_requests)]  # type: ignore[index]
             prompt = item["turns"][0][0]["content"]
-            encoded_img = encode_image(item["images"][0])
+            encoded_images = [encode_image(img) for img in item["images"]]
             prompt_len = len(tokenizer(prompt).input_ids)
             output_len = None if output_lengths is None else output_lengths[i]
             sampled_requests.append(
@@ -1237,7 +1246,7 @@ class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
                     prompt_formatted=prompt,
                     prompt_len=prompt_len,
                     output_len=output_len,
-                    encoded_img=encoded_img,
+                    encoded_images=encoded_images,
                 )
             )
         return sampled_requests
@@ -1359,7 +1368,7 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
                     prompt_formatted=prompt_formatted,
                     prompt_len=prompt_len,
                     output_len=output_len,
-                    encoded_img=None,
+                    encoded_images=[],
                 )
             )
 
@@ -1385,11 +1394,13 @@ class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
         # Validate required parameters
         if output_lengths is None:
             raise ValueError(
-                "output_lengths is required for ObfuscatedConversationsBenchmarkDataset"
+                "output_lengths is required for"
+                " ObfuscatedConversationsBenchmarkDataset"
             )
 
         assert self.dataset_path is not None, (
-            "dataset_path must be provided for ObfuscatedConversationsBenchmarkDataset"
+            "dataset_path must be provided for"
+            " ObfuscatedConversationsBenchmarkDataset"
         )
         random.seed(seed)
         np.random.seed(seed)
@@ -1402,7 +1413,8 @@ class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
 
         if len(decoded_lines) < num_requests:
             raise ValueError(
-                f"Dataset has {len(decoded_lines)} conversations but {num_requests} were requested"
+                f"Dataset has {len(decoded_lines)} conversations but"
+                f" {num_requests} were requested"
             )
 
         if shuffle:
@@ -1426,7 +1438,7 @@ class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
                     prompt_formatted=prompt,
                     prompt_len=prompt_len,
                     output_len=output_lengths[i],
-                    encoded_img=None,
+                    encoded_images=[],
                 )
             )
         return sampled_requests

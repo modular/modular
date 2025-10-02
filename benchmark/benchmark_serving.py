@@ -115,10 +115,10 @@ except ImportError:
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
-    "This command runs comprehensive benchmark tests on a model server to measure "
-    "performance metrics including throughput, latency, and resource utilization. "
-    "Make sure that the MAX server is running and hosting a model before running "
-    "this command."
+    "This command runs comprehensive benchmark tests on a model server to"
+    " measure performance metrics including throughput, latency, and resource"
+    " utilization. Make sure that the MAX server is running and hosting a model"
+    " before running this command."
 )
 
 logger = logging.getLogger("benchmark_serving")
@@ -127,7 +127,7 @@ logger = logging.getLogger("benchmark_serving")
 @dataclass
 class RequestFuncInput:
     prompt: str | list[dict[str, Any]]
-    img: OpenAIImage | None
+    images: list[OpenAIImage]
     api_url: str
     prompt_len: int
     max_tokens: int | None
@@ -174,7 +174,8 @@ class RequestCounter:
         async with self.req_counter_lock:
             if self.total_sent_requests >= self.max_requests:
                 logger.warning(
-                    f"Ending run: max requests {self.max_requests} have been sent"
+                    f"Ending run: max requests {self.max_requests} have been"
+                    " sent"
                 )
                 return False
 
@@ -344,7 +345,10 @@ async def async_request_openai_completions(
                                 most_recent_timestamp = timestamp
                                 generated_text += data["choices"][0]["text"]
                     if not has_content:
-                        output.error = "No content returned, there could be an issue with accuracy"
+                        output.error = (
+                            "No content returned, there could be an issue with"
+                            " accuracy"
+                        )
                         output.success = False
                     else:
                         output.generated_text = generated_text
@@ -395,10 +399,10 @@ async def async_request_openai_chat_completions(
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
 
-        if request_func_input.img:
+        for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)
-            payload["messages"][0]["content"].append(request_func_input.img)  # type: ignore[index]
+            payload["messages"][0]["content"].append(img)  # type: ignore[index]
 
         headers = {
             "Content-Type": "application/json",
@@ -455,7 +459,10 @@ async def async_request_openai_chat_completions(
                             most_recent_timestamp = timestamp
 
                     if not has_content:
-                        output.error = "No content returned, there could be an issue with accuracy"
+                        output.error = (
+                            "No content returned, there could be an issue with"
+                            " accuracy"
+                        )
                         output.success = False
                     else:
                         output.generated_text = generated_text
@@ -553,8 +560,9 @@ def generate_lora_adapter(
             # Validate that module is supported (attention only for now)
             if module not in attn_module_dims:
                 raise ValueError(
-                    f"Unsupported target module '{module}'. "
-                    f"Only attention modules are currently supported: {list(attn_module_dims.keys())}"
+                    f"Unsupported target module '{module}'. Only attention"
+                    " modules are currently supported:"
+                    f" {list(attn_module_dims.keys())}"
                 )
 
             # Get the output dimension for this module type
@@ -653,7 +661,8 @@ async def async_request_lora_load(
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 if response.status == 200:
                     logger.debug(
-                        f"Successfully loaded LoRA '{lora_name}' in {elapsed_ms:.2f}ms"
+                        f"Successfully loaded LoRA '{lora_name}' in"
+                        f" {elapsed_ms:.2f}ms"
                     )
                     return True, elapsed_ms
                 else:
@@ -690,7 +699,8 @@ async def async_request_lora_unload(
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 if response.status == 200:
                     logger.debug(
-                        f"Successfully unloaded LoRA '{lora_name}' in {elapsed_ms:.2f}ms"
+                        f"Successfully unloaded LoRA '{lora_name}' in"
+                        f" {elapsed_ms:.2f}ms"
                     )
                     return True, elapsed_ms
                 else:
@@ -1075,7 +1085,7 @@ async def chat_session_driver(
         prompt_len=0,
         max_tokens=0,
         ignore_eos=True,
-        img=None,
+        images=[],
         session_id=str(chat_session.id),
     )
     content_idx = 0  # Assume user initiates the conversation
@@ -1119,7 +1129,8 @@ async def chat_session_driver(
         if not response.success:
             if not response.cancelled:
                 logger.error(
-                    f"Ending chat session {chat_session.id} due to server error response: {response.error}"
+                    f"Ending chat session {chat_session.id} due to server error"
+                    f" response: {response.error}"
                 )
             break
 
@@ -1179,7 +1190,9 @@ async def benchmark(
 ):
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
-            "--ignore-first-turn-stats and --skip-first-n-requests both set. Ignoring --skip-first-n-requests due to first turn in each chat already being ignored."
+            "--ignore-first-turn-stats and --skip-first-n-requests both set."
+            " Ignoring --skip-first-n-requests due to first turn in each chat"
+            " already being ignored."
         )
         skip_first_n_requests = 0
 
@@ -1230,7 +1243,7 @@ async def benchmark(
             test_prompt_len = test_question.num_tokens
             test_max_tokens: int | None = test_answer.num_tokens
             test_ignore_eos = True
-            test_img = None
+            test_images = []
         else:
             test_request = input_requests[0]
             test_prompt = test_request.prompt_formatted
@@ -1239,7 +1252,7 @@ async def benchmark(
                 (test_request.output_len, max_output_len)
             )
             test_ignore_eos = test_request.output_len is not None
-            test_img = test_request.encoded_img
+            test_images = test_request.encoded_images
 
         test_input = RequestFuncInput(
             model=model_id,
@@ -1248,7 +1261,7 @@ async def benchmark(
             prompt_len=test_prompt_len,
             max_tokens=test_max_tokens,
             ignore_eos=test_ignore_eos,
-            img=test_img,
+            images=test_images,
             top_k=top_k,
         )
         test_output = await request_func(
@@ -1287,7 +1300,8 @@ async def benchmark(
                 from max.diagnostics.gpu import BackgroundRecorder
             except ImportError:
                 logger.warning(
-                    "max.diagnostics not available, skipping GPU stats collection"
+                    "max.diagnostics not available, skipping GPU stats"
+                    " collection"
                 )
             else:
                 gpu_recorder = benchmark_stack.enter_context(
@@ -1304,7 +1318,8 @@ async def benchmark(
                 cpu_collector.start()
             except:
                 logger.warning(
-                    "Cannot access max-serve PIDs, skipping CPU stats collection"
+                    "Cannot access max-serve PIDs, skipping CPU stats"
+                    " collection"
                 )
 
         benchmark_start_time = time.perf_counter_ns()
@@ -1371,7 +1386,7 @@ async def benchmark(
                     top_p=top_p,
                     top_k=top_k,
                     ignore_eos=ignore_eos,
-                    img=request.encoded_img,
+                    images=request.encoded_images,
                 )
                 tasks.append(
                     asyncio.create_task(
@@ -1844,7 +1859,8 @@ def main(args: argparse.Namespace) -> None:
         if args.num_chat_sessions:
             if args.output_lengths is not None:
                 raise NotImplementedError(
-                    "TODO: Add support for fixed output lengths with multi-turn code-debug"
+                    "TODO: Add support for fixed output lengths with multi-turn"
+                    " code-debug"
                 )
             chat_sessions = benchmark_dataset.gen_twoturn_longcontext_requests(
                 num_chat_sessions=args.num_chat_sessions,
@@ -1893,7 +1909,8 @@ def main(args: argparse.Namespace) -> None:
     elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
         if output_lengths:
             ValueError(
-                "Arxiv summarization dataset does not support --output-lengths. Please use --max-output-len"
+                "Arxiv summarization dataset does not support --output-lengths."
+                " Please use --max-output-len"
             )
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
@@ -1927,6 +1944,7 @@ def main(args: argparse.Namespace) -> None:
                 max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
                 distribution_type=args.random_distribution_type,
                 image_size=args.random_image_size,
+                image_count=args.random_image_count,
             )
     elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
         input_requests = benchmark_dataset.sample_requests(
@@ -1976,7 +1994,7 @@ def main(args: argparse.Namespace) -> None:
                     "output_len": request.output_len,
                     "prompt_len": request.prompt_len,
                     "prompt": request.prompt_formatted,
-                    "encoded_img": request.encoded_img,
+                    "encoded_images": request.encoded_images,
                 }
             )
 
