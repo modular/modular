@@ -3769,6 +3769,43 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
   if (ParserBase(shared, lexer).parseSuite(extensionDecl))
     return failure();
 
+  // Now check for conflicts; things in the extension shouldnt already be in the
+  // struct, unless theyre both methods because overloading is fine.
+  if (extensionDecl.declsInScope && structAstDecl.declsInScope) {
+    for (auto &[declName, extensionMemberDecls] : *extensionDecl.declsInScope) {
+      ASTDecl *firstExtensionMemberDecl = extensionMemberDecls.front();
+      bool isExtensionMethod =
+          isa_and_nonnull<FnOp>(firstExtensionMemberDecl->getIfOperation());
+      auto it = structAstDecl.declsInScope->find(declName);
+      if (it == structAstDecl.declsInScope->end()) {
+        // If there's nothing in the struct with this name, no conflict, done.
+        continue;
+      }
+      ASTDecl *firstStructMemberDecl = it->second.front();
+      bool isStructMethod =
+          isa_and_nonnull<FnOp>(firstStructMemberDecl->getIfOperation());
+
+      if (isExtensionMethod && isStructMethod) {
+        // Method overloading is okay, done.
+        continue;
+      }
+
+      // Show an error for each conflicting member in the extension decl, and
+      // mark it erroneous.
+      for (ASTDecl *extensionMemberDecl : extensionMemberDecls) {
+        auto diag =
+            emitError(extensionMemberDecl->getLoc(), "invalid redefinition of ")
+            << declName;
+        diag.attachNote(firstStructMemberDecl->getLoc())
+            << "extension " << (isExtensionMethod ? "method" : "declaration")
+            << " conflicts with struct "
+            << (isStructMethod ? "method" : "declaration");
+        extensionMemberDecl->setErroneous();
+      }
+      return failure();
+    }
+  }
+
   return success();
 }
 

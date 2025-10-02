@@ -1658,57 +1658,6 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   return emitter.emitResult(result, node, dest);
 }
 
-/// Collect the type declaration and any extension declarations for the given
-/// type. Returns a vector containing the struct/trait declaration and any
-/// extension declarations.
-static SmallVector<ASTDecl *, 4>
-collectTypeAndExtensionDecls(ASTType type, ASTDecl &usesiteScope,
-                             SMLoc callLoc) {
-  SharedState &shared = usesiteScope.getShared();
-  SmallVector<ASTDecl *, 4> result;
-  auto structAstDecl = type.getDecl(shared);
-  if (structAstDecl)
-    result.push_back(structAstDecl);
-
-  // Handle both struct and trait types for extension lookup
-  ASTDecl *typeDecl = nullptr;
-  StringRef typeName;
-
-  if (LIT::StructType structType = dyn_cast<LIT::StructType>(type.mlirType)) {
-    typeDecl = ASTType(structType).getDecl(shared);
-  } else if (LIT::TraitType traitType =
-                 dyn_cast<LIT::TraitType>(type.mlirType)) {
-    typeDecl = ASTType(traitType).getDecl(shared);
-    // Support trait extensions - look up extensions for traits the same way
-    // we do for structs
-  }
-
-  if (typeDecl) {
-    typeName = typeDecl->getNameIfOperation().value();
-    LookupAllResult lookupResult =
-        shared.lookupAllDeclsWithName(typeName, callLoc, usesiteScope, true);
-    // Only consider results from successful lookups. Lookups with isErroneous()
-    // means the error was already diagnosed. Lookups with isFailure() should
-    // be rare since we expect to find at least the original type declaration,
-    // but we gracefully handle it by skipping extension lookup.
-    if (lookupResult.isSuccess()) {
-      ArrayRef<ASTDecl *> foundAstDecls = lookupResult.getIfSuccess();
-      for (ASTDecl *foundAstDecl : foundAstDecls) {
-        if (failed(shared.declResolver->resolveBody(*foundAstDecl, callLoc))) {
-          // Do nothing, skip it. Errors were already printed out, and we don't
-          // mind missing call candidates from erroneous extensions.
-          continue;
-        }
-
-        if (isa_and_nonnull<ExtensionDeclOp>(foundAstDecl->getIfOperation()))
-          result.push_back(foundAstDecl);
-      }
-    }
-  }
-
-  return result;
-}
-
 /// Emit a qualified attribute reference like "x.y" to MLIR. These can always be
 /// emitted eagerly in the LHS of an assignment because the base expression can
 /// never have an inferred type.
@@ -1806,8 +1755,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Find the member being accessed.
   // Search through the struct and also through any of its visible extensions.
   SmallVector<ASTDecl *, 4> structAndExtensionsDecls =
-      collectTypeAndExtensionDecls(baseRVType, emitter.getDeclScope(),
-                                   getLoc());
+      emitter.getDeclScope().collectTypeAndExtensions(baseRVType, getLoc());
   SmallVector<ASTDecl *> memberDecls;
   for (ASTDecl *containerDecl : structAndExtensionsDecls) {
     LookupResult lookup =

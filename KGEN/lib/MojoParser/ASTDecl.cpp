@@ -8,6 +8,7 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITInterfaces.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -67,9 +68,54 @@ ASTDecl *ASTDecl::tryGetMethodParentDecl() const {
 
   // Don't return non-null for nested functions or module-level functions.
   ASTDecl *parent = getParentDecl();
-  return isa_and_nonnull<StructDeclOp, TraitDeclOp>(parent->getIfOperation())
+  return isa_and_nonnull<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(
+             parent->getIfOperation())
              ? parent
              : nullptr;
+}
+
+/// Collect the struct/trait declaration and all visible extension declarations
+/// for the given type from this use-site context.
+llvm::SmallVector<ASTDecl *, 4>
+ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
+  llvm::SmallVector<ASTDecl *, 4> result;
+  auto structAstDecl = type.getDecl(shared);
+  if (structAstDecl) {
+    result.push_back(structAstDecl);
+  }
+  ASTDecl *typeDecl = nullptr;
+  if (LIT::StructType structType = dyn_cast<LIT::StructType>(type.mlirType)) {
+    typeDecl = ASTType(structType).getDecl(shared);
+  } else if (LIT::TraitType traitType =
+                 dyn_cast<LIT::TraitType>(type.mlirType)) {
+    typeDecl = ASTType(traitType).getDecl(shared);
+    // TODO: Support trait extensions
+  }
+
+  if (typeDecl) {
+    StringRef typeName = typeDecl->getNameIfOperation().value();
+    LookupAllResult lookupResult =
+        shared.lookupAllDeclsWithName(typeName, callLoc, *this, true);
+    // Only consider results from successful lookups. Lookups with isErroneous()
+    // means the error was already diagnosed. Lookups with isFailure() should
+    // be rare since we expect to find at least the original type declaration,
+    // but we gracefully handle it by skipping extension lookup.
+    if (lookupResult.isSuccess()) {
+      ArrayRef<ASTDecl *> foundAstDecls = lookupResult.getIfSuccess();
+      for (ASTDecl *foundAstDecl : foundAstDecls) {
+        if (failed(shared.declResolver->resolveBody(*foundAstDecl, callLoc))) {
+          // Do nothing, skip it. Errors were already printed out, and we don't
+          // mind missing call candidates from erroneous extensions.
+          continue;
+        }
+
+        if (isa_and_nonnull<ExtensionDeclOp>(foundAstDecl->getIfOperation()))
+          result.push_back(foundAstDecl);
+      }
+    }
+  }
+
+  return result;
 }
 
 void ASTDecl::takeDecls(ASTDecl &src) {
