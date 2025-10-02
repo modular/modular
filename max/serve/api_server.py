@@ -24,7 +24,11 @@ from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.interfaces import (
+    PipelinesFactory,
+    PipelineTask,
+    PipelineTokenizer,
+)
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
@@ -67,7 +71,7 @@ def validate_port_is_free(port: int):
 @dataclass(frozen=True)
 class ServingTokenGeneratorSettings:
     # Pipeline config
-    model_factory: PipelinesFactory
+    model_factory: PipelinesFactory  # type: ignore
     pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer[Any, Any, Any]
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION

@@ -195,7 +195,7 @@ async def _async_worker(
     async with (
         start_telemetry_consumer(settings) as metric_client,
         start_model_worker(
-            model_factory=model_factory,
+            model_factory=model_factory,  # type: ignore
             pipeline_config=pipeline_config,
             settings=settings,
             metric_client=metric_client,

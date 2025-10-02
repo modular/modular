@@ -25,7 +25,12 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Callable
 
 import uvloop
-from max.interfaces import Pipeline, PipelinesFactory
+from max.interfaces import (
+    Pipeline,
+    PipelineInputsType,
+    PipelineOutputType,
+    PipelinesFactory,
+)
 from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
@@ -98,7 +103,7 @@ class ModelWorker:
     @traced
     async def run(
         pc: ProcessControl,
-        model_factory: PipelinesFactory,
+        model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
         metric_client_factory: Callable[
@@ -181,7 +186,7 @@ class ModelWorker:
     @traced
     def __call__(
         pc: ProcessControl,
-        model_factory: PipelinesFactory,
+        model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
         metric_client_factory: Callable[
@@ -224,7 +229,7 @@ class ModelWorker:
 
 @asynccontextmanager
 async def start_model_worker(
-    model_factory: PipelinesFactory,
+    model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
