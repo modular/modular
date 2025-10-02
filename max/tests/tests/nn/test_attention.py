@@ -14,7 +14,7 @@ from unittest import mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Graph, ops
-from max.nn.attention import AttentionWithRope, DistributedAttentionWithRope
+from max.nn.attention import AttentionWithRope, TensorParallelAttentionWithRope
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -90,7 +90,7 @@ def test_attention_with_rope_clip_qkv_validation() -> None:
 
 
 def test_distributed_attention_with_rope_device_validation() -> None:
-    """Tests that DistributedAttentionWithRope raises ValueError for CPU."""
+    """Tests that TensorParallelAttentionWithRope raises ValueError for CPU."""
     rope = RotaryEmbedding(
         dim=64,
         n_heads=32,
@@ -109,9 +109,9 @@ def test_distributed_attention_with_rope_device_validation() -> None:
 
     # Test that CPU devices raises ValueError.
     with pytest.raises(
-        ValueError, match="DistributedAttentionWithRope does not support CPU"
+        ValueError, match="TensorParallelAttentionWithRope does not support CPU"
     ):
-        DistributedAttentionWithRope(
+        TensorParallelAttentionWithRope(
             rope=rope,
             num_attention_heads=32,
             num_key_value_heads=8,
@@ -125,7 +125,7 @@ def test_distributed_attention_with_rope_device_validation() -> None:
 def test_distributed_attention_with_rope_call_validation(
     allreduce_mock: mock.Mock,
 ) -> None:
-    """Tests input validation in DistributedAttentionWithRope.__call__."""
+    """Tests input validation in TensorParallelAttentionWithRope.__call__."""
     rope = RotaryEmbedding(
         dim=64,
         n_heads=32,
@@ -143,7 +143,7 @@ def test_distributed_attention_with_rope_call_validation(
     )
 
     devices = [DeviceRef("gpu", i) for i in range(2)]
-    dist_attn = DistributedAttentionWithRope(
+    dist_attn = TensorParallelAttentionWithRope(
         rope=rope,
         num_attention_heads=32,
         num_key_value_heads=8,
@@ -197,7 +197,7 @@ def test_distributed_attention_with_rope_call_validation(
 def test_distributed_attention_with_rope_non_divisible_heads(
     allreduce_mock: mock.Mock,
 ) -> None:
-    """Tests DistributedAttentionWithRope with non-divisible number of heads."""
+    """Tests TensorParallelAttentionWithRope with non-divisible number of heads."""
     rope = RotaryEmbedding(
         dim=64,
         n_heads=30,  # Not divisible by 4
@@ -217,7 +217,7 @@ def test_distributed_attention_with_rope_non_divisible_heads(
     devices = [DeviceRef("gpu", i) for i in range(4)]
 
     # Should not raise an error anymore
-    dist_attn = DistributedAttentionWithRope(
+    dist_attn = TensorParallelAttentionWithRope(
         rope=rope,
         num_attention_heads=30,
         num_key_value_heads=8,
@@ -239,7 +239,7 @@ def test_distributed_attention_with_rope_non_divisible_heads(
 def test_distributed_attention_with_rope_stacked_qkv(
     allreduce_mock: mock.Mock,
 ) -> None:
-    """Tests DistributedAttentionWithRope with stacked QKV configuration."""
+    """Tests TensorParallelAttentionWithRope with stacked QKV configuration."""
     rope = RotaryEmbedding(
         dim=64,
         n_heads=32,
@@ -259,7 +259,7 @@ def test_distributed_attention_with_rope_stacked_qkv(
     devices = [DeviceRef("gpu", i) for i in range(4)]
 
     # Test with stacked QKV
-    dist_attn = DistributedAttentionWithRope(
+    dist_attn = TensorParallelAttentionWithRope(
         rope=rope,
         num_attention_heads=32,
         num_key_value_heads=8,
@@ -280,7 +280,7 @@ def test_distributed_attention_with_rope_stacked_qkv(
 def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
     allreduce_mock: mock.Mock,
 ) -> None:
-    """Tests DistributedAttentionWithRope with stacked QKV and non-divisible heads."""
+    """Tests TensorParallelAttentionWithRope with stacked QKV and non-divisible heads."""
     rope = RotaryEmbedding(
         dim=64,
         n_heads=30,  # Not divisible by 4
@@ -300,7 +300,7 @@ def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
     devices = [DeviceRef("gpu", i) for i in range(4)]
 
     # Should work with stacked QKV even with non-divisible heads
-    dist_attn = DistributedAttentionWithRope(
+    dist_attn = TensorParallelAttentionWithRope(
         rope=rope,
         num_attention_heads=30,
         num_key_value_heads=10,
@@ -325,7 +325,7 @@ def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
 def test_distributed_attention_with_rope_separate_projections(
     allreduce_mock: mock.Mock,
 ) -> None:
-    """Tests DistributedAttentionWithRope with separate Q, K, V projections."""
+    """Tests TensorParallelAttentionWithRope with separate Q, K, V projections."""
     rope = RotaryEmbedding(
         dim=64,
         n_heads=30,  # Not divisible by 4
@@ -345,7 +345,7 @@ def test_distributed_attention_with_rope_separate_projections(
     devices = [DeviceRef("gpu", i) for i in range(4)]
 
     # Test with separate projections (stacked_qkv=False)
-    dist_attn = DistributedAttentionWithRope(
+    dist_attn = TensorParallelAttentionWithRope(
         rope=rope,
         num_attention_heads=30,
         num_key_value_heads=10,
