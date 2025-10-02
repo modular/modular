@@ -2231,6 +2231,34 @@ struct ConvertPOPCallToAIRIntrinsic
     : public ConvertSymbolOpToLLVM<CallLLVMIntrinsicOp> {
   using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
+  // Helper function to mangle type according to LLVM's mangling of args of
+  // intrinsics.
+  // See LLVM's getMangledTypeStr
+  std::string mangleType(Type type) const {
+    if (auto intTy = dyn_cast<IntegerType>(type)) {
+      return "i" + llvm::utostr(intTy.getWidth());
+    } else if (isa<BFloat16Type>(type)) {
+      return "bf16";
+    } else if (auto fltTy = dyn_cast<FloatType>(type)) {
+      return "f" + llvm::utostr(fltTy.getWidth());
+    } else if (auto vecTy = dyn_cast<VectorType>(type)) {
+      auto shape = vecTy.getShape();
+      assert(shape.size() == 1 &&
+             "Multidimensional vectors are not supported.");
+      assert(!vecTy.allDimsScalable() &&
+             "Scalable vectors are not yet supported.");
+      return "v" + llvm::utostr(shape[0]) + mangleType(vecTy.getElementType());
+    } else {
+      llvm_unreachable("Unknown type to mangle");
+    }
+  }
+
+  // Return true if AIR intrinsic has no type overloading, i.e. no need to add
+  // types to its name.
+  bool requiresMangling(StringRef airFunctionName) const {
+    return airFunctionName != "air.wg.barrier";
+  }
+
   LogicalResult
   matchAndRewrite(CallLLVMIntrinsicOp op, CallLLVMIntrinsicOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
@@ -2248,23 +2276,32 @@ struct ConvertPOPCallToAIRIntrinsic
     if (!isMetalTriple(target.getTriple()))
       return failure();
 
-    // Convert AIR intrinsic to regular function call
-    // Remove "llvm." prefix to get "air.function_name"
-    StringRef airFunctionName = intrinsicName.drop_front(5);
+    SmallVector<Value> newOperands =
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+    SmallVector<Type> argTypes;
+    for (Value value : newOperands)
+      argTypes.push_back(value.getType());
+
+    // Convert AIR intrinsic to regular function call with mangled argument
+    // types. Additionally remove "llvm." prefix to get
+    // "air.function_name.<type0>.<type1>..."
+    // TODO: Support result type if it's different to type of argument
+    std::string airFunctionName = intrinsicName.drop_front(5).str();
+    if (requiresMangling(airFunctionName)) {
+      SmallVector<Type> uniqueTypes(argTypes.begin(), argTypes.end());
+      for (auto it = uniqueTypes.begin(), ei = llvm::unique(uniqueTypes);
+           it != ei; ++it) {
+        airFunctionName += "." + mangleType(*it);
+      }
+    }
 
     auto moduleOp = op->getParentOfType<mlir::ModuleOp>();
     if (!moduleOp)
       return failure();
 
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(airFunctionName);
-
-    SmallVector<Value> newOperands =
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
     if (!func) {
       // Create LLVM function type from the intrinsic operation
-      SmallVector<Type> argTypes;
-      for (Value value : newOperands)
-        argTypes.push_back(value.getType());
 
       Type returnType = op.getResultTypes().empty()
                             ? LLVM::LLVMVoidType::get(op.getContext())

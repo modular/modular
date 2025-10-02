@@ -184,3 +184,65 @@ kgen.func @noalias_cast(%arg0: !kgen.pointer<index>) -> index {
 // CHECK-NEXT: return %arg0
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch = "", data_layout = "", simd_bit_width = 128>} {
+  // CHECK-LABEL: @test_air_cos_f16_mangling
+  llvm.func @test_air_cos_f16_mangling(%arg0: !llvm.struct<(f16)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(f16)> to !kgen.struct<(scalar<f16>)>
+    // CHECK: llvm.call @air.cos.f16
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<f16>)>) -> !pop.scalar<f16>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_cos_f32_mangling
+  llvm.func @test_air_cos_f32_mangling(%arg0: !llvm.struct<(f32)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(f32)> to !kgen.struct<(scalar<f32>)>
+    // CHECK: llvm.call @air.cos.f32
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<f32>)>) -> !pop.scalar<f32>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_cos_bf16_mangling
+  llvm.func @test_air_cos_bf16_mangling(%arg0: !llvm.struct<(bf16)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(bf16)> to !kgen.struct<(scalar<bf16>)>
+    // CHECK: llvm.call @air.cos.bf16
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<bf16>)>) -> !pop.scalar<bf16>
+    llvm.return
+  }
+
+  // COM: There's no cos for integer type, but it's needed to verify mangling is correct
+  // CHECK-LABEL: @test_air_cos_i32_mangling
+  llvm.func @test_air_cos_i32_mangling(%arg0: !llvm.struct<(i32)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(i32)> to !kgen.struct<(scalar<si32>)>
+    // CHECK: llvm.call @air.cos.i32
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<si32>)>) -> !pop.scalar<si32>
+    llvm.return
+  }
+
+  // COM: There's no cos for integer type, but it's needed to verify mangling is correct
+  // CHECK-LABEL: @test_air_cos_i128_mangling
+  llvm.func @test_air_cos_i128_mangling(%arg0: !llvm.struct<(i128)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(i128)> to !kgen.struct<(scalar<si128>)>
+    // CHECK: llvm.call @air.cos.i128
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(scalar<si128>)>) -> !pop.scalar<si128>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_max_bf16_mangling
+  llvm.func @test_air_max_bf16_mangling(%arg0: !llvm.struct<(bf16)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(bf16)> to !kgen.struct<(scalar<bf16>)>
+    // CHECK: llvm.call @air.max.bf16
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.max", (%input, %input) : (!kgen.struct<(scalar<bf16>)>, !kgen.struct<(scalar<bf16>)>) -> !pop.scalar<bf16>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_cos_v2f16_mangling
+  llvm.func @test_air_cos_v2f16_mangling(%arg0: !llvm.struct<(vector<2 x f16>)>) {
+    %input = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(vector<2 x f16>)> to !kgen.struct<(!pop.simd<2, f16>)>
+    // CHECK: llvm.call @air.cos.v2f16
+    %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(!pop.simd<2, f16>)>) -> !pop.simd<2, f16>
+    llvm.return
+  }
+}
