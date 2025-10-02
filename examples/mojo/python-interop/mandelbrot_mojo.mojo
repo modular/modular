@@ -100,10 +100,10 @@ fn mandelbrot(
     # Calculate the complex C corresponding to that grid location.
     var cx = MIN_X + col * SCALE_X
     var cy = MIN_Y + row * SCALE_Y
-    var c = ComplexSIMD[float_dtype, 1](cx, cy)
+    var c = ComplexScalar[float_dtype](cx, cy)
 
     # Perform the Mandelbrot iteration loop calculation.
-    var z = ComplexSIMD[float_dtype, 1](0, 0)
+    var z = ComplexScalar[float_dtype](0, 0)
     var iters = Scalar[int_dtype](0)
 
     var in_set_mask = Scalar[DType.bool](True)

@@ -448,7 +448,7 @@ fn advanced_indexing_getitem[
     ],
     indices_fn: fn[indices_index: Int] (
         IndexList[index_rank]
-    ) capturing -> SIMD[index_type, 1],
+    ) capturing -> Scalar[index_type],
 ](
     out_tensor: NDBuffer[
         mut=True, input_type, input_rank + index_rank - num_index_tensors
@@ -631,7 +631,7 @@ fn advanced_indexing_setitem_inplace[
     ) capturing -> SIMD[input_type, width],
     indices_fn: fn[indices_index: Int] (
         IndexList[index_rank]
-    ) capturing -> SIMD[index_type, 1],
+    ) capturing -> Scalar[index_type],
 ](
     input_tensor: NDBuffer[mut=True, dtype=input_type, rank=input_rank],
     index_tensor_shape: IndexList[index_rank, **_],

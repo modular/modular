@@ -538,7 +538,7 @@ fn test_advanced_indexing_getitem() raises:
     @parameter
     fn indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+    ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
         return indices[indices_index].load[width=1](coordinates)
 
     advanced_indexing_getitem[
@@ -645,7 +645,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     @parameter
     fn indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+    ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
         return indices[indices_index].load[width=1](coordinates)
 
     alias start_axis = 2

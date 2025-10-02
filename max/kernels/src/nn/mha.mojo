@@ -4608,7 +4608,7 @@ fn _bmm0_bs[
 
     var p = p_ptr + Int(p_offset)
 
-    var accum = SIMD[p_type, 1](0.0)
+    var accum = Scalar[p_type](0.0)
 
     if x < UInt(cur_cache_len) and y < UInt(cur_query_len):
         var k_ptr = k.block_paged_ptr[1](batch, x, kv_head, 0)
@@ -4740,7 +4740,7 @@ fn _bmm1_bs[
     var kv_head = Int(head // group)
     var output = output_ptr + Int(output_offset)
 
-    var accum = SIMD[DType.float32, 1](0.0)
+    var accum = Scalar[DType.float32](0.0)
 
     for i in range(cur_cache_len):
         var v_ptr = v.block_paged_ptr[1](batch, i, kv_head, x)

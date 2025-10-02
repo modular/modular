@@ -130,7 +130,7 @@ def test_matmul_sm100_epilogue[
     for i in range(M):
         for j in range(N):
             # bigger number for numerical stability
-            c_host.tensor[i, j] = SIMD[c_type, 1](random_si64(0, 20))
+            c_host.tensor[i, j] = Scalar[c_type](random_si64(0, 20))
             c_host_copy.tensor[i, j] = c_host.tensor[i, j]
 
     # Move operands to the Device

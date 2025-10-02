@@ -11,4 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Provides types and functions for working with complex numbers."""
-from .complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
+from .complex import (
+    ComplexScalar,
+    ComplexFloat32,
+    ComplexFloat64,
+    ComplexSIMD,
+    abs,
+)

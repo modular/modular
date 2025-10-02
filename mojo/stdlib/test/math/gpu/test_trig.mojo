@@ -18,7 +18,7 @@ from testing import assert_almost_equal
 
 
 fn run_func[
-    dtype: DType, kernel_fn: fn (SIMD[dtype, 1]) capturing -> SIMD[dtype, 1]
+    dtype: DType, kernel_fn: fn (Scalar[dtype]) capturing -> Scalar[dtype]
 ](
     out_prefix: String,
     val: Scalar[dtype],
@@ -30,7 +30,7 @@ fn run_func[
     var out = ctx.enqueue_create_buffer[dtype](1)
 
     @parameter
-    fn kernel(out_dev: UnsafePointer[Scalar[dtype]], lhs: SIMD[dtype, 1]):
+    fn kernel(out_dev: UnsafePointer[Scalar[dtype]], lhs: Scalar[dtype]):
         var result = kernel_fn(lhs)
         out_dev[0] = result
 
@@ -48,19 +48,19 @@ fn run_func[
 
 def main():
     @parameter
-    fn cos_fn(val: SIMD[DType.float16, 1]) -> SIMD[DType.float16, 1]:
+    fn cos_fn(val: Scalar[DType.float16]) -> Scalar[DType.float16]:
         return cos(val)
 
     @parameter
-    fn cos_fn(val: SIMD[DType.float32, 1]) -> SIMD[DType.float32, 1]:
+    fn cos_fn(val: Scalar[DType.float32]) -> Scalar[DType.float32]:
         return cos(val)
 
     @parameter
-    fn sin_fn(val: SIMD[DType.float16, 1]) -> SIMD[DType.float16, 1]:
+    fn sin_fn(val: Scalar[DType.float16]) -> Scalar[DType.float16]:
         return sin(val)
 
     @parameter
-    fn sin_fn(val: SIMD[DType.float32, 1]) -> SIMD[DType.float32, 1]:
+    fn sin_fn(val: Scalar[DType.float32]) -> Scalar[DType.float32]:
         return sin(val)
 
     with DeviceContext() as ctx:

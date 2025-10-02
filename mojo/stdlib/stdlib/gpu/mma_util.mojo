@@ -213,7 +213,7 @@ fn load_matrix_a_amd[
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float32, 1]:
+) -> Scalar[DType.float32]:
     """Loads a tile of matrix A from memory to registers for AMD FP32 tensor core operations.
 
     Parameters:
@@ -535,7 +535,7 @@ fn load_matrix_b_amd[
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float32, 1]:
+) -> Scalar[DType.float32]:
     """Loads a tile of matrix B from memory to registers for AMD FP32 tensor core operations.
 
     Parameters:

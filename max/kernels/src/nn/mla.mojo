@@ -2093,7 +2093,7 @@ fn mla_prefill_single_batch[
 
         @parameter
         fn _apply_mask[masked: Bool]():
-            var scale_log2e: SIMD[accum_type, 1] = (
+            var scale_log2e: Scalar[accum_type] = (
                 scale.cast[accum_type]() if use_score_mod
                 or mask_t.apply_log2e_after_mask else scale.cast[accum_type]()
                 * log2e

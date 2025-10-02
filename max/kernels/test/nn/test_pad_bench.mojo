@@ -44,7 +44,7 @@ fn pad_constant_dispatch[
         dtype, input_layout, address_space = AddressSpace.GENERIC, **_
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
-    constant: SIMD[constant_type, 1],
+    constant: Scalar[constant_type],
 ):
     """
     Fill `output` with values from `input`, and edges padded with `constant`

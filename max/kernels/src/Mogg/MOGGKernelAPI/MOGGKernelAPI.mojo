@@ -8292,7 +8292,7 @@ struct AdvancedIndexingGetItem:
         @parameter
         fn indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
             constrained[
                 indices_index < num_index_tensors, "tensor index out of bounds"
             ]()
@@ -8366,7 +8366,7 @@ struct AdvancedIndexingSetItemInplace:
         @parameter
         fn indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
             constrained[
                 indices_index < num_index_tensors, "tensor index out of bounds"
             ]()

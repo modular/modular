@@ -983,7 +983,7 @@ fn repack_Q4_0_for_sm8x[
     @parameter
     fn convert_bytes_to_bf16[
         scales_type: DType
-    ](input_bytes: SIMD[DType.uint8, _]) -> SIMD[scales_type, 1]:
+    ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
             DType.float32
         ]()
@@ -1013,7 +1013,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[DType.uint8, 1]](),
+        alignment = align_of[Scalar[DType.uint8]](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -1174,7 +1174,7 @@ fn repack_GPTQ_for_sm8x[
     @parameter
     fn convert_bytes_to_bf16[
         scales_type: DType
-    ](input_bytes: SIMD[raw_scales_type, _]) -> SIMD[scales_type, 1]:
+    ](input_bytes: SIMD[raw_scales_type, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
             DType.float32
         ]()
@@ -1215,7 +1215,7 @@ fn repack_GPTQ_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[DType.uint8, 1]](),
+        alignment = align_of[Scalar[DType.uint8]](),
     ]()
     var weights_smem = LayoutTensor[
         DType.uint8,

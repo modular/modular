@@ -862,7 +862,7 @@ fn _apply_mask[
     ]()
 
     var lane = lane_id()
-    var scale_log2e: SIMD[accum_type, 1] = scale.cast[accum_type]() * (
+    var scale_log2e: Scalar[accum_type] = scale.cast[accum_type]() * (
         log2e if use_exp2
         and not mask_t.apply_log2e_after_mask else Scalar[accum_type](1)
     )

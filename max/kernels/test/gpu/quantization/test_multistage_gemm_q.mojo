@@ -105,7 +105,7 @@ fn repack_Q4_0_for_sm8x[
     @parameter
     fn convert_bytes_to_bf16[
         scales_type: DType
-    ](input_bytes: SIMD[DType.uint8, _]) -> SIMD[scales_type, 1]:
+    ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
             DType.float32
         ]()
@@ -135,7 +135,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[DType.uint8, 1]](),
+        alignment = align_of[Scalar[DType.uint8]](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -336,7 +336,7 @@ fn create_ref_b[
 
     @always_inline
     fn int4tobf16(
-        i4: Int32, scale: SIMD[DType.bfloat16, 1]
+        i4: Int32, scale: Scalar[DType.bfloat16]
     ) -> SIMD[DType.bfloat16, 2]:
         alias MASK: Int32 = 0x000F000F
         alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300

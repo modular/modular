@@ -191,7 +191,7 @@ fn causal_conv1d_kernel[
     var x_vals: SIMD[dtype, elements * 2]
     var out_vals: SIMD[dtype, elements] = 0
     var tmp: SIMD[dtype, width]
-    var B: SIMD[dtype, 1]
+    var B: Scalar[dtype]
     var W: SIMD[dtype, width]
     var prev_input_chunk: SIMD[dtype, elements]
     var input_chunk: SIMD[dtype, elements]

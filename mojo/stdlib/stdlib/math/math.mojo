@@ -1475,15 +1475,15 @@ fn atan2[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["atan2f", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["atan2f", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["atan2", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["atan2", Scalar[result_type]](arg0, arg1)
 
     constrained[
         dtype.is_floating_point(), "input type must be floating point"
@@ -2020,15 +2020,15 @@ fn hypot[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["hypotf", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["hypotf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["hypot", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["hypot", Scalar[result_type]](arg0, arg1)
 
     constrained[
         dtype.is_floating_point(), "input type must be floating point"
@@ -2143,8 +2143,8 @@ fn remainder[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["remainderf", SIMD[result_type, 1]](
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["remainderf", Scalar[result_type]](
             arg0, arg1
         )
 
@@ -2152,8 +2152,8 @@ fn remainder[
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["remainder", SIMD[result_type, 1]](
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["remainder", Scalar[result_type]](
             arg0, arg1
         )
 
@@ -2296,15 +2296,15 @@ fn scalb[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["scalbf", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["scalbf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["scalb", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["scalb", Scalar[result_type]](arg0, arg1)
 
     constrained[
         dtype.is_floating_point(), "input type must be floating point"

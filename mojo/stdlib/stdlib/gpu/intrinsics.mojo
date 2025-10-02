@@ -897,7 +897,7 @@ struct AMDBufferResource:
 
         self.desc = SIMD[DType.uint32, 4](0)
         var address = bitcast[DType.uint32, 2](
-            SIMD[DType.uint64, 1](Int(gds_ptr))
+            Scalar[DType.uint64](Int(gds_ptr))
         )
         self.desc[0] = address[0]
         # assuming 0 stride currently

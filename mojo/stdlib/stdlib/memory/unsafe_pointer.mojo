@@ -260,9 +260,9 @@ struct UnsafePointer[
 
         ```mojo
         var p = UnsafePointer[Scalar[DType.int32]].alloc(4)
-        p.store(0, SIMD[DType.int32, 1](42))
-        p.store(1, SIMD[DType.int32, 1](7))
-        p.store(2, SIMD[DType.int32, 1](9))
+        p.store(0, Scalar[DType.int32](42))
+        p.store(1, Scalar[DType.int32](7))
+        p.store(2, Scalar[DType.int32](9))
         var a = p.load(0)
         print(a[0], p.load(1)[0], p.load(2)[0])
         p.free()

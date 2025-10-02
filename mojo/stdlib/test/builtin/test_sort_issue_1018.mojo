@@ -15,7 +15,7 @@ from random import rand
 
 
 fn sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
-    var p = UnsafePointer[SIMD[dtype, 1]].alloc(size)
+    var p = UnsafePointer[Scalar[dtype]].alloc(size)
     rand[dtype](p, size)
     sort(Span[Scalar[dtype], MutableAnyOrigin](ptr=p, length=UInt(size)))
     for i in range(1, size - 1):

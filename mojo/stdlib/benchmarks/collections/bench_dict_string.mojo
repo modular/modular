@@ -97,7 +97,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         ]()
         self.allocated_bytes = capacity << 3
         self.keys = UnsafePointer[UInt8].alloc(self.allocated_bytes)
-        self.keys_end = UnsafePointer[SIMD[KeyEndType, 1]].alloc(capacity)
+        self.keys_end = UnsafePointer[Scalar[KeyEndType]].alloc(capacity)
         self.count = 0
         self.capacity = capacity
 
@@ -139,9 +139,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         var count = self.count + 1
         if count >= self.capacity:
             var new_capacity = self.capacity + (self.capacity >> 1)
-            var keys_end = UnsafePointer[SIMD[KeyEndType, 1]].alloc(
-                new_capacity
-            )
+            var keys_end = UnsafePointer[Scalar[KeyEndType]].alloc(new_capacity)
             memcpy(dest=keys_end, src=self.keys_end, count=self.capacity)
             self.keys_end.free()
             self.keys_end = keys_end
@@ -309,7 +307,7 @@ struct StringDict[
                 self.values.append(value.copy())
                 self.count += 1
                 self.slot_to_index.store(
-                    slot, SIMD[KeyCountType, 1](self.keys.count)
+                    slot, Scalar[KeyCountType](self.keys.count)
                 )
                 return
 
@@ -400,7 +398,7 @@ struct StringDict[
         for i in range(old_capacity):
             if old_slot_to_index[i] == 0:
                 continue
-            var key_hash = SIMD[KeyCountType, 1](0)
+            var key_hash = Scalar[KeyCountType](0)
 
             @parameter
             if caching_hashes:

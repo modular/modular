@@ -29,7 +29,7 @@ def test_bitcast():
 
 
 def test_pack_bits():
-    alias b1 = SIMD[DType.bool, 1](True)
+    alias b1 = Scalar[DType.bool](True)
     assert_equal(pack_bits(b1).cast[DType.bool](), b1)
     assert_equal(pack_bits(b1).cast[DType.uint8](), UInt8(0b0000_0001))
 

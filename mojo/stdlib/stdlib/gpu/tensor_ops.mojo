@@ -270,12 +270,12 @@ fn _tc_reduce_scalar[
     @parameter
     if out_type is DType.float32 and in_type is DType.float16:
         var d_reg = SIMD[out_type, 2]()
-        var a_reg = SIMD[in_type, 1](1)
-        var b_reg = SIMD[in_type, 1](val)
+        var a_reg = Scalar[in_type](1)
+        var b_reg = Scalar[in_type](val)
         var c_reg = SIMD[out_type, 2]()
 
         mma(d_reg, a_reg, b_reg, c_reg)
-        var x_reg = SIMD[in_type, 1]()
+        var x_reg = Scalar[in_type]()
         d_reg[0] += d_reg[1]
         x_reg[0] = d_reg[0].cast[in_type]()
         mma(d_reg, a_reg, x_reg, c_reg)

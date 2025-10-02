@@ -122,7 +122,7 @@ fn test_bicubic_kernel[
     for c in range(3):  # 3 channels
         for h in range(5):
             for w in range(5):
-                input_host.tensor[0, c, h, w] = SIMD[dtype, 1](
+                input_host.tensor[0, c, h, w] = Scalar[dtype](
                     channel_values[c][h][w]
                 )
 
@@ -643,7 +643,7 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
         for c in range(3):
             for h in range(32):
                 for w in range(32):
-                    input_host.tensor[n, c, h, w] = SIMD[dtype, 1](
+                    input_host.tensor[n, c, h, w] = Scalar[dtype](
                         Float32(h * 32 + w) / 1024.0
                     )
 

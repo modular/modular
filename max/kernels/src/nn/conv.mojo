@@ -204,7 +204,7 @@ struct Naive2dConvolution[
         producing a single scalar value at the given output tensor index.
         """
         # Initialize the result of this point.
-        var value: SIMD[output_type, 1] = 0
+        var value: Scalar[output_type] = 0
 
         # Input dims.
         var D = self.input_shape[1]

@@ -1187,7 +1187,7 @@ fn broadcast(val: UInt) -> UInt:
 
 
 @always_inline
-fn _vote_nvidia_helper(vote: Bool) -> SIMD[DType.uint32, 1]:
+fn _vote_nvidia_helper(vote: Bool) -> Scalar[DType.uint32]:
     return llvm_intrinsic[
         "llvm.nvvm.vote.ballot.sync",
         UInt32,

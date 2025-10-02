@@ -213,8 +213,8 @@ def test_indexer():
 
 
 def test_simd_conversion():
-    assert_equal(UInt(SIMD[DType.int32, 1](1)), UInt(1))
-    assert_equal(UInt(SIMD[DType.uint32, 1](32)), UInt(32))
+    assert_equal(UInt(Scalar[DType.int32](1)), UInt(1))
+    assert_equal(UInt(Scalar[DType.uint32](32)), UInt(32))
 
 
 def test_comparison():

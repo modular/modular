@@ -92,7 +92,7 @@ fn _bmm0_bs[
 
     var p = p_ptr + Int(p_offset)
 
-    var accum = SIMD[p_type, 1](0.0)
+    var accum = Scalar[p_type](0.0)
 
     # Set total KV length: KV written previous to and during this forward.
     if x < UInt(num_keys) and y < UInt(cur_query_len):
@@ -186,7 +186,7 @@ fn _bmm1_bs[
     var kv_head = Int(head // group)
     var output = output_ptr + Int(output_offset)
 
-    var accum = SIMD[DType.float32, 1](0.0)
+    var accum = Scalar[DType.float32](0.0)
 
     for i in range(cur_kv_len + v_cache.cache_length(batch)):
         var v_ptr = v_cache.block_paged_ptr[tile_size=1](batch, i, kv_head, x)

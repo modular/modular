@@ -18,7 +18,7 @@ fn slice[
     alias new_size = size // 2
     var result = SIMD[dtype, new_size]()
     for i in range(new_size):
-        result[i] = SIMD[dtype, 1](x[i + offset])
+        result[i] = Scalar[dtype](x[i + offset])
     return result
 
 
