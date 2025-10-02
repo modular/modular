@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-batch_size=100
+batch_size=512
 max_length=4096
 extra_pipelines_args=(--enable-echo)
 extra_lm_eval_args=(
