@@ -78,41 +78,39 @@ ASTDecl *ASTDecl::tryGetMethodParentDecl() const {
 /// for the given type from this use-site context.
 llvm::SmallVector<ASTDecl *, 4>
 ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
-  llvm::SmallVector<ASTDecl *, 4> result;
-  auto structAstDecl = type.getDecl(shared);
-  if (structAstDecl) {
-    result.push_back(structAstDecl);
-  }
-  ASTDecl *typeDecl = nullptr;
-  if (LIT::StructType structType = dyn_cast<LIT::StructType>(type.mlirType)) {
-    typeDecl = ASTType(structType).getDecl(shared);
-  } else if (LIT::TraitType traitType =
-                 dyn_cast<LIT::TraitType>(type.mlirType)) {
-    typeDecl = ASTType(traitType).getDecl(shared);
-    // TODO: Support trait extensions
-  }
+  SharedState &shared = getShared();
+  auto astDecl = type.getDecl(shared);
 
-  if (typeDecl) {
-    StringRef typeName = typeDecl->getNameIfOperation().value();
-    LookupAllResult lookupResult =
-        shared.lookupAllDeclsWithName(typeName, callLoc, *this, true);
-    // Only consider results from successful lookups. Lookups with isErroneous()
-    // means the error was already diagnosed. Lookups with isFailure() should
-    // be rare since we expect to find at least the original type declaration,
-    // but we gracefully handle it by skipping extension lookup.
-    if (lookupResult.isSuccess()) {
-      ArrayRef<ASTDecl *> foundAstDecls = lookupResult.getIfSuccess();
-      for (ASTDecl *foundAstDecl : foundAstDecls) {
-        if (failed(shared.declResolver->resolveBody(*foundAstDecl, callLoc))) {
-          // Do nothing, skip it. Errors were already printed out, and we don't
-          // mind missing call candidates from erroneous extensions.
-          continue;
-        }
+  SmallVector<ASTDecl *, 4> result;
+  if (astDecl)
+    result.push_back(astDecl);
 
-        if (isa_and_nonnull<ExtensionDeclOp>(foundAstDecl->getIfOperation()))
-          result.push_back(foundAstDecl);
-      }
+  // Handle both struct and trait types for extension lookup.
+  if (!astDecl || !astDecl->getNameIfOperation() ||
+      !isa<StructDeclOp, TraitDeclOp>(astDecl->getIfOperation()))
+    return result;
+
+  StringRef typeName = astDecl->getNameIfOperation().value();
+  LookupAllResult lookupResult =
+      shared.lookupAllDeclsWithName(typeName, callLoc, *this, true);
+
+  // Only consider results from successful lookups. Lookups with isErroneous()
+  // means the error was already diagnosed. Lookups with isFailure() should
+  // be rare since we expect to find at least the original type declaration,
+  // but we gracefully handle it by skipping extension lookup.
+  if (!lookupResult.isSuccess())
+    return result;
+
+  ArrayRef<ASTDecl *> foundAstDecls = lookupResult.getIfSuccess();
+  for (ASTDecl *foundAstDecl : foundAstDecls) {
+    if (failed(shared.declResolver->resolveBody(*foundAstDecl, callLoc))) {
+      // Do nothing, skip it. Errors were already printed out, and we don't
+      // mind missing call candidates from erroneous extensions.
+      continue;
     }
+
+    if (isa_and_nonnull<ExtensionDeclOp>(foundAstDecl->getIfOperation()))
+      result.push_back(foundAstDecl);
   }
 
   return result;
