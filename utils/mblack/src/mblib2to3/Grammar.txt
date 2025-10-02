@@ -66,7 +66,7 @@ convention: VAR | OWNED | OUT | READ | MUT | DEINIT | (REF ['[' test [',' test [
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*
 
-tname: NAME [metaparams] [':' (test|star_expr)]
+tname: NAME [metaparams] [':' (type_test|star_expr)]
 
 tname_star: NAME [':' (test|star_expr)]
 tfpdef: tname | '(' tfplist ')'
@@ -207,6 +207,18 @@ dictsetmaker: ( ((test ':' asexpr_test | test '=' asexpr_test | test | '**' expr
                  (comp_for | (',' (test ':' asexpr_test | test '=' asexpr_test | test | '**' expr))* [','])) |
                 ((test [':=' test] | star_expr)
 		 (comp_for | (',' (test [':=' test] | star_expr))* [','])) )
+
+# Type-expression subgrammar (enables functype within bitwise chains only in type contexts)
+type_test: type_or_expr
+type_or_expr: type_xor_expr ('|' type_xor_expr)*
+type_xor_expr: type_and_expr ('^' [type_and_expr | '.' NAME trailer* ['**' factor]])*
+type_and_expr: type_shift_expr ('&' type_shift_expr)*
+type_shift_expr: type_arith_expr (('<<'|'>>') type_arith_expr)*
+type_arith_expr: type_term (('+'|'-') type_term)*
+type_term: type_factor (('*'|'@'|'/'|'%'|'//') type_factor)*
+type_factor: ('+'|'-'|'~') type_factor | type_power
+type_power: [AWAIT] type_atom trailer* ['**' factor]
+type_atom: functype | atom
 
 classdef: ('class' | STRUCT | TRAIT) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
