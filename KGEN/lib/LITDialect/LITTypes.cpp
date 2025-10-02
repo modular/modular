@@ -619,35 +619,11 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
     return processPostFix();
   }
 
-  // If this is a '*'-prefixed double quoted string, then this is a simple
-  // parameter reference.
-  if (succeeded(p.parseOptionalStar())) {
-    if (succeeded(p.parseOptionalLParen())) {
-      // Try to parse *(0,0) as an index reference.
-      size_t depth, index;
-      if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
-          p.parseRParen())
-        return failure();
-      result = ParamIndexRefAttr::get(depth, index, *this);
-    } else {
-      std::string name;
-      if (failed(p.parseString(&name)))
-        return failure();
-      result = ParamDeclRefAttr::get(name, *this);
-    }
-    return processPostFix();
-  }
-
-  // Barewords / MLIR keywords are implicitly parameter declaration references
-  // or the start of a expression in function form.
-  StringRef keyword;
-  if (succeeded(p.parseOptionalKeyword(&keyword))) {
-    // A bareword or string must be a parameter reference.
-    result = ParamDeclRefAttr::get(keyword, *this);
-    return processPostFix();
-  }
-
-  return {};
+  // Handle other things like param expressions, and KGEN operators. Disable
+  // the type parser so we don't recurse.
+  if (failed(parseParamValue(p, result, *this, /*disableTypeParser*/ true)))
+    return {};
+  return processPostFix();
 }
 
 LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {

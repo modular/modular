@@ -960,15 +960,22 @@ static uint32_t getOpcodeFromString(StringRef keyword) {
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
+///
+/// If 'disableTypeParser' is set, then the type parser is not used. This is
+/// intended for cases where the type parser needs to recurse to handle general
+/// cases.
+ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
+                                  bool disableTypeParser) {
   assert(type && "always have a contextual type");
   llvm::SMLoc loc = p.getCurrentLocation();
 
   // If the type provides a pretty parsing hook, use it.
-  if (auto typeItf = dyn_cast<ParameterTypeInterface>(type)) {
-    OptionalParseResult result = typeItf.parseValue(p, value);
-    if (result.has_value())
-      return *result;
+  if (!disableTypeParser) {
+    if (auto typeItf = dyn_cast<ParameterTypeInterface>(type)) {
+      OptionalParseResult result = typeItf.parseValue(p, value);
+      if (result.has_value())
+        return *result;
+    }
   }
 
   // If this is a '*'-prefixed double quoted string, then this is a simple

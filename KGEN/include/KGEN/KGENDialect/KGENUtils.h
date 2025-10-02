@@ -146,7 +146,8 @@ void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
+ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type,
+                            bool disableTypeParser = false);
 
 /// Parse a parameter declaration of the form `name = value`.
 ParseResult parseParamDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
