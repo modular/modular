@@ -2667,8 +2667,7 @@ fn _call_libm[
         dtype.is_floating_point(), "argument type must be floating point"
     ]()
     constrained[
-        not is_nvidia_gpu(),
-        "the libm operation is not available on the CUDA target",
+        not is_gpu(), "libm operations are only available on CPU targets"
     ]()
 
     @parameter
