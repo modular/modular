@@ -69,6 +69,14 @@ def test_chunk():
         assert chunk.real
 
 
+def test_concat():
+    tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
+    result = F.concat([tensor_2d, tensor_2d], axis=0)
+    result._sync_realize()
+    assert result.real
+    assert result.shape.static_dims == [8, 6]
+
+
 def test_constant():
     device_ref = DeviceRef.from_device(DEVICE)
     result = F.constant(1.0, DType.float32, device_ref)
