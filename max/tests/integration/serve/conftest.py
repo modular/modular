@@ -28,6 +28,7 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.serve.telemetry.common import configure_metrics
 
 
@@ -40,6 +41,7 @@ class MockPipelineConfig(PipelineConfig):
     def __init__(self):
         self.max_batch_size = 1
         self._model_config = MockModelConfig()
+        self.zmq_endpoint_base: str = generate_zmq_ipc_path()
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):

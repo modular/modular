@@ -162,6 +162,40 @@ async def test_prefix_caching_basic() -> None:
 
 
 @pytest.mark.asyncio
+async def test_prefix_caching_reset_prefix_cache() -> None:
+    kv_manager = create_paged_manager(num_blocks=128)
+    # This is a noop
+    kv_manager.reset_prefix_cache()
+
+    prompt = np.array([10, 11, 12, 13, 14])
+    context_1 = create_text_context(prompt)
+    context_2 = create_text_context(prompt)
+    context_3 = create_text_context(prompt)
+
+    # Get cache hit of 0 tokens since the prefix cache is empty
+    kv_manager.external_claim(context_1.request_id)
+    kv_manager.maybe_reserve(context_1)
+    kv_manager.fetch([context_1])
+    context_1.update(15)
+    kv_manager.step([context_1])
+    kv_manager.release(context_1.request_id)
+    assert kv_manager.metrics.cache_tokens == 0
+
+    # Get cache hit of 4 tokens
+    kv_manager.external_claim(context_2.request_id)
+    kv_manager.maybe_reserve(context_2)
+    kv_manager.release(context_2.request_id)
+    assert kv_manager.metrics.cache_tokens == 4
+
+    # Get cache hit of 0 tokens since we reset the prefix cache
+    kv_manager.reset_prefix_cache()
+    kv_manager.external_claim(context_3.request_id)
+    kv_manager.maybe_reserve(context_3)
+    kv_manager.release(context_3.request_id)
+    assert kv_manager.metrics.cache_tokens == 4
+
+
+@pytest.mark.asyncio
 async def test_prefix_caching_with_repeating_prompt() -> None:
     kv_manager = create_paged_manager(num_blocks=128)
 
