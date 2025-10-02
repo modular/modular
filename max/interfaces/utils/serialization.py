@@ -208,7 +208,11 @@ def msgpack_numpy_decoder(type_: Any, copy: bool = True) -> MsgpackNumpyDecoder:
 
     Args:
         type_: The type to decode into
-        copy: Copy numpy arrays if true
+        copy: Copy numpy arrays if true. Defaults to True.
+            Copy is set to True by default because most downstream usage of deserialized tensors are MAX driver tensors, which require owned numpy arrays.
+            This is a constraint imposed by dlpack & numpy where we cannot create a buffer from read-only data.
+            While there is a performance benefit during deserialization to removing copies by default, this often just moves the work downstream to an implicit copy during `Tensor.from_numpy`.
+            As a result, it is easier to make the copy explicit here and maintain the pattern that all numpy arrays used in MAX are owned by the current process.
 
     Returns:
         A pickleable decoder instance that decodes bytes into the specified type
@@ -225,14 +229,13 @@ def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
         copy: Whether to copy the array data.
     """
     if isinstance(obj, dict) and obj.get("__np__") is True:
-        arr = np.frombuffer(obj["data"], dtype=obj["dtype"]).reshape(
-            obj["shape"]
+        # Wrapping the frombuffer in an array to avoid potential issues with data ownership across process boundaries.
+        return np.array(
+            np.frombuffer(obj["data"], dtype=obj["dtype"]).reshape(
+                obj["shape"]
+            ),
+            copy=copy,
         )
-
-        if copy:
-            arr = np.copy(arr)
-
-        return arr
 
     if isinstance(obj, dict) and obj.get("__shm__") is True:
         try:
