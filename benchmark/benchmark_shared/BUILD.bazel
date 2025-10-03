@@ -4,7 +4,9 @@ load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 modular_py_library(
     name = "benchmark_shared",
     srcs = glob(["**/*.py"]),
-    data = glob(["datasets/packaged_data/**/*"]),
+    data = glob(["datasets/packaged_data/**/*"]) + [
+        "//open-source/max/benchmark:benchmark_config_yaml_files",
+    ],
     imports = [".."],
     # Used under the OSS path, but not under the internal path.
     # TODO: Remove when we no longer have internal symlinking to OSS.
