@@ -827,12 +827,6 @@ if __name__ == "__main__":
     # Load configuration from YAML file and create argument parser
     config_path = os.path.join(
         os.path.dirname(__file__),
-        "..",
-        "..",
-        "..",
-        "open-source",
-        "max",
-        "benchmark",
         "configs",
         "throughput_config.yaml",
     )
