@@ -1019,8 +1019,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // If we are binding the reference to a value in memory directly, check for
     // reference compatibility directly.
     if (argVal.isMValue()) {
-      RefType valueRefType =
-          cast<RefType>(value.getMValueReference().getType());
+      RefType valueRefType = value.getMValueType();
       // If the IRValue type is MBValue or MRValue then we need infer an
       // immutable ref, to match behavior where we don't allow passing an
       // MBValue or MRValue as 'mut'.

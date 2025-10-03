@@ -222,6 +222,13 @@ def RefPackAttr : DialectAttribute<(attr
   ConcreteType<"RefPackType">:$type
 )>;
 
+def SugarAttr : DialectAttribute<(attr
+  EnumAttr<"SugarKind">:$kind,
+  TypedAttr:$sugared,
+  TypedAttr:$original
+)>;
+
+
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
     DenseResourceElementsArrayAttr,
@@ -244,6 +251,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     LITStructAttr,
     WrappedStructExtractAttr,
     RefPackAttr,
+    SugarAttr,
     TypeConventionAttr,
     VarDeclKindAttr,
   ];

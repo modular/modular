@@ -497,7 +497,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // compatible.
     RefType valueRefType;
     if (operand.ir.isMValue())
-      valueRefType = cast<RefType>(operand.ir.getMValueReference().getType());
+      valueRefType = operand.ir.getMValueType();
 
     // If we are binding to something that is already a reference, check for
     // compatibility of the references and we're done.

@@ -47,7 +47,7 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
 fn paramArith[x: Int]():
-    # CHECK: lit.alias.decl *"y`": !Bool = <{_mlir_value: i1 = eq(#lit.struct.extract<:!Int x, "_mlir_value">, 99)}>
+    # CHECK: lit.alias.decl *"y`": !Bool = <{{.*}}{_mlir_value: i1 = eq(#lit.struct.extract<:!Int x, "_mlir_value">, 99)}
     alias y = x == 98 + 1
 
 fn take_3index(a: Int, b: Int, c: Int) -> Int:
