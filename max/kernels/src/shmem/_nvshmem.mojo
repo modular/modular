@@ -20,6 +20,7 @@ from sys.ffi import (
     _Global,
     _OwnedDLHandle,
     c_int,
+    c_uint,
     c_size_t,
     external_call,
 )
@@ -35,13 +36,22 @@ from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 # ===-----------------------------------------------------------------------===#
 
 alias NVSHMEM_LIBRARY_PATHS = List[Path](
-    "libnvshmem_host.so.3.3.9",
+    "libnvshmem_host.so.3.4.5",
     "libnvshmem_host.so.3",
     "libnvshmem_host.so",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so.3.3.9",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so.3",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so",
 )
+
+
+@register_passable
+struct NVSHMEMIVersion:
+    var major: c_int
+    var minor: c_int
+    var patch: c_int
+
+    fn __init__(out self):
+        self.major = 3
+        self.minor = 4
+        self.patch = 5
 
 
 fn _on_error_msg() -> String:
@@ -210,18 +220,6 @@ struct NVSHMEMXUniqueID:
         self.internal = InlineArray[Byte, 124](fill=0)
 
 
-@register_passable
-struct NVSHMEMIVersion:
-    var major: c_int
-    var minor: c_int
-    var patch: c_int
-
-    fn __init__(out self):
-        self.major = 3
-        self.minor = 3
-        self.patch = 9
-
-
 fn _get_prefix[scope: SHMEMScope]() -> StaticString:
     @parameter
     if scope == SHMEMScope.default:
@@ -334,6 +332,10 @@ fn nvshmemx_init() raises:
 
     # Initialize NVSHMEM with MPI
     var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    # For single process per GPU, fallback to one device per process per node.
+    attr.args.uid_args.myrank = 0
+    attr.args.uid_args.nranks = 1
+
     _ = nvshmemx_hostlib_init_attr(
         NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
     )

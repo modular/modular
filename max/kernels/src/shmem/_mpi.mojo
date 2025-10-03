@@ -28,9 +28,6 @@ alias MPI_LIBRARY_PATHS = List[Path](
     "nvshmem_bootstrap_mpi.so.3.0.0",
     "nvshmem_bootstrap_mpi.so.3",
     "nvshmem_bootstrap_mpi.so",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/nvshmem_bootstrap_mpi.so.3.0.0",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/nvshmem_bootstrap_mpi.so.3",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/nvshmem_bootstrap_mpi.so",
 )
 
 alias MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
