@@ -59,10 +59,10 @@ fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_buffer, output_host)
     ctx.enqueue_copy(shared_buffer, shared_host)
 
-    ctx.enqueue_function[kernel[dtype]](
-        input_buffer.unsafe_ptr(),
-        output_buffer.unsafe_ptr(),
-        shared_buffer.unsafe_ptr(),
+    ctx.enqueue_function_checked[kernel[dtype], kernel[dtype]](
+        input_buffer,
+        output_buffer,
+        shared_buffer,
         buffer_size,
         grid_dim=1,
         block_dim=block_size,

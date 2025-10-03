@@ -39,7 +39,7 @@ def main():
         print("No compatible GPU found")
     else:
         ctx = DeviceContext()
-        ctx.enqueue_function[print_threads](
+        ctx.enqueue_function_checked[print_threads, print_threads](
             grid_dim=(2, 2, 1), block_dim=(16, 4, 2)
         )
         ctx.synchronize()
