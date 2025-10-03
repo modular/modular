@@ -441,7 +441,7 @@ class Tensor(DLPackArray, HasTensorValue):
         # - Otherwise, this is probably accidental. The code is running
         #   inside an async environment, but for some reason is trying
         #   to synchronously await. Check for this case explicitly and warn.
-        def is_interactive():
+        def is_interactive() -> bool:
             import __main__ as main
 
             return not hasattr(main, "__file__")
@@ -790,7 +790,7 @@ class ComputeGraph:
         self.unrealized[id(tensor)] = tensor
 
 
-def _remove_unused_arguments(graph: graph.Graph):
+def _remove_unused_arguments(graph: graph.Graph) -> None:
     # Obviously this is deeply tied to the implementation of Graph.
     #  - GraphOp should be simplified to have a single API for managing arguments
     #  - Graph should expose this behavior
