@@ -320,6 +320,7 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
             attributes=attributes^,
             constant_memory=constant_memory^,
         )
+        shmem_module_finalize(gpu_kernel)
 
     @always_inline
     @parameter
@@ -471,6 +472,7 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
         # Mark point in priority stream and wait for it to complete in main stream
         self._priority_stream.record_event(self._end_event)
         self._main_stream.enqueue_wait_for(self._end_event)
+        shmem_module_finalize(gpu_kernel)
 
     @always_inline
     fn synchronize(self) raises:

@@ -64,6 +64,7 @@ from .shmem_api import (
     shmem_barrier_all_on_stream,
     shmem_calloc,
     shmem_fence,
+    shmem_module_finalize,
     shmem_finalize,
     shmem_free,
     shmem_g,

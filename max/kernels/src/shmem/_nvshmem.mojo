@@ -369,6 +369,13 @@ fn nvshmemx_cumodule_init(module: CUmodule) -> c_int:
     ]()(module)
 
 
+fn nvshmemx_cumodule_finalize(module: CUmodule) -> c_int:
+    return _get_nvshmem_function[
+        "nvshmemx_cumodule_finalize",
+        fn (CUmodule) -> c_int,
+    ]()(module)
+
+
 fn nvshmemx_init_status() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_init_status",

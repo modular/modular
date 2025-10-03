@@ -91,6 +91,7 @@ from ._nvshmem import (
     nvshmem_team_my_pe,
     nvshmemx_barrier_all_on_stream,
     nvshmemx_cumodule_init,
+    nvshmemx_cumodule_finalize,
     nvshmemx_hostlib_finalize,
     nvshmemx_init,
     nvshmemx_init_status,
@@ -832,4 +833,28 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
     else:
         CompilationTarget.unsupported_target_error[
             operation="shmem_cumodule_init",
+        ]()
+
+
+fn shmem_module_finalize(device_function: DeviceFunction) raises:
+    """
+    Finalizes the device state in the compiled function module and cleans up
+    NVSHMEM operations. This should be called when NVSHMEM operations are no
+    longer needed for the given device function.
+
+    Args:
+        device_function: The compiled device function to finalize and clean up
+            NVSHMEM resources.
+
+    Raises:
+        String: If module finalization fails.
+    """
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        var func = CUDA_MODULE(device_function)
+        _ = nvshmemx_cumodule_finalize(func)
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation="shmem_module_finalize",
         ]()
