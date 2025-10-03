@@ -8,7 +8,7 @@ batch_size=256
 max_length=128000
 
 evaluator=mistral-evals
-tasks=mathvista,chartqa,docvqa
+tasks=mathvista,chartqa,docvqa,mmmu
 
 extra_pipelines_args=(
   --trust-remote-code

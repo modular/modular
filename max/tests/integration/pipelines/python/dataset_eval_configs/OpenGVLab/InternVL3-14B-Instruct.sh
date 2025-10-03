@@ -5,7 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 batch_size=512
-max_length=8192
+max_length=32768
 
 evaluator=mistral-evals
 tasks=mathvista,chartqa,docvqa
