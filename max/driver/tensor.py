@@ -42,8 +42,7 @@ def _repr(self: Tensor) -> str:
 def _view(
     self: Tensor, dtype: DType, shape: Optional[ShapeType] = None
 ) -> Tensor:
-    """Return a new tensor with the given type and shape that shares the
-    underlying memory.
+    """Return a new tensor with the given type and shape that shares the underlying memory.
 
     If the shape is not given, it will be deduced if possible, or a
     ValueError is raised.
@@ -62,10 +61,11 @@ def _view(
 
 
 def inplace_copy_from(self: Tensor, src: Tensor) -> None:
-    """Copy the contents of another tensor into this one. These tensors may
-    be on different devices.
+    """Copy the contents of another tensor into this one.
 
-    Requires that both tensors are contiguous and have same size."""
+    These tensors may be on different devices.
+    Requires that both tensors are contiguous and have same size.
+    """
     # check that both tensors are contiguous
     if not self.is_contiguous:
         raise ValueError("Cannot copy from non-contiguous tensor")
@@ -87,8 +87,8 @@ def _from_numpy(arr: npt.NDArray[Any]) -> Tensor:
     """Creates a tensor from a provided numpy array on the host device.
 
     The underlying data is not copied unless the array is noncontiguous. If
-    it is, a contiguous copy will be returned."""
-
+    it is, a contiguous copy will be returned.
+    """
     # NOTE: np.ascontiguousarray only copies if needed.
     # Skip np.contiguousarray for scalars since it converts them to rank-1.
     return Tensor.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
@@ -114,7 +114,8 @@ def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
     """Create a tensor from an object implementing the dlpack protocol.
 
     This usually does not result in a copy, and the producer of the object
-    retains ownership of the underlying memory."""
+    retains ownership of the underlying memory.
+    """
     if isinstance(array, np.ndarray):
         if not array.flags.c_contiguous:
             raise ValueError(
@@ -221,7 +222,6 @@ def load_max_tensor(path: PathLike[str]) -> Tensor:
     Raises:
         ValueError if the file format is not the MAX checkpoint format.
     """
-
     with open(path, "rb") as f:
         header = f.read(8)
         if header != b"\x93\xf0\x9f\x94\xa5\x2b\x2b\x93":

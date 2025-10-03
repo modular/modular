@@ -9,9 +9,7 @@ from enum import Enum
 
 
 class GenerationStatus(str, Enum):
-    """
-    Enum representing the status of a generation process in the MAX API.
-    """
+    """Enum representing the status of a generation process in the MAX API."""
 
     ACTIVE = "active"
     """The generation process is ongoing."""
@@ -24,8 +22,7 @@ class GenerationStatus(str, Enum):
 
     @property
     def is_done(self) -> bool:
-        """
-        Returns True if the generation process is complete (not ACTIVE).
+        """Returns True if the generation process is complete (not ACTIVE).
 
         Returns:
             bool: True if the status is not ACTIVE, indicating completion.

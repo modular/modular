@@ -201,8 +201,7 @@ class SamplingParams:
 
 @runtime_checkable
 class BaseContext(Protocol):
-    """
-    Core interface for request lifecycle management across all of MAX, including serving, scheduling, and pipelines.
+    """Core interface for request lifecycle management across all of MAX, including serving, scheduling, and pipelines.
 
     This protocol is intended to provide a unified, minimal contract for request state and status handling throughout the MAX stack.
     Over time, `BaseContext` is expected to supersede and replace `InputContext` as the canonical context interface, as we refactor and standardize context handling across the codebase.
@@ -487,6 +486,7 @@ class InputContext(BaseContext, Protocol):
     @property
     def last_generated_token(self) -> int:
         """Returns the most recently generated token. If no tokens have been generated, raises an error.
+
         Returns:
             int: The most recently generated token.
         """
