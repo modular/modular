@@ -90,7 +90,7 @@ def draw_if_interactive() -> None:
     show._draw_called = True
 
 
-def flush_figures():
+def flush_figures():  # noqa: ANN201
     if not show._draw_called:
         return
 
@@ -114,7 +114,7 @@ def flush_figures():
 FigureCanvas = _FigureCanvasAgg
 
 
-def _fetch_figure_metadata(fig):  # noqa: ANN001
+def _fetch_figure_metadata(fig):  # noqa: ANN001, ANN202
     # determine if a background is needed for legibility
     if _is_transparent(fig.get_facecolor()):
         # the background is transparent
@@ -133,12 +133,12 @@ def _fetch_figure_metadata(fig):  # noqa: ANN001
     return None
 
 
-def _is_light(color):  # noqa: ANN001
+def _is_light(color):  # noqa: ANN001, ANN202
     rgbaArr = colors.to_rgba_array(color)
     return rgbaArr[:, :3].dot((0.299, 0.587, 0.114)) > 0.5
 
 
-def _is_transparent(color):  # noqa: ANN001
+def _is_transparent(color):  # noqa: ANN001, ANN202
     rgba = colors.to_rgba(color)
     return rgba[3] < 0.5
 
