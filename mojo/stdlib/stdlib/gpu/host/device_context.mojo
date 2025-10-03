@@ -174,28 +174,31 @@ fn _raise_checked_impl(
 # Checks that the given `dim` has only positive integers in them.
 fn _check_dim[
     func_name_for_msg: StringLiteral, dim_name_for_msg: StringLiteral
-](dim: Dim) raises:
+](dim: Dim, *, location: _SourceLocation) raises:
     if dim.x() <= 0:
-        raise Error(
-            func_name_for_msg
-            + ": Dim value "
-            + dim_name_for_msg
-            + ".x must be a positive number."
+        alias msg = String(
+            func_name_for_msg,
+            ": Dim value ",
+            dim_name_for_msg,
+            ".x must be a positive number.",
         )
+        raise Error(location.prefix(msg))
     if dim.y() <= 0:
-        raise Error(
-            func_name_for_msg
-            + ": Dim value "
-            + dim_name_for_msg
-            + ".y must be a positive number."
+        alias msg = String(
+            func_name_for_msg,
+            ": Dim value ",
+            dim_name_for_msg,
+            ".y must be a positive number.",
         )
+        raise Error(location.prefix(msg))
     if dim.z() <= 0:
-        raise Error(
-            func_name_for_msg
-            + ": Dim value "
-            + dim_name_for_msg
-            + ".z must be a positive number."
+        alias msg = String(
+            func_name_for_msg,
+            ": Dim value ",
+            dim_name_for_msg,
+            ".z must be a positive number.",
         )
+        raise Error(location.prefix(msg))
 
 
 struct _DeviceTimer:
@@ -1605,8 +1608,12 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=__call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=__call_location()
+        )
 
         constrained[
             not f.declared_arg_types,
@@ -3967,8 +3974,12 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=__call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=__call_location()
+        )
 
         var gpu_kernel = self.compile_function[
             func,
@@ -4069,10 +4080,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
-            grid_dim
+            grid_dim, location=__call_location()
         )
         _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
-            block_dim
+            block_dim, location=__call_location()
         )
 
         var gpu_kernel = self.compile_function[
@@ -4157,8 +4168,12 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=__call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=__call_location()
+        )
 
         constrained[
             not f.declared_arg_types,
@@ -4242,10 +4257,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
-            grid_dim
+            grid_dim, location=__call_location()
         )
         _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
-            block_dim
+            block_dim, location=__call_location()
         )
 
         constrained[
@@ -4330,10 +4345,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
-            grid_dim
+            grid_dim, location=__call_location()
         )
         _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
-            block_dim
+            block_dim, location=__call_location()
         )
 
         constrained[
@@ -4434,10 +4449,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
-            grid_dim
+            grid_dim, location=__call_location()
         )
         _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
-            block_dim
+            block_dim, location=__call_location()
         )
 
         var gpu_kernel = self.compile_function_checked[
@@ -4538,10 +4553,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         _check_dim["DeviceContext.enqueue_function_experimental", "grid_dim"](
-            grid_dim
+            grid_dim, location=__call_location()
         )
         _check_dim["DeviceContext.enqueue_function_experimental", "block_dim"](
-            block_dim
+            block_dim, location=__call_location()
         )
 
         var gpu_kernel = self.compile_function_experimental[
@@ -4648,10 +4663,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
-            grid_dim
+            grid_dim, location=__call_location()
         )
         _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
-            block_dim
+            block_dim, location=__call_location()
         )
 
         var gpu_kernel = self.compile_function_checked[
@@ -4753,10 +4768,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         _check_dim["DeviceContext.enqueue_function_experimental", "grid_dim"](
-            grid_dim
+            grid_dim, location=__call_location()
         )
         _check_dim["DeviceContext.enqueue_function_experimental", "block_dim"](
-            block_dim
+            block_dim, location=__call_location()
         )
 
         var gpu_kernel = self.compile_function_experimental[
@@ -4850,10 +4865,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
-            grid_dim
+            grid_dim, location=__call_location()
         )
         _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
-            block_dim
+            block_dim, location=__call_location()
         )
 
         constrained[
@@ -4987,8 +5002,12 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             ctx.synchronize()
         ```
         """
-        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
-        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
+            grid_dim, location=__call_location()
+        )
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
+            block_dim, location=__call_location()
+        )
 
         self._enqueue_external_function(
             f,
@@ -5018,13 +5037,6 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[_SourceLocation] = None,
     ) raises:
-        _check_dim["DeviceContext.enqueue_external_function", "grid_dim"](
-            grid_dim
-        )
-        _check_dim["DeviceContext.enqueue_external_function", "block_dim"](
-            block_dim
-        )
-
         f._call_with_pack(
             self,
             args,
