@@ -742,7 +742,28 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
   if (providedCanonTrait == trait)
     return true;
 
-  ArrayRef<SymbolRefAttr> providedSymbols = providedCanonTrait.getSymbols();
+  // Collect all provided symbols, starting with the struct's own conformances
+  SmallVector<SymbolRefAttr> providedSymbols(
+      providedCanonTrait.getSymbols().begin(),
+      providedCanonTrait.getSymbols().end());
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(this->getIfOperation())) {
+    llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
+    if (ASTDecl *structParent = this->getParentDecl()) {
+      structParent->findExtensionsInScopeForStruct(this->getSymbolRef(),
+                                                   uniqueExtensions);
+    }
+    llvm::SmallVector<ASTDecl *> allExtensions(uniqueExtensions.begin(),
+                                               uniqueExtensions.end());
+    for (ASTDecl *extDecl : allExtensions) {
+      if (auto extOp =
+              dyn_cast_or_null<ExtensionDeclOp>(extDecl->getIfOperation())) {
+        TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
+        for (SymbolRefAttr symbol : extCanonicalTrait.getSymbols()) {
+          providedSymbols.push_back(symbol);
+        }
+      }
+    }
+  }
 
   // Check the provided symbols against the required symbols by the target
   // trait. There's no need to canonicalize the required symbols as long as
