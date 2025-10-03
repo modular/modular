@@ -29,6 +29,7 @@ from max.graph import (
     Type,
     ops,
 )
+from max.graph.ops.allgather import allgather
 from max.graph.ops.allreduce import matmul_allreduce
 from max.nn import (
     MLP,
@@ -41,7 +42,7 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.attention.multi_latent_attention import (
-    TensorParallelLatentAttentionWithRope,
+    DataParallelLatentAttentionWithRope,
 )
 from max.nn.comm.allreduce import Allreduce
 from max.nn.kv_cache import (
@@ -75,7 +76,7 @@ class DeepseekV3DecoderLayer(Module):
         num_devices = len(config.devices)
 
         # Create self-attention layer
-        self.self_attn = TensorParallelLatentAttentionWithRope(
+        self.self_attn = DataParallelLatentAttentionWithRope(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
@@ -152,13 +153,6 @@ class DeepseekV3DecoderLayer(Module):
                     n_group=config.n_group,
                     topk_group=config.topk_group,
                     norm_topk_prob=config.norm_topk_prob,
-                    # These parameters are passed to the MoEGate class
-                    # from the MoE layer.
-                    # num_experts_per_tok=config.num_experts_per_tok,
-                    # num_experts=config.n_routed_experts,
-                    # hidden_dim=config.hidden_size,
-                    # devices=config.devices,
-                    # dtype=config.dtype,
                 ),
                 has_shared_experts=True,
                 shared_experts_dim=config.n_shared_experts
@@ -211,6 +205,7 @@ class DeepseekV3DecoderLayer(Module):
             for i in range(len(kv_blocks))
         ]
 
+        # Data-parallel attention (per-device)
         attn_outs = self.self_attn(
             layer_idx,
             norm_xs,
@@ -220,30 +215,58 @@ class DeepseekV3DecoderLayer(Module):
             input_row_offsets=input_row_offsets,
         )
 
+        # Residual add (still per-device)
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
 
-        # Apply post attention layer norm to each shard
+        # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
             self.post_attention_layernorm_shards, hs
         )
-        mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+
+        # Allgather across data-parallel shards (batch axis)
+        devices = [t.device for t in xs]
+        gathered_list = allgather(norm_outs, signal_buffers, axis=0)
+
+        # Tensor-parallel MLP runs on the replicated full batch
+        mlp_full = forward_sharded_layers(self.mlp_shards, gathered_list)
 
         if (
             self.distributed_gemm_config is None
             or not self.distributed_gemm_config.enable_matmul_allreduce
         ):
-            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+            mlp_full = self.allreduce(mlp_full, signal_buffers)
         else:
             # Special matmul + allreduce split version
-            # extract the sharded weights from the last linear layers
             weights = [layer.down_proj.weight for layer in self.mlp_shards]  # type: ignore[union-attr]
-            mlp_outs = matmul_allreduce(
-                mlp_outs,
+            mlp_full = matmul_allreduce(
+                mlp_full,
                 weights,
                 signal_buffers,
             )
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+        # Re-split the full-batch MLP output back to per-device shards
+        lengths_cpu: list[TensorValue] = []
+        for offs in input_row_offsets:
+            last_len = offs[-1]
+            lengths_cpu.append(last_len.to(DeviceRef.CPU()))
+
+        starts_cpu: list[TensorValue] = []
+        running = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
+        for ln in lengths_cpu:
+            starts_cpu.append(running)
+            running = running + ln
+
+        mlp_local: list[TensorValue] = []
+        for i, (start_i, len_i) in enumerate(zip(starts_cpu, lengths_cpu)):
+            end_i = start_i + len_i
+            local_slice = ops.slice_tensor(
+                mlp_full[i],
+                [(slice(start_i, end_i), f"mlp_local_{i}")],
+            ).to(devices[i])
+            mlp_local.append(local_slice)
+
+        # Final residual add stays in data-parallel layout
+        hs = [h + m for h, m in zip(hs, mlp_local)]
 
         return hs
 
@@ -334,7 +357,6 @@ class DeepseekV3(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         freqs_cis = distribute_value(self.rope.freqs_cis, devices)
-
         input_row_offsets_ = distribute_value(input_row_offsets, devices)
 
         subgraph_input_types: Sequence[Type[Any] | list[Type[Any]]] = [
@@ -349,7 +371,6 @@ class DeepseekV3(Module):
             [offset.type for offset in input_row_offsets_],
         ]
 
-        # First, we need to build the subgraphs for each layer group.
         subgraphs = []
         for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
             assert len(layer_group) > 0, (
@@ -367,7 +388,6 @@ class DeepseekV3(Module):
                 )
             )
 
-        # Then, we need to call the subgraphs for each layer group.
         for idx, layer in enumerate(self.layers):
             has_subgraph = False
             for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
@@ -405,7 +425,6 @@ class DeepseekV3(Module):
                     ]
                     break
             if not has_subgraph:
-                # If no subgraph was found, call the layer directly.
                 h = layer(
                     ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                     h,
@@ -423,6 +442,7 @@ class DeepseekV3(Module):
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
         last_token_distributed = distribute_value(last_token_h, devices)
+
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(
             self.norm_shards, last_token_distributed
@@ -495,31 +515,25 @@ class DeepseekV3(Module):
         # config.
         device_ref = self.config.devices[0]
 
-        # Construct general input types
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=device_ref
         )
 
         kv_inputs = kv_manager.input_symbols()
 
-        # Construct Graph Inputs
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
-        # Flatten kv types for each device
         flattened_kv_types: list[TensorType] = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
 
         signals = Signals(devices=self.config.devices)
-
-        # Explicitly construct tuple with mixed types
         signal_buffer_types: list[BufferType] = signals.input_types()
 
-        # Build the complete input types list
         all_input_types: list[TensorType | BufferType] = [
             tokens_type,
             input_row_offsets_type,
