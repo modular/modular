@@ -1384,7 +1384,7 @@ class TestMAXConfigArgumentGroups:
             )
 
             @classmethod
-            def _get_enum_mapping_impl(cls):
+            def _get_enum_mapping_impl(cls):  # noqa: ANN206
                 return {"GPUProfilingMode": GPUProfilingMode}
 
             @staticmethod

@@ -18,7 +18,7 @@ from max.serve.schemas.openai import InputItem, PromptItem
 
 
 @pytest.fixture
-def app(mock_pipeline_config: PipelineConfig):
+def app(mock_pipeline_config: PipelineConfig):  # noqa: ANN201
     settings = Settings(
         api_types=[APIType.KSERVE], MAX_SERVE_USE_HEARTBEAT=False
     )

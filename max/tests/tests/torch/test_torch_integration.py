@@ -63,7 +63,7 @@ def test_unsupported_arg_type_error(op_library: CustomOpLibrary) -> None:
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_grayscale(op_library: CustomOpLibrary, backend: str) -> None:
     @torch.compile(backend=backend, options={"force_disable_caches": True})
-    def grayscale(pic):  # noqa: ANN001
+    def grayscale(pic):  # noqa: ANN001, ANN202
         result = pic.new_empty(pic.shape[:-1])
         op_library.grayscale(result, pic)
         return result
@@ -84,14 +84,14 @@ def test_grayscale(op_library: CustomOpLibrary, backend: str) -> None:
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_graph_ops__grayscale(backend: str) -> None:
     @graph_op
-    def max_grayscale(pic: TensorValue):
+    def max_grayscale(pic: TensorValue):  # noqa: ANN202
         scaled = pic.cast(DType.float32) * np.array([0.21, 0.71, 0.07])
         grayscaled = ops.sum(scaled, axis=-1).cast(pic.dtype)
         # max reductions don't remove the dimension, need to squeeze
         return ops.squeeze(grayscaled, axis=-1)
 
     @torch.compile(backend=backend)
-    def grayscale(pic: torch.Tensor):
+    def grayscale(pic: torch.Tensor):  # noqa: ANN202
         output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
         max_grayscale(output, pic)  # Call as destination-passing style
         return output
@@ -120,19 +120,19 @@ def test_graph_ops__specify_input_type(backend: str) -> None:
     )
 
     @graph_op(input_types=[input_type], output_types=[output_type])
-    def max_grayscale(pic: TensorValue):
+    def max_grayscale(pic: TensorValue):  # noqa: ANN202
         scaled = pic.cast(DType.float32) * np.array([0.21, 0.71, 0.07])
         grayscaled = ops.sum(scaled, axis=-1).cast(pic.dtype)
         # max reductions don't remove the dimension, need to squeeze
         return ops.squeeze(grayscaled, axis=-1)
 
     @torch.compile(backend=backend)
-    def grayscale(pic: torch.Tensor):
+    def grayscale(pic: torch.Tensor):  # noqa: ANN202
         output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
         max_grayscale(output, pic)  # Call as destination-passing style
         return output
 
-    def test_tensor(*shape):
+    def test_tensor(*shape):  # noqa: ANN202
         return (torch.rand(*shape, device=device) * 255).to(torch.uint8)
 
     square_input = test_tensor(64, 64, 3)
@@ -226,7 +226,7 @@ def test_parameters(op_library: CustomOpLibrary, backend: str) -> None:
     @torch.compile(
         backend=backend, fullgraph=True, options={"force_disable_caches": True}
     )
-    def increment_42(input):  # noqa: ANN001
+    def increment_42(input):  # noqa: ANN001, ANN202
         result = torch.empty_like(input)
         parameter_increment_42(result, input)
         return result
@@ -248,7 +248,7 @@ def test_parameters(op_library: CustomOpLibrary, backend: str) -> None:
     @torch.compile(
         backend=backend, fullgraph=True, options={"force_disable_caches": True}
     )
-    def increment_17(input):  # noqa: ANN001
+    def increment_17(input):  # noqa: ANN001, ANN202
         result = torch.empty_like(input)
         parameter_increment_17(result, input)
         return result
@@ -302,7 +302,7 @@ def test_scalar_add(op_library: CustomOpLibrary, backend: str) -> None:
 
 
 def test_model_compilation_race(op_library: CustomOpLibrary) -> None:
-    def grayscale(pic):  # noqa: ANN001
+    def grayscale(pic):  # noqa: ANN001, ANN202
         result = pic.new_empty(pic.shape[:-1])
         op_library.grayscale(result, pic)
         return result
@@ -313,7 +313,7 @@ def test_model_compilation_race(op_library: CustomOpLibrary) -> None:
     event = threading.Event()
     real_load = op_library._session.load
 
-    def load(graph):  # noqa: ANN001
+    def load(graph):  # noqa: ANN001, ANN202
         nonlocal load_count
         load_count += 1
         event.wait()

@@ -42,7 +42,7 @@ def remove_prefix(text: str, prefix: str) -> str:
     return text
 
 
-def decode_and_strip(text: bytes, prefix: str | None):
+def decode_and_strip(text: bytes, prefix: str | None):  # noqa: ANN201
     decoded = text.decode("utf-8").strip()
     if prefix:
         return remove_prefix(decoded, prefix)

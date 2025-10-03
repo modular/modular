@@ -116,7 +116,7 @@ def test_functional_in_graph() -> None:
 
 
 def test_tensor_warns_on_sync() -> None:
-    async def coro():
+    async def coro():  # noqa: ANN202
         t = Tensor.constant(1, dtype=DType.float32, device=CPU())
         return t.item()
 

@@ -13,7 +13,7 @@ from mojo.paths import MojoCompilationError
 
 
 @pytest.fixture(scope="session")
-def ipython():
+def ipython():  # noqa: ANN201
     ipython = start_ipython()
     import mojo.notebook  # noqa
 

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 @pytest_asyncio.fixture(scope="function")
-def app(fixture_tokenizer, mock_pipeline_config: PipelineConfig):  # noqa: ANN001
+def app(fixture_tokenizer, mock_pipeline_config: PipelineConfig):  # noqa: ANN001, ANN201
     settings = Settings(
         api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
     )

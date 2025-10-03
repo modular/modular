@@ -83,7 +83,7 @@ def test_read_events() -> None:
 
 
 @contextlib.contextmanager
-def run_process(p: multiprocessing.process.BaseProcess):
+def run_process(p: multiprocessing.process.BaseProcess):  # noqa: ANN201
     try:
         p.start()
         yield p

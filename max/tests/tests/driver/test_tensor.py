@@ -468,7 +468,7 @@ def test_scalar() -> None:
 # NOTE: This is kept at function scope intentionally to avoid issues if tests
 # mutate the stored data.
 @pytest.fixture(scope="function")
-def memmap_example_file():
+def memmap_example_file():  # noqa: ANN201
     with tempfile.NamedTemporaryFile(mode="w+b") as f:
         f.write(b"\x00\x01\x02\x03\x04\x05\x06\x07")
         f.flush()
