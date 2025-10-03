@@ -28,7 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn import Module
-from max.nn.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import PagedCacheValues, PagedKVCacheManager
 from max.pipelines.lib.lora import LoRAManager
 
 from .llama3 import Llama3
@@ -154,10 +154,12 @@ class DataParallelLlama(Module):
 
         for i in range(len(self.config.devices)):
             start_idx = i * self.num_kv_cache_inputs
-            end_idx = start_idx + self.num_kv_cache_inputs
-            kv_cache_args = [
-                inp.tensor for inp in all_kv_cache_inputs[start_idx:end_idx]
-            ]
+            kv_cache_args = PagedCacheValues(
+                kv_blocks=all_kv_cache_inputs[start_idx].buffer,
+                cache_lengths=all_kv_cache_inputs[start_idx + 1].tensor,
+                lookup_table=all_kv_cache_inputs[start_idx + 2].tensor,
+                max_lengths=all_kv_cache_inputs[start_idx + 3].tensor,
+            )
 
             all_model_args.append(
                 (
