@@ -30,7 +30,7 @@ from algorithm import vectorize
 from bit import log2_floor
 from builtin.device_passable import DevicePassable
 from builtin.dtype import _unsigned_integral_type_of
-from gpu.host import DeviceBuffer, HostBuffer
+from gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import AMDBufferResource
@@ -2254,6 +2254,27 @@ struct LayoutTensor[
         masked=masked,
         alignment=alignment,
     ]
+
+    @always_inline
+    fn to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[dtype]:
+        """Convert the tensor to a `DeviceBuffer`.
+
+        Args:
+            ctx: The device context to use.
+
+        Returns:
+            A `DeviceBuffer` containing the tensor's data.
+        """
+        constrained[
+            address_space == address_space.GENERIC,
+            "DeviceBuffer is only used on GENERIC address space",
+        ]()
+        return DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](self.ptr),
+            self.size(),
+            owning=False,
+        )
 
     @always_inline("nodebug")
     fn _stack_copy(

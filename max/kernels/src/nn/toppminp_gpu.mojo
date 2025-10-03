@@ -18,7 +18,7 @@ from sys import align_of
 from buffer import DimList, NDBuffer
 from builtin.dtype import _uint_type_of_width
 from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
@@ -454,29 +454,43 @@ fn radix_sort_pairs_kernel[
             local_offsets[radix] += 1
 
 
-struct DoubleBuffer[T: AnyType](ImplicitlyCopyable, Movable):
-    var _d_buffers: InlineArray[UnsafePointer[T], 2]
+struct DoubleBuffer[dtype: DType](ImplicitlyCopyable, Movable):
+    var _d_buffers: InlineArray[UnsafePointer[Scalar[dtype]], 2]
     var _selection: Int32
+    var _size: Int
 
     fn __init__(out self):
         self._d_buffers = [{}, {}]
         self._selection = 0
+        self._size = 0
 
     fn __init__(
         out self,
-        current: UnsafePointer[T],
-        alternate: UnsafePointer[T],
+        current: UnsafePointer[Scalar[dtype]],
+        alternate: UnsafePointer[Scalar[dtype]],
+        size: Int,
     ):
         self._d_buffers = [current, alternate]
         self._selection = 0
+        self._size = size
 
     @always_inline
-    fn current(self) -> UnsafePointer[T]:
-        return self._d_buffers[self._selection]
+    fn current(self, ctx: DeviceContext) -> DeviceBuffer[dtype]:
+        return DeviceBuffer[dtype](
+            ctx,
+            self._d_buffers[self._selection],
+            self._size,
+            owning=False,
+        )
 
     @always_inline
-    fn alternate(self) -> UnsafePointer[T]:
-        return self._d_buffers[self._selection ^ 1]
+    fn alternate(self, ctx: DeviceContext) -> DeviceBuffer[dtype]:
+        return DeviceBuffer[dtype](
+            ctx,
+            self._d_buffers[self._selection ^ 1],
+            self._size,
+            owning=False,
+        )
 
     @always_inline
     fn swap(mut self):
@@ -492,13 +506,20 @@ fn run_radix_sort_pairs_gpu[
     NUM_BITS_PER_PASS: Int = 4,
 ](
     ctx: DeviceContext,
-    mut keys: DoubleBuffer[Scalar[dtype], **_],
-    mut key_ids: DoubleBuffer[Scalar[out_idx_type], **_],
+    mut keys: DoubleBuffer[dtype, **_],
+    mut key_ids: DoubleBuffer[out_idx_type, **_],
     skip_sort: UnsafePointer[Scalar[DType.bool]],
     in_shape: IndexList,
 ) raises:
     var batch_size = in_shape[0]
     var vocab_size = in_shape[1]
+
+    var skip_sort_device = DeviceBuffer[DType.bool](
+        ctx,
+        skip_sort,
+        batch_size,
+        owning=False,
+    )
 
     @parameter
     for current_bit in range(0, dtype.bit_width(), NUM_BITS_PER_PASS):
@@ -506,13 +527,13 @@ fn run_radix_sort_pairs_gpu[
             dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
 
-        ctx.enqueue_function[kernel](
-            keys.current(),
-            keys.alternate(),
-            key_ids.current(),
-            key_ids.alternate(),
+        ctx.enqueue_function_checked[kernel, kernel](
+            keys.current(ctx),
+            keys.alternate(ctx),
+            key_ids.current(ctx),
+            key_ids.alternate(ctx),
             vocab_size,
-            skip_sort,
+            skip_sort_device,
             grid_dim=Dim(batch_size),
             block_dim=Dim(BLOCK_SIZE),
         )
@@ -742,17 +763,19 @@ fn _topp_minp_sampling_gpu[
 
     alias K = 1
     alias num_blocks_per_input = 1
-    ctx.enqueue_function[
-        topk_wrapper[dtype, out_idx_type, is_top_p, _test_sort=_test_sort]
-    ](
+    alias topk_kernel = topk_wrapper[
+        dtype, out_idx_type, is_top_p, _test_sort=_test_sort
+    ]
+    ctx.enqueue_function_checked[topk_kernel, topk_kernel](
         K,
         vocab_size,
         num_blocks_per_input,
-        input_probs.data,
-        max_vals.unsafe_ptr(),
-        out_token_ids.ptr,  # out_token_ids will now store the argmax
-        p_thresholds.ptr,
-        skip_sort.unsafe_ptr(),
+        probs_buf,
+        max_vals,
+        # out_token_ids will now store the argmax
+        out_token_ids.to_device_buffer(ctx),
+        p_thresholds.to_device_buffer(ctx),
+        skip_sort,
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
         shared_mem_bytes=_get_shmem_size_stg_1[dtype](BLOCK_SIZE),
@@ -762,10 +785,14 @@ fn _topp_minp_sampling_gpu[
     # Create the input_ids buffer
     var ids_buf = ctx.enqueue_create_buffer[out_idx_type](input_size * 2)
     var probs_double_buffer = DoubleBuffer(
-        probs_buf.unsafe_ptr(), probs_buf.unsafe_ptr().offset(input_size)
+        probs_buf.unsafe_ptr(),
+        probs_buf.unsafe_ptr().offset(input_size),
+        input_size,
     )
     var keys_double_buffer = DoubleBuffer(
-        ids_buf.unsafe_ptr(), ids_buf.unsafe_ptr().offset(input_size)
+        ids_buf.unsafe_ptr(),
+        ids_buf.unsafe_ptr().offset(input_size),
+        input_size,
     )
 
     run_radix_sort_pairs_gpu[BLOCK_SIZE=BLOCK_SIZE](
@@ -787,14 +814,15 @@ fn _topp_minp_sampling_gpu[
         )
 
     # Step 4: Sample from the sorted probabilities by cumsumming
-    ctx.enqueue_function[
-        topp_minp_sampling_kernel[dtype, out_idx_type, is_top_p]
-    ](
-        p_thresholds.ptr,
-        probs_buf.unsafe_ptr(),
-        ids_buf.unsafe_ptr(),
-        out_token_ids.ptr,
-        skip_sort.unsafe_ptr(),
+    alias topp_minp_kernel = topp_minp_sampling_kernel[
+        dtype, out_idx_type, is_top_p
+    ]
+    ctx.enqueue_function_checked[topp_minp_kernel, topp_minp_kernel](
+        p_thresholds.to_device_buffer(ctx),
+        probs_buf,
+        ids_buf,
+        out_token_ids.to_device_buffer(ctx),
+        skip_sort,
         vocab_size,
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),

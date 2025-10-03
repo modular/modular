@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 
@@ -75,8 +75,10 @@ fn _fill_gpu[
     ctx: DeviceContext,
 ) raises:
     alias block_dim = 256
-    ctx.enqueue_function[_fill_gpu_kernel[dtype]](
-        ptr,
+    alias kernel = _fill_gpu_kernel[dtype]
+    var ptr_device = DeviceBuffer[dtype](ctx, ptr, count, owning=False)
+    ctx.enqueue_function_checked[kernel, kernel](
+        ptr_device,
         value,
         count,
         grid_dim=((count + block_dim) // block_dim),
@@ -93,9 +95,12 @@ fn _memcpy_gpu[
     ctx: DeviceContext,
 ) raises:
     alias block_dim = 256
-    ctx.enqueue_function[_copy_gpu_kernel[dtype]](
-        dst,
-        src,
+    alias kernel = _copy_gpu_kernel[dtype]
+    var dst_device = DeviceBuffer[dtype](ctx, dst, count, owning=False)
+    var src_device = DeviceBuffer[dtype](ctx, src, count, owning=False)
+    ctx.enqueue_function_checked[kernel, kernel](
+        dst_device,
+        src_device,
         count,
         grid_dim=((count + block_dim) // block_dim),
         block_dim=(block_dim),

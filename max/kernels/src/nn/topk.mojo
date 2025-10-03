@@ -32,7 +32,7 @@ from gpu import (
     warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
@@ -1252,16 +1252,20 @@ fn _topk_gpu[
     else:
         k_ptr = UnsafePointer[Int64]()  # null pointer
 
+    var k_size = k.value().size() if k else 0
+    var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
+
     # Enqueue the first kernel (stage 1)
-    ctx.enqueue_function[_topk_stage1[dtype, out_idx_type, largest]](
-        k_ptr,
+    alias kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
+    ctx.enqueue_function_checked[kernel_1, kernel_1](
+        k_device,
         max_k,
         N,
         num_blocks_per_input_,
-        input_buf.ptr,
-        input_buf_tmp.unsafe_ptr(),
-        device_local_topk_vals.ptr,
-        device_local_topk_idxs.ptr,
+        input_buf.to_device_buffer(ctx),
+        input_buf_tmp,
+        device_local_topk_vals.to_device_buffer(ctx),
+        device_local_topk_idxs.to_device_buffer(ctx),
         grid_dim=grid_dim_stage1,
         block_dim=block_dim_stage1,
         shared_mem_bytes=shared_mem_bytes_1,
@@ -1294,6 +1298,7 @@ fn _topk_gpu[
         temp_ptr = rebind[UnsafePointer[Float32]](temperature.value().ptr)
     else:
         temp_ptr = UnsafePointer[Float32]()  # null pointer
+    var temp_size = temperature.value().size() if temperature else 0
 
     # Handle optional top_p parameter
     var top_p_ptr: UnsafePointer[Float32]
@@ -1301,6 +1306,7 @@ fn _topk_gpu[
         top_p_ptr = rebind[UnsafePointer[Float32]](top_p.value().ptr)
     else:
         top_p_ptr = UnsafePointer[Float32]()  # null pointer
+    var top_p_size = top_p.value().size() if top_p else 0
 
     # Handle optional seed parameter
     var seed_ptr: UnsafePointer[UInt64]
@@ -1308,19 +1314,40 @@ fn _topk_gpu[
         seed_ptr = rebind[UnsafePointer[UInt64]](seed.value().ptr)
     else:
         seed_ptr = UnsafePointer[UInt64]()  # null pointer
+    var seed_size = seed.value().size() if seed else 0
+
+    var temp_device = DeviceBuffer[DType.float32](
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.float32]]](temp_ptr),
+        temp_size,
+        owning=False,
+    )
+    var top_p_device = DeviceBuffer[DType.float32](
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.float32]]](top_p_ptr),
+        top_p_size,
+        owning=False,
+    )
+    var seed_device = DeviceBuffer[DType.uint64](
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.uint64]]](seed_ptr),
+        seed_size,
+        owning=False,
+    )
 
     # Enqueue the second kernel (stage 2)
-    ctx.enqueue_function[_topk_stage2[dtype, out_idx_type, sampling, largest]](
-        k_ptr,
+    alias kernel_2 = _topk_stage2[dtype, out_idx_type, sampling, largest]
+    ctx.enqueue_function_checked[kernel_2, kernel_2](
+        k_device,
         max_k,
         num_blocks_per_input_,
-        device_local_topk_vals.ptr,
-        device_local_topk_idxs.ptr,
-        out_vals.ptr,
-        out_idxs.ptr,
-        temp_ptr,
-        top_p_ptr,
-        seed_ptr,
+        device_local_topk_vals.to_device_buffer(ctx),
+        device_local_topk_idxs.to_device_buffer(ctx),
+        out_vals.to_device_buffer(ctx),
+        out_idxs.to_device_buffer(ctx),
+        temp_device,
+        top_p_device,
+        seed_device,
         grid_dim=grid_dim_stage2,
         block_dim=block_dim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
