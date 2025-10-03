@@ -699,6 +699,23 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama3.1-8b",
             encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
+                json_file="torch_llama3_1_bfloat16_golden.json",
+            ),
+            cos_dist_threshold=3.0e-4,
+            kl_div_threshold=7.4e-3,
+        ),
+    ),
+    "meta-llama/Llama-3.1-8B-Instruct-data-parallel-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=_make_pipeline_runner(
+            pipeline="llama3.1-8b-data-parallel",
+            encoding="bfloat16",
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
+                json_file="torch_llama3_1_bfloat16_golden.json",
+            ),
             cos_dist_threshold=3.0e-4,
             kl_div_threshold=7.4e-3,
         ),

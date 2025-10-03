@@ -103,6 +103,24 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_logits_processor_gpu",
+    srcs = [
+        "conftest.py",
+        "test_logits_processor_gpu.py",
+    ],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/interfaces",
+        "//SDK/lib/API/python/max/pipelines",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test-speculative-decoding",
     size = "large",
     srcs = [

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, TypedDict, TypeVar
 
 import numpy as np
 from max import pipelines
@@ -61,6 +61,27 @@ class ModelOutput(TypedDict):
 
 NUM_STEPS = 10
 
+T = TypeVar("T")
+
+
+def _create_batches(
+    requests: Sequence[T], batch_sizes: int | list[int] = 1
+) -> list[Sequence[T]]:
+    if isinstance(batch_sizes, list):
+        if sum(batch_sizes) != len(requests):
+            raise ValueError(
+                "The sum of the batch sizes must be equal to the number of requests."
+            )
+    else:
+        batch_sizes = [batch_sizes] * len(requests)
+    batches = []
+
+    start = 0
+    for size in batch_sizes:
+        batches.append(requests[start : start + size])
+        start += size
+    return batches
+
 
 def run_model(
     pipeline: pipelines.TextGenerationPipeline,
@@ -68,11 +89,10 @@ def run_model(
     requests: Sequence[MockTextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
-    batch_size: int = 1,
+    batch_size: int | list[int] = 1,
     reference: list[ModelOutput] | None = None,
 ) -> list[dict[str, Any]]:
     """Runs the pipeline for N steps on each request provided."""
-    assert batch_size >= 1
     assert hasattr(tokenizer, "delegate")
     hf_tokenizer = tokenizer.delegate
     assert isinstance(hf_tokenizer, PreTrainedTokenizerBase)
@@ -96,19 +116,18 @@ def run_model(
     sampling_params = SamplingParams(
         top_k=1, max_new_tokens=num_steps, logits_processors=logits_processors
     )
+    batched_requests = _create_batches(requests, batch_size)
+    batched_ids = _create_batches(ids, batch_size)
 
-    text_gen_requests = []
-    for i, request in enumerate(requests):
-        text_gen_requests.append(
-            request.to_text_generation_request(ids[i], sampling_params)
-        )
-
-    for i in range(0, len(requests), batch_size):
-        batch = text_gen_requests[i : i + batch_size]
+    for ids_in_batch, requests_in_batch in zip(batched_ids, batched_requests):
+        batch = [
+            request.to_text_generation_request(id, sampling_params)
+            for id, request in zip(ids_in_batch, requests_in_batch)
+        ]
         outputs = pipeline.generate(batch)
         if print_outputs:
             for j in range(len(batch)):
-                request = requests[i + j]
+                request = requests_in_batch[j]
                 prompt = request.prompt
                 print(
                     "Prompt:",

@@ -129,6 +129,7 @@ class PipelineOracle(ABC):
     """
 
     task: PipelineTask = PipelineTask.TEXT_GENERATION
+    default_batch_size: int | list[int] | None = None
 
     @property
     @abstractmethod
@@ -659,6 +660,7 @@ class GenericOracle(PipelineOracle):
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
         auto_processor_cls: Any = transformers.AutoTokenizer,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
+        batch_size: int | list[int] | None = None,
     ) -> None:
         self.model_path = model_path
         self._device_encoding_map = device_encoding_map
@@ -669,6 +671,7 @@ class GenericOracle(PipelineOracle):
         self.auto_processor_cls = auto_processor_cls
         self.task = task
         self._use_cache = use_cache
+        self.default_batch_size = batch_size
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -817,6 +820,20 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
             "cpu": ["float32", "q4_k"],
         },
+    ),
+    "llama3.1-8b-data-parallel": GenericOracle(
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
+        config_params={
+            "max_length": 512,
+            "data_parallel_degree": 2,
+            "enable_prefix_caching": False,
+        },
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+        },
+        # prompts=test_data.DEFAULT_PROMPTS[1:2] + test_data.DEFAULT_PROMPTS[1:3],
+        # Run the 4 text prompts with batch sizes 1, 2, 1.
+        batch_size=[1, 2, 1],
     ),
     "llama3.1-8b-float8-static": GenericOracle(
         model_path="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8",
@@ -1243,7 +1260,7 @@ def _detect_hf_flakes(
     "--max-batch-size",
     "max_batch_size",
     type=int,
-    default=1,
+    default=None,
     help="The maximum batch size to use when evaluating the model.",
 )
 @click.option(
@@ -1260,7 +1277,7 @@ def main(
     encoding_name: str,
     output_path: Path,
     print_output: bool,
-    max_batch_size: int,
+    max_batch_size: int | None,
     log_hf_downloads: bool,
 ) -> None:
     """Click command entry point that delegates to the implementation function.
@@ -1296,7 +1313,7 @@ def generate_llm_logits(
     encoding_name: str,
     output_path: Path,
     print_output: bool,
-    max_batch_size: int = 1,
+    max_batch_size: int | None = None,
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
 ) -> None:
@@ -1311,6 +1328,15 @@ def generate_llm_logits(
         os.chdir(workspace_dir)
 
     pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
+
+    evaluation_batch_size: int | list[int]
+    if max_batch_size is None:
+        if pipeline_oracle.default_batch_size is None:
+            evaluation_batch_size = 1
+        else:
+            evaluation_batch_size = pipeline_oracle.default_batch_size
+    else:
+        evaluation_batch_size = max_batch_size
 
     for device_spec in device_specs:
         if not pipeline_oracle.is_supported(
@@ -1346,7 +1372,7 @@ def generate_llm_logits(
                     requests=pipeline_oracle.inputs,
                     num_steps=NUM_STEPS,
                     print_outputs=True,
-                    batch_size=max_batch_size,
+                    batch_size=evaluation_batch_size,
                     reference=reference,
                 )
             elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -1354,11 +1380,15 @@ def generate_llm_logits(
                     max_pipeline_and_tokenizer.pipeline,
                     pipelines.EmbeddingsPipeline,
                 )
+                if not isinstance(evaluation_batch_size, int):
+                    raise ValueError(
+                        "Data parallel mode not supported for embeddings generation."
+                    )
                 results = evaluate_embeddings.encode(
                     max_pipeline_and_tokenizer.pipeline,
                     max_pipeline_and_tokenizer.tokenizer,
                     prompts=(inp.prompt for inp in pipeline_oracle.inputs),
-                    batch_size=max_batch_size,
+                    batch_size=evaluation_batch_size,
                 )
             else:
                 raise ValueError(
