@@ -1238,6 +1238,7 @@ def get_features_used(  # noqa: C901
         elif n.type == token.SLASH:
             if n.parent and n.parent.type in {
                 syms.typedargslist,
+                syms.typedparamslist,
                 syms.arglist,
                 syms.varargslist,
             }:
@@ -1253,11 +1254,11 @@ def get_features_used(  # noqa: C901
                 features.add(Feature.RELAXED_DECORATORS)
 
         elif (
-            n.type in {syms.typedargslist, syms.arglist}
+            n.type in {syms.typedargslist, syms.typedparamslist, syms.arglist}
             and n.children
             and n.children[-1].type == token.COMMA
         ):
-            if n.type == syms.typedargslist:
+            if n.type in (syms.typedargslist, syms.typedparamslist):
                 feature = Feature.TRAILING_COMMA_IN_DEF
             else:
                 feature = Feature.TRAILING_COMMA_IN_CALL
