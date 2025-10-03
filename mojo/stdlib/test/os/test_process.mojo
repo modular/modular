@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: system-linux || system-darwin
 # RUN: %mojo %s | FileCheck %s
 
 from collections import List
@@ -20,9 +19,9 @@ from os import Process
 from testing import assert_false, assert_raises
 
 
-# CHECK-LABEL: TEST_ECHO
 def test_process_run():
-    _ = Process.run("echo", List[String]("== TEST_ECHO"))
+    var command = "echo"
+    _ = Process.run(command, List[String]("== TEST_ECHO"))
 
 
 def test_process_run_missing():
@@ -38,6 +37,7 @@ def test_process_run_missing():
         _ = Process.run(missing_executable_file, List[String]())
 
 
+# CHECK-LABEL: TEST_ECHO
 def main():
     test_process_run()
     test_process_run_missing()

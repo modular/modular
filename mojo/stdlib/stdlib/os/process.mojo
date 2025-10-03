@@ -21,11 +21,7 @@ from os import Process
 from collections import List, Optional
 from collections.string import StringSlice
 
-from sys import (
-    os_is_linux,
-    os_is_macos,
-    os_is_windows,
-)
+from sys import CompilationTarget
 from sys._libc import (
     vfork,
     execvp,
@@ -40,8 +36,6 @@ from sys._libc import (
 )
 from sys.ffi import c_char, c_int
 from sys.os import sep
-
-from memory import Span, UnsafePointer
 
 
 # ===----------------------------------------------------------------------=== #
@@ -62,7 +56,7 @@ struct Pipe:
     """File descriptor for pipe output."""
 
     fn __init__(
-        mut self,
+        out self,
         in_close_on_exec: Bool = False,
         out_close_on_exec: Bool = False,
     ) raises:
@@ -91,7 +85,7 @@ struct Pipe:
         self.fd_out = FileDescriptor(Int(pipe_fds[1]))
         pipe_fds.free()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Ensures pipes input and output file descriptors are closed, when the object is destroyed.
         """
         self.set_input_only()
@@ -172,7 +166,7 @@ struct Process:
     var child_pid: c_int
     """Child process id."""
 
-    fn __init__(mut self, child_pid: c_int):
+    fn __init__(out self, child_pid: c_int):
         """Struct to manage metadata about child process.
         Use the `run` static method to create new process.
 
@@ -211,7 +205,7 @@ struct Process:
         return self._kill(SignalCodes.KILL)
 
     @staticmethod
-    fn run(path: String, argv: List[String]) raises -> Process:
+    fn run(var path: String, argv: List[String]) raises -> Process:
         """Spawn new process from file executable.
 
         Args:
@@ -223,34 +217,36 @@ struct Process:
         """
 
         @parameter
-        if os_is_linux() or os_is_macos():
-            var file_name = path.split(sep)[-1]
+        if CompilationTarget.is_linux() or CompilationTarget.is_macos():
+            var file_name = String(path.split(sep)[-1])
             var pipe = Pipe(out_close_on_exec=True)
             var exec_err_code = String("EXEC_ERR")
 
             var pid = vfork()
 
             if pid == 0:
-                """Child process."""
+                # Child process.
                 pipe.set_output_only()
 
                 var arg_count = len(argv)
                 var argv_array_ptr_cstr_ptr = UnsafePointer[
-                    UnsafePointer[c_char]
+                    UnsafePointer[c_char, mut=False]
                 ].alloc(arg_count + 2)
                 var offset = 0
                 # Arg 0 in `argv` ptr array should be the file name
                 argv_array_ptr_cstr_ptr[offset] = file_name.unsafe_cstr_ptr()
                 offset += 1
 
-                for arg in argv:
-                    argv_array_ptr_cstr_ptr[offset] = arg[].unsafe_cstr_ptr()
+                for var arg in argv:
+                    argv_array_ptr_cstr_ptr[offset] = arg.unsafe_cstr_ptr()
                     offset += 1
 
                 # `argv` ptr array terminates with NULL PTR
                 argv_array_ptr_cstr_ptr[offset] = UnsafePointer[c_char]()
 
-                _ = execvp(path.unsafe_cstr_ptr(), argv_array_ptr_cstr_ptr)
+                var path_cptr = path.unsafe_cstr_ptr()
+
+                _ = execvp(path_cptr, argv_array_ptr_cstr_ptr)
 
                 # This will only get reached if exec call fails to replace currently executing code
                 argv_array_ptr_cstr_ptr.free()
@@ -281,11 +277,6 @@ struct Process:
                 raise Error("Failed to execute " + path)
 
             return Process(child_pid=pid)
-        elif os_is_windows():
-            constrained[
-                False, "Windows process execution currently not implemented"
-            ]()
-            return abort[Process]()
         else:
             constrained[
                 False, "Unknown platform process execution not implemented"
