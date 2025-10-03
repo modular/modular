@@ -3,12 +3,7 @@
 This folder contains the open-source Mojo standard library! 🔥
 
 We're thrilled to have you join our community of developers eager to build a
-vibrant and supportive ecosystem. If you just want to *use* the Mojo Standard
-Library, it’s already included with Mojo—simply install the MAX SDK or the
-standalone Mojo SDK:
-
-- [Get the MAX SDK.](https://docs.modular.com/engine/get-started)
-- [Get the Mojo SDK.](https://docs.modular.com/mojo/manual/get-started/)
+vibrant and supportive ecosystem.
 
 ## Vision and roadmap
 
@@ -54,6 +49,6 @@ See the license file in the repository for more details.
 ## Support
 
 For any inquiries, bug reports, or feature requests, please [open an
-issue](https://github.com/modular/max/issues) on the GitHub repository. See
+issue](https://github.com/modular/modular/issues) on the GitHub repository. See
 the [Mojo contributor guide](../CONTRIBUTING.md) for guidelines on filing good
 bugs.

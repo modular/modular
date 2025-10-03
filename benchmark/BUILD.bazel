@@ -1,0 +1,174 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+
+modular_py_library(
+    name = "benchmark_serving_lib",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "serve_replay.py",
+            "benchmark_throughput.py",
+        ],
+    ),
+    data = [
+        ":benchmark_config_yaml_files",
+    ] + glob(["datasets/**/*"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/diagnostics",
+        requirement("aiohttp"),
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("jinja2"),
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("psutil"),
+        requirement("pyyaml"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
+    name = "benchmark_serving",
+    srcs = ["benchmark_serving.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":benchmark_config",
+        ":benchmark_cpu_metrics",
+        ":benchmark_datasets",
+        ":metrics",
+        "//SDK/lib/API/python/max/diagnostics",
+        requirement("aiohttp"),
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("jinja2"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "metrics",
+    srcs = ["metrics.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [requirement("numpy")],
+)
+
+modular_py_library(
+    name = "benchmark_config",
+    srcs = ["benchmark_config.py"],
+    data = [
+        ":benchmark_config_yaml_files",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":benchmark_datasets",
+        "//SDK/lib/API/python/max/pipelines/lib",
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_library(
+    name = "benchmark_cpu_metrics",
+    srcs = ["benchmark_cpu_metrics.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("psutil"),
+    ],
+)
+
+modular_py_library(
+    name = "benchmark_datasets",
+    srcs = ["benchmark_datasets.py"],
+    data = glob(["datasets/**/*"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("msgspec"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
+    name = "benchmark_throughput",
+    srcs = [
+        "benchmark_throughput.py",
+    ],
+    data = [
+        ":yaml_files",
+        # TODO: Why do we need these?
+        "//KGEN/tools/mojo",
+        "//SDK:max",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":benchmark_config",
+        ":benchmark_datasets",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/serve",
+        requirement("click"),
+        requirement("msgspec"),
+        requirement("pyarrow"),
+        requirement("pyyaml"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
+    name = "serve_replay",
+    srcs = ["serve_replay.py"],
+    visibility = [":__subpackages__"],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//SDK/lib/API/python/max/entrypoints:replay_recording",
+        requirement("click"),
+        requirement("httpx"),
+    ],
+)
+
+# TODO: This is maybe redundant since we already have yaml_files?
+pkg_files(
+    name = "benchmark_config_yaml_files",
+    srcs = glob(["configs/*.yaml"]),
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "python_files",
+    srcs = glob(
+        [
+            "**/*.py",
+        ],
+    ),
+    prefix = "benchmark",
+    strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "yaml_files",
+    srcs = glob(
+        [
+            "**/*.yaml",
+        ],
+        exclude = [
+            "serving-benchmarking/**",
+        ],
+    ),
+    prefix = "benchmark",
+    visibility = ["//visibility:public"],
+)

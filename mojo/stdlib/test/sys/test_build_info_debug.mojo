@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -D BUILD_TYPE=debug %s
 
 from sys._build import is_debug_build, is_release_build
 
 from testing import assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_is_debug():
@@ -23,4 +23,8 @@ def test_is_debug():
 
 
 def main():
-    test_is_debug()
+    var suite = TestSuite()
+
+    suite.test[test_is_debug]()
+
+    suite^.run()

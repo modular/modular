@@ -1,115 +1,134 @@
-![Modular Logo](https://modular-assets.s3.amazonaws.com/images/modular_github_logo_bg.png)
+<div align="center">
+    <img src="https://modular-assets.s3.amazonaws.com/images/modular_github_logo_bg.png">
 
-# Welcome to MAX
+  [About Modular] | [Get started] | [API docs] | [Contributing] | [Changelog]
+</div>
 
-> Note: Mojo is included as a subdirectory in this repository
+[About Modular]: https://www.modular.com/
+[Get started]: https://docs.modular.com/max/get-started
+[API docs]: https://docs.modular.com/max/api
+[Contributing]: ./CONTRIBUTING.md
+[Changelog]: https://docs.modular.com/max/changelog
 
-The Modular Accelerated Xecution ([MAX](https://www.modular.com/max)) platform
-is an integrated suite of AI libraries, tools, and technologies that unifies
-commonly fragmented AI deployment workflows. MAX accelerates time to market
-for the latest innovations by giving AI developers a single toolchain that
-unlocks full programmability, unparalleled performance, and seamless hardware portability.
+# Modular Platform
 
-![](https://docs.modular.com/images/github/max-stack.png)
+> A unified platform for AI development and deployment, including **MAX**🧑‍🚀 and
+**Mojo**🔥.
 
-[See here to get started with MAX](https://docs.modular.com/max/get-started)
-and when you want to report issues or request features,
-[please create a GitHub issue here](https://github.com/modular/max/issues/new/choose).
+The Modular Platform is an open and fully-integrated suite of AI libraries
+and tools that accelerates model serving and scales GenAI deployments. It
+abstracts away hardware complexity so you can run the most popular open
+models with industry-leading GPU and CPU performance without any code changes.
 
-The [Discord](https://discord.gg/modular) community and
-[our forum](https://forum.modular.com/) is the best place to share
-your experiences and chat with the team and other community members.
+![](https://docs.modular.com/images/modular-container-stack.png?20250513)
 
-In the [examples directory](https://github.com/modular/max/tree/main/examples),
-you will find code examples and Jupyter notebooks that show how to run inference
-with MAX.
+## Get started
 
-## Getting Started
+You don't need to clone this repo.
 
-MAX is available in both stable and nightly builds. To install either version,
-follow the guide to [create a project with
-Magic](https://docs.modular.com/max/create-project).
+You can install Modular as a `pip` or `conda` package and then start an
+OpenAI-compatible endpoint with a model of your choice.
 
-Then clone this repository:
+To get started with the Modular Platform and serve a model using the MAX
+framework, see [the quickstart guide](https://docs.modular.com/max/get-started).
 
-```bash
-git clone https://github.com/modular/max.git
+> [!NOTE]
+> **Nightly vs. stable releases**
+> If you cloned the repo and want a stable release, run
+  `git checkout modular/vX.X` to match the version.
+> The `main` branch tracks nightly builds, while the `stable` branch matches
+  the latest released version.
+
+After your model endpoint is up and running, you can start sending the model
+inference requests using
+[our OpenAI-compatible REST API](https://docs.modular.com/max/api/serve).
+
+Try running hundreds of other models from
+[our model repository](https://builds.modular.com/?category=models).
+
+## Deploy our container
+
+The MAX container is our Kubernetes-compatible Docker container for convenient
+deployment, which uses the MAX framework's built-in inference server. We have
+separate containers for NVIDIA and AMD GPU environments, and a unified container
+that works with both.
+
+For example, you can start a container for an NVIDIA GPU with this command:
+
+```sh
+docker run --gpus=1 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -p 8000:8000 \
+    modular/max-nvidia-full:latest \
+    --model-path google/gemma-3-27b-it
 ```
 
-If you installed the stable build (v24.6), be sure you switch to the `stable` branch,
-because the `main` branch is for nightly releases and might not be compatible
-with stable builds:
+For more information, see our [MAX container
+docs](https://docs.modular.com/max/container) or the [Modular Docker Hub
+repository](https://hub.docker.com/u/modular).
 
-```bash
-git checkout stable
-```
+## About the repo
 
-## Running
+We're constantly open-sourcing more of the Modular Platform and you can find
+all of it in here. As of May, 2025, this repo includes over 450,000 lines of
+code from over 6000 contributors, providing developers with production-grade
+reference implementations and tools to extend the Modular Platform with new
+algorithms, operations, and hardware targets. It is quite likely **the world's
+largest repository of open source CPU and GPU kernels**!
 
-### MAX Pipelines
+Highlights include:
 
-To show off the full power of MAX, a
-[series of end-to-end pipelines for common AI workloads](./src/max/pipelines/)
-(and more) are ready to run. As one example, this includes everything needed to
-self-host
-[the Llama 3.1 text-generation model](./src/max/pipelines/architectures/llama3/).
-All code is provided so that these pipelines can be customized, built upon, or
-learned from.
+- Mojo standard library: [/mojo/stdlib](mojo/stdlib)
+- MAX GPU and CPU kernels: [/max/kernels](max/kernels) (Mojo kernels)
+- MAX inference server: [/max/serve](max/serve) (OpenAI-compatible endpoint)
+- MAX model pipelines: [/max/pipelines](max/pipelines) (Python-based graphs)
+- Code example: [/examples](examples)
 
-### Examples
+This repo has two major branches:
 
-In addition to the end-to-end pipelines, there are many [examples](./examples/)
-that exercise various aspects of MAX. You can follow the instructions in the
-README for each example or notebook you want to run.
+- The [`main`](https://github.com/modular/modular/tree/main) branch, which is
+in sync with the nightly build and subject to new bugs. Use this branch for
+[contributions](./CONTRIBUTING.md), or if you [installed the nightly
+build](https://docs.modular.com/max/packages).
 
-### Notebooks
+- The [`stable`](https://github.com/modular/modular/tree/stable) branch, which
+is in sync with the last stable released version of Mojo. Use the examples in
+here if you [installed the stable
+build](https://docs.modular.com/max/packages).
 
-Check out the [notebooks examples](./examples/notebooks/) for using MAX Engine
-🏎️ for models such as
-
-- [Mistral-7B](./examples/notebooks/mistral7b-python-onnx.ipynb)
-- [Roberta-pytorch](./examples/notebooks/roberta-python-pytorch.ipynb)
-
-### Tutorials
-
-The [tutorials](./tutorials/) directory contains the "finished" code for
-tutorials you can read at
-[docs.modular.com/max/tutorials](https://docs.modular.com/max/tutorials).
-
-### Docker Container
-
-The MAX container is our official Docker container for convenient MAX deployment.
-It includes the latest MAX version with GPU support, several AI libraries, and
-integrates with orchestration tools like Kubernetes.
-
-The MAX container image is available in the
-[Modular Docker Hub repository](https://hub.docker.com/r/modular/max-openai-api/).
-
-## Contributing
+## Contribute
 
 Thanks for your interest in contributing to this repository!
 
-We accept contributions to the [Mojo standard library](./mojo).
-Please see the [Contribution Guide](mojo/CONTRIBUTING.md) for instructions.
+We accept contributions to the [Mojo standard library](./mojo), [MAX AI
+kernels](./max/kernels), code examples, and Mojo docs, but currently not to any
+other parts of the repository.
 
-We are not accepting contributions for other parts of the repository.
+Please see the [Contribution Guide](./CONTRIBUTING.md) for instructions.
 
-We also welcome your bug reports.  If you have a bug, please file an issue
-[here](https://github.com/modular/max/issues/new/choose).
+We also welcome your bug reports.  If you have a bug, please [file an issue
+here](https://github.com/modular/modular/issues/new/choose).
 
-If you need support, the [Discord](https://discord.gg/modular)
-community and [our forum](https://forum.modular.com/) is the best
-place to share your experiences and chat with the team and other
-community members.
+## Contact us
+
+If you'd like to chat with the team and other community members, please send a
+message to our [Discord channel](https://discord.gg/modular) and [our
+forum board](https://forum.modular.com/).
 
 ## License
 
 This repository and its contributions are licensed under the Apache License
 v2.0 with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
-MAX and Mojo usage and distribution are licensed under the
-[MAX & Mojo Community License](https://www.modular.com/legal/max-mojo-license).
+Modular, MAX and Mojo usage and distribution are licensed under the
+[Modular Community License](https://www.modular.com/legal/community).
 
-### Third Party Licenses
+### Third party licenses
 
 You are entirely responsible for checking and validating the licenses of
 third parties (i.e. Huggingface) for related software and libraries that are downloaded.
+
+## Thanks to our contributors
+
+<a href="https://github.com/modular/modular/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=modular/modular" />
+</a>

@@ -1,0 +1,52 @@
+load("//bazel:api.bzl", "mojo_test")
+
+_DEPS = [
+    "@mojo//:internal_utils",
+    "@mojo//:linalg",
+    "@mojo//:quantization",
+    "@mojo//:stdlib",
+]
+
+_H100_TESTS = [
+    "test_scaled_matmul.mojo",
+    "test_scaled_fp8_quantization.mojo",
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:h100_gpu"],
+        deps = _DEPS,
+    )
+    for src in _H100_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = _DEPS,
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = [
+            "test_multistage_gemm_q.mojo",
+        ] + _H100_TESTS,
+    )
+]
+
+mojo_test(
+    name = "test_multistage_gemm_q.mojo.test",
+    srcs = ["test_multistage_gemm_q.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    # FIXME: KERN-1377 and move this into the glob above
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = _DEPS,
+)

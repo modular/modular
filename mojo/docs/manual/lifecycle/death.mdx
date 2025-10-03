@@ -16,60 +16,64 @@ Then, Mojo immediately ends the value's lifetime and calls the `__del__()`
 destructor to perform any necessary cleanup for the type.
 
 For example, notice when the `__del__()` destructor is called for each instance
-of `MyPet`:
+of `Balloon`:
 
 ```mojo
-@value
-struct MyPet:
-    var name: String
-    var age: Int
+@fieldwise_init
+struct Balloon(Writable):
+    var color: String
 
-    fn __del__(owned self):
-        print("Destruct", self.name)
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write(String("a ", self.color, " balloon"))
 
-fn pets():
-    var a = MyPet("Loki", 4)
-    var b = MyPet("Sylvie", 2)
-    print(a.name)
-    # a.__del__() runs here for "Loki"
+    fn __del__(deinit self):
+        print("Destroyed", String(self))
 
-    a = MyPet("Charlie", 8)
-    # a.__del__() runs immediately because "Charlie" is never used
 
-    print(b.name)
+def main():
+    var a = Balloon("red")
+    var b = Balloon("blue")
+    print(a)
+    # a.__del__() runs here for "red" Balloon
+
+    a = Balloon("green")
+    # a.__del__() runs immediately because "green" Balloon is never used
+
+    print(b)
     # b.__del__() runs here
 
-pets()
 ```
 
 ```output
-Loki
-Destruct Loki
-Destruct Charlie
-Sylvie
-Destruct Sylvie
+a red balloon
+Destroyed a red balloon
+Destroyed a green balloon
+a blue balloon
+Destroyed a blue balloon
 ```
 
 Notice that each initialization of a value is matched with a call to the
-destructor, and `a` is actually destroyed multiple times—once for each time it receives
-a new value.
+destructor, and `a` is actually destroyed multiple times—once for each time it
+receives a new value.
 
 Also notice that this `__del__()` implementation doesn't actually do
 anything. Most structs don't require a custom destructor, and Mojo automatically
 adds a no-op destructor if you don't define one.
 
+The `__del__()` method takes its argument using the `deinit`
+[argument convention](/mojo/manual/values/ownership#argument-conventions), which
+indicates that the value is being deinitialized.
+
 ### Default destruction behavior
 
 You may be wondering how Mojo can destroy a type without a custom destructor, or
 why a no-op destructor is useful. If a type is simply a collection of fields,
-like the `MyPet` example, Mojo only needs to destroy the fields: `MyPet` doesn't
+like the `Balloon` example, Mojo only needs to destroy the fields: `Balloon` doesn't
 dynamically allocate memory or use any long-lived resources (like file handles).
-There's no special action to take when a `MyPet` value is destroyed.
+There's no special action to take when a `Balloon` value is destroyed.
 
-Looking at the individual fields, `MyPet` includes an `Int` and a `String`. The
-`Int` is what Mojo calls a *trivial type*. It's a statically-sized bundle of
-bits. Mojo knows exactly how big it is, so those bits can be reused to store
-something else.
+When a `Balloon` value is destroyed, the `String` value in its `color` field is
+no longer used, and it is also immediately destroyed.
 
 The `String` value is a little more complicated. Mojo strings are mutable. The
 `String` object has an internal buffer—a
@@ -80,8 +84,8 @@ grow or shrink. The string itself doesn't have any special destructor logic,
 but when Mojo destroys a string, it calls the destructor for the
 `List` field, which de-allocates the memory.
 
-Since `String` and `Int` don't require any custom destructor logic, they both
-have no-op destructors: literally, `__del__()` methods that don't do anything.
+Since `String` doesn't require any custom destructor logic, it has a no-op
+destructor: literally, a `__del__()` method that doesn't do anything.
 This may seem pointless, but it means that Mojo can call the destructor on any
 value when its lifetime ends. This makes it easier to write generic containers
 and algorithms.
@@ -103,13 +107,6 @@ the end of the code scope to destroy values):
   tail call. This can be a significant performance and memory problem for
   certain functional programming patterns, which is not a problem in Mojo,
   because the destructor call always happens before the tail call.
-
-Additionally, Mojo's ASAP destruction works great within Python-style `def`
-functions. That's because Python doesn't really provide scopes beyond a
-function scope, so the Python garbage collector cleans up resources more often
-than a scope-based destruction policy would. However, Mojo does not use a
-garbage collector, so the ASAP destruction policy provides destruction
-guarantees that are even more fine-grained than in Python.
 
 The Mojo destruction policy is more similar to how Rust and Swift work, because
 they both have strong value ownership tracking and provide memory safety. One
@@ -137,13 +134,10 @@ need to implement the destructor.
 For example, consider this simple struct:
 
 ```mojo
-struct MyPet:
-    var name: String
-    var age: Int
-
-    fn __init__(out self, name: String, age: Int):
-        self.name = name
-        self.age = age
+@fieldwise_init
+struct Balloons:
+    var color: String
+    var count: Int
 ```
 
 There's no need to define the `__del__()` destructor for this, because it's a
@@ -155,23 +149,46 @@ memory allocated by its
 [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer):
 
 ```mojo
-from memory import UnsafePointer
-
-struct HeapArray:
+struct HeapArray(Writable):
     var data: UnsafePointer[Int]
     var size: Int
 
-    fn __init__(out self, size: Int, val: Int):
-        self.size = size
+    fn __init__(out self, *values: Int):
+        self.size = len(values)
         self.data = UnsafePointer[Int].alloc(self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(val)
+            (self.data + i).init_pointee_copy(values[i])
 
-    fn __del__(owned self):
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("[")
+        for i in range(self.size):
+            writer.write(self.data[i])
+            if i < self.size - 1:
+                writer.write(", ")
+        writer.write("]")
+
+    fn __del__(deinit self):
+        print("Destroying", self.size, "elements")
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()
+
+
+def main():
+    var a = HeapArray(10, 1, 3, 9)
+    print(a)
 ```
+
+```output
+[10, 1, 3, 9]
+Destroying 4 elements
+```
+
+The destructor takes its `self` argument using the `deinit`
+[argument convention](/mojo/manual/values/ownership#argument-conventions), which
+grants exclusive ownership of the value and marks it as destroyed at the end of
+the function. (For more information on the `deinit` convention, see
+[Field lifetimes during destruct and move](#field-lifetimes-during-destruct-and-move)).
 
 Note that a pointer doesn't *own* any values in the memory it points to, so
 when a pointer is destroyed, Mojo doesn't call the destructors on those values.
@@ -183,29 +200,24 @@ the destructors, use the `destroy_pointee()` method provided by the
 
 :::note
 
-You can't just call the destructor explicitly. Because `__del__()`
-takes `self` as an `owned` value, and owned arguments are copied by default,
-`foo.__del__()` actually creates and destroys a *copy* of `foo`. When Mojo
-destroys a value, however, it passes in the original value as `self`, not a
-copy.
+You shouldn't call the destructor explicitly. If you need to ensure that a
+destructor is called at a specific point, use the discard pattern described in
+[explicit lifetime extension](#explicit-lifetime-extension).
 
 :::
 
 It's important to notice that the `__del__()` method is an "extra" cleanup
 event, and your implementation does not override any default destruction
-behaviors. For example, Mojo still destroys all the fields in `MyPet` even
-if you implement `__del__()` to do nothing:
+behaviors. For example, Mojo still destroys all the fields in `Balloons` even
+if you add a `__del__()` method that to do nothing:
 
 ```mojo
-struct MyPet:
-    var name: String
-    var age: Int
+@fieldwise_init
+struct Balloons:
+    var color: String
+    var count: Int
 
-    fn __init__(out self, name: String, age: Int):
-        self.name = name
-        self.age = age
-
-    fn __del__(owned self):
+    fn __del__(deinit self):
         # Mojo destroys all the fields when they're last used
         pass
 ```
@@ -232,44 +244,47 @@ destroys each field independently with its ASAP destruction policy.
 For example, consider this code that changes the value of a field:
 
 ```mojo
-@value
-struct MyPet:
-    var name: String
-    var age: Int
+@fieldwise_init
+struct Balloons:
+    var color: String
+    var count: Int
 
-fn use_two_strings():
-    var pet = MyPet("Po", 8)
-    print(pet.name)
-    # pet.name.__del__() runs here, because this instance is
+
+def main():
+    var balloons = Balloons("red", 5)
+    print(balloons.color)
+    # balloons.color.__del__() runs here, because this instance is
     # no longer used; it's replaced below
 
-    pet.name = String("Lola") # Overwrite pet.name
-    print(pet.name)
-    # pet.__del__() runs here
+    balloons.color = "blue"  # Overwrite balloons.color
+    print(balloons.color)
+    # balloons.__del__() runs here
 ```
 
-The `pet.name` field is destroyed after the first `print()`, because Mojo knows
-that it will be overwritten below. You can also see this behavior when using the
-transfer sigil:
+The `balloons.color` field is destroyed after the first `print()`, because Mojo
+knows that it will be overwritten below. You can also see this behavior when
+using the transfer sigil:
 
 ```mojo
-fn consume(owned arg: String):
+fn consume(var arg: String):
     pass
 
-fn use(arg: MyPet):
-    print(arg.name)
+
+fn use(arg: Balloons):
+    print(arg.count, arg.color, "balloons.")
+
 
 fn consume_and_use():
-    var pet = MyPet("Selma", 5)
-    consume(pet.name^)
-    # pet.name.__moveinit__() runs here, which destroys pet.name
-    # Now pet is only partially initialized
+    var balloons = Balloons("blue", 8)
+    consume(balloons.color^)
+    # String.__moveinit__() runs here, which invalidates balloons.color
+    # Now balloons is only partially initialized
 
-    # use(pet)  # This fails because pet.name is uninitialized
+    # use(balloons)  # This fails because balloons.color is uninitialized
 
-    pet.name = String("Jasper")  # All together now
-    use(pet)                     # This is ok
-    # pet.__del__() runs here (and only if the object is whole)
+    balloons.color = String("orange")  # All together now
+    use(balloons)  # This is ok
+    # balloons.__del__() runs here (and only if the object is whole)
 ```
 
 Notice that the code transfers ownership of the `name` field to `consume()`.
@@ -290,130 +305,102 @@ it's likewise impossible to destroy an object by destroying only its fields.
 
 ### Field lifetimes during destruct and move
 
-The consuming-move constructor and destructor face an interesting situation
-with field lifetimes, because, unlike other lifecycle methods, they both take
-an instance of their own type as an `owned` argument, which is about to be
-destroyed. You don't really need to worry about this detail when implementing
-these methods, but it might help you better understand field lifetimes.
+Both the consuming move constructor and the destructor take their operand with
+the `deinit` argument convention. This grants exclusive ownership of the value
+and marks it as destroyed at the end of the function. Within the function body,
+Mojo’s ASAP policy still applies to fields: each field is destroyed immediately
+after its last use.
 
 Just to recap, the move constructor and destructor method signatures
 look like this:
 
 ```mojo
 struct TwoStrings:
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         # Initializes a new `self` by consuming the contents of `existing`
-    fn __del__(owned self):
+    fn __del__(deinit self):
         # Destroys all resources in `self`
+```
+
+Like the `var` argument convention, the `deinit` convention gives the argument
+exclusive ownership of a value. But unlike a `var` argument, Mojo doesn't
+insert a destructor call for the argument at the end of the function—because the
+`deinit` convention already marks it as a value that's in the process of being
+destroyed.
+
+For example, the following code shows how fields are destroyed inside a
+destructor.
+
+```mojo
+fn consume(var str: String):
+    print("Consumed", str)
+
+@fieldwise_init
+struct TwoStrings(Copyable, Movable):
+    var str1: String
+    var str2: String
+
+    fn __del__(deinit self):
+        # self value is whole at the beginning of the function
+        self.dump()
+        # After dump(): str2 is never used again, so str2.__del__() runs now
+
+        consume(self.str1^)
+        # self.str1 has been transferred so str1 becomes uninitialized, and
+        # no destructor is called for str1.
+        # self.__del__() is not called (avoiding an infinite loop).
+
+    fn dump(mut self):
+        print("str1:", self.str1)
+        print("str2:", self.str2)
+
+
+def main():
+    var two_strings = TwoStrings("foo", "bar")
+```
+
+## Explicit lifetime extension
+
+Most of the time, Mojo’s ASAP destruction “just works.” Very rarely, you may
+need to explicitly mark the last use of a value to control when its destructor
+runs. Think of this as an explicit last-use marker for the lifetime checker, not
+a general-purpose pattern.
+
+You might do this:
+
+- When writing tests that intentionally create otherwise-unused values (to avoid
+  warnings or dead-code elimination).
+
+- When writing unsafe/advanced code (for example, code that manipulates a
+  value’s [origin](/mojo/manual/values/lifetimes)).
+
+- When you need deterministic destructor timing relative to specific side
+  effects (such as logging or profiling).
+
+Mark the last use by assigning the value to the `_` discard pattern at the point
+where it is okay to destroy it. This sets the last use at that line, so the
+destructor runs immediately after the statement:
+
+```mojo
+# Without explicit extension: s is last used in the print() call, so it is
+# destroyed immediately afterwards.
+var s = "abc"
+print(s)  # s.__del__() runs after this line
+
+# With explicit extension: push last-use to the discard line.
+var t = "xyz"
+print(t)
+
+# ... some time later
+_ = t  # t.__del__() runs after this line
 ```
 
 :::note
 
-There are two kinds of "self" here: capitalized `Self` is an alias
-for the current type name (used as a type specifier for the `existing`
-argument), whereas lowercase `self` is the argument name for the
-implicitly-passed reference to the current instance (also called "this" in
-other languages, and also implicitly a `Self` type).
+Previous versions of Mojo required the transfer sigil (`^`) when discarding a
+move-only type. This is no longer required, since the compiler doesn't actually
+move the discarded value. For more information on the transfer sigil, see the
+section on
+[ownership transfer](/mojo/manual/values/ownership#transfer-arguments-var-and-).
 
 :::
-
-Both of these methods face an interesting but obscure problem: they both must
-dismantle the `existing`/`self` value that's `owned`. That is, `__moveinit__()`
-implicitly destroys sub-elements of `existing` in order to transfer ownership
-to a new instance (read more about the [move
-constructor](/mojo/manual/lifecycle/life#move-constructor)),
-while `__del__()` implements the deletion logic for its `self`. As such, they
-both need to own and transform elements of the `owned` value, and they
-definitely don't want the original `owned` value's destructor to also run—that
-could result in a double-free error, and in the case of the `__del__()` method,
-it would become an infinite loop.
-
-To solve this problem, Mojo handles these two methods specially by assuming
-that their whole values are destroyed upon reaching any return from the method.
-This means that the whole object may be used as usual, up until the field
-values are transferred or the method returns.
-
-For example, the following code works as you would expect (within the
-destructor, we can still pass ownership of a field value to another function,
-and there's no infinite loop to destroy `self`):
-
-```mojo
-fn consume(owned str: String):
-    print('Consumed', str)
-
-struct TwoStrings:
-    var str1: String
-    var str2: String
-
-    fn __init__(out self, one: String):
-        self.str1 = one
-        self.str2 = String("bar")
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.str1 = existing.str1
-        self.str2 = existing.str2
-
-    fn __del__(owned self):
-        self.dump() # Self is still whole here
-        # Mojo calls self.str2.__del__() since str2 isn't used anymore
-
-        consume(self.str1^)
-        # self.str1 has been transferred so it is also destroyed now;
-        # `self.__del__()` is not called (avoiding an infinite loop).
-
-    fn dump(mut self):
-        print('str1:', self.str1)
-        print('str2:', self.str2)
-
-fn use_two_strings():
-    var two_strings = TwoStrings("foo")
-```
-
-## Explicit lifetimes
-
-So far, we've described how Mojo destroys a value at the point it's last used,
-and this works great in almost all situations. However, there are very rare
-situations in which Mojo simply cannot predict this correctly and will destroy
-a value that is still referenced through some other means.
-
-For instance, perhaps you're building a type with a field that carries a pointer
-to another field. The Mojo compiler won't be able to reason about the pointer,
-so it might destroy a field (`obj1`) when that field is technically no longer
-used, even though another field (`obj2`) still holds a pointer to part of it.
-So, you might need to keep `obj1` alive until you can execute some special
-logic in the destructor or move initializer.
-
-You can force Mojo to keep a value alive up to a certain point by assigning the
-value to the `_` discard pattern at the point where it's okay to destroy it.
-For example:
-
-```mojo
-fn __del__(owned self):
-    self.dump() # Self is still whole here
-
-    consume(self.obj2^)
-    _ = self.obj1
-    # Mojo keeps `obj1` alive until here, after its "last use"
-```
-
-In this case, if `consume()` refers to some value in `obj1` somehow, this
-ensures that Mojo does not destroy `obj1` until after the call to `consume()`,
-because assignment to the discard variable `_` is actually the last use.
-
-For other situations, you can also scope the lifetime of a value using the
-Python-style [`with`
-statement](https://docs.python.org/3/reference/compound_stmts.html#the-with-statement).
-That is, for any value defined at the entrance to a `with` statement, Mojo will
-keep that value alive until the end of the `with` statement. For example:
-
-```mojo
-with open("my_file.txt", "r") as file:
-    print(file.read())
-
-    # Other stuff happens here (whether using `file` or not)...
-    foo()
-    # `file` is alive up to the end of the `with` statement.
-
-# `file` is destroyed when the statement ends.
-bar()
-```

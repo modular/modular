@@ -5,24 +5,44 @@ description: Debugging Mojo programs.
 ---
 
 The Mojo extension for Visual Studio Code enables you to use VS Code's built-in
-debugger with Mojo programs. (The Mojo extension also supports debugging C, C++,
-and Objective-C.)
+debugger with Mojo code. This page describes the features available through the
+VS Code Mojo extension, as well as current limitations of the Mojo debugger.
+
+You can install the Mojo extension from either the
+[Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+or the
+[Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+See
+[Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension) for
+more information.
+
+To use the Mojo extension, you must also
+[install the `mojo` package](/mojo/manual/install)—or, if you're developing for
+the MAX framework, [install the `modular` package](/max/packages), which
+includes the `mojo` package.
+
+:::note
+
+The Mojo extension relies on the Python extension for locating your Python
+environment. In some cases, this appears to default to your globally-installed
+environment, even when a virtual environment exists. If the Mojo extension
+cannot find your SDK installation, try invoking the "Python: Set Project
+Environment" command and selecting your virtual environment.
+
+:::
 
 For complete coverage of VS Code's debugging features, see
 [Debugging in Visual Studio Code](https://code.visualstudio.com/docs/editor/debugging).
 
-This page describes the features available through the Mojo extension, as well
-as current limitations of the Mojo debugger.
-
-The MAX SDK includes the [LLDB debugger](https://lldb.llvm.org/) and a Mojo
-LLDB plugin. Together these provide the low-level debugging interface for the
-Mojo extension. You can also use the `mojo debug` command to start a
+The `mojo` package includes the [LLDB debugger](https://lldb.llvm.org/) and a
+Mojo LLDB plugin. Together these provide the low-level debugging interface for
+the Mojo extension. You can also use the `mojo debug` command to start a
 command-line debugging session using LLDB or to launch a Mojo debugging session
 in VS Code.
 
-The MAX SDK also includes support for debugging Mojo programs running on GPU.
-This requires some extra software and configuration. Currently GPU debugging
-only works with NVIDIA GPUs. For details, see
+The `mojo` package also includes support for debugging Mojo programs running on
+GPU. This requires some extra software and configuration. Currently GPU
+debugging only works with NVIDIA GPUs. For details, see
 [GPU debugging](/mojo/tools/gpu-debugging).
 
 ## Start debugging
@@ -31,9 +51,9 @@ There are several ways to start a debug session in VS Code.
 
 To start debugging, you'll need to have a Mojo project to debug. There are a
 number of examples ranging from simple to complex in [our GitHub
-repo](https://github.com/modular/max/tree/main/examples/mojo).
+repo](https://github.com/modular/modular/tree/main/examples/mojo).
 
-:::note **VS Code veteran?**
+:::note VS Code veteran?
 
 If you're already familiar with debugging in VS Code, the
 material in this section will mostly be review. You might want to skip ahead to
@@ -140,7 +160,7 @@ session from the **Command Palette**.
 
 #### Launch from the File Explorer
 
-To launch a debug session from the the **File Explorer** view:
+To launch a debug session from the **File Explorer** view:
 
 1. Right-click on a Mojo file.
 2. Select a Mojo debug configuration.
@@ -468,8 +488,7 @@ input is treated as an expression.
 
 Currently Mojo expressions are limited to inspecting variables and their fields.
 The console also supports subscript notation (`vector[index]`) for certain data
-structures in the standard library, including  `List`, `SIMD`,
-and `ListLiteral`.
+structures in the standard library, including  `List` and `SIMD`.
 
 In the future, we intend to provide a way for arbitrary data structures to
 support subscript notation in the **Debug Console**.
@@ -515,12 +534,12 @@ debugger in the same way that a `breakpoint()` call will.
 
 ### Set parameters from the Mojo command line
 
-You can use the [`param_env`](/mojo/stdlib/sys/param_env/) module to retrieve
+You can use the [`sys`](/mojo/stdlib/sys/) module to retrieve
 parameter values specified on the Mojo command line. Among other things, this
 is an easy way to switch debugging logic on and off. For example:
 
 ```mojo
-from param_env import is_defined
+from sys import is_defined
 
 def some_function_with_issues():
     # ...

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly version="1.27.0"
+
+arch="$(uname -m)"
+if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
+  readonly bazel_arch="arm64"
+else
+  readonly bazel_arch="amd64"
+fi
+
+if [[ $OSTYPE == darwin* ]]; then
+  readonly platform=darwin-arm64
+  readonly sha="8bf08c894ccc19ef37f286e58184c3942c58cb08da955e990522703526ddb720"
+elif [[ $OSTYPE == linux* ]]; then
+  readonly platform=linux-"$bazel_arch"
+  if [[ "$bazel_arch" == "amd64" ]]; then
+    readonly sha="e1508323f347ad1465a887bc5d2bfb91cffc232d11e8e997b623227c6b32fb76"
+  else
+    readonly sha="bb608519a440d45d10304eb684a73a2b6bb7699c5b0e5434361661b25f113a5d"
+  fi
+else
+  echo "error: unsupported platform $OSTYPE" >&2
+  exit 1
+fi
+
+readonly url="https://github.com/bazelbuild/bazelisk/releases/download/v$version/bazelisk-$platform"
+script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly executable="$script_root/build/bazelisk-$version-$platform"
+
+if [[ ! -x "$executable" ]]; then
+  echo "Installing bazelisk..." >&2
+  mkdir -p "$(dirname "$executable")"
+
+  download_bazelisk() {
+    curl --fail -L --retry 5 --retry-connrefused --silent --progress-bar \
+      --output "$executable" "$url"
+  }
+
+  download_bazelisk || download_bazelisk
+  if echo "$sha  $executable" | shasum --check --status; then
+    chmod +x "$executable"
+  else
+    echo "error: bazelisk sha mismatch" >&2
+    rm -f "$executable"
+    exit 1
+  fi
+fi
+
+# Set BAZEL to the executable path so the rules_go dependency can reference it.
+# Without this, rules_go will likely fail in CI with the following error:
+#   exec: "bazel": executable file not found in $PATH
+export BAZEL="$executable"
+
+exec "$executable" "$@"

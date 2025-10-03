@@ -152,10 +152,11 @@ might hold a `Pointer` back to the original list.
 the iterators for standard library collection types like `List` return
 pointers.)
 
-You can construct a `Pointer` using the `address_of()` static method:
+You can construct a `Pointer` to an existing value by calling the constructor
+with the `to` keyword argument:
 
-```python
-ptr = Pointer.address_of(some_value)
+```mojo
+ptr = Pointer(to=some_value)
 ```
 
 You can also create a `Pointer` by copying an existing `Pointer`.
@@ -171,12 +172,12 @@ underlying data. An `OwnedPointer` points to a single item, which is passed in
 when you initialize the `OwnedPointer`. The `OwnedPointer` allocates memory and
 moves or copies the value into the reserved memory.
 
-```python
+```mojo
 o_ptr = OwnedPointer(some_big_struct)
 ```
 
-An owned pointer can hold almost any type of item, but the stored item must be
-either `Movable`, `Copyable`, or `ExplicitlyCopyable`.
+An owned pointer can hold almost any type of item, but when constructing an
+`OwnedPointer`, the stored item must be either `Movable` or `Copyable`.
 
 Since an `OwnedPointer` is designed to enforce single ownership, the pointer
 itself can be moved, but not copied.
@@ -184,9 +185,9 @@ itself can be moved, but not copied.
 Note: Currently, you can't create an `Optional[OwnedPointer[T]]` because the
 `Optional` type only works with types that are both movable and copyable. This
 restricts some use cases that would otherwise be a natural fit
-for`OwnedPointer`, including self-referential data structures like linked lists
+for `OwnedPointer`, including self-referential data structures like linked lists
 and trees. (Until this use case is supported for `OwnedPointer`, it's possible
-to use`ArcPointer` where you need a smart pointer that can be `Optional`.)
+to use `ArcPointer` where you need a smart pointer that can be `Optional`.)
 
 ## `ArcPointer`
 
@@ -195,8 +196,8 @@ smart pointer, ideal for shared resources where the last owner for a given value
 may not be clear. Like an `OwnedPointer`, it points to a single value, and it
 allocates memory when you initialize the `ArcPointer` with a value:
 
-```python
-attributesDict = Dict[String, String]()
+```mojo
+attributesDict: Dict[String, String] = {}
 attributes = ArcPointer(attributesDict)
 ```
 
@@ -211,21 +212,20 @@ example, in the following code snippet `SharedDict` uses an `ArcPointer` to
 store a dictionary. Copying an instance of `SharedDict` only copies the
 `ArcPointer`, not the dictionary, which is shared between all of the copies.
 
-```python
+```mojo
 from memory import ArcPointer
-from collections import Dict
 
 struct SharedDict:
     var attributes: ArcPointer[Dict[String, String]]
 
     fn __init__(out self):
-        attributesDict = Dict[String, String]()
+        attributesDict: Dict[String, String] = {}
         self.attributes = ArcPointer(attributesDict)
 
     fn __copyinit__(out self, other: Self):
         self.attributes = other.attributes
 
-    def __setitem__(inout self, key: String, value: String):
+    def __setitem__(mut self, key: String, value: String):
         self.attributes[][key] = value
 
     def __getitem__(self, key: String) -> String:
@@ -239,7 +239,7 @@ def main():
 ```
 
 Note: The reference count is stored using an
-[`Atomic`]([/mojo/stdlib/os/atomic/Atomic](https://docs.modular-staging.com/mojo/stdlib/os/atomic/Atomic))
+[`Atomic`](/mojo/stdlib/os/atomic/Atomic)
 value to ensure that updates to the reference count are thread-safe. However,
 Mojo doesn't currently enforce exclusive access across thread boundaries, so
 it's possible to form race conditions.

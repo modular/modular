@@ -1,0 +1,79 @@
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+
+_FILECHECK_TESTS = [
+    "test_activations.mojo",
+    "test_arange.mojo",
+    "test_arg_nonzero.mojo",
+    "test_argmaxmin.mojo",
+    "test_broadcast.mojo",
+    "test_buffer_slice.mojo",
+    "test_buffer_slice_dim.mojo",
+    "test_concat.mojo",
+    "test_conv1d.mojo",
+    "test_conv1d_winograd.mojo",
+    "test_conv2d_winograd.mojo",
+    "test_conv3d.mojo",
+    "test_conv_epilogue.mojo",
+    "test_conv_partition.mojo",
+    "test_conv_transposed.mojo",
+    "test_conv_transposed_naive.mojo",
+    "test_cumsum.mojo",
+    "test_direct_conv.mojo",
+    "test_direct_conv_int8.mojo",
+    "test_fold.mojo",
+    "test_gather.mojo",
+    "test_gather_elements.mojo",
+    "test_gather_nd.mojo",
+    "test_index_tensor.mojo",
+    "test_nms.mojo",
+    "test_nn_random.mojo",
+    "test_pad.mojo",
+    "test_pad_bench.mojo",
+    "test_pool.mojo",
+    "test_repeat_interleave.mojo",
+    "test_resize.mojo",
+    "test_scatter_elements.mojo",
+    "test_softmax.mojo",
+    "test_static_conv.mojo",
+    "test_static_conv_small_shapes.mojo",
+    "test_tile.mojo",
+    "test_top_k.mojo",
+]
+
+_CONSTRAINTS = {
+    "test_activations.mojo": ["@platforms//os:linux"],
+    "test_top_k.mojo": ["@platforms//os:linux"],  # TODO: Fix on macOS
+}
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        target_compatible_with = _CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        target_compatible_with = _CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:nn",
+            "@mojo//:stdlib",
+            "@mojo//:testdata",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
+]

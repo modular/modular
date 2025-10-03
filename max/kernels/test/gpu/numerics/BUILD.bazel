@@ -1,0 +1,74 @@
+load("//bazel:api.bzl", "mojo_filecheck_test")
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:h100_gpu"],
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in [
+        "test_e4m3fn_conversion.mojo",
+        "test_e5m2_conversion.mojo",
+        "test_fp8_nan.mojo",
+    ]
+]
+
+mojo_filecheck_test(
+    name = "test_fp8fnuz_amd.mojo.test",
+    srcs = ["test_fp8fnuz_amd.mojo"],
+    tags = [
+        "gpu",
+        "manual",  # TODO(KERN-1377)
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:h100_gpu": ["//:h100_gpu"],
+            "//:mi300x_gpu": ["//:mi300x_gpu"],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in [
+        "test_e4m3fnuz_conversion.mojo",
+        "test_e5m2fnuz_conversion.mojo",
+    ]
+]
+
+mojo_filecheck_test(
+    name = "test_e4m3fn_to_e4m3fnuz_conversion.mojo.test",
+    srcs = ["test_e4m3fn_to_e4m3fnuz_conversion.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_filecheck_test(
+    name = "test_ue8m0_conversion.mojo.test",
+    srcs = ["test_ue8m0_conversion.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:b200_gpu",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)

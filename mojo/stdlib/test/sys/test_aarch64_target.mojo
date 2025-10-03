@@ -10,23 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# COM: TODO (17471): Not all aarch64 have neon, so we need to guard against that,
-# for now just require Apple Silicon.
-# REQUIRES: system-darwin
-# RUN: %mojo %s
 
-from sys import alignof, has_avx512f, has_neon, simdbitwidth
+from sys import simd_bit_width
+from sys.info import CompilationTarget
 
 from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_arch_query():
-    assert_true(has_neon())
+    assert_true(CompilationTarget.has_neon())
 
-    assert_equal(simdbitwidth(), 128)
+    assert_equal(simd_bit_width(), 128)
 
-    assert_false(has_avx512f())
+    assert_false(CompilationTarget.has_avx512f())
 
 
 def main():
-    test_arch_query()
+    var suite = TestSuite()
+
+    suite.test[test_arch_query]()
+
+    suite^.run()

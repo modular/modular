@@ -1,0 +1,13 @@
+diff --git a/go/private/rules/go_bin_for_host.bzl b/go/private/rules/go_bin_for_host.bzl
+index 475516c3..d1ba8886 100644
+--- a/go/private/rules/go_bin_for_host.bzl
++++ b/go/private/rules/go_bin_for_host.bzl
+@@ -12,7 +12,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-load("@local_config_platform//:constraints.bzl", "HOST_CONSTRAINTS")
++load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+ load("//go/private:common.bzl", "GO_TOOLCHAIN")
+ 
+ def _ensure_target_cfg(ctx):

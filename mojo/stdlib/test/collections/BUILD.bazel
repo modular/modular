@@ -1,0 +1,84 @@
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+
+_FILECHECK_TESTS = [
+    "test_index_normalization.mojo",
+    "test_list_getitem_invalid_index_int.mojo",
+    "test_list_getitem_invalid_index_uint.mojo",
+]
+
+_NO_ASAN = [
+    "string/test_string.mojo",
+    "string/test_string_slice.mojo",  # TODO(MOCO-2316): Takes too long to compile
+]
+
+_PLATFORM_CONSTRAINTS = {
+    src: select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+    for src in _NO_ASAN
+}
+
+_MOJO_COMPILE_OPTS = {
+    "test_index_normalization.mojo": [
+        "-D",
+        "ASSERT=warn",
+    ],
+    "test_list_getitem_invalid_index_int.mojo": [
+        "-D",
+        "BUILD_TYPE=debug",
+    ],
+    "test_list_getitem_invalid_index_uint.mojo": [
+        "-D",
+        "BUILD_TYPE=debug",
+    ],
+}
+
+_DISABLED_ASSERTIONS = [
+    "test_index_normalization.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+]
+
+_EXPECT_CRASH = [
+    "test_list_getitem_invalid_index_int.mojo",
+    "test_list_getitem_invalid_index_uint.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ] + _MOJO_COMPILE_OPTS.get(src, []),
+        enable_assertions = src not in _DISABLED_ASSERTIONS,
+        expect_crash = src in _EXPECT_CRASH,
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        data = [src],  # NOTE: some tests attempt to read their source files
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
+]

@@ -10,15 +10,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash mojo %s 2>&1
 
+from pathlib import Path
 from sys import DLHandle
+
+from testing import assert_raises
+from test_utils import TestSuite
 
 
 def check_invalid_dlhandle():
-    _ = DLHandle("/an/invalid/library")
+    with assert_raises(contains="dlopen failed"):
+        _ = DLHandle("/an/invalid/library")
+
+
+def check_invalid_dlhandle_path():
+    with assert_raises(contains="dlopen failed"):
+        _ = DLHandle(Path("/an/invalid/library"))
 
 
 def main():
-    check_invalid_dlhandle()
+    var suite = TestSuite()
+
+    suite.test[check_invalid_dlhandle]()
+    suite.test[check_invalid_dlhandle_path]()
+
+    suite^.run()

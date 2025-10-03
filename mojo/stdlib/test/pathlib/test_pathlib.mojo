@@ -10,16 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo  -D TEMP_FILE=%t %s
 
 import os
 from pathlib import DIR_SEPARATOR, Path, cwd
-from sys import env_get_string, os_is_windows
+from sys import CompilationTarget
+from tempfile import NamedTemporaryFile
 
 from builtin._location import __source_location
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
-
-alias TEMP_FILE = env_get_string["TEMP_FILE"]()
 
 
 def test_cwd():
@@ -83,32 +81,30 @@ def test_joinpath():
 
 
 def test_read_write():
-    Path(TEMP_FILE).write_text("hello")
-    assert_equal(Path(TEMP_FILE).read_text(), "hello")
+    var temp_file = Path(os.getenv("TEST_TMPDIR")) / "foo.txt"
+    temp_file.write_text("hello")
+    assert_equal(temp_file.read_text(), "hello")
+
+
+def test_read_write_bytes():
+    alias data = "hello world".as_bytes()
+    with NamedTemporaryFile() as tmp:
+        var file = Path(tmp.name)
+        file.write_bytes(data)
+        assert_equal(List[Byte](data), file.read_bytes())
 
 
 fn get_user_path() -> Path:
-    @parameter
-    if os_is_windows():
-        return Path("C:") / "Users" / "user"
     return Path("/home/user")
 
 
 fn get_current_home() -> String:
-    @parameter
-    if os_is_windows():
-        return os.env.getenv("USERPROFILE")
     return os.env.getenv("HOME")
 
 
 def set_home(path: Path):
     path_str = String(path)
-
-    @parameter
-    if os_is_windows():
-        _ = os.env.setenv("USERPROFILE", path_str)
-    else:
-        _ = os.env.setenv("HOME", path_str)
+    _ = os.env.setenv("HOME", path_str)
 
 
 # More elaborate tests in `os/path/test_expanduser.mojo`
@@ -135,14 +131,6 @@ def test_home():
     assert_equal(user_path, Path.home())
     # Match Python behavior allowing `home()` to overwrite existing path.
     assert_equal(user_path, Path("test").home())
-    # Tests with empty "HOME" and "USERPROFILE"
-    set_home(Path(""))
-    if os_is_windows():
-        # Don't expand on windows if home isn't set
-        assert_equal(Path("~"), Path.home())
-    else:
-        # Test fallback to `/etc/passwd` works on linux
-        assert_true(len(Path.home().path) > 1)
 
     # Ensure other tests in this process aren't broken by changing the home dir.
     set_home(original_home)
@@ -153,10 +141,12 @@ def test_stat():
     var stat = path.stat()
     assert_equal(
         String(stat),
-        "os.stat_result(st_mode={}, st_ino={}, st_dev={}, st_nlink={},"
-        " st_uid={}, st_gid={}, st_size={}, st_atime={}, st_mtime={},"
-        " st_ctime={}, st_birthtime={}, st_blocks={}, st_blksize={},"
-        " st_rdev={}, st_flags={})".format(
+        StaticString(
+            "os.stat_result(st_mode={}, st_ino={}, st_dev={}, st_nlink={},"
+            " st_uid={}, st_gid={}, st_size={}, st_atime={}, st_mtime={},"
+            " st_ctime={}, st_birthtime={}, st_blocks={}, st_blksize={},"
+            " st_rdev={}, st_flags={})"
+        ).format(
             stat.st_mode,
             stat.st_ino,
             stat.st_dev,
@@ -176,6 +166,51 @@ def test_stat():
     )
 
 
+# More elaborate tests in `os/path/test_basename.mojo`
+def test_name():
+    # Root directories
+    assert_equal("", Path("/").name())
+
+    # Empty strings
+    assert_equal("", Path("").name())
+
+    # Current directory (matching behavior of python, doesn't resolve `..` etc.)
+    assert_equal(".", Path(".").name())
+
+    # Parent directory
+    assert_equal("..", Path("..").name())
+
+    # Absolute paths
+    assert_equal("file", Path("/file").name())
+    assert_equal("file.txt", Path("/file.txt").name())
+    assert_equal("file", Path("/dir/file").name())
+    assert_equal("file", Path("/dir/subdir/file").name())
+
+    # Relative paths
+    assert_equal("file", Path("dir/file").name())
+    assert_equal("file", Path("dir/subdir/file").name())
+    assert_equal("file", Path("file").name())
+
+
+def test_parts():
+    var path_to_file = Path("/path/to/file")
+    assert_equal(path_to_file.parts(), path_to_file.path.split("/"))
+
+    var rel_path = Path("path/to/file")
+    assert_equal(rel_path.parts(), rel_path.path.split("/"))
+
+    var path_no_slash = Path("path")
+    assert_equal(path_no_slash.parts(), path_no_slash.path.split("/"))
+
+    var path_with_tail_slash = Path("path/")
+    assert_equal(
+        path_with_tail_slash.parts(), path_with_tail_slash.path.split("/")
+    )
+
+    var root_path = Path("/")
+    assert_equal(root_path.parts(), root_path.path.split("/"))
+
+
 def main():
     test_cwd()
     test_path()
@@ -188,3 +223,5 @@ def main():
     test_expand_user()
     test_home()
     test_stat()
+    test_name()
+    test_parts()

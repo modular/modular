@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "mojo_kgen_lib", "mojo_library")
+
+package(default_visibility = ["//visibility:public"])
+
+mogg_lib_deps = [
+    "@mojo//:kv_cache",
+    "@mojo//:layout",
+    "@mojo//:linalg",
+    "@mojo//:nn",
+    "@mojo//:quantization",
+    "@mojo//:tensor_internal",
+    "@mojo//:compiler_internal",
+    "@mojo//:stdlib",
+]
+
+mojo_kgen_lib(
+    name = "MOGGKernelAPILib",
+    srcs = glob(["**/*.mojo"]),
+    deps = mogg_lib_deps + ["@mojo//:MOGGPrimitives"],
+)
+
+mojo_library(
+    name = "MOGGKernelAPI",
+    testonly = True,
+    srcs = glob(["**/*.mojo"]),
+    deps = mogg_lib_deps + ["@mojo//:MOGGPrimitives"],
+)

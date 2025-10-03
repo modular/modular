@@ -92,18 +92,18 @@ Here's an example:
 ```mojo
 def my_sort[
     # infer-only parameters
-    Type: DType,
+    dtype: DType,
     width: Int,
     //,
     # positional-only parameter
-    values: SIMD[Type, width],
+    values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn (Scalar[Type], Scalar[Type]) -> Int,
+    compare: fn (Scalar[dtype], Scalar[dtype]) -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,
-]() -> SIMD[Type, width]:
+]() -> SIMD[dtype, width]:
 ```
 
 Here's a quick overview of the special characters in the parameter list:
@@ -142,13 +142,16 @@ example, we could rewrite `repeat[]()` to take any type of argument that
 conforms to the [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait:
 
 ```mojo
-fn repeat[MsgType: Stringable, count: Int](msg: MsgType):
+fn repeat[MsgType: Stringable, //, count: Int](msg: MsgType):
     @parameter
     for i in range(count):
         print(String(msg))
 
-# Must use keyword parameter for `count`
-repeat[count=2](42)
+
+def main():
+    # MsgType is always inferred, so first positional keyword `2` is
+    # passed to `count`
+    repeat[2](42)
 ```
 
 ```output
@@ -159,30 +162,16 @@ repeat[count=2](42)
 This updated function takes any `Stringable` type, so you can pass it an `Int`,
 `String`, or `Bool` value.
 
-You can't pass the `count` as a positional keyword without also specifying
-`MsgType`. You can put `//` after `MsgType` to specify that it's always inferred
-by the argument. Now you can pass the following parameter `count` positionally:
-
-```mojo
-fn repeat[MsgType: Stringable, //, count: Int](msg: MsgType):
-    @parameter
-    for i in range(count):
-        print(String(msg))
-
-# MsgType is always inferred, so first positional keyword `2` is passed to `count`
-repeat[2](42)
-```
-
-```output
-42
-42
-```
+Note that there's a double-slash (`//`) in the parameter list after `MsgType`,
+to specify that it's an [infer-only parameter](#infer-only-parameters), so you
+don't need to specify it explicitly. Instead, the compiler sees that the `msg`
+argument is an `Int` and *infers* the type from the value.
 
 Mojo's support for generics is still early. You can write generic functions like
 this using traits and parameters. You can also write generic collections like
 `List` and `Dict`. If you're interested in learning how these types work, you
 can find the source code for the standard library collection types
-[on GitHub](https://github.com/modular/max/blob/main/mojo/stdlib/src/collections/).
+[on GitHub](https://github.com/modular/modular/blob/main/mojo/stdlib/stdlib/collections/).
 
 ## Parameterized structs
 
@@ -191,25 +180,23 @@ build generic collections. For example, a generic array type might include code
 like this:
 
 ```mojo
-from memory import UnsafePointer
-
-struct GenericArray[ElementType: CollectionElement]:
+struct GenericArray[ElementType: Copyable & Movable]:
     var data: UnsafePointer[ElementType]
     var size: Int
 
-    fn __init__(out self, *elements: ElementType):
+    fn __init__(out self, var *elements: ElementType):
         self.size = len(elements)
         self.data = UnsafePointer[ElementType].alloc(self.size)
         for i in range(self.size):
-            (self.data + i).init_pointee_move(elements[i])
+            (self.data + i).init_pointee_move(elements[i].copy())
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()
 
     fn __getitem__(self, i: Int) raises -> ref [self] ElementType:
-        if (i < self.size):
+        if i < self.size:
             return self.data[i]
         else:
             raise Error("Out of bounds")
@@ -217,9 +204,9 @@ struct GenericArray[ElementType: CollectionElement]:
 
 This struct has a single parameter, `ElementType`, which is a placeholder for
 the data type you want to store in the array, sometimes called a *type
-parameter*. `ElementType` is typed as
-[`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement), which is a
-[trait](/mojo/manual/traits) representing any type that can be copied and moved.
+parameter*. `ElementType` conforms to the
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+[`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 
 As with parameterized functions, you need to pass in parameter values when you
 use a parameterized struct. In this case, when you create an instance of
@@ -235,13 +222,14 @@ constructor, and the return type of the `__getitem__()` method.
 Here's an example of using `GenericArray`:
 
 ```mojo
-var array = GenericArray[Int](1, 2, 3, 4)
+var array = GenericArray(1, 2, 3, 4)
 for i in range(array.size):
-    print(array[i], end=" ")
+    end = ", " if i < array.size - 1 else "\n"
+    print(array[i], end=end)
 ```
 
 ```output
-1 2 3 4
+1, 2, 3, 4
 ```
 
 A parameterized struct can use the `Self` type to represent a concrete instance
@@ -250,7 +238,7 @@ could add a static factory method to `GenericArray` with the following
 signature:
 
 ```mojo
-struct GenericArray[ElementType: CollectionElement]:
+struct GenericArray[ElementType: Copyable & Movable]:
     ...
 
     @staticmethod
@@ -271,8 +259,9 @@ The method returns an instance of `GenericArray[Float64]`.
 
 When creating a generic struct, you might want to define some methods that
 require extra features. For example, consider a collection like `GenericArray`
-that holds instances of `CollectionElement`. The `CollectionElement` trait only
-requires that the stored data type be copyable and movable. This imposes a lot
+that holds instances of a type that conforms to the
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+[`Movable`](/mojo/stdlib/builtin/value/Movable) traits. This imposes a lot
 of limitations: you can't implement a `sort()` method because you can't
 guarantee that the stored type supports the comparison operators; you can't
 write a useful `__str__()` or `__repr__()` dunder method because you can't
@@ -283,47 +272,49 @@ method that requires additional features. You do this by defining the `self`
 value that has a more specific bound on one or more of its parameters.
 
 For example, the following code defines a `Container` type that holds an
-instance of `CollectionElement`. It also defines a `__str__()` method that can
-only be called if the stored `ElementType` conforms to
-`WritableCollectionElement`:
+instance of a type conforming to `Movable`. It also defines a
+`__str__()` method that can only be called if the stored `ElementType` conforms
+to `Writable` as well as `Movable`:
 
 ```mojo
-@value
-struct Container[ElementType: CollectionElement]:
+@fieldwise_init
+struct Container[ElementType: Movable]:
     var element: ElementType
 
-    def __str__[StrElementType: WritableCollectionElement, //](
-            self: Container[StrElementType]) -> String:
+    def __str__[
+        StrElementType: Writable & Movable, //
+    ](self: Container[StrElementType]) -> String:
         return String(self.element)
 
-def use_container():
-    float_container = Container(5)
+
+def main():
+    float_container = Container(5.0)
     string_container = Container("Hello")
     print(float_container.__str__())
     print(string_container.__str__())
-
-use_container()
 ```
 
 ```output
-5
+5.0
 Hello
 ```
 
 Note the signature of the `__str__()` method, which declares the `self` argument
 with a more specific type. Specifically, it declares that it takes a `Container`
-with an `ElementType` that conforms to the `WritableCollectionElement` trait.
+with an `ElementType` that conforms to the `Writable` and `Movable`
+traits.
 
 ```mojo
-def __str__[StrElementType: WritableCollectionElement, //](
+def __str__[StrElementType: Writable & Movable, //](
         self: Container[StrElementType]) -> String:
 ```
 
-This trait must be a superset of `ElementType`'s original trait: for example,
-`WritableCollectionElement` inherits from `CollectionElement`, so it includes
-all of requirements of the original trait.
+The trait bound on `StrElementType` must include `ElementType`'s original trait
+(`Movable` in this case), either by composition or by inheritance. The trait
+composition `Writable & Movable` includes the original trait. You could also use
+a trait that inherits from `Movable`.
 
-Note that the `use_container()` function calls the `__str__()` method directly,
+Note that the `main()` function calls the `__str__()` method directly,
 rather than calling `String(float_container)`. One current limitation of
 conditional conformance is that Mojo can't recognize the struct
 `Container[Int]` as conforming to `Stringable`, even though the `__str__()`
@@ -412,20 +403,26 @@ specifies the data type and `size` specifies the length of the SIMD vector (it
 must be a power of 2):
 
 ```mojo
-# Make a vector of 4 floats.
-var small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+def main():
+    # Make a vector of 4 floats.
+    var small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
-# Make a big vector containing 1.0 in float16 format.
-var big_vec = SIMD[DType.float16, 32](1.0)
+    # Make a big vector containing 1.0 in float16 format.
+    var big_vec = SIMD[DType.float16, 32](1.0)
 
-# Do some math and convert the elements to float32.
-var bigger_vec = (big_vec+big_vec).cast[DType.float32]()
+    # Do some math and convert the elements to float32.
+    var bigger_vec = (big_vec + big_vec).cast[DType.float32]()
 
-# You can write types out explicitly if you want of course.
-var bigger_vec2 : SIMD[DType.float32, 32] = bigger_vec
+    # You can write types out explicitly if you want of course.
+    var bigger_vec2: SIMD[DType.float32, 32] = bigger_vec
 
-print('small_vec type:', small_vec.element_type, 'length:', len(small_vec))
-print('bigger_vec2 type:', bigger_vec2.element_type, 'length:', len(bigger_vec2))
+    print("small_vec DType:", small_vec.dtype, "size:", small_vec.size)
+    print(
+        "bigger_vec2 DType:",
+        bigger_vec2.dtype,
+        "size:",
+        bigger_vec2.size,
+    )
 ```
 
 ```output
@@ -452,8 +449,9 @@ from math import sqrt
 fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
     return 1 / sqrt(x)
 
-var v = SIMD[DType.float16, 4](42)
-print(rsqrt(v))
+def main():
+    var v = SIMD[DType.float16, 4](42)
+    print(rsqrt(v))
 ```
 
 ```output
@@ -489,12 +487,12 @@ a constructor or static method.
 For example, consider the following struct:
 
 ```mojo
-@value
-struct One[Type: WritableCollectionElement]:
+struct One[Type: Writable & Copyable & Movable]:
     var value: Type
 
     fn __init__(out self, value: Type):
-        self.value = value
+        self.value = value.copy()
+
 
 def use_one():
     s1 = One(123)
@@ -508,13 +506,13 @@ You can also infer parameters from a parameterized type passed to a constructor
 or static method:
 
 ```mojo
-struct Two[Type: WritableCollectionElement]:
+struct Two[Type: Writable & Copyable & Movable]:
     var val1: Type
     var val2: Type
 
     fn __init__(out self, one: One[Type], another: One[Type]):
-        self.val1 = one.value
-        self.val2 = another.value
+        self.val1 = one.value.copy()
+        self.val2 = another.value.copy()
         print(String(self.val1), String(self.val2))
 
     @staticmethod
@@ -524,6 +522,8 @@ struct Two[Type: WritableCollectionElement]:
 def use_two():
     s3 = Two(One("infer"), One("me"))
     Two.fire(One(1), One(2))
+    # Two.fire(One("mixed"), One(0)) # Error: parameter inferred to two
+                                     # different values
 
 use_two()
 ```
@@ -538,7 +538,8 @@ infer me
 the `Type` parameter, since it can be inferred from the arguments.
 
 Similarly, the static `fire()` method takes values of type `One[Type]`, so Mojo
-can infer the `Type` value at compile time.
+can infer the `Type` value at compile time. Note that passing two instances of
+`One` with different types doesn't work.
 
 :::note
 
@@ -562,20 +563,22 @@ their position in the function signature.
 For example, here's a function with two parameters, each with a default value:
 
 ```mojo
-fn speak[a: Int = 3, msg: StringLiteral = "woof"]():
+fn speak[a: Int = 3, msg: String = "woof"]():
     print(msg, a)
 
-fn use_defaults() raises:
-    speak()             # prints 'woof 3'
-    speak[5]()          # prints 'woof 5'
+
+fn use_defaults():
+    speak()  # prints 'woof 3'
+    speak[5]()  # prints 'woof 5'
     speak[7, "meow"]()  # prints 'meow 7'
-    speak[msg="baaa"]() # prints 'baaa 3'
+    speak[msg="baaa"]()  # prints 'baaa 3'
 ```
 
-Recall that when a parametric function is called, Mojo can infer the parameter values.
-That is, it can use the parameter values attached to an argument value (see the
-`sqrt[]()` example above). If the parametric function also has a default value defined,
-then the inferred parameter type takes precedence.
+Recall that when a parametric function is called, Mojo can
+[infer the parameter values](#parameter-inference). That is, it can determine
+its parameter values from the parameters attached to an argument. If the
+parametric function also has a default value defined, then the inferred
+parameter value takes precedence.
 
 For example, in the following code, we update the parametric `speak[]()` function
 to take an argument with a parametric type. Although the function has a default
@@ -584,12 +587,14 @@ from the `bar` argument (as written, the default `a` value can never be used,
 but this is just for demonstration purposes):
 
 ```mojo
-@value
+@fieldwise_init
 struct Bar[v: Int]:
     pass
 
-fn speak[a: Int = 3, msg: StringLiteral = "woof"](bar: Bar[a]):
+
+fn speak[a: Int = 3, msg: String = "woof"](bar: Bar[a]):
     print(msg, a)
+
 
 fn use_inferred():
     speak(Bar[9]())  # prints 'woof 9'
@@ -649,7 +654,7 @@ inferred from context or specified by keyword. Infer-only parameters are placed 
 **beginning** of the parameter list, set off from other parameters by the `//` sigil:
 
 ```mojo
-fn example[type: CollectionElement, //, list: List[type]]()
+fn example[type: Copyable & Movable, //, list: List[type]]()
 ```
 
 Transforming `dtype` into an infer-only parameter solves this problem:
@@ -671,21 +676,25 @@ Because infer-only parameters are declared at the beginning of the parameter
 list, other parameters can depend on them, and the compiler will always attempt
 to infer the infer-only values from bound parameters or arguments.
 
-There are sometimes cases where it's useful to specify an infer-only parameter by
-keyword. For example, the [`StringSlice`](/mojo/stdlib/utils/string_slice/StringSlice)
-type is parametric on [origin](/mojo/manual/values/lifetimes):
+There are sometimes cases where it's useful to specify an infer-only parameter
+by keyword. For example, the
+[`Span`](/mojo/stdlib/memory/span/Span/) type
+is parametric on [origin](/mojo/manual/values/lifetimes):
 
 ```mojo
-struct StringSlice[mut: Bool, //, origin: Origin[mut]]: ...
+struct Span[mut: Bool, //, T: Copyable & Movable, origin: Origin[mut], ...]:
+    ...
 ```
 
-Here, the `StringSlice` `mut` parameter is infer-only. The value is usually
-inferred when you create an instance of `StringSlice`. Binding the `mut`
-parameter by keyword lets you define a new type that's constrained to an
-immutable origin:
+Here, the `mut` parameter is infer-only. The value is usually inferred when you
+create an instance of `Span`. Binding the `mut` parameter by keyword lets you
+define a `Span` that requires a mutable origin.
 
 ```mojo
-alias ImmutableStringSlice = StringSlice[mut=False]
+def mutate_span(span: Span[mut=True, Byte]):
+    for i in range(0, len(span), 2):
+        if i + 1 < len(span):
+            span.swap_elements(UInt(i), UInt(i + 1))
 ```
 
 If the compiler can't infer the value of an infer-only parameter, and it's not
@@ -737,28 +746,29 @@ example, you might want to define a helper function to concatenate two SIMD
 vectors:
 
 ```mojo
-fn concat[ty: DType, len1: Int, len2: Int](
-        lhs: SIMD[ty, len1], rhs: SIMD[ty, len2]) -> SIMD[ty, len1+len2]:
+fn concat[
+    dtype: DType, ls_size: Int, rh_size: Int, //
+](lhs: SIMD[dtype, ls_size], rhs: SIMD[dtype, rh_size]) -> SIMD[
+    dtype, ls_size + rh_size
+]:
+    var result = SIMD[dtype, ls_size + rh_size]()
 
-    var result = SIMD[ty, len1 + len2]()
-    for i in range(len1):
-        result[i] = SIMD[ty, 1](lhs[i])
-    for j in range(len2):
-        result[len1 + j] = SIMD[ty, 1](rhs[j])
+    @parameter
+    for i in range(ls_size):
+        result[i] = lhs[i]
+
+    @parameter
+    for j in range(rh_size):
+        result[ls_size + j] = rhs[j]
     return result
-
-var a = SIMD[DType.float32, 2](1, 2)
-var x = concat(a, a)
-
-print('result type:', x.element_type, 'length:', len(x))
 ```
 
 ```output
 result type: float32 length: 4
 ```
 
-Note that the resulting length is the sum of the input vector lengths, and this is
-expressed with a simple `+` operation.
+Note that the resulting length is the sum of the input vector lengths, and this
+is expressed with a simple `+` operation.
 
 ### Powerful compile-time programming
 
@@ -768,29 +778,34 @@ For instance, here is an example "tree reduction" algorithm that sums all
 elements of a vector recursively into a scalar:
 
 ```mojo
-fn slice[ty: DType, new_size: Int, size: Int](
-        x: SIMD[ty, size], offset: Int) -> SIMD[ty, new_size]:
-    var result = SIMD[ty, new_size]()
+fn slice[
+    dtype: DType, size: Int, //
+](x: SIMD[dtype, size], offset: Int) -> SIMD[dtype, size // 2]:
+    alias new_size = size // 2
+    var result = SIMD[dtype, new_size]()
     for i in range(new_size):
-        result[i] = SIMD[ty, 1](x[i + offset])
+        result[i] = SIMD[dtype, 1](x[i + offset])
     return result
 
-fn reduce_add[ty: DType, size: Int](x: SIMD[ty, size]) -> Int:
+
+fn reduce_add(x: SIMD) -> Int:
     @parameter
-    if size == 1:
+    if x.size == 1:
         return Int(x[0])
-    elif size == 2:
+    elif x.size == 2:
         return Int(x[0]) + Int(x[1])
 
     # Extract the top/bottom halves, add them, sum the elements.
-    alias half_size = size // 2
-    var lhs = slice[ty, half_size, size](x, 0)
-    var rhs = slice[ty, half_size, size](x, half_size)
-    return reduce_add[ty, half_size](lhs + rhs)
+    alias half_size = x.size // 2
+    var lhs = slice(x, 0)
+    var rhs = slice(x, half_size)
+    return reduce_add(lhs + rhs)
 
-var x = SIMD[DType.index, 4](1, 2, 3, 4)
-print(x)
-print("Elements sum:", reduce_add(x))
+
+def main():
+    var x = SIMD[DType.int, 4](1, 2, 3, 4)
+    print(x)
+    print("Elements sum:", reduce_add(x))
 ```
 
 ```output
@@ -804,92 +819,52 @@ It requires that its condition be a valid parameter expression, and ensures that
 the live branch of the `if` statement is compiled into the program. (This is similar to
 use of the `@parameter` decorator with a `for` loop shown earlier.)
 
-## Mojo types are just parameter expressions
-
-While we've shown how you can use parameter expressions within types, type
-annotations can themselves be arbitrary expressions (just like in Python).
-Types in Mojo have a special metatype type, allowing type-parametric algorithms
-and functions to be defined.
-
-For example, we can create a simplified `Array` that supports arbitrary types of
-elements (via the `AnyTrivialRegType` parameter):
-
-```mojo
-from memory import UnsafePointer
-
-struct Array[T: AnyTrivialRegType]:
-    var data: UnsafePointer[T]
-    var size: Int
-
-    fn __init__(out self, size: Int, value: T):
-        self.size = size
-        self.data = UnsafePointer[T].alloc(self.size)
-        for i in range(self.size):
-            (self.data + i).init_pointee_copy(value)
-
-    fn __getitem__(self, i: Int) -> T:
-        return self.data[i]
-
-    fn __del__(owned self):
-        for i in range(self.size):
-            (self.data + i).destroy_pointee()
-        self.data.free()
-
-var v = Array[Float32](4, 3.14)
-print(v[0], v[1], v[2], v[3])
-```
-
-Notice that the `T` parameter is being used as the formal type for the
-`value` arguments and the return type of the `__getitem__()` function.
-Parameters allow the `Array` type to provide different APIs based on the
-different use-cases.
-
-There are many other cases that benefit from more advanced use of parameters.
-For example, you can execute a closure N times in parallel, feeding in a value
-from the context, like this:
-
-```mojo
-fn parallelize[func: fn (Int) -> None](num_work_items: Int):
-    # Not actually parallel: see the 'algorithm' module for real implementation.
-    for i in range(num_work_items):
-        func(i)
-```
-
-Another example where this is important is with variadic generics, where an
-algorithm or data structure may need to be defined over a list of heterogeneous
-types such as for a tuple. Right now, this is not fully supported in Mojo and
-requires writing some MLIR by hand. In the future, this will be possible in pure
-Mojo.
-
 ## `alias`: named parameter expressions
 
 It is very common to want to *name* compile-time values. Whereas `var` defines a
 runtime value, we need a way to define a
-compile-time temporary value. For this, Mojo uses an `alias` declaration.
-
-For example, the [`DType`](/mojo/stdlib/builtin/dtype/DType) struct
-implements a simple enum using aliases for the enumerators like this (the actual
-`DType` implementation details vary a bit):
+compile-time temporary value. For this, Mojo uses an `alias` declaration. At its
+simplest, `alias` can be used to define a constant value:
 
 ```mojo
-struct DType:
-    var value : UI8
-    alias invalid = DType(0)
-    alias bool = DType(1)
-    alias int8 = DType(2)
-    alias uint8 = DType(3)
-    alias int16 = DType(4)
-    alias int16 = DType(5)
-    ...
-    alias float32 = DType(15)
+alias rows = 512
 ```
 
-This allows clients to use `DType.float32` as a parameter expression (which also
-works as a runtime value) naturally. Note that this is invoking the
-runtime constructor for `DType` at compile-time.
+Some Mojo types use aliases to express enumerations. For example, the following
+code defines a `Sentiment` type that defines aliases for different sentiment
+values:
+
+```mojo
+@fieldwise_init
+struct Sentiment(EqualityComparable, ImplicitlyCopyable):
+    var _value: Int
+
+    alias NEGATIVE = Sentiment(0)
+    alias NEUTRAL = Sentiment(1)
+    alias POSITIVE = Sentiment(2)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+fn is_happy(s: Sentiment):
+    if s == Sentiment.POSITIVE:
+        print("Yes. 😀")
+    else:
+        print("No. ☹️")
+```
+
+This pattern provides a type-safe enumeration.
+
+The [`DType`](/mojo/stdlib/builtin/dtype/DType) struct implements a simple enum
+using aliases like this. This allows clients to use values like `DType.float32`
+in parameter expressions or runtime expressions.
 
 Types are another common use for aliases. Because types are compile-time
-expressions, it is handy to be able to do things like this:
+expressions, you can use an alias as a shorthand (or "typedef") for a
+parameterized type:
 
 ```mojo
 alias Float16 = SIMD[DType.float16, 1]
@@ -898,8 +873,68 @@ alias UInt8 = SIMD[DType.uint8, 1]
 var x: Float16 = 0  # Float16 works like a "typedef"
 ```
 
+(These aliases and others are actually defined in the
+[`simd` module](/mojo/stdlib/builtin/simd/#aliases).)
+
 Like `var` variables, aliases obey scope, and you can use local aliases within
 functions as you'd expect.
+
+### Parametric aliases
+
+A *parametric alias* is a compile-time expression that takes a list of
+parameters and returns a compile-time constant value:
+
+```mojo
+alias AddOne[a: Int] : Int = a + 1
+
+alias nine = AddOne(8)
+```
+
+As you can see in the previous example, a parametric alias is a little like a
+*compile-time-only function*. A regular function or method can also be invoked
+at compile time:
+
+```mojo
+fn add_one(a: Int) -> Int:
+    return a + 1
+
+alias ten = add_one(9)
+```
+
+A major difference between a function and a parametric alias is that the value
+of an alias can be a type, while a function can't return a type as a value.
+
+```mojo
+# Does not work—-dynamic type values not permitted
+fn int_type() -> AnyType:
+    return Int
+
+# Works
+alias IntType = Int
+```
+
+Because the value of an alias can be a type, you can use parametric aliases to
+express new types:
+
+```mojo
+alias TwoOfAKind[dt: DType] = SIMD[dt, 2]
+twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
+
+alias StringKeyDict[ValueType: Copyable & Movable] = Dict[String, ValueType]
+var b: StringKeyDict[UInt8] = {"answer": 42}
+```
+
+Parametric alias signatures support the same features as parameterized structs
+or functions: infer-only parameters, keyword-only and optional parameters,
+[automatic parameterization](#automatic-parameterization), and so on.
+
+```mojo
+    alias Floats[size: Int, half_width: Bool = False] = SIMD[
+        (DType.float16 if half_width else DType.float32), size
+    ]
+    var floats = Floats[2](6.0, 8.0)
+    var half_floats = Floats[2, True](10.0, 12.0)
+```
 
 ## Fully-bound, partially-bound, and unbound types
 
@@ -912,17 +947,31 @@ contexts. For example, you can alias a partially-bound type to create a new type
 that requires fewer parameters:
 
 ```mojo
-from collections import Dict
-
 alias StringKeyDict = Dict[String, _]
-var b = StringKeyDict[UInt8]()
-b["answer"] = 42
+var b: StringKeyDict[UInt8] = {"answer": 42}
 ```
 
 Here, `StringKeyDict` is a type alias for a `Dict` that takes `String` keys. The
 underscore `_` in the parameter list indicates that the second parameter,
 `V` (the value type), is unbound.
 You specify the `V` parameter later, when you use `StringKeyDict`.
+
+:::note Partially-bound types versus parametric aliases
+
+You may notice that this example is very similar to an example in the section
+on [parametric aliases](#parametric-aliases). For simple type aliases like this,
+you can use either a partially-bound type or a parametric alias.
+Parametric aliases provide a more flexible way to define type aliases, since
+you can define the order of the parameters, add default values, and so on.
+
+Partially-bound and unbound types can provide a handy shortcut when defining
+parametric functions and aliases, called
+[automatic parameterization](#automatic-parameterization).
+
+:::
+
+You can also use partially-bound types as the type bound for an argument or
+parameter.
 
 For example, given the following type:
 
@@ -936,24 +985,26 @@ It can appear in code in the following forms:
 * *Fully bound*, with all of its parameters specified:
 
   ```mojo
-  MyType["Hello", 3, 4, True]
+  def my_fn1(m1: MyType["Hello", 3, 4, True]):
+      pass
   ```
 
 * *Partially bound*, with *some but not all* of its parameters specified:
 
   ```mojo
-  MyType["Hola", _, _, True]
+  def my_fn2(m2: MyType["Hola", _, _, True]):
+      pass
   ```
 
 * *Unbound*, with no parameters specified:
 
   ```mojo
-  MyType[_, _, _, _]
+  def my_fn3(m3: MyType[_, _, _, _]):
+      pass
   ```
 
 You can also use the star-underscore expression `*_` to unbind an arbitrary
-number of positional parameters at the end of a parameter
-list.
+number of positional parameters at the end of a parameter list:
 
 ```mojo
 # These two types are equivalent
@@ -962,12 +1013,13 @@ MyType["Hello", _, _, _]
 ```
 
 The `*_` expression specifically matches any parameters that can be specified by
-position (positional-only or positional-or-keyword). To unbind keyword-only parameters,
-use the double-star-underscore expression, `**_`, which matches any parameters that can
-be specified by keyword (positional-or-keyword or keyword-only).
+position (positional-only or positional-or-keyword). To unbind keyword-only
+parameters, use the double-star-underscore expression, `**_`, which matches any
+parameters that can be specified by keyword (positional-or-keyword or
+keyword-only).
 
 ```mojo
-@value
+@fieldwise_init
 struct KeyWordStruct[pos_or_kw: Int, *, kw_only: Int = 10]:
     pass
 
@@ -986,7 +1038,7 @@ original type declaration is ignored.
 Partially-bound and unbound parametric types can be used in some contexts where
 the missing (unbound) parameters will be supplied later—such as in
 [aliases](#alias-named-parameter-expressions) and
-[automatically parameterized functions](#automatic-parameterization-of-functions).
+[automatically parameterized functions](#automatic-parameterization).
 
 ### Omitted parameters
 
@@ -1012,21 +1064,22 @@ MyType["Hi there", _, _, True] # Uses the default value for `b`
 
 :::note
 
-This format is currently supported for backwards compatibility. We intend to
-deprecate this format in the future in favor of the explicit unbinding syntax.
+This behavior with omitted parameters is currently supported for backwards
+compatibility. We intend to reconcile the behavior of omitted parameters and
+explicitly unbound parameters in the future.
 
 :::
 
-## Automatic parameterization of functions
+## Automatic parameterization
 
-Mojo  supports "automatic" parameterization of functions. If a function
-argument type is a
-[partially-bound or unbound type](#fully-bound-partially-bound-and-unbound-types),
+Mojo supports "automatic" parameterization of functions and parametric aliases.
+If a function argument type or parameter type is
+[partially-bound or unbound](#fully-bound-partially-bound-and-unbound-types),
 the unbound parameters are automatically added as input parameters on the
 function. This is easier to understand with an example:
 
 ```mojo
-fn print_params(vec: SIMD[*_]):
+fn print_params(vec: SIMD):
     print(vec.type)
     print(vec.size)
 
@@ -1045,11 +1098,11 @@ an [unbound parameterized
 type](#fully-bound-partially-bound-and-unbound-types)—that is, it doesn't
 specify any parameter values for the type. Mojo treats the unbound parameters
 on `vec` as infer-only parameters on the function. This is roughly equivalent to
-the following codes:
+the following code:
 
 ```mojo
-fn print_params[t: DType, s: Int, //](vec: SIMD[t, s]):
-    print(vec.type)
+fn print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
+    print(vec.dtype)
     print(vec.size)
 ```
 
@@ -1077,7 +1130,7 @@ Or as attributes on an *instance* of the type:
 ```mojo
 fn on_instance():
     var x = SIMD[DType.int32, 2](4, 8)
-    print(x.type) # prints int32
+    print(x.dtype)  # prints int32
 ```
 
 You can even use this syntax in the function's signature to define a
@@ -1109,16 +1162,25 @@ writing the equivalent `SIMD[v1.type, v1.size]`.
 
 ### Automatic parameterization of parameters
 
-You can also take advantage of automatic parameterization in a function's
-parameter list. For example:
+You can also take advantage of automatic parameterization in the parameter list
+of a function or parametric alias. For example:
 
 ```mojo
 fn foo[value: SIMD]():
     pass
 
 # Equivalent to:
-fn foo[type: DType, size: Int, //, value: SIMD[type, size]]():
+fn foo[dtype: DType, size: Int, //, value: SIMD[dtype, size]]():
     pass
+```
+
+Here's another example using a parametric alias:
+
+```mojo
+alias Foo[S: SIMD] = Bar[S]
+
+# Equivalent to:
+alias Foo[dtype: DType, size: Int, //, S: SIMD[dtype, size]] = Bar[S]
 ```
 
 ### Automatic parameterization with partially-bound types
@@ -1130,7 +1192,7 @@ types with some but not all of the parameters specified).
 For example, suppose we have a `Fudge` struct with three parameters:
 
 ```mojo
-@value
+@fieldwise_init
 struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
     fn __str__(self) -> String:
         return String.write("Fudge (", sugar, ",", cream, ",", chocolate, ")")
@@ -1255,8 +1317,8 @@ nibble(Fudge[5, 5, 9]())
 
 :::note TODO
 
-Support for omitting unbound parameters will eventually be deprecated in
-favor of explicitly unbound parameters using `_` and `*_`.
+We intend to reconcile the behavior of omitted parameters and explicitly unbound
+parameters in the future.
 
 :::
 

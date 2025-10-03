@@ -27,7 +27,7 @@ fn test_print_stderr():
     # CHECK-STDERR: helloworld
     print("hello", end="world", file=sys.stderr)
     # CHECK-STDERR: hello world
-    print(String("hello world"), file=sys.stderr)
+    print("hello world", file=sys.stderr)
 
 
 fn main():

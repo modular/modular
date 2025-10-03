@@ -61,6 +61,20 @@ convention](/mojo/manual/values/ownership#argument-conventions) that declares
 `self` as a mutable reference that starts out as uninitialized and must be
 initialized before the function returns.
 
+Many types use a field-wise constructor like the one shown for `MyPair` above:
+it takes an argument for each field, and initializes the fields directly from
+the arguments.  To save typing, Mojo provides a
+[`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator, which
+generates a field-wise constructor for the struct. So you can rewrite the
+`MyPair` example above like this:
+
+```mojo
+@fieldwise_init
+struct MyPair:
+    var first: Int
+    var second: Int
+```
+
 The `__init__()` method is one of many [special methods](#special-methods)
 (also known as "dunder methods" because they have *d*ouble *under*scores) with
 pre-determined names.
@@ -77,12 +91,108 @@ Once you have a constructor, you can create an instance of `MyPair` and set the
 fields:
 
 ```mojo
-var mine = MyPair(2,4)
+var mine = MyPair(2, 4)
 print(mine.first)
 ```
 
 ```output
 2
+```
+
+## Making a struct copyable and movable
+
+Mojo structs are not copyable or movable by default.
+
+For example, the following code produces errors:
+
+```mojo
+var a = MyPair(1, 2)
+
+# Implicit copy
+var b = a  # value of type 'MyPair' is not implicitly copyable, it does not
+           # conform to 'ImplicitlyCopyable'
+
+# Explicit copy
+var c = a.copy()  # 'MyPair' value has no attribute 'copy'
+
+# Move
+var d = a^  #  value of type 'MyPair' cannot be copied or moved; consider
+            # conforming it to 'Movable'
+
+```
+
+In most cases, you can make a struct copyable and movable just by adding the
+appropriate [traits](/mojo/manual/traits).
+
+### Copyability
+
+To make a struct copyable, add the `Copyable` trait:
+
+  ```mojo
+  struct MyPair(Copyable):
+    ...
+  ```
+
+In most cases, that's all you need to do. Mojo will generate a copy constructor
+( `__copyinit__()` method) for you. You don't need to write your own unless you
+need custom logic in the copy constructor—for example, if your struct
+dynamically allocates memory. For more information, see the section on
+[copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
+
+The `Copyable` trait also supplies the `copy()` method, which
+provides a more user-friendly way to copy a value than invoking the
+copy constructor directly.
+
+### Implicit copyability
+
+To make a struct implicitly copyable, add the `ImplicitlyCopyable` trait:
+
+```mojo
+struct MyPair(ImplicitlyCopyable):
+    ...
+```
+
+`ImplicitlyCopyable` automatically implies `Copyable`, so all
+the notes related to copyability apply here. A type should only be implicitly
+copyable if copying the type is inexpensive and has no side effects. Unnecessary
+copies can be a big drain on memory and performance, so use this trait with
+caution.
+
+### Movability
+
+To make a struct movable, add the `Movable` trait:
+
+  ```mojo
+  struct MyPair(Copyable, Movable):
+  ...
+  ```
+
+Mojo will generate a move constructor for you. You have rarely need to
+write your own custom move constructor. For more information,
+see the section on
+[move constructors](/mojo/manual/lifecycle/life#move-constructor).
+
+### A movable, copyable `MyPair`
+
+Here's a movable and implicitly copyable version of `MyPair`:
+
+```mojo
+@fieldwise_init
+struct MyPair(ImplicitlyCopyable, Movable):
+    var first: Int
+    var second: Int
+```
+
+Since the `MyPair` struct is a simple data structure that holds two `Int`
+values, there's no harm in making it implicitly copyable.
+
+And here's how to exercise the copy and move constructors:
+
+```mojo
+var original_pair = MyPair(2, 6)
+var copied_pair = original_pair  # implicit copy
+var another_pair = original_pair.copy()  # explicit copy
+var moved_pair = original_pair^  # move
 ```
 
 ## Methods
@@ -91,13 +201,10 @@ In addition to special methods like `__init__()`, you can add any other method
 you want to your struct. For example:
 
 ```mojo
+@fieldwise_init
 struct MyPair:
     var first: Int
     var second: Int
-
-    fn __init__(out self, first: Int, second: Int):
-        self.first = first
-        self.second = second
 
     fn get_sum(self) -> Int:
         return self.first + self.second
@@ -253,10 +360,8 @@ and they usually accomplish one of two types of tasks:
 
 * Operator overloading: A lot of special methods are designed to overload
   operators such as `<` (less-than), `+` (add), and `|` (or) so they work
-  appropriately with each type. For example, look at the methods listed for Mojo's
-  [`Int` type](/mojo/stdlib/builtin/int/Int). One such method is `__lt__()`, which
-  Mojo calls to perform a less-than comparison between two integers (for example,
-  `num1 < num2`).
+  appropriately with each type. For more information, see
+  [Implement operators for custom types](/mojo/manual/operators#implement-operators-for-custom-types).
 
 * Lifecycle event handling: These special methods deal with the lifecycle and
   value ownership of an instance. For example, `__init__()` and `__del__()`
@@ -268,68 +373,8 @@ You can learn all about the lifecycle special methods in the [Value
 lifecycle](/mojo/manual/lifecycle/) section. However, most structs are simple
 aggregations of other types, so unless your type requires custom behaviors when
 an instance is created, copied, moved, or destroyed, you can synthesize the
-essential lifecycle methods you need (and save yourself some time) by adding
-the `@value` decorator.
-
-### `@value` decorator
-
-When you add the [`@value` decorator](/mojo/manual/decorators/value) to a
-struct, Mojo will synthesize the essential lifecycle methods so your object
-provides full value semantics. Specifically, it generates the `__init__()`,
-`__copyinit__()`, and `__moveinit__()` methods, which allow you to construct,
-copy, and move your struct type in a manner that's value semantic and
-compatible with Mojo's ownership model.
-
-For example:
-
-```mojo
-@value
-struct MyPet:
-    var name: String
-    var age: Int
-```
-
-Mojo will notice that you don't have a member-wise initializer, a move
-constructor, or a copy constructor, and it will synthesize these for you as if
-you had written:
-
-```mojo
-struct MyPet:
-    var name: String
-    var age: Int
-
-    fn __init__(out self, owned name: String, age: Int):
-        self.name = name^
-        self.age = age
-
-    fn __copyinit__(out self, existing: Self):
-        self.name = existing.name
-        self.age = existing.age
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.name = existing.name^
-        self.age = existing.age
-```
-
-Without the copy and move constructors, the following code would not work
-because Mojo would not know how to copy an instance of `MyPet`:
-
-```mojo
-var dog = MyPet("Charlie", 5)
-var poodle = dog
-print(poodle.name)
-```
-
-```output
-Charlie
-```
-
-When you add the `@value` decorator, Mojo synthesizes each special method above
-only if it doesn't exist already. That is, you can still implement a custom
-version of each method.
-
-In addition to the `out` argument convention you already saw with
-`__init__()`, this code also introduces `owned`, which is another argument
-convention that ensures the argument has unique ownership of the value.
-For more detail, see the section about [value
-ownership](/mojo/manual/values/ownership).
+essential lifecycle methods you need (and save yourself some time) using the
+`@fieldwise_init` decorator (described in
+[Struct definition](#struct-definition)), and the `Copyable` and `Movable`
+traits (described in
+[Making a struct copyable and movable](#making-a-struct-copyable-and-movable)).

@@ -1,0 +1,84 @@
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+
+_FILECHECK_TESTS = [
+    "test_stencil1d.mojo",
+    "test_stencil2d.mojo",
+]
+
+_EXTRA_CONSTRAINTS = {
+    "test_tiled_matmul_backtoback.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_matmul_int.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2397
+    "test_stencil2d.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2397
+    "test_stencil1d.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2397
+    "test_double_buffer_gemm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2415
+    "test_stencil_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2435
+    "test_mandelbrot.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2435
+}
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:kv_cache",
+            "@mojo//:linalg",
+            "@mojo//:nn",
+            "@mojo//:quantization",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": "1.5",
+        },
+        tags = ["gpu"] + (
+            ["manual"] if src == "test_scatterND.mojo" else []
+        ),
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:kv_cache",
+            "@mojo//:linalg",
+            "@mojo//:nn",
+            "@mojo//:quantization",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
+]
+
+filegroup(
+    name = "test-sources",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//utils/debugging/gpu-build-benchmarking:__subpackages__"],
+)

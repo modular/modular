@@ -1,0 +1,74 @@
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+
+_FILECHECK_TESTS = [
+    "test_trap.mojo",
+]
+
+_LIT_TESTS = [
+    "test_no_trap.mojo",
+]
+
+_PLATFORM_CONSTRAINTS = {
+    "path/test_islink.mojo": ["@platforms//:incompatible"],  # TODO(#33762): This is causing recursive dirs to be created.
+}
+
+_ENV = {
+    "test_env.mojo": {"TEST_MYVAR": "MyValue"},
+}
+
+_EXPECT_CRASH = [
+    "test_trap.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        expect_crash = src in _EXPECT_CRASH,
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        data = [src],  # NOTE: some tests attempt to read their source files
+        env = _ENV.get(src, {}),
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS + _LIT_TESTS,
+    )
+]
+
+lit_tests(
+    name = "lit_tests",
+    size = "large",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

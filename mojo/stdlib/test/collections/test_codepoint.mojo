@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from test_utils import TestSuite
 
 
 def test_char_validity():
@@ -22,7 +22,7 @@ def test_char_validity():
 
     assert_true(Codepoint.from_u32(0))
 
-    # For a visual intuition of what constitues a valid scalar value:
+    # For a visual intuition of what constitutes a valid scalar value:
     #   https://connorgray.com/ephemera/project-log#2025-01-09
 
     # Last valid code point in the smaller scalar value range.
@@ -176,7 +176,7 @@ alias SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
 )
 
 
-fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
+fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     var char_opt = Codepoint.from_u32(codepoint)
     var char = char_opt.value()
 
@@ -187,8 +187,10 @@ fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
     # Check that the number of bytes written was as expected.
     assert_equal(
         written,
-        len(expected),
-        "wrong byte count written encoding codepoint: {}".format(codepoint),
+        UInt(len(expected)),
+        StaticString("wrong byte count written encoding codepoint: {}").format(
+            codepoint
+        ),
     )
 
     # Normalize `expected` to length 4 so we can compare the written byte
@@ -199,28 +201,26 @@ fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
     assert_equal(
         buffer,
         expected,
-        "wrong byte values written encoding codepoint: {}".format(codepoint),
+        StaticString("wrong byte values written encoding codepoint: {}").format(
+            codepoint
+        ),
     )
 
 
 def test_char_utf8_encoding():
-    for entry in SIGNIFICANT_CODEPOINTS:
-        var codepoint = entry[][0]
-        var expected_utf8 = entry[][1]
-
-        assert_utf8_bytes(codepoint, expected_utf8)
+    for elements in materialize[SIGNIFICANT_CODEPOINTS]():
+        var codepoint, ref expected_utf8 = elements
+        assert_utf8_bytes(codepoint, expected_utf8.copy())
 
 
 def test_char_utf8_byte_length():
-    for entry in SIGNIFICANT_CODEPOINTS:
-        var codepoint = entry[][0]
-        var expected_utf8 = entry[][1]
+    for elements in materialize[SIGNIFICANT_CODEPOINTS]():
+        var codepoint, ref expected_utf8 = elements
+        var computed_len = (
+            Codepoint.from_u32(codepoint).value().utf8_byte_length()
+        )
 
-        var computed_len = Codepoint.from_u32(
-            codepoint
-        ).value().utf8_byte_length()
-
-        assert_equal(computed_len, len(expected_utf8))
+        assert_equal(computed_len, UInt(len(expected_utf8)))
 
 
 def test_char_comptime():
@@ -232,16 +232,19 @@ def test_char_comptime():
 
 
 def main():
-    test_char_validity()
-    test_char_from_u8()
-    test_char_comparison()
-    test_char_formatting()
-    test_char_properties()
-    test_char_is_posix_space()
-    test_char_is_lower()
-    test_char_is_upper()
-    test_char_is_digit()
-    test_char_is_printable()
-    test_char_utf8_encoding()
-    test_char_utf8_byte_length()
-    test_char_comptime()
+    var suite = TestSuite()
+    suite.test[test_char_validity]()
+    suite.test[test_char_from_u8]()
+    suite.test[test_char_comparison]()
+    suite.test[test_char_formatting]()
+    suite.test[test_char_properties]()
+    suite.test[test_char_is_posix_space]()
+    suite.test[test_char_is_lower]()
+    suite.test[test_char_is_upper]()
+    suite.test[test_char_is_digit]()
+    suite.test[test_char_is_printable]()
+    suite.test[test_char_utf8_encoding]()
+    suite.test[test_char_utf8_byte_length]()
+    suite.test[test_char_comptime]()
+
+    suite^.run()

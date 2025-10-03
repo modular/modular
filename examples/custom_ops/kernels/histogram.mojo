@@ -12,31 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-
-from gpu import (
-    thread_idx,
-    global_idx,
-    MAX_THREADS_PER_BLOCK_METADATA,
-)
-from gpu.memory import AddressSpace
-from gpu.host import DeviceContext
-from runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 from os import Atomic
+
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
+from gpu.host.info import is_cpu
+from gpu.host import DeviceBuffer
+from gpu.memory import AddressSpace
 from memory import stack_allocation
+from runtime.asyncrt import DeviceContextPtr
+from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+
 from utils import StaticTuple
-
-from utils.index import IndexList
-from gpu.host.info import Info, is_cpu, is_gpu
-
-from memory import UnsafePointer
 
 alias bin_width = Int(UInt8.MAX)
 
 
-fn _histogram_cpu(out: ManagedTensorSlice, input: ManagedTensorSlice):
+fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
     for i in range(input.dim_size(0)):
-        out[Int(input[i])] += 1
+        output[Int(input[i])] += 1
 
 
 fn _histogram_gpu(
@@ -57,7 +50,7 @@ fn _histogram_gpu(
     ):
         var tid = global_idx.x
 
-        if tid >= n:
+        if tid >= UInt(n):
             return
 
         # Allocate shared memory for the histogram
@@ -72,13 +65,13 @@ fn _histogram_gpu(
         barrier()
 
         # Increment the shared memory for the current thread
-        _ = Atomic._fetch_add(shared_mem + Int(input[tid]), 1)
+        _ = Atomic.fetch_add(shared_mem + Int(input[tid]), 1)
 
         # Synchronize all threads to ensure that the shared memory is updated
         barrier()
 
         # Increment the output for the current thread
-        _ = Atomic._fetch_add(output + thread_idx.x, shared_mem[thread_idx.x])
+        _ = Atomic.fetch_add(output + thread_idx.x, shared_mem[thread_idx.x])
 
     var n = input.dim_size(0)
 
@@ -86,9 +79,16 @@ fn _histogram_gpu(
 
     var ctx = ctx_ptr.get_device_context()
 
-    ctx.enqueue_function[kernel](
-        output.unsafe_ptr(),
-        input.unsafe_ptr(),
+    var output_device = DeviceBuffer[output.dtype](
+        ctx, output.unsafe_ptr(), output.size(), owning=False
+    )
+    var input_device = DeviceBuffer[input.dtype](
+        ctx, input.unsafe_ptr(), input.size(), owning=False
+    )
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        output_device,
+        input_device,
         n,
         block_dim=block_dim,
         grid_dim=grid_dim,
@@ -99,12 +99,14 @@ fn _histogram_gpu(
 struct Histogram:
     @staticmethod
     fn execute[
-        target: StringLiteral
+        target: StaticString
     ](
-        out: OutputTensor[type = DType.int64, rank=1],
-        input: InputTensor[type = DType.uint8, rank=1],
+        output: OutputTensor[dtype = DType.int64, rank=1],
+        input: InputTensor[dtype = DType.uint8, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        _histogram_cpu(out, input) if is_cpu[target]() else _histogram_gpu(
-            out, input, ctx
-        )
+        @parameter
+        if is_cpu[target]():
+            _histogram_cpu(output, input)
+        else:
+            _histogram_gpu(output, input, ctx)

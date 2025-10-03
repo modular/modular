@@ -10,10 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 import os
-from collections import Dict, Optional
 from os.path import exists, split
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory, gettempdir, mkdtemp
@@ -55,25 +53,25 @@ struct TempEnvWithCleanup:
     """Function called after the context manager exits if an error occurs."""
 
     fn __init__(
-        mut self,
+        out self,
         vars_to_set: Dict[String, String],
         clean_up_function: fn () raises -> None,
     ):
-        self.vars_to_set = vars_to_set
+        self.vars_to_set = vars_to_set.copy()
         self._vars_back = Dict[String, String]()
         self.clean_up_function = clean_up_function
 
     def __enter__(mut self):
         for key_value in self.vars_to_set.items():
-            var key = key_value[].key
-            var value = key_value[].value
+            var key = key_value.key
+            var value = key_value.value
             self._vars_back[key] = os.getenv(key)
             _ = os.setenv(key, value, overwrite=True)
 
     fn __exit__(mut self):
         for key_value in self.vars_to_set.items():
-            var key = key_value[].key
-            var value = key_value[].value
+            var key = key_value.key
+            var value = key_value.value
             _ = os.setenv(key, value, overwrite=True)
 
     def __exit__(mut self, error: Error) -> Bool:
@@ -165,19 +163,21 @@ def test_gettempdir():
 
 
 def test_temporary_directory() -> None:
-    var tmp_dir: String = ""
+    var tmp_dir2 = String()
     with TemporaryDirectory(suffix="my_suffix", prefix="my_prefix") as tmp_dir:
         assert_true(exists(tmp_dir), "Failed to create temp dir " + tmp_dir)
         assert_true(tmp_dir.endswith("my_suffix"))
         assert_true(tmp_dir.split(os.sep)[-1].startswith("my_prefix"))
-    assert_false(exists(tmp_dir), "Failed to delete temp dir " + tmp_dir)
+        tmp_dir2 = tmp_dir
+    assert_false(exists(tmp_dir2), "Failed to delete temp dir " + tmp_dir2)
 
     with TemporaryDirectory() as tmp_dir:
         assert_true(exists(tmp_dir), "Failed to create temp dir " + tmp_dir)
         _ = open(Path(tmp_dir) / "test_file", "w")
         os.mkdir(Path(tmp_dir) / "test_dir")
         _ = open(Path(tmp_dir) / "test_dir" / "test_file2", "w")
-    assert_false(exists(tmp_dir), "Failed to delete temp dir " + tmp_dir)
+        tmp_dir2 = tmp_dir
+    assert_false(exists(tmp_dir2), "Failed to delete temp dir " + tmp_dir2)
 
 
 def test_named_temporary_file_deletion():

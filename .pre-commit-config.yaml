@@ -14,26 +14,10 @@
 repos:
   - repo: local
     hooks:
-      - id: mojo-format
-        name: mojo-format
-        entry: mojo format
+      - id: format
+        name: format
+        entry: ./bazelw run format
         language: system
-        files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
-        stages: [commit]
-      - id: check-docstrings
-        name: check-docstrings
-        entry: python3 ./mojo/stdlib/scripts/check-docstrings.py
-        language: system
+        files: '\.(mojo|🔥|py|md)$'
+        stages: [pre-commit]
         pass_filenames: false
-        stages: [commit]
-      - id: check-license
-        name: check-license
-        entry: mojo mojo/stdlib/scripts/check_licenses.mojo
-        language: system
-        files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
-        stages: [commit]
-  - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.40.0
-    hooks:
-      - id: markdownlint
-        args: ["--config", "mojo/stdlib/scripts/.markdownlint.yaml", "--fix"]

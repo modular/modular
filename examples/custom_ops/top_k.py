@@ -11,16 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 import argparse
-import os
 from collections import defaultdict
 from pathlib import Path
-from typing import DefaultDict
 
 import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from numpy.typing import NDArray
 
 INPUT_TEXT = """
@@ -43,10 +41,10 @@ The lazy rabbit rests beside the brown fox
 
 
 class NextWordFrequency:
-    def __init__(self, text):
+    def __init__(self, text: str) -> None:
         # nested `DefaultDict` to create the keys when first indexed
         # Structure looks like: {"word": {"next_word": count}}
-        self.word_frequencies: DefaultDict[str, DefaultDict[str, int]] = (
+        self.word_frequencies: defaultdict[str, defaultdict[str, int]] = (
             defaultdict(lambda: defaultdict(int))
         )
 
@@ -63,7 +61,7 @@ class NextWordFrequency:
                 self.max_next_words, len(self.word_frequencies[current_word])
             )
 
-    def next_word_probabilities(self, words) -> NDArray[np.float32]:
+    def next_word_probabilities(self, words: list[str]) -> NDArray[np.float32]:
         if not words:
             return np.empty(0, dtype=np.float32)
 
@@ -96,12 +94,11 @@ class NextWordFrequency:
 
         return np.stack(prob_distributions, axis=0)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: str):
         return self.word_frequencies[idx]
 
 
-# Example usage
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Top-K sampling with custom ops"
     )
@@ -112,12 +109,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # This is necessary only for Modular internal CI.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
-    # Get the path to our compiled custom ops
-    path = Path(__file__).parent / "kernels.mojopkg"
+    # Get the path to our Mojo custom ops
+    mojo_kernels = Path(__file__).parent / "kernels"
 
     # Initialize the next word frequency for each unique word
     frequencies = NextWordFrequency(INPUT_TEXT)
@@ -129,43 +122,44 @@ def main():
     batch_size = len(probabilities)
     K = frequencies.max_next_words
 
+    # Place the graph on a GPU, if available. Fall back to CPU if not.
+    device = CPU() if args.cpu or accelerator_count() == 0 else Accelerator()
+    device_ref = DeviceRef.from_device(device)
+
+    # The dtype and shape of the probabilities being passed in
+    vals_type = TensorType(DType.float32, [batch_size, K], device_ref)
+    # The shape of the probabilities, but with int32 for the index dtype
+    idx_type = TensorType(DType.int32, [batch_size, K], device_ref)
+
     # Configure our simple one-operation graph.
     with Graph(
         "top_k_sampler",
-        # The dtype and shape of the probabilities being passed in
-        input_types=[TensorType(DType.float32, shape=[batch_size, K])],
+        input_types=[vals_type],
+        custom_extensions=[mojo_kernels],
     ) as graph:
         # Take the probabilities as a single input to the graph.
-        probs, *_ = graph.inputs
-
+        in_vals = graph.inputs[0]
         results = ops.custom(
             # This is the custom op name defined in `kernels/top_k.mojo`.
             name="top_k_custom",
+            device=device_ref,
             # Passes `K` as a compile-time Mojo `Int`.
             parameters={"K": K},
             # Passes the probabilities as a single input to the graph.
-            values=[probs],
-            out_types=[
-                # The output values dtype and shape
-                TensorType(probs.tensor.dtype, probs.tensor.shape),
-                # The output indices dtype and shape
-                TensorType(DType.int32, probs.tensor.shape),
-            ],
+            values=[in_vals],
+            # The output tensors shape, dtype, and device for the custom op
+            out_types=[vals_type, idx_type],
         )
         graph.output(*results)
 
-    # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if args.cpu or accelerator_count() == 0 else Accelerator()
-
     # Set up an inference session for running the graph.
-    session = InferenceSession(devices=[device], custom_extensions=path)
+    session = InferenceSession(devices=[device])
 
     # Compile the graph.
     model = session.load(graph)
 
     # Create a driver tensor from the next word probabilities
     input_tensor = Tensor.from_numpy(probabilities).to(device)
-
     print(f"Sampling top k: {K} for batch size: {batch_size}")
 
     values, indices = model.execute(input_tensor)

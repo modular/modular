@@ -1,0 +1,45 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("//bazel:api.bzl", "modular_py_library")
+
+exports_files([
+    "validate_lit_features.py",
+    "lit_shim.py",
+])
+
+modular_py_library(
+    name = "modular_test_format",
+    testonly = True,
+    srcs = ["modular_test_format.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@llvm-project//llvm:lit",
+    ],
+)
+
+filegroup(
+    name = "lit_data",
+    testonly = True,
+    srcs = [
+        "lit.common.cfg.py",
+        "modular_test_format.py",
+        ":lit_common_configured",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+expand_template(
+    name = "lit_common_configured",
+    testonly = True,
+    out = "lit.common.configured",
+    substitutions = select({
+        "//:asan": {"@LLVM_USE_SANITIZER@": "address"},
+        "//:tsan": {"@LLVM_USE_SANITIZER@": "thread"},
+        "//:ubsan": {"@LLVM_USE_SANITIZER@": "undefined"},
+        "//conditions:default": {"@LLVM_USE_SANITIZER@": ""},
+    }) | select({
+        "//:modular_config_production": {"@ENABLE_ASSERTIONS@": "False"},
+        "//conditions:default": {"@ENABLE_ASSERTIONS@": "True"},
+    }),
+    template = "lit.common.configured.in",
+)

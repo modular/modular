@@ -10,13 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo -O0 %s
 
 from sys.compile import DebugLevel, OptimizationLevel
 
 from testing import assert_equal
+from test_utils import TestSuite
+
+
+def test_compile_debug_options():
+    assert_equal(Int(OptimizationLevel), 0)
+    assert_equal(String(DebugLevel), "none")
 
 
 def main():
-    assert_equal(Int(OptimizationLevel), 0)
-    assert_equal(String(DebugLevel), "none")
+    var suite = TestSuite()
+
+    suite.test[test_compile_debug_options]()
+
+    suite^.run()

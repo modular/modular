@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# XFAIL: asan && !system-darwin
-# RUN: %mojo %s
 
 from python import Python, PythonObject
 from testing import assert_equal, assert_raises
@@ -19,7 +17,7 @@ from testing import assert_equal, assert_raises
 
 fn test_python_exception_import() raises:
     try:
-        var sys = Python.import_module("my_uninstalled_module")
+        var _sys = Python.import_module("my_uninstalled_module")
     except e:
         assert_equal(String(e), "No module named 'my_uninstalled_module'")
 
@@ -29,15 +27,15 @@ fn test_python_exception_getattr() raises:
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
             var person = my_module.Person()
-            var expec_fail = person.undefined()
+            var _expect_fail = person.undefined()
     except e:
         assert_equal(String(e), "'Person' object has no attribute 'undefined'")
 
 
 fn test_python_exception_getitem() raises:
     try:
-        var list = PythonObject([1, 2, 3])
-        var should_fail = list[13]
+        var list: PythonObject = [1, 2, 3]
+        var _should_fail = list[13]
     except e:
         assert_equal(String(e), "list index out of range")
 
@@ -48,7 +46,7 @@ fn test_python_exception_call() raises:
     ):
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
-            var person = my_module.AbstractPerson()
+            _ = my_module.AbstractPerson()
 
 
 def main():

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2023, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,14 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: system-linux
-# COM: currently flaky on Linux only, see SDLC-1080
-# RUN: %mojo %s
 
 # This sample implements the nbody benchmarking in
 # https://benchmarksgame-team.pages.debian.net/benchmarksgame/performance/nbody.html
 
-from collections import List
 from math import sqrt
 
 from benchmark import keep, run
@@ -28,21 +24,11 @@ alias SOLAR_MASS = 4 * PI * PI
 alias DAYS_PER_YEAR = 365.24
 
 
-@value
-struct Planet:
+@fieldwise_init
+struct Planet(ImplicitlyCopyable, Movable):
     var pos: SIMD[DType.float64, 4]
     var velocity: SIMD[DType.float64, 4]
     var mass: Float64
-
-    fn __init__(
-        mut self,
-        pos: SIMD[DType.float64, 4],
-        velocity: SIMD[DType.float64, 4],
-        mass: Float64,
-    ):
-        self.pos = pos
-        self.velocity = velocity
-        self.mass = mass
 
 
 alias Sun = Planet(
@@ -123,7 +109,7 @@ fn offset_momentum(mut bodies: List[Planet]):
     var p = SIMD[DType.float64, 4]()
 
     for body in bodies:
-        p += body[].velocity * body[].mass
+        p += body.velocity * body.mass
 
     var body = bodies[0]
     body.velocity = -p / SOLAR_MASS
@@ -133,8 +119,9 @@ fn offset_momentum(mut bodies: List[Planet]):
 
 @always_inline
 fn advance(mut bodies: List[Planet], dt: Float64):
-    for i in range(len(INITIAL_SYSTEM)):
-        for j in range(len(INITIAL_SYSTEM) - i - 1):
+    alias l = len(INITIAL_SYSTEM)
+    for i in range(l):
+        for j in range(l - i - 1):
             var body_i = bodies[i]
             var body_j = bodies[j + i + 1]
             var diff = body_i.pos - body_j.pos
@@ -147,22 +134,22 @@ fn advance(mut bodies: List[Planet], dt: Float64):
             bodies[i] = body_i
             bodies[j + i + 1] = body_j
 
-    for body in bodies:
-        body[].pos += dt * body[].velocity
+    for ref body in bodies:
+        body.pos += dt * body.velocity
 
 
 @always_inline
 fn energy(bodies: List[Planet]) -> Float64:
     var e: Float64 = 0
-
-    for i in range(len(INITIAL_SYSTEM)):
+    alias l = len(INITIAL_SYSTEM)
+    for i in range(l):
         var body_i = bodies[i]
         e += (
             0.5
             * body_i.mass
             * ((body_i.velocity * body_i.velocity).reduce_add())
         )
-        for j in range(len(INITIAL_SYSTEM) - i - 1):
+        for j in range(l - i - 1):
             var body_j = bodies[j + i + 1]
             var diff = body_i.pos - body_j.pos
             var distance = sqrt((diff * diff).reduce_add())
@@ -174,12 +161,12 @@ fn energy(bodies: List[Planet]) -> Float64:
 def run_system():
     print("Starting nbody...")
 
-    var system = INITIAL_SYSTEM
+    var system = materialize[INITIAL_SYSTEM]()
     offset_momentum(system)
 
     print("Energy of System:", energy(system))
 
-    for i in range(50_000_000):
+    for _ in range(50_000_000):
         advance(system, 0.01)
 
     var system_energy = energy(system)
@@ -189,11 +176,11 @@ def run_system():
 
 def benchmark():
     fn benchmark_fn():
-        var system = INITIAL_SYSTEM
+        var system = materialize[INITIAL_SYSTEM]()
         offset_momentum(system)
         keep(energy(system))
 
-        for i in range(50_000_000):
+        for _ in range(50_000_000):
             advance(system, 0.01)
 
         keep(energy(system))

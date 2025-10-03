@@ -219,16 +219,6 @@ The dialect supports various comparison operations:
    - `array.replace` - Replace array element
    - `array.gep` - Get element pointer
 
-### String Operations
-
-1. String Manipulation:
-   - `string.replace` - Replace substring
-   - `string.hash` - Hash string using XXH3
-   - `string.compress` - Compress using zlib
-   - `string.decompress` - Decompress using zlib
-   - `string.base64_encode` - Base64 encoding
-   - `string.base64_decode` - Base64 decoding
-
 ### Control Flow
 
 1. Selection:

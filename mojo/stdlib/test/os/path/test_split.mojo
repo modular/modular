@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 import os
 from os.path import expanduser, split
@@ -43,12 +42,12 @@ def main():
 
     # Single separator
     head, tail = split(os.sep)
-    assert_equal(head, os.sep)
+    assert_equal(head, String(os.sep))
     assert_equal(tail, "")
 
     # Two chars, absolute on Linux.
-    head, tail = split(os.path.join(os.sep, "a"))
-    assert_equal(head, os.sep)
+    head, tail = split(os.path.join(String(os.sep), "a"))
+    assert_equal(head, String(os.sep))
     assert_equal(tail, "a")
 
     # Two chars relative, empty tail
@@ -62,6 +61,6 @@ def main():
     assert_equal(tail, "c.txt")
 
     # Test with __source_location()
-    source_location = __source_location().file_name
+    source_location = String(__source_location().file_name)
     head, tail = split(source_location)
     assert_equal(head + os.sep + tail, source_location)

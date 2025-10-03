@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# XFAIL: asan && !system-darwin
-# RUN: %mojo  %s
 
 from python import Python, PythonObject
 from testing import assert_equal, assert_true
@@ -26,14 +24,14 @@ fn test_import(mut python: Python) raises:
 
 fn test_list(mut python: Python) raises:
     var b: PythonObject = Python.import_module("builtins")
-    var my_list = PythonObject([1, 2.34, "False"])
+    var my_list: PythonObject = [1, 2.34, "False"]
     var py_string = String(my_list)
     assert_equal(py_string, "[1, 2.34, 'False']")
 
 
 fn test_tuple(mut python: Python) raises:
     var b: PythonObject = Python.import_module("builtins")
-    var my_tuple = PythonObject((1, 2.34, "False"))
+    var my_tuple = Python.tuple(1, 2.34, "False")
     var py_string = String(my_tuple)
     assert_equal(py_string, "(1, 2.34, 'False')")
 

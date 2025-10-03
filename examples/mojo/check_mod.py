@@ -18,12 +18,12 @@ from importlib.util import find_spec
 FIX = """
 -------------------------------------------------------------------------
 fix following the steps here:
-    https://github.com/modular/max/issues/1085#issuecomment-1771403719
+    https://github.com/modular/modular/issues/1085#issuecomment-1771403719
 -------------------------------------------------------------------------
 """
 
 
-def install_if_missing(name: str):
+def install_if_missing(name: str) -> None:
     if find_spec(name):
         return
 
@@ -38,4 +38,4 @@ def install_if_missing(name: str):
         subprocess.check_call([python, "-m", "pip", "install", name])
         return
     except:
-        raise ImportError(f"{name} not found" + FIX)
+        raise ImportError(f"{name} not found" + FIX)  # noqa: B904

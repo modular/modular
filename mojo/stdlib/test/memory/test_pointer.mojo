@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-from testing import assert_equal, assert_true, assert_not_equal
+
+from test_utils import TestSuite
+from testing import assert_equal, assert_not_equal, assert_true
 
 
 def test_copy_reference_explicitly():
-    var a = List[Int](1, 2, 3)
+    var a = [1, 2, 3]
 
-    var b = Pointer.address_of(a)
+    var b = Pointer(to=a)
     var c = b.copy()
 
     c[][0] = 4
@@ -27,17 +28,17 @@ def test_copy_reference_explicitly():
 
 
 def test_equality():
-    var a = List[Int](1, 2, 3)
-    var b = List[Int](4, 5, 6)
+    var a = [1, 2, 3]
+    var b = [4, 5, 6]
 
-    assert_true(Pointer.address_of(a) == Pointer.address_of(a))
-    assert_true(Pointer.address_of(b) == Pointer.address_of(b))
-    assert_true(Pointer.address_of(a) != Pointer.address_of(b))
+    assert_true(Pointer(to=a) == Pointer(to=a))
+    assert_true(Pointer(to=b) == Pointer(to=b))
+    assert_true(Pointer(to=a) != Pointer(to=b))
 
 
 def test_str():
     var a = Int(42)
-    var a_ref = Pointer.address_of(a)
+    var a_ref = Pointer(to=a)
     assert_true(String(a_ref).startswith("0x"))
 
 
@@ -46,8 +47,39 @@ def test_pointer_to():
     assert_not_equal(0, Pointer(to=local)[])
 
 
+# Test pointer merging with ternary operation.
+def test_merge():
+    var a = [1, 2, 3]
+    var b = [4, 5, 6]
+
+    fn inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
+        var either = Pointer(to=a) if cond else Pointer(to=b)
+        either[].append(x)
+
+    inner(True, 7, a, b)
+    inner(False, 8, a, b)
+
+    assert_equal(a, [1, 2, 3, 7])
+    assert_equal(b, [4, 5, 6, 8])
+
+
+# We don't actually need to run this,
+# but Mojo's exclusivity check shouldn't complain
+def test_get_immutable() -> Int:
+    fn foo(x: Pointer[mut=False, Int], y: Pointer[mut=False, Int]) -> Int:
+        return x[]
+
+    var x = Int(0)
+    return foo(Pointer(to=x), Pointer(to=x))
+
+
 def main():
-    test_copy_reference_explicitly()
-    test_equality()
-    test_str()
-    test_pointer_to()
+    var suite = TestSuite()
+
+    suite.test[test_copy_reference_explicitly]()
+    suite.test[test_equality]()
+    suite.test[test_str]()
+    suite.test[test_pointer_to]()
+    suite.test[test_merge]()
+
+    suite^.run()

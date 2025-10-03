@@ -3,34 +3,28 @@
 A collection of sample programs written in the
 [Mojo](https://docs.modular.com/mojo/manual/) programming language.
 
-## Getting Started
+## Getting started
 
-The easiest way to get started with Mojo is to install the Magic package and
-virtual environment manager. By following the instructions in [Get started with
-Magic](https://docs.modular.com/magic/), you can quickly install Magic and use
-it to create a virtual environment for Mojo programming. Alternatively, you can
-follow the instructions for how to [Add MAX/Mojo to a conda
-project](https://docs.modular.com/magic/conda).
+The easiest way to get started with Mojo is to install the
+[Pixi](https://pixi.sh/latest/) package and virtual environment manager:
 
-After you have set up a Mojo programming environment, you can then use `git` to
-clone this repository of Mojo samples using the command below:
-
-```bash
-git clone https://github.com/modular/max.git
+```sh
+curl -fsSL https://pixi.sh/install.sh | sh
 ```
 
-## Running
-
-If you're using [`magic`](https://docs.modular.com/magic), navigate into
-the `examples` directory and use `magic run` to invoke `mojo` and run the basic
-example programs. For example:
+Then use `git` to clone this repository of Mojo samples using the command
+below:
 
 ```bash
-magic run mojo matmul.mojo
+git clone https://github.com/modular/modular.git
 ```
 
-You'll also find several complete Mojo projects as subdirectories of the
-`examples` directory.
+Navigate into the `examples` directory and use `pixi run` to invoke `mojo` and
+run the basic example programs. For example:
+
+```bash
+pixi run mojo mandelbrot.mojo
+```
 
 ## License
 

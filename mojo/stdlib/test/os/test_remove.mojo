@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from os import PathLike, remove, unlink
 from os.path import exists
@@ -21,7 +20,7 @@ from testing import assert_false, assert_raises, assert_true
 
 fn create_file_and_test_delete_path[
     func: fn[PathLike: PathLike] (PathLike) raises -> None,
-    name: StringLiteral,
+    name: StaticString,
 ](filepath: Path) raises:
     try:
         with open(filepath.__fspath__(), "w"):

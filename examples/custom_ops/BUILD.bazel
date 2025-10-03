@@ -1,0 +1,94 @@
+load("//bazel:api.bzl", "mojo_binary", "mojo_library", "requirement")
+load(":custom_op_example.bzl", "custom_op_example_py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# NOTE: The custom_op_example_py_binary macro automatically creates a test
+
+filegroup(
+    name = "kernel_sources",
+    srcs = glob(["kernels/*.mojo"]),
+)
+
+custom_op_example_py_binary(
+    name = "addition",
+    srcs = ["addition.py"],
+)
+
+custom_op_example_py_binary(
+    name = "parametric_addition",
+    srcs = ["parametric_addition.py"],
+)
+
+custom_op_example_py_binary(
+    name = "mandelbrot",
+    srcs = ["mandelbrot.py"],
+)
+
+custom_op_example_py_binary(
+    name = "image_pipeline",
+    srcs = ["image_pipeline.py"],
+    extra_data = [":dogs.jpg"],
+    extra_deps = [
+        requirement("pillow"),
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "vector_addition",
+    srcs = ["vector_addition.py"],
+)
+
+custom_op_example_py_binary(
+    name = "top_k",
+    srcs = ["top_k.py"],
+)
+
+custom_op_example_py_binary(
+    name = "fused_attention",
+    srcs = ["fused_attention.py"],
+    target_compatible_with = select({
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+custom_op_example_py_binary(
+    name = "causal_conv1d",
+    srcs = ["causal_conv1d.py"],
+    tags = ["manual"],  # TODO: Fix this flaky test
+)
+
+custom_op_example_py_binary(
+    name = "matrix_multiplication",
+    srcs = ["matrix_multiplication.py"],
+)
+
+custom_op_example_py_binary(
+    name = "histogram",
+    srcs = ["histogram.py"],
+)
+
+mojo_binary(
+    name = "benchmarks",
+    srcs = ["benchmarks.mojo"],
+    deps = [
+        ":kernels",
+        "@mojo//:compiler",
+        "@mojo//:layout",
+        "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
+    ],
+)
+
+mojo_library(
+    name = "kernels",
+    srcs = [":kernel_sources"],
+    deps = [
+        "@mojo//:compiler",
+        "@mojo//:layout",
+        "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
+    ],
+)

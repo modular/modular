@@ -10,16 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from testing import assert_equal
-
-
-def main():
-    test_str()
-    test_repr()
-    test_format_to()
-    test_type_from_none()
+from test_utils import TestSuite
 
 
 def test_str():
@@ -53,9 +46,9 @@ struct FromNone:
 
 
 def test_type_from_none():
-    obj = FromNone(5)
+    _ = FromNone(5)
 
-    obj = FromNone(None)
+    _ = FromNone(None)
 
     # -------------------------------------
     # Test implicit conversion from `None`
@@ -71,4 +64,15 @@ def test_type_from_none():
     # foo(None)
     #
     #   But, interestingly, this does not fail?
-    var obj2: FromNone = None
+    var _obj2: FromNone = None
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_str]()
+    suite.test[test_repr]()
+    suite.test[test_format_to]()
+    suite.test[test_type_from_none]()
+
+    suite^.run()

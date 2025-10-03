@@ -15,7 +15,7 @@ name: MAX bug report
 description: Create a bug report to help us improve MAX
 title: "[BUG]: "
 labels:
-  - "bug,max,max-repo"
+  - "bug,max,Needs Triage"
 body:
   - type: markdown
     attributes:
@@ -50,6 +50,6 @@ body:
       label: System information
       description: What version of MAX are you using?
       value: |
-        - Provide the system information by running `magic info`.
-        - Provide version information for MAX (includes Mojo) by pasting the output of `magic list max`.
+        - Provide the system information by running `pixi info`.
+        - Provide version information for MAX (includes Mojo) by pasting the output of `pixi list max`.
       render: shell

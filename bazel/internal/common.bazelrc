@@ -1,0 +1,234 @@
+# Faster hashing for remote builds
+startup --digest_function=blake3
+
+# https://github.com/aspect-build/rules_js/issues/1408
+startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
+
+# Enable --config=(macos|windows|linux) based on the host OS
+# TODO: This should be 'common', currently blocked on buildbuddy cli changes
+# TODO: '=true' is required because of a buildbuddy cli bug
+build --enable_platform_specific_config=true
+
+# Show more output files when you build multiple targets
+common --show_result=10
+
+# https://github.com/bazelbuild/bazel/pull/27030
+common --experimental_objc_fastbuild_options=
+
+# Don't inherit magic copts for objc_library rules
+common --incompatible_avoid_hardcoded_objc_compilation_flags
+
+# https://github.com/aspect-build/tools_telemetry
+common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
+
+# Retry dependency download flakes
+common --experimental_repository_downloader_retries=5
+
+# Make globs that don't match anything fail
+common --incompatible_disallow_empty_glob
+
+common --platforms=@mojo_host_platform
+common --host_platform=@mojo_host_platform
+
+# TODO: remove when https://github.com/bazelbuild/bazel/issues/25145 is fixed
+info --platforms=@platforms//host
+
+# Improve sandboxed build performance by reusing symlink trees
+common --reuse_sandbox_directories
+
+# Disable networking for sandboxed tests
+common --sandbox_default_allow_network=false
+
+# Pass tags to underlying actions in rules
+common --incompatible_allow_tags_propagation
+
+# Disable legacy __init__.py creation behavior
+common --incompatible_default_to_explicit_init_py
+
+# Reduce disk usage if using multiple clones
+common --experimental_repository_cache_hardlinks
+
+# Increase max test log size
+common --experimental_ui_max_stdouterr_bytes=4000000
+
+# TODO: Break lit tests finding FileCheck
+# Disable legacy duplicate runfiles creation
+common --legacy_external_runfiles=false
+common --build_runfile_links=false
+
+# Generate a smaller manifest which is nicer for remote exec
+common --incompatible_compact_repo_mapping_manifest
+
+# Make sure test outputs exist without having to unarchive
+common --zip_undeclared_test_outputs=false
+
+# https://github.com/bazelbuild/rules_python/issues/2445
+common --@rules_python//python/config_settings:exec_tools_toolchain=disabled
+
+# Make flag easier to write on the command line
+build --flag_alias=mojocopt=@rules_mojo//:mojo_copt
+
+# Disable cc_library's underlying shared library because of circular dependency linking issues
+build --dynamic_mode=off
+build --features=-supports_dynamic_linker
+
+# Make sure we use llvm-ar on macOS for exec config too
+common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos
+# Always use llvm-ar which works fine for macOS
+common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
+
+# Disable layering check for third parties since we don't care about their
+# layers, and we're not using this ourselves yet.
+build --features=-layering_check --host_features=-layering_check
+
+# Buildbuddy cache optimization recommendations
+build --experimental_profile_include_primary_output
+build --experimental_profile_include_target_label
+build --remote_cache_async
+build --experimental_remote_cache_ttl=14d
+build --remote_cache_compression
+build --experimental_remote_cache_compression_threshold=100
+build --legacy_important_outputs=false
+build --slim_profile=false
+
+# Include full test log in failed tests
+build --test_output=errors
+build --test_summary=terse
+
+# Disable crash reporting for all tests and runs, test rules can override this
+build --action_env=MODULAR_CRASH_REPORTING_ENABLED=false --host_action_env=MODULAR_CRASH_REPORTING_ENABLED=false
+build --test_env=MODULAR_CRASH_REPORTING_ENABLED=false
+run --run_env=MODULAR_CRASH_REPORTING_ENABLED=false
+
+# Disable telemetry for all tests and runs, test rules can override this
+build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TELEMETRY_ENABLED=false
+build --test_env=MODULAR_TELEMETRY_ENABLED=false
+run --run_env=MODULAR_TELEMETRY_ENABLED=false
+
+# Differentiate between accidental 'bazel run' vs 'bazel test'
+test --test_env=MODULAR_RUNNING_TESTS=true
+
+# Default GPU memory restrictions to 0, all tests must override this
+build --test_env=MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY=true
+build --test_env=MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE=0
+build --test_env=MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT=100
+
+# Allow --modify_execution_info to be passed any number of times
+common --incompatible_modify_execution_info_additive
+
+# Reduce the impact of transitions on rebuilding C++ files
+build --modify_execution_info=CppArchive=+supports-path-mapping
+build --modify_execution_info=CppCompile=+supports-path-mapping
+build --modify_execution_info=Objc.*=+supports-path-mapping
+build --experimental_output_paths=strip
+
+# These are required to avoid issues caused by dynamic linking on OS X, which
+# is documented in detail here: https://github.com/sorbet/sorbet/issues/1281
+# Set base macOS deployment target otherwise the target depends on the host OS
+build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
+
+build --@llvm_zstd//:llvm_enable_zstd=false
+build --experimental_propagate_custom_flag=@llvm_zstd//:llvm_enable_zstd
+build --@llvm-project//lldb:enable_libedit=true
+build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_libedit
+build --@llvm-project//lldb:enable_curses=true
+build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_curses
+build --@llvm-project//llvm:pfm=disable
+build --experimental_propagate_custom_flag=@llvm-project//llvm:pfm
+build --@llvm-project//mlir:enable_cuda=true
+build --experimental_propagate_custom_flag=@llvm-project//mlir:enable_cuda
+
+build --remote_download_outputs=toplevel
+build --remote_download_regex='.*\.(inc|h)$'
+# Required for debug info references from binaries
+build:macos --remote_download_regex='.*\.(a|lo|o|dylib)$'
+build --experimental_remote_cache_eviction_retries=3
+build --grpc_keepalive_time=30s
+build --remote_upload_local_results
+build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
+# Set local builds to higher than CI priority
+build --remote_execution_priority=-1
+
+build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
+build:cache --bes_backend=grpcs://modular.buildbuddy.io
+build:cache --experimental_remote_downloader=grpcs://modular.buildbuddy.io
+build:cache --experimental_remote_downloader_local_fallback
+build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
+
+build:remote --config=cache
+build:remote --remote_executor=grpcs://modular.buildbuddy.io
+build:remote --local_test_jobs=HOST_CPUS
+build:remote --jobs=1000
+build:remote --repo_env=MODULAR_REMOTE_EXEC=1
+
+# Enable dynamic execution on Linux only
+build --internal_spawn_scheduler
+build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
+build:macos --spawn_strategy=remote,worker,sandboxed,standalone
+
+# https://github.com/bazelbuild/bazel/issues/25221
+build --strategy=TestRunner=remote,worker,sandboxed,standalone
+
+build:linux --build_metadata=TAG_HOST_OS=linux
+build:linux --build_metadata=TAG_TARGET_OS=linux
+build:macos --build_metadata=TAG_HOST_OS=macos
+build:macos --build_metadata=TAG_TARGET_OS=macos
+
+# Separate CI config that doesn't affect build output for verifying we share caches
+build:ci-no-config --build_metadata=ROLE=CI
+build:ci-no-config --config=cache
+build:ci-no-config --disk_cache=
+build:ci-no-config --ui_event_filters=+WARNING
+build:ci-no-config --verbose_failures
+# Disable dynamic execution for remote exec
+build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
+
+build:ci --config=ci-no-config
+# Set CI builds to lower priority than local builds, some CI builds override this
+build:ci --remote_execution_priority=20
+test:ci --remote_download_outputs=minimal
+
+build:ci-gpu-common --config=ci
+build:ci-gpu-common --test_tag_filters=gpu,-lint-test
+
+build:remote-h100 --config=remote
+build:remote-h100 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
+build:remote-h100 --platforms=//:h100-platform
+build:remote-h100 --extra_execution_platforms=//:m7i-platform,//:h100-platform,@mojo_host_platform
+build:remote-h100 --spawn_strategy=remote,worker,sandboxed,standalone
+build:remote-h100 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-h100 --build_metadata=TAG_GPU=h100
+build:remote-h100 --build_metadata=TAG_TARGET_OS=linux
+
+build:ci-remote-h100 --config=ci-gpu-common
+build:ci-remote-h100 --config=remote-h100
+build:ci-remote-h100 --test_keep_going=false
+
+build:remote-b200 --config=remote
+build:remote-b200 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
+build:remote-b200 --platforms=//:b200-platform
+build:remote-b200 --extra_execution_platforms=//:m7i-platform,//:b200-platform,@mojo_host_platform
+build:remote-b200 --spawn_strategy=remote,worker,sandboxed,standalone
+build:remote-b200 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-b200 --build_metadata=TAG_GPU=b200
+build:remote-b200 --build_metadata=TAG_TARGET_OS=linux
+
+build:ci-remote-b200 --config=ci-gpu-common
+build:ci-remote-b200 --config=remote-b200
+build:ci-remote-b200 --test_keep_going=false
+
+build:remote-mi300 --config=remote
+build:remote-mi300 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
+build:remote-mi300 --platforms=//:mi300-platform
+build:remote-mi300 --extra_execution_platforms=//:m7i-platform,//:mi300-platform,@mojo_host_platform
+build:remote-mi300 --spawn_strategy=remote,worker,sandboxed,standalone
+build:remote-mi300 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-mi300 --build_metadata=TAG_GPU=mi300
+build:remote-mi300 --build_metadata=TAG_TARGET_OS=linux
+
+build:ci-remote-mi300 --config=ci-gpu-common
+build:ci-remote-mi300 --config=remote-mi300
+build:ci-remote-mi300 --test_keep_going=false
+
+# TODO: Remove once transitives are fixed
+common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo

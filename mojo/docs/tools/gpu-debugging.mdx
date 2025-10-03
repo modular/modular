@@ -4,7 +4,7 @@ sidebar_position: 2
 description: Debugging Mojo programs on GPU.
 ---
 
-The MAX SDK provides support for debugging Mojo code running on GPU using
+You can debug Mojo code running on GPUs using
 [CUDA-GDB](https://docs.nvidia.com/cuda/cuda-gdb/index.html#). You can either
 debug using the `cuda-gdb` command-line interface, or through VS Code, using the
 Mojo and NVIDIA extensions.
@@ -16,9 +16,9 @@ GPU:
 
 - GPU debugging is supported only on NVIDIA GPUs.
 - You cannot debug Mojo code running inside a MAX
-  [custom operation](/max/custom-ops/). You can only debug Mojo GPU code
-  launched from a Mojo program (for example, using the
-  [max.driver](/max/api/mojo/driver/) API).
+  [custom operation](/max/custom-ops/). (You can only debug Mojo GPU code
+  launched from a Mojo program when using the
+  [gpu.host](/mojo/stdlib/gpu/host/) API).
 
 :::
 
@@ -45,6 +45,8 @@ To set up for GPU debugging:
 
 2. If using VS Code, install
    [Nsight Visual Studio Code Edition](https://marketplace.visualstudio.com/items?itemName=nvidia.nsight-vscode-edition)
+   and the
+   [Mojo extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
    from the Visual Studio Marketplace.
 
 ### Using the classic debugger backend

@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_true
+from test_utils import TestSuite
 
 
 def test_none_end_folds():
@@ -23,15 +23,15 @@ def test_none_end_folds():
 
 
 # This requires parameter inference of StartT.
-@value
-struct FunnySlice:
+@fieldwise_init
+struct FunnySlice(ImplicitlyCopyable, Movable):
     var start: Int
     var upper: String
     var stride: Float64
 
 
-@value
-struct BoringSlice:
+@fieldwise_init
+struct BoringSlice(ImplicitlyCopyable, Movable):
     var a: Int
     var b: Int
     var c: String
@@ -48,7 +48,7 @@ struct Sliceable:
         return a
 
 
-def test_slicable():
+def test_sliceable():
     var sliceable = Sliceable()
 
     var new_slice = sliceable[1:"hello":4.0]
@@ -136,8 +136,12 @@ def test_slice_indices():
 
 
 def main():
-    test_none_end_folds()
-    test_slicable()
-    test_slice_stringable()
-    test_slice_eq()
-    test_slice_indices()
+    var suite = TestSuite()
+
+    suite.test[test_none_end_folds]()
+    suite.test[test_sliceable]()
+    suite.test[test_slice_stringable]()
+    suite.test[test_slice_eq]()
+    suite.test[test_slice_indices]()
+
+    suite^.run()

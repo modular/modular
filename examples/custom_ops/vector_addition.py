@@ -11,51 +11,59 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 from pathlib import Path
 
 import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 if __name__ == "__main__":
-    # This is necessary only in specific build environments.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
-    path = Path(__file__).parent / "kernels.mojopkg"
+    mojo_kernels = Path(__file__).parent / "kernels"
 
     vector_width = 10
     dtype = DType.float32
+
+    # Place the graph on a GPU, if available. Fall back to CPU if not.
+    device = CPU() if accelerator_count() == 0 else Accelerator()
 
     # Configure our simple one-operation graph.
     with Graph(
         "vector_addition",
         input_types=[
-            TensorType(dtype, shape=[vector_width]),
-            TensorType(dtype, shape=[vector_width]),
+            TensorType(
+                dtype,
+                shape=[vector_width],
+                device=DeviceRef.from_device(device),
+            ),
+            TensorType(
+                dtype,
+                shape=[vector_width],
+                device=DeviceRef.from_device(device),
+            ),
         ],
+        custom_extensions=[mojo_kernels],
     ) as graph:
         # Take in the two inputs to the graph.
         lhs, rhs = graph.inputs
         output = ops.custom(
             name="vector_addition",
+            device=DeviceRef.from_device(device),
             values=[lhs, rhs],
             out_types=[
-                TensorType(dtype=lhs.tensor.dtype, shape=lhs.tensor.shape)
+                TensorType(
+                    dtype=lhs.tensor.dtype,
+                    shape=lhs.tensor.shape,
+                    device=DeviceRef.from_device(device),
+                )
             ],
         )[0].tensor
         graph.output(output)
 
-    # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if accelerator_count() == 0 else Accelerator()
-
     # Set up an inference session for running the graph.
     session = InferenceSession(
         devices=[device],
-        custom_extensions=path,
     )
 
     # Compile the graph.

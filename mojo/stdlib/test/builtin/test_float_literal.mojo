@@ -10,20 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from testing import (
-    assert_almost_equal,
-    assert_equal,
-    assert_false,
-    assert_not_equal,
-    assert_true,
-)
+from testing import assert_equal, assert_false, assert_true
 
 alias nan = FloatLiteral.nan
 alias neg_zero = FloatLiteral.negative_zero
 alias inf = FloatLiteral.infinity
 alias neg_inf = FloatLiteral.negative_infinity
+
+
+def test_init():
+    alias n: IntLiteral[(4).value] = 4
+    assert_equal(4.0, FloatLiteral(n))
 
 
 def test_division():
@@ -174,6 +172,7 @@ def test_float_conversion():
 
 
 def main():
+    test_init()
     test_division()
     test_mod()
     test_int_conversion()

@@ -5,16 +5,13 @@ description: Introduction to Mojo `fn` and `def` functions.
 ---
 
 As mentioned in the [syntax overview](/mojo/manual/basics), Mojo supports two
-types of functions: `def` and `fn` functions. You can use either declaration
+keywords to declare functions: `def` and `fn`. You can use either declaration
 with any function, including the `main()` function, but they have different
 default behaviors, as described on this page.
 
 We believe both `def` and `fn` have good use cases and don't consider either to
 be better than the other. Deciding which to use is a matter of personal taste as
 to which style best fits a given task.
-
-We believe Mojo's flexibility in this regard is a superpower that allows you to
-write code in the manner that's best for your project.
 
 :::note
 
@@ -41,7 +38,7 @@ Functions can have:
 
 - Parameters: A function can optionally take one or more compile-time
   _parameter_ values used for metaprogramming.
-- Arguments: A function can also optionally take one or more runtime
+- Arguments: A function can also optionally take one or more run-time
   _arguments_.
 - Return value: A function can optionally return a value.
 - Function body: Statements that are executed when you call the function.
@@ -56,15 +53,15 @@ def do_nothing():
 ```
 
 If a function takes no parameters, you can omit the square brackets, but the
-parenthesis are always required.
+parentheses are always required.
 
-While you can't leave out the function body, you can use the `pass` statement to
-define a function that does nothing.
+Although you can't leave out the function body, you can use the `pass` statement
+to define a function that does nothing.
 
 ### Arguments and parameters
 
 Functions take two kinds of inputs: _arguments_ and _parameters_. Arguments are
-familiar from many other languages: they are runtime values passed into the
+familiar from many other languages: they are run-time values passed into the
 function.
 
 ```mojo
@@ -72,9 +69,9 @@ def add(a: Int, b: Int) -> Int:
     return a+b
 ```
 
-On the other hand, you can think of a parameter as a
-compile-time variable that becomes a runtime constant. For example, consider the
-following function with a parameter:
+On the other hand, you can think of a parameter as a compile-time variable that
+becomes a run-time constant. For example, consider the following function with a
+parameter:
 
 ```mojo
 def add_tensors[rank: Int](a: MyTensor[rank], b: MyTensor[rank]) -> MyTensor[rank]:
@@ -85,174 +82,88 @@ In this case, the `rank` value needs to be specified in a way that can be
 determined at compilation time, such as a literal or expression.
 
 When you compile a program that uses this code, the compiler produces a unique
-version of the function for each unique `rank` value used in the program, each
-with a constant `rank`.
+version of the function for each unique `rank` value used in the program, with
+`rank` treated as a constant within each specialized version.
 
 This usage of "parameter"
 is probably different from what you're used to from other languages, where
 "parameter" and "argument" are often used interchangeably. In Mojo, "parameter"
 and "parameter expression" refer to compile-time values, and "argument" and
-"expression" refer to runtime values.
+"expression" refer to run-time values.
 
 By default, both arguments and parameters can be specified either by position or
-by keyword, as shown below:
+by keyword. These forms can also be mixed in the same function call.
 
 ```mojo
 # positional
-x = add(5, 7)
+x = add(5, 7)      # Positionally, a=5 and b=7
 # keyword
-y = add(a=9, b=3)
+y = add(b=3, a=9)
+# mixed
+z = add(5, b=7)    # Positionally, a=5
 ```
-
-These forms can also be mixed in the same function call.
 
 For more information on arguments, see [Function arguments](#function-arguments)
 on this page. For more information on parameters, see
 [Parameterization: compile-time metaprogramming](/mojo/manual/parameters/).
 
-## `def` functions
+## `def` and `fn` comparison
 
-Compared to an `fn` function, a `def` function has fewer restrictions.
-The `def` function works more like a Python
-`def` function. For example, this function works the same in Python and Mojo:
+Defining a function using `def` and `fn` have much in common. They both have the
+following requirements:
 
-```mojo
-def greet(name):
-    greeting = "Hello, " + name + "!"
-    return greeting
-```
+* You must declare the type of each function parameter and argument.
 
-In a Mojo `def` function, you have the option to specify the argument type and
-the return type. You can also declare variables with `var`, with or without
-explicit typing. So you can write a `def` function that looks almost exactly
-like an `fn` function:
+* If a function doesn't return a value, you can either omit the return type or
+  declare `None` as the return type.
 
-```mojo
-def greet(name: String) -> String:
-    var greeting = "Hello, " + name + "!"
-    return greeting
-```
+  ```mojo
+  # The following function definitions are equivalent
 
-This way, the compiler ensures that `name` is a string, and the return type is a
-string.
+  def greet(name: String):
+    print("Hello," name)
 
-Here's everything to know about `def`:
+  def greet(name: String) -> None:
+    print("Hello," name)
+  ```
 
-* Arguments don't require a declared type.
+* If the function returns a value, you must either declare the return type using
+  the <code><strong>-></strong> <var>type</var></code> syntax or provide a
+  [named result](#named-results) in the argument list.
 
-  Undeclared arguments are actually passed as an
-  [`object`](/mojo/stdlib/builtin/object/object), which allows the
-  function to receive any type (Mojo infers the type at runtime).
+  ```mojo
+  # The following function definitions are equivalent
 
-* Return types don't need to be declared, and also default to `object`. (If a
-  `def` function doesn't declare a return type of `None`, it's considered to
-  return an `object` by default.)
+  def incr(a: Int) -> Int:
+    return a + 1
 
-* Arguments are mutable. Arguments default to using the `read`
-  [argument convention](/mojo/manual/values/ownership#argument-conventions)
-  like an `fn` function, with a special addition: if the function mutates the
-  argument, it makes a mutable copy.
+  def incr(a: Int, out b: Int):
+    b = a + 1
+  ```
 
-  If an argument is an `object` type, it's received as a reference, following
-  [object reference
-  semantics](/mojo/manual/values/value-semantics#python-style-reference-semantics).
+  For more information, see the [Return values](#return-values) section of this
+  page.
 
-  If an argument is any other declared type, it's received as a value.
+Where `def` and `fn` differ is error handling.
 
-### The `object` type
+* The compiler doesn't allow a function declared with `fn` to raise an error
+  condition unless it explicitly includes a `raises` declaration. In contrast,
+  the compiler assumes that *all* functions declared with `def` *might* raise an
+  error. See the [Raising and non-raising
+  functions](#raising-and-non-raising-functions) section of this page for more
+  information.
 
-If you don't declare the type for an argument or return value in a `def`, it
-becomes an [`object`](/mojo/stdlib/builtin/object/object), which is unlike
-any other type in the standard library.
-
-The `object` type allows for dynamic typing because it can actually represent
-any type in the Mojo standard library, and the actual type is inferred at
-runtime. (Actually, there's still more to do before it can represent all Mojo
-types.) This is great for compatibility with Python and all of the flexibility
-that it provides with dynamic types. However, this lack of type enforcement can
-lead to runtime errors when a function receives or returns an unexpected type.
-
-For compatibility with Python, `object` values are passed using [object
-reference
-semantics](/mojo/manual/values/value-semantics#python-style-reference-semantics).
-As such, the `object` type is not compatible with the [argument
-conventions](/mojo/manual/values/ownership#argument-conventions) that
-enforce value semantics. So, be careful if using `object` values alongside other
-strongly-typed values—their behavior might be inconsistent because `object` is
-the only type in the standard library that does not conform to [full value
-semantics](/mojo/manual/values/value-semantics#intro-to-value-semantics).
-
-:::note TODO
-
-The `object` type is still a work in progress. It doesn't support all of the
-possible underlying types, for example.
-
-:::
-
-## `fn` functions
-
-The `fn` function has somewhat stricter rules than the `def` function.
-
-Here's an example of an `fn` function:
-
-```mojo
-fn greet(name: String) -> String:
-    var greeting = "Hello, " + name + "!"
-    return greeting
-```
-
-As far as a function caller is concerned, `def` and `fn` functions are
-interchangeable. That is, there's nothing a `def` can do that an `fn` can't
-(and vice versa). The difference is that, compared to a `def` function, an `fn`
-function is more strict on the inside.
-
-Here's everything to know about `fn`:
-
-* Arguments must specify a type (except for the
-  `self` argument in [struct methods](/mojo/manual/structs#methods)).
-
-* Return values must specify a type, unless the function doesn't return a value.
-
-  If you don't specify a return type, it defaults to `None` (meaning no return
-  value).
-
-* By default, arguments are received as an immutable reference (values are
-  read-only, using the `read` [argument
-  convention](/mojo/manual/values/ownership#argument-conventions)).
-
-  This prevents accidental mutations, and permits the use of non-copyable types
-  as arguments.
-
-  If you want a local copy, you can simply assign the value to a local
-  variable. Or, you can get a mutable reference to the value by declaring the
-  `mut` [argument
-  convention](/mojo/manual/values/ownership#argument-conventions)).
-
-* If the function can raise an error, it must be explicitly declared with the
-  `raises` keyword. A `def` function does not need to add the `raises` keyword.
-  For information, see
-  [Raising and non-raising functions](#raising-and-non-raising-functions).
-
-By enforcing these type checks, using the `fn` function helps avoid a variety
-of runtime errors.
+As far as a function caller is concerned, there is no difference between
+invoking a function declared with `def` vs a function declared with `fn`. You
+could reimplement a `def` function as an `fn` function without making any
+changes to code that calls the function.
 
 ## Function arguments
 
-As noted in the previous sections, there are a few differences between how `def`
-and `fn` functions treat arguments. But most of the time they are the same.
-
-As noted, there are some differences in *argument conventions*.
-Argument conventions are discussed in much more detail in the page on
-[Ownership](/mojo/manual/values/ownership#argument-conventions).
-
-The other difference is that `def` functions don't need to specify an argument's
-type. If no type is specified, the argument is passed as an
-[`object`](/mojo/stdlib/builtin/object/object).
-
-The remaining rules for arguments described in this section apply to both `def`
+The rules for arguments described in this section apply to both `def`
 and `fn` functions.
 
-:::note Functions with \`/\` and \`*\` in the argument list
+:::note Functions with / and * in the argument list
 
 You might see the following characters in
 place of arguments: slash (`/`) and/or star (`*`). For example:
@@ -261,8 +172,8 @@ place of arguments: slash (`/`) and/or star (`*`). For example:
 def myfunc(pos_only, /, pos_or_keyword, *, keyword_only):
 ```
 
-Arguments **before** the `/` can only be passed by position. Arguments **after**
-the `*` can only be passed by keyword. For details, see
+Arguments **before** the `/` can be passed only by position. Arguments **after**
+the `*` can be passed only by keyword. For details, see
 [Positional-only and keyword-only arguments](#positional-only-and-keyword-only-arguments)
 
 You may also see argument names prefixed with one or two stars (`*`):
@@ -292,8 +203,9 @@ fn use_defaults():
     print(z)
 ```
 
-However, you cannot define a default value for an argument that's declared as
-[`mut`](/mojo/manual/values/ownership#mutable-arguments-mut).
+However, you can't define a default value for an argument that's declared with
+the [`mut`](/mojo/manual/values/ownership#mutable-arguments-mut) argument
+convention.
 
 Any optional arguments must appear after any required arguments. [Keyword-only
 arguments](#positional-only-and-keyword-only-arguments), discussed later, can
@@ -358,7 +270,8 @@ see [variadic parameters](/mojo/manual/parameters/#variadic-parameters).
 
 #### Homogeneous variadic arguments
 
-When defining a homogeneous variadic argument, use <code>*<var>argument_name</var>: <var>argument_type</var></code>:
+When defining a homogeneous variadic argument (all arguments must be the same
+type), use <code>*<var>argument_name</var>: <var>argument_type</var></code>:
 
 ```mojo
 def greet(*names: String):
@@ -368,7 +281,7 @@ def greet(*names: String):
 Inside the function body, the variadic argument is available as an iterable list
 for ease of use. Currently there are some differences in handling the list
 depending on whether the arguments are register-passable types (such as `Int`)
-or memory-only types (such as `String`). 
+or memory-only types (such as `String`).
 
 :::note TODO
 
@@ -377,7 +290,7 @@ We hope to remove these differences in the future.
 :::
 
 Register-passable types, such as `Int`, are available as a
-[`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList) type. As
+[`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList) type. As
 shown in the previous example, you can iterate over the values using a `for..in`
 loop.
 
@@ -390,38 +303,38 @@ fn sum(*values: Int) -> Int:
 ```
 
 Memory-only types, such as `String`, are available as a
-[`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem).
+[`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem).
 Iterating over this list directly with a `for..in` loop currently produces a
-[`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to each value instead
-of the value itself. You must add an empty subscript operator `[]` to
-dereference the pointer and retrieve the value:
+reference to the element, which can be mutable with a `mut` variadic list. Use
+the `ref` binding pattern to capture a mutable reference if you
+want to mutate the elements of the list:
 
 ```mojo
 def make_worldly(mut *strs: String):
-    # Requires extra [] to dereference the pointer for now.
-    for i in strs:
-        i[] += " world"
-
+    for ref i in strs:
+        i += " world"
 ```
 
-Alternately, subscripting into a `VariadicListMem` returns the argument value,
-and doesn't require any dereferencing:
+You can also directly index the list with integers as well:
 
 ```mojo
 fn make_worldly(mut *strs: String):
-    # This "just works" as you'd expect!
     for i in range(len(strs)):
         strs[i] += " world"
 ```
 
 #### Heterogeneous variadic arguments
 
-Implementing heterogeneous variadic arguments is somewhat more complicated than
-homogeneous variadic arguments. Writing generic code to handle multiple argument
-types requires [traits](/mojo/manual/traits) and
-[parameters](/mojo/manual/parameters/). So the syntax may look a little
-unfamiliar if you haven't worked with those features. The signature for a
-function with a heterogeneous variadic argument looks like this:
+Implementing heterogeneous variadic arguments (each argument type may be
+different) is somewhat more complicated than homogeneous variadic arguments. To
+handle multiple argument types, the function must be
+[generic](/mojo/manual/functions/#variadic-arguments), which requires using
+[traits](/mojo/manual/traits) and [parameters](/mojo/manual/parameters/). So
+the syntax may look a little unfamiliar if you haven't worked with those
+features.
+
+The signature for a function with a heterogeneous variadic argument looks like
+this:
 
 ```mojo
 def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
@@ -430,74 +343,48 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
 
 The parameter list, `[*ArgTypes: Intable]` specifies that the function takes an
 `ArgTypes` parameter, which is a list of types, all of which conform to the
-[`Intable`](/mojo/stdlib/builtin/int/Intable) trait. The argument list,
-`(*args: *ArgTypes)` has the familiar `*args` for the variadic argument, but
-instead of a single type, its type is defined as *list* of types, `*ArgTypes`.
+[`Intable`](/mojo/stdlib/builtin/int/Intable) trait. The asterisk in `*ArgTypes`
+indicates that `ArgTypes` is a **variadic type parameter** (a list of types).
+
+The argument list, `(*args: *ArgTypes)` has the familiar `*args` for the
+variadic argument, but instead of a single type, its type is defined as the
+variadic type list `*ArgTypes`. The asterisk in `*args` indicates a
+**variadic argument**, and the asterisk in `*ArgTypes` refers to the
+variadic type parameter.
 
 This means that each argument in `args` has a corresponding type in `ArgTypes`,
 so <code>args[<var>n</var>]</code> is of type <code>ArgTypes[<var>n</var>]</code>.
 
-Inside the function, `args` is available as a
-[`VariadicPack`](/mojo/stdlib/builtin/list_literal/VariadicPack). The easiest
-way to work with the arguments is to use the `each()` method to iterate through
-the `VariadicPack`:
+Inside the function, `args` becomes a
+[`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) because the
+syntax `*args: *ArgTypes` creates a heterogeneous variadic argument. That means
+each element in `args` can be a different type that requires a different amount
+of memory. To iterate through the `VariadicPack`, the compiler must know each
+element's type (its memory size), so you must use a [parametric `for`
+loop](/mojo/manual/decorators/parameter/#parametric-for-statement):
 
 ```mojo
 fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     var total = 0
 
     @parameter
-    fn add[Type: Intable](value: Type):
-        total += Int(value)
+    for i in range(args.__len__()):
+        total += Int(args[i])
 
-    args.each[add]()
     return total
 
-print(count_many_things(5, 11.7, 12))
+def main():
+    print(count_many_things(5, 11.7, 12))
 ```
 
 ```output
 28
 ```
 
-In the example above, the `add()` function is called for each argument in turn,
-with the appropriate `value` and `Type` values. For instance, `add()` is first
-called with `value=5` and `Type=Int`, then with `value=11.7` and `Type=Float64`.
-
-Also, note that when calling `count_many_things()`, you don't actually pass in
+Notice that when calling `count_many_things()`, you don't actually pass in
 a list of argument types. You only need to pass in the arguments, and Mojo
 generates the `ArgTypes` list itself.
 
-As a small optimization, if your function is likely to be called with a single
-argument frequently, you can define your function with a single argument
-followed by a variadic argument. This lets the simple case bypass populating and
-iterating through the `VariadicPack`.
-
-For example, given a `print_string()` function that prints a single string, you
-could re-implement the variadic `print()` function with code like this:
-
-```mojo
-fn print_string(s: String):
-    print(s, end="")
-
-fn print_many[T: Stringable, *Ts: Stringable](first: T, *rest: *Ts):
-    print_string(String(first))
-
-    @parameter
-    fn print_elt[T: Stringable](a: T):
-        print_string(" ")
-        print_string(String(a))
-    rest.each[print_elt]()
-print_many("Bob")
-```
-
-```output
-Bob
-```
-
-If you call `print_many()` with a single argument, it calls `print_string()`
-directly. The `VariadicPack` is empty, so `each()` returns immediately without
-calling the `print_elt()` function.
 
 #### Variadic keyword arguments
 
@@ -509,7 +396,7 @@ variadic keyword argument syntax <code>**<var>kw_argument_name</var></code>:
 ```mojo
 fn print_nicely(**kwargs: Int) raises:
   for key in kwargs.keys():
-      print(key[], "=", kwargs[key[]])
+      print(key, "=", kwargs[key])
 
  # prints:
  # `a = 7`
@@ -540,10 +427,9 @@ There are currently a few limitations:
   is `**kwargs: Float64` then the argument dictionary will be a
   `OwnedKwargsDict[Float64]`.
 
-* The argument type must conform to the
-  [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait.
-  That is, the type must be both [`Movable`](/mojo/stdlib/builtin/value/Movable)
-  and [`Copyable`](/mojo/stdlib/builtin/value/Copyable).
+* The argument type must conform to both the
+  [`Movable`](/mojo/stdlib/builtin/value/Movable) and
+  [`Copyable`](/mojo/stdlib/builtin/value/Copyable) traits.
 
 * Dictionary unpacking is not supported yet:
 
@@ -561,8 +447,8 @@ There are currently a few limitations:
 
 ### Positional-only and keyword-only arguments
 
-When defining a function, you can restrict some arguments so that they can only
-be passed as positional arguments, or they can only be passed as keyword
+When defining a function, you can restrict some arguments so that they can
+be passed only as positional arguments, or they can be passed only as keyword
 arguments.
 
 To define positional-only arguments, add a slash character (`/`) to the
@@ -580,7 +466,7 @@ keywords, like `min(a=1, b=2)`.
 There are several reasons you might want to write a function with
 positional-only arguments:
 
-* The argument names aren't meaningful for the the caller.
+* The argument names aren't meaningful for the caller.
 * You want the freedom to change the argument names later on without breaking
   backward compatibility.
 
@@ -591,7 +477,7 @@ For more information on positional-only arguments, see [PEP 570 – Python
 Positional-Only Parameters](https://peps.python.org/pep-0570/).
 
 Keyword-only arguments are the inverse of positional-only arguments: they can
-only be specified by keyword. If a function accepts variadic arguments, any
+be specified only by keyword. If a function accepts variadic arguments, any
 arguments defined *after* the variadic arguments are treated as keyword-only.
 For example:
 
@@ -639,13 +525,8 @@ Arguments](https://peps.python.org/pep-3102/).
 
 ## Overloaded functions
 
-If a `def` function does not specify argument types, then it can accept any
-data type and decide how to handle each type internally. This is nice when you
-want expressive APIs that just work by accepting arbitrary inputs, so there's
-usually no need to write function overloads for a `def` function.
-
-On the other hand, all `fn` functions must specify argument types, so if you
-want a function to work with different data types, you need to implement
+All function declarations must specify argument types, so if you want a
+function to work with different data types, you need to implement
 separate versions of the function that each specify different argument types.
 This is called "overloading" a function.
 
@@ -685,7 +566,6 @@ compiler error. You can fix this by casting the value to the type you really
 want:
 
 ```mojo
-@value
 struct MyString:
     @implicit
     fn __init__(out self, string: StringLiteral):
@@ -703,10 +583,8 @@ fn call_foo():
     foo(MyString(string))
 ```
 
-
-Overloading also works with combinations of both `fn` and `def` functions.
-For example, you could define multiple `fn` function overloads and then one
-or more `def` versions that don't specify all argument types, as a fallback.
+Overloading also works with combinations of both `fn` and `def` function
+declarations.
 
 ### Overload resolution
 
@@ -822,7 +700,7 @@ copied. Named result syntax lets you specify a named, uninitialized variable to
 return to the caller using the `out` argument convention:
 
 ```mojo
-def get_name_tag(owned name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag):
     name_tag = NameTag(name^)
 ```
 
@@ -846,9 +724,9 @@ The fact that a function uses a named result is transparent to the caller. That
 is, these two signatures are interchangeable to the caller:
 
 ```mojo
-def get_name_tag(owned name: String) -> NameTag:
+def get_name_tag(var name: String) -> NameTag:
     ...
-def get_name_tag(owned name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag):
     ...
 ```
 
@@ -867,22 +745,22 @@ which takes several steps to initialize:
 struct ImmovableObject:
     var name: String
 
-    fn __init__(out self, owned name: String):
+    fn __init__(out self, var name: String):
         self.name = name^
 
-def create_immovable_object(owned name: String, out obj: ImmovableObject):
+def create_immovable_object(var name: String, out obj: ImmovableObject):
     obj = ImmovableObject(name^)
     obj.name += "!"
     # obj is implicitly returned
 
 def main():
-    my_obj = create_immutable_object("Blob")
+    my_obj = create_immovable_object("Blob")
 ```
 
 By contrast, the following function with a standard return value doesn't work:
 
 ```mojo
-def create_immovable_object2(owned name: String) -> ImmovableObject:
+def create_immovable_object2(var name: String) -> ImmovableObject:
     obj = ImmovableObject(name^)
     obj.name += "!"
     return obj^ # Error: ImmovableObject is not copyable or movable
@@ -894,7 +772,7 @@ or copied to the callee. This isn't an issue if the newly-created value is
 returned immediately:
 
 ```mojo
-def create_immovable_object3(owned name: String) -> ImmovableObject:
+def create_immovable_object3(var name: String) -> ImmovableObject:
     return ImmovableObject(name^) # OK
 ```
 
@@ -909,8 +787,12 @@ def raises_error():
     raise Error("There was an error.")
 ```
 
-Functions declared with `fn` without the `raises` keyword are _non-raising
-functions_—that is, they are not allowed to propagate an error to the calling
+The Mojo compiler *always* treats a function declared with `def` as a *raising
+function*, even if the body of the function doesn't contain any code that could
+raise an error.
+
+Functions declared with `fn` without the `raises` keyword are *non-raising
+functions*—that is, they are not allowed to propagate an error to the calling
 function. If a non-raising function calls a raising function, it **must handle
 any possible errors.**
 
@@ -919,17 +801,23 @@ any possible errors.**
 fn unhandled_error():
     raises_error()   # Error: can't call raising function in a non-raising context
 
+# Explicitly handle the error
 fn handle_error():
     try:
         raises_error()
     except e:
-        print("Handled an error," e)
+        print("Handled an error:", e)
+
+# Explicitly propagate the error
+fn propagate_error() raises:
+    raises_error()
+
 ```
 
 If you're writing code that you expect to use widely or distribute as a package,
 you may want to use `fn` functions for APIs that don't raise errors to limit
 the number of places users need to add unnecessary error handling code. For some
-extremely performance-sensitive code, it may be preferable to avoid runtime
+extremely performance-sensitive code, it may be preferable to avoid run-time
 error-handling.
 
 For more information, see

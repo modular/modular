@@ -1,0 +1,38 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+modular_py_library(
+    name = "base_print_hook",
+    srcs = [
+        "base_print_hook.py",
+        "identity.py",
+    ],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/nn",
+    ],
+)
+
+modular_py_library(
+    name = "print_hook",
+    srcs = ["print_hook.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":base_print_hook",
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/graph",
+    ],
+)
+
+modular_py_library(
+    name = "hooks",
+    srcs = [
+        "__init__.py",
+    ],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":print_hook",
+    ],
+)

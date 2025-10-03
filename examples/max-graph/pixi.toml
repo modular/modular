@@ -1,0 +1,17 @@
+[project]
+authors = ["Modular <hello@modular.com>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "max-graph"
+description = "A simple example of building a MAX graph in Python"
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+addition = "python3 addition.py"
+test = "pytest test_addition.py"
+
+[dependencies]
+python = ">=3.9,<3.14"
+max = "*"
+numpy = "*"
+pytest = ">=8.3.3,<9"

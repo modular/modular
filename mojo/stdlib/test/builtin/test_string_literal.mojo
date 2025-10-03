@@ -10,24 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from sys.ffi import c_char
 
-from memory import UnsafePointer
-from testing import (
-    assert_equal,
-    assert_false,
-    assert_not_equal,
-    assert_raises,
-    assert_true,
-)
-from builtin.string_literal import (
-    _base64_encode,
-    _base64_decode,
-    _compress,
-    _decompress,
-)
+from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_add():
@@ -45,7 +31,7 @@ def test_mul():
     assert_equal(static_concat_0, static_concat_1)
     assert_equal(static_concat_1, static_concat_2)
     assert_equal("mojomojomojo", static_concat_0)
-    assert_equal(static_concat_0, String("mojo") * 3)
+    assert_equal(static_concat_0, "mojo" * 3)
     var dynamic_concat = "mojo" * 3
     assert_equal("mojomojomojo", dynamic_concat)
     assert_equal(static_concat_0, dynamic_concat)
@@ -58,7 +44,7 @@ def test_equality():
     assert_true(StringLiteral.__ne__("five", "six"))
     assert_false(StringLiteral.__ne__("six", "six"))
 
-    var hello = String("hello")
+    var hello = "hello"
     var hello_ref = hello.as_string_slice()
 
     assert_false(StringLiteral.__eq__("goodbye", hello))
@@ -76,12 +62,6 @@ def test_len():
 def test_bool():
     assert_true(StringLiteral.__bool__("not_empty"))
     assert_false(StringLiteral.__bool__(""))
-
-
-def test_contains():
-    assert_true(StringLiteral.__contains__("abcde", "abc"))
-    assert_true(StringLiteral.__contains__("abcde", "bc"))
-    assert_false(StringLiteral.__contains__("abcde", "xy"))
 
 
 def test_find():
@@ -123,17 +103,6 @@ def test_rfind():
     assert_equal("hello world".rfind("w", -5), 6)
 
     assert_equal(-1, "abc".rfind("abcd"))
-
-
-def test_replace():
-    assert_equal("".replace("", "hello world"), "")
-    assert_equal("hello world".replace("", "something"), "hello world")
-    assert_equal("hello world".replace("world", ""), "hello ")
-    assert_equal("hello world".replace("world", "mojo"), "hello mojo")
-    assert_equal(
-        "hello world hello world".replace("world", "mojo"),
-        "hello mojo hello mojo",
-    )
 
 
 def test_startswith():
@@ -218,15 +187,6 @@ def test_comparison_operators():
     assert_true(StringLiteral.__ge__("", empty_slice))
 
 
-def test_hash():
-    # Test a couple basic hash behaviors.
-    # `test_hash.test_hash_bytes` has more comprehensive tests.
-    assert_not_equal(0, StringLiteral.__hash__("test"))
-    assert_not_equal(StringLiteral.__hash__("a"), StringLiteral.__hash__("b"))
-    assert_equal(StringLiteral.__hash__("a"), StringLiteral.__hash__("a"))
-    assert_equal(StringLiteral.__hash__("b"), StringLiteral.__hash__("b"))
-
-
 def test_indexing():
     var s = "hello"
     assert_equal(s[False], "h")
@@ -239,32 +199,6 @@ def test_intable():
 
     with assert_raises():
         _ = StringLiteral.__int__("hi")
-
-
-def test_join():
-    assert_equal("".join(), "")
-    assert_equal("".join("a", "b", "c"), "abc")
-    assert_equal(" ".join("a", "b", "c"), "a b c")
-    assert_equal(" ".join("a", "b", "c", ""), "a b c ")
-    assert_equal(" ".join("a", "b", "c", " "), "a b c  ")
-
-    var sep = ","
-    var s = String("abc")
-    assert_equal(sep.join(s, s, s, s), "abc,abc,abc,abc")
-    assert_equal(sep.join(1, 2, 3), "1,2,3")
-    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
-
-    var s2 = ",".join(List[UInt8](1, 2, 3))
-    assert_equal(s2, "1,2,3")
-
-    var s3 = ",".join(List[UInt8](1, 2, 3, 4, 5, 6, 7, 8, 9))
-    assert_equal(s3, "1,2,3,4,5,6,7,8,9")
-
-    var s4 = ",".join(List[UInt8]())
-    assert_equal(s4, "")
-
-    var s5 = ",".join(List[UInt8](1))
-    assert_equal(s5, "1")
 
 
 def test_isdigit():
@@ -295,7 +229,7 @@ def test_iter():
     # Test iterating over a string
     var s = "one"
     var i = 0
-    for c in s:
+    for c in s.codepoints():
         if i == 0:
             assert_equal(String(c), "o")
         elif i == 1:
@@ -402,137 +336,11 @@ def test_center():
     assert_equal("hello".center(8, "*"), "*hello**")
 
 
-def test_split():
-    var d = "hello world".split()
-    assert_true(len(d) == 2)
-    assert_true(d[0] == "hello")
-    assert_true(d[1] == "world")
-    d = "hello \t\n\n\v\fworld".split("\n")
-    assert_true(len(d) == 3)
-    assert_true(d[0] == "hello \t" and d[1] == "" and d[2] == "\v\fworld")
-
-    # should split into empty strings between separators
-    d = "1,,,3".split(",")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "1" and d[1] == "" and d[2] == "" and d[3] == "3")
-    d = "abababaaba".split("aba")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "" and d[1] == "b" and d[2] == "" and d[3] == "")
-
-    # should split into maxsplit + 1 items
-    d = "1,2,3".split(",", 0)
-    assert_true(len(d) == 1)
-    assert_true(d[0] == "1,2,3")
-    d = "1,2,3".split(",", 1)
-    assert_true(len(d) == 2)
-    assert_true(d[0] == "1" and d[1] == "2,3")
-
-    assert_true(len("".split()) == 0)
-    assert_true(len(" ".split()) == 0)
-    assert_true(len("".split(" ")) == 1)
-    assert_true(len(" ".split(" ")) == 2)
-    assert_true(len("  ".split(" ")) == 3)
-    assert_true(len("   ".split(" ")) == 4)
-
-    with assert_raises():
-        _ = "".split("")
-
-    # Matches should be properly split in multiple case
-    var d2 = " "
-    var in2 = "modcon is coming soon"
-    var res2 = in2.split(d2)
-    assert_equal(len(res2), 4)
-    assert_equal(res2[0], "modcon")
-    assert_equal(res2[1], "is")
-    assert_equal(res2[2], "coming")
-    assert_equal(res2[3], "soon")
-
-    # No match from the delimiter
-    var d3 = "x"
-    var in3 = "hello world"
-    var res3 = in3.split(d3)
-    assert_equal(len(res3), 1)
-    assert_equal(res3[0], "hello world")
-
-    # Multiple character delimiter
-    var d4 = "ll"
-    var in4 = "hello"
-    var res4 = in4.split(d4)
-    assert_equal(len(res4), 2)
-    assert_equal(res4[0], "he")
-    assert_equal(res4[1], "o")
-
-
-def test_splitlines():
-    alias L = List[String]
-    # Test with no line breaks
-    assert_equal("hello world".splitlines(), L("hello world"))
-
-    # Test with line breaks
-    assert_equal("hello\nworld".splitlines(), L("hello", "world"))
-    assert_equal("hello\rworld".splitlines(), L("hello", "world"))
-    assert_equal("hello\r\nworld".splitlines(), L("hello", "world"))
-
-    # Test with multiple different line breaks
-    s1 = "hello\nworld\r\nmojo\rlanguage\r\n"
-    hello_mojo = L("hello", "world", "mojo", "language")
-    assert_equal(s1.splitlines(), hello_mojo)
-    assert_equal(
-        s1.splitlines(keepends=True),
-        L("hello\n", "world\r\n", "mojo\r", "language\r\n"),
-    )
-
-    # Test with an empty string
-    assert_equal("".splitlines(), L())
-    # test \v \f \x1c \x1d
-    s2 = "hello\vworld\fmojo\x1clanguage\x1d"
-    assert_equal(s2.splitlines(), hello_mojo)
-    assert_equal(
-        s2.splitlines(keepends=True),
-        L("hello\v", "world\f", "mojo\x1c", "language\x1d"),
-    )
-
-    # test \x1c \x1d \x1e
-    s3 = "hello\x1cworld\x1dmojo\x1elanguage\x1e"
-    assert_equal(s3.splitlines(), hello_mojo)
-    assert_equal(
-        s3.splitlines(keepends=True),
-        L("hello\x1c", "world\x1d", "mojo\x1e", "language\x1e"),
-    )
-
-
 def test_float_conversion():
     assert_equal(("4.5").__float__(), 4.5)
     assert_equal(Float64("4.5"), 4.5)
     with assert_raises():
         _ = ("not a float").__float__()
-
-
-def test_string_literal_from_stringable():
-    assert_equal(get_string_literal["hello"](), "hello")
-    assert_equal(get_string_literal[String("hello")](), "hello")
-    assert_equal(get_string_literal[42](), "42")
-    assert_equal(
-        get_string_literal[SIMD[DType.int64, 4](1, 2, 3, 4)](), "[1, 2, 3, 4]"
-    )
-
-
-def test_base64_encode_decode():
-    assert_equal(_base64_encode["hello"](), "aGVsbG8=")
-    assert_equal(_base64_decode["aGVsbG8="](), "hello")
-
-    alias encoded = _base64_encode["I'm a mojo string"]()
-    alias decoded = _base64_decode[encoded]()
-    assert_equal(decoded, "I'm a mojo string")
-
-
-def test_compress_decompress():
-    alias compressed = _compress["hello"]()
-    alias decompressed = _decompress[compressed]()
-    alias compressed_base64 = _base64_encode[compressed]()
-    assert_equal(compressed_base64, "eNrLSM3JyQcABiwCFQ==")
-    assert_equal(len(compressed), 13)
-    assert_equal(decompressed, "hello")
 
 
 def main():
@@ -541,14 +349,10 @@ def main():
     test_equality()
     test_len()
     test_bool()
-    test_contains()
     test_find()
-    test_join()
     test_rfind()
-    test_replace()
     test_comparison_operators()
     test_count()
-    test_hash()
     test_indexing()
     test_intable()
     test_isdigit()
@@ -563,9 +367,4 @@ def main():
     test_startswith()
     test_endswith()
     test_strip()
-    test_split()
-    test_splitlines()
     test_float_conversion()
-    test_string_literal_from_stringable()
-    test_base64_encode_decode()
-    test_compress_decompress()

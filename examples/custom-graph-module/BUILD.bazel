@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+
+modular_py_binary(
+    name = "main",
+    srcs = [
+        "main.py",
+        "mlp.py",
+    ],
+    imports = ["."],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        "//SDK/lib/API/python/max/nn",
+    ],
+)
+
+modular_run_binary_test(
+    name = "main_test",
+    binary = "main",
+    external_noop = True,
+)

@@ -1,0 +1,22 @@
+[workspace]
+authors = ["Modular <hello@modular.com>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge", "pytorch"]
+description = "Examples of PyTorch custom ops in Mojo"
+name = "pytorch_custom_ops"
+platforms = ["linux-aarch64", "linux-64", "osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+addition = "python addition.py"
+grayscale = "python grayscale.py"
+graph = "python graph.py"
+torch-grayscale = "python torch-grayscale.py"
+whisper = "python whisper.py"
+
+[dependencies]
+modular = ">=25.6.0.dev2025080505,<26"
+pillow = ">=11.3.0,<12"
+numpy = ">=2.3.2,<3"
+pytorch = ">=2.7.1,<3"
+transformers = "*"
+datasets = "*"

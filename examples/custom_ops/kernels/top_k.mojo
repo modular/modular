@@ -12,22 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from sys import alignof, sizeof, num_physical_cores
+from sys import align_of, size_of
+
 from algorithm import parallelize_over_rows
 from bit import log2_floor
 from compiler import register
-from gpu import WARP_SIZE, barrier, block_idx, block_dim, thread_idx, warp
+from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx, warp
 from gpu.memory import AddressSpace, external_memory
-from max.tensor import OutputTensor, InputTensor
 from memory import Span
 from runtime.asyncrt import DeviceContextPtr
-from utils.index import IndexList
+from tensor_internal import InputTensor, OutputTensor
+
 from utils.numerics import min_or_neg_inf
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TopKElement[T: DType]:
+struct TopKElement[T: DType](
+    ImplicitlyCopyable & GreaterThanComparable & Movable
+):
     """Stores the value with it's index."""
 
     var idx: Int32
@@ -48,15 +51,15 @@ struct TopK:
 
     @staticmethod
     fn execute[
-        type: DType,
+        dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
         K: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
-        out_vals: OutputTensor[type=type, rank=rank],
-        out_idxs: OutputTensor[type = DType.int32, rank=rank],
-        in_vals: InputTensor[type=type, rank=rank],
+        out_vals: OutputTensor[dtype=dtype, rank=rank],
+        out_idxs: OutputTensor[dtype = DType.int32, rank=rank],
+        in_vals: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()
@@ -69,26 +72,30 @@ struct TopK:
         var batch_size = shape[0]
         var dev_ctx = ctx.get_device_context()
 
+        var out_vals_tensor = out_vals.to_layout_tensor()
+        var out_idxs_tensor = out_idxs.to_layout_tensor()
+        var in_vals_tensor = in_vals.to_layout_tensor()
+
         @parameter
         fn top_k_gpu[
             K: Int,
         ](
-            out_vals: __type_of(out_vals),
-            out_idxs: __type_of(out_idxs),
-            in_vals: __type_of(in_vals),
+            out_vals: __type_of(out_vals_tensor),
+            out_idxs: __type_of(out_idxs_tensor),
+            in_vals: __type_of(in_vals_tensor),
         ):
             var bid = block_idx.x
             var tid = thread_idx.x
 
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
-                TopKElement[type],
+                TopKElement[dtype],
                 address_space = AddressSpace.SHARED,
-                alignment = alignof[TopKElement[type]](),
+                alignment = align_of[TopKElement[dtype]](),
             ]()
 
             # Threads put their corresponding index and value into shared memory
-            top_k_sram[tid] = TopKElement(tid, in_vals[bid, tid])
+            top_k_sram[tid] = TopKElement(tid, in_vals[bid, tid][0])
             # Finish packing the values across threads in this block
             barrier()
 
@@ -121,24 +128,24 @@ struct TopK:
 
                     # Remove found maximum from consideration in the next iter
                     var index = reduced.idx % block_dim.x
-                    top_k_sram[index].val = min_or_neg_inf[type]()
+                    top_k_sram[index].val = min_or_neg_inf[dtype]()
 
         @parameter
         if target == "gpu":
-            dev_ctx.enqueue_function[top_k_gpu[K]](
-                out_vals,
-                out_idxs,
-                in_vals,
+            dev_ctx.enqueue_function_checked[top_k_gpu[K], top_k_gpu[K]](
+                out_vals_tensor,
+                out_idxs_tensor,
+                in_vals_tensor,
                 grid_dim=batch_size,  # One block per batch
                 block_dim=K,  # One thread per K
-                shared_mem_bytes=K * sizeof[TopKElement[type]](),
+                shared_mem_bytes=K * size_of[TopKElement[dtype]](),
             )
         else:
 
             @parameter
             fn top_k_cpu(start_idx: Int, end_idx: Int):
                 for row_idx in range(start_idx, end_idx):
-                    var offset = (row_idx * K)
+                    var offset = row_idx * K
                     iota(out_idxs.unsafe_ptr() + offset, K)
 
                     @parameter

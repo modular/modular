@@ -15,11 +15,10 @@ from math import iota
 
 import compiler
 from complex import ComplexSIMD
-from max.tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
 from runtime.asyncrt import DeviceContextPtr
+from tensor_internal import OutputTensor, foreach
 
 from utils.index import IndexList
-
 
 alias float_dtype = DType.float32
 
@@ -29,9 +28,9 @@ struct Mandelbrot:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StringLiteral,
+        target: StaticString,
     ](
-        out: OutputTensor,
+        output: OutputTensor,
         # starting here are the list of inputs
         min_x: Float32,
         min_y: Float32,
@@ -45,15 +44,17 @@ struct Mandelbrot:
         @always_inline
         fn elementwise_mandelbrot[
             width: Int
-        ](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
+        ](idx: IndexList[output.rank]) -> SIMD[output.dtype, width]:
             # Obtain the position in the grid from the X, Y thread locations.
             var row = idx[0]
             var col = idx[1]
 
             # Calculate the complex C corresponding to that grid location.
-            var cx = min_x.cast[float_dtype]() + (
-                col + iota[float_dtype, width]()
-            ) * scale_x.cast[float_dtype]()
+            var cx = (
+                min_x.cast[float_dtype]()
+                + (col + iota[float_dtype, width]())
+                * scale_x.cast[float_dtype]()
+            )
             var cy = min_y.cast[float_dtype]() + row * SIMD[float_dtype, width](
                 scale_y.cast[float_dtype]()
             )
@@ -61,15 +62,15 @@ struct Mandelbrot:
             var z = ComplexSIMD[float_dtype, width](0, 0)
 
             # Perform the Mandelbrot iteration loop calculation.
-            var iters = SIMD[out.type, width](0)
-            var in_set_mask: SIMD[DType.bool, width] = True
+            var iters = SIMD[output.dtype, width](0)
+            var in_set_mask = SIMD[DType.bool, width](fill=True)
             for _ in range(max_iterations):
                 if not any(in_set_mask):
                     break
-                in_set_mask = z.squared_norm() <= 4
+                in_set_mask = z.squared_norm().le(4)
                 iters = in_set_mask.select(iters + 1, iters)
                 z = z.squared_add(c)
 
             return iters
 
-        foreach[elementwise_mandelbrot, target=target](out, ctx)
+        foreach[elementwise_mandelbrot, target=target](output, ctx)

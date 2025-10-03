@@ -10,21 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from sys import os_is_macos
-
-from testing import assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_tuple_contains():
-    var a = (123, True, "Mojo is awesome")
+    var a = (123, True, StaticString("Mojo is awesome"))
 
-    assert_true("Mojo is awesome" in a)
-    assert_true(a.__contains__("Mojo is awesome"))
+    assert_true(StaticString("Mojo is awesome") in a)
+    assert_true(a.__contains__(StaticString("Mojo is awesome")))
 
-    assert_false("Hello world" in a)
-    assert_false(a.__contains__("Hello world"))
+    assert_false(StaticString("Hello world") in a)
+    assert_false(a.__contains__(StaticString("Hello world")))
 
     assert_true(123 in a)
     assert_true(a.__contains__(123))
@@ -54,22 +52,22 @@ def test_tuple_contains():
     assert_false(True in c)
     assert_false(False in c)
 
-    var d = (123, True, String("Mojo is awesome"))
+    var d = (123, True, "Mojo is awesome")
 
-    assert_true(String("Mojo is awesome") in d)
-    assert_false("Mojo is awesome" in d)
-    assert_true(d.__contains__(String("Mojo is awesome")))
+    assert_true("Mojo is awesome" in d)
+    assert_false(StaticString("Mojo is awesome") in d)
+    assert_true(d.__contains__("Mojo is awesome"))
 
-    assert_false(String("Hello world") in d)
-    assert_false(d.__contains__(String("Hello world")))
+    assert_false("Hello world" in d)
+    assert_false(d.__contains__("Hello world"))
 
-    alias a_alias = (123, True, "Mojo is awesome")
+    alias a_alias = (123, True, StaticString("Mojo is awesome"))
 
-    assert_true("Mojo is awesome" in a_alias)
-    assert_true(a_alias.__contains__("Mojo is awesome"))
+    assert_true(StaticString("Mojo is awesome") in a_alias)
+    assert_true(a_alias.__contains__(StaticString("Mojo is awesome")))
 
-    assert_false("Hello world" in a_alias)
-    assert_false(a_alias.__contains__("Hello world"))
+    assert_false(StaticString("Hello world") in a_alias)
+    assert_false(a_alias.__contains__(StaticString("Hello world")))
 
     assert_true(123 in a_alias)
     assert_true(a_alias.__contains__(123))
@@ -99,18 +97,30 @@ def test_tuple_contains():
     assert_false(True in c_alias)
     assert_false(False in c_alias)
 
-    alias d_alias = (123, True, String("Mojo is awesome"))
+    alias d_alias = (123, True, "Mojo is awesome")
     # Ensure `contains` itself works in comp-time domain
     alias ok = 123 in d_alias
     assert_true(ok)
 
-    assert_true(String("Mojo is awesome") in d_alias)
-    assert_false("Mojo is awesome" in d_alias)
-    assert_true(d_alias.__contains__(String("Mojo is awesome")))
+    assert_true("Mojo is awesome" in d_alias)
+    assert_true(d_alias.__contains__("Mojo is awesome"))
 
-    assert_false(String("Hello world") in d_alias)
-    assert_false(d_alias.__contains__(String("Hello world")))
+    assert_false("Hello world" in d_alias)
+    assert_false(d_alias.__contains__("Hello world"))
+
+
+def test_tuple_unpack():
+    (var list) = [a + b for a, b in [(1, 2), (3, 4)]]
+    assert_equal(list, [3, 7])
+
+    var list2 = [a + b for a, b in [(1, 2), (3, 4)]]
+    assert_equal(list2, [3, 7])
 
 
 def main():
-    test_tuple_contains()
+    var suite = TestSuite()
+
+    suite.test[test_tuple_contains]()
+    suite.test[test_tuple_unpack]()
+
+    suite^.run()

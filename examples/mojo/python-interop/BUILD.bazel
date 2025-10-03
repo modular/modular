@@ -1,0 +1,59 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+
+modular_py_binary(
+    name = "hello",
+    srcs = ["hello.py"],
+    data = ["hello_mojo.mojo"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//open-source/max/mojo/python/mojo",
+    ],
+)
+
+modular_py_binary(
+    name = "person",
+    srcs = ["person.py"],
+    data = ["person_module.mojo"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//open-source/max/mojo/python/mojo",
+    ],
+)
+
+modular_py_binary(
+    name = "mandelbrot",
+    srcs = ["mandelbrot.py"],
+    data = ["mandelbrot_mojo.mojo"],
+    mojo_deps = [
+        "@mojo//:layout",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//open-source/max/mojo/python/mojo",
+    ],
+)
+
+modular_run_binary_test(
+    name = "hello_test",
+    binary = "hello",
+    external_noop = True,
+)
+
+modular_run_binary_test(
+    name = "person_test",
+    binary = "person",
+    external_noop = True,
+)
+
+modular_run_binary_test(
+    name = "mandelbrot_test",
+    binary = "mandelbrot",
+)

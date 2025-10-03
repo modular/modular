@@ -10,42 +10,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from os import abort
-
-from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import (
-    CopyCounter,
-    MoveCounter,
-    DelRecorder,
     AbortOnDel,
+    CopyCounter,
+    DelRecorder,
+    MoveCounter,
+    TestSuite,
 )
 from testing import assert_equal
 
 
 def test_maybe_uninitialized():
     # Every time an Int is destroyed, it's going to be recorded here.
-    var destructor_counter = List[Int]()
+    var destructor_recorder = List[Int]()
 
-    var a = UnsafeMaybeUninitialized[DelRecorder]()
-    a.write(DelRecorder(42, UnsafePointer.address_of(destructor_counter)))
+    var ptr = UnsafePointer(to=destructor_recorder).origin_cast[False]()
+    var a = UnsafeMaybeUninitialized[DelRecorder[ptr.origin]]()
+    a.write(DelRecorder(42, ptr))
 
     assert_equal(a.assume_initialized().value, 42)
-    assert_equal(len(destructor_counter), 0)
+    assert_equal(len(destructor_recorder), 0)
 
     assert_equal(a.unsafe_ptr()[].value, 42)
-    assert_equal(len(destructor_counter), 0)
+    assert_equal(len(destructor_recorder), 0)
 
     a.assume_initialized_destroy()
-    assert_equal(len(destructor_counter), 1)
-    assert_equal(destructor_counter[0], 42)
+    assert_equal(len(destructor_recorder), 1)
+    assert_equal(destructor_recorder[0], 42)
     _ = a
 
     # Last use of a, but the destructor should not have run
     # since we assume uninitialized memory
-    assert_equal(len(destructor_counter), 1)
+    assert_equal(len(destructor_recorder), 1)
 
 
 def test_write_does_not_trigger_destructor():
@@ -53,7 +51,7 @@ def test_write_does_not_trigger_destructor():
     a.write(AbortOnDel(42))
 
     # Using the initializer should not trigger the destructor too.
-    var b = UnsafeMaybeUninitialized[AbortOnDel](AbortOnDel(42))
+    _ = UnsafeMaybeUninitialized[AbortOnDel](AbortOnDel(42))
 
     # The destructor of a and b have already run at this point, and it shouldn't have
     # caused a crash since we assume uninitialized memory.
@@ -77,7 +75,7 @@ def test_maybe_uninitialized_move_from_pointer():
 
     var b = UnsafeMaybeUninitialized[MoveCounter[Int]]()
     # b is uninitialized here.
-    b.move_from(UnsafePointer.address_of(a))
+    b.move_from(UnsafePointer(to=a))
     _ = a^
 
     # a is uninitialized now. Thankfully, we're working with trivial types
@@ -102,8 +100,12 @@ def test_maybe_uninitialized_copy():
 
 
 def main():
-    test_maybe_uninitialized()
-    test_write_does_not_trigger_destructor()
-    test_maybe_uninitialized_move()
-    test_maybe_uninitialized_move_from_pointer()
-    test_maybe_uninitialized_copy()
+    var suite = TestSuite()
+
+    suite.test[test_maybe_uninitialized]()
+    suite.test[test_write_does_not_trigger_destructor]()
+    suite.test[test_maybe_uninitialized_move]()
+    suite.test[test_maybe_uninitialized_move_from_pointer]()
+    suite.test[test_maybe_uninitialized_copy]()
+
+    suite^.run()

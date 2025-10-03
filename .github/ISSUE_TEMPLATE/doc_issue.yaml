@@ -12,17 +12,15 @@
 ##===----------------------------------------------------------------------===##
 
 name: Documentation issue
-description: Report a problem with the MAX docs
+description: Report a problem with the docs
 title: "[Docs]"
 labels:
-  - "documentation,max-repo"
+  - "documentation,Needs Triage"
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for helping us improve the MAX docs!
-
-        Please add a title above and fill in the following fields so we can understand the problem.
+        Please add a title above and fill in the following fields.
 
   - type: input
     id: url
@@ -48,4 +46,4 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you!
+        Thank you for helping us improve the docs!

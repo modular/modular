@@ -10,12 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo --debug-level full %s
 
-from collections import List
-
-from memory import ArcPointer, UnsafePointer
-from test_utils import ObservableDel
+from memory import ArcPointer
+from test_utils import ObservableDel, TestSuite
 from testing import assert_equal, assert_false, assert_true
 
 
@@ -38,12 +35,14 @@ def test_is():
 
 def test_deleter_not_called_until_no_references():
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer.address_of(deleted)))
+    var p = ArcPointer(
+        ObservableDel(UnsafePointer(to=deleted).origin_cast[False]())
+    )
     var p2 = p
     _ = p^
     assert_false(deleted)
 
-    var vec = List[ArcPointer[ObservableDel]]()
+    var vec = List[__type_of(p)]()
     vec.append(p2)
     _ = p2^
     assert_false(deleted)
@@ -53,12 +52,14 @@ def test_deleter_not_called_until_no_references():
 
 def test_deleter_not_called_until_no_references_explicit_copy():
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer.address_of(deleted)))
+    var p = ArcPointer(
+        ObservableDel(UnsafePointer(to=deleted).origin_cast[False]())
+    )
     var p2 = p.copy()
     _ = p^
     assert_false(deleted)
 
-    var vec = List[ArcPointer[ObservableDel]]()
+    var vec = List[__type_of(p)]()
     vec.append(p2.copy())
     _ = p2^
     assert_false(deleted)
@@ -70,16 +71,52 @@ def test_count():
     var a = ArcPointer(10)
     var b = a.copy()
     var c = a
-    assert_equal(3, a.count())
+    assert_equal(UInt64(3), a.count())
     _ = b^
-    assert_equal(2, a.count())
+    assert_equal(UInt64(2), a.count())
     _ = c
-    assert_equal(1, a.count())
+    assert_equal(UInt64(1), a.count())
+
+
+def test_steal_data_and_construct_from_raw_ptr():
+    var deleted = False
+    var leaked = ArcPointer(
+        ObservableDel(UnsafePointer(to=deleted).origin_cast[False]())
+    )
+
+    var raw = leaked^.steal_data()
+    assert_false(deleted)
+
+    var p = ArcPointer(unsafe_from_raw_pointer=raw)
+    _ = p^
+    assert_true(deleted)
+
+
+def test_steal_data_does_not_decrement_refcount():
+    var leaked = ArcPointer(42)
+    var copy = leaked.copy()
+
+    assert_equal(UInt64(2), copy.count())
+    var raw = leaked^.steal_data()
+
+    # since we leaked the data, the refcount was not decremented
+    assert_equal(UInt64(2), copy.count())
+
+    _ = copy^
+
+    var p = ArcPointer(unsafe_from_raw_pointer=raw)
+    assert_equal(UInt64(1), p.count())
 
 
 def main():
-    test_basic()
-    test_is()
-    test_deleter_not_called_until_no_references()
-    test_deleter_not_called_until_no_references_explicit_copy()
-    test_count()
+    var suite = TestSuite()
+
+    suite.test[test_basic]()
+    suite.test[test_is]()
+    suite.test[test_deleter_not_called_until_no_references]()
+    suite.test[test_deleter_not_called_until_no_references_explicit_copy]()
+    suite.test[test_count]()
+    suite.test[test_steal_data_and_construct_from_raw_ptr]()
+    suite.test[test_steal_data_does_not_decrement_refcount]()
+
+    suite^.run()

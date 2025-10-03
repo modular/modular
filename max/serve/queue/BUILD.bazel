@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "queue",
+    srcs = glob(["*.py"]),
+    imports = ["../../.."],
+    deps = [
+        "//SDK/lib/API/python/max/interfaces",
+        "//SDK/lib/API/python/max/profiler",
+        requirement("psutil"),
+        requirement("pyzmq"),
+    ],
+)

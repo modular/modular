@@ -1,0 +1,66 @@
+load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("@rules_pycross//pycross:defs.bzl", "pycross_lock_file", "pycross_uv_lock_model")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load(":uv.bzl", "uv_lock")
+
+sh_binary(
+    name = "uv",
+    srcs = ["uv-wrapper.sh"],
+    data = [
+        "//bazel/internal:uv",
+        "@python_3_9//:py3_runtime",
+        "@python_3_9//:python3",
+    ],
+    env = {
+        "UV": "$(rlocationpath //bazel/internal:uv)",
+        "PYTHON": "$(rlocationpath @python_3_9//:python3)",
+    },
+    deps = [
+        "@bazel_tools//tools/bash/runfiles",
+    ],
+)
+
+uv_lock(
+    name = "uv_lock",
+    exec_properties = {"dockerNetwork": "bridge"},
+    existing_lockfile = "uv.lock",
+    py3_runtime = "@python_3_9//:py3_runtime",
+    pyproject = "pyproject.toml",
+)
+
+genrule(
+    name = "generate_pycross_bzl_lock",
+    srcs = [":uv_lock"],
+    outs = ["new_pycross_lock_file.bzl"],
+    cmd = "$(location //bazel/pip/pycross:generate) $(location :uv_lock) $(OUTS)",
+    tools = ["//bazel/pip/pycross:generate"],
+)
+
+write_source_files(
+    name = "update_requirements",
+    files = {
+        "uv.lock": ":uv_lock",
+        "pycross_lock_file.bzl": ":generate_pycross_bzl_lock",
+    },
+)
+
+# NOTE: These upstream files are unused but are useful for diffing against our
+# custom output
+pycross_uv_lock_model(
+    name = "default_lock_model",
+    development_groups = ["cpu"],
+    lock_file = "uv.lock",
+    project_file = "pyproject.toml",
+)
+
+pycross_lock_file(
+    name = "pycross_lock_file",
+    out = "upstream_pycross_lock_file.bzl",
+    default_alias_single_version = True,
+    default_build_dependencies = [
+        "setuptools",
+        "wheel",
+    ],
+    lock_model_file = ":default_lock_model",
+    target_environments = ["@rules_pycross_all_environments//:environments"],
+)

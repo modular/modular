@@ -1,8 +1,20 @@
 aiohttp
+datasets
 huggingface_hub[hf_transfer]
 huggingface_hub
+msgspec
 numpy
+protobuf
+psutil
+taskgroup
 tqdm
 transformers
-nvitop
+typing-extensions
 Jinja2
+Pillow
+
+# for upload.py
+boto3
+click
+google-auth
+google-cloud-bigquery

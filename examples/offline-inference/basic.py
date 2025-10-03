@@ -11,24 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/serve/offline-inference.mdx
+
 from __future__ import annotations
 
 import os
 
 from max.entrypoints.llm import LLM
 from max.pipelines import PipelineConfig
-from max.pipelines.architectures import register_all_models
-from max.serve.config import Settings
 
 
-def main():
-    register_all_models()
-
+def main() -> None:
     model_path = "modularai/Llama-3.1-8B-Instruct-GGUF"
     print(f"Loading model: {model_path}")
     pipeline_config = PipelineConfig(model_path=model_path)
-    settings = Settings()
-    llm = LLM(settings, pipeline_config)
+    llm = LLM(pipeline_config)
 
     prompts = [
         "In the beginning, there was",

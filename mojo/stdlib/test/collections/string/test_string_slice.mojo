@@ -10,17 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections.string._utf8_validation import _is_valid_utf8
-from collections.string.string_slice import (
-    StringSlice,
-    _count_utf8_continuation_bytes,
-)
-from sys.info import alignof, sizeof
+from collections.string.string_slice import _to_string_list, get_static_string
+from sys.info import size_of
 
-from memory import Span, UnsafePointer
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
@@ -60,23 +55,34 @@ fn test_string_slice_layout() raises:
     # `llvm::StringRef`
 
     # StringSlice should be two words in size.
-    assert_equal(sizeof[StringSlice[MutableAnyOrigin]](), 2 * sizeof[Int]())
+    assert_equal(size_of[StringSlice[MutableAnyOrigin]](), 2 * size_of[Int]())
 
     var str_slice = StringSlice("")
 
-    var base_ptr = Int(UnsafePointer.address_of(str_slice))
-    var first_word_ptr = Int(UnsafePointer.address_of(str_slice._slice._data))
-    var second_word_ptr = Int(UnsafePointer.address_of(str_slice._slice._len))
+    var base_ptr = Int(UnsafePointer(to=str_slice))
+    var first_word_ptr = Int(UnsafePointer(to=str_slice._slice._data))
+    var second_word_ptr = Int(UnsafePointer(to=str_slice._slice._len))
 
     # 1st field should be at 0-byte offset from base ptr
     assert_equal(first_word_ptr - base_ptr, 0)
     # 2nd field should at 1-word offset from base ptr
-    assert_equal(second_word_ptr - base_ptr, sizeof[Int]())
+    assert_equal(second_word_ptr - base_ptr, size_of[Int]())
+
+
+def test_constructors():
+    def some_func_immut(b: StringSlice[mut=False]):
+        assert_false(b.mut)
+
+    def some_func_mut(b: StringSlice[mut=True]):
+        assert_true(b.mut)
+
+    var a = "123"
+    some_func_immut(a)
+    some_func_mut(StringSlice(a))
 
 
 fn test_string_literal_byte_span() raises:
-    alias string: StringLiteral = "Hello"
-    alias slc = string.as_bytes()
+    alias slc = "Hello".as_bytes()
 
     assert_equal(len(slc), 5)
     assert_equal(slc[0], ord("H"))
@@ -87,8 +93,8 @@ fn test_string_literal_byte_span() raises:
 
 
 fn test_string_byte_span() raises:
-    var string = String("Hello")
-    var str_slice = string.as_bytes()
+    var string = "Hello"
+    var str_slice = string.as_bytes_mut()
 
     assert_equal(len(str_slice), 5)
     assert_equal(str_slice[0], ord("H"))
@@ -194,18 +200,6 @@ fn test_string_byte_span() raises:
     assert_equal(unicode_str1[0:0], "")
     assert_equal(unicode_str1[0:1], "H")
     assert_equal(unicode_str1[0:2], "Hi")
-    with assert_raises(
-        contains="String `Slice` end byte 3 must fall on codepoint boundary."
-    ):
-        _ = unicode_str1[0:3]
-    with assert_raises(
-        contains="String `Slice` end byte 4 must fall on codepoint boundary."
-    ):
-        _ = unicode_str1[0:4]
-    with assert_raises(
-        contains="String `Slice` end byte 5 must fall on codepoint boundary."
-    ):
-        _ = unicode_str1[0:5]
     assert_equal(unicode_str1[0:6], "Hi👋")
     assert_equal(unicode_str1[0:7], "Hi👋!")
 
@@ -231,24 +225,14 @@ fn test_string_byte_span() raises:
 
     assert_equal(unicode_str2[0:1], "y")
     assert_equal(unicode_str2[0:2], "yo")
-    with assert_raises(
-        contains="String `Slice` end byte 3 must fall on codepoint boundary."
-    ):
-        _ = unicode_str2[0:3]
     assert_equal(unicode_str2[0:4], unicode_str2)
-    with assert_raises(
-        contains="String `Slice` end byte 3 must fall on codepoint boundary."
-    ):
-        _ = unicode_str2[2:3]
     # NOTE: This renders weirdly, but is a single-codepoint string containing
     #   <https://www.compart.com/en/unicode/U+0308>.
     assert_equal(unicode_str2[2:4], "̈")
 
 
 fn test_heap_string_from_string_slice() raises:
-    alias string_lit: StringLiteral = "Hello"
-
-    alias static_str = string_lit.as_string_slice()
+    alias static_str = "Hello".as_string_slice()
 
     alias heap_string = String(static_str)
 
@@ -256,7 +240,7 @@ fn test_heap_string_from_string_slice() raises:
 
 
 fn test_string_substring() raises:
-    var string = String("Hello")
+    var string = "Hello"
     var str_slice = string.as_string_slice()
 
     assert_equal(len(str_slice), 5)
@@ -305,13 +289,6 @@ fn test_string_substring() raises:
     # Empty slices still have a pointer value
     assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
 
-    # ----------------------------------
-    # Test disallowed stepsize
-    # ----------------------------------
-
-    with assert_raises():
-        var sub6 = str_slice[0:0:2]
-
 
 fn test_slice_len() raises:
     assert_equal(5, len(StringSlice("12345")))
@@ -322,12 +299,12 @@ fn test_slice_len() raises:
     assert_equal(0, len(StringSlice("")))
 
     # String length is in bytes, not codepoints.
-    var s0 = String("ನಮಸ್ಕಾರ")
+    var s0 = "ನಮಸ್ಕಾರ"
     assert_equal(len(s0), 21)
     assert_equal(len(s0.codepoints()), 7)
 
     # For ASCII string, the byte and codepoint length are the same:
-    var s1 = String("abc")
+    var s1 = "abc"
     assert_equal(len(s1), 3)
     assert_equal(len(s1.codepoints()), 3)
 
@@ -362,10 +339,10 @@ fn test_slice_char_length() raises:
 fn test_slice_eq() raises:
     var str1: String = "12345"
     var str2: String = "12345"
-    var str3: StringLiteral = "12345"
+    var str3: StaticString = "12345"
     var str4: String = "abc"
     var str5: String = "abcdef"
-    var str6: StringLiteral = "abcdef"
+    var str6: StaticString = "abcdef"
 
     # eq
 
@@ -419,153 +396,52 @@ def test_slice_repr():
     assert_equal(StringSlice.__repr__("hello 🔥!"), "'hello 🔥!'")  # 4-byte
 
 
-fn test_utf8_validation() raises:
-    var text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
-    varius tellus quis tincidunt dictum. Donec eros orci, ultricies ac metus non
-    , rutrum faucibus neque. Nunc ultricies turpis ut lacus consequat dapibus.
-    Nulla nec risus a purus volutpat blandit. Donec sit amet massa velit. Aenean
-    fermentum libero eu pharetra placerat. Sed id molestie tellus. Fusce
-    sollicitudin a purus ac placerat.
-    Lorem Ipsum，也称乱数假文或者哑元文本， 是印刷及排版领域所常用的虚拟文字
-    由于曾经一台匿名的打印机刻意打乱了一盒印刷字体从而造出一本字体样品书，Lorem
-    Ipsum从西元15世纪起就被作为此领域的标准文本使用。它不仅延续了五个世纪，
-    还通过了电子排版的挑战，其雏形却依然保存至今。在1960年代，”Leatraset”公司发布了印刷着
-    Lorem Ipsum段落的纸张，从而广泛普及了它的使用。最近，计算机桌面出版软件
-    למה אנו משתמשים בזה?
-    זוהי עובדה מבוססת שדעתו של הקורא תהיה מוסחת על ידי טקטס קריא כאשר הוא יביט בפריסתו. המטרה בשימוש
-     ב- Lorem Ipsum הוא שיש לו פחות או יותר תפוצה של אותיות, בניגוד למלל ' יסוי
-    יסוי  יסוי', ונותן חזות קריאה יותר.הרבה הוצאות מחשבים ועורכי דפי אינטרנט משתמשים כיום ב-
-    Lorem Ipsum כטקסט ברירת המחדל שלהם, וחיפוש של 'lorem ipsum' יחשוף אתרים רבים בראשית
-    דרכם.גרסאות רבות נוצרו במהלך השנים, לעתים בשגגה
-    Lorem Ipsum е едноставен модел на текст кој се користел во печатарската
-    индустрија.
-    Lorem Ipsum - це текст-"риба", що використовується в друкарстві та дизайні.
-    Lorem Ipsum คือ เนื้อหาจำลองแบบเรียบๆ ที่ใช้กันในธุรกิจงานพิมพ์หรืองานเรียงพิมพ์
-    มันได้กลายมาเป็นเนื้อหาจำลองมาตรฐานของธุรกิจดังกล่าวมาตั้งแต่ศตวรรษที่
-    Lorem ipsum" في أي محرك بحث ستظهر العديد
-     من المواقع الحديثة العهد في نتائج البحث. على مدى السنين
-     ظهرت نسخ جديدة ومختلفة من نص لوريم إيبسوم، أحياناً عن طريق
-     الصدفة، وأحياناً عن عمد كإدخال بعض العبارات الفكاهية إليها.
-    """
-    assert_true(_is_valid_utf8(text.as_bytes()))
-    assert_true(_is_valid_utf8(text.as_bytes()))
-
-    var positive = List[List[UInt8]](
-        List[UInt8](0x0),
-        List[UInt8](0x00),
-        List[UInt8](0x66),
-        List[UInt8](0x7F),
-        List[UInt8](0x00, 0x7F),
-        List[UInt8](0x7F, 0x00),
-        List[UInt8](0xC2, 0x80),
-        List[UInt8](0xDF, 0xBF),
-        List[UInt8](0xE0, 0xA0, 0x80),
-        List[UInt8](0xE0, 0xA0, 0xBF),
-        List[UInt8](0xED, 0x9F, 0x80),
-        List[UInt8](0xEF, 0x80, 0xBF),
-        List[UInt8](0xF0, 0x90, 0xBF, 0x80),
-        List[UInt8](0xF2, 0x81, 0xBE, 0x99),
-        List[UInt8](0xF4, 0x8F, 0x88, 0xAA),
-    )
-    for item in positive:
-        assert_true(_is_valid_utf8(Span(item[])))
-        assert_true(_is_valid_utf8(Span(item[])))
-    var negative = List[List[UInt8]](
-        List[UInt8](0x80),
-        List[UInt8](0xBF),
-        List[UInt8](0xC0, 0x80),
-        List[UInt8](0xC1, 0x00),
-        List[UInt8](0xC2, 0x7F),
-        List[UInt8](0xDF, 0xC0),
-        List[UInt8](0xE0, 0x9F, 0x80),
-        List[UInt8](0xE0, 0xC2, 0x80),
-        List[UInt8](0xED, 0xA0, 0x80),
-        List[UInt8](0xED, 0x7F, 0x80),
-        List[UInt8](0xEF, 0x80, 0x00),
-        List[UInt8](0xF0, 0x8F, 0x80, 0x80),
-        List[UInt8](0xF0, 0xEE, 0x80, 0x80),
-        List[UInt8](0xF2, 0x90, 0x91, 0x7F),
-        List[UInt8](0xF4, 0x90, 0x88, 0xAA),
-        List[UInt8](0xF4, 0x00, 0xBF, 0xBF),
-        List[UInt8](
-            0xC2, 0x80, 0x00, 0x00, 0xE1, 0x80, 0x80, 0x00, 0xC2, 0xC2, 0x80
-        ),
-        List[UInt8](0x00, 0xC2, 0xC2, 0x80, 0x00, 0x00, 0xE1, 0x80, 0x80),
-        List[UInt8](0x00, 0x00, 0x00, 0xF1, 0x80, 0x00),
-        List[UInt8](0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF1),
-        List[UInt8](0x00, 0x00, 0x00, 0x00, 0xF1, 0x00, 0x80, 0x80),
-        List[UInt8](0x00, 0x00, 0xF1, 0x80, 0xC2, 0x80, 0x00),
-        List[UInt8](0x00, 0x00, 0xF0, 0x80, 0x80, 0x80),
-    )
-    for item in negative:
-        assert_false(_is_valid_utf8(Span(item[])))
-        assert_false(_is_valid_utf8(Span(item[])))
-
-
 def test_find():
-    haystack = String("abcdefg").as_string_slice()
-    haystack_with_special_chars = String("abcdefg@#$").as_string_slice()
-    haystack_repeated_chars = String(
-        "aaaaaaaaaaaaaaaaaaaaaaaa"
-    ).as_string_slice()
+    haystack = "abcdefg".as_string_slice()
+    haystack_with_special_chars = "abcdefg@#$".as_string_slice()
+    haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
 
-    assert_equal(haystack.find(String("a").as_string_slice()), 0)
-    assert_equal(haystack.find(String("ab").as_string_slice()), 0)
-    assert_equal(haystack.find(String("abc").as_string_slice()), 0)
-    assert_equal(haystack.find(String("bcd").as_string_slice()), 1)
-    assert_equal(haystack.find(String("de").as_string_slice()), 3)
-    assert_equal(haystack.find(String("fg").as_string_slice()), 5)
-    assert_equal(haystack.find(String("g").as_string_slice()), 6)
-    assert_equal(haystack.find(String("z").as_string_slice()), -1)
-    assert_equal(haystack.find(String("zzz").as_string_slice()), -1)
+    assert_equal(haystack.find("a".as_string_slice()), 0)
+    assert_equal(haystack.find("ab".as_string_slice()), 0)
+    assert_equal(haystack.find("abc".as_string_slice()), 0)
+    assert_equal(haystack.find("bcd".as_string_slice()), 1)
+    assert_equal(haystack.find("de".as_string_slice()), 3)
+    assert_equal(haystack.find("fg".as_string_slice()), 5)
+    assert_equal(haystack.find("g".as_string_slice()), 6)
+    assert_equal(haystack.find("z".as_string_slice()), -1)
+    assert_equal(haystack.find("zzz".as_string_slice()), -1)
 
-    assert_equal(haystack.find(String("@#$").as_string_slice()), -1)
-    assert_equal(
-        haystack_with_special_chars.find(String("@#$").as_string_slice()), 7
-    )
+    assert_equal(haystack.find("@#$".as_string_slice()), -1)
+    assert_equal(haystack_with_special_chars.find("@#$".as_string_slice()), 7)
 
-    assert_equal(
-        haystack_repeated_chars.find(String("aaa").as_string_slice()), 0
-    )
-    assert_equal(
-        haystack_repeated_chars.find(String("AAa").as_string_slice()), -1
-    )
+    assert_equal(haystack_repeated_chars.find("aaa".as_string_slice()), 0)
+    assert_equal(haystack_repeated_chars.find("AAa".as_string_slice()), -1)
 
-    assert_equal(
-        haystack.find(String("hijklmnopqrstuvwxyz").as_string_slice()), -1
-    )
+    assert_equal(haystack.find("hijklmnopqrstuvwxyz".as_string_slice()), -1)
 
-    assert_equal(
-        String("").as_string_slice().find(String("abc").as_string_slice()), -1
-    )
+    assert_equal(String().as_string_slice().find("abc".as_string_slice()), -1)
 
 
 def test_find_compile_time():
-    alias haystack = String("abcdefg").as_string_slice()
-    alias haystack_with_special_chars = String("abcdefg@#$").as_string_slice()
-    alias haystack_repeated_chars = String(
-        "aaaaaaaaaaaaaaaaaaaaaaaa"
-    ).as_string_slice()
+    alias haystack = "abcdefg".as_string_slice()
+    alias haystack_with_special_chars = "abcdefg@#$".as_string_slice()
+    alias haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
 
-    alias c1 = haystack.find(String("a").as_string_slice())
-    alias c2 = haystack.find(String("ab").as_string_slice())
-    alias c3 = haystack.find(String("abc").as_string_slice())
-    alias c4 = haystack.find(String("bcd").as_string_slice())
-    alias c5 = haystack.find(String("de").as_string_slice())
-    alias c6 = haystack.find(String("fg").as_string_slice())
-    alias c7 = haystack.find(String("g").as_string_slice())
-    alias c8 = haystack.find(String("z").as_string_slice())
-    alias c9 = haystack.find(String("zzz").as_string_slice())
-    alias c10 = haystack.find(String("@#$").as_string_slice())
-    alias c11 = haystack_with_special_chars.find(
-        String("@#$").as_string_slice()
-    )
-    alias c12 = haystack_repeated_chars.find(String("aaa").as_string_slice())
-    alias c13 = haystack_repeated_chars.find(String("AAa").as_string_slice())
-    alias c14 = haystack.find(String("hijklmnopqrstuvwxyz").as_string_slice())
-    alias c15 = String("").as_string_slice().find(
-        String("abc").as_string_slice()
-    )
+    alias c1 = haystack.find("a".as_string_slice())
+    alias c2 = haystack.find("ab".as_string_slice())
+    alias c3 = haystack.find("abc".as_string_slice())
+    alias c4 = haystack.find("bcd".as_string_slice())
+    alias c5 = haystack.find("de".as_string_slice())
+    alias c6 = haystack.find("fg".as_string_slice())
+    alias c7 = haystack.find("g".as_string_slice())
+    alias c8 = haystack.find("z".as_string_slice())
+    alias c9 = haystack.find("zzz".as_string_slice())
+    alias c10 = haystack.find("@#$".as_string_slice())
+    alias c11 = haystack_with_special_chars.find("@#$".as_string_slice())
+    alias c12 = haystack_repeated_chars.find("aaa".as_string_slice())
+    alias c13 = haystack_repeated_chars.find("AAa".as_string_slice())
+    alias c14 = haystack.find("hijklmnopqrstuvwxyz".as_string_slice())
+    alias c15 = String().as_string_slice().find("abc".as_string_slice())
 
     assert_equal(c1, 0)
     assert_equal(c2, 0)
@@ -606,303 +482,135 @@ def test_is_codepoint_boundary():
     assert_false(empty.is_codepoint_boundary(1))
 
 
-alias GOOD_SEQUENCES = List[String](
-    "a",
-    "\xc3\xb1",
-    "\xe2\x82\xa1",
-    "\xf0\x90\x8c\xbc",
-    "안녕하세요, 세상",
-    "\xc2\x80",
-    "\xf0\x90\x80\x80",
-    "\xee\x80\x80",
-    "very very very long string 🔥🔥🔥",
-)
+def test_comparison_operators():
+    var abc = StringSlice("abc")
+    var de = StringSlice("de")
+    var ABC = StringSlice("ABC")
+    var ab = StringSlice("ab")
+    var abcd = StringSlice("abcd")
 
+    # Test equality and inequality
+    assert_true(StringSlice.__eq__(abc, abc))
+    assert_true(StringSlice.__eq__(abc, "abc"))
+    assert_false(StringSlice.__eq__(abc, de))
+    assert_false(StringSlice.__eq__(abc, "xyz"))
 
-# TODO: later on, don't use String because
-# it will likely refuse non-utf8 data.
-alias BAD_SEQUENCES = List[String](
-    "\xc3\x28",  # continuation bytes does not start with 10xx
-    "\xa0\xa1",  # first byte is continuation byte
-    "\xe2\x28\xa1",  # second byte should be continuation byte
-    "\xe2\x82\x28",  # third byte should be continuation byte
-    "\xf0\x28\x8c\xbc",  # second byte should be continuation byte
-    "\xf0\x90\x28\xbc",  # third byte should be continuation byte
-    "\xf0\x28\x8c\x28",  # fourth byte should be continuation byte
-    "\xc0\x9f",  # overlong, could be just one byte
-    "\xf5\xff\xff\xff",  # missing continuation bytes
-    "\xed\xa0\x81",  # UTF-16 surrogate pair
-    "\xf8\x90\x80\x80\x80",  # 5 bytes is too long
-    "123456789012345\xed",  # Continuation bytes are missing
-    "123456789012345\xf1",  # Continuation bytes are missing
-    "123456789012345\xc2",  # Continuation bytes are missing
-    "\xC2\x7F",  # second byte is not continuation byte
-    "\xce",  # Continuation byte missing
-    "\xce\xba\xe1",  # two continuation bytes missing
-    "\xce\xba\xe1\xbd",  # One continuation byte missing
-    "\xce\xba\xe1\xbd\xb9\xcf",  # fifth byte should be continuation byte
-    "\xce\xba\xe1\xbd\xb9\xcf\x83\xce",  # missing continuation byte
-    "\xce\xba\xe1\xbd\xb9\xcf\x83\xce\xbc\xce",  # missing continuation byte
-    "\xdf",  # missing continuation byte
-    "\xef\xbf",  # missing continuation byte
-)
+    # Test less than and greater than
+    assert_true(StringSlice.__lt__(abc, de))
+    assert_false(StringSlice.__lt__(de, abc))
+    assert_false(StringSlice.__lt__(abc, abc))
+    assert_true(StringSlice.__lt__(ab, abc))
+    assert_true(StringSlice.__gt__(abc, ab))
+    assert_false(StringSlice.__gt__(abc, abcd))
 
+    # Test less than or equal to and greater than or equal to
+    assert_true(StringSlice.__le__(abc, de))
+    assert_true(StringSlice.__le__(abc, abc))
+    assert_false(StringSlice.__le__(de, abc))
+    assert_true(StringSlice.__ge__(abc, abc))
+    assert_false(StringSlice.__ge__(ab, abc))
+    assert_true(StringSlice.__ge__(abcd, abc))
 
-fn validate_utf8(slice: StringSlice) -> Bool:
-    return _is_valid_utf8(slice.as_bytes())
+    # Test case sensitivity in comparison (assuming ASCII order)
+    assert_true(StringSlice.__gt__(abc, ABC))
+    assert_false(StringSlice.__le__(abc, ABC))
 
+    # Testing with implicit conversion
+    assert_true(StringSlice.__lt__(abc, "defgh"))
+    assert_false(StringSlice.__gt__(abc, "xyz"))
+    assert_true(StringSlice.__ge__(abc, "abc"))
+    assert_false(StringSlice.__le__(abc, "ab"))
 
-def test_good_utf8_sequences():
-    for sequence in GOOD_SEQUENCES:
-        assert_true(validate_utf8(sequence[]))
-
-
-def test_bad_utf8_sequences():
-    for sequence in BAD_SEQUENCES:
-        assert_false(validate_utf8(sequence[]))
-
-
-def test_stringslice_from_utf8():
-    for sequence in GOOD_SEQUENCES:
-        var bytes = sequence[].as_bytes()
-        _ = StringSlice.from_utf8(bytes)
-
-    for sequence in BAD_SEQUENCES:
-        with assert_raises(contains="buffer is not valid UTF-8"):
-            var bytes = sequence[].as_bytes()
-            _ = StringSlice.from_utf8(bytes)
-
-
-def test_combination_good_utf8_sequences():
-    # any combination of good sequences should be good
-    for i in range(0, len(GOOD_SEQUENCES)):
-        for j in range(i, len(GOOD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] + GOOD_SEQUENCES[j]
-            assert_true(validate_utf8(sequence))
-
-
-def test_combination_bad_utf8_sequences():
-    # any combination of bad sequences should be bad
-    for i in range(0, len(BAD_SEQUENCES)):
-        for j in range(i, len(BAD_SEQUENCES)):
-            var sequence = BAD_SEQUENCES[i] + BAD_SEQUENCES[j]
-            assert_false(validate_utf8(sequence))
-
-
-def test_combination_good_bad_utf8_sequences():
-    # any combination of good and bad sequences should be bad
-    for i in range(0, len(GOOD_SEQUENCES)):
-        for j in range(0, len(BAD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] + BAD_SEQUENCES[j]
-            assert_false(validate_utf8(sequence))
-
-
-def test_combination_10_good_utf8_sequences():
-    # any 10 combination of good sequences should be good
-    for i in range(0, len(GOOD_SEQUENCES)):
-        for j in range(i, len(GOOD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] * 10 + GOOD_SEQUENCES[j] * 10
-            assert_true(validate_utf8(sequence))
-
-
-def test_combination_10_good_10_bad_utf8_sequences():
-    # any 10 combination of good and bad sequences should be bad
-    for i in range(0, len(GOOD_SEQUENCES)):
-        for j in range(0, len(BAD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] * 10 + BAD_SEQUENCES[j] * 10
-            assert_false(validate_utf8(sequence))
-
-
-def test_count_utf8_continuation_bytes():
-    alias c = UInt8(0b1000_0000)
-    alias b1 = UInt8(0b0100_0000)
-    alias b2 = UInt8(0b1100_0000)
-    alias b3 = UInt8(0b1110_0000)
-    alias b4 = UInt8(0b1111_0000)
-
-    def _test(amnt: Int, items: List[UInt8]):
-        var p = items.unsafe_ptr()
-        var span = Span[Byte, StaticConstantOrigin](ptr=p, length=len(items))
-        var str_slice = StringSlice(unsafe_from_utf8=span)
-        assert_equal(amnt, _count_utf8_continuation_bytes(str_slice))
-
-    _test(5, List[UInt8](c, c, c, c, c))
-    _test(2, List[UInt8](b2, c, b2, c, b1))
-    _test(2, List[UInt8](b2, c, b1, b2, c))
-    _test(2, List[UInt8](b2, c, b2, c, b1))
-    _test(2, List[UInt8](b2, c, b1, b2, c))
-    _test(2, List[UInt8](b1, b2, c, b2, c))
-    _test(2, List[UInt8](b3, c, c, b1, b1))
-    _test(2, List[UInt8](b1, b1, b3, c, c))
-    _test(2, List[UInt8](b1, b3, c, c, b1))
-    _test(3, List[UInt8](b1, b4, c, c, c))
-    _test(3, List[UInt8](b4, c, c, c, b1))
-    _test(3, List[UInt8](b3, c, c, b2, c))
-    _test(3, List[UInt8](b2, c, b3, c, c))
+    # Test comparisons involving empty strings
+    assert_true(StringSlice.__lt__("", abc))
+    assert_false(StringSlice.__lt__(abc, ""))
+    assert_true(StringSlice.__le__("", ""))
+    assert_true(StringSlice.__ge__("", ""))
 
 
 def test_split():
-    # empty separators default to whitespace
-    var d0 = StringSlice("hello world").split()
-    assert_true(len(d0) == 2)
-    assert_true(d0[0] == "hello")
-    assert_true(d0[1] == "world")
-    var d = StringSlice("hello \t\n\n\v\fworld").split(sep="\n")
-    assert_true(len(d) == 3)
-    assert_true(d[0] == "hello \t" and d[1] == "" and d[2] == "\v\fworld")
+    alias S = StaticString
+    alias L = List[StaticString]
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
-    # 0 is to build a String with null terminator
-    alias next_line = List[UInt8](0xC2, 0x85, 0)
-    """TODO: \\x85"""
-    alias unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8, 0)
-    """TODO: \\u2028"""
-    alias unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9, 0)
-    """TODO: \\u2029"""
+    var next_line = List[UInt8](0xC2, 0x85)
+    var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
+    var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
-    # escape secuences are accepted
-    var univ_sep_var = (
-        String(
-            " ",
-            "\t",
-            "\n",
-            "\r",
-            "\v",
-            "\f",
-            "\x1c",
-            "\x1d",
-            "\x1e",
-            String(buffer=next_line),
-            String(buffer=unicode_line_sep),
-            String(buffer=unicode_paragraph_sep),
-        )
+    # escape sequences are accepted
+    var univ_sep_var = String(
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\v",
+        "\f",
+        "\x1c",
+        "\x1d",
+        "\x1e",
+        String(bytes=next_line),
+        String(bytes=unicode_line_sep),
+        String(bytes=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
-    var ds1 = StringSlice(s).split()
-    assert_true(len(ds1) == 2)
-    assert_true(ds1[0] == "hello" and ds1[1] == "world")
+    assert_equal(StringSlice(s).split(), L("hello", "world"))
 
     # should split into empty strings between separators
-    d = StringSlice("1,,,3").split(",")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "1" and d[1] == "" and d[2] == "" and d[3] == "3")
-    d = StringSlice(",,,").split(",")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "" and d[1] == "" and d[2] == "" and d[3] == "")
-    d = StringSlice(" a b ").split(" ")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "" and d[1] == "a" and d[2] == "b" and d[3] == "")
-    d = StringSlice("abababaaba").split("aba")
-    assert_true(len(d) == 4)
-    assert_true(d[0] == "" and d[1] == "b" and d[2] == "" and d[3] == "")
+    assert_equal(S("1,,,3").split(","), L("1", "", "", "3"))
+    assert_equal(S(",,,").split(","), L("", "", "", ""))
+    assert_equal(S(" a b ").split(" "), L("", "a", "b", ""))
+    assert_equal(S("abababaaba").split("aba"), L("", "b", "", ""))
+    assert_true(len(S("").split()) == 0)
+    assert_true(len(S(" ").split()) == 0)
+    assert_true(len(S("").split(" ")) == 1)
+    assert_true(len(S(",").split(",")) == 2)
+    assert_true(len(S(" ").split(" ")) == 2)
+    assert_true(len(S("").split("")) == 2)
+    assert_true(len(S("  ").split(" ")) == 3)
+    assert_true(len(S("   ").split(" ")) == 4)
 
     # should split into maxsplit + 1 items
-    d = StringSlice("1,2,3").split(",", 0)
-    assert_true(len(d) == 1)
-    assert_true(d[0] == "1,2,3")
-    d = StringSlice("1,2,3").split(",", 1)
-    assert_true(len(d) == 2)
-    assert_true(d[0] == "1" and d[1] == "2,3")
-
-    assert_true(len(StringSlice("").split()) == 0)
-    assert_true(len(StringSlice(" ").split()) == 0)
-    assert_true(len(StringSlice("").split(" ")) == 1)
-    assert_true(len(StringSlice(" ").split(" ")) == 2)
-    assert_true(len(StringSlice("  ").split(" ")) == 3)
-    assert_true(len(StringSlice("   ").split(" ")) == 4)
-
-    with assert_raises():
-        _ = StringSlice("").split("")
+    assert_equal(S("1,2,3").split(",", 0), L("1,2,3"))
+    assert_equal(S("1,2,3").split(",", 1), L("1", "2,3"))
 
     # Split in middle
-    var d1 = StringSlice("n")
-    var in1 = StringSlice("faang")
-    var res1 = in1.split(d1)
-    assert_equal(len(res1), 2)
-    assert_equal(res1[0], "faa")
-    assert_equal(res1[1], "g")
-
-    # Matches should be properly split in multiple case
-    var d2 = StringSlice(" ")
-    var in2 = StringSlice("modcon is coming soon")
-    var res2 = in2.split(d2)
-    assert_equal(len(res2), 4)
-    assert_equal(res2[0], "modcon")
-    assert_equal(res2[1], "is")
-    assert_equal(res2[2], "coming")
-    assert_equal(res2[3], "soon")
+    assert_equal(S("faang").split("n"), L("faa", "g"))
 
     # No match from the delimiter
-    var d3 = StringSlice("x")
-    var in3 = StringSlice("hello world")
-    var res3 = in3.split(d3)
-    assert_equal(len(res3), 1)
-    assert_equal(res3[0], "hello world")
+    assert_equal(S("hello world").split("x"), L("hello world"))
 
     # Multiple character delimiter
-    var d4 = StringSlice("ll")
-    var in4 = StringSlice("hello")
-    var res4 = in4.split(d4)
-    assert_equal(len(res4), 2)
-    assert_equal(res4[0], "he")
-    assert_equal(res4[1], "o")
+    assert_equal(S("hello").split("ll"), L("he", "o"))
 
-    # related to #2879
-    # TODO: replace string comparison when __eq__ is implemented for List
-    assert_equal(
-        StringSlice("abbaaaabbba").split("a").__str__(),
-        "['', 'bb', '', '', '', 'bbb', '']",
-    )
-    assert_equal(
-        StringSlice("abbaaaabbba").split("a", 8).__str__(),
-        "['', 'bb', '', '', '', 'bbb', '']",
-    )
-    assert_equal(
-        StringSlice("abbaaaabbba").split("a", 5).__str__(),
-        "['', 'bb', '', '', '', 'bbba']",
-    )
-    assert_equal(StringSlice("aaa").split("a", 0).__str__(), "['aaa']")
-    assert_equal(StringSlice("a").split("a").__str__(), "['', '']")
-    assert_equal(StringSlice("1,2,3").split("3", 0).__str__(), "['1,2,3']")
-    assert_equal(StringSlice("1,2,3").split("3", 1).__str__(), "['1,2,', '']")
-    assert_equal(
-        StringSlice("1,2,3,3").split("3", 2).__str__(), "['1,2,', ',', '']"
-    )
-    assert_equal(
-        StringSlice("1,2,3,3,3").split("3", 2).__str__(), "['1,2,', ',', ',3']"
-    )
+    res = L("", "bb", "", "", "", "bbb", "")
+    assert_equal(S("abbaaaabbba").split("a"), res)
+    assert_equal(S("abbaaaabbba").split("a", 8), res)
+    s1 = S("abbaaaabbba").split("a", 5)
+    assert_equal(s1, L("", "bb", "", "", "", "bbba"))
+    assert_equal(S("aaa").split("a", 0), L("aaa"))
+    assert_equal(S("a").split("a"), L("", ""))
+    assert_equal(S("1,2,3").split("3", 0), L("1,2,3"))
+    assert_equal(S("1,2,3").split("3", 1), L("1,2,", ""))
+    assert_equal(S("1,2,3,3").split("3", 2), L("1,2,", ",", ""))
+    assert_equal(S("1,2,3,3,3").split("3", 2), L("1,2,", ",", ",3"))
 
-    var in5 = StringSlice("Hello 🔥!")
-    var res5 = in5.split()
-    assert_equal(len(res5), 2)
-    assert_equal(res5[0], "Hello")
-    assert_equal(res5[1], "🔥!")
+    assert_equal(S("Hello 🔥!").split(), L("Hello", "🔥!"))
 
-    var in6 = StringSlice("Лорем ипсум долор сит амет")
-    var res6 = in6.split(" ")
-    assert_equal(len(res6), 5)
-    assert_equal(res6[0], "Лорем")
-    assert_equal(res6[1], "ипсум")
-    assert_equal(res6[2], "долор")
-    assert_equal(res6[3], "сит")
-    assert_equal(res6[4], "амет")
+    s2 = S("Лорем ипсум долор сит амет").split(" ")
+    assert_equal(s2, L("Лорем", "ипсум", "долор", "сит", "амет"))
+    s3 = S("Лорем ипсум долор сит амет").split("м")
+    assert_equal(s3, L("Лоре", " ипсу", " долор сит а", "ет"))
 
-    with assert_raises(contains="Separator cannot be empty."):
-        _ = StringSlice("1, 2, 3").split("")
+    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():
-    alias S = StringSlice[StaticConstantOrigin]
-    alias L = List[StringSlice[StaticConstantOrigin]]
-
-    # FIXME: remove once StringSlice conforms to TestableCollectionElement
-    fn _assert_equal[
-        O1: ImmutableOrigin
-    ](l1: List[StringSlice[O1]], l2: List[String]) raises:
-        assert_equal(len(l1), len(l2))
-        for i in range(len(l1)):
-            assert_equal(String(l1[i]), l2[i])
+    alias S = StaticString
+    alias L = List[StaticString]
 
     # Test with no line breaks
     assert_equal(S("hello world").splitlines(), L("hello world"))
@@ -940,20 +648,19 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(buffer=List[UInt8](0xC2, 0x85, 0))
-    """TODO: \\x85"""
-    var unicode_line_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA8, 0))
-    """TODO: \\u2028"""
-    var unicode_paragraph_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA9, 0))
-    """TODO: \\u2029"""
+    var next_line = String(bytes=List[UInt8](0xC2, 0x85))
+    var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
+    var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):
-        u = i[]
-        item = String("").join("hello", u, "world", u, "mojo", u, "language", u)
-        s = StringSlice(item)
-        assert_equal(s.splitlines(), hello_mojo)
-        items = List("hello" + u, "world" + u, "mojo" + u, "language" + u)
-        _assert_equal(s.splitlines(keepends=True), items)
+    for ref u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
+        item = StaticString("").join(
+            "hello", u, "world", u, "mojo", u, "language", u
+        )
+        assert_equal(item.splitlines(), hello_mojo)
+        assert_equal(
+            _to_string_list(item.splitlines(keepends=True)),
+            List("hello" + u, "world" + u, "mojo" + u, "language" + u),
+        )
 
 
 def test_rstrip():
@@ -1257,9 +964,9 @@ def test_string_slice_from_pointer():
     )
     assert_equal(3, len(a))
     assert_equal(3, len(b))
-    var c = String("ABCD")
+    var c = "ABCD"
     var d = StringSlice[__origin_of(c)](
-        unsafe_from_utf8_cstr_ptr=c.unsafe_cstr_ptr()
+        unsafe_from_utf8_ptr=c.unsafe_cstr_ptr()
     )
     var e = StringSlice[__origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_ptr())
     assert_equal(4, len(c))
@@ -1272,45 +979,116 @@ def test_string_slice_from_pointer():
     assert_true("D", d[-1])
 
 
+def test_replace():
+    assert_equal(StringSlice("").replace("", "hello world"), "")
+    assert_equal(
+        StringSlice("hello").replace("", "something"),
+        "somethinghsomethingesomethinglsomethinglsomethingo",
+    )
+    assert_equal(StringSlice("hello world").replace("world", ""), "hello ")
+    assert_equal(
+        StringSlice("hello world").replace("world", "mojo"), "hello mojo"
+    )
+    assert_equal(
+        StringSlice("hello world hello world").replace("world", "mojo"),
+        "hello mojo hello mojo",
+    )
+    assert_equal(
+        StringSlice("this is a test").replace(
+            "this", "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz"
+        ),
+        "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz is a test",
+    )
+
+
+def test_join():
+    assert_equal(StaticString("").join(), "")
+    assert_equal(StaticString("").join("a", "b", "c"), "abc")
+    assert_equal(StaticString(" ").join("a", "b", "c"), "a b c")
+    assert_equal(StaticString(" ").join("a", "b", "c", ""), "a b c ")
+    assert_equal(StaticString(" ").join("a", "b", "c", " "), "a b c  ")
+
+    var sep = StaticString(",")
+    var s = "abc"
+    assert_equal(sep.join(s, s, s, s), "abc,abc,abc,abc")
+    assert_equal(sep.join(1, 2, 3), "1,2,3")
+    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
+
+    var s2 = StaticString(",").join(List[UInt8](1, 2, 3))
+    assert_equal(s2, "1,2,3")
+
+    var s3 = StaticString(",").join(List[UInt8](1, 2, 3, 4, 5, 6, 7, 8, 9))
+    assert_equal(s3, "1,2,3,4,5,6,7,8,9")
+
+    var s4 = StaticString(",").join(List[UInt8]())
+    assert_equal(s4, "")
+
+    var s5 = StaticString(",").join(List[UInt8](1))
+    assert_equal(s5, "1")
+
+
+def test_string_slice_intern():
+    assert_equal(get_static_string["hello"](), "hello")
+    assert_equal(get_static_string[String("hello")](), "hello")
+    assert_equal(get_static_string[String(42)](), "42")
+    alias simd = SIMD[DType.int64, 4](1, 2, 3, 4)
+    assert_equal(get_static_string[String(simd)](), "[1, 2, 3, 4]")
+    # Test get_static_string with multiple string arguments.
+    assert_equal(get_static_string["a", "b", "c"](), "abc")
+
+
+# This is just a compile test
+# it does not need to be run
+def test_merge():
+    var a = ""
+    var b = "hi"
+
+    fn cond(
+        pred: Bool, a: StringSlice, b: StringSlice
+    ) -> StringSlice[__origin_of(a.origin, b.origin)]:
+        return a if pred else b
+
+    _ = cond(True, a, b)
+
+
 def main():
-    test_string_slice_layout()
-    test_string_literal_byte_span()
-    test_string_byte_span()
-    test_heap_string_from_string_slice()
-    test_slice_len()
-    test_slice_char_length()
-    test_slice_eq()
-    test_slice_bool()
-    test_slice_repr()
-    test_utf8_validation()
-    test_find()
-    test_find_compile_time()
-    test_is_codepoint_boundary()
-    test_good_utf8_sequences()
-    test_bad_utf8_sequences()
-    test_stringslice_from_utf8()
-    test_combination_good_utf8_sequences()
-    test_combination_bad_utf8_sequences()
-    test_combination_good_bad_utf8_sequences()
-    test_combination_10_good_utf8_sequences()
-    test_combination_10_good_10_bad_utf8_sequences()
-    test_count_utf8_continuation_bytes()
-    test_split()
-    test_splitlines()
-    test_rstrip()
-    test_lstrip()
-    test_strip()
-    test_startswith()
-    test_endswith()
-    test_isupper()
-    test_islower()
-    test_lower()
-    test_upper()
-    test_is_ascii_digit()
-    test_is_ascii_printable()
-    test_rjust()
-    test_ljust()
-    test_center()
-    test_count()
-    test_chars_iter()
-    test_string_slice_from_pointer()
+    var suite = TestSuite()
+
+    suite.test[test_string_slice_layout]()
+    suite.test[test_constructors]()
+    suite.test[test_string_literal_byte_span]()
+    suite.test[test_string_byte_span]()
+    suite.test[test_heap_string_from_string_slice]()
+    suite.test[test_slice_len]()
+    suite.test[test_slice_char_length]()
+    suite.test[test_slice_eq]()
+    suite.test[test_slice_bool]()
+    suite.test[test_slice_repr]()
+    suite.test[test_find]()
+    suite.test[test_find_compile_time]()
+    suite.test[test_is_codepoint_boundary]()
+    suite.test[test_comparison_operators]()
+    suite.test[test_split]()
+    suite.test[test_splitlines]()
+    suite.test[test_rstrip]()
+    suite.test[test_lstrip]()
+    suite.test[test_strip]()
+    suite.test[test_startswith]()
+    suite.test[test_endswith]()
+    suite.test[test_isupper]()
+    suite.test[test_islower]()
+    suite.test[test_lower]()
+    suite.test[test_upper]()
+    suite.test[test_is_ascii_digit]()
+    suite.test[test_is_ascii_printable]()
+    suite.test[test_rjust]()
+    suite.test[test_ljust]()
+    suite.test[test_center]()
+    suite.test[test_count]()
+    suite.test[test_chars_iter]()
+    suite.test[test_string_slice_from_pointer]()
+    suite.test[test_replace]()
+    suite.test[test_join]()
+    suite.test[test_string_slice_intern]()
+
+    suite^.run()

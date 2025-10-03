@@ -15,27 +15,22 @@
 set -euo pipefail
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-REPO_ROOT="${SCRIPT_DIR}"/../..
-BUILD_DIR="${REPO_ROOT}"/build
+REPO_ROOT="${SCRIPT_DIR}"/../../..
 
-echo "Creating build directory for building the stdlib running the tests in."
-mkdir -p "${BUILD_DIR}"
 
-source "${SCRIPT_DIR}"/build-stdlib.sh
-
-echo "Packaging up the test_utils."
-TEST_UTILS_PATH="${REPO_ROOT}/stdlib/test/test_utils"
-# This is needed to compile test_utils.mojopkg correctly, otherwise it
-# uses the stdlib that's given in the nightly, and will fail compilation
-# if some breaking changes are made.
-export MODULAR_MOJO_MAX_IMPORT_PATH=$BUILD_DIR
-mojo package "${TEST_UTILS_PATH}" -I ${BUILD_DIR} -o "${BUILD_DIR}/test_utils.mojopkg"
-
-TEST_PATH="${REPO_ROOT}/stdlib/test"
+FILTER=""
 if [[ $# -gt 0 ]]; then
-  # If an argument is provided, use it as the specific test file or directory
-  TEST_PATH=$1
+  FILTER="${1#./}" # remove leading relative file path if it has one
+  if [[ -f ${FILTER} ]]; then # specific file
+    FILTER="//mojo/$(dirname $FILTER):$(basename $FILTER)"
+    FILTER=$("$REPO_ROOT"/bazelw query $FILTER)
+  else
+    # specific test directory
+    FILTER="${FILTER%/}" # remove trailing / if it has one
+    FILTER="//mojo/${FILTER}/..."
+  fi
+else
+  FILTER="//mojo/stdlib/test/..."
 fi
 
-# Run the tests
-lit -sv "${TEST_PATH}"
+exec "$REPO_ROOT"/bazelw test ${FILTER}

@@ -1,0 +1,35 @@
+---
+title: '@fieldwise_init'
+description: Generates fieldwise constructor for a struct.
+codeTitle: true
+
+---
+
+You can add the `@fieldwise_init` decorator on a struct to generate the
+field-wise `__init__()` constructor.
+
+For example, consider a simple struct like this:
+
+```mojo
+@fieldwise_init
+struct MyPet:
+    var name: String
+    var age: Int
+```
+
+Mojo sees the `@fieldwise_init` decorator and synthesizes a field-wise
+constructor, the result being as if you had actually written this:
+
+```mojo
+struct MyPet:
+    var name: String
+    var age: Int
+
+    fn __init__(out self, var name: String, age: Int):
+        self.name = name^
+        self.age = age
+```
+
+You can also synthesize the copy constructor and move constructor by adding the
+`Copyable` and `Movable` traits to your struct. For more information about these
+lifecycle methods, read [Life of a value](/mojo/manual/lifecycle/life).

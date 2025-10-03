@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "mojo_test", "pkg_files")
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]
+
+pkg_files(
+    name = "test_mandelbrot",
+    srcs = [
+        "test_mandelbrot.mojo",
+    ],
+    visibility = ["//visibility:public"],
+)

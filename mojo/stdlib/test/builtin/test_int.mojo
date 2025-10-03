@@ -10,18 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from sys.info import bitwidthof
-
-from memory import UnsafePointer
 from python import PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from test_utils import TestSuite
 
 
 def test_properties():
-    assert_equal(Int.MAX, (1 << bitwidthof[DType.index]() - 1) - 1)
-    assert_equal(Int.MIN, -(1 << bitwidthof[DType.index]() - 1))
+    assert_equal(Int.MAX, (1 << DType.int.bit_width() - 1) - 1)
+    assert_equal(Int.MIN, -(1 << DType.int.bit_width() - 1))
 
 
 def test_add():
@@ -103,9 +100,7 @@ def test_mod():
 
 
 def test_divmod():
-    var a: Int
-    var b: Int
-    a, b = divmod(7, 3)
+    var a, b = divmod(7, 3)
     assert_equal(a, 2)
     assert_equal(b, 1)
 
@@ -233,38 +228,44 @@ def test_float_conversion():
     assert_equal(Float64(Int(45)), Float64(45))
 
 
-def test_conversion_from_python():
-    # Test conversion from Python '5'
-    assert_equal(Int.try_from_python(PythonObject(5)), 5)
-
-    # Test error trying conversion from Python '"str"'
-    with assert_raises(contains="an integer is required"):
-        _ = Int.try_from_python(PythonObject("str"))
-
-    # Test conversion from Python '-1'
-    assert_equal(Int.try_from_python(PythonObject(-1)), -1)
+def test_is_power_of_two():
+    assert_equal(Int.MIN.is_power_of_two(), False)
+    assert_equal(Int(-(2**59)).is_power_of_two(), False)
+    assert_equal(Int(-1).is_power_of_two(), False)
+    assert_equal(Int(0).is_power_of_two(), False)
+    assert_equal(Int(1).is_power_of_two(), True)
+    assert_equal(Int(2).is_power_of_two(), True)
+    assert_equal(Int(3).is_power_of_two(), False)
+    assert_equal(Int(4).is_power_of_two(), True)
+    assert_equal(Int(5).is_power_of_two(), False)
+    assert_equal(Int(2**59).is_power_of_two(), True)
+    assert_equal(Int.MAX.is_power_of_two(), False)
 
 
 def main():
-    test_properties()
-    test_add()
-    test_sub()
-    test_div()
-    test_pow()
-    test_ceil()
-    test_floor()
-    test_round()
-    test_trunc()
-    test_floordiv()
-    test_mod()
-    test_divmod()
-    test_abs()
-    test_string_conversion()
-    test_int_representation()
-    test_indexer()
-    test_bool()
-    test_decimal_digit_count()
-    test_comparison()
-    test_int_uint()
-    test_float_conversion()
-    test_conversion_from_python()
+    var suite = TestSuite()
+
+    suite.test[test_properties]()
+    suite.test[test_add]()
+    suite.test[test_sub]()
+    suite.test[test_div]()
+    suite.test[test_pow]()
+    suite.test[test_ceil]()
+    suite.test[test_floor]()
+    suite.test[test_round]()
+    suite.test[test_trunc]()
+    suite.test[test_floordiv]()
+    suite.test[test_mod]()
+    suite.test[test_divmod]()
+    suite.test[test_abs]()
+    suite.test[test_string_conversion]()
+    suite.test[test_int_representation]()
+    suite.test[test_indexer]()
+    suite.test[test_bool]()
+    suite.test[test_decimal_digit_count]()
+    suite.test[test_comparison]()
+    suite.test[test_int_uint]()
+    suite.test[test_float_conversion]()
+    suite.test[test_is_power_of_two]()
+
+    suite^.run()

@@ -1,5 +1,5 @@
-# ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -9,12 +9,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ===----------------------------------------------------------------------=== #
+##===----------------------------------------------------------------------===##
 
 name: Run pre-commit
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -36,16 +36,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Download Magic CLI
+      - name: Install Pixi
         run: |
-          curl -ssL https://magic.modular.com/cfba4c92-2390-4b86-93de-04b2f47114d5 | bash
-          # Add magic to PATH
-          echo "$HOME/.modular/bin" >> $GITHUB_PATH
-
-      - name: Install pre-commit
-        run: |
-          pip install pre-commit
-          pre-commit install
+          curl -fsSL https://pixi.sh/install.sh | PIXI_VERSION=0.54.2 sh
+          # Add pixi to PATH
+          echo "$HOME/.pixi/bin" >> $GITHUB_PATH
 
       - name: Run pre-commit
-        run: magic run --manifest-path mojo pre-commit run --all-files
+        run: pixi x pre-commit run --all-files

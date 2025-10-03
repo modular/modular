@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# XFAIL: asan && !system-darwin
-# RUN: %mojo %s
 
-from python.python import Python, PythonObject, _get_global_python_itf
-from testing import assert_equal
+from python.python import Python, PythonObject
+from testing import assert_equal, assert_raises, assert_true
 
 
 fn test_execute_python_string(mut python: Python) -> String:
@@ -73,6 +71,33 @@ fn test_call(mut python: Python) -> String:
         return String(e)
 
 
+def test_int_conversion():
+    var py_int = Python.int(PythonObject("123"))
+    # TODO: use assert_equal once we have parametric raises in __eq__.
+    assert_true(py_int == PythonObject(123))
+
+    with assert_raises(contains="invalid literal for int()"):
+        _ = Python.int(PythonObject("foo"))
+
+
+def test_float_conversion():
+    var math = Python.import_module("math")
+
+    var f = Python.float(PythonObject("123.45"))
+    assert_true(f == PythonObject(123.45))
+
+    f = Python.float(PythonObject("inf"))
+    assert_true(f == math.inf)
+
+    with assert_raises(contains="could not convert string to float"):
+        _ = Python.float(PythonObject("foo"))
+
+
+def test_str_conversion():
+    var py_str = Python.str(PythonObject(123))
+    assert_true(py_str == PythonObject("123"))
+
+
 def main():
     var python = Python()
     assert_equal(test_local_import(python), "orange")
@@ -95,10 +120,14 @@ def main():
     var obj: PythonObject = [1, 2.4, True, "False"]
     assert_equal(String(obj), "[1, 2.4, True, 'False']")
 
-    obj = (1, 2.4, True, "False")
+    obj = Python.tuple(1, 2.4, True, "False")
     assert_equal(String(obj), "(1, 2.4, True, 'False')")
 
     obj = None
     assert_equal(String(obj), "None")
 
     assert_equal(test_execute_python_string(python), "ab")
+
+    test_int_conversion()
+    test_float_conversion()
+    test_str_conversion()

@@ -10,11 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t
-# NOTE: to test changes on the current branch using run-benchmarks.sh, remove
-# the -t flag. Remember to replace it again before pushing any code.
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -27,7 +24,7 @@ fn bench_stringify_small_integers(mut b: Bencher) raises:
     fn call_fn():
         for i in range(1_000):
             var a = String(i)
-            benchmark.keep(Bool(a))
+            keep(Bool(a))
 
     b.iter[call_fn]()
 

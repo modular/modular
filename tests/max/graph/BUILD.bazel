@@ -1,0 +1,58 @@
+load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "requirement")
+
+_MULTI_VERSION_TEST_SRCS = [
+    "test_graph.py",
+]
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = _MULTI_VERSION_TEST_SRCS,
+    ),
+    data = [
+        "//SDK/integration-test:test_user_op",
+        "//SDK/lib/API/python/tests/graph/testdata",
+    ],
+    env = {
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
+        "MODULAR_PATH": ".",
+        "TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata",
+    },
+    imports = ["."],
+    mojo_deps = [
+        "//SDK/integration-test:test_user_op",
+        "@mojo//:stdlib",
+    ],
+    deps = [
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/nn",
+        requirement("gguf"),
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_multi_py_version_test(
+    name = "multi_version_tests",
+    srcs = _MULTI_VERSION_TEST_SRCS + [
+        "conftest.py",
+    ],
+    data = ["//SDK/lib/API/python/tests/graph/testdata"],
+    env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
+    exclude = ["3.13"],  # numpy issues
+    imports = ["."],
+    deps = [
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/nn",
+        requirement("gguf"),
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

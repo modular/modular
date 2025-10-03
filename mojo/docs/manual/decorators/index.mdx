@@ -1,29 +1,16 @@
 ---
 title: Mojo decorators
-sidebar_label: Decorators
+sidebar_label: Overview
 sidebar_position: 1
 description: A reference of Mojo's built-in decorators
 hide_table_of_contents: true
-listing:
-  - id: docs
-    contents:
-      - always-inline.md
-      - copy-capture.md
-      - implicit.md
-      - nonmaterializable.md
-      - parameter.md
-      - register-passable.md
-      - staticmethod.md
-      - value.md
-    type: grid
-    page-size: 99
 ---
 
 A Mojo decorator is a [higher-order
 function](https://en.wikipedia.org/wiki/Higher-order_function) that modifies or
 extends the behavior of a struct, a function, or some other code. Instead of
 actually calling the higher-order function, you simply add the decorator (such
-as the `@value` decorator) above your code (such as a struct). The Mojo
+as the `@fieldwise_init` decorator) above your code (such as a struct). The Mojo
 compiler then uses the decorator function to modify your code at compile time.
 
 :::note No custom decorators
@@ -35,5 +22,10 @@ built directly into the compiler.
 
 The following pages describe each built-in decorator with examples.
 
-:::🔥#docs
-:::
+import MDXListing from '@site/src/components/Listing/MDXListing';
+
+export const decorators = [
+        '*.mdx'
+    ]
+
+<MDXListing mdxList={decorators} />

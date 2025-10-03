@@ -10,12 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import Optional
 from collections.counter import Counter
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from test_utils import TestSuite
 
 
 def test_and():
@@ -45,7 +44,7 @@ def test_bool():
     assert_false(c)
     c["a"] = 1
     assert_true(c)
-    c.pop("a")
+    _ = c.pop("a")
     assert_false(c)
 
 
@@ -91,10 +90,11 @@ def test_counter_construction():
     _ = Counter[Int]()
     _ = Counter[Int](List[Int]())
     _ = Counter[String](List[String]())
+    _ = Counter[Int](1, 2)
 
 
 def test_counter_getitem():
-    c = Counter[Int](List[Int](1, 2, 2, 3, 3, 3, 4))
+    c = Counter[Int](1, 2, 2, 3, 3, 3, 4)
     assert_equal(c[1], 1)
     assert_equal(c[2], 2)
     assert_equal(c[3], 3)
@@ -103,7 +103,7 @@ def test_counter_getitem():
 
 
 def test_fromkeys():
-    var keys = List[String]("a", "b", "c")
+    var keys = [String("a"), "b", "c"]
     var c = Counter[String].fromkeys(keys, 3)
 
     assert_equal(c["a"], 3)
@@ -134,11 +134,18 @@ def test_iter():
     c["a"] = 1
     c["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     for key in c:
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "ab")
+
+    var keys_list = ["a", "b"]
+    var keys_count = 0
+    for i, e in enumerate(c):
+        assert_equal(i, keys_count)
+        assert_equal(e, keys_list[i])
+        keys_count += 1
 
 
 def test_iter_keys():
@@ -146,9 +153,9 @@ def test_iter_keys():
     c["a"] = 1
     c["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     for key in c.keys():
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -160,7 +167,7 @@ def test_iter_values():
 
     var sum = 0
     for value in c.values():
-        sum += value[]
+        sum += value
 
     assert_equal(sum, 3)
 
@@ -170,8 +177,8 @@ def test_iter_values_mut():
     c["a"] = 1
     c["b"] = 2
 
-    for value in c.values():
-        value[] += 1
+    for ref value in c.values():
+        value += 1
 
     assert_equal(2, c["a"])
     assert_equal(3, c["b"])
@@ -183,11 +190,11 @@ def test_iter_items():
     c["a"] = 1
     c["b"] = 2
 
-    var keys = String("")
+    var keys = String()
     var sum = 0
     for entry in c.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry.key
+        sum += entry.value
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)
@@ -199,7 +206,7 @@ def test_len():
     c["b"] = 2
 
     assert_equal(len(c), 2)
-    c.pop("a")
+    _ = c.pop("a")
     assert_equal(len(c), 1)
     c.clear()
     assert_equal(len(c), 0)
@@ -332,7 +339,7 @@ def test_add():
     assert_equal(c2["c"], 4)
 
 
-def test_substract():
+def test_subtract():
     var c1 = Counter[String]()
     c1["a"] = 4
     c1["b"] = 2
@@ -453,35 +460,38 @@ def test_popitem():
     assert_equal(item[1][Int], 1)
 
     with assert_raises():
-        counter.popitem()
+        _ = counter.popitem()
 
 
 def main():
-    test_add()
-    test_and()
-    test_bool()
-    test_clear()
-    test_contains()
-    test_copy()
-    test_counter_construction()
-    test_counter_getitem()
-    test_counter_setitem()
-    test_elements()
-    test_eq_and_ne()
-    test_fromkeys()
-    test_get()
-    test_iter()
-    test_iter_keys()
-    test_iter_items()
-    test_iter_values()
-    test_iter_values_mut()
-    test_len()
-    test_lt_le_gt_and_ge()
-    test_most_common()
-    test_neg()
-    test_or()
-    test_pop()
-    test_popitem()
-    test_substract()
-    test_total()
-    test_update()
+    var suite = TestSuite()
+    suite.test[test_add]()
+    suite.test[test_and]()
+    suite.test[test_bool]()
+    suite.test[test_clear]()
+    suite.test[test_contains]()
+    suite.test[test_copy]()
+    suite.test[test_counter_construction]()
+    suite.test[test_counter_getitem]()
+    suite.test[test_counter_setitem]()
+    suite.test[test_elements]()
+    suite.test[test_eq_and_ne]()
+    suite.test[test_fromkeys]()
+    suite.test[test_get]()
+    suite.test[test_iter]()
+    suite.test[test_iter_keys]()
+    suite.test[test_iter_items]()
+    suite.test[test_iter_values]()
+    suite.test[test_iter_values_mut]()
+    suite.test[test_len]()
+    suite.test[test_lt_le_gt_and_ge]()
+    suite.test[test_most_common]()
+    suite.test[test_neg]()
+    suite.test[test_or]()
+    suite.test[test_pop]()
+    suite.test[test_popitem]()
+    suite.test[test_subtract]()
+    suite.test[test_total]()
+    suite.test[test_update]()
+
+    suite^.run()

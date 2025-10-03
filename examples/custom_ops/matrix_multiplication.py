@@ -11,14 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
+# DOC: max/tutorials/custom-ops-matmul.mdx
+
 from pathlib import Path
 
 import numpy as np
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from numpy.typing import NDArray
 
 
@@ -36,13 +37,24 @@ def matrix_multiplication(
     a_tensor = Tensor.from_numpy(a).to(device)
     b_tensor = Tensor.from_numpy(b).to(device)
 
+    mojo_kernels = Path(__file__).parent / "kernels"
+
     # Configure our simple one-operation graph.
     with Graph(
         "matrix_multiplication_graph",
         input_types=[
-            TensorType(dtype, shape=a_tensor.shape),
-            TensorType(dtype, shape=b_tensor.shape),
+            TensorType(
+                dtype,
+                shape=a_tensor.shape,
+                device=DeviceRef.from_device(device),
+            ),
+            TensorType(
+                dtype,
+                shape=b_tensor.shape,
+                device=DeviceRef.from_device(device),
+            ),
         ],
+        custom_extensions=[mojo_kernels],
     ) as graph:
         # Take in the two inputs to the graph.
         a_value, b_value = graph.inputs
@@ -51,11 +63,13 @@ def matrix_multiplication(
         # via compile-time parameterization.
         output = ops.custom(
             name="matrix_multiplication",
+            device=DeviceRef.from_device(device),
             values=[a_value, b_value],
             out_types=[
                 TensorType(
                     dtype=a_value.tensor.dtype,
                     shape=[a_value.tensor.shape[0], b_value.tensor.shape[1]],
+                    device=DeviceRef.from_device(device),
                 )
             ],
             parameters={"algorithm": algorithm},
@@ -76,12 +90,6 @@ def matrix_multiplication(
 
 
 if __name__ == "__main__":
-    # This is necessary only in specific build environments.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
-    path = Path(__file__).parent / "kernels.mojopkg"
-
     M = 256
     K = 256
     N = 256
@@ -92,7 +100,6 @@ if __name__ == "__main__":
     # Set up an inference session for running the graph.
     session = InferenceSession(
         devices=[device],
-        custom_extensions=path,
     )
 
     # Fill the input matrices with random values.

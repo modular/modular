@@ -10,43 +10,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from builtin.format_int import _format_int
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 fn test_format_int() raises:
-    assert_equal(_format_int[DType.index](123), "123")
-    assert_equal(_format_int[DType.index](4, 2), "100")
-    assert_equal(_format_int[DType.index](255, 2), "11111111")
-    assert_equal(_format_int[DType.index](254, 2), "11111110")
-    assert_equal(_format_int[DType.index](255, 36), "73")
+    assert_equal(_format_int[DType.int](123), "123")
+    assert_equal(_format_int[DType.int](4, 2), "100")
+    assert_equal(_format_int[DType.int](255, 2), "11111111")
+    assert_equal(_format_int[DType.int](254, 2), "11111110")
+    assert_equal(_format_int[DType.int](255, 36), "73")
 
-    assert_equal(_format_int[DType.index](-123, 10), "-123")
-    assert_equal(_format_int[DType.index](-999_999_999, 10), "-999999999")
+    assert_equal(_format_int[DType.int](-123, 10), "-123")
+    assert_equal(_format_int[DType.int](-999_999_999, 10), "-999999999")
 
-    #
-    # Max and min i64 values in base 10
-    #
-
+    # i64
     assert_equal(_format_int(Int64.MAX_FINITE, 10), "9223372036854775807")
-
     assert_equal(_format_int(Int64.MIN_FINITE, 10), "-9223372036854775808")
+    assert_equal(_format_int(Int64.MAX_FINITE, 2), "1" * 63)
+    assert_equal(_format_int(Int64.MIN_FINITE, 2), "-1" + "0" * 63)
 
-    #
-    # Max and min i64 values in base 2
-    #
-
+    # i128
+    alias int128_max = Int128(UInt128(1) << 127) - 1
+    alias int128_min = Int128(UInt128(1) << 127)
     assert_equal(
-        _format_int(Int64.MAX_FINITE, 2),
-        "111111111111111111111111111111111111111111111111111111111111111",
+        _format_int(int128_max, 10),
+        "170141183460469231731687303715884105727",
     )
-
     assert_equal(
-        _format_int(Int64.MIN_FINITE, 2),
-        "-1000000000000000000000000000000000000000000000000000000000000000",
+        _format_int(int128_min, 10),
+        "-170141183460469231731687303715884105728",
     )
+    assert_equal(_format_int(int128_max, 2), "1" * 127)
+    assert_equal(_format_int(int128_min, 2), "-1" + "0" * 127)
+
+    # i256
+    alias int256_max = Int256(UInt256(1) << 255) - 1
+    alias int256_min = Int256(UInt256(1) << 255)
+    assert_equal(
+        _format_int(int256_max, 10),
+        "57896044618658097711785492504343953926634992332820282019728792003956564819967",
+    )
+    assert_equal(
+        _format_int(int256_min, 10),
+        "-57896044618658097711785492504343953926634992332820282019728792003956564819968",
+    )
+    assert_equal(_format_int(int256_max, 2), "1" * 255)
+    assert_equal(_format_int(int256_min, 2), "-1" + "0" * 255)
 
 
 fn test_hex() raises:
@@ -77,7 +89,7 @@ fn test_hex() raises:
     assert_equal(hex(False), "0x0")
 
 
-@value
+@fieldwise_init
 struct Ind(Intable):
     fn __int__(self) -> Int:
         return 1
@@ -136,11 +148,11 @@ def test_intable():
 
 def test_different_prefix():
     assert_equal(bin(Int8(1), prefix="binary"), "binary1")
-    assert_equal(hex(Int8(1), prefix="hexadecimal"), "hexidecimal1")
+    assert_equal(hex(Int8(1), prefix="hexadecimal"), "hexadecimal1")
     assert_equal(oct(Int8(1), prefix="octal"), "octal1")
 
     assert_equal(bin(0, prefix="binary"), "binary0")
-    assert_equal(hex(0, prefix="hexadecimal"), "hexidecimal0")
+    assert_equal(hex(0, prefix="hexadecimal"), "hexadecimal0")
     assert_equal(oct(0, prefix="octal"), "octal0")
 
     assert_equal(bin(Ind(), prefix="I'mAnIndexer!"), "I'mAnIndexer!1")
@@ -153,12 +165,17 @@ def test_different_prefix():
 
 
 def main():
-    test_format_int()
-    test_hex()
-    test_bin_scalar()
-    test_bin_int()
-    test_bin_bool()
-    test_intable()
-    test_oct_scalar()
-    test_oct_bool()
-    test_oct_int()
+    var suite = TestSuite()
+
+    suite.test[test_format_int]()
+    suite.test[test_hex]()
+    suite.test[test_bin_scalar]()
+    suite.test[test_bin_int]()
+    suite.test[test_bin_bool]()
+    suite.test[test_intable]()
+    suite.test[test_oct_scalar]()
+    suite.test[test_oct_bool]()
+    suite.test[test_oct_int]()
+    suite.test[test_different_prefix]()
+
+    suite^.run()

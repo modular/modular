@@ -60,7 +60,7 @@ problems:
    In this example, it would canonicalization “n+n” to “2*n” and these canonical
    forms are important to reduce rebinds.
 3. ✅ We have complicated and fragile logic to work around this in the case when
-   the the operands are “simple constants” (see
+   the operands are “simple constants” (see
    `inlineFunctionCallIntoPValueIfPossible` and transitive code it calls,
     *shudder*) which has lots of problems, e.g. it completely fails on
     parametric function calls.
@@ -102,7 +102,7 @@ operation).  We don’t want to special case the methods themselves into the
 compiler, but we do necessarily have a tight coupling and want type checking.
 
 This new level of `always_inline` would have the same behavior as `"nodebug"`
-(e.g. get the same LLVM represention, still disable debug info generation etc)
+(e.g. get the same LLVM representation, still disable debug info generation etc)
 but add two more behaviors.
 
 ### Function definition body-resolution checking

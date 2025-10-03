@@ -14,18 +14,21 @@
 # This file is only run on linux targets.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: system-linux
-# RUN: %mojo %s
 
-from sys import os_is_linux, os_is_macos
+from sys import CompilationTarget
 
 from testing import assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_os_query():
-    assert_false(os_is_macos())
-    assert_true(os_is_linux())
+    assert_false(CompilationTarget.is_macos())
+    assert_true(CompilationTarget.is_linux())
 
 
 def main():
-    test_os_query()
+    var suite = TestSuite()
+
+    suite.test[test_os_query]()
+
+    suite^.run()

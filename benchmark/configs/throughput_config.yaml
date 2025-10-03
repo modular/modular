@@ -1,0 +1,64 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Throughput Benchmark Configuration
+# This configuration inherits from base_config.yaml and adds throughput-specific parameters.
+# Used by benchmark_throughput.py and other offline throughput benchmarks.
+
+# Configuration metadata
+name: "Throughput Benchmark Configuration"
+description: "Configuration for offline throughput benchmarks (benchmark_throughput.py)"
+version: "0.0.1"
+
+# Inherit from base configuration.
+depends_on: "base_config.yaml"
+
+# Throughput-specific benchmark parameters
+benchmark_config:
+  # Backend configuration (throughput-specific)
+  backend: "modular"  # choices: modular (throughput benchmarks typically use modular backend only)
+
+  # Model configuration (throughput-specific extensions)
+  quantization_encoding: null  # choices: q4_0, q4_k, q6_k, bfloat16, float32, null
+  weight_path: null  # Path for already-downloaded pretrained weight file
+
+  # Input/Output configuration (throughput-specific)
+  input_len: null  # Input prompt length for each request
+  output_len: null  # Output length for each request (overrides dataset output length)
+
+  # Batching and performance configuration (throughput-specific)
+  max_batch_size: null  # Maximum number of requests to include in a single batch
+  max_num_steps: 10  # Maximum number of steps to run per multi-step scheduling call
+  async_engine: true  # Use Modular async pipeline engine rather than LLM class
+
+  # KV Cache configuration (throughput-specific)
+  cache_strategy: "paged"  # The KVCache strategy to use (paged, etc.)
+  kv_cache_page_size: null  # Number of tokens in a single page in the paged kv cache
+  enable_prefix_caching: false  # Enable prefix caching of kv cache entries when using paged attention
+  enable_kvcache_swapping_to_host: false  # Enable swapping KVCache blocks to host memory
+  host_kvcache_swap_space_gb: 50.0  # Amount of host memory for host KVCache in GiB
+
+  # Device and memory configuration (throughput-specific)
+  device_memory_utilization: null  # Fraction of available device memory to consume
+  devices: null  # Device ID to target (GPU configuration)
+
+  # Pipeline configuration (throughput-specific)
+  pipeline_task: "text_generation"  # Type of task to complete using the pipeline
+  max_length: null  # Maximum length of sequence (including prompt and output)
+
+  # Sampling configuration
+  top_k: null  # The number of top tokens to consider for sampling
+
+  # Output configuration (throughput-specific)
+  output_json: null  # Path to save throughput results in JSON format
+  show_text: false  # Whether to show generated text

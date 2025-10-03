@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from base64 import b16decode, b16encode, b64decode, b64encode
 
+
 from testing import assert_equal, assert_raises
+from test_utils import TestSuite
 
 
 def test_b64encode():
@@ -61,12 +62,12 @@ def test_b64decode():
     assert_equal(b64decode("QUJDREVGYWJjZGVm"), "ABCDEFabcdef")
 
     with assert_raises(
-        contains="ValueError: Input length 21 must be divisible by 4"
+        contains="ValueError: Input length '21' must be divisible by 4"
     ):
         _ = b64decode[validate=True]("invalid base64 string")
 
     with assert_raises(
-        contains='ValueError: Unexpected character " " encountered'
+        contains="ValueError: Unexpected character ' ' encountered"
     ):
         _ = b64decode[validate=True]("invalid base64 string!!!")
 
@@ -106,7 +107,11 @@ def test_b16decode():
 
 
 def main():
-    test_b64encode()
-    test_b64decode()
-    test_b16encode()
-    test_b16decode()
+    var suite = TestSuite()
+
+    suite.test[test_b64encode]()
+    suite.test[test_b64decode]()
+    suite.test[test_b16encode]()
+    suite.test[test_b16decode]()
+
+    suite^.run()

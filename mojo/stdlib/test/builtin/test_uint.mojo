@@ -10,9 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from sys import bitwidthof
 
 from bit import count_trailing_zeros
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
@@ -90,7 +88,7 @@ def test_inequality():
 
 def test_properties():
     assert_equal(UInt.MIN, UInt(0))
-    if bitwidthof[DType.index]() == 32:
+    if DType.int.bit_width() == 32:
         assert_equal(UInt.MAX, (1 << 32) - 1)
     else:
         assert_equal(UInt.MAX, (1 << 64) - 1)
@@ -174,9 +172,7 @@ def test_mod():
 
 
 def test_divmod():
-    var a: UInt
-    var b: UInt
-    a, b = divmod(UInt(7), UInt(3))
+    var a, b = divmod(UInt(7), UInt(3))
     assert_equal(a, UInt(2))
     assert_equal(b, UInt(1))
 
@@ -216,6 +212,11 @@ def test_indexer():
     assert_true(987 == index(UInt(987)))
 
 
+def test_simd_conversion():
+    assert_equal(UInt(Int32(1)), UInt(1))
+    assert_equal(UInt(UInt32(32)), UInt(32))
+
+
 def test_comparison():
     assert_true(UInt.__lt__(UInt(1), UInt(7)))
     assert_false(UInt.__lt__(UInt(7), UInt(7)))
@@ -240,9 +241,9 @@ def test_pos():
 
 
 def test_hash():
-    assert_not_equal(UInt.__hash__(123), UInt.__hash__(456))
-    assert_equal(UInt.__hash__(123), UInt.__hash__(123))
-    assert_equal(UInt.__hash__(456), UInt.__hash__(456))
+    assert_not_equal(hash(UInt(123)), hash(UInt(456)))
+    assert_equal(hash(UInt(123)), hash(UInt(123)))
+    assert_equal(hash(UInt(456)), hash(UInt(456)))
 
 
 def test_comptime():
@@ -273,6 +274,7 @@ def main():
     test_string_conversion()
     test_int_representation()
     test_indexer()
+    test_simd_conversion()
     test_comparison()
     test_pos()
     test_hash()

@@ -10,11 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t
-# NOTE: to test changes on the current branch using run-benchmarks.sh, remove
-# the -t flag. Remember to replace it again before pushing any code.
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm import elementwise
 from benchmark import Bench, BenchConfig, Bencher, BenchId
@@ -28,9 +25,7 @@ from utils.index import Index, IndexList
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, n
-    ].stack_allocation()
+    var vector = NDBuffer[DType.int, 1, MutableAnyOrigin, n].stack_allocation()
 
     for i in range(len(vector)):
         vector[i] = -1
@@ -40,11 +35,13 @@ fn bench_elementwise[n: Int](mut b: Bencher) raises:
     fn call_fn() raises:
         @always_inline
         @parameter
-        fn func[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        fn func[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
             vector[idx[0]] = 42
 
         elementwise[func, 1](Index(n))
-        elementwise[func=func, simd_width = simdwidthof[DType.index]()](
+        elementwise[func=func, simd_width = simd_width_of[DType.int]()](
             Index(n)
         )
 

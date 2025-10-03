@@ -1,0 +1,31 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+
+name: multistage_gemm
+file: $KERNEL_BENCHMARKS_ROOT/autotune/sample.mojo
+
+rules:
+  - stages<=4 and $x<2
+  - stages>1
+
+params:
+
+- dtype: DType.float16
+  shape: [1024x512x256, 32x32x32]
+  stages: [4,8]
+  $x: "[i for i in range(4)]"
+
+- dtype: DType.float32
+  shape: 64x64x64
+  stages: 2

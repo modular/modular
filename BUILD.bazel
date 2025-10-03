@@ -1,0 +1,232 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
+load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
+load("//bazel:api.bzl", "mojo_binary", "requirement")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "MODULAR_CONFIGS", "TOP_LEVEL_TAG")
+
+package(default_visibility = ["//visibility:public"])
+
+mojo_binary(
+    name = "repro",
+    testonly = True,
+    srcs = ["repro.mojo"],
+    tags = ["manual"],
+    deps = ALL_MOJOPKGS + [
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+alias(
+    name = "has_gpu",
+    actual = "@mojo_gpu_toolchains//:has_gpu",
+)
+
+alias(
+    name = "has_multi_gpu",
+    actual = "@mojo_gpu_toolchains//:has_multi_gpu",
+)
+
+alias(
+    name = "has_4_gpus",
+    actual = "@mojo_gpu_toolchains//:has_4_gpus",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+alias(
+    name = "amd_gpu",
+    actual = "@mojo_gpu_toolchains//:amd_gpu",
+)
+
+alias(
+    name = "nvidia_gpu",
+    actual = "@mojo_gpu_toolchains//:nvidia_gpu",
+)
+
+alias(
+    name = "apple_gpu",
+    actual = "@mojo_gpu_toolchains//:apple_gpu",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+[
+    alias(
+        name = "{}_gpu".format(gpu),
+        actual = "@mojo_gpu_toolchains//:{}_gpu".format(gpu),
+        tags = [ALLOW_UNUSED_TAG],
+    )
+    for gpu in SUPPORTED_GPUS.keys()
+]
+
+config_setting(
+    name = "production_build",
+    tags = [ALLOW_UNUSED_TAG],
+    values = {"features": "UNREACHABLE"},
+)
+
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+config_setting(
+    name = "linux_aarch64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
+alias(
+    name = "lint",
+    actual = "//bazel/lint",
+    tags = [TOP_LEVEL_TAG],
+)
+
+alias(
+    name = "format",
+    actual = "//bazel/lint:fix",
+    tags = [TOP_LEVEL_TAG],
+)
+
+platform(
+    name = "m7i-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "Pool": "m7i-large-executors",
+        "OSFamily": "Linux",
+        "container-image": "docker://466483404629.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
+        "dockerNetwork": "off",
+    },
+)
+
+platform(
+    name = "h100-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":nvidia_gpu",
+        ":has_gpu",
+        ":has_multi_gpu",
+        ":h100_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "h100-executors",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
+        "dockerNetwork": "off",
+        "test.resources:gpu-count": "0.01",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+platform(
+    name = "b200-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":nvidia_gpu",
+        ":has_gpu",
+        ":has_multi_gpu",
+        ":b200_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "b200-executors",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
+        "dockerNetwork": "off",
+        "test.resources:gpu-count": "0.01",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+platform(
+    name = "mi300-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":amd_gpu",
+        ":has_gpu",
+        ":has_multi_gpu",
+        ":mi300x_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "mi300-executors",
+        "container-image": "docker://us-ashburn-1.ocir.io/idiy4j6eayc0/modular-build-env:ubuntu2204-rocm",
+        "dockerNetwork": "off",
+        "test.resources:gpu-count": "0.01",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+string_flag(
+    name = "modular_config",
+    build_setting_default = "default",
+    values = MODULAR_CONFIGS,
+)
+
+[
+    config_setting(
+        name = "modular_config_" + config,
+        flag_values = {"//:modular_config": config},
+    )
+    for config in MODULAR_CONFIGS
+]
+
+alias(
+    name = "asan",
+    actual = ":modular_config_asan",
+)
+
+config_setting(
+    name = "asan_linux",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {"//:modular_config": "asan"},
+)
+
+alias(
+    name = "tsan",
+    actual = ":modular_config_tsan",
+)
+
+config_setting(
+    name = "tsan_linux",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {"//:modular_config": "tsan"},
+)
+
+config_setting(
+    name = "tsan_macos",
+    constraint_values = ["@platforms//os:macos"],
+    flag_values = {"//:modular_config": "tsan"},
+)
+
+alias(
+    name = "ubsan",
+    actual = ":modular_config_ubsan",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "ubsan_linux",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {"//:modular_config": "ubsan"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "ubsan_macos",
+    constraint_values = ["@platforms//os:macos"],
+    flag_values = {"//:modular_config": "ubsan"},
+    tags = [ALLOW_UNUSED_TAG],
+)

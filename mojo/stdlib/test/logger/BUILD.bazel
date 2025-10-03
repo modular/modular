@@ -1,0 +1,56 @@
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+
+_FILECHECK_TESTS = [
+    "test_logger.mojo",
+    "test_logger_alias.mojo",
+    "test_logger_critical.mojo",
+    "test_logger_with_env.mojo",
+]
+
+_MOJO_COMPILE_OPTS = {
+    "test_logger_with_env.mojo": [
+        "-D",
+        "LOGGING_LEVEL=DEBUG",
+    ],
+}
+
+_EXPECT_CRASH = [
+    "test_logger_critical.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ] + _MOJO_COMPILE_OPTS.get(src, []),
+        expect_crash = src in _EXPECT_CRASH,
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        allow_empty = True,  # No non-FileCheck tests yet
+        exclude = _FILECHECK_TESTS,
+    )
+]

@@ -2,7 +2,7 @@
 title: Testing
 sidebar_position: 3
 description: Testing Mojo programs.
-github_url: https://github.com/modular/max/tree/main/examples/mojo/testing
+github_url: https://github.com/modular/modular/tree/main/examples/mojo/testing
 ---
 
 Mojo includes a framework for developing and executing unit tests. The Mojo
@@ -36,8 +36,8 @@ def test_inc_one():
 ```
 
 In this file, the `inc()` function is the test *target*. The functions whose
-names begin with `test_` are the tests. Usually the target should be in a
-separate source file from its tests, but you can define them in the same file
+names begin with `test_` are the tests. Usually you should define the target in
+a separate source file from its tests, but you can define them in the same file
 for this simple example.
 
 A test function *fails* if it raises an error when executed, otherwise it
@@ -97,7 +97,7 @@ its error message.
 - [The `mojo test` command](#the-mojo-test-command) describes how to execute
   and collect lists of tests.
 - Our GitHub repo contains an [example
-  project](https://github.com/modular/max/tree/main/examples/mojo/testing) to
+  project](https://github.com/modular/modular/tree/main/examples/mojo/testing) to
   demonstrate unit testing. Several of the examples shown later are based on
   this project.
 
@@ -144,7 +144,7 @@ Unhandled exception caught during execution
 Error: At Expression [2] wrapper:14:16: AssertionError: paradoxes are not allowed
 ```
 
-For comparing floating point values you should use `assert_almost_equal()`,
+For comparing floating-point values, you should use `assert_almost_equal()`,
 which allows you to specify either an absolute or relative tolerance.
 
 ```mojo
@@ -189,7 +189,7 @@ Error: AssertionError: Didn't raise at Expression [4] wrapper:18:23
 :::note
 
 The example above assigns the return value from `inc()` to a
-[*discard pattern*](/mojo/manual/lifecycle/death#explicit-lifetimes).
+[*discard pattern*](/mojo/manual/lifecycle/death#explicit-lifetime-extension).
 Without it, the Mojo compiler reports a warning that the return value is unused.
 
 :::
@@ -222,7 +222,7 @@ A Mojo unit test is simply a function that fulfills all of these requirements:
 
 - Has a name that starts with `test_`.
 - Accepts no arguments.
-- Returns either `None` or a value of type `object`.
+- Returns `None`.
 - Raises an error to indicate test failure.
 - Is defined at the module scope, not as a Mojo struct method.
 
@@ -233,7 +233,7 @@ using `fn` must include the `raises` declaration.
 Generally, you should use the assertion utilities from the Mojo standard library
 [`testing`](/mojo/stdlib/testing/testing/) module to implement your tests.
 You can include multiple related assertions in the same test function. However,
-if an assertion raises an error during execution then the test function returns
+if an assertion raises an error during execution, then the test function returns
 immediately, skipping any subsequent assertions.
 
 You must define your Mojo unit tests in Mojo source files named with a `test`
@@ -269,7 +269,7 @@ above are:
 
 - `test_my_target_module.mojo::test_validate_input()`
 - `test_my_target_module.mojo::test_convert_input()`
-- `test_my_target_module.mojo::test_convert_error()`
+- `test_my_target_module.mojo::test_convert_input_error()`
 
 ## The `mojo test` command
 
@@ -287,10 +287,18 @@ the following:
 - A single absolute or relative directory path, to recurse through that
   directory hierarchy and run all tests found.
 
+:::note
+
+When recursing through directories, `mojo test` automatically ignores any
+directories whose names begin with a dot (such as `.git`, `.vscode`, or
+`.pytest_cache`).
+
+:::
+
 If needed, you can optionally use the `-I` option one or more times to append
 additional paths to the list of directories searched to import Mojo modules and
 packages. Consider the [example testing
-project](https://github.com/modular/max/tree/main/examples/mojo/testing) in
+project](https://github.com/modular/modular/tree/main/examples/mojo/testing) in
 GitHub, which has the following directory structure:
 
 ```output
@@ -362,7 +370,7 @@ By including the `--collect-only` or `--co` option, you can use `mojo test` to
 discover and print a list of tests.
 
 Consider the [example testing
-project](https://github.com/modular/max/tree/main/examples/mojo/testing)
+project](https://github.com/modular/modular/tree/main/examples/mojo/testing)
 directory structure shown in the [Running tests](#running-tests) section. The
 following command produces a list of all of the tests defined in the `test`
 directory hierarchy.
@@ -386,8 +394,8 @@ The output shows the hierarchy of directories, test files, and individual tests
 
 ### Producing JSON formatted output
 
-By default `mojo test` produces concise, human-readable output. Alternatively
-you can produce JSON formatted output more suitable for input to other tools by
+By default, `mojo test` produces concise, human-readable output. Alternatively,
+you can produce JSON-formatted output more suitable for input to other tools by
 including the `--diagnostic-format json` option.
 
 For example, you can run the tests in the `test_quickstart.mojo` file shown
@@ -431,9 +439,9 @@ output shown):
 }
 ```
 
-You can also produce JSON output for test collection as well. Consider the
-[example testing
-project](https://github.com/modular/max/tree/main/examples/mojo/testing)
+You can also produce JSON output for test collection. Consider the [example
+testing
+project](https://github.com/modular/modular/tree/main/examples/mojo/testing)
 directory structure shown in the [Running tests](#running-tests) section. The
 following command collects a list in JSON format of all of the tests defined in
 the `test` directory hierarchy:

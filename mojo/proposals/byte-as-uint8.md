@@ -40,5 +40,5 @@ and 78 results for `DTypePointer[DType.int8]`.  Replacing
 `DTypePointer[DType.int8]` with `DTypePointer[DType.uint8]` and `Pointer[Int8]`
 with `Pointer[UInt8]` on case by case bases is a substantial refactoring effort,
 but it will prevent a certain class of logical bugs (see
-<https://github.com/modular/max/pull/2098>). As it is a breaking change in
+<https://github.com/modular/modular/pull/2098>). As it is a breaking change in
 sense of API design, it is sensible to do the refactoring as soon as possible.

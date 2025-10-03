@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "mojo_library", "pkg_files")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["__init__.mojo"])
+
+filegroup(
+    name = "stdlib_srcs",
+    srcs = glob(["**/*.mojo"]),
+)
+
+mojo_library(
+    name = "stdlib",
+    srcs = [
+        ":stdlib_srcs",
+    ],
+)
+
+pkg_files(
+    name = "docs",
+    srcs = [":stdlib.docs"],
+    renames = {
+        "stdlib.docs": "stdlib",
+    },
+)

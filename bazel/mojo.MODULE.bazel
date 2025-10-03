@@ -1,0 +1,44 @@
+"""Define the Mojo toolchain"""
+
+PACKAGE_VERSION = "25.7.0.dev2025100305"
+
+BASE_URL = "https://dl.modular.com/public/nightly/python"
+
+mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
+mojo.toolchain(
+    base_url = BASE_URL,
+    use_prebuilt_packages = False,
+    version = "0." + PACKAGE_VERSION,
+)
+use_repo(mojo, "mojo_toolchains")
+
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+rebuild_wheel = use_repo_rule("//bazel:modular_wheel_repository.bzl", "rebuild_wheel")
+
+_PLATFORMS = [
+    "linux_aarch64",
+    "linux_x86_64",
+    "macos_arm64",
+]
+
+[
+    rebuild_wheel(
+        name = "module_platlib_" + platform,
+        base_url = BASE_URL,
+        platform = platform,
+        version = PACKAGE_VERSION,
+    )
+    for platform in _PLATFORMS
+]
+
+http_file(
+    name = "mblack_wheel",
+    downloaded_file_path = "mblack-{}-py3-none-any.whl".format(
+        PACKAGE_VERSION,
+    ),
+    url = "{}/mblack-{}-py3-none-any.whl".format(
+        BASE_URL,
+        PACKAGE_VERSION,
+    ),
+)

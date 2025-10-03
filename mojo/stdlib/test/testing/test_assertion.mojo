@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s
 
 from builtin._location import _SourceLocation
 from python import PythonObject
@@ -18,14 +17,11 @@ from testing import (
     assert_almost_equal,
     assert_equal,
     assert_false,
-    assert_is,
-    assert_is_not,
     assert_not_equal,
     assert_raises,
     assert_true,
 )
 
-from utils import StringSlice
 from utils.numerics import inf, nan
 
 
@@ -53,8 +49,8 @@ def test_assert_messages():
         assert_true(assertion in String(e) and assertion_error in String(e))
 
 
-@value
-struct DummyStruct:
+@fieldwise_init
+struct DummyStruct(EqualityComparable, Stringable):
     var value: Int
 
     fn __eq__(self, other: Self) -> Bool:
@@ -91,28 +87,22 @@ def test_assert_equal_with_simd():
 
 def test_assert_equal_with_list():
     assert_equal(
-        List(String("This"), String("is"), String("Mojo")),
-        List(String("This"), String("is"), String("Mojo")),
+        ["This", "is", "Mojo"],
+        List("This", "is", "Mojo"),
     )
 
     with assert_raises():
         assert_equal(
-            List(String("This"), String("is"), String("Mojo")),
-            List(String("This"), String("is"), String("mojo")),
+            ["This", "is", "Mojo"],
+            List("This", "is", "mojo"),
         )
 
 
 def test_assert_not_equal_with_list():
-    assert_not_equal(
-        List(3, 2, 1),
-        List(3, 1, 0),
-    )
+    assert_not_equal([3, 2, 1], [3, 1, 0])
 
     with assert_raises():
-        assert_not_equal(
-            List(3, 2, 1),
-            List(3, 2, 1),
-        )
+        assert_not_equal([3, 2, 1], [3, 2, 1])
 
 
 def test_assert_almost_equal():
@@ -122,10 +112,10 @@ def test_assert_almost_equal():
 
     @parameter
     def _should_succeed[
-        type: DType, size: Int
+        dtype: DType, size: Int
     ](
-        lhs: SIMD[type, size],
-        rhs: SIMD[type, size],
+        lhs: SIMD[dtype, size],
+        rhs: SIMD[dtype, size],
         *,
         atol: Float64 = 0,
         rtol: Float64 = 0,
@@ -136,8 +126,6 @@ def test_assert_almost_equal():
             lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
         )
 
-    _should_succeed[DType.bool, 1](True, True)
-    _should_succeed(SIMD[DType.int32, 2](0, 1), SIMD[DType.int32, 2](0, 1))
     _should_succeed(
         SIMD[float_type, 2](-_inf, _inf), SIMD[float_type, 2](-_inf, _inf)
     )
@@ -159,10 +147,10 @@ def test_assert_almost_equal():
 
     @parameter
     def _should_fail[
-        type: DType, size: Int
+        dtype: DType, size: Int
     ](
-        lhs: SIMD[type, size],
-        rhs: SIMD[type, size],
+        lhs: SIMD[dtype, size],
+        rhs: SIMD[dtype, size],
         *,
         atol: Float64 = 0,
         rtol: Float64 = 0,
@@ -174,10 +162,6 @@ def test_assert_almost_equal():
                 lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
             )
 
-    _should_fail[DType.bool, 1](True, False)
-    _should_fail(
-        SIMD[DType.int32, 2](0, 1), SIMD[DType.int32, 2](0, -1), atol=5
-    )
     _should_fail(
         SIMD[float_type, 2](-_inf, 0.0),
         SIMD[float_type, 2](_inf, 0.0),
@@ -218,13 +202,13 @@ def test_assert_almost_equal():
 def test_assert_is():
     var a = PythonObject("mojo")
     var b = a
-    assert_is(a, b)
+    assert_true(a is b)
 
 
 def test_assert_is_not():
     var a = PythonObject("mojo")
     var b = PythonObject("mojo")
-    assert_is_not(a, b)
+    assert_true(a is not b)
 
 
 def test_assert_custom_location():
@@ -241,27 +225,27 @@ def test_assert_custom_location():
 
 
 def test_assert_equal_stringslice():
-    str1 = "This is Mojo"
-    str2 = String("This is Mojo")
-    str3 = "This is mojo"
+    str1 = StaticString("This is Mojo")
+    str2 = "This is Mojo"
+    str3 = StaticString("This is mojo")
 
-    fn _build(
-        value: StringLiteral, start: Int, end: Int
-    ) -> StringSlice[StaticConstantOrigin]:
-        return StringSlice[StaticConstantOrigin](
-            ptr=value.unsafe_ptr() + start, length=end - start
+    fn _build(value: StaticString, start: Int, end: Int) -> StaticString:
+        return StaticString(
+            ptr=value.unsafe_ptr() + start,
+            length=UInt(end - start),
         )
 
     fn _build(
         read value: String, start: Int, end: Int
     ) -> StringSlice[__origin_of(value)]:
         return StringSlice[__origin_of(value)](
-            ptr=value.unsafe_ptr() + start, length=end - start
+            ptr=value.unsafe_ptr() + start,
+            length=UInt(end - start),
         )
 
-    l1 = List(_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12))
-    l2 = List(_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12))
-    l3 = List(_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12))
+    l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
+    l2 = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
+    l3 = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
     assert_equal(l1, l1)
     assert_equal(l2, l2)
     assert_equal(l1, l2)

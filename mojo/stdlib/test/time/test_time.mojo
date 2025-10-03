@@ -10,9 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from sys import os_is_windows
 from time import monotonic, perf_counter, perf_counter_ns, sleep, time_function
 
 from testing import assert_true
@@ -27,7 +25,7 @@ fn time_me():
 @always_inline
 @parameter
 fn time_me_templated[
-    type: DType,
+    dtype: DType,
 ]():
     time_me()
     return
@@ -35,9 +33,9 @@ fn time_me_templated[
 
 # Check that time_function works on templated function
 fn time_templated_function[
-    type: DType,
+    dtype: DType,
 ]() -> Int:
-    return time_function[time_me_templated[type]]()
+    return time_function[time_me_templated[dtype]]()
 
 
 fn time_capturing_function(iters: Int) -> Int:

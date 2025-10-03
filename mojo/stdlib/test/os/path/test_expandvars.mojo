@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 import os
 from os.path import expandvars
@@ -18,8 +17,8 @@ from os.path import expandvars
 from testing import assert_equal
 
 
-@value
-struct EnvVar:
+@fieldwise_init
+struct EnvVar(ImplicitlyCopyable, Movable):
     var name: String
 
     fn __init__(out self, name: String, value: String):

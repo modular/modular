@@ -10,51 +10,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from sys import (
-    alignof,
-    has_avx,
-    has_avx2,
-    has_avx512f,
-    has_fma,
-    has_intel_amx,
-    has_neon,
-    has_neon_int8_dotprod,
-    has_neon_int8_matmul,
-    has_vnni,
+    CompilationTarget,
+    align_of,
     num_logical_cores,
     num_performance_cores,
     num_physical_cores,
-    sizeof,
-    CompilationTarget,
+    size_of,
 )
 
 from testing import assert_equal, assert_true
+from test_utils import TestSuite
 
 
-fn test_sizeof() raises:
-    assert_equal(sizeof[__mlir_type.i16](), 2)
+fn test_size_of() raises:
+    assert_equal(size_of[__mlir_type.i16](), 2)
 
-    assert_equal(sizeof[__mlir_type.ui16](), 2)
+    assert_equal(size_of[__mlir_type.ui16](), 2)
 
-    assert_equal(sizeof[DType.int16](), 2)
+    assert_equal(size_of[DType.int16](), 2)
 
-    assert_equal(sizeof[DType.uint16](), 2)
+    assert_equal(size_of[DType.uint16](), 2)
 
-    assert_equal(sizeof[SIMD[DType.int16, 2]](), 4)
+    assert_equal(size_of[SIMD[DType.int16, 2]](), 4)
 
 
-fn test_alignof() raises:
-    assert_true(alignof[__mlir_type.i16]() > 0)
+fn test_align_of() raises:
+    assert_true(align_of[__mlir_type.i16]() > 0)
 
-    assert_true(alignof[__mlir_type.ui16]() > 0)
+    assert_true(align_of[__mlir_type.ui16]() > 0)
 
-    assert_true(alignof[DType.int16]() > 0)
+    assert_true(align_of[DType.int16]() > 0)
 
-    assert_true(alignof[DType.uint16]() > 0)
+    assert_true(align_of[DType.uint16]() > 0)
 
-    assert_true(alignof[SIMD[DType.int16, 2]]() > 0)
+    assert_true(align_of[SIMD[DType.int16, 2]]() > 0)
 
 
 fn test_cores() raises:
@@ -63,22 +54,26 @@ fn test_cores() raises:
     assert_true(num_performance_cores() > 0)
 
 
-fn test_target_has_feature():
+fn test_target_has_feature() raises:
     # Ensures target feature check functions exist and return a boolable value.
-    var has_feature: Bool = has_avx()
-    has_feature = has_avx2()
-    has_feature = has_avx512f()
-    has_feature = has_fma()
-    has_feature = has_intel_amx()
-    has_feature = has_neon()
-    has_feature = has_neon_int8_dotprod()
-    has_feature = has_neon_int8_matmul()
-    has_feature = CompilationTarget.has_sse4()
-    has_feature = has_vnni()
+    var _has_feature: Bool = CompilationTarget.has_avx()
+    _has_feature = CompilationTarget.has_avx2()
+    _has_feature = CompilationTarget.has_avx512f()
+    _has_feature = CompilationTarget.has_fma()
+    _has_feature = CompilationTarget.has_intel_amx()
+    _has_feature = CompilationTarget.has_neon()
+    _has_feature = CompilationTarget.has_neon_int8_dotprod()
+    _has_feature = CompilationTarget.has_neon_int8_matmul()
+    _has_feature = CompilationTarget.has_sse4()
+    _has_feature = CompilationTarget.has_vnni()
 
 
 def main():
-    test_sizeof()
-    test_alignof()
-    test_cores()
-    test_target_has_feature()
+    var suite = TestSuite()
+
+    suite.test[test_size_of]()
+    suite.test[test_align_of]()
+    suite.test[test_cores]()
+    suite.test[test_target_has_feature]()
+
+    suite^.run()

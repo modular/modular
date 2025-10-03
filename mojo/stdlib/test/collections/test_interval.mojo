@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from testing import assert_equal, assert_false, assert_true, assert_not_equal
-from collections.interval import Interval, IntervalTree
+from collections.interval import Interval, IntervalElement, IntervalTree
+
+from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from test_utils import TestSuite
 
 
 def test_interval():
@@ -112,7 +113,14 @@ def test_interval():
     assert_false(Bool(Interval(0, 0)))
 
 
-struct MyType:
+struct MyType(
+    Comparable,
+    Floatable,
+    ImplicitlyCopyable,
+    IntervalElement,
+    Movable,
+    Stringable,
+):
     var value: Float64
 
     fn __init__(out self):
@@ -120,12 +128,6 @@ struct MyType:
 
     fn __init__(out self, value: Float64, /):
         self.value = value
-
-    fn __copyinit__(out self, existing: Self, /):
-        self.value = existing.value
-
-    fn __moveinit__(out self, owned existing: Self, /):
-        self.value = existing.value
 
     fn __gt__(self, other: Self) -> Bool:
         return self.value > other.value
@@ -154,7 +156,7 @@ struct MyType:
     fn __float__(self) -> Float64:
         return self.value
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.value)
 
     fn __str__(self) -> String:
@@ -166,8 +168,8 @@ def test_interval_floating():
     var interval = Interval(MyType(2.4), MyType(3.5))
 
     # Verify the interval start and end values are correctly set.
-    assert_equal(rebind[Float64](interval.start.value), 2.4)
-    assert_equal(rebind[Float64](interval.end.value), 3.5)
+    assert_equal(interval.start.value, 2.4)
+    assert_equal(interval.end.value, 3.5)
 
     # Test union operation with overlapping interval.
     var union = interval.union(Interval(MyType(3.0), MyType(4.5)))
@@ -197,6 +199,10 @@ def test_interval_tree():
 
 
 def main():
-    test_interval()
-    test_interval_floating()
-    test_interval_tree()
+    var suite = TestSuite()
+
+    suite.test[test_interval]()
+    suite.test[test_interval_floating]()
+    suite.test[test_interval_tree]()
+
+    suite^.run()

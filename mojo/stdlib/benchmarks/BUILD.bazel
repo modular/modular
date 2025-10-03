@@ -1,0 +1,32 @@
+load("//bazel:api.bzl", "mojo_test")
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        args = ["-t"],  # NOTE: to test changes on the current branch, remove the -t flag. Remember to replace it again before pushing any code.
+        data = [
+            "collections/data/UN_charter_AR.html",
+            "collections/data/UN_charter_AR.txt",
+            "collections/data/UN_charter_EN.html",
+            "collections/data/UN_charter_EN.txt",
+            "collections/data/UN_charter_ES.html",
+            "collections/data/UN_charter_ES.txt",
+            "collections/data/UN_charter_RU.html",
+            "collections/data/UN_charter_RU.txt",
+            "collections/data/UN_charter_zh-CN.html",
+            "collections/data/UN_charter_zh-CN.txt",
+            "collections/string/data/canada.txt",
+            "collections/string/data/mesh.txt",
+        ],
+        enable_assertions = False,
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],  # Too slow to build with ASAN
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]

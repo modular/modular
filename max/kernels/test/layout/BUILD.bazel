@@ -1,0 +1,50 @@
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+
+_FILECHECK_TESTS = [
+    "test_element.mojo",
+    "test_layout.mojo",
+    "test_nd_buffer_stub.mojo",
+    "test_swizzle.mojo",
+    "test_tensor.mojo",
+    "test_tensor_masked.mojo",
+    "test_tensor_math.mojo",
+    "test_tensor_runtime_layout.mojo",
+    "test_tiled_matmul.mojo",
+    "test_vectorized_matmul.mojo",
+]
+
+_EXTRA_CONSTRAINTS = {
+    "test_tensor_masked.mojo": select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = (["manual"] if src == "test_tiled_matmul_backtoback.mojo" else []),  # TODO(MOCO-1523)
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
+]

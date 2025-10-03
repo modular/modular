@@ -11,16 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 from pathlib import Path
 
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def draw_mandelbrot(tensor: Tensor, width: int, height: int, iterations: int):
+def draw_mandelbrot(
+    tensor: Tensor, width: int, height: int, iterations: int
+) -> None:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     sr = "....,c8M@jawrpogOQEPGJ"
     for row in range(height):
@@ -32,7 +33,7 @@ def draw_mandelbrot(tensor: Tensor, width: int, height: int, iterations: int):
                 print(p, end="")
             else:
                 print(" ", end="")
-        print("")
+        print()
 
 
 def create_mandelbrot_graph(
@@ -43,24 +44,43 @@ def create_mandelbrot_graph(
     scale_x: float,
     scale_y: float,
     max_iterations: int,
+    device: DeviceRef,
 ) -> Graph:
     """Configure a graph to run a Mandelbrot kernel."""
     output_dtype = DType.int32
+    mojo_kernels = Path(__file__).parent / "kernels"
+
     with Graph(
         "mandelbrot",
+        custom_extensions=[mojo_kernels],
     ) as graph:
         # The custom Mojo operation is referenced by its string name, and we
         # need to provide inputs as a list as well as expected output types.
         result = ops.custom(
             name="mandelbrot",
+            device=device,
             values=[
-                ops.constant(min_x, dtype=DType.float32),
-                ops.constant(min_y, dtype=DType.float32),
-                ops.constant(scale_x, dtype=DType.float32),
-                ops.constant(scale_y, dtype=DType.float32),
-                ops.constant(max_iterations, dtype=DType.int32),
+                ops.constant(
+                    min_x, dtype=DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    min_y, dtype=DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    scale_x, dtype=DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    scale_y, dtype=DType.float32, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    max_iterations, dtype=DType.int32, device=DeviceRef.CPU()
+                ),
             ],
-            out_types=[TensorType(dtype=output_dtype, shape=[height, width])],
+            out_types=[
+                TensorType(
+                    dtype=output_dtype, shape=[height, width], device=device
+                )
+            ],
         )[0].tensor
 
         # Return the result of the custom operation as the output of the graph.
@@ -69,12 +89,6 @@ def create_mandelbrot_graph(
 
 
 if __name__ == "__main__":
-    # This is necessary only in specific build environments.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
-    path = Path(__file__).parent / "kernels.mojopkg"
-
     # Establish Mandelbrot set ranges.
     WIDTH = 60
     HEIGHT = 25
@@ -84,20 +98,26 @@ if __name__ == "__main__":
     MIN_Y = -1.12
     MAX_Y = 1.12
 
+    # Place the graph on a GPU, if available. Fall back to CPU if not.
+    device = CPU() if accelerator_count() == 0 else Accelerator()
+
     # Configure our simple graph.
     scale_x = (MAX_X - MIN_X) / WIDTH
     scale_y = (MAX_Y - MIN_Y) / HEIGHT
     graph = create_mandelbrot_graph(
-        WIDTH, HEIGHT, MIN_X, MIN_Y, scale_x, scale_y, MAX_ITERATIONS
+        WIDTH,
+        HEIGHT,
+        MIN_X,
+        MIN_Y,
+        scale_x,
+        scale_y,
+        MAX_ITERATIONS,
+        DeviceRef.from_device(device),
     )
-
-    # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session that runs the graph on a GPU, if available.
     session = InferenceSession(
         devices=[device],
-        custom_extensions=path,
     )
     # Compile the graph.
     model = session.load(graph)

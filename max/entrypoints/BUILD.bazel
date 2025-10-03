@@ -1,0 +1,115 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_filegroup", "pkg_files", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+modular_py_library(
+    name = "entrypoints",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            "gpu_query.py",
+            "pipelines.py",
+            "replay_recording.py",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/diagnostics",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
+        "//SDK/lib/API/python/max/serve/pipelines",
+        requirement("click"),
+        requirement("gguf"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("opentelemetry-api"),
+        requirement("opentelemetry-sdk"),
+        requirement("pillow"),
+        requirement("psutil"),
+        requirement("requests"),
+        requirement("sentencepiece"),
+        requirement("tokenizers"),
+        requirement("tqdm"),
+        requirement("transformers"),
+        requirement("uvicorn"),
+        requirement("uvloop"),
+    ],
+)
+
+modular_py_library(
+    name = "_pipelines",
+    srcs = [
+        "pipelines.py",
+    ],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/interfaces",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/serve",
+        # These all point to the symlinked version of the benchmark directory.
+        "//SDK/lib/API/python/max/benchmark:benchmark_serving_lib",
+        requirement("aiohttp"),
+        requirement("click"),
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("tqdm"),
+        requirement("transformers"),
+        requirement("uvicorn"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines",
+    srcs = [
+        "pipelines.py",
+    ],
+    env = {
+        "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
+    },
+    deps = [
+        ":_pipelines",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "replay_recording",
+    srcs = ["replay_recording.py"],
+    deps = [
+        "//SDK/lib/API/python/max/serve/recordreplay",
+        requirement("click"),
+        requirement("httpx"),
+    ],
+)
+
+pkg_files(
+    name = "python_files",
+    srcs = glob(
+        [
+            "**/*.py",
+        ],
+    ),
+    # Don't strip the prefix of subdirectories.
+    strip_prefix = "",
+)
+
+pkg_filegroup(
+    name = "entrypoints_python",
+    srcs = [
+        ":python_files",
+        "//SDK/lib/API/python/max/benchmark:python_files",
+    ],
+)
+
+modular_py_library(
+    name = "gpu-query",
+    srcs = ["gpu_query.py"],
+    visibility = ["//visibility:public"],
+    deps = ["//open-source/max/mojo/python/mojo"],
+)

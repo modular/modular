@@ -10,44 +10,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-
-from collections.string import StringSlice
 from hashlib._ahash import AHasher
-from hashlib._hasher import _hash_with_hasher, _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from pathlib import Path
 
-from memory import UnsafePointer
-from python import Python, PythonObject
-from testing import assert_equal, assert_true
+from testing import assert_equal
+from test_utils import TestSuite
 
 
-struct DummyHasher(_Hasher):
+struct DummyHasher(Hasher):
     var _dummy_value: UInt64
 
     fn __init__(out self):
         self._dummy_value = 0
 
-    fn _update_with_bytes(mut self, data: UnsafePointer[UInt8], length: Int):
+    fn _update_with_bytes(
+        mut self,
+        data: UnsafePointer[
+            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
+        ],
+        length: Int,
+    ):
         for i in range(length):
             self._dummy_value += data[i].cast[DType.uint64]()
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):
         self._dummy_value += value.cast[DType.uint64]().reduce_add()
 
-    fn update[T: _HashableWithHasher](mut self, value: T):
+    fn update[T: Hashable](mut self, value: T):
         value.__hash__(self)
 
-    fn finish(owned self) -> UInt64:
+    fn finish(var self) -> UInt64:
         return self._dummy_value
 
 
-@value
-struct SomeHashableStruct(_HashableWithHasher):
+@fieldwise_init
+struct SomeHashableStruct(Hashable, ImplicitlyCopyable, Movable):
     var _value: Int64
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         hasher._update_with_simd(self._value)
 
 
@@ -60,42 +62,42 @@ def test_hasher():
 
 def test_hash_with_hasher():
     var hashable = SomeHashableStruct(10)
-    assert_equal(_hash_with_hasher[HasherType=DummyHasher](hashable), 10)
+    assert_equal(hash[HasherType=DummyHasher](hashable), 10)
 
 
-@value
-struct ComplexeHashableStruct(_HashableWithHasher):
+@fieldwise_init
+struct ComplexHashableStruct(Hashable):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
 
 
 def test_complex_hasher():
     var hasher = DummyHasher()
-    var hashable = ComplexeHashableStruct(
+    var hashable = ComplexHashableStruct(
         SomeHashableStruct(42), SomeHashableStruct(10)
     )
     hasher.update(hashable)
     assert_equal(hasher^.finish(), 52)
 
 
-def test_complexe_hash_with_hasher():
-    var hashable = ComplexeHashableStruct(
+def test_complex_hash_with_hasher():
+    var hashable = ComplexHashableStruct(
         SomeHashableStruct(42), SomeHashableStruct(10)
     )
-    assert_equal(_hash_with_hasher[HasherType=DummyHasher](hashable), 52)
+    assert_equal(hash[HasherType=DummyHasher](hashable), 52)
 
 
-@value
-struct ComplexHashableStructWithList(_HashableWithHasher):
+@fieldwise_init
+struct ComplexHashableStructWithList(Hashable):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
     var _value3: List[UInt8]
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
         # This is okay because self is passed as read-only so the pointer will
@@ -104,17 +106,16 @@ struct ComplexHashableStructWithList(_HashableWithHasher):
             data=self._value3.unsafe_ptr(),
             length=len(self._value3),
         )
-        _ = self._value3
 
 
-@value
-struct ComplexHashableStructWithListAndWideSIMD(_HashableWithHasher):
+@fieldwise_init
+struct ComplexHashableStructWithListAndWideSIMD(Hashable):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
     var _value3: List[UInt8]
     var _value4: SIMD[DType.uint32, 4]
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
         # This is okay because self is passed as read-only so the pointer will
@@ -124,7 +125,6 @@ struct ComplexHashableStructWithListAndWideSIMD(_HashableWithHasher):
             length=len(self._value3),
         )
         hasher.update(self._value4)
-        _ = self._value3
 
 
 def test_update_with_bytes():
@@ -134,6 +134,11 @@ def test_update_with_bytes():
     )
     hasher.update(hashable)
     assert_equal(hasher^.finish(), 58)
+
+
+alias _hash_with_hasher = hash[
+    _, HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+]
 
 
 def test_with_ahasher():
@@ -154,26 +159,27 @@ def test_with_ahasher():
 
 def test_hash_hashable_with_hasher_types():
     assert_equal(_hash_with_hasher(DType.uint64), 6529703120343940753)
-    assert_equal(_hash_with_hasher(""), 11583516797109448887)
-    assert_equal(_hash_with_hasher(String("")), 11583516797109448887)
+    assert_equal(_hash_with_hasher(StaticString("")), 11583516797109448887)
+    assert_equal(_hash_with_hasher(String()), 11583516797109448887)
     assert_equal(_hash_with_hasher(StringSlice("")), 11583516797109448887)
     assert_equal(_hash_with_hasher(Int(-123)), 4720193641311814362)
     assert_equal(_hash_with_hasher(UInt(123)), 4498397628805512285)
     assert_equal(
         _hash_with_hasher(SIMD[DType.float16, 4](0.1, -0.1, 12, 0)),
-        3806818604433176740,
+        9316495345323385448,
     )
     assert_equal(_hash_with_hasher(Path("/tmp")), 16491058316913697698)
-    # Hash value of PythonObject is randomized by default
-    # can be deterministic if env var PYTHONHASHSEED is set
-    assert_true(_hash_with_hasher(PythonObject("hello")) != 0)
 
 
 def main():
-    test_hasher()
-    test_hash_with_hasher()
-    test_complex_hasher()
-    test_complexe_hash_with_hasher()
-    test_update_with_bytes()
-    test_with_ahasher()
-    test_hash_hashable_with_hasher_types()
+    var suite = TestSuite()
+
+    suite.test[test_hasher]()
+    suite.test[test_hash_with_hasher]()
+    suite.test[test_complex_hasher]()
+    suite.test[test_complex_hash_with_hasher]()
+    suite.test[test_update_with_bytes]()
+    suite.test[test_with_ahasher]()
+    suite.test[test_hash_hashable_with_hasher_types]()
+
+    suite^.run()

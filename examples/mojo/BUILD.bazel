@@ -1,0 +1,51 @@
+load("//bazel:api.bzl", "modular_py_library", "mojo_test", "requirement")
+
+modular_py_library(
+    name = "lib",
+    testonly = True,
+    srcs = glob(
+        ["*.py"],
+        exclude = ["lit.cfg.py"],
+    ),
+    deps = [
+        requirement("numpy"),
+    ],
+)
+
+mojo_test(
+    name = "hello_interop.mojo.test",
+    srcs = ["hello_interop.mojo"],
+    target_compatible_with = select({
+        # TODO: Debug asan failure with this test
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":lib",
+        "@mojo//:stdlib",
+    ],
+)
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        target_compatible_with = select({
+            # TODO: Debug asan failure with this test
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        [
+            "**/*.mojo",
+            "**/*.🔥",
+        ],
+        exclude = [
+            "hello_interop.mojo",
+        ],
+    )
+]

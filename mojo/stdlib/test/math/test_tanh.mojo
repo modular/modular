@@ -1,0 +1,195 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from math import tanh
+from random import randn, seed
+
+from buffer import NDBuffer
+from test_utils import compare, libm_call, TestSuite
+from testing import assert_almost_equal
+
+
+fn tanh_libm[
+    dtype: DType, simd_width: Int
+](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    return libm_call["tanhf", "tanh"](arg)
+
+
+def test_tanh_tfvals_fp32():
+    alias dtype = DType.float32
+
+    # The following input values for x are taken from
+    # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
+    var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var x = NDBuffer[dtype, 1, _, 4](x_stack)
+    x.store[width=4](
+        0,
+        SIMD[dtype, 4](
+            -1.2583316564559937,
+            -8.081921577453613,
+            -8.626264572143555,
+            -0.7127348184585571,
+        ),
+    )
+
+    var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var y = NDBuffer[dtype, 1, _, 4](y_stack)
+    for i in range(4):
+        y[i] = tanh(x[i])
+
+    #################################################
+    # TF results
+    # use `tf.print(tf.math.tanh(numpy.float32(x)))`
+    var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var tfvals_fp32 = NDBuffer[dtype, 1, _, 4](tfvals_stack)
+    tfvals_fp32.store[width=4](
+        0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
+    )
+
+    # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
+    var abs_rel_err = SIMD[dtype, 4](
+        0.0, 1.1920928955078125e-07, 0.0, 1.1920928955078125e-07
+    )
+    var err = compare[dtype](
+        y.data, tfvals_fp32.data, 4, msg="Compare Mojo vs. Tensorflow FP32"
+    )
+    # check that tolerances are better than or almost equal to abs_rel_err
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
+
+
+def test_tanh_tfvals_fp64():
+    alias dtype = DType.float64
+
+    # The following input values for x are taken from
+    # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
+    var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var x = NDBuffer[dtype, 1, _, 4](x_stack)
+    x.store[width=4](
+        0,
+        SIMD[dtype, 4](
+            -1.2583316564559937,
+            -8.081921577453613,
+            -8.626264572143555,
+            -0.7127348184585571,
+        ),
+    )
+
+    var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var y = NDBuffer[dtype, 1, _, 4](y_stack)
+    for i in range(4):
+        y[i] = tanh(x[i])
+
+    #################################################
+    # TF results
+    # use `tf.print(tf.math.tanh(numpy.float64(x)))`
+    var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var tfvals_fp64 = NDBuffer[dtype, 1, _, 4](tfvals_stack)
+    tfvals_fp64.store[width=4](
+        0,
+        SIMD[dtype, 4](
+            -0.85060351067231821,
+            -0.99999980894339091,
+            -0.99999993567914991,
+            -0.61238890225714893,
+        ),
+    )
+
+    # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
+    var abs_rel_err = SIMD[dtype, 4](
+        7.2062200651146213e-09,
+        1.2149700800989649e-08,
+        8.3577847290501252e-09,
+        1.4283624095774667e-08,
+    )
+
+    var err = compare[dtype](
+        y.data, tfvals_fp64.data, 4, msg="Compare Mojo vs. Tensorflow FP64"
+    )
+    # check that tolerances are better than or almost equal to abs_rel_err
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
+
+
+def test_tanh_libm[N: Int = 8192]():
+    seed(0)
+    alias test_dtype = DType.float32
+    var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    randn[test_dtype](x32, N, 0, 9.0)
+    print("For N=", N, " randomly generated vals; mean=0.0, var=9.0")
+
+    ####################
+    # mojo tanh result
+    ####################
+    var y32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    for i in range(N):
+        y32[i] = tanh(x32[i])
+
+    ####################
+    ## libm tanh result
+    ####################
+    var libm_out = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    for i in range(N):
+        libm_out[i] = tanh_libm(x32[i])
+
+    # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
+    var abs_rel_err = SIMD[test_dtype, 4](
+        0.0, 2.384185791015625e-07, 0.0, 2.5438197326366208e-07
+    )
+
+    var err = compare[test_dtype](y32, libm_out, N, msg="Compare Mojo vs. LibM")
+    # check that tolerances are better than or almost equal to abs_rel_err
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
+
+    x32.free()
+    y32.free()
+    libm_out.free()
+
+
+def test_direct():
+    alias F32x4 = SIMD[DType.float32, 4]
+    var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
+    assert_almost_equal(
+        tanh(f32x4), F32x4(0.0, 0.462117165, 0.761594176, 0.905148208)
+    )
+    assert_almost_equal(
+        tanh(0.5 * f32x4), F32x4(0.0, 0.244918659, 0.462117165, 0.635149002)
+    )
+
+    alias F64x4 = SIMD[DType.float64, 4]
+    var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0)
+    assert_almost_equal(
+        tanh(f64x4), F64x4(0.0, 0.462117165, 0.761594176, 0.905148208)
+    )
+    assert_almost_equal(
+        tanh(0.5 * f64x4), F64x4(0.0, 0.244918659, 0.462117165, 0.635149002)
+    )
+
+
+def test_tanh_libm_wrapper():
+    test_tanh_libm[]()
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_direct]()
+    suite.test[test_tanh_tfvals_fp32]()
+    suite.test[test_tanh_tfvals_fp64]()
+    suite.test[test_tanh_libm_wrapper]()
+
+    suite^.run()

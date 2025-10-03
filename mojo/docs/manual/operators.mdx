@@ -1,7 +1,7 @@
 ---
 title: Operators, expressions, and dunder methods
 sidebar_label: Operators and expressions
-github_url: https://github.com/modular/max/tree/main/examples/mojo/operators
+github_url: https://github.com/modular/modular/tree/main/examples/mojo/operators
 ---
 
 Mojo includes a variety of operators for manipulating values of different types.
@@ -102,7 +102,7 @@ the order of evaluation:
 :::note
 
 Mojo also uses the caret (`^`) as the [*transfer
-sigil*](/mojo/manual/values/ownership#transfer-arguments-owned-and-). In
+sigil*](/mojo/manual/values/ownership#transfer-arguments-var-and-). In
 expressions where its use might be ambiguous, Mojo treats the character as the
 bitwise XOR operator. For example, `x^+1` is treated as `(x)^(+1)`.
 
@@ -212,7 +212,7 @@ result = i8 * f64
 ```
 
 ```output
-error: invalid call to '__mul__': could not deduce parameter 'type' of parent struct 'SIMD'
+error: invalid call to '__mul__': failed to infer parameter 'type' of parent struct 'SIMD'
     result = i8 * f64
              ~~~^~~~~
 ```
@@ -222,19 +222,29 @@ different types, you can explicitly convert a value to the desired type either
 by invoking its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by
 passing it as an argument to the constructor of the target type.
 
+For example, to fix the previous example, add an explicit conversion:
+
 ```mojo
-simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
-simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
-print("simd3:", simd3)
-simd4 = simd2 + SIMD[DType.int16, 4](simd1)  # Convert with SIMD constructor
-print("simd4:", simd4)
+var i8: Int8 = 8
+var f64: Float64 = 64.0
+result = Float64(i8) * f64
+```
+
+Here are some more examples of converting SIMD values using both constructors
+and the `cast()` method:
+
+```mojo
+simd4 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
+simd5 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+simd6 = simd4 * simd5.cast[DType.float32]()  # Convert with cast() method
+print("simd6:", simd6)
+simd7 = simd5 + SIMD[DType.int16, 4](simd4)  # Convert with SIMD constructor
+print("simd7:", simd7)
 ```
 
 ```output
-simd3: [-2.2, 6.6, -13.200001, 22.0]
-simd4: [1, 5, 1, 9]
-```
+simd6: [-2.2, 6.6, -13.200001, 22.0]
+simd7: [1, 5, 1, 9]```
 
 One exception is that the exponentiation operator, `**`, is overloaded so that
 you can specify an `Int` type exponent. All values in the `SIMD` are
@@ -380,66 +390,45 @@ Mojo supports a standard set of comparison operators: `==`, `!=`, `<`, `<=`,
 `>`, and `>=`. However their behavior depends on the type of values being
 compared.
 
+The remainder of this section describes numeric comparison operators. String
+comparisons are discussed in the [String operators](#string-operators). Several
+other types in the Mojo standard library support various comparison operators,
+in particular the equality and inequality comparisons. Consult the
+[API documentation](/mojo/lib) for a type to determine whether any comparison
+operators are supported.
+
+#### `Bool`-returning comparisons
+
+These comparisons return a single `Bool` value:
+
 - `Int`, `UInt`, `IntLiteral`, and any type that can be implicitly converted to
   `Int` or `UInt` do standard numerical comparison with a `Bool` result.
-- Two `SIMD` values can be compared only if they are the same `DType` and size.
-  (If you need to compare two `SIMD` values of different types, you can
-  explicitly convert a value so that they have the same type either by invoking
-  its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by passing it as
-  an argument to the constructor of the target type.) Mojo performs elementwise
-  comparison with a `SIMD[DType.bool]` result. For example:
+- Equality operators (`==` and `!=`) with multi-element `SIMD` values return a
+  `Bool` result using reduction semantics. The comparison is `True` only if it's
+  true for all corresponding elements. For example:
 
     ```mojo
-    simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd2 = SIMD[DType.int16, 4](0, 1, 2, 3)
-    simd3 = simd1 > simd2  # SIMD[DType.bool, 4]
-    print(simd3)
+    simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
+    simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
+    print("simd8 == simd9:", simd8 == simd9)  # False (element 2 differs)
+    print("simd8 != simd9:", simd8 != simd9)  # True (not all elements equal)
     ```
 
     ```output
-    [False, True, False, True]
+    simd8 == simd9: False
+    simd8 != simd9: True
     ```
 
-- An integral type `SIMD` can be compared to an `IntLiteral`, `Int`, `UInt`, or
-  any type that can be implicitly converted to `Int` or `UInt`. Mojo performs
-  elementwise comparison against the value provided and produces a
-  `SIMD[DType.bool]` result. For example:
-
-    ```mojo
-    simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd2 = simd1 > 2  # SIMD[DType.bool, 4]
-    print(simd2)
-    ```
-
-    ```output
-    [False, False, False, True]
-    ```
-
-- A floating point type `SIMD` can be compared to a `FloatLiteral`,
-  `IntLiteral`, `Int`, `UInt`, or any type that can be implicitly converted to
-  `Int` or `UInt`. Mojo performs elementwise comparison against the value
-  provided and produces a `SIMD[DType.bool]` result. For example:
-
-    ```mojo
-    simd1 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
-    simd2 = simd1 > 0.5  # SIMD[DType.bool, 4]
-    print(simd2)
-    ```
-
-    ```output
-    [True, False, True, False]
-    ```
-
-- `Scalar` values are simply aliases for single-element `SIMD` vectors.
-  Therefore, the same restrictions apply against comparing different types. In
-  other words, you can't compare a `Float16` value to a `Float32` value unless
-  you convert the values to the same type. You can convert a `Scalar` value by
-  passing it as an argument to the constructor of the target type:
+- Inequality operators (`<`, `<=`, `>`, `>=`) with multi-element `SIMD` values
+  are not supported. These operators only work with scalar (single-element)
+  `SIMD` values.
+- `Scalar` values are simply aliases for single-element `SIMD` vectors and
+  support all comparison operators with `Bool` results:
 
     ```mojo
     var float1: Float16 = 12.345         # SIMD[DType.float16, 1]
     var float2: Float32 = 0.5            # SIMD[DType.float32, 1]
-    result = Float32(float1) > float2    # Result is SIMD[DType.bool, 1]
+    result = Float32(float1) > float2    # Result is Bool
     print(result)
     ```
 
@@ -447,42 +436,80 @@ compared.
     True
     ```
 
-    :::note
+#### Elementwise comparisons
 
-    Note that the result of comparing a `Scalar` value is a `SIMD[DType.bool, 1]`,
-    which is not the same as a `Bool` value. However, `SIMD` values of size
-    1 implement the `Boolable` trait, which provides for implicit conversion to
-    a `Bool` value when used in a boolean expression.
+For elementwise comparisons that return a `SIMD[DType.bool]` result, use the
+comparison methods: `eq()`, `ne()`, `lt()`, `le()`, `gt()`, and `ge()`. These
+methods work with both `SIMD`-to-`SIMD` and `SIMD`-to-scalar comparisons. Here
+are examples showing all six elementwise comparison methods:
 
-    :::
+    ```mojo
+    simd8 = SIMD[DType.int32, 4](1, 2, 3, 2)
+    simd9 = SIMD[DType.int32, 4](1, 2, 4, 2)
 
-- `String` and `StringLiteral` values can be compared using standard
-  lexicographical ordering, producing a `Bool`. (For example, "Zebra" is treated
-  as less than "ant" because upper case letters occur before lower case letters
-  in the character encoding.) String comparisons are discussed further in the
-  [String operators](#string-operators) section below.
+    print("simd8.eq(simd9):", simd8.eq(simd9))    # Equal
+    print("simd8.ne(simd9):", simd8.ne(simd9))    # Not equal
+    print("simd8.lt(simd9):", simd8.lt(simd9))    # Less than
+    print("simd8.le(simd9):", simd8.le(simd9))    # Less than or equal
+    print("simd8.gt(simd9):", simd8.gt(simd9))    # Greater than
+    print("simd8.ge(simd9):", simd8.ge(simd9))    # Greater than or equal
+    ```
 
-Several other types in the Mojo standard library support various comparison
-operators, in particular the equality and inequality comparisons. Consult the
-[API documentation](/mojo/lib) for a type to determine whether any comparison
-operators are supported.
+    ```output
+    simd8.eq(simd9): [True, True, False, True]
+    simd8.ne(simd9): [False, False, True, False]
+    simd8.lt(simd9): [False, False, True, False]
+    simd8.le(simd9): [True, True, True, True]
+    simd8.gt(simd9): [False, False, False, False]
+    simd8.ge(simd9): [True, True, False, True]
+    ```
+
+    You can also use these methods for `SIMD`-to-scalar comparisons:
+
+    ```mojo
+    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+    simd5 = simd4.gt(2)  # SIMD[DType.bool, 4]
+    print("simd4.gt(2):", simd5)
+
+    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
+    simd7 = simd6.gt(0.5)  # SIMD[DType.bool, 4]
+    print("simd6.gt(0.5):", simd7)
+    ```
+
+    ```output
+    simd4.gt(2): [False, False, False, True]
+    simd6.gt(0.5): [True, False, True, False]
+    ```
+
+Use elementwise comparison methods when you need to compare each element
+individually and work with the resulting boolean mask for further processing.
 
 ### String operators
 
 As discussed in [Strings](/mojo/manual/types#strings), the
-[`String`](/mojo/stdlib/collections/string/String) type represents a mutable
-string value. In contrast, the
+[`String`](/mojo/stdlib/collections/string/string/String) type represents a
+mutable string value. In contrast, the
 [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral) type
-represents a literal string that is embedded into your compiled program. At
-run-time a `StringLiteral` is loaded into memory as a constant that persists for
-the duration of your program's execution.
+represents a literal string that is embedded into your compiled program, but
+at run-time it materializes to a `String`, allowing you to mutate it:
 
-The `String` type has a constructor that accepts a `StringLiteral` value, which
-means that a `StringLiteral` can be implicitly converted to a `String` at
-run-time if you pass it as an argument to a function or assign it to a `String`
-type variable. You also can use the [`String`
-constructor](/mojo/stdlib/collections/string/String#__init__) to explicitly
-convert the `StringLiteral` to a `String` value at run-time.
+```mojo
+message = "Hello"       # type = String
+alias name = " Pat"       # type = StringLiteral
+greeting = " good Day!"  # type = String
+
+# Mutate the original `message` String
+message += name
+message += greeting
+print(message)
+```
+
+```output
+Hello Pat good day!
+```
+
+This means that `StringLiteral` values can be intermixed with `String` values in
+any runtime expression without having to convert between types.
 
 #### String concatenation
 
@@ -496,36 +523,9 @@ alias last_name = "Curie"
 alias marie = "Marie " + last_name
 print(marie)
 
-# Compile-time concatenation assigned to a run-time StringLiteral type variable
+# Compile-time concatenation before materializing to a run-time `String`
 pierre = "Pierre " + last_name
 print(pierre)
-```
-
-```output
-Marie Curie
-Pierre Curie
-```
-
-With the `String` type the `+` operator performs run-time string concatenation
-to produce a new `String` value. You can also concatenate a `String` and a
-`StringLiteral` to produce a new `String` result.
-
-```mojo
-var first_name: String = "Grace"
-var last_name: String = " Hopper"
-
-# String type result
-programmer = first_name + last_name
-print(programmer)
-
-# String type result
-singer = first_name + " Slick"
-print(singer)
-```
-
-```output
-Grace Hopper
-Grace Slick
 ```
 
 :::tip
@@ -543,6 +543,9 @@ you can write:
 ```mojo
 result = String("The point at (", x, ", ", y, ")")
 ```
+
+This will write the underlying data using a stack buffer, and will only allocate
+and memcpy to the heap once.
 
 :::
 
@@ -571,7 +574,7 @@ alias divider2 = symbol * 40
 
 # You must define the following function using `fn` because an alias
 # initializer cannot call a function that can potentially raise an error.
-fn generate_divider(char: StringLiteral, repeat: IntLiteral) -> StringLiteral:
+fn generate_divider(char: String, repeat: Int) -> String:
     return char * repeat
 
 alias divider3 = generate_divider("~", 40)  # Evaluated at compile-time
@@ -638,10 +641,10 @@ Is "bird" greater than or equal to "CAT"? True
 
 #### Substring testing
 
-Both `String` and `StringLiteral` support using the `in` operator to produce a
-`Bool` result indicating whether a given substring appears within another
-string. The operator is overloaded so that you can use any combination of
-`String` and `StringLiteral` for both the substring and the string to test.
+`String`, `StringLiteral`, and `StringSlice` support using the `in` operator to
+produce a `Bool` result indicating whether a given substring appears within
+another string. The operator is overloaded so that you can use any combination
+of `String` and `StringLiteral` for both the substring and the string to test.
 
 ```mojo
 var food: String = "peanut butter"
@@ -658,7 +661,7 @@ It contains a nut
 
 #### String indexing and slicing
 
-Both the `String` and `StringLiteral` types allow you to use indexing to return
+`String`, `StringLiteral`, and `StringSlice` allow you to use indexing to return
 a single character. Character positions are identified with a zero-based index
 starting from the first character. You can also specify a negative index to
 count backwards from the end of the string, with the last character identified
@@ -666,7 +669,7 @@ by index -1. Specifying an index beyond the bounds of the string results in a
 run-time error.
 
 ```mojo
-alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # StringLiteral type value
+var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # String type value
 print(alphabet[0], alphabet[-1])
 
 # The following would produce a run-time error
@@ -677,16 +680,16 @@ print(alphabet[0], alphabet[-1])
 A Z
 ```
 
-The `String` type—but *not* the `StringLiteral` type—also supports slices to
-return a substring from the original `String`. Providing a slice in the form
-`[start:end]` returns a substring starting with the character index specified by
-`start` and continuing up to but not including the character at index `end`. You
-can use positive or negative indexing for both the start and end values.
-Omitting `start` is the same as specifying `0`, and omitting `end` is the same
-as specifying 1 plus the length of the string.
+The `String` and `StringSlice` types—but *not* the `StringLiteral` type—also
+support slices to return a substring from the original `String`. Providing a
+slice in the form `[start:end]` returns a substring starting with the character
+index specified by `start` and continuing up to but not including the character
+at index `end`. You can use positive or negative indexing for both the start and
+end values. Omitting `start` is the same as specifying `0`, and omitting `end`
+is the same as specifying 1 plus the length of the string.
 
 ```mojo
-var alphabet: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" # String type value
 print(alphabet[1:4])  # The 2nd through 4th characters
 print(alphabet[:6])   # The first 6 characters
 print(alphabet[-6:])  # The last 6 characters
@@ -782,6 +785,94 @@ Hello, Vera
 Enter a name or 'quit' to exit: quit
 ```
 
+### Type merging
+
+When an expression involves values of different types,
+Mojo needs to statically determine the return type of the expression. This
+process is called *type merging*. By default, Mojo determines type merging
+based on implicit conversions. Individual structs can also define custom type
+merging behavior.
+
+The following code demonstrates type merging based on implicit conversions:
+
+```mojo
+list = [0.5, 1, 2]
+for value in list:
+    print(value)
+```
+
+```output
+0.5
+1.0
+2.0
+```
+
+Here, the list literal includes both float and integer literals, which
+materialize as `Float64` and `Int`, respectively. Since `Int` can be
+implicitly converted to `Float64`, the result is a `List[Float64]`.
+
+Here's an example of where type merging fails:
+
+```mojo
+a: Int = 0
+b: String = "Hello"
+c = a if a > 0 else b   # Error: value of type 'Int' is not compatible with
+                        # value of type 'String'mojo
+```
+
+In this case, `Int` can't be implicitly converted to a `String`, and
+`String` can't be implicitly converted to an `Int`, so type merging fails. This
+is the correct result: there's no way for Mojo to know what type you want `c` to
+take. You can fix this by adding an explicit conversion:
+
+```mojo
+c = String(a) if a > 0 else b
+```
+
+Individual structs can define custom type merging logic by defining a
+`__merge_with__()` dunder method. For example:
+
+```mojo
+@fieldwise_init
+struct MyType(Movable, Copyable):
+    var val: Int
+
+    def __bool__(self) -> Bool:
+        return self.val > 0
+
+    def __merge_with__[other_type: __type_of(Int)](self) -> Int:
+        return Int(self.val)
+
+def main():
+    i = 0
+    m = MyType(9)
+    print(i if i > 0 else m)  # prints "9"
+```
+
+If either type in the expression defines a custom `__merge_with__()` dunder
+for merging with the other type, this type takes precedence over any implicit
+conversions. (Note that the result type doesn't have to be either of the input
+types, it could be a third type.)
+
+A type can declare multiple `__merge_with__()` overrides for different types.
+
+At a high level, the logic for merging two types goes like this:
+
+- Does either type define a `__merge_with__()` method for the other type? If so,
+  the returned value determines the target type.
+  - If **both** types define a `__merge_with__()` method for the other type,
+    the two methods must both return the same type, or the conversion fails.
+  - Both types must be implicitly convertible to the target type (a type is
+    always implicitly convertible to itself).
+- Is either type implicitly convertible to the other type?
+  - If only one type is implicitly convertible to the other type, convert it.
+  - If both types are convertible to the other type, the conversion is
+    ambiguous, and it fails.
+
+For more background on type merging and the `__merge_with__()` dunder, see the
+proposal,
+[Customizable Type Merging in Mojo](https://github.com/modular/modular/blob/main/mojo/proposals/custom-type-merging.md).
+
 ## Implement operators for custom types
 
 When you create a custom struct, Mojo allows you to define the behavior of many
@@ -815,7 +906,7 @@ operator. For example, you could implement the `-` negative operator for a
 `MyInt` struct like this:
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt:
     var value: Int
 
@@ -878,7 +969,7 @@ argument, we need to implement an `__radd__()` method, because the built-in
 type.
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt:
     var value: Int
 
@@ -943,7 +1034,7 @@ As an example, consider implementing support for all of the comparison operator
 dunder methods for a custom `MyInt` struct.
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt(
     Comparable
 ):
@@ -991,7 +1082,7 @@ In the simple case of a one-dimensional sequence, the `__getitem__()` and
 `__setitem__()` methods should have signatures similar to this:
 
 ```mojo
-struct MySeq[type: CollectionElement]:
+struct MySeq[type: Copyable & Movable]:
     fn __getitem__(self, idx: Int) -> type:
         # Return element at the given index
         ...
@@ -1005,7 +1096,7 @@ multiple index arguments—or even variadic index arguments for
 arbitrary—dimension collections.
 
 ```mojo
-struct MySeq[type: CollectionElement]:
+struct MySeq[type: Copyable & Movable]:
     # 2-dimension support
     fn __getitem__(self, x_idx: Int, y_idx: Int) -> type:
         ...
@@ -1024,7 +1115,7 @@ collection) you implement to methods to accept a
 the case of a multi-dimensional collection).
 
 ```mojo
-struct MySeq[type: CollectionElement]:
+struct MySeq[type: Copyable & Movable]:
     # Return a new MySeq with a subset of elements
     fn __getitem__(self, span: Slice) -> Self:
         ...
@@ -1047,7 +1138,7 @@ non-negative values. You can then use these normalized values to determine the
 corresponding elements of your collection being referenced.
 
 ```mojo
-struct MySeq[type: CollectionElement]:
+struct MySeq[type: Copyable & Movable]:
     var size: Int
 
     # Return a new MySeq with a subset of elements
@@ -1072,7 +1163,7 @@ operations like printing complex values. We'll also allow mixing `Complex` and
 
 This example builds our `Complex` struct incrementally. You can also find the
 [complete example in the public GitHub
-repo](https://github.com/modular/max/tree/main/examples/mojo/operators).
+repo](https://github.com/modular/modular/tree/main/examples/mojo/operators).
 
 :::note
 
@@ -1087,15 +1178,20 @@ will not be based on the `ComplexSIMD` struct or be compatible with it.
 
 Our `Complex` struct is an example of a simple value type consisting of trivial
 numeric fields and requiring no special constructor or destructor behaviors.
-This means that we can take advantage of Mojo's
-[`@value`](/mojo/manual/decorators/value) decorator, which is described in
-[Simple value types](/mojo/manual/lifecycle/life#value-decorator), to
-automatically implement a member-wise initializer (a constructor with arguments
-for each field), a copy constructor, a move constructor, and a destructor.
+This means we can use the
+[`@register_passable("trivial")`](/mojo/manual/decorators/register-passable/#register_passabletrivial)
+decorator, which declares that the type can be trivially copied, moved, and
+destroyed—and doesn't need a copy constructor, move constructor, or destructor.
+
+For the time being, we'll also use the
+[`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator to
+automatically implement a field-wise initializer (a constructor with arguments
+for each field).
 
 ```mojo
-@value
-struct Complex():
+@fieldwise_init
+@register_passable("trivial")
+struct Complex:
     var re: Float64
     var im: Float64
 ```
@@ -1116,7 +1212,7 @@ As a convenience, let's add an explicit constructor to handle the case of
 creating a `Complex` instance with an imaginary component of 0.
 
 ```mojo
-@value
+@register_passable("trivial")
 struct Complex():
     var re: Float64
     var im: Float64
@@ -1125,6 +1221,9 @@ struct Complex():
         self.re = re
         self.im = im
 ```
+
+Since this constructor also handles creating a `Complex` instance with both real
+and imaginary components, we don't need the `@fieldwise_init` decorator anymore.
 
 Now we can create a `Complex` instance and provide just a real component.
 
@@ -1148,7 +1247,7 @@ methods in [The `Stringable`, `Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
 
 ```mojo
-@value
+@register_passable("trivial")
 struct Complex(
     Writable,
     Stringable,
@@ -1158,7 +1257,7 @@ struct Complex(
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("(", self.re)
         if self.im < 0:
             writer.write(" - ", -self.im)
@@ -1503,7 +1602,6 @@ representing floating point numbers when performing arithmetic operations. But
 we'll go ahead and implement the operators for completeness.)
 
 ```mojo
-@value
 struct Complex(
     EqualityComparable,
     Formattable,
@@ -1514,7 +1612,7 @@ struct Complex(
         return self.re == other.re and self.im == other.im
 
     fn __ne__(self, other: Self) -> Bool:
-        return self.re != other.re and self.im != other.im
+        return self.re != other.re or self.im != other.im
 ```
 
 :::note

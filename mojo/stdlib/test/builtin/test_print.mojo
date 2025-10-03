@@ -10,16 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-
-import sys
-from collections.string import StaticString
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __call_location, _SourceLocation
-from testing import assert_equal
-from utils.write import WritableVariadicPack
+from test_utils import TestSuite
 
 from utils import IndexList
 
@@ -43,7 +38,7 @@ fn _assert_equal_error(
     return _assert_error(err, loc)
 
 
-struct PrintChecker:
+struct PrintChecker(Movable):
     var tmp: NamedTemporaryFile
     var cursor: UInt64
     var call_location: _SourceLocation
@@ -54,16 +49,11 @@ struct PrintChecker:
         self.call_location = __call_location()
         self.cursor = 0
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         return self^
 
-    fn __moveinit__(out self, owned existing: Self):
-        self.tmp = existing.tmp^
-        self.cursor = existing.cursor
-        self.call_location = existing.call_location
-
     fn stream(self) -> FileDescriptor:
-        return self.tmp._file_handle._get_raw_fd()
+        return FileDescriptor(self.tmp._file_handle._get_raw_fd())
 
     fn check_line(mut self, expected: String, msg: String = "") raises:
         print(end="", file=self.stream(), flush=True)
@@ -124,7 +114,7 @@ def test_print():
         print(">", x, file=checker.stream())
         checker.check_line_starts_with("> 0.6535")
 
-        print(String("Hello world"), file=checker.stream())
+        print("Hello world", file=checker.stream())
         checker.check_line("Hello world")
 
 
@@ -143,18 +133,11 @@ def test_print_sep():
         checker.check_line("a/1/2xx")
 
 
-fn foo[*Ts: Writable](*messages: *Ts) -> String:
-    return String("message:", WritableVariadicPack(messages), "[end]", sep=" ")
-
-
-def test_writable_variadic_pack[*Ts: Writable]():
-    var x = 42
-    res = foo("'x = ", x, "'")
-    assert_equal(res, "message: 'x = 42' [end]")
-
-
 def main():
-    test_print()
-    test_print_end()
-    test_print_sep()
-    test_writable_variadic_pack()
+    var suite = TestSuite()
+
+    suite.test[test_print]()
+    suite.test[test_print_end]()
+    suite.test[test_print_sep]()
+
+    suite^.run()

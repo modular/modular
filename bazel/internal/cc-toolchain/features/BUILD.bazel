@@ -1,0 +1,91 @@
+load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
+load(":features.bzl", "MARKER_FEATURES")
+
+package(default_visibility = ["//visibility:public"])
+
+[
+    cc_feature(
+        name = name,
+        feature_name = name,
+    )
+    for name in MARKER_FEATURES
+]
+
+cc_feature(
+    name = "asan",
+    args = [
+        "//bazel/internal/cc-toolchain/args:asan_compile_args",
+        "//bazel/internal/cc-toolchain/args:asan_link_args",
+    ],
+    feature_name = "asan",
+)
+
+cc_feature(
+    name = "tsan",
+    args = [
+        "//bazel/internal/cc-toolchain/args:tsan_compile_args",
+        "//bazel/internal/cc-toolchain/args:tsan_link_args",
+    ],
+    feature_name = "tsan",
+)
+
+cc_feature(
+    name = "ubsan",
+    args = [
+        "//bazel/internal/cc-toolchain/args:ubsan_compile_args",
+        "//bazel/internal/cc-toolchain/args:ubsan_link_args",
+    ],
+    feature_name = "ubsan",
+)
+
+cc_feature(
+    name = "non_opt_feature",
+    args = ["//bazel/internal/cc-toolchain/args:non_opt_link_args"],
+    feature_name = "_underlying_non_opt",
+    requires_any_of = [
+        ":dbg_stub",
+        ":fastbuild_stub",
+    ],
+)
+
+cc_feature(
+    name = "opt_feature",
+    args = [
+        "//bazel/internal/cc-toolchain/args:opt_compile_args",
+        "//bazel/internal/cc-toolchain/args:opt_link_args",
+    ],
+    feature_name = "_underlying_opt",
+    requires_any_of = [":opt_stub"],
+)
+
+# Ideally we wouldn't re-stub these https://github.com/bazelbuild/rules_cc/issues/325
+cc_feature(
+    name = "dbg_stub",
+    overrides = "@rules_cc//cc/toolchains/features:dbg",
+)
+
+cc_feature(
+    name = "fastbuild_stub",
+    overrides = "@rules_cc//cc/toolchains/features:fastbuild",
+)
+
+cc_feature(
+    name = "opt_stub",
+    overrides = "@rules_cc//cc/toolchains/features:opt",
+)
+
+cc_feature(
+    name = "generate_dsym",
+    args = [
+        "//bazel/internal/cc-toolchain/args:generate_dsym",
+    ],
+    overrides = "@rules_cc//cc/toolchains/features/legacy:generate_dsym_file",
+)
+
+# TODO: Remove after https://github.com/bazelbuild/rules_cc/pull/386
+cc_feature(
+    name = "external_include_paths",
+    args = ["@rules_cc//cc/toolchains/args/external_include_paths"],
+    feature_name = "external_include_paths",
+    visibility = ["//visibility:public"],
+)

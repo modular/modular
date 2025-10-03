@@ -11,25 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 from pathlib import Path
 
 import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def main():
-    # This is necessary only for Modular internal CI.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
-    path = Path(__file__).parent / "kernels.mojopkg"
+def main() -> None:
+    mojo_kernels = Path(__file__).parent / "kernels"
 
     dtype = DType.float32
 
+    # Place the graph on a GPU, if available. Fall back to CPU if not.
+    device = CPU() if accelerator_count() == 0 else Accelerator()
     if accelerator_count() == 0:
         N = 8
         D = 8
@@ -44,25 +41,34 @@ def main():
     with Graph(
         "fused_attention",
         input_types=[
-            TensorType(dtype, shape=[N, D]),
-            TensorType(dtype, shape=[N, D]),
-            TensorType(dtype, shape=[N, D]),
+            TensorType(
+                dtype, shape=[N, D], device=DeviceRef.from_device(device)
+            ),
+            TensorType(
+                dtype, shape=[N, D], device=DeviceRef.from_device(device)
+            ),
+            TensorType(
+                dtype, shape=[N, D], device=DeviceRef.from_device(device)
+            ),
         ],
+        custom_extensions=[mojo_kernels],
     ) as graph:
         q, k, v, *_ = graph.inputs
         results = ops.custom(
-            name="fused_attention_custom",
-            parameters={"N": N, "D": D, "BD": BD, "BN": BN},
+            name="modular_ops::fused_attention_custom",
+            device=DeviceRef.from_device(device),
+            parameters={"BD": BD, "BN": BN},
             values=[q, k, v],
-            out_types=[TensorType(dtype, shape=[N, D])],
+            out_types=[
+                TensorType(
+                    dtype, shape=[N, D], device=DeviceRef.from_device(device)
+                )
+            ],
         )
         graph.output(*results)
 
-    # Place the graph on a GPU, if available. Fall back to CPU if not.
-    device = CPU() if accelerator_count() == 0 else Accelerator()
-
     # Set up an inference session for running the graph.
-    session = InferenceSession(devices=[device], custom_extensions=path)
+    session = InferenceSession(devices=[device])
 
     # Compile the graph.
     model = session.load(graph)

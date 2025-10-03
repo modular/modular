@@ -1,0 +1,32 @@
+load("//bazel:api.bzl", "mojo_test")
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["skip-external-ci-macos-15"],  # TODO: Debug why this only fails on public github actions, not locally
+        deps = [
+            "@mojo//:quantization",
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = ["test_per_channel_grouped_4bit.mojo"],
+    )
+]
+
+# TODO(KERN-1880): Re-enable this.
+mojo_test(
+    name = "test_per_channel_grouped_4bit.mojo.test",
+    srcs = ["test_per_channel_grouped_4bit.mojo"],
+    tags = [
+        "manual",
+        # TODO: Debug why this only fails on public github actions, not locally
+        "skip-external-ci-macos-15",
+    ],
+    deps = [
+        "@mojo//:quantization",
+        "@mojo//:stdlib",
+    ],
+)

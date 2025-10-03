@@ -10,37 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-
 
 import os
 from os.env import getenv, setenv
 from os.path import expanduser, join
-from sys.info import os_is_windows
+from sys.info import CompilationTarget
 
-from testing import assert_equal, assert_raises, assert_true
+from testing import assert_equal
 
 
 fn get_user_path() -> String:
-    @parameter
-    if os_is_windows():
-        return join("C:", "Users", "user")
     return "/home/user"
 
 
 fn get_current_home() -> String:
-    @parameter
-    if os_is_windows():
-        return getenv("USERPROFILE")
     return getenv("HOME")
 
 
 def set_home(path: String):
-    @parameter
-    if os_is_windows():
-        _ = os.env.setenv("USERPROFILE", path)
-    else:
-        _ = os.env.setenv("HOME", path)
+    _ = os.env.setenv("HOME", path)
 
 
 fn main() raises:
@@ -68,22 +56,5 @@ fn main() raises:
 
     # Path with multiple tildes
     assert_equal(join(user_path, "~folder"), expanduser("~/~folder"))
-
-    # Tests with empty "HOME" and "USERPROFILE"
-    set_home("")
-    if os_is_windows():
-        # Don't expand on windows if home isn't set
-        assert_equal("~/folder", expanduser("~/folder"))
-    else:
-        # Test fallback to `/etc/passwd` works on linux
-        alias folder = "~/folder"
-        assert_true(len(expanduser(folder)) > len(folder))
-
-        # Test expanding user name on Unix
-        assert_true(expanduser("~root") != "~root")
-
-        # Test path is returned unchanged on missing user
-        var missing_user = "~asdfasdzvxewr/user"
-        assert_equal(expanduser(missing_user), missing_user)
 
     set_home(original_home)

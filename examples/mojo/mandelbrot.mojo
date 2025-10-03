@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2023, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo %s | FileCheck %s
-
 from math import iota
-from sys import num_physical_cores, simdwidthof
+from sys import num_physical_cores, simd_width_of
 
 import benchmark
 from algorithm import parallelize, vectorize
-from complex import ComplexFloat64, ComplexSIMD
-from memory import UnsafePointer
+from complex import ComplexSIMD
 
 alias float_type = DType.float32
 alias int_type = DType.int32
-alias simd_width = 2 * simdwidthof[float_type]()
+alias simd_width = 2 * simd_width_of[float_type]()
 alias unit = benchmark.Unit.ms
 
 alias cols = 960
@@ -36,13 +33,13 @@ alias min_y = -1.5
 alias max_y = 1.5
 
 
-struct Matrix[type: DType, rows: Int, cols: Int]:
-    var data: UnsafePointer[Scalar[type]]
+struct Matrix[dtype: DType, rows: Int, cols: Int]:
+    var data: UnsafePointer[Scalar[dtype]]
 
     fn __init__(out self):
-        self.data = UnsafePointer[Scalar[type]].alloc(rows * cols)
+        self.data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
 
-    fn store[nelts: Int](self, row: Int, col: Int, val: SIMD[type, nelts]):
+    fn store[nelts: Int](self, row: Int, col: Int, val: SIMD[dtype, nelts]):
         self.data.store(row * cols + col, val)
 
 
@@ -54,16 +51,15 @@ fn mandelbrot_kernel_SIMD[
     var cy = c.im
     var x = SIMD[float_type, simd_width](0)
     var y = SIMD[float_type, simd_width](0)
-    var y2 = SIMD[float_type, simd_width](0)
     var iters = SIMD[int_type, simd_width](0)
-    var t: SIMD[DType.bool, simd_width] = True
+    var t = SIMD[DType.bool, simd_width](fill=True)
 
     for _ in range(MAX_ITERS):
         if not any(t):
             break
-        y2 = y * y
+        var y2 = y * y
         y = x.fma(y + y, cy)
-        t = x.fma(x, y2) <= 4
+        t = x.fma(x, y2).le(4)
         x = x.fma(x, cx - y2)
         iters = t.select(iters + 1, iters)
     return iters
@@ -104,7 +100,6 @@ fn main() raises:
     var parallelized = benchmark.run[bench_parallel]().mean(unit)
     print("Parallelized:", parallelized, unit)
 
-    # CHECK: Parallel speedup
     print("Parallel speedup:", vectorized / parallelized)
 
     matrix.data.free()

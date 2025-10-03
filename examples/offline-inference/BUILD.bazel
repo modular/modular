@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
+
+modular_py_binary(
+    name = "basic",
+    srcs = ["basic.py"],
+    imports = ["."],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+        requirement("tqdm"),
+    ],
+)
+
+modular_run_binary_test(
+    name = "basic_test",
+    timeout = "long",
+    binary = "basic",
+    external_noop = True,
+    tags = ["requires-network"],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME long running on MacOS. MOCO-2412
+)

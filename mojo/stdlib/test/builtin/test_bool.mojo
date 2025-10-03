@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s
 
+from python import PythonObject
 from testing import assert_equal, assert_false, assert_true
+from test_utils import TestSuite
 
 
 def test_default():
@@ -38,8 +39,8 @@ def test_bool_none():
     assert_equal(Bool(test), False)
 
 
-@value
-struct MyTrue:
+@fieldwise_init
+struct MyTrue(ImplicitlyBoolable):
     fn __bool__(self) -> Bool:
         return True
 
@@ -54,11 +55,6 @@ fn takes_bool(cond: Bool) -> Bool:
 def test_convert_from_implicitly_boolable():
     assert_true(takes_bool(MyTrue()))
     assert_true(Bool(MyTrue()))
-
-
-# def test_bool_to_string():
-#     assert_equal(String(True), "True")
-#     assert_equal(String(False), "False")
 
 
 def test_bool_representation():
@@ -112,11 +108,6 @@ def test_bitwise():
     assert_false(value)
 
 
-def test_neg():
-    assert_equal(-1, -True)
-    assert_equal(0, -False)
-
-
 def test_indexer():
     assert_true(1 == index(Bool(True)))
     assert_true(0 == index(Bool(False)))
@@ -160,15 +151,17 @@ def test_float_conversion():
 
 
 def main():
-    test_default()
-    test_min_max()
-    test_bool_cast_to_int()
-    test_bool_none()
-    test_convert_from_implicitly_boolable()
-    # test_bool_to_string()
-    test_bool_representation()
-    test_bitwise()
-    test_neg()
-    test_indexer()
-    test_comparisons()
-    test_float_conversion()
+    var suite = TestSuite()
+
+    suite.test[test_default]()
+    suite.test[test_min_max]()
+    suite.test[test_bool_cast_to_int]()
+    suite.test[test_bool_none]()
+    suite.test[test_convert_from_implicitly_boolable]()
+    suite.test[test_bool_representation]()
+    suite.test[test_bitwise]()
+    suite.test[test_indexer]()
+    suite.test[test_comparisons]()
+    suite.test[test_float_conversion]()
+
+    suite^.run()

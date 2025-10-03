@@ -10,16 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import LinkedList, Optional
+from collections import LinkedList
 
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
     MoveCounter,
-    g_dtor_count,
+    TestSuite,
 )
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
@@ -33,6 +32,22 @@ def test_construction():
     assert_equal(l2[0], 1)
     assert_equal(l2[1], 2)
     assert_equal(l2[2], 3)
+
+
+def test_linkedlist_literal():
+    var l: LinkedList[Int] = [1, 2, 3]
+    assert_equal(3, len(l))
+    assert_equal(1, l[0])
+    assert_equal(2, l[1])
+    assert_equal(3, l[2])
+
+    var l2: LinkedList[Float64] = [1, 2.5]
+    assert_equal(2, len(l2))
+    assert_equal(1.0, l2[0])
+    assert_equal(2.5, l2[1])
+
+    var l3: LinkedList[Int] = []
+    assert_equal(0, len(l3))
 
 
 def test_append():
@@ -81,6 +96,26 @@ def test_pop():
     assert_equal(len(l1), 2)
     assert_equal(l1[0], 1)
     assert_equal(l1[1], 2)
+
+
+def test_pop_copies():
+    var l1 = LinkedList[CopyCounter](
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+    )
+    assert_equal(l1.pop().copy_count, 0)
+    assert_equal(len(l1), 4)
+    assert_equal(l1.pop().copy_count, 0)
+    assert_equal(len(l1), 3)
+    assert_equal(l1.pop(1).copy_count, 0)
+    assert_equal(len(l1), 2)
+    assert_equal(l1.maybe_pop(1).value().copy_count, 0)
+    assert_equal(len(l1), 1)
+    assert_equal(l1.maybe_pop().value().copy_count, 0)
+    assert_equal(len(l1), 0)
 
 
 def test_getitem():
@@ -353,8 +388,8 @@ def test_list_insert():
         v4.insert(0, 4 - i)
         v4.insert(len(v4), 4 + i + 1)
 
-    for i in range(len(v4)):
-        assert_equal(v4[i], i + 1)
+    for i, value in enumerate(v4):
+        assert_equal(value, i + 1)
 
 
 def test_list_extend_non_trivial():
@@ -394,7 +429,7 @@ def test_2d_dynamic_list():
         var v = LinkedList[Int]()
         for j in range(3):
             v.append(i + j)
-        list.append(v)
+        list.append(v^)
 
     assert_equal(0, list[0][0])
     assert_equal(1, list[0][1])
@@ -408,6 +443,7 @@ def test_2d_dynamic_list():
     assert_equal(3, len(list[0]))
 
     list[0].clear()
+
     assert_equal(0, len(list[0]))
 
     list.clear()
@@ -427,8 +463,8 @@ def test_list_explicit_copy():
 
     var l2_copy = l2.copy()
     assert_equal(len(l2), len(l2_copy))
-    for i in range(len(l2)):
-        assert_equal(l2[i], l2_copy[i])
+    for i, value in enumerate(l2):
+        assert_equal(value, l2_copy[i])
 
 
 def test_no_extra_copies_with_sugared_set_by_field():
@@ -479,7 +515,7 @@ def test_list_contains():
     assert_true(1 in x)
     assert_false(4 in x)
 
-    # TODO: implement LinkedList.__eq__ for Self[ComparableCollectionElement]
+    # TODO: implement LinkedList.__eq__ for Self[Copyable & Movable & Comparable]
     # var y = LinkedList[LinkedList[Int]]()
     # y.append(LinkedList(1,2))
     # assert_equal(LinkedList(1,2) in y,True)
@@ -522,89 +558,92 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 
 
-def inner_test_list_dtor():
-    # explicitly reset global counter
-    g_dtor_count = 0
+def test_list_dtor():
+    var dtor_count = 0
 
-    var l = LinkedList[DelCounter]()
-    assert_equal(g_dtor_count, 0)
+    var ptr = UnsafePointer(to=dtor_count).origin_cast[
+        False, ImmutableAnyOrigin
+    ]()
+    var l = LinkedList[DelCounter[ptr.origin]]()
+    assert_equal(dtor_count, 0)
 
-    l.append(DelCounter())
-    assert_equal(g_dtor_count, 0)
+    l.append(DelCounter(ptr))
+    assert_equal(dtor_count, 0)
 
     l^.__del__()
-    assert_equal(g_dtor_count, 1)
-
-
-def test_list_dtor():
-    # call another function to force the destruction of the list
-    inner_test_list_dtor()
-
-    # verify we still only ran the destructor once
-    assert_equal(g_dtor_count, 1)
+    assert_equal(dtor_count, 1)
 
 
 def test_iter():
     var l = LinkedList[Int](1, 2, 3)
-    var iter = l.__iter__()
-    assert_true(iter.__has_next__(), "Expected iter to have next")
-    assert_equal(len(iter), 3)
-    assert_equal(iter.__next__()[], 1)
-    assert_equal(iter.__next__()[], 2)
-    assert_equal(len(iter), 1)
-    assert_equal(iter.__next__()[], 3)
-    assert_equal(len(iter), 0)
-    assert_false(iter.__has_next__(), "Expected iter to not have next")
+    var it = l.__iter__()
+    assert_true(it.__has_next__(), "Expected iter to have next")
+    assert_equal(it.__next_ref__(), 1)
+    assert_equal(it.__next_ref__(), 2)
+    assert_equal(it.__next_ref__(), 3)
+    assert_false(it.__has_next__(), "Expected iter to not have next")
 
     var riter = l.__reversed__()
     assert_true(riter.__has_next__(), "Expected iter to have next")
-    assert_equal(len(riter), 3)
-    assert_equal(riter.__next__()[], 3)
-    assert_equal(riter.__next__()[], 2)
-    assert_equal(len(riter), 1)
-    assert_equal(riter.__next__()[], 1)
-    assert_equal(len(riter), 0)
+    assert_equal(riter.__next_ref__(), 3)
+    assert_equal(riter.__next_ref__(), 2)
+    assert_equal(riter.__next_ref__(), 1)
     assert_false(riter.__has_next__(), "Expected iter to not have next")
 
     var i = 0
     for el in l:
-        assert_equal(el[], l[i])
+        assert_equal(el, l[i])
         i += 1
 
     i = 2
     for el in l.__reversed__():
-        assert_equal(el[], l[i])
+        assert_equal(el, l[i])
         i -= 1
+
+    var ll = LinkedList[Int]()
+    assert_equal(iter(ll).__has_next__(), False)
+
+
+def test_repr_wrap():
+    var l1 = LinkedList[Int](1, 2, 3)
+    assert_equal(repr(l1), "LinkedList(1, 2, 3)")
 
 
 def main():
-    test_construction()
-    test_append()
-    test_prepend()
-    test_copy()
-    test_reverse()
-    test_pop()
-    test_getitem()
-    test_setitem()
-    test_str()
-    test_repr()
-    test_pop_on_empty_list()
-    test_optional_pop_on_empty_linked_list()
-    test_list()
-    test_list_clear()
-    test_list_to_bool_conversion()
-    test_list_pop()
-    test_list_variadic_constructor()
-    test_list_reverse()
-    test_list_extend_non_trivial()
-    test_list_explicit_copy()
-    test_no_extra_copies_with_sugared_set_by_field()
-    test_2d_dynamic_list()
-    test_list_boolable()
-    test_list_count()
-    test_list_contains()
-    test_indexing()
-    test_list_dtor()
-    test_list_insert()
-    test_list_eq_ne()
-    test_iter()
+    var suite = TestSuite()
+
+    suite.test[test_construction]()
+    suite.test[test_linkedlist_literal]()
+    suite.test[test_append]()
+    suite.test[test_prepend]()
+    suite.test[test_copy]()
+    suite.test[test_reverse]()
+    suite.test[test_pop]()
+    suite.test[test_pop_copies]()
+    suite.test[test_getitem]()
+    suite.test[test_setitem]()
+    suite.test[test_str]()
+    suite.test[test_repr]()
+    suite.test[test_pop_on_empty_list]()
+    suite.test[test_optional_pop_on_empty_linked_list]()
+    suite.test[test_list]()
+    suite.test[test_list_clear]()
+    suite.test[test_list_to_bool_conversion]()
+    suite.test[test_list_pop]()
+    suite.test[test_list_variadic_constructor]()
+    suite.test[test_list_reverse]()
+    suite.test[test_list_extend_non_trivial]()
+    suite.test[test_list_explicit_copy]()
+    suite.test[test_no_extra_copies_with_sugared_set_by_field]()
+    suite.test[test_2d_dynamic_list]()
+    suite.test[test_list_boolable]()
+    suite.test[test_list_count]()
+    suite.test[test_list_contains]()
+    suite.test[test_indexing]()
+    suite.test[test_list_dtor]()
+    suite.test[test_list_insert]()
+    suite.test[test_list_eq_ne]()
+    suite.test[test_iter]()
+    suite.test[test_repr_wrap]()
+
+    suite^.run()

@@ -13,28 +13,28 @@
 
 
 class Simple:
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
 
 class WithGetItem:
-    def __getitem__(self, key):
+    def __getitem__(self, key):  # noqa: ANN001
         if isinstance(key, tuple):
-            return "Keys: {0}".format(", ".join(map(str, key)))
+            return "Keys: {}".format(", ".join(map(str, key)))
         else:
-            return "Key: {0}".format(key)
+            return f"Key: {key}"
 
 
 class WithGetItemException:
-    def __getitem__(self, key):
+    def __getitem__(self, key):  # noqa: ANN001
         raise ValueError("Custom error")
 
 
 class With2DGetItem:
-    def __init__(self):
+    def __init__(self) -> None:
         self.data = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 
-    def __getitem__(self, key):
+    def __getitem__(self, key):  # noqa: ANN001
         if isinstance(key, tuple) and all(isinstance(k, slice) for k in key):
             return [row[key[1]] for row in self.data[key[0]]]
         elif isinstance(key, tuple):
@@ -44,5 +44,5 @@ class With2DGetItem:
 
 
 class Sliceable:
-    def __getitem__(self, key):
+    def __getitem__(self, key):  # noqa: ANN001
         return key

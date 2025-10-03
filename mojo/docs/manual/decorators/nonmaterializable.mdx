@@ -1,0 +1,62 @@
+---
+title: '@nonmaterializable'
+description: Declares that a type should exist only in the parameter domain.
+codeTitle: true
+
+---
+
+You can add the `@nonmaterializable` decorator on a struct to declare that the
+type can exist only in the parameter domain (it can be used for metaprogramming
+only, and not as a runtime type). And, if an instance of this type does
+transition into the runtime domain, this decorator declares what type it
+becomes there.
+
+To use it, declare your type with `@nonmaterializable(TargetType)`, where
+`TargetType` is the type that the object should convert to if it becomes a
+runtime value (you must declare the `TargetType`). For example, if a struct is
+marked as `@nonmaterializable(Foo)`, then anywhere that it goes from a
+parameter value to a runtime value, it automatically converts into the `Foo`
+type.
+
+For example, the following `ParamStruct` type can be used in the parameter
+domain, but the `runtime_struct` instance of it is converted to a
+`RuntimeStruct` when it's materialized as a runtime value:
+
+```mojo
+@fieldwise_init
+@register_passable("trivial")
+struct RuntimeStruct:
+    var value: Int
+
+    @implicit
+    fn __init__(out self, nms: ParamStruct):
+        self.value = nms.param_value
+
+
+@nonmaterializable(RuntimeStruct)
+@register_passable("trivial")
+struct ParamStruct[param_value: Int]:
+    fn __init__(out self):
+        pass
+
+    fn __add__(
+        self, rhs: ParamStruct
+    ) -> ParamStruct[self.param_value + rhs.param_value]:
+        return ParamStruct[self.param_value + rhs.param_value]()
+
+
+def main():
+    alias still_param_struct = ParamStruct[1]() + ParamStruct[2]()
+    print(still_param_struct.param_value)
+    # When materializing to a run-time variable, it is automatically converted,
+    # even without a type annotation.
+    var runtime_struct = still_param_struct
+    print(runtime_struct.value)
+```
+
+The materialized struct must have an `@implicit` conversion constructor that
+takes an instance of the non-materializable struct as input (as shown in the
+code example).
+
+Also, since the non-materializable type only exists in the parameter domain, all
+of its methods must be able to run in the parameter domain.

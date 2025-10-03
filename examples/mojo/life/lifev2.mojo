@@ -14,11 +14,11 @@
 import time
 
 from gridv2 import Grid
-from python import Python, PythonObject
+from python import Python
 
 
 def run_display(
-    owned grid: Grid,
+    var grid: Grid,
     window_height: Int = 600,
     window_width: Int = 600,
     background_color: String = "black",
@@ -32,7 +32,7 @@ def run_display(
     pygame.init()
 
     # Create a window and set its title
-    window = pygame.display.set_mode((window_height, window_width))
+    window = pygame.display.set_mode(Python.tuple(window_height, window_width))
     pygame.display.set_caption("Conway's Game of Life")
 
     cell_height = window_height / grid.rows
@@ -65,7 +65,9 @@ def run_display(
                     width = cell_width - border_size
                     height = cell_height - border_size
                     pygame.draw.rect(
-                        window, cell_fill_color, (x, y, width, height)
+                        window,
+                        cell_fill_color,
+                        Python.tuple(x, y, width, height),
                     )
 
         # Update the display
@@ -83,4 +85,4 @@ def run_display(
 
 def main():
     start = Grid[128, 128].random()
-    run_display(start)
+    run_display(start^)

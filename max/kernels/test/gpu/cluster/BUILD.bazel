@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "mojo_filecheck_test")
+
+mojo_filecheck_test(
+    name = "test_cluster.mojo.test",
+    srcs = ["test_cluster.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:b200_gpu",
+    ],
+    deps = [
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)

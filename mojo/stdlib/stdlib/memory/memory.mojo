@@ -1,0 +1,512 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Defines functions for memory manipulations.
+
+You can import these APIs from the `memory` package. For example:
+
+```mojo
+from memory import memcmp
+```
+"""
+
+
+from collections.string.string_slice import _get_kgen_string
+from math import iota
+from sys import _libc as libc
+from sys import (
+    align_of,
+    external_call,
+    is_compile_time,
+    is_gpu,
+    llvm_intrinsic,
+    simd_bit_width,
+    simd_width_of,
+    size_of,
+)
+
+from algorithm import vectorize
+from memory.pointer import AddressSpace, _GPUAddressSpace
+
+# ===-----------------------------------------------------------------------===#
+# memcmp
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _memcmp_impl_unconstrained[
+    dtype: DType, //
+](
+    s1: UnsafePointer[Scalar[dtype], mut=False, **_],
+    s2: UnsafePointer[Scalar[dtype], mut=False, **_],
+    count: Int,
+) -> Int:
+    for i in range(count):
+        var s1i = s1[i]
+        var s2i = s2[i]
+        if s1i != s2i:
+            return 1 if s1i > s2i else -1
+    return 0
+
+
+@always_inline
+fn _memcmp_opt_impl_unconstrained[
+    dtype: DType, //
+](
+    s1: UnsafePointer[Scalar[dtype], mut=False, **_],
+    s2: UnsafePointer[Scalar[dtype], mut=False, **_],
+    count: Int,
+) -> Int:
+    alias simd_width = simd_width_of[dtype]()
+    if count < simd_width:
+        for i in range(count):
+            var s1i = s1[i]
+            var s2i = s2[i]
+            if s1i != s2i:
+                return 1 if s1i > s2i else -1
+        return 0
+
+    var last = count - simd_width
+
+    for i in range(0, last, simd_width):
+        var s1i = s1.load[width=simd_width](i)
+        var s2i = s2.load[width=simd_width](i)
+        var diff = s1i.ne(s2i)
+        if any(diff):
+            var index = Int(
+                diff.select(
+                    iota[DType.uint8, simd_width](),
+                    SIMD[DType.uint8, simd_width](255),
+                ).reduce_min()
+            )
+            return -1 if s1i[index] < s2i[index] else 1
+
+    var s1i = s1.load[width=simd_width](last)
+    var s2i = s2.load[width=simd_width](last)
+    var diff = s1i.ne(s2i)
+    if any(diff):
+        var index = Int(
+            diff.select(
+                iota[DType.uint8, simd_width](),
+                SIMD[DType.uint8, simd_width](255),
+            ).reduce_min()
+        )
+        return -1 if s1i[index] < s2i[index] else 1
+    return 0
+
+
+@always_inline
+fn _memcmp_impl[
+    dtype: DType
+](
+    s1: UnsafePointer[Scalar[dtype], mut=False, **_],
+    s2: UnsafePointer[Scalar[dtype], mut=False, **_],
+    count: Int,
+) -> Int:
+    constrained[dtype.is_integral(), "the input dtype must be integral"]()
+    if is_compile_time():
+        return _memcmp_impl_unconstrained(s1, s2, count)
+    else:
+        return _memcmp_opt_impl_unconstrained(s1, s2, count)
+
+
+@always_inline
+fn memcmp[
+    type: AnyType, address_space: AddressSpace
+](
+    s1: UnsafePointer[type, address_space=address_space, mut=False, **_],
+    s2: UnsafePointer[type, address_space=address_space, mut=False, **_],
+    count: Int,
+) -> Int:
+    """Compares two buffers. Both strings are assumed to be of the same length.
+
+    Parameters:
+        type: The element type.
+        address_space: The address space of the pointer.
+
+    Args:
+        s1: The first buffer address.
+        s2: The second buffer address.
+        count: The number of elements in the buffers.
+
+    Returns:
+        Returns 0 if the bytes strings are identical, 1 if s1 > s2, and -1 if
+        s1 < s2. The comparison is performed by the first different byte in the
+        byte strings.
+    """
+    var byte_count = count * size_of[type]()
+
+    @parameter
+    if size_of[type]() % size_of[DType.int32]() == 0:
+        return _memcmp_impl(
+            s1.bitcast[Int32](),
+            s2.bitcast[Int32](),
+            byte_count // size_of[DType.int32](),
+        )
+
+    return _memcmp_impl(s1.bitcast[Byte](), s2.bitcast[Byte](), byte_count)
+
+
+# ===-----------------------------------------------------------------------===#
+# memcpy
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _memcpy_impl(
+    dest_data: UnsafePointer[Byte, mut=True, *_, **_],
+    src_data: UnsafePointer[Byte, mut=False, *_, **_],
+    n: Int,
+):
+    """Copies a memory area.
+
+    Args:
+        dest_data: The destination pointer.
+        src_data: The source pointer.
+        n: The number of bytes to copy.
+    """
+
+    @parameter
+    fn copy[width: Int](offset: Int):
+        dest_data.store(offset, src_data.load[width=width](offset))
+
+    @parameter
+    if is_gpu():
+        vectorize[copy, simd_bit_width()](n)
+
+        return
+
+    if n < 5:
+        if n == 0:
+            return
+        dest_data[0] = src_data[0]
+        dest_data[n - 1] = src_data[n - 1]
+        if n <= 2:
+            return
+        dest_data[1] = src_data[1]
+        dest_data[n - 2] = src_data[n - 2]
+        return
+
+    if n <= 16:
+        if n >= 8:
+            var ui64_size = size_of[UInt64]()
+            dest_data.bitcast[UInt64]().store[alignment=1](
+                0, src_data.bitcast[UInt64]().load[alignment=1](0)
+            )
+            dest_data.offset(n - ui64_size).bitcast[UInt64]().store[
+                alignment=1
+            ](
+                0,
+                src_data.offset(n - ui64_size)
+                .bitcast[UInt64]()
+                .load[alignment=1](0),
+            )
+            return
+
+        var ui32_size = size_of[UInt32]()
+        dest_data.bitcast[UInt32]().store[alignment=1](
+            0, src_data.bitcast[UInt32]().load[alignment=1](0)
+        )
+        dest_data.offset(n - ui32_size).bitcast[UInt32]().store[alignment=1](
+            0,
+            src_data.offset(n - ui32_size)
+            .bitcast[UInt32]()
+            .load[alignment=1](0),
+        )
+        return
+
+    # TODO (#10566): This branch appears to cause a 12% regression in BERT by
+    # slowing down broadcast ops
+    # if n <= 32:
+    #    alias simd_16xui8_size = 16 * size_of[Int8]()
+    #    dest_data.store[width=16](src_data.load[width=16]())
+    #    # note that some of these bytes may have already been written by the
+    #    # previous simd_store
+    #    dest_data.store[width=16](
+    #        n - simd_16xui8_size, src_data.load[width=16](n - simd_16xui8_size)
+    #    )
+    #    return
+
+    # Copy in 32-byte chunks.
+    vectorize[copy, 32](n)
+
+
+@doc_private
+@always_inline
+@deprecated(
+    "`memcpy` without keyword arguments is deprecated. Please use the"
+    " keyword-only arguments version instead."
+)
+fn memcpy[
+    T: AnyType,
+    __disambiguate: NoneType = None,
+](
+    dest: UnsafePointer[T, mut=True, origin=_],
+    src: UnsafePointer[T, mut=False, origin=_],
+    count: Int,
+):
+    memcpy(dest=dest, src=src, count=count)
+
+
+@always_inline
+fn memcpy[
+    T: AnyType
+](
+    *,
+    dest: UnsafePointer[T, mut=True, origin=_],
+    src: UnsafePointer[T, mut=False, origin=_],
+    count: Int,
+):
+    """Copies a memory area.
+
+    Parameters:
+        T: The element type.
+
+    Args:
+        dest: The destination pointer.
+        src: The source pointer.
+        count: The number of elements to copy.
+    """
+    var n = count * size_of[dest.type]()
+
+    if is_compile_time():
+        # A fast version for the interpreter to evaluate
+        # this function during compile time.
+        llvm_intrinsic["llvm.memcpy", NoneType](
+            dest.bitcast[Byte](), src.bitcast[Byte](), n
+        )
+    else:
+        _memcpy_impl(dest.bitcast[Byte](), src.bitcast[Byte](), n)
+
+
+# ===-----------------------------------------------------------------------===#
+# memset
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn _memset_impl(
+    ptr: UnsafePointer[Byte, mut=True, **_], value: Byte, count: Int
+):
+    @parameter
+    fn fill[width: Int](offset: Int):
+        ptr.store(offset, SIMD[DType.uint8, width](value))
+
+    alias simd_width = simd_width_of[Byte]()
+    vectorize[fill, simd_width](count)
+
+
+@always_inline
+fn memset(ptr: UnsafePointer[_, mut=True, **_], value: Byte, count: Int):
+    """Fills memory with the given value.
+
+    Args:
+        ptr: UnsafePointer to the beginning of the memory block to fill.
+        value: The value to fill with.
+        count: Number of elements to fill (in elements, not bytes).
+    """
+    _memset_impl(ptr.bitcast[Byte](), value, count * size_of[ptr.type]())
+
+
+# ===-----------------------------------------------------------------------===#
+# memset_zero
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn memset_zero(ptr: UnsafePointer[_, mut=True, **_], count: Int):
+    """Fills memory with zeros.
+
+    Args:
+        ptr: UnsafePointer to the beginning of the memory block to fill.
+        count: Number of elements to fill (in elements, not bytes).
+    """
+    memset(ptr, 0, count)
+
+
+@always_inline
+fn memset_zero[
+    dtype: DType, //, *, count: Int
+](ptr: UnsafePointer[Scalar[dtype], mut=True, **_]):
+    """Fills memory with zeros.
+
+    Parameters:
+        dtype: The element type.
+        count: Number of elements to fill (in elements, not bytes).
+
+    Args:
+        ptr: UnsafePointer to the beginning of the memory block to fill.
+    """
+
+    @parameter
+    if count > 128:
+        return memset_zero(ptr, count)
+
+    @parameter
+    fn fill[width: Int](offset: Int):
+        ptr.store(offset, SIMD[dtype, width](0))
+
+    vectorize[fill, simd_width_of[dtype](), size=count]()
+
+
+# ===-----------------------------------------------------------------------===#
+# stack_allocation
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn stack_allocation[
+    count: Int,
+    dtype: DType,
+    /,
+    alignment: Int = align_of[dtype](),
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]() -> UnsafePointer[
+    Scalar[dtype], address_space=address_space, origin = MutableOrigin.empty
+]:
+    """Allocates data buffer space on the stack given a data type and number of
+    elements.
+
+    Parameters:
+        count: Number of elements to allocate memory for.
+        dtype: The data type of each element.
+        alignment: Address alignment of the allocated data.
+        address_space: The address space of the pointer.
+
+    Returns:
+        A data pointer of the given type pointing to the allocated space.
+    """
+
+    return stack_allocation[
+        count, Scalar[dtype], alignment=alignment, address_space=address_space
+    ]()
+
+
+@always_inline
+fn stack_allocation[
+    count: Int,
+    type: AnyType,
+    /,
+    name: Optional[StaticString] = None,
+    alignment: Int = align_of[type](),
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]() -> UnsafePointer[
+    type, address_space=address_space, origin = MutableOrigin.empty
+]:
+    """Allocates data buffer space on the stack given a data type and number of
+    elements.
+
+    Parameters:
+        count: Number of elements to allocate memory for.
+        type: The data type of each element.
+        name: The name of the global variable (only honored in certain cases).
+        alignment: Address alignment of the allocated data.
+        address_space: The address space of the pointer.
+
+    Returns:
+        A data pointer of the given type pointing to the allocated space.
+    """
+
+    @parameter
+    if is_gpu():
+        # On NVGPU, SHARED and CONSTANT address spaces lower to global memory.
+
+        alias global_name = name.value() if name else "_global_alloc"
+
+        @parameter
+        if address_space == _GPUAddressSpace.SHARED:
+            return __mlir_op.`pop.global_alloc`[
+                name = _get_kgen_string[global_name](),
+                count = count._mlir_value,
+                memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
+                _type = UnsafePointer[
+                    type, address_space=address_space
+                ]._mlir_type,
+                alignment = alignment._mlir_value,
+            ]()
+        elif address_space == _GPUAddressSpace.CONSTANT:
+            # No need to annotation this global_alloc because constants in
+            # GPU shared memory won't prevent llvm module splitting to
+            # happen since they are immutables.
+            return __mlir_op.`pop.global_alloc`[
+                name = _get_kgen_string[global_name](),
+                count = count._mlir_value,
+                _type = UnsafePointer[
+                    type, address_space=address_space
+                ]._mlir_type,
+                alignment = alignment._mlir_value,
+            ]()
+
+        # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
+        # only have generic address spaces. When allocating LOCAL memory,
+        # addrspacecast the resulting pointer.
+        elif address_space == _GPUAddressSpace.LOCAL:
+            var generic_ptr = __mlir_op.`pop.stack_allocation`[
+                count = count._mlir_value,
+                _type = UnsafePointer[type]._mlir_type,
+                alignment = alignment._mlir_value,
+            ]()
+            return __mlir_op.`pop.pointer.bitcast`[
+                _type = UnsafePointer[
+                    type, address_space=address_space
+                ]._mlir_type
+            ](generic_ptr)
+
+    # Perform a stack allocation of the requested size, alignment, and type.
+    return __mlir_op.`pop.stack_allocation`[
+        count = count._mlir_value,
+        _type = UnsafePointer[type, address_space=address_space]._mlir_type,
+        alignment = alignment._mlir_value,
+    ]()
+
+
+# ===-----------------------------------------------------------------------===#
+# malloc
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _malloc[
+    type: AnyType,
+    /,
+](
+    size: Int,
+    /,
+    *,
+    alignment: Int = align_of[type](),
+    out res: UnsafePointer[
+        type, address_space = AddressSpace.GENERIC, origin = MutableOrigin.empty
+    ],
+):
+    @parameter
+    if is_gpu():
+        alias U = UnsafePointer[NoneType, address_space = AddressSpace.GENERIC]
+        var ptr = external_call["malloc", U](size)
+        return ptr.bitcast[type]().origin_cast[True, MutableOrigin.empty]()
+    else:
+        return __mlir_op.`pop.aligned_alloc`[_type = __type_of(res)._mlir_type](
+            alignment._mlir_value, size._mlir_value
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# aligned_free
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _free(ptr: UnsafePointer[_, mut=True, **_]):
+    @parameter
+    if is_gpu():
+        libc.free(ptr.bitcast[NoneType]())
+    else:
+        __mlir_op.`pop.aligned_free`(ptr.address)

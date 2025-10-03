@@ -10,15 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import InlineArray
+from sys.info import size_of
 
-from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import DelRecorder
-from testing import assert_equal, assert_false, assert_true
-from sys.info import sizeof
+from test_utils import CopyCounter, DelRecorder, MoveCounter, TestSuite
+from testing import assert_equal, assert_true
 
 
 def test_array_unsafe_get():
@@ -75,7 +72,7 @@ def test_array_int():
     assert_equal(copy[2], move[2])
 
     # fill element initializer
-    var arr2 = InlineArray[Int, 3](5)
+    var arr2 = InlineArray[Int, 3](fill=5)
     assert_equal(arr2[0], 5)
     assert_equal(arr2[1], 5)
     assert_equal(arr2[2], 5)
@@ -83,15 +80,41 @@ def test_array_int():
     var arr3 = InlineArray[Int, 1](5)
     assert_equal(arr3[0], 5)
 
-    var arr4 = InlineArray[UInt8, 1](42)
-    assert_equal(arr4[0], 42)
-    var a = InlineArray[UInt8, 1000](10)
-    for i in range(1000):
-        assert_equal(a[i], 10)
+    def test_init_fill[size: Int, batch_size: Int, dt: DType](arg: Scalar[dt]):
+        var arr = InlineArray[Scalar[dt], size].__init__[batch_size=batch_size](
+            fill=arg
+        )
+        for i in range(size):
+            assert_equal(arr[i], arg)
+
+    def test_init_fill_scalars[
+        *dts: DType, sizes: List[Int], batch_sizes: List[Int]
+    ]():
+        @parameter
+        for current_batch_size in range(len(batch_sizes)):
+
+            @parameter
+            for current_size in range(len(sizes)):
+
+                @parameter
+                for current_type in range(len(VariadicList(dts))):
+                    test_init_fill[
+                        sizes[current_size], batch_sizes[current_batch_size]
+                    ](Scalar[dts[current_type]].MAX)
+
+    test_init_fill_scalars[
+        Int64.dtype,
+        Int8.dtype,
+        sizes= [1, 32, 64, 129, 256, 512, 768, 1000],
+        batch_sizes= [1, 8, 32, 64, 128],
+    ]()
+
+    test_init_fill[2048, 512](Int64.MAX)
+    test_init_fill[2048, 1](Int64.MAX)
 
 
 def test_array_str():
-    var arr = InlineArray[String, 3]("hi", "hello", "hey")
+    var arr: InlineArray[String, 3] = ["hi", "hello", "hey"]
 
     assert_equal(arr[0], "hi")
     assert_equal(arr[1], "hello")
@@ -121,7 +144,7 @@ def test_array_str():
     assert_equal(copy[2], move[2])
 
     # fill element initializer
-    var arr2 = InlineArray[String, 3]("hi")
+    var arr2 = InlineArray[String, 3](fill="hi")
     assert_equal(arr2[0], "hi")
     assert_equal(arr2[1], "hi")
     assert_equal(arr2[2], "hi")
@@ -191,31 +214,29 @@ def test_array_unsafe_assume_initialized_constructor_string():
 
 def test_array_contains():
     var arr = InlineArray[String, 3]("hi", "hello", "hey")
-    assert_true(String("hi") in arr)
-    assert_true(not String("greetings") in arr)
+    assert_true("hi" in arr)
+    assert_true(not "greetings" in arr)
 
 
 def test_inline_array_runs_destructors():
     """Ensure we delete the right number of elements."""
-    var destructor_counter = List[Int]()
-    var pointer_to_destructor_counter = UnsafePointer.address_of(
-        destructor_counter
-    )
+    var destructor_recorder = List[Int]()
+    var ptr = UnsafePointer(to=destructor_recorder).origin_cast[False]()
     alias capacity = 32
-    var inline_list = InlineArray[DelRecorder, 4, run_destructors=True](
-        DelRecorder(0, pointer_to_destructor_counter),
-        DelRecorder(10, pointer_to_destructor_counter),
-        DelRecorder(20, pointer_to_destructor_counter),
-        DelRecorder(30, pointer_to_destructor_counter),
+    var inline_list = InlineArray[DelRecorder[ptr.origin], 4](
+        DelRecorder(0, ptr),
+        DelRecorder(10, ptr),
+        DelRecorder(20, ptr),
+        DelRecorder(30, ptr),
     )
     _ = inline_list
     # This is the last use of the inline list, so it should be destroyed here,
     # along with each element.
-    assert_equal(len(destructor_counter), 4)
-    assert_equal(destructor_counter[0], 0)
-    assert_equal(destructor_counter[1], 10)
-    assert_equal(destructor_counter[2], 20)
-    assert_equal(destructor_counter[3], 30)
+    assert_equal(len(destructor_recorder), 4)
+    assert_equal(destructor_recorder[0], 0)
+    assert_equal(destructor_recorder[1], 10)
+    assert_equal(destructor_recorder[2], 20)
+    assert_equal(destructor_recorder[3], 30)
 
 
 fn test_unsafe_ptr() raises:
@@ -229,27 +250,86 @@ fn test_unsafe_ptr() raises:
         assert_equal(arr[i], ptr[i])
 
 
-def test_sizeof_array[current_type: CollectionElement, capacity: Int]():
-    """Testing if `sizeof` the array equals capacity * `sizeof` current_type.
+def test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
+    """Testing if `size_of` the array equals capacity * `size_of` current_type.
 
     Parameters:
         current_type: The type of the elements of the `InlineList`.
         capacity: The capacity of the `InlineList`.
     """
-    alias size_of_current_type = sizeof[current_type]()
+    alias size_of_current_type = size_of[current_type]()
     assert_equal(
-        sizeof[InlineArray[current_type, capacity]](),
+        size_of[InlineArray[current_type, capacity]](),
         capacity * size_of_current_type,
     )
 
 
+def test_move():
+    """Test that moving an InlineArray works correctly."""
+
+    # === 1. Check that the move constructor is called correctly. ===
+
+    var arr = InlineArray[MoveCounter[Int], 3]({1}, {2}, {3})
+    var copied_arr = arr.copy()
+
+    for i in range(len(arr)):
+        # The elements were moved into the array
+        assert_equal(arr[i].move_count, 1)
+
+    var moved_arr = arr^
+
+    for i in range(len(moved_arr)):
+        # Check that the moved array has the same elements as the copied array
+        assert_equal(copied_arr[i].value, moved_arr[i].value)
+        # Check that the move constructor was called again for each element
+        assert_equal(moved_arr[i].move_count, 2)
+
+    # === 2. Check that the copy constructor is not called when moving. ===
+
+    var arr2 = InlineArray[CopyCounter, 3]({}, {}, {})
+    for i in range(len(arr2)):
+        # The elements were moved into the array and not copied
+        assert_equal(arr2[i].copy_count, 0)
+
+    var moved_arr2 = arr2^
+
+    for i in range(len(moved_arr2)):
+        # Check that the copy constructor was not called
+        assert_equal(moved_arr2[i].copy_count, 0)
+
+    # === 3. Check that the destructor is not called when moving. ===
+
+    var del_counter = List[Int]()
+    var del_counter_ptr = UnsafePointer(to=del_counter).origin_cast[False]()
+    var del_recorder = DelRecorder(0, del_counter_ptr)
+    var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
+
+    assert_equal(len(del_counter_ptr[]), 0)
+
+    var moved_arr3 = arr3^
+
+    assert_equal(len(del_counter_ptr[]), 0)
+
+    _ = moved_arr3
+
+    # Double check that the destructor is called when the array is destroyed
+    assert_equal(len(del_counter_ptr[]), 1)
+    _ = del_recorder
+    _ = del_counter
+
+
 def main():
-    test_array_unsafe_get()
-    test_array_int()
-    test_array_str()
-    test_array_int_pointer()
-    test_array_unsafe_assume_initialized_constructor_string()
-    test_array_contains()
-    test_inline_array_runs_destructors()
-    test_unsafe_ptr()
-    test_sizeof_array[Int, capacity=32]()
+    var suite = TestSuite()
+
+    suite.test[test_array_unsafe_get]()
+    suite.test[test_array_int]()
+    suite.test[test_array_str]()
+    suite.test[test_array_int_pointer]()
+    suite.test[test_array_unsafe_assume_initialized_constructor_string]()
+    suite.test[test_array_contains]()
+    suite.test[test_inline_array_runs_destructors]()
+    suite.test[test_unsafe_ptr]()
+    suite.test[test_size_of_array[Int, capacity=32]]()
+    suite.test[test_move]()
+
+    suite^.run()

@@ -1,0 +1,6 @@
+"name","met (ms)","iters","spec"
+"gemm/dtype=float16/m=1024/n=512/k=512/stages=8",3.45e-05,2,"multistage_gemm/dtype=DType.float16/shape=1024x512x256/stages=8"
+"gemm/dtype=float16/m=1024/n=512/k=512/stages=4",4.4e-05,2,"multistage_gemm/dtype=DType.float16/shape=1024x512x256/stages=4"
+"gemm/dtype=float16/m=32/n=32/k=32/stages=8",4.4e-05,2,"multistage_gemm/dtype=DType.float16/shape=32x32x32/stages=8"
+"gemm/dtype=float16/m=32/n=32/k=32/stages=4",3.8e-05,2,"multistage_gemm/dtype=DType.float16/shape=32x32x32/stages=4"
+"gemm/dtype=float32/m=64/n=64/k=64/stages=2",4.5e-05,2,"multistage_gemm/dtype=DType.float32/shape=64x64x64/stages=2"

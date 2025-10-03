@@ -55,8 +55,7 @@ always have the latest linting tools applied.
 To do so, install pre-commit:
 
 ```bash
-pip install pre-commit
-pre-commit install
+pixi x pre-commit install
 ```
 
 and that's it!
@@ -77,7 +76,7 @@ enabled, this will run automatically before committing. If you want to run it
 manually with pre-commit, just run
 
 ```bash
-pre-commit run --all-files
+pixi x pre-commit run --all-files
 ```
 
 #### Whitespace
@@ -253,6 +252,24 @@ struct Array[length: Int, ElementType: Movable] # 🔴 Avoid
 struct Array[ElementType: Movable, length: Int] # 🟢 Preferred
 ```
 
+#### Use the `Some[]` utility instead of named type parameters when appropriate
+
+Consider using the `Some[]` utility if a named (and inferred) type parameter
+is not reused in a function signature or body.
+
+```mojo
+fn foo[Str: Stringable, //](arg: Str): ... # 🔴 Avoid
+fn foo(arg: Some[Stringable]): ...         # 🟢 Preferred
+```
+
+Avoid using the `Some[]` utility if a named type parameter is reused in a
+function signature or body.
+
+```mojo
+fn foo(arg0: Some[Stringable], arg1: __type_of(arg0)): ... # 🔴 Avoid
+fn foo[Str: Stringable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
+```
+
 ### Container lifecycle semantics
 
 #### ℹ️ Prefer explicit copy constructors; avoid allowing implicit copies
@@ -268,7 +285,7 @@ intention clear.
 Copying `@register_passable` types like `Int`, `Bool`, `Pointer`, and `SIMD` is
 safe and inexpensive. However, copying types that dynamically allocate memory
 can be expensive. This includes common types like `List`, `Dict`, `Set`,
-`Tensor`, and `String`.
+and `String`.
 
 Some standard library types allow implicit copies where they shouldn’t. We will
 resolve this shortly as new Mojo language features are shipped to help with this
@@ -286,6 +303,18 @@ struct MyStruct:
     fn __init__(out self, other: Self):
         # do a deep copy of MyStruct
 ```
+
+#### ℹ️ Use `copy()` method for explicit copying
+
+Many standard library types provide a `copy()` method that creates an explicit copy:
+
+```mojo
+var original = List[Int]()
+var explicit_copy = original.copy()  # 🟢 Preferred
+```
+
+This pattern is used throughout the stdlib for types like `Optional`, `String`,
+and collections.
 
 ### Import statements
 
@@ -376,9 +405,76 @@ fn _test_cpu() capturing -> Bool:
 debug_assert[_test_cpu]("This code is only runnable on CPU")
 ```
 
+### Target Specific Code
+
+When writing code that uses `@parameter if` to tailor logic based on the target
+hardware platform or features, do not use trailing `else` statements that
+"fallthrough" to a particular hardware vendor.
+
+This leads to poor error messages when an unsupported hardware vendor is
+targeted.
+
+```mojo
+# 🔴 Avoid
+@parameter
+if is_nvidia_gpu():
+    return "llvm.nvvm..."
+else:
+    # BAD: Assumes only non-NVIDIA target is AMD
+    return "llvm.amdgcn..."
+```
+
+Always gate hardware-specific logic on an explicit check that that vendor or
+feature is being targeted:
+
+```mojo
+# 🟢 Prefer
+
+@parameter
+if is_nvidia_gpu():
+    ...
+elif is_amd_gpu():
+    ...
+else:
+    return CompilationTarget.unsupported_target_error[Foo]()
+```
+
+In cases where a generic, cross-platform compatible fallback implementation
+is available, it is okay to use an unguarded `else` condition:
+
+```mojo
+@always_inline("nodebug")
+fn prefetch[...](...):
+    @parameter
+    if is_nvidia_gpu():
+        inlined_assembly["prefetch.global.L2 [$0];", ...](...)
+    else:
+        llvm_intrinsic["llvm.prefetch", NoneType](...)
+```
+
 ### Testing
 
 #### Unit test filenames
 
-All test filenames should be prefixes with `test_`.
+All test filenames should be prefixed with `test_`.
 For example `test_sort.mojo`.
+
+#### Test organization
+
+- Tests should mirror the source structure
+  - e.g., `stdlib/collections/list.mojo` tests are in
+  `test/collections/test_list.mojo`
+- Use the `testing` module assertions (`assert_equal`, `assert_true`, etc.) for
+  new tests
+- Test files should focus on testing the public API and critical edge cases
+
+#### Performance tests and benchmarks
+
+- Benchmarks are located in the `benchmarks/` directory
+- Use the `benchmark` module for performance testing
+- Benchmark files should be prefixed with `bench_` (e.g., `bench_sort.mojo`)
+
+#### Integration with build system
+
+- See the [bazel usage docs](../../../bazel/docs/usage.md) for more detaiils
+  on how to run tests.

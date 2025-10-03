@@ -5,12 +5,8 @@ channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 
 [tasks]
-build = "./stdlib/scripts/build-stdlib.sh"
 tests = "./stdlib/scripts/run-tests.sh"
-examples = "../examples/mojo/run-examples.sh"
-benchmarks = "./stdlib/scripts/run-benchmarks.sh"
+format = "mojo format ./stdlib"
 
 [dependencies]
-python = ">=3.9,<3.13"
-lit = "*"
-max = "*"
+mojo = "<1.0.0"

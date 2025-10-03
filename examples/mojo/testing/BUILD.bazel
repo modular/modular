@@ -1,0 +1,40 @@
+load("//bazel:api.bzl", "mojo_binary", "mojo_library", "mojo_test")
+
+mojo_library(
+    name = "my_math",
+    srcs = glob(["src/my_math/*.mojo"]),
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "example",
+    srcs = ["src/example.mojo"],
+    deps = [
+        ":my_math",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_inc",
+    srcs = [
+        "test/my_math/test_inc.mojo",
+    ],
+    deps = [
+        ":my_math",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_dec",
+    srcs = [
+        "test/my_math/test_dec.mojo",
+    ],
+    deps = [
+        ":my_math",
+        "@mojo//:stdlib",
+    ],
+)

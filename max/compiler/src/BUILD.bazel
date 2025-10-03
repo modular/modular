@@ -1,0 +1,10 @@
+load("//bazel:api.bzl", "mojo_library")
+
+mojo_library(
+    name = "compiler",
+    srcs = glob(["**/*.mojo"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@mojo//:compiler_internal",
+    ],
+)

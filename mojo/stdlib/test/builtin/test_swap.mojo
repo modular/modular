@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from test_utils import MoveOnly
 from testing import assert_equal
@@ -64,8 +63,8 @@ def test_swap_Tuple_Int():
 
 
 def test_swap_Tuple_Mixed():
-    var a = (1, String("Hello"), 3)
-    var b = (4, String("World"), 6)
+    var a = (1, "Hello", 3)
+    var b = (4, "World", 6)
 
     swap(a, b)
 

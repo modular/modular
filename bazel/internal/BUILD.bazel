@@ -1,0 +1,83 @@
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "requirement")
+load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
+load(":lib_toolchain.bzl", "lib_toolchain")
+
+exports_files([
+    "load_bazel_tools.py",
+    "lsan-suppressions.txt",
+])
+
+filegroup(
+    name = "mojo-filecheck-test",
+    testonly = True,
+    srcs = ["mojo-filecheck-test.sh"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "create_venv",
+    testonly = True,
+    srcs = ["create_venv.py"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "pytest_runner",
+    testonly = True,
+    srcs = ["pytest_runner.py"],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "uv",
+    actual = select({
+        "//:linux_aarch64": "@uv_linux_aarch64//:uv",
+        "//:linux_x86_64": "@uv_linux_x86_64//:uv",
+        "@platforms//os:macos": "@uv_darwin_aarch64//:uv",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+modular_py_binary(
+    name = "mojodoc_json_to_markdown",
+    srcs = ["mojodoc_json_to_markdown.py"],
+    data = glob(["mojodoc-templates/**"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("jinja2"),
+    ],
+)
+
+lib_toolchain(
+    name = "lib_toolchain",
+    visibility = ["//visibility:public"],
+)
+
+modular_py_library(
+    name = "bazel_sitecustomize",
+    srcs = [
+        "sitecustomize.py",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+gpu_toolchain_alias(
+    name = "current_gpu_toolchain",
+    testonly = True,
+    visibility = ["//visibility:public"],
+)
+
+modular_cc_library(
+    name = "debugging_test_lib",
+    srcs = ["debugging_test_lib.cpp"],
+    hdrs = ["debugging_test_lib.h"],
+    tags = ["manual"],
+)
+
+modular_cc_binary(
+    name = "debugging_test_bin",
+    srcs = ["debugging_test_bin.cpp"],
+    tags = ["manual"],
+    deps = [":debugging_test_lib"],
+)

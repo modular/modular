@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
 
 
 def main():
@@ -47,7 +46,7 @@ def test_rebind_register():
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct MyMemStruct[size: Int]:
     var value: Int
 

@@ -1,0 +1,369 @@
+"""Define bazel dependencies common to the internal and external repos."""
+
+bazel_dep(name = "abseil-cpp", version = "20250127.1")
+bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
+bazel_dep(name = "gazelle", version = "0.43.0")
+bazel_dep(name = "rules_go", version = "0.55.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_java", version = "8.15.2")
+bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
+bazel_dep(name = "aspect_rules_js", version = "2.4.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.1")
+bazel_dep(name = "curl", version = "8.8.0")
+bazel_dep(name = "google_benchmark", version = "1.8.5")
+bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "grpc-java", version = "1.67.1")
+bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
+bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "protobuf", version = "31.1")
+bazel_dep(name = "rules_cc", version = "0.2.8")
+bazel_dep(name = "rules_mojo", version = "0.5.0")
+bazel_dep(name = "rules_multirun", version = "0.13.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_proto", version = "7.0.2")
+bazel_dep(name = "rules_pycross", version = "0.8.0")
+bazel_dep(name = "rules_python", version = "1.5.1")
+bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
+
+# TODO: Remove when transitives bump to this version or above
+bazel_dep(name = "rules_foreign_cc", version = "0.13.0")  # NOTE: Avoid direct usage
+bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
+bazel_dep(name = "rules_apple", version = "3.22.0")
+bazel_dep(name = "rules_nodejs", version = "6.5.0")
+bazel_dep(name = "rules_swift", version = "2.8.2")
+bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
+
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
+
+archive_override(
+    module_name = "rules_mojo",
+    integrity = "sha256-fOkBbbvPAZmBji2zJ7KSXxpvCgxSTi6buwMJal4zOEE=",
+    strip_prefix = "rules_mojo-ffd2636629835c1f1287dcf6846251e088eec1d8",
+    urls = [
+        "https://github.com/modular/rules_mojo/archive/ffd2636629835c1f1287dcf6846251e088eec1d8.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_nodejs",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazel-contrib/rules_nodejs/pull/3859
+        "//bazel/public-patches:rules_nodejs_toolchains.patch",
+    ],
+    version = "6.5.0",
+)
+
+# Manually pull in https://github.com/bazel-contrib/rules_jvm_external/pull/1265
+single_version_override(
+    module_name = "rules_jvm_external",
+    version = "6.7",
+)
+
+bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
+single_version_override(
+    module_name = "rules_mypy",
+    patch_strip = 1,
+    patches = [
+        # TODO: Should we submit this upstream or force our deps to directly
+        # depend on the things that provide their pyi files?
+        "//bazel/public-patches:rules_mypy_pyi_files.patch",
+        # https://github.com/bazel-contrib/rules_mypy/pull/118
+        "//bazel/public-patches:rules_mypy_pyinfo.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazel-contrib/rules_python/pull/3233
+        "//bazel/public-patches:rules_python_wheel.patch",
+    ],
+)
+
+# TODO: Remove once >0.8.0 is out
+archive_override(
+    module_name = "rules_pycross",
+    integrity = "sha256-80I/HQ37qIGF7o632GMRKV7PK4/wpEvBGQyXJsnKkPo=",
+    strip_prefix = "rules_pycross-1d8bdc0e0a48ce338c0de8122c952af841d40d2d",
+    urls = [
+        "https://github.com/jvolkman/rules_pycross/archive/1d8bdc0e0a48ce338c0de8122c952af841d40d2d.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "aspect_rules_js",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/aspect-build/rules_js/pull/2330
+        "//bazel/public-patches:aspect_rules_js_toolchains.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "opentelemetry-cpp",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:opentelemetry.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_go",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazel-contrib/rules_go/pull/4368
+        "//bazel/public-patches:rules_go.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "protobuf",
+    patch_strip = 1,
+    patches = [
+        # TODO: Remove when this patch is in a release
+        # https://github.com/protocolbuffers/protobuf/pull/22633
+        "//bazel/public-patches:protobuf-platforms.patch",
+        # TODO: https://github.com/protocolbuffers/protobuf/commit/a5220488813040037e59b5625f953f2da7bf73a4
+        "//bazel/public-patches:protobuf-windows.patch",
+        # TODO: https://github.com/protocolbuffers/protobuf/commit/27227205a3986987b7495078aaf7377b49dc38aa
+        "//bazel/public-patches:protobuf-debug-context.patch",
+    ],
+    version = "31.1",  # TODO: Remove restriction next update
+)
+
+single_version_override(
+    module_name = "with_cfg.bzl",
+    patch_strip = 1,
+    patches = [
+        "//bazel/public-patches:with_cfg_visibility.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "grpc",
+    patch_strip = 1,
+    patches = [
+        # Revert of https://github.com/grpc/grpc//commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
+        "//bazel/public-patches:grpc-no-macos-x86.patch",
+        # TODO: Drop when logspew is fixed
+        "//bazel/public-patches:grpc-warnings.patch",
+        # https://github.com/grpc/grpc/pull/40687
+        "//bazel/public-patches:grpc-rules-python.patch",
+    ],
+    version = "1.73.1",
+)
+
+single_version_override(
+    module_name = "grpc-java",
+    patch_strip = 1,
+    patches = [
+        # TODO: Drop when this is pulled from bzlmod instead of grpc_deps.bzl
+        "//bazel/public-patches:grpc-java.patch",
+    ],
+    version = "1.67.1",
+)
+
+DEFAULT_PYTHON_VERSION = "3.12"
+
+PYTHON_VERSIONS = [
+    "3_9",
+    "3_10",
+    "3_11",
+    "3_12",
+    "3_13",
+]
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.defaults(python_version = DEFAULT_PYTHON_VERSION)
+
+[
+    python.toolchain(python_version = version.replace("_", "."))
+    for version in PYTHON_VERSIONS
+]
+
+# Only the lowest version is used explicitly, everything else is indirect
+use_repo(python, "python_3_9")
+
+environments = use_extension("@rules_pycross//pycross/extensions:environments.bzl", "environments")
+environments.create_for_python_toolchains(
+    name = "rules_pycross_all_environments",
+    platforms = [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+    ],
+    python_versions = [x.replace("_", ".") for x in PYTHON_VERSIONS],
+)
+use_repo(environments, "rules_pycross_all_environments")
+
+lock_file = use_extension("@rules_pycross//pycross/extensions:lock_file.bzl", "lock_file")
+lock_file.instantiate(
+    name = "modular_pip_lock_file_repo",
+    lock_file = "//bazel/pip/requirements:pycross_lock_file.bzl",
+)
+use_repo(lock_file, "modular_pip_lock_file_repo")
+
+module_versions = use_repo_rule("//bazel/pip:module_versions.bzl", "module_versions")
+
+module_versions(
+    name = "module_versions",
+    default_python_version = DEFAULT_PYTHON_VERSION,
+    python_versions = PYTHON_VERSIONS,
+)
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+RUFF_VERSION = "0.11.13"
+
+[
+    http_archive(
+        name = "ruff-{arch}".format(arch = arch),
+        build_file_content = 'exports_files(["ruff"])',
+        sha256 = sha,
+        strip_prefix = "ruff-{arch}".format(arch = arch),
+        url = "https://github.com/astral-sh/ruff/releases/download/{version}/ruff-{arch}.tar.gz".format(
+            arch = arch,
+            version = RUFF_VERSION,
+        ),
+    )
+    for arch, sha in [
+        ("x86_64-unknown-linux-gnu", "01aa32d29d00876b8d1429c617ed63a00b1fc81abfa4183bb05c9cb647fbc3d0"),
+        ("aarch64-unknown-linux-gnu", "551af2ebc439d8268dcaf871ea60ad035f688728d30943dcbb2bf775e105213e"),
+        ("aarch64-apple-darwin", "7d5e8feea7ee5c3962807996cad557e8a0c4d676c1cba6223bfb0e8b2ca07723"),
+    ]
+]
+
+NVSHMEM_VERSION = "3.3.9_cuda12"
+
+http_archive(
+    name = "libnvshmem_device_bc",
+    build_file_content = """
+filegroup(
+    name = "libnvshmem_device_bc",
+    srcs = ["lib/libnvshmem_device.bc"],
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "72a788ef5723a30d8882b193f0a513f454ecaee3ab5a225a5c43db79d433ef66",
+    strip_prefix = "libnvshmem-linux-x86_64-{}-archive".format(NVSHMEM_VERSION),
+    urls = ["https://developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/libnvshmem-linux-x86_64-{}-archive.tar.xz".format(NVSHMEM_VERSION)],
+)
+
+mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
+mojo.gpu_toolchains(
+    # nvidia-smi / amd-smi output -> GPU name, empty string to ignore GPU
+    gpu_mapping = {
+        " A10G": "a10",
+        "A100-": "a100",
+        " H100": "h100",
+        " H200": "h200",
+        " L4": "l4",
+        " Ada ": "l4",
+        " A3000 ": "a3000",
+        "B100": "b100",
+        "B200": "b200",
+        " RTX 5090": "rtx5090",
+        "Laptop GPU": "",
+        "RTX 4070 Ti": "",
+        "RTX 4080 SUPER": "",
+        "RTX 4090": "rtx4090",
+        "NVIDIA GeForce RTX 3090": "rtx3090",
+        "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
+        "MI300X": "mi300x",
+        "MI325": "mi325",
+        "MI355": "mi355",
+        "Navi": "radeon",
+        "AMD Radeon Graphics": "radeon",
+        "AMD Radeon RX 6900 XT": "rx6900xt",
+        "Metal 1": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
+        "Metal 2": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
+        "Metal 3": "metal3",  # macOS 15
+        "Metal 4": "metal4",  # macOS 26
+    },
+    # GPU name -> target accelerator
+    supported_gpus = {
+        "780M": "amdgpu:gfx1103",
+        "a10": "nvidia:86",
+        "a100": "nvidia:80",
+        "a3000": "nvidia:86",
+        "b100": "nvidia:100a",
+        "b200": "nvidia:100a",
+        "h100": "nvidia:90a",
+        "h200": "nvidia:90a",
+        "l4": "nvidia:89",
+        "mi300x": "amdgpu:gfx942",
+        "mi325": "amdgpu:gfx942",
+        "mi355": "amdgpu:gfx950",
+        "rtx3090": "nvidia:86",
+        "gtx1080ti": "nvidia:61",
+        "rtx4090": "nvidia:89",
+        "rtx5090": "nvidia:120a",
+        "rx6900xt": "amdgpu:gfx1030",
+        "metal3": "metal:3",
+        "metal4": "metal:4",
+    },
+)
+use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
+
+http_archive(
+    name = "uv_linux_aarch64",
+    build_file_content = 'exports_files(["uv"])',
+    sha256 = "4351c1e2ec13f5eb4da058ac1c39f00ae3042de9d6fdb6480e0170f32813210f",
+    strip_prefix = "uv-aarch64-unknown-linux-musl",
+    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-unknown-linux-musl.tar.gz",
+)
+
+http_archive(
+    name = "uv_linux_x86_64",
+    build_file_content = 'exports_files(["uv"])',
+    sha256 = "b1dc0892749e93382decbd894755be0ba1535587f0bb8333572b072d1b0f652a",
+    strip_prefix = "uv-x86_64-unknown-linux-gnu",
+    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-x86_64-unknown-linux-gnu.tar.gz",
+)
+
+http_archive(
+    name = "uv_darwin_aarch64",
+    build_file_content = 'exports_files(["uv"])',
+    sha256 = "7a20f3d33cbbc75683d66e0562d4bdbd702ca656d7dc1b7be3c592de6a6517b9",
+    strip_prefix = "uv-aarch64-apple-darwin",
+    url = "https://github.com/astral-sh/uv/releases/download/0.7.15/uv-aarch64-apple-darwin.tar.gz",
+)
+
+bazel_dep(name = "sysroot-jammy-aarch64")
+archive_override(
+    module_name = "sysroot-jammy-aarch64",
+    integrity = "sha256-/gPauKjoBn4Wuy7UEYKKAQpqLHjohlf9U5XEH7bNM64=",
+    urls = [
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/5/fe03dab8a8e8067e16bb2ed411828a010a6a2c78e88657fd5395c41fb6cd33ae/sysroot-jammy-aarch64.tar.xz",
+    ],
+)
+
+bazel_dep(name = "sysroot-jammy-x86_64")
+archive_override(
+    module_name = "sysroot-jammy-x86_64",
+    integrity = "sha256-6SU7cW9SeAMp1L2SbyxlUjebYa5nQ2ZwroqTnh5Mb1c=",
+    urls = [
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/5/e9253b716f52780329d4bd926f2c6552379b61ae67436670ae8a939e1e4c6f57/sysroot-jammy-x86_64.tar.xz",
+    ],
+)
+
+http_archive(
+    name = "clang-linux-x86_64",
+    sha256 = "4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/20.1.8/4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651/llvm-linux-x86_64.tar.xz",
+)
+
+http_archive(
+    name = "clang-linux-aarch64",
+    sha256 = "5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/20.1.8/5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189/llvm-linux-aarch64.tar.xz",
+)
+
+http_archive(
+    name = "clang-macos",
+    sha256 = "a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
+)

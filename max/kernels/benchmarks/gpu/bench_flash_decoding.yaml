@@ -1,0 +1,30 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_mha
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_mha.mojo
+
+params:
+
+# Llama3 shapes with increasing batch size and sequence length.
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  $num_partitions: [0, 1] # 0: auto-partitioning, 1: single-partition.
+  $seq_len: 1
+  $batch_size: [4, 16, 32, 64, 128, 256]
+  $num_keys: [32, 64, 128, 256, 512, 1024, 1536, 2048]
+  $mode: flash_decoding

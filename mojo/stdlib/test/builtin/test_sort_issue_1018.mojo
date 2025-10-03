@@ -11,17 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo %s | FileCheck %s
-
 from random import rand
 
-from memory import Span, UnsafePointer
 
-
-fn sort_test[D: DType, name: StringLiteral](size: Int, max: Int) raises:
-    var p = UnsafePointer[SIMD[D, 1]].alloc(size)
-    rand[D](p, size)
-    sort(Span[Scalar[D], MutableAnyOrigin](ptr=p, length=size))
+fn sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
+    var p = UnsafePointer[Scalar[dtype]].alloc(size)
+    rand[dtype](p, size)
+    sort(Span[Scalar[dtype], MutableAnyOrigin](ptr=p, length=UInt(size)))
     for i in range(1, size - 1):
         if p[i] < p[i - 1]:
             print(name, "size:", size, "max:", max, "incorrect sort")
@@ -33,7 +29,7 @@ fn sort_test[D: DType, name: StringLiteral](size: Int, max: Int) raises:
             print("] =", p[i])
             print()
             p.free()
-            raise "Failed"
+            raise Error("Failed")
     p.free()
 
 

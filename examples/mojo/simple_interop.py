@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2023, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ check_mod.install_if_missing("numpy")
 import numpy as np
 
 
-def test_interop_func():
+def test_interop_func() -> None:
     print("Hello from Python!")
     a = np.array([1, 2, 3])
     print("I can even print a numpy array: ", a)

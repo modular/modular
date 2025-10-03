@@ -1,0 +1,90 @@
+load("//bazel:api.bzl", "mojo_binary", "mojo_test", "requirement")
+
+mojo_binary(
+    name = "lifev1",
+    testonly = True,
+    srcs = [
+        "gridv1.mojo",
+        "lifev1.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+        requirement("pygame"),
+    ],
+)
+
+mojo_binary(
+    name = "lifev2",
+    testonly = True,
+    srcs = [
+        "gridv2.mojo",
+        "lifev2.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+        requirement("pygame"),
+    ],
+)
+
+mojo_binary(
+    name = "lifev3",
+    testonly = True,
+    srcs = [
+        "gridv3.mojo",
+        "lifev3.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+        requirement("pygame"),
+    ],
+)
+
+mojo_binary(
+    name = "benchmark",
+    testonly = True,
+    srcs = [
+        "benchmark.mojo",
+        "gridv1.mojo",
+        "gridv2.mojo",
+        "gridv3.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_gridv1",
+    srcs = [
+        "gridv1.mojo",
+        "test/test_gridv1.mojo",
+    ],
+    main = "test/test_gridv1.mojo",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_gridv2",
+    srcs = [
+        "gridv2.mojo",
+        "test/test_gridv2.mojo",
+    ],
+    main = "test/test_gridv2.mojo",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_test(
+    name = "test_gridv3",
+    srcs = [
+        "gridv3.mojo",
+        "test/test_gridv3.mojo",
+    ],
+    main = "test/test_gridv3.mojo",
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)

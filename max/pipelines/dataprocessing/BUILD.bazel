@@ -1,0 +1,8 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "dataprocessing",
+    srcs = glob(["**/*.py"]),
+    imports = ["../../.."],
+    deps = [requirement("numpy")],
+)

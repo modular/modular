@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from random import (
     randn_float64,
@@ -79,13 +78,13 @@ def test_seed_normal():
 
     var sum: Float64 = 0.0
     for sample in samples:
-        sum += sample[]
+        sum += sample
 
     var mean: Float64 = sum / num_samples
 
     var sum_sq: Float64 = 0.0
     for sample in samples:
-        sum_sq += (sample[] - mean) ** 2
+        sum_sq += (sample - mean) ** 2
 
     var variance = sum_sq / num_samples
 
@@ -141,14 +140,14 @@ def test_shuffle():
     shuffle(b)
     assert_equal(len(a), len(b))
     assert_true(a != b)
-    for i in range(len(b)):
-        assert_true(b[i] in a)
+    for item in b:
+        assert_true(item in a)
 
     shuffle(d)
     assert_equal(len(c), len(d))
     assert_true(c != d)
-    for i in range(len(d)):
-        assert_true(d[i] in c)
+    for item in d:
+        assert_true(item in c)
 
     var e = L_i(21)
     shuffle(e)

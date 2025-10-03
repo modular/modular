@@ -1,0 +1,86 @@
+load("//bazel:api.bzl", "mojo_test")
+
+_TEST_DATA = [
+    "asyncrt_test_utils.mojo",
+]
+
+_CPU_TESTS = [
+    "test_smoke.mojo",
+    "test_copies.mojo",
+    "test_host_mapped.mojo",
+    "test_timing.mojo",
+    "test_memset.mojo",
+]
+
+_EXTRA_CONSTRAINTS = {
+    "test_hip.mojo": ["//:amd_gpu"],
+    "test_cuda.mojo": ["//:nvidia_gpu"],
+    "test_capture.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2399
+    "test_copies.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2562
+    "test_smoke.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEX-2554
+    "test_elementwise.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: PRDT-506
+    "test_function.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2433
+    "test_function_regress.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2433
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = _TEST_DATA + [src],
+        copts = [
+            "-D",
+            "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu",
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "1.5",
+        },
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:stdlib",
+            "@mojo//:tensor_internal",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _TEST_DATA,
+    )
+]
+
+[
+    mojo_test(
+        name = src + ".cpu.test",
+        srcs = _TEST_DATA + [src],
+        copts = [
+            "-D",
+            "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu",
+        ],
+        main = src,
+        deps = [
+            "@mojo//:layout",
+            "@mojo//:stdlib",
+            "@mojo//:tensor_internal",
+        ],
+    )
+    for src in _CPU_TESTS
+]

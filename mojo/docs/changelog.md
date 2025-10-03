@@ -8,6 +8,7 @@ what we publish.
 [//]: # Here's the template to use when starting a new batch of notes:
 [//]: ## UNRELEASED
 [//]: ### ✨ Highlights
+[//]: ### Language enhancements
 [//]: ### Language changes
 [//]: ### Standard library changes
 [//]: ### Tooling changes
@@ -18,62 +19,40 @@ what we publish.
 
 ### ✨ Highlights
 
+### Language enhancements
+
+Literals now have a default type. For example, you can now bind
+`[1,2,3]` to `T` in a call to a function defined as
+ `fn zip[T: Iterable](impl:T)` because it will default to the
+ standard library's List type.
+
 ### Language changes
 
 ### Standard library changes
 
-- You can now forward a `VariadicPack` that is `Writable` to a writer using
-`WritableVariadicPack`:
+- Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
-```mojo
-from utils.write import WritableVariadicPack
+- The deprecated `DType.index` is now removed in favor of the `DType.int`.
 
-fn print_message[*Ts: Writable](*messages: *Ts):
-    print("message:", WritableVariadicPack(messages), "[end]")
+- `math.isqrt` has been renamed to `rsqrt` since it performs reciprocal square
+  root functionality.
 
-x = 42
-print_message("'x = ", x, "'")
-```
+- Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
+  when the pointers may potentially alias each other.
 
-```text
-message: 'x = 42' [end]
-```
+- `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
 
-In this example the variadic pack is buffered to the stack in the `print` call
-along with the extra arguments, before doing a single syscall to write to
-stdout.
-
-### GPU changes
-
-- `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the
-thread information and variadic args passed after the condition:
-
-```mojo
-from gpu.host import DeviceContext
-
-fn kernel():
-    var x = 1
-    debug_assert(x == 2, "x should be 2 but is: ", x)
-
-def main():
-    with DeviceContext() as ctx:
-        ctx.enqueue_function[kernel](grid_dim=2, block_dim=2)
-```
-
-Running `mojo run -D ASSERT=all [filename]` will output:
-
-```text
-At /tmp/test.mojo:5:17: block: [0,0,0] thread: [0,0,0] Assert Error: x should be 2 but is: 1
-At /tmp/test.mojo:5:17: block: [0,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
-At /tmp/test.mojo:5:17: block: [1,0,0] thread: [0,0,0] Assert Error: x should be 2 but is: 1
-At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
-```
+- The `math` package now has a mojo native implementation of `acos`, `asin`,
+  `cbrt`, and `erfc`.
 
 ### Tooling changes
 
+- Error messages now preserve symbolic calls to `always_inline("builtin")`
+  functions rather than inlining them into the error message.
+
 ### ❌ Removed
 
-- The `SIMD.roundeven()` method has been removed from the standard library.
-  This functionality is now handled by the `round()` function.
-
 ### 🛠️ Fixed
+
+- The `math.cos` and `math.sin` function can now be evaluated at compile time
+  (fixes #5111).

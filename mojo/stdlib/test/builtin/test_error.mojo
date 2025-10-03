@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 def raise_an_error():
@@ -36,5 +36,9 @@ def test_from_and_to_string():
 
 
 def main():
-    test_error_raising()
-    test_from_and_to_string()
+    var suite = TestSuite()
+
+    suite.test[test_error_raising]()
+    suite.test[test_from_and_to_string]()
+
+    suite^.run()

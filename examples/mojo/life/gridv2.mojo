@@ -14,10 +14,10 @@
 import random
 from collections import Optional
 
-from memory import UnsafePointer, memcpy, memset_zero
+from memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](StringableRaising):
+struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -29,7 +29,7 @@ struct Grid[rows: Int, cols: Int](StringableRaising):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    def __init__(out self):
+    fn __init__(out self):
         self.data = UnsafePointer[Int8].alloc(self.num_cells)
         memset_zero(self.data, self.num_cells)
 
@@ -38,14 +38,7 @@ struct Grid[rows: Int, cols: Int](StringableRaising):
         memcpy(dest=self.data, src=existing.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 
-    fn __moveinit__(out self, owned existing: Self):
-        self.data = existing.data
-        # Then the lifetime of `existing` ends here, but
-        # Mojo does NOT call its destructor
-
-    fn __del__(owned self):
-        for i in range(self.num_cells):
-            (self.data + i).destroy_pointee()
+    fn __del__(deinit self):
         self.data.free()
 
     # ===-------------------------------------------------------------------===#
@@ -53,7 +46,7 @@ struct Grid[rows: Int, cols: Int](StringableRaising):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    def random(seed: Optional[Int] = None) -> Self:
+    fn random(seed: Optional[Int] = None) -> Self:
         if seed:
             random.seed(seed.value())
         else:
@@ -62,23 +55,23 @@ struct Grid[rows: Int, cols: Int](StringableRaising):
         grid = Self()
         random.randint(grid.data, grid.num_cells, 0, 1)
 
-        return grid
+        return grid^
 
     # ===-------------------------------------------------------------------===#
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    def __getitem__(self, row: Int, col: Int) -> Int8:
+    fn __getitem__(self, row: Int, col: Int) -> Int8:
         return (self.data + row * cols + col)[]
 
-    def __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
+    fn __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
         (self.data + row * cols + col)[] = value
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    def __str__(self) -> String:
+    fn __str__(self) -> String:
         str = String()
         for row in range(rows):
             for col in range(cols):
@@ -94,7 +87,7 @@ struct Grid[rows: Int, cols: Int](StringableRaising):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def evolve(self) -> Self:
+    fn evolve(self) -> Self:
         next_generation = Self()
 
         for row in range(rows):
@@ -122,4 +115,4 @@ struct Grid[rows: Int, cols: Int](StringableRaising):
                 if num_neighbors | self[row, col] == 3:
                     next_generation[row, col] = 1
 
-        return next_generation
+        return next_generation^

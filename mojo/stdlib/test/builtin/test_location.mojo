@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-# RUN: %mojo -debug-level full %s
+#
+
 
 from builtin._location import (
     __call_location,
@@ -130,7 +130,7 @@ fn capture_call_loc[depth: Int = 1](cond: Bool = False) -> _SourceLocation:
     if (
         not cond
     ):  # NOTE: we test that __call_location works even in a nested scope.
-        return __call_location[depth]()
+        return __call_location[inline_count=depth]()
     return _SourceLocation(-1, -1, "")
 
 
@@ -141,7 +141,7 @@ fn capture_call_loc_nodebug[
     if (
         not cond
     ):  # NOTE: we test that __call_location works even in a nested scope.
-        return __call_location[depth]()
+        return __call_location[inline_count=depth]()
     return _SourceLocation(-1, -1, "")
 
 
@@ -226,7 +226,7 @@ fn source_loc_with_debug() -> _SourceLocation:
     var col: __mlir_type.index
     var file_name: __mlir_type.`!kgen.string`
     line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount = Int(0).value,
+        inlineCount = Int(0)._mlir_value,
         _type = (
             __mlir_type.index,
             __mlir_type.index,
@@ -234,7 +234,11 @@ fn source_loc_with_debug() -> _SourceLocation:
         ),
     ]()
 
-    return _SourceLocation(line, col, file_name)
+    return _SourceLocation(
+        Int(mlir_value=line),
+        Int(mlir_value=col),
+        StaticString(file_name),
+    )
 
 
 fn test_source_location_struct() raises:

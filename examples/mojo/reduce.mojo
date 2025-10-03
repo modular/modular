@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2023, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
 
 # This sample implements a simple reduction operation on a
 # large array of values to produce a single result.
@@ -21,7 +20,6 @@ from random import rand
 from algorithm import sum
 from benchmark import Unit, benchmark, keep
 from buffer import NDBuffer
-from memory import UnsafePointer
 from python import Python
 
 # Change these numbers to reduce on different sizes
@@ -96,7 +94,6 @@ fn main() raises:
     bench[naive_reduce_sum, size_small, "naive"](buffer_small)
     bench[naive_reduce_sum, size_large, "naive"](buffer_large)
     bench[stdlib_reduce_sum, size_small, "stdlib"](buffer_small)
-    # CHECK: stdlib elements
     bench[stdlib_reduce_sum, size_large, "stdlib"](buffer_large)
 
     ptr_small.free()

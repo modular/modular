@@ -9,7 +9,7 @@ All values in Mojo have an associated data type. Most of the types are
 nominal (or "named") because type equality is determined by the type's *name*,
 not its *structure*.
 
-There are a some types that aren't defined as structs:
+There are some types that aren't defined as structs:
 
 * Functions are typed based on their signatures.
 * `NoneType` is a type with one instance, the `None` object, which is used to
@@ -19,7 +19,7 @@ Mojo comes with a standard library that provides a number of useful types and
 utility functions. These standard types aren't privileged. Each of the standard
 library types is defined just like user-defined types—even basic types like
 [`Int`](/mojo/stdlib/builtin/int/Int) and
-[`String`](/mojo/stdlib/collections/string/String). But these standard library
+[`String`](/mojo/stdlib/collections/string/string/String). But these standard library
 types are the building blocks you'll use for most Mojo programs.
 
 The most common types are *built-in types*, which are always available and
@@ -381,7 +381,7 @@ a type that can be converted to a string. Use `String(value)` to
 explicitly convert a value to a string:
 
 ```mojo
-var s = String("Items in list: ") + String(5)
+var s = "Items in list: " + String(5)
 print(s)
 ```
 
@@ -411,7 +411,7 @@ Adjacent literals are concatenated together, so you can define a long string
 using a series of literals broken up over several lines:
 
 ```
-var s = "A very long string which is "
+alias s = "A very long string which is "
         "broken into two literals for legibility."
 ```
 
@@ -419,7 +419,7 @@ To define a multi-line string, enclose the literal in three single or double
 quotes:
 
 ```
-var s = """
+alias s = """
 Multi-line string literals let you
 enter long blocks of text, including
 newlines."""
@@ -428,19 +428,12 @@ newlines."""
 Note that the triple double quote form is also used for API documentation
 strings.
 
-Unlike `IntLiteral` and `FloatLiteral`, `StringLiteral` doesn't automatically
-materialize to a runtime type. In some cases, you may need to explicitly convert
-`StringLiteral` values to `String`.
+A `StringLiteral` will materialize to a `String` when used at run-time:
 
 ```mojo
-# Variable is type `StringLiteral`
-var s1 = "Example"
-
-# Variable is type `String`
-var s2: String = "Example"
-
-# Variable is type `String`
-var s3 = String("Example")
+alias param = "foo"        # type = StringLiteral
+var runtime_value = "bar"  # type = String
+var runtime_value2 = param # type = String
 ```
 
 ## Booleans
@@ -489,12 +482,10 @@ print(s)
 Example
 ```
 
-You can also create a tuple without explicit typing. Note that if we declare the
-same tuple from the previous example with implicit typing instead of explicit,
-we must also convert `"Example"` from type `StringLiteral` to type `String`.
+You can also create a tuple without explicit typing.
 
 ```mojo
-example_tuple = (1, String("Example"))
+example_tuple = (1, "Example")
 s = example_tuple[1]
 print(s)
 ```
@@ -534,7 +525,7 @@ type at compile time using a [parameter](/mojo/manual/parameters/). For
 example, you can create a `List` of `Int` values like this:
 
 ```mojo
-var l = List[Int](1, 2, 3, 4)
+var l: List[Int] = [1, 2, 3, 4]
 # l.append(3.14) # error: FloatLiteral cannot be converted to Int
 ```
 
@@ -543,8 +534,8 @@ type, you can omit it. For example, when you construct a list from a set of
 integer literals, Mojo creates a `List[Int]`.
 
 ```mojo
-# Inferred type == Int
-var l1 = List(1, 2, 3, 4)
+# Inferred type == List[Int]
+var l1 = [1, 2, 3, 4]
 ```
 
 Where you need a more flexible collection, the
@@ -560,8 +551,8 @@ The following sections give brief introduction to the main collection types.
 
 [`List`](/mojo/stdlib/collections/list/List) is a dynamically-sized array of
 elements. List elements need to conform to the
-[`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait, which
-just means that the items must be copyable and movable. Most of the common
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+[`Movable`](/mojo/stdlib/builtin/value/Movable) traits. Most of the common
 standard library primitives, like `Int`, `String`, and `SIMD` conform to this
 trait. You can create a `List` by passing the element type as a parameter,  like
 this:
@@ -575,9 +566,7 @@ ability to append to the list, pop items out of the list, and access list items
 using subscript notation.
 
 ```mojo
-from collections import List
-
-var list = List(2, 3, 5)
+var list = [2, 3, 5]
 list.append(7)
 list.append(11)
 print("Popping last item from list: ", list.pop())
@@ -595,19 +584,23 @@ Note that the previous code sample leaves out the type parameter when creating
 the list. Because the list is being created with a set of `Int` values, Mojo can
 *infer* the type from the arguments.
 
-There are some notable limitations when using `List`:
-
-* You can't currently initialize a list from a list literal, like this:
+* Mojo supports list, set, and dictionary literals for collection initialization:
 
   ```mojo
-  # Doesn't work!
-  var list: List[Int] = [2, 3, 5]
+  # List literal, element type infers to Int.
+  var nums = [2, 3, 5]
   ```
 
-  But you can use variadic arguments to achieve the same thing:
+  You can also use an explicit type if you want a specific element type:
 
   ```mojo
-  var list = List(2, 3, 5)
+  var list : List[UInt8] = [2, 3, 5]
+  ```
+
+  You can also use list "comprehensions" for compact conditional initialization:
+
+  ```mojo
+  var list2 = [x*Int(y) for x in nums for y in list if x != 3]
   ```
 
 * You can't `print()` a list, or convert it directly into a string.
@@ -620,65 +613,79 @@ There are some notable limitations when using `List`:
   As shown above, you can print the individual elements in a list as long as
   they're a [`Stringable`](/mojo/stdlib/builtin/str/Stringable) type.
 
-* Iterating a `List` currently returns a
-  [`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to each item, not the
-  item itself. You can access the item using the dereference operator, `[]`:
+* Iterating a `List` returns an immutable
+  [reference](/mojo/manual/values/lifetimes#working-with-references) to each
+  item:
 
 ```mojo
-#: from collections import List
-var list = List(2, 3, 4)
+var list = [2, 3, 4]
 for item in list:
-      print(item[], end=", ")
+      print(item, end=", ")
 ```
 
 ```output
 2, 3, 4,
 ```
 
-Subscripting in to a list, however, returns the item directly—no need to
-dereference:
+If you would like to mutate the elements of the list, capture the reference to
+the element with `ref` instead of making a copy:
 
 ```mojo
-#: from collections import List
-#: var list = List[Int](2, 3, 4)
-for i in range(len(list)):
-    print(list[i], end=", ")
+var list = [2, 3, 4]
+for ref item in list:     # Capture a ref to the list element
+      print(item, end=", ")
+      item = 0  # Mutates the element inside the list
+print("\nAfter loop:", list[0], list[1], list[2])
 ```
 
 ```output
 2, 3, 4,
+After loop: 0 0 0
 ```
+
+You can see that the original loop entries were modified.
 
 ### Dict
 
 The [`Dict`](/mojo/stdlib/collections/dict/Dict) type is an associative array
 that holds key-value pairs. You can create a `Dict` by specifying the key type
-and value type as parameters, like this:
+and value type as parameters and using dictionary literals:
+
+```mojo
+# Empty dictionary
+var empty_dict: Dict[String, Float64] = {}
+
+# Dictionary with initial key-value pairs
+var values: Dict[String, Float64] = {"pi": 3.14159, "e": 2.71828}
+```
+
+You can also use the constructor syntax:
 
 ```mojo
 var values = Dict[String, Float64]()
 ```
 
 The dictionary's key type must conform to the
-[`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait, and value
-elements must conform to the
-[`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait.
+[`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, and value
+elements must conform to the [`Copyable`](/mojo/stdlib/builtin/value/Copyable)
+and [`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
 
-The `Dict` iterators all yield references, so you need to use the dereference
-operator `[]` as shown in the following example:
+The `Dict` iterators all yield
+[references](/mojo/manual/values/lifetimes#working-with-references), which are
+copied into the declared name by default, but you can use the `ref` marker to
+avoid the copy:
 
 ```mojo
-from collections import Dict
-
-var d = Dict[String, Float64]()
-d["plasticity"] = 3.1
-d["elasticity"] = 1.3
-d["electricity"] = 9.7
+var d: Dict[String, Float64] = {
+    "plasticity": 3.1,
+    "elasticity": 1.3,
+    "electricity": 9.7
+}
 for item in d.items():
-    print(item[].key, item[].value)
+    print(item.key, item.value)
 ```
 
 ```output
@@ -686,6 +693,9 @@ plasticity 3.1000000000000001
 elasticity 1.3
 electricity 9.6999999999999993
 ```
+
+This is an unmeasurable micro-optimization in this case, but is useful when
+working with types that aren't `Copyable`.
 
 ### Set
 
@@ -695,18 +705,18 @@ exists in the set, and perform set algebra operations, like unions and
 intersections between two sets.
 
 Sets are generic and the element type must conform to the
-[`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait.
+[`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait. Like lists and
+dictionaries, sets support standard literal syntax, as well as generator
+comprehensions:
 
 ```mojo
-from collections import Set
-
-i_like = Set("sushi", "ice cream", "tacos", "pho")
-you_like = Set("burgers", "tacos", "salad", "ice cream")
+i_like = {"sushi", "ice cream", "tacos", "pho"}
+you_like = {"burgers", "tacos", "salad", "ice cream"}
 we_like = i_like.intersection(you_like)
 
 print("We both like:")
 for item in we_like:
-    print("-", item[])
+    print("-", item)
 ```
 
 ```output
@@ -720,7 +730,8 @@ We both like:
 An [`Optional`](/mojo/stdlib/collections/optional/Optional)  represents a
 value that may or may not be present. Like the other collection types, it is
 generic, and can hold any type that conforms to the
-[`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement) trait.
+[`Copyable`](/mojo/stdlib/builtin/value/Copyable) and
+[`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 
 ```mojo
 # Two ways to initialize an Optional with a value
@@ -738,7 +749,7 @@ results in undefined behavior, so you should always guard a call to `value()`
 inside a conditional that checks whether a value exists.
 
 ```mojo
-var opt: Optional[String] = String("Testing")
+var opt: Optional[String] = "Testing"
 if opt:
     var value_ref = opt.value()
     print(value_ref)
@@ -755,7 +766,7 @@ value if there is one, or a user-specified default value otherwise:
 var custom_greeting: Optional[String] = None
 print(custom_greeting.or_else("Hello"))
 
-custom_greeting = String("Hi")
+custom_greeting = "Hi"
 print(custom_greeting.or_else("Hello"))
 
 ```
@@ -779,17 +790,23 @@ memory-only types are distinguished based on how they hold data:
   `String` field. Register-passable types are declared with the
   [`@register_passable`](/mojo/manual/decorators/register-passable) decorator.
 
-  Register-passable types are always passed by value (that is, the values are
-  copied).
-
-* Memory-only types consist of any types that *don't* fit the description of
-  register-passable types. In particular, these types usually have pointers or
+* Memory-only types consist of all other types that *aren't* specifically
+  designated as register-passable types. These types often have pointers or
   references to dynamically-allocated memory. `String`, `List`, and `Dict` are
   all examples of memory-only types.
 
+Register-passable types have a slightly different lifecycle than memory-only
+types, which is discussed in [Life of a value](/mojo/manual/lifecycle/life/).
+
+There are also a number of low-level differences in how the Mojo compiler treats
+register-passable types versus memory-only types, which you probably won't have
+to think about for most Mojo programming. For more information, see
+the [`@register_passable`](/mojo/manual/decorators/register-passable) decorator
+reference.
+
 Our long-term goal is to make this distinction transparent to the user, and
 ensure all APIs work with both register-passable and memory-only types.
-But right now you will see some standard library types that only work with
+But right now you will see a few standard library types that only work with
 register-passable types or only work with memory-only types.
 
 In addition to these two categories, Mojo also has "trivial" types. Conceptually
@@ -807,11 +824,11 @@ so in the future we intend to separate trivial types from the
 Two other things you'll see in Mojo APIs are references to `AnyType` and
 `AnyTrivialRegType`. These are effectively *metatypes*, that is, types of types.
 
-* `AnyType` represents any Mojo type. Mojo treats `AnyType` as a special kind of
-  trait, and you'll find more discussion of it on the
+* `AnyType` is a trait that represents a type with a destructor. You'll find
+  more discussion of it on the
   [Traits page](/mojo/manual/traits#the-anytype-trait).
 * `AnyTrivialRegType` is a metatype representing any Mojo type that's marked
-  register passable.
+  as a trivial type.
 
 You'll see them in signatures like this:
 

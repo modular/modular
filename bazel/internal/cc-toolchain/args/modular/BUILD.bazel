@@ -1,0 +1,132 @@
+load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
+load("@rules_cc//cc/toolchains:feature_constraint.bzl", "cc_feature_constraint")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_feature_constraint(
+    name = "third_party_code",
+    none_of = [
+        "//bazel/internal/cc-toolchain/features:modular_code",
+    ],
+)
+
+cc_args(
+    name = "first_party",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "//:modular_config_default": [
+            "-g",
+            "-O2",
+        ],
+        "//:modular_config_debug_modular": [
+            "-DMODULAR_DEBUG",
+            "-g",
+            "-O0",
+        ],
+        "//:modular_config_debug_everything": [
+            "-DMODULAR_DEBUG",
+            "-g",
+            "-O0",
+        ],
+        "//:modular_config_ci_build": [
+            "-g0",
+            "-O3",
+        ],
+        "//:modular_config_release": [
+            "-gline-tables-only",
+            "-O3",
+        ],
+        "//:modular_config_production": [
+            "-DMODULAR_PRODUCTION=1",
+            "-g",
+            "-O3",
+        ],
+        "//:modular_config_asan": [
+            "-g",
+            "-O3",
+        ],
+        "//:modular_config_tsan": [
+            "-g",
+            "-O3",
+        ],
+        "//:modular_config_ubsan": [
+            "-g",
+            "-O3",
+        ],
+        "//:modular_config_coverage": [
+            "-g",
+            "-O2",
+            "-fprofile-instr-generate",
+            "-fcoverage-mapping",
+        ],
+    }),
+    requires_any_of = ["//bazel/internal/cc-toolchain/features:modular_code"],
+)
+
+cc_args(
+    name = "third_party",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "//:modular_config_default": [
+            "-gline-tables-only",
+            "-O2",
+        ],
+        "//:modular_config_debug_modular": [
+            "-gline-tables-only",
+            "-O2",
+        ],
+        "//:modular_config_debug_everything": [
+            "-g",
+            "-O0",
+        ],
+        "//:modular_config_ci_build": [
+            "-g0",
+            "-O3",
+        ],
+        "//:modular_config_release": [
+            "-gline-tables-only",
+            "-O3",
+        ],
+        "//:modular_config_production": [
+            "-g",
+            "-O3",
+        ],
+        "//:modular_config_asan": [
+            "-gline-tables-only",
+            "-O3",
+        ],
+        "//:modular_config_tsan": [
+            "-gline-tables-only",
+            "-O3",
+        ],
+        "//:modular_config_ubsan": [
+            "-gline-tables-only",
+            "-O3",
+        ],
+        "//:modular_config_coverage": [
+            "-gline-tables-only",
+            "-O2",
+        ],
+    }),
+    requires_any_of = [":third_party_code"],
+)
+
+cc_args(
+    name = "assertions",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "//:modular_config_production": [
+            "-DNDEBUG",
+            "-U_DEBUG",
+            "-U_GLIBCXX_ASSERTIONS",
+            "-Wno-unused-but-set-variable",
+            "-Wno-unused-function",
+            "-Wno-unused-variable",
+        ],
+        "//conditions:default": [
+            "-D_DEBUG",
+            "-D_GLIBCXX_ASSERTIONS",
+            "-UNDEBUG",
+        ],
+    }),
+)

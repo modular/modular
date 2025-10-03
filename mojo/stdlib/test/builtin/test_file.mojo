@@ -10,15 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s
-
 
 from pathlib import Path, _dir_of_current_file
-from sys import os_is_windows
 from tempfile import gettempdir
 
-from memory import UnsafePointer
 from testing import assert_equal, assert_true
+from test_utils import TestSuite
+
+alias DUMMY_FILE_SIZE: UInt = 954
 
 
 def test_file_read():
@@ -50,17 +49,13 @@ def test_file_read_bytes_multi():
     ) as f:
         var bytes1 = f.read_bytes(12)
         assert_equal(len(bytes1), 12, "12 bytes")
-        # we add the null terminator
-        bytes1.append(0)
-        var string1 = String(buffer=bytes1)
+        var string1 = String(bytes=bytes1)
         assert_equal(len(string1), 12, "12 chars")
-        assert_equal(string1, String("Lorem ipsum "))
+        assert_equal(string1, "Lorem ipsum ")
 
         var bytes2 = f.read_bytes(6)
         assert_equal(len(bytes2), 6, "6 bytes")
-        # we add the null terminator
-        bytes2.append(0)
-        var string2 = String(buffer=bytes2)
+        var string2 = String(bytes=bytes2)
         assert_equal(len(string2), 6, "6 chars")
         assert_equal(string2, "dolor ")
 
@@ -69,6 +64,24 @@ def test_file_read_bytes_multi():
 
         assert_equal(len(s), 936)
         assert_true(s.startswith("sit amet, consectetur adipiscing elit."))
+
+
+def test_file_read_bytes_all():
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var bytes_all = f.read_bytes(-1)
+        assert_equal(len(bytes_all), Int(DUMMY_FILE_SIZE))
+
+
+def test_file_read_all():
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var all = f.read(-1)
+        assert_equal(len(all), Int(DUMMY_FILE_SIZE))
 
 
 def test_file_read_path():
@@ -104,36 +117,70 @@ def test_file_read_context():
 
 
 def test_file_read_to_address():
+    alias DUMMY_FILE_SIZE = 954
+    # Test buffer size > file size
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
     ) as f:
-        var ptr = UnsafePointer[UInt8].alloc(1000)
-        assert_equal(f.read(ptr), 954)
-        assert_equal(ptr.load(0), 76)  # L
-        assert_equal(ptr.load(1), 111)  # o
-        assert_equal(ptr.load(2), 114)  # r
-        assert_equal(ptr.load(3), 101)  # e
-        assert_equal(ptr.load(4), 109)  # m
-        assert_equal(ptr.load(5), 32)  # <space>
-        assert_equal(ptr.load(56), 10)  # <LF>
+        var buffer = InlineArray[UInt8, size=1000](fill=0)
+        assert_equal(f.read(buffer), DUMMY_FILE_SIZE)
+        assert_equal(buffer[0], 76)  # L
+        assert_equal(buffer[1], 111)  # o
+        assert_equal(buffer[2], 114)  # r
+        assert_equal(buffer[3], 101)  # e
+        assert_equal(buffer[4], 109)  # m
+        assert_equal(buffer[5], 32)  # <space>
+        assert_equal(buffer[56], 10)  # <LF>
 
+    # Test buffer size < file size
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
     ) as f:
-        var ptr = UnsafePointer[UInt8].alloc(1000)
-        assert_equal(f.read(ptr, 1000), 954)
+        var buffer = InlineArray[UInt8, size=500](fill=0)
+        assert_equal(f.read(buffer), 500)
 
+    # Test buffer size == file size
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
     ) as f:
-        var ptr = UnsafePointer[UInt8].alloc(1000)
-        assert_equal(f.read(ptr, 30), 30)
-        assert_equal(f.read(ptr, 1), 1)
-        assert_equal(f.read(ptr, 2), 2)
-        assert_equal(f.read(ptr, 100), 100)
+        var buffer = InlineArray[UInt8, size=DUMMY_FILE_SIZE](fill=0)
+        assert_equal(f.read(buffer), DUMMY_FILE_SIZE)
+
+    # Test buffer size 0
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer = List[UInt8]()
+        assert_equal(f.read(buffer), 0)
+
+    # Test sequential reads of different sizes
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer_30 = InlineArray[UInt8, size=30](fill=0)
+        var buffer_1 = InlineArray[UInt8, size=1](fill=0)
+        var buffer_2 = InlineArray[UInt8, size=2](fill=0)
+        var buffer_100 = InlineArray[UInt8, size=100](fill=0)
+        var buffer_1000 = InlineArray[UInt8, size=1000](fill=0)
+        assert_equal(f.read(buffer_30), 30)
+        assert_equal(f.read(buffer_1), 1)
+        assert_equal(f.read(buffer_2), 2)
+        assert_equal(f.read(buffer_100), 100)
+        assert_equal(f.read(buffer_1000), DUMMY_FILE_SIZE - (30 + 1 + 2 + 100))
+
+    # Test read after EOF
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer_1000 = InlineArray[UInt8, size=1000](fill=0)
+        assert_equal(f.read(buffer_1000), DUMMY_FILE_SIZE)
+        assert_equal(f.read(buffer_1000), 0)
 
 
 def test_file_seek():
@@ -206,44 +253,6 @@ def test_file_write_again():
         assert_equal(read_file.read(), expected_content)
 
 
-@value
-@register_passable
-struct Word:
-    var first_letter: UInt8
-    var second_letter: UInt8
-    var third_letter: UInt8
-    var fourth_letter: UInt8
-    var fith_letter: UInt8
-
-    @no_inline
-    fn __str__(self) -> String:
-        var word = List[UInt8](capacity=6)
-        word.append(self.first_letter)
-        word.append(self.second_letter)
-        word.append(self.third_letter)
-        word.append(self.fourth_letter)
-        word.append(self.fith_letter)
-        word.append(0)
-        return String(buffer=word)
-
-
-def test_file_read_to_dtype_pointer():
-    with open(_dir_of_current_file() / "test_file_dummy_input.txt", "r") as f:
-        var ptr = UnsafePointer[UInt8].alloc(8)
-        var data = f.read(ptr, 8)
-        assert_equal(
-            String(ptr.load[width=8](0)),
-            "[76, 111, 114, 101, 109, 32, 105, 112]",
-        )
-
-        var ptr2 = UnsafePointer[Int8].alloc(8)
-        var data2 = f.read(ptr2, 8)
-        assert_equal(
-            String(ptr2.load[width=8](0)),
-            "[115, 117, 109, 32, 100, 111, 108, 111]",
-        )
-
-
 def test_file_get_raw_fd():
     # since JIT and build give different file descriptors, we test by checking
     # if we printed to the right file.
@@ -253,7 +262,7 @@ def test_file_get_raw_fd():
 
     print(
         "test from file 1",
-        file=f1._get_raw_fd(),
+        file=FileDescriptor(f1._get_raw_fd()),
         flush=True,
         end="",
     )
@@ -266,8 +275,18 @@ def test_file_get_raw_fd():
     _ = f2.seek(0)
     _ = f3.seek(0)
 
-    print("test from file 2", file=f2._get_raw_fd(), flush=True, end="")
-    print("test from file 3", file=f3._get_raw_fd(), flush=True, end="")
+    print(
+        "test from file 2",
+        file=FileDescriptor(f2._get_raw_fd()),
+        flush=True,
+        end="",
+    )
+    print(
+        "test from file 3",
+        file=FileDescriptor(f3._get_raw_fd()),
+        flush=True,
+        end="",
+    )
 
     _ = f2.seek(0)
     _ = f3.seek(0)
@@ -282,16 +301,22 @@ def test_file_get_raw_fd():
 
 
 def main():
-    test_file_read()
-    test_file_read_multi()
-    test_file_read_bytes_multi()
-    test_file_read_path()
-    test_file_path_direct_read()
-    test_file_read_context()
-    test_file_seek()
-    test_file_open_nodir()
-    test_file_write()
-    test_file_write_span()
-    test_file_write_again()
-    test_file_read_to_dtype_pointer()
-    test_file_get_raw_fd()
+    var suite = TestSuite()
+
+    suite.test[test_file_read]()
+    suite.test[test_file_read_multi]()
+    suite.test[test_file_read_bytes_multi]()
+    suite.test[test_file_read_bytes_all]()
+    suite.test[test_file_read_all]()
+    suite.test[test_file_read_path]()
+    suite.test[test_file_path_direct_read]()
+    suite.test[test_file_read_context]()
+    suite.test[test_file_read_to_address]()
+    suite.test[test_file_seek]()
+    suite.test[test_file_open_nodir]()
+    suite.test[test_file_write]()
+    suite.test[test_file_write_span]()
+    suite.test[test_file_write_again]()
+    suite.test[test_file_get_raw_fd]()
+
+    suite^.run()

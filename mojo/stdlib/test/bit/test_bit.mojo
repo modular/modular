@@ -10,9 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo %s
 
-from math import floor, log2
+from math import ceil, floor, log2
 
 from bit import (
     bit_not,
@@ -21,7 +20,7 @@ from bit import (
     byte_swap,
     count_leading_zeros,
     count_trailing_zeros,
-    is_power_of_two,
+    log2_ceil,
     log2_floor,
     next_power_of_two,
     pop_count,
@@ -30,6 +29,7 @@ from bit import (
     rotate_bits_right,
 )
 from testing import assert_equal
+from test_utils import TestSuite
 
 
 def test_count_leading_zeros():
@@ -76,6 +76,9 @@ def test_count_leading_zeros_simd():
     assert_equal(
         count_leading_zeros(var7), SIMD[int64_t, simd_width](0, 64, 0, 1)
     )
+
+    alias alias7 = count_leading_zeros(SIMD[DType.uint8, 4](0))
+    assert_equal(alias7, SIMD[DType.uint8, 4](8, 8, 8, 8))
 
 
 def test_count_trailing_zeros():
@@ -175,9 +178,13 @@ def test_byte_swap():
 
 def test_byte_swap_simd():
     alias simd_width = 4
+    alias int8_t = DType.int8
     alias int16_t = DType.int16
     alias int32_t = DType.int32
     alias int64_t = DType.int64
+
+    alias var1 = SIMD[int8_t, simd_width](0x01, 0x23, 0x45, 0x67)
+    assert_equal(byte_swap(var1), var1)
 
     alias var2 = SIMD[int16_t, simd_width](-0x0123, 0x0000, 0x0102, 0x0201)
     assert_equal(
@@ -278,58 +285,6 @@ def test_bit_not_simd():
     )
 
 
-def test_is_power_of_two():
-    assert_equal(is_power_of_two(Int.MIN), False)
-    assert_equal(is_power_of_two(-(2**59)), False)
-    assert_equal(is_power_of_two(-1), False)
-    assert_equal(is_power_of_two(0), False)
-    assert_equal(is_power_of_two(1), True)
-    assert_equal(is_power_of_two(2), True)
-    assert_equal(is_power_of_two(3), False)
-    assert_equal(is_power_of_two(4), True)
-    assert_equal(is_power_of_two(5), False)
-    assert_equal(is_power_of_two(2**59), True)
-    assert_equal(is_power_of_two(Int.MAX), False)
-
-
-def test_is_power_of_two_simd():
-    alias simd_width = 4
-    alias int8_t = DType.int8
-    alias int16_t = DType.int16
-    alias int32_t = DType.int32
-    alias int64_t = DType.int64
-
-    alias var1 = SIMD[int8_t, simd_width](-114, 0, 100, 2**6)
-    assert_equal(
-        is_power_of_two(var1),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    alias var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, 2**13)
-    assert_equal(
-        is_power_of_two(var2),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    alias var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, 2**29)
-    assert_equal(
-        is_power_of_two(var3),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    # TODO: use this line after #2882 is fixed
-    # alias var4 = SIMD[int64_t, simd_width](-111444444, 0, 3000000, 2**59)
-    alias var4 = SIMD[int64_t, simd_width](
-        -111444444, 0, 3000000, 576460752303423488
-    )
-    assert_equal(
-        is_power_of_two(var4),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    assert_equal(is_power_of_two(Int64.MIN), False)
-
-
 def test_bit_width():
     assert_equal(bit_width(-(2**59)), 59)
     assert_equal(bit_width(-2), 1)
@@ -367,13 +322,24 @@ def test_bit_width_simd():
 
 
 def test_next_power_of_two():
-    assert_equal(next_power_of_two(-(2**59)), 1)
-    assert_equal(next_power_of_two(-2), 1)
-    assert_equal(next_power_of_two(1), 1)
-    assert_equal(next_power_of_two(2), 2)
-    assert_equal(next_power_of_two(4), 4)
-    assert_equal(next_power_of_two(5), 8)
-    assert_equal(next_power_of_two(2**59 - 3), 2**59)
+    # test for Int
+    assert_equal(next_power_of_two(Int(-(2**59))), 1)
+    assert_equal(next_power_of_two(Int(-2)), 1)
+    assert_equal(next_power_of_two(Int(-1)), 1)
+    assert_equal(next_power_of_two(Int(0)), 1)
+    assert_equal(next_power_of_two(Int(1)), 1)
+    assert_equal(next_power_of_two(Int(2)), 2)
+    assert_equal(next_power_of_two(Int(4)), 4)
+    assert_equal(next_power_of_two(Int(5)), 8)
+    assert_equal(next_power_of_two(Int(2**59 - 3)), 2**59)
+
+    # test for UInt
+    assert_equal(next_power_of_two(UInt(0)), 1)
+    assert_equal(next_power_of_two(UInt(1)), 1)
+    assert_equal(next_power_of_two(UInt(2)), 2)
+    assert_equal(next_power_of_two(UInt(4)), 4)
+    assert_equal(next_power_of_two(UInt(5)), 8)
+    assert_equal(next_power_of_two(UInt(2**59 - 3)), UInt(2) ** 59)
 
 
 def test_next_power_of_two_simd():
@@ -472,84 +438,227 @@ def test_rotate_bits_int():
 
 def test_rotate_bits_simd():
     alias simd_width = 1
-    alias type = DType.uint8
+    alias dtype = DType.uint8
 
     assert_equal(rotate_bits_left[0](UInt64(104)), 104)
-    assert_equal(rotate_bits_left[0](SIMD[type, simd_width](104)), 104)
+    assert_equal(rotate_bits_left[0](SIMD[dtype, simd_width](104)), 104)
     assert_equal(
-        rotate_bits_left[2](SIMD[type, 2](104)), SIMD[type, 2](161, 161)
+        rotate_bits_left[2](SIMD[dtype, 2](104)), SIMD[dtype, 2](161, 161)
     )
 
-    assert_equal(rotate_bits_left[2](Scalar[type](104)), 161)
-    assert_equal(rotate_bits_left[11](Scalar[type](15)), 120)
-    assert_equal(rotate_bits_left[0](Scalar[type](96)), 96)
-    assert_equal(rotate_bits_left[1](Scalar[type](96)), 192)
-    assert_equal(rotate_bits_left[2](Scalar[type](96)), 129)
-    assert_equal(rotate_bits_left[3](Scalar[type](96)), 3)
-    assert_equal(rotate_bits_left[4](Scalar[type](96)), 6)
-    assert_equal(rotate_bits_left[5](Scalar[type](96)), 12)
+    assert_equal(rotate_bits_left[2](Scalar[dtype](104)), 161)
+    assert_equal(rotate_bits_left[11](Scalar[dtype](15)), 120)
+    assert_equal(rotate_bits_left[0](Scalar[dtype](96)), 96)
+    assert_equal(rotate_bits_left[1](Scalar[dtype](96)), 192)
+    assert_equal(rotate_bits_left[2](Scalar[dtype](96)), 129)
+    assert_equal(rotate_bits_left[3](Scalar[dtype](96)), 3)
+    assert_equal(rotate_bits_left[4](Scalar[dtype](96)), 6)
+    assert_equal(rotate_bits_left[5](Scalar[dtype](96)), 12)
 
     assert_equal(rotate_bits_right[0](UInt64(104)), 104)
-    assert_equal(rotate_bits_right[0](SIMD[type, simd_width](104)), 104)
+    assert_equal(rotate_bits_right[0](SIMD[dtype, simd_width](104)), 104)
     assert_equal(
-        rotate_bits_right[2](SIMD[type, 2](104)), SIMD[type, 2](26, 26)
+        rotate_bits_right[2](SIMD[dtype, 2](104)), SIMD[dtype, 2](26, 26)
     )
 
-    assert_equal(rotate_bits_right[2](Scalar[type](104)), 26)
-    assert_equal(rotate_bits_right[11](Scalar[type](15)), 225)
-    assert_equal(rotate_bits_right[0](Scalar[type](96)), 96)
-    assert_equal(rotate_bits_right[1](Scalar[type](96)), 48)
-    assert_equal(rotate_bits_right[2](Scalar[type](96)), 24)
-    assert_equal(rotate_bits_right[3](Scalar[type](96)), 12)
-    assert_equal(rotate_bits_right[4](Scalar[type](96)), 6)
-    assert_equal(rotate_bits_right[5](Scalar[type](96)), 3)
-    assert_equal(rotate_bits_right[6](Scalar[type](96)), 129)
+    assert_equal(rotate_bits_right[2](Scalar[dtype](104)), 26)
+    assert_equal(rotate_bits_right[11](Scalar[dtype](15)), 225)
+    assert_equal(rotate_bits_right[0](Scalar[dtype](96)), 96)
+    assert_equal(rotate_bits_right[1](Scalar[dtype](96)), 48)
+    assert_equal(rotate_bits_right[2](Scalar[dtype](96)), 24)
+    assert_equal(rotate_bits_right[3](Scalar[dtype](96)), 12)
+    assert_equal(rotate_bits_right[4](Scalar[dtype](96)), 6)
+    assert_equal(rotate_bits_right[5](Scalar[dtype](96)), 3)
+    assert_equal(rotate_bits_right[6](Scalar[dtype](96)), 129)
 
 
 fn _log2_floor(n: Int) -> Int:
     return Int(floor(log2(Float64(n))))
 
 
+@always_inline
+fn _log2_ceil(n: Int) -> Int:
+    """Computes ceil(log_2(d))."""
+
+    return Int(_log2_ceil(Scalar[DType.int](n)))
+
+
+@always_inline
+fn _log2_ceil(n: Scalar) -> __type_of(n):
+    return {ceil(log2(Float64(n)))}
+
+
 def test_log2_floor():
-    assert_equal(log2_floor(0), 0)
     for i in range(1, 100):
         assert_equal(
             log2_floor(i),
             _log2_floor(i),
-            msg=String("mismatching value for the input value of ", i),
+            msg=String(
+                "mismatching value for the input value of ",
+                i,
+                " expected ",
+                _log2_floor(i),
+                " but got ",
+                log2_floor(i),
+            ),
         )
+
+    # test dtypes
+    @parameter
+    for dtype in [
+        DType.int8,
+        DType.uint8,
+        DType.int16,
+        DType.uint16,
+        DType.int32,
+        DType.uint32,
+        DType.int64,
+        DType.uint64,
+        DType.int128,
+        DType.uint128,
+        DType.int256,
+        DType.uint256,
+    ]:
+        alias value = Scalar[dtype](-1) if dtype.is_signed() else (
+            Scalar[dtype](0) - 1
+        )
+
+        assert_equal(value, log2_floor(Scalar[dtype](0)), String(dtype))
+
+        @parameter
+        if dtype.is_signed():
+            assert_equal(value, log2_floor(Scalar[dtype](-1)))
+            assert_equal(value, log2_floor(Scalar[dtype](-2)))
+            assert_equal(value, log2_floor(Scalar[dtype](-3)))
+
+        for i in range(1, 100):
+            assert_equal(
+                log2_floor(Scalar[dtype](i)),
+                Scalar[dtype](_log2_floor(i)),
+                msg=String("mismatching value for the input value of ", i),
+            )
 
     fn _check_alias[n: Int](expected: Int) raises:
         alias res = log2_floor(n)
-        assert_equal(res, expected)
+        assert_equal(
+            res,
+            expected,
+            msg=String(
+                "mismatching value for the input value of ",
+                n,
+                " expected ",
+                expected,
+                " but got ",
+                res,
+            ),
+        )
 
-    _check_alias[0](0)
     _check_alias[1](0)
     _check_alias[2](1)
     _check_alias[15](3)
     _check_alias[32](5)
 
 
+def test_log2_ceil():
+    assert_equal(log2_ceil(0), 0)
+    for i in range(1, 100):
+        assert_equal(
+            log2_ceil(i),
+            _log2_ceil(i),
+            msg=String(
+                "mismatching value for the input value of ",
+                i,
+                " expected ",
+                _log2_ceil(i),
+                " but got ",
+                log2_ceil(i),
+            ),
+        )
+
+    fn _check_alias[n: Int](expected: Int) raises:
+        alias res = log2_ceil(n)
+        assert_equal(
+            res,
+            expected,
+            msg=String(
+                "mismatching value for the input value of ",
+                n,
+                " expected ",
+                expected,
+                " but got ",
+                res,
+            ),
+        )
+
+    _check_alias[0](0)
+    _check_alias[1](0)
+    _check_alias[2](1)
+    _check_alias[15](4)
+    _check_alias[32](5)
+
+
+def test_log2_ceil_int32():
+    assert_equal(log2_ceil(Int32(0)), 0)
+    for i in range(Int32(1), Int32(100)):
+        assert_equal(
+            log2_ceil(i),
+            _log2_ceil(i),
+            msg=String(
+                "mismatching value for the input value of ",
+                i,
+                " expected ",
+                _log2_ceil(i),
+                " but got ",
+                log2_ceil(i),
+            ),
+        )
+
+    fn _check_alias[n: Int32](expected: Int32) raises:
+        alias res = log2_ceil(n)
+        assert_equal(
+            res,
+            expected,
+            msg=String(
+                "mismatching value for the input value of ",
+                n,
+                " expected ",
+                expected,
+                " but got ",
+                res,
+            ),
+        )
+
+    _check_alias[0](0)
+    _check_alias[1](0)
+    _check_alias[2](1)
+    _check_alias[15](4)
+    _check_alias[32](5)
+
+
 def main():
-    test_rotate_bits_int()
-    test_rotate_bits_simd()
-    test_next_power_of_two()
-    test_next_power_of_two_simd()
-    test_prev_power_of_two()
-    test_prev_power_of_two_simd()
-    test_bit_width()
-    test_bit_width_simd()
-    test_is_power_of_two()
-    test_is_power_of_two_simd()
-    test_count_leading_zeros()
-    test_count_leading_zeros_simd()
-    test_count_trailing_zeros()
-    test_count_trailing_zeros_simd()
-    test_bit_reverse()
-    test_bit_reverse_simd()
-    test_byte_swap()
-    test_byte_swap_simd()
-    test_pop_count()
-    test_pop_count_simd()
-    test_bit_not_simd()
-    test_log2_floor()
+    var suite = TestSuite()
+
+    suite.test[test_rotate_bits_int]()
+    suite.test[test_rotate_bits_simd]()
+    suite.test[test_next_power_of_two]()
+    suite.test[test_next_power_of_two_simd]()
+    suite.test[test_prev_power_of_two]()
+    suite.test[test_prev_power_of_two_simd]()
+    suite.test[test_bit_width]()
+    suite.test[test_bit_width_simd]()
+    suite.test[test_count_leading_zeros]()
+    suite.test[test_count_leading_zeros_simd]()
+    suite.test[test_count_trailing_zeros]()
+    suite.test[test_count_trailing_zeros_simd]()
+    suite.test[test_bit_reverse]()
+    suite.test[test_bit_reverse_simd]()
+    suite.test[test_byte_swap]()
+    suite.test[test_byte_swap_simd]()
+    suite.test[test_pop_count]()
+    suite.test[test_pop_count_simd]()
+    suite.test[test_bit_not_simd]()
+    suite.test[test_log2_floor]()
+    suite.test[test_log2_ceil]()
+    suite.test[test_log2_ceil_int32]()
+
+    suite^.run()

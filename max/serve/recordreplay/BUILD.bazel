@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "recordreplay",
+    srcs = glob(["**/*.py"]),
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("asgiref"),
+        requirement("httpx"),
+        requirement("msgspec"),
+        requirement("scipy"),
+        requirement("taskgroup"),
+        requirement("typing-extensions"),
+    ],
+)

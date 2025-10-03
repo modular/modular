@@ -1,10 +1,10 @@
 # Using MAX pipelines to run LLMs offline
 
-Examples of using the MAX stack to directly query LLMs from python
+Examples of using the MAX stack to directly query LLMs from Python
 without spinning up a webserver.
 
-A single Magic command runs the example:
+A single [Pixi](https://pixi.sh) command runs the example:
 
 ```sh
-magic run basic
+pixi run basic
 ```
