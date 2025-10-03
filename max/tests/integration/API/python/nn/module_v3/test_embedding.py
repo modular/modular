@@ -13,7 +13,7 @@ from max.experimental.tensor import Tensor
 from max.nn.module_v3 import Embedding
 
 
-def test_repr():
+def test_repr() -> None:
     assert (
         repr(Embedding(2, dim=2)) == "Embedding(vocab_size=Dim(2), dim=Dim(2))"
     )
@@ -23,28 +23,28 @@ def test_repr():
     )
 
 
-def test_vocab_size():
+def test_vocab_size() -> None:
     assert Embedding(2, dim=3).vocab_size == 2
 
 
-def test_dim():
+def test_dim() -> None:
     assert Embedding(2, dim=3).dim == 3
 
     with pytest.raises(TypeError):
         _ = Embedding(2, dims=(3, 4)).dim
 
 
-def test_dims():
+def test_dims() -> None:
     assert Embedding(2, dim=3).dims == [3]
     assert Embedding(2, dims=(3, 4)).dims == [3, 4]
 
 
-def test_parameters():
+def test_parameters() -> None:
     embedding = Embedding(2, dim=3)
     assert dict(embedding.parameters) == {"weight": embedding.weight}
 
 
-def test_call():
+def test_call() -> None:
     embedding = Embedding(2, dim=3)
     result = embedding(Tensor.ones([10], dtype=DType.uint64))
     assert result.shape == [10, 3]

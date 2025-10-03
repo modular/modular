@@ -9,7 +9,7 @@ from __future__ import annotations
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 
 
-def test_split_into_groups():
+def test_split_into_groups() -> None:
     devices = [0, 1, 2, 3, 4, 5, 6, 7]
     data_parallel_degree = 1
     expected_devices = [[0, 1, 2, 3, 4, 5, 6, 7]]

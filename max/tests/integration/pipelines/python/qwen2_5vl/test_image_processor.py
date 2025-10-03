@@ -43,7 +43,7 @@ def download_image(url: str) -> Image.Image:
     return processed_image
 
 
-def test_image_processor():
+def test_image_processor() -> None:
     """Compare our custom processor with transformers library."""
     # Download the demo image
     image_url = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg"
@@ -215,7 +215,7 @@ def test_image_processor():
     )
 
 
-def test_multiple_images():
+def test_multiple_images() -> None:
     """Test our custom processor with multiple images."""
     # Download multiple images
     image_urls = [

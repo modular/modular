@@ -40,7 +40,7 @@ LOGICAL_BINARY = [
 
 
 @pytest.mark.parametrize("op", BINARY)
-def test_binary(op):  # noqa: ANN001
+def test_binary(op) -> None:  # noqa: ANN001
     a = Tensor.zeros([10, 1], dtype=DType.float32, device=DEVICE)
     b = Tensor.zeros([10], dtype=DType.float32, device=DEVICE)
     result = op(a, b)
@@ -50,7 +50,7 @@ def test_binary(op):  # noqa: ANN001
 
 
 @pytest.mark.parametrize("op", LOGICAL_BINARY)
-def test_logical_binary(op):  # noqa: ANN001
+def test_logical_binary(op) -> None:  # noqa: ANN001
     a = Tensor.full([10, 1], False, dtype=DType.bool, device=DEVICE)
     b = Tensor.full([10], False, dtype=DType.bool, device=DEVICE)
     result = op(a, b)

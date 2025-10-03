@@ -25,35 +25,35 @@ def test_ones_defaults() -> None:
         assert_all_close([1] * 10, t)
 
 
-def test_abs():
+def test_abs() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = abs(tensor)
     result._sync_realize()
     assert result.real
 
 
-def test_argmax():
+def test_argmax() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor.argmax()
     result._sync_realize()
     assert result.real
 
 
-def test_max():
+def test_max() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor.max()
     result._sync_realize()
     assert result.real
 
 
-def test_mean():
+def test_mean() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor.mean()
     result._sync_realize()
     assert result.real
 
 
-def test_reshape():
+def test_reshape() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor.reshape([6, 4])
     result._sync_realize()
@@ -61,7 +61,7 @@ def test_reshape():
     assert list(result.driver_tensor.shape) == [6, 4]
 
 
-def test_cast():
+def test_cast() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor.cast(DType.int64)
     result._sync_realize()
@@ -69,7 +69,7 @@ def test_cast():
     assert result.dtype == DType.int64
 
 
-def test_permute():
+def test_permute() -> None:
     tensor = Tensor.ones([2, 3, 4], dtype=DType.float32, device=DEVICE)
     result = tensor.permute([2, 0, 1])
     result._sync_realize()
@@ -77,7 +77,7 @@ def test_permute():
     assert list(result.driver_tensor.shape) == [4, 2, 3]
 
 
-def test_transpose():
+def test_transpose() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor.transpose(0, 1)
     result._sync_realize()
@@ -85,7 +85,7 @@ def test_transpose():
     assert list(result.driver_tensor.shape) == [6, 4]
 
 
-def test_T_property():
+def test_T_property() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor.T
     result._sync_realize()
@@ -93,21 +93,21 @@ def test_T_property():
     assert list(result.driver_tensor.shape) == [6, 4]
 
 
-def test_getitem():
+def test_getitem() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = tensor[0:2, 1:4]
     result._sync_realize()
     assert result.real
 
 
-def test_neg():
+def test_neg() -> None:
     tensor = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = -tensor
     result._sync_realize()
     assert result.real
 
 
-def test_eq():
+def test_eq() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a == b
@@ -115,7 +115,7 @@ def test_eq():
     assert result.real
 
 
-def test_ne():
+def test_ne() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.zeros([4, 6], dtype=DType.float32, device=DEVICE)
     result = a != b
@@ -123,7 +123,7 @@ def test_ne():
     assert result.real
 
 
-def test_ge():
+def test_ge() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.zeros([4, 6], dtype=DType.float32, device=DEVICE)
     result = a >= b
@@ -131,7 +131,7 @@ def test_ge():
     assert result.real
 
 
-def test_gt():
+def test_gt() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.zeros([4, 6], dtype=DType.float32, device=DEVICE)
     result = a > b
@@ -139,7 +139,7 @@ def test_gt():
     assert result.real
 
 
-def test_le():
+def test_le() -> None:
     a = Tensor.zeros([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a <= b
@@ -147,7 +147,7 @@ def test_le():
     assert result.real
 
 
-def test_lt():
+def test_lt() -> None:
     a = Tensor.zeros([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a < b
@@ -155,7 +155,7 @@ def test_lt():
     assert result.real
 
 
-def test_add():
+def test_add() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a + b
@@ -163,14 +163,14 @@ def test_add():
     assert result.real
 
 
-def test_radd():
+def test_radd() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = 2.0 + a  # triggers __radd__
     result._sync_realize()
     assert result.real
 
 
-def test_sub():
+def test_sub() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a - b
@@ -178,14 +178,14 @@ def test_sub():
     assert result.real
 
 
-def test_rsub():
+def test_rsub() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = 2.0 - a  # triggers __rsub__
     result._sync_realize()
     assert result.real
 
 
-def test_mul():
+def test_mul() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a * b
@@ -193,14 +193,14 @@ def test_mul():
     assert result.real
 
 
-def test_rmul():
+def test_rmul() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = 2.0 * a  # triggers __rmul__
     result._sync_realize()
     assert result.real
 
 
-def test_truediv():
+def test_truediv() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a / b
@@ -208,14 +208,14 @@ def test_truediv():
     assert result.real
 
 
-def test_rtruediv():
+def test_rtruediv() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = 2.0 / a  # triggers __rtruediv__
     result._sync_realize()
     assert result.real
 
 
-def test_floordiv():
+def test_floordiv() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a // b
@@ -223,14 +223,14 @@ def test_floordiv():
     assert result.real
 
 
-def test_rfloordiv():
+def test_rfloordiv() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = 2.0 // a  # triggers __rfloordiv__
     result._sync_realize()
     assert result.real
 
 
-def test_mod():
+def test_mod() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a % b
@@ -238,14 +238,14 @@ def test_mod():
     assert result.real
 
 
-def test_rmod():
+def test_rmod() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = 2.0 % a  # triggers __rmod__
     result._sync_realize()
     assert result.real
 
 
-def test_divmod():
+def test_divmod() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     quotient, remainder = divmod(a, b)
@@ -255,7 +255,7 @@ def test_divmod():
     assert remainder.real
 
 
-def test_rdivmod():
+def test_rdivmod() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     # Call __rdivmod__ explicitly, divmod(2.0, a) is typed improperly
     quotient, remainder = a.__rdivmod__(2.0)
@@ -265,7 +265,7 @@ def test_rdivmod():
     assert remainder.real
 
 
-def test_matmul():
+def test_matmul() -> None:
     a = Tensor.ones([4, 3], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([3, 6], dtype=DType.float32, device=DEVICE)
     result = a @ b
@@ -274,7 +274,7 @@ def test_matmul():
     assert list(result.driver_tensor.shape) == [4, 6]
 
 
-def test_rmatmul():
+def test_rmatmul() -> None:
     a = Tensor.ones([4, 3], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([3, 6], dtype=DType.float32, device=DEVICE)
     # a @ b would call __matmul__, so call __rmatmal__ explicitly
@@ -283,7 +283,7 @@ def test_rmatmul():
     assert result.real
 
 
-def test_pow():
+def test_pow() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = a**b
@@ -291,14 +291,14 @@ def test_pow():
     assert result.real
 
 
-def test_rpow():
+def test_rpow() -> None:
     a = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = 2.0**a  # triggers __rpow__
     result._sync_realize()
     assert result.real
 
 
-def test_and():
+def test_and() -> None:
     a = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     b = Tensor.full([4, 6], False, dtype=DType.bool, device=DEVICE)
     result = a & b
@@ -306,14 +306,14 @@ def test_and():
     assert result.real
 
 
-def test_rand():
+def test_rand() -> None:
     a = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     result = True & a  # triggers __rand__
     result._sync_realize()
     assert result.real
 
 
-def test_or():
+def test_or() -> None:
     a = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     b = Tensor.full([4, 6], False, dtype=DType.bool, device=DEVICE)
     result = a | b
@@ -321,14 +321,14 @@ def test_or():
     assert result.real
 
 
-def test_ror():
+def test_ror() -> None:
     a = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     result = False | a  # triggers __ror__
     result._sync_realize()
     assert result.real
 
 
-def test_xor():
+def test_xor() -> None:
     a = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     b = Tensor.full([4, 6], False, dtype=DType.bool, device=DEVICE)
     result = a ^ b
@@ -336,14 +336,14 @@ def test_xor():
     assert result.real
 
 
-def test_rxor():
+def test_rxor() -> None:
     a = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     result = False ^ a  # triggers __rxor__
     result._sync_realize()
     assert result.real
 
 
-def test_invert():
+def test_invert() -> None:
     a = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     result = ~a
     result._sync_realize()

@@ -27,7 +27,7 @@ def strip_margin(s: str, margin_character: str = "|"):
     )
 
 
-def test_repr():
+def test_repr() -> None:
     s = Sequential(
         Sequential(
             TestModule(1),
@@ -47,14 +47,14 @@ def test_repr():
     assert expected_repr == repr(s)
 
 
-def test_children():
+def test_children() -> None:
     c1 = Sequential(TestModule(1), TestModule(2))
     c2 = Sequential(TestModule(3), TestModule(4))
     s = Sequential(c1, c2)
     assert dict(s.children) == {"0": c1, "1": c2}
 
 
-def test_descendents():
+def test_descendents() -> None:
     t1 = TestModule(1)
     t2 = TestModule(2)
     t3 = TestModule(3)
@@ -72,7 +72,7 @@ def test_descendents():
     }
 
 
-def test_call():
+def test_call() -> None:
     s = Sequential(
         Sequential(
             TestModule(1),

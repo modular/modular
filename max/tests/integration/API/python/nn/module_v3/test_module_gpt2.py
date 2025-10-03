@@ -251,11 +251,11 @@ def gpt_model(device: Device):
     yield model.to(device=device)
 
 
-def test_gpt2_repr(gpt_model: GPTModel):
+def test_gpt2_repr(gpt_model: GPTModel) -> None:
     _ = repr(gpt_model)
 
 
-def test_gpt2_eager(gpt_model: GPTModel, device: Device):
+def test_gpt2_eager(gpt_model: GPTModel, device: Device) -> None:
     input = Tensor.zeros([1, 1], dtype=DType.int64, device=device)
 
     # Eagerly use model, submodule
@@ -274,7 +274,7 @@ def test_gpt2_eager(gpt_model: GPTModel, device: Device):
     assert embedded_tokens.real
 
 
-def test_gpt2_compiled(gpt_model: GPTModel, device: Device):
+def test_gpt2_compiled(gpt_model: GPTModel, device: Device) -> None:
     # Compile to inference graph
     token_type = TensorType(
         DType.int64, ("batch", "seqlen"), device=DeviceRef.from_device(device)
@@ -287,7 +287,7 @@ def test_gpt2_compiled(gpt_model: GPTModel, device: Device):
     assert results.shape == [1, 1, gpt_model.token_embedding.vocab_size]
 
 
-def test_default_dtype_device(gpt_model: GPTModel, device: Device):
+def test_default_dtype_device(gpt_model: GPTModel, device: Device) -> None:
     with default_dtype(DType.float64), default_device(CPU()):
         input = Tensor.zeros([1, 1], dtype=DType.int64)
         results = gpt_model(input)

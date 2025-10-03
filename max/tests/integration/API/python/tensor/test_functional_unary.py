@@ -51,7 +51,7 @@ LOGICAL_UNARY = [
 
 
 @pytest.mark.parametrize("op", UNARY)
-def test_unary(op):  # noqa: ANN001
+def test_unary(op) -> None:  # noqa: ANN001
     tensor = Tensor.zeros([10], dtype=DType.float32, device=DEVICE)
     result = op(tensor)
     result._sync_realize()
@@ -60,7 +60,7 @@ def test_unary(op):  # noqa: ANN001
 
 
 @pytest.mark.parametrize("op", LOGICAL_UNARY)
-def test_logical_unary(op):  # noqa: ANN001
+def test_logical_unary(op) -> None:  # noqa: ANN001
     tensor = Tensor.full([10], False, dtype=DType.bool, device=DEVICE)
     result = op(tensor)
     result._sync_realize()

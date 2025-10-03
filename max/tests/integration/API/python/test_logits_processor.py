@@ -38,7 +38,7 @@ def create_tensor(shape: tuple[int, ...], dtype: str = "float32") -> Tensor:
 class TestLogitsProcessor:
     """Test suite for LogitsProcessor functions."""
 
-    def test_simple_function_processor(self):
+    def test_simple_function_processor(self) -> None:
         """Test a simple function processor that modifies logits."""
 
         def simple_processor(inputs: ProcessorInputs) -> None:
@@ -59,7 +59,7 @@ class TestLogitsProcessor:
 
         assert mock_tensor[0][0] == -10000
 
-    def test_processor_with_state(self):
+    def test_processor_with_state(self) -> None:
         """Test LogitsProcessor with stateful callable (like the example in docstring)."""
 
         class SuppressBeginToken:
@@ -119,7 +119,7 @@ class TestLogitsProcessor:
         assert input_tensor[1, 7] == 0
         assert processor.step_counter == 2  # Should not increment further
 
-    def test_multiple_processors_independence(self):
+    def test_multiple_processors_independence(self) -> None:
         """Test that multiple processors maintain independent state."""
 
         class CountingProcessor:
@@ -198,7 +198,7 @@ class TestApplyLogitsProcessors:
         ]
         return context_batch
 
-    def test_apply_logits_processors_no_offsets(self):
+    def test_apply_logits_processors_no_offsets(self) -> None:
         """Test apply_logits_processors with no offsets."""
 
         logits = Tensor.from_numpy(np.arange(10).reshape(2, 5))
@@ -211,7 +211,7 @@ class TestApplyLogitsProcessors:
 
         assert np.all(final_array == expected_array)
 
-    def test_apply_logits_processors_with_offsets(self):
+    def test_apply_logits_processors_with_offsets(self) -> None:
         """Test apply_logits_processors with offsets."""
 
         # Assume these 3 logits are returned for the first context
@@ -228,7 +228,7 @@ class TestApplyLogitsProcessors:
         expected_array[3:5, :] -= 1
         assert np.all(final_array == expected_array)
 
-    def test_apply_logits_processors_with_batch_processors(self):
+    def test_apply_logits_processors_with_batch_processors(self) -> None:
         """Test apply_logits_processors with batch processors."""
 
         logits = Tensor.from_numpy(np.arange(10).reshape(2, 5))

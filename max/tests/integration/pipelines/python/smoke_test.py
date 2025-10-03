@@ -127,14 +127,14 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
     ]
 
 
-def write_github_output(key: str, value: str):
+def write_github_output(key: str, value: str) -> None:
     path = os.getenv("GITHUB_OUTPUT")
     if path:
         with open(path, "a") as f:
             f.write(f"{key}={value}\n")
 
 
-def gracefully_stop_process(process: Popen):
+def gracefully_stop_process(process: Popen) -> None:
     try:
         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
         process.wait(5)
@@ -214,7 +214,7 @@ def build_eval_summary(
     default=None,
     help="If provided, write the summary of the smoke test to this file",
 )
-def smoke_test(framework: str, model: str, output_file: Optional[Path]):
+def smoke_test(framework: str, model: str, output_file: Optional[Path]) -> None:
     model = model.lower().strip()
     cmd = get_server_cmd(framework, model)
 

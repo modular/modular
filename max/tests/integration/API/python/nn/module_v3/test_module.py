@@ -49,7 +49,7 @@ def super_module(test_module: TestModule):
     return SuperModule(mod=test_module)
 
 
-def test_module_dataclass():
+def test_module_dataclass() -> None:
     @module_dataclass
     class Test(Module):
         a: int
@@ -59,7 +59,7 @@ def test_module_dataclass():
     assert repr(Test(1, 3)) == "Test(a=1, b=3)"
 
 
-def test_module_repr(test_module: TestModule):
+def test_module_repr(test_module: TestModule) -> None:
     assert "TestModule" in repr(test_module)
     assert "SubModule" in repr(test_module)
     assert "a=Tensor" in repr(test_module)
@@ -74,7 +74,7 @@ def test_module_repr(test_module: TestModule):
     assert "eps=" in repr(sub)
 
 
-def test_module_custom_repr():
+def test_module_custom_repr() -> None:
     class Linear(Module):
         weight: Tensor
         bias: Tensor | int
@@ -97,24 +97,24 @@ def test_module_custom_repr():
     assert repr(l2) == "Linear(in_dim=Dim(3), out_dim=Dim(1), bias=False)"
 
 
-def test_module_decomposition(test_module: TestModule):
+def test_module_decomposition(test_module: TestModule) -> None:
     test_module_2 = TestModule(a=Tensor.constant(1), sub=test_module.sub)
     assert test_module_2.sub is test_module.sub
     assert dict(test_module_2.children) == dict(test_module.children)
 
 
-def test_module_decomposition_call(test_module: TestModule):
+def test_module_decomposition_call(test_module: TestModule) -> None:
     x = Tensor.constant(1)
     assert test_module.sub.b.item() == 2
     assert test_module.sub(x).item() == 3
 
 
-def test_module_local_parameters(test_module: TestModule):
+def test_module_local_parameters(test_module: TestModule) -> None:
     assert dict(test_module.local_parameters) == {"a": test_module.a}
     assert dict(test_module.sub.local_parameters) == {"b": test_module.sub.b}
 
 
-def test_module_parameters(test_module: TestModule):
+def test_module_parameters(test_module: TestModule) -> None:
     assert dict(test_module.parameters) == {
         "a": test_module.a,
         "sub.b": test_module.sub.b,
@@ -123,13 +123,17 @@ def test_module_parameters(test_module: TestModule):
     assert dict(test_module.sub.parameters) == {"b": test_module.sub.b}
 
 
-def test_module_children(test_module: TestModule, super_module: SuperModule):
+def test_module_children(
+    test_module: TestModule, super_module: SuperModule
+) -> None:
     assert dict(super_module.children) == {"mod": test_module}
     assert dict(test_module.children) == {"sub": test_module.sub}
     assert dict(test_module.sub.children) == {}
 
 
-def test_module_descendents(test_module: TestModule, super_module: SuperModule):
+def test_module_descendents(
+    test_module: TestModule, super_module: SuperModule
+) -> None:
     assert super_module.mod is test_module
     assert dict(super_module.descendents) == {
         "mod": test_module,
@@ -139,7 +143,7 @@ def test_module_descendents(test_module: TestModule, super_module: SuperModule):
     assert dict(test_module.sub.descendents) == {}
 
 
-def test_apply_to_local_parameters(test_module: TestModule):
+def test_apply_to_local_parameters(test_module: TestModule) -> None:
     a = test_module.a
     b = test_module.sub.b
 
@@ -150,7 +154,7 @@ def test_apply_to_local_parameters(test_module: TestModule):
     assert test_module.sub.b.item() == b.item()
 
 
-def test_apply_to_parameters(test_module: TestModule):
+def test_apply_to_parameters(test_module: TestModule) -> None:
     a = test_module.a
     b = test_module.sub.b
 
@@ -161,7 +165,7 @@ def test_apply_to_parameters(test_module: TestModule):
     assert test_module.sub.b.item() == (b + 1).item()
 
 
-def test_apply_to_parameters__qualified_names(test_module: TestModule):
+def test_apply_to_parameters__qualified_names(test_module: TestModule) -> None:
     names = set()
     expected = dict(test_module.parameters).keys()
 
@@ -173,7 +177,7 @@ def test_apply_to_parameters__qualified_names(test_module: TestModule):
     assert expected == names
 
 
-def test_map_parameters(test_module: TestModule):
+def test_map_parameters(test_module: TestModule) -> None:
     a = test_module.a
     b = test_module.sub.b
 
@@ -186,7 +190,7 @@ def test_map_parameters(test_module: TestModule):
     assert test_module.sub.b.item() == b.item()
 
 
-def test_load_state_simple_dict(test_module: TestModule):
+def test_load_state_simple_dict(test_module: TestModule) -> None:
     weights = {
         "a": Tensor.constant(5),
         "sub.b": Tensor.constant(6),
@@ -196,14 +200,14 @@ def test_load_state_simple_dict(test_module: TestModule):
     assert test_module.sub.b.item() == 6
 
 
-def test_load_state_simple_dict_lookup_failure(test_module: TestModule):
+def test_load_state_simple_dict_lookup_failure(test_module: TestModule) -> None:
     weights: dict[str, Tensor] = {}
     # No guarantee on the resulting state here!
     with pytest.raises(KeyError):
         test_module.load_state(weights.__getitem__)
 
 
-def test_load_state_name_remapping(test_module: TestModule):
+def test_load_state_name_remapping(test_module: TestModule) -> None:
     def remap_name(name: str):
         name = re.sub(r"\bsub\.", "feed_forward.", name)
         return name
@@ -218,7 +222,7 @@ def test_load_state_name_remapping(test_module: TestModule):
     assert test_module.sub.b.item() == 6
 
 
-def test_load_state_dict(test_module: TestModule):
+def test_load_state_dict(test_module: TestModule) -> None:
     weights = {
         "a": Tensor.constant(5),
         "sub.b": Tensor.constant(6),
@@ -228,7 +232,7 @@ def test_load_state_dict(test_module: TestModule):
     assert test_module.sub.b.item() == 6
 
 
-def test_load_state_dict_strict(test_module: TestModule):
+def test_load_state_dict_strict(test_module: TestModule) -> None:
     weights = {
         "a": Tensor.constant(5),
         "sub.b": Tensor.constant(6),
@@ -238,7 +242,7 @@ def test_load_state_dict_strict(test_module: TestModule):
         test_module.load_state_dict(weights)
 
 
-def test_load_state_dict_nonstrict(test_module: TestModule):
+def test_load_state_dict_nonstrict(test_module: TestModule) -> None:
     weights = {
         "a": Tensor.constant(5),
         "sub.b": Tensor.constant(6),
@@ -250,14 +254,14 @@ def test_load_state_dict_nonstrict(test_module: TestModule):
 
 
 @pytest.mark.skipif(not accelerator_count(), reason="requires multiple devices")
-def test_to(test_module: TestModule):
+def test_to(test_module: TestModule) -> None:
     assert all(t.device == Accelerator() for _, t in test_module.parameters)
     module = test_module.to(CPU())
     assert module is test_module
     assert all(t.device == CPU() for _, t in test_module.parameters)
 
 
-def test_compile(test_module: TestModule):
+def test_compile(test_module: TestModule) -> None:
     dtype, device = defaults()
     type = TensorType(dtype, ["batch", "n"], device=device)
     compiled = test_module.compile(type)

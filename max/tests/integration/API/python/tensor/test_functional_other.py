@@ -19,7 +19,7 @@ from max.graph import DeviceRef
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
 
-def test_as_interleaved_complex():
+def test_as_interleaved_complex() -> None:
     # needs even last dimension
     complex_input = Tensor.ones([2, 4], dtype=DType.float32, device=DEVICE)
     result = F.as_interleaved_complex(complex_input)
@@ -27,7 +27,7 @@ def test_as_interleaved_complex():
     assert result.real
 
 
-def test_avg_pool2d():
+def test_avg_pool2d() -> None:
     # needs 4D input with NHWC format
     tensor_4d = Tensor.ones(
         [1, 4, 4, 2], dtype=DType.float32, device=DEVICE
@@ -37,7 +37,7 @@ def test_avg_pool2d():
     assert result.real
 
 
-def test_band_part():
+def test_band_part() -> None:
     # needs at least 2D tensor
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.band_part(tensor_2d, num_lower=-1, num_upper=0)
@@ -45,14 +45,14 @@ def test_band_part():
     assert result.real
 
 
-def test_broadcast_to():
+def test_broadcast_to() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.broadcast_to(tensor_2d, [4, 6])
     result._sync_realize()
     assert result.real
 
 
-def test_cast():
+def test_cast() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.cast(tensor_2d, DType.int64)
     result._sync_realize()
@@ -60,7 +60,7 @@ def test_cast():
     assert result.dtype == DType.int64
 
 
-def test_chunk():
+def test_chunk() -> None:
     # split into 2 chunks along axis 0
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     chunks = F.chunk(tensor_2d, chunks=2, axis=0)
@@ -69,7 +69,7 @@ def test_chunk():
         assert chunk.real
 
 
-def test_concat():
+def test_concat() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.concat([tensor_2d, tensor_2d], axis=0)
     result._sync_realize()
@@ -77,14 +77,14 @@ def test_concat():
     assert result.shape.static_dims == [8, 6]
 
 
-def test_constant():
+def test_constant() -> None:
     device_ref = DeviceRef.from_device(DEVICE)
     result = F.constant(1.0, DType.float32, device_ref)
     result._sync_realize()
     assert result.real
 
 
-def test_conv2d():
+def test_conv2d() -> None:
     # NHWC input: [batch, height, width, in_channels]
     # RSCF filter: [height, width, in_channels/groups, out_channels]
     tensor_4d = Tensor.ones(
@@ -99,7 +99,7 @@ def test_conv2d():
 
 
 @pytest.mark.skip("KERNELS-1975")
-def test_conv2d_transpose():
+def test_conv2d_transpose() -> None:
     tensor_4d = Tensor.ones(
         [1, 4, 4, 2], dtype=DType.float32, device=DEVICE
     )  # [N, H, W, C]
@@ -111,7 +111,7 @@ def test_conv2d_transpose():
     assert result.real
 
 
-def test_conv3d():
+def test_conv3d() -> None:
     # NDHWC input: [batch, depth, height, width, in_channels]
     # QRSCF filter: [depth, height, width, in_channels/groups, out_channels]
     tensor_5d = Tensor.ones(
@@ -125,14 +125,14 @@ def test_conv3d():
     assert result.real
 
 
-def test_flatten():
+def test_flatten() -> None:
     tensor_3d = Tensor.ones([2, 3, 4], dtype=DType.float32, device=DEVICE)
     result = F.flatten(tensor_3d, start_dim=1, end_dim=2)
     result._sync_realize()
     assert result.real
 
 
-def test_fold():
+def test_fold() -> None:
     # needs shape [N, C * kernel_size[0] * kernel_size[1], L]
     # For kernel_size=[2, 2], we need C * 4 channels
     kernel_size = [2, 2]
@@ -144,7 +144,7 @@ def test_fold():
     assert result.real
 
 
-def test_gather():
+def test_gather() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     indices = Tensor.full([2], 0, dtype=DType.int64, device=DEVICE)
     result = F.gather(tensor_2d, indices, axis=0)
@@ -152,7 +152,7 @@ def test_gather():
     assert result.real
 
 
-def test_gather_nd():
+def test_gather_nd() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     indices_nd = Tensor.full([2, 2], 0, dtype=DType.int64, device=DEVICE)
     result = F.gather_nd(tensor_2d, indices_nd)
@@ -160,7 +160,7 @@ def test_gather_nd():
     assert result.real
 
 
-def test_hann_window():
+def test_hann_window() -> None:
     device_ref = DeviceRef.from_device(DEVICE)
     result = F.hann_window(4, device=device_ref)
     result._sync_realize()
@@ -170,14 +170,14 @@ def test_hann_window():
 @pytest.mark.skipif(
     isinstance(DEVICE, CPU), reason="IRFFT only supported on GPU"
 )
-def test_irfft():
+def test_irfft() -> None:
     tensor_2d = Tensor.ones([4, 8], dtype=DType.float32, device=DEVICE)
     result = F.irfft(tensor_2d, n=14, axis=-1)
     result._sync_realize()
     assert result.real
 
 
-def test_layer_norm():
+def test_layer_norm() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     gamma = Tensor.ones(
         [6], dtype=DType.float32, device=DEVICE
@@ -190,7 +190,7 @@ def test_layer_norm():
     assert result.real
 
 
-def test_masked_scatter():
+def test_masked_scatter() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     mask = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     source = Tensor.ones([24], dtype=DType.float32, device=DEVICE)
@@ -199,7 +199,7 @@ def test_masked_scatter():
     assert result.real
 
 
-def test_matmul():
+def test_matmul() -> None:
     a = Tensor.ones([4, 3], dtype=DType.float32, device=DEVICE)
     b = Tensor.ones([3, 6], dtype=DType.float32, device=DEVICE)
     result = F.matmul(a, b)
@@ -207,7 +207,7 @@ def test_matmul():
     assert result.real
 
 
-def test_max_pool2d():
+def test_max_pool2d() -> None:
     tensor_4d = Tensor.ones(
         [1, 4, 4, 2], dtype=DType.float32, device=DEVICE
     )  # [N, H, W, C]
@@ -216,7 +216,7 @@ def test_max_pool2d():
     assert result.real
 
 
-def test_nonzero():
+def test_nonzero() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.nonzero(
         tensor_2d, out_dim=24
@@ -225,7 +225,7 @@ def test_nonzero():
     assert result.real
 
 
-def test_outer():
+def test_outer() -> None:
     vec_a = Tensor.ones([3], dtype=DType.float32, device=DEVICE)
     vec_b = Tensor.ones([4], dtype=DType.float32, device=DEVICE)
     result = F.outer(vec_a, vec_b)
@@ -233,28 +233,28 @@ def test_outer():
     assert result.real
 
 
-def test_pad():
+def test_pad() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.pad(tensor_2d, [1, 1, 2, 2])  # pad left, right, top, bottom
     result._sync_realize()
     assert result.real
 
 
-def test_permute():
+def test_permute() -> None:
     tensor_3d = Tensor.ones([2, 3, 4], dtype=DType.float32, device=DEVICE)
     result = F.permute(tensor_3d, [2, 0, 1])
     result._sync_realize()
     assert result.real
 
 
-def test_range():
+def test_range() -> None:
     device_ref = DeviceRef.from_device(DEVICE)
     result = F.range(0, 10, 1, dtype=DType.int32, device=device_ref)
     result._sync_realize()
     assert result.real
 
 
-def test_repeat_interleave():
+def test_repeat_interleave() -> None:
     # repeat_interleave not supported on GPU, use CPU
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=CPU())
     result = F.repeat_interleave(tensor_2d, 2, axis=0)
@@ -262,14 +262,14 @@ def test_repeat_interleave():
     assert result.real
 
 
-def test_reshape():
+def test_reshape() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.reshape(tensor_2d, [6, 4])
     result._sync_realize()
     assert result.real
 
 
-def test_scatter():
+def test_scatter() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     indices_scatter = Tensor.full([2, 2], 0, dtype=DType.int64, device=DEVICE)
     source_scatter = Tensor.ones([2, 2], dtype=DType.float32, device=DEVICE)
@@ -280,7 +280,7 @@ def test_scatter():
     assert result.real
 
 
-def test_scatter_nd():
+def test_scatter_nd() -> None:
     # Create input tensor to scatter into
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     indices_nd = Tensor.full([2, 2], 0, dtype=DType.int64, device=DEVICE)
@@ -292,14 +292,14 @@ def test_scatter_nd():
     assert result.real
 
 
-def test_slice_tensor():
+def test_slice_tensor() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.slice_tensor(tensor_2d, [slice(0, 2), slice(1, 4)])
     result._sync_realize()
     assert result.real
 
 
-def test_split():
+def test_split() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     splits = F.split(tensor_2d, [2, 2], axis=0)  # split_sizes as sequence
     for split_tensor in splits:
@@ -307,7 +307,7 @@ def test_split():
         assert split_tensor.real
 
 
-def test_squeeze():
+def test_squeeze() -> None:
     # needs tensor with size-1 dimension
     tensor_with_one = Tensor.ones([4, 1, 6], dtype=DType.float32, device=DEVICE)
     result = F.squeeze(tensor_with_one, axis=1)
@@ -315,7 +315,7 @@ def test_squeeze():
     assert result.real
 
 
-def test_stack():
+def test_stack() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     tensors_to_stack = [tensor_2d, tensor_2d]
     result = F.stack(tensors_to_stack, axis=0)
@@ -323,14 +323,14 @@ def test_stack():
     assert result.real
 
 
-def test_tile():
+def test_tile() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.tile(tensor_2d, [2, 1])
     result._sync_realize()
     assert result.real
 
 
-def test_top_k():
+def test_top_k() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     values, indices = F.top_k(tensor_2d, k=3, axis=-1)
     values._sync_realize()
@@ -339,7 +339,7 @@ def test_top_k():
     assert indices.real
 
 
-def test_transfer_to():
+def test_transfer_to() -> None:
     # transfer to same device (should be no-op)
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     device_ref = DeviceRef.from_device(DEVICE)
@@ -348,21 +348,21 @@ def test_transfer_to():
     assert result.real
 
 
-def test_transpose():
+def test_transpose() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.transpose(tensor_2d, axis_1=0, axis_2=1)
     result._sync_realize()
     assert result.real
 
 
-def test_unsqueeze():
+def test_unsqueeze() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     result = F.unsqueeze(tensor_2d, axis=1)
     result._sync_realize()
     assert result.real
 
 
-def test_where():
+def test_where() -> None:
     condition = Tensor.full([4, 6], True, dtype=DType.bool, device=DEVICE)
     x = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     y = Tensor.zeros([4, 6], dtype=DType.float32, device=DEVICE)
@@ -371,7 +371,7 @@ def test_where():
     assert result.real
 
 
-def test_functional_returns_tensor():
+def test_functional_returns_tensor() -> None:
     @F.functional
     def returns_tensor():
         return Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)

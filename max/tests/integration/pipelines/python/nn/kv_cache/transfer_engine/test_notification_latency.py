@@ -19,7 +19,7 @@ from max.driver import CPU, Tensor
 from max.nn.kv_cache import KVTransferEngine
 
 
-def test_notification_delivery_is_prompt():
+def test_notification_delivery_is_prompt() -> None:
     TIMEOUT_SEND_S = 10
     TIMEOUT_RECV_S = 12
     MAX_ACCEPTABLE_LATENCY_S = 8
@@ -37,7 +37,7 @@ def test_notification_delivery_is_prompt():
     # Exit codes
     exit_codes = [-1, -1]
 
-    def sender():
+    def sender() -> None:
         acc = CPU()
         blocks = Tensor.from_numpy(
             np.ones((num_blocks, bytes_per_block), dtype=np.int8)
@@ -74,7 +74,7 @@ def test_notification_delivery_is_prompt():
 
         exit_codes[0] = 0
 
-    def receiver():
+    def receiver() -> None:
         acc = CPU()
         blocks = Tensor.from_numpy(
             np.ones((num_blocks, bytes_per_block), dtype=np.int8)

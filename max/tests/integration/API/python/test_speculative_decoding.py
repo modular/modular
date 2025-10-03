@@ -499,7 +499,7 @@ def test_speculative_decoding_context_update(
     )
 
 
-def test_draft_model_encoding_selection():
+def test_draft_model_encoding_selection() -> None:
     """Test that draft model encoding is correctly selected from config or fallback."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
 
@@ -556,7 +556,7 @@ def test_draft_model_encoding_selection():
     assert isinstance(pipeline2, SpeculativeDecodingTextGenerationPipeline)
 
 
-def test_kv_cache_claiming_protocol():
+def test_kv_cache_claiming_protocol() -> None:
     """Test that external_claim is called before fetch in prepare_batch."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
@@ -592,7 +592,7 @@ def test_kv_cache_claiming_protocol():
     # Track call order
     call_order = []
 
-    def track_external_claim(request_id: RequestID):
+    def track_external_claim(request_id: RequestID) -> None:
         call_order.append(("external_claim", request_id))
 
     def track_fetch(batch: dict[RequestID, TextContext], num_steps: int):

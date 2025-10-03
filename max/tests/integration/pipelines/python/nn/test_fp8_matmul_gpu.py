@@ -37,7 +37,7 @@ def act_quant_kernel(
     s_ptr: torch.Tensor,
     scale_ub: float,
     BLOCK_SIZE: tl.constexpr,
-):
+) -> None:
     """
     Quantizes the input tensor `x_ptr` and stores the result in `y_ptr` and the scaling factor in `s_ptr`.
 
@@ -106,7 +106,7 @@ def fp8_gemm_kernel(
     BLOCK_SIZE_K: tl.constexpr,
     TILE_SIZE_K: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
-):
+) -> None:
     """
     Performs a matrix multiplication operation on FP8 matrices with scaling factors.
 

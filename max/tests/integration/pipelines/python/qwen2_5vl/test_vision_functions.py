@@ -74,7 +74,7 @@ def rot_pos_emb_torch(
     return pos_ids, max_grid_size
 
 
-def test_get_window_index_and_cumulative_seqlens():
+def test_get_window_index_and_cumulative_seqlens() -> None:
     grid_thw = np.array([[1, 98, 146], [1, 76, 114]], dtype=np.int64)
     window_size = 112
     spatial_merge_size = 2
@@ -120,7 +120,7 @@ def test_get_window_index_and_cumulative_seqlens():
     assert np.array_equal(cu_seqlens_torch_result, cu_seqlens_numpy)
 
 
-def test_rot_pos_emb():
+def test_rot_pos_emb() -> None:
     grid_thw = np.array([[1, 98, 146], [1, 76, 114]], dtype=np.int64)
     spatial_merge_size = 2
 

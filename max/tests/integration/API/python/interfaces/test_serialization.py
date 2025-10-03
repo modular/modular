@@ -26,7 +26,7 @@ class SampleData(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     request_id: RequestID
 
 
-def test_msgpack_numpy_decoder_pickle_serialization():
+def test_msgpack_numpy_decoder_pickle_serialization() -> None:
     """Test that MsgpackNumpyDecoder can be pickled and unpickled successfully."""
     # Create test data with a numpy array
     original_array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
@@ -62,7 +62,7 @@ def test_msgpack_numpy_decoder_pickle_serialization():
     assert decoded_original.value == decoded_unpickled.value
 
 
-def test_msgpack_numpy_decoder_pickle_with_copy_false():
+def test_msgpack_numpy_decoder_pickle_with_copy_false() -> None:
     """Test pickling decoder with copy=False parameter."""
     # Create test data
     original_array = np.array([1, 2, 3, 4, 5], dtype=np.int64)
@@ -93,7 +93,7 @@ def test_msgpack_numpy_decoder_pickle_with_copy_false():
     assert decoded_original.value == decoded_unpickled.value == 123
 
 
-def test_msgpack_numpy_decoder_pickle_preserves_parameters():
+def test_msgpack_numpy_decoder_pickle_preserves_parameters() -> None:
     """Test that pickling preserves decoder parameters correctly."""
     # Test different parameter combinations
     test_cases = [
@@ -114,7 +114,7 @@ def test_msgpack_numpy_decoder_pickle_preserves_parameters():
         assert unpickled_decoder._copy == copy
 
 
-def test_msgpack_numpy_encoder_pickle_serialization():
+def test_msgpack_numpy_encoder_pickle_serialization() -> None:
     """Test that MsgpackNumpyEncoder can be pickled and unpickled successfully."""
     # Create test data with a numpy array
     original_array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
@@ -152,7 +152,7 @@ def test_msgpack_numpy_encoder_pickle_serialization():
     assert decoded_original.value == decoded_unpickled.value == 42
 
 
-def test_msgpack_numpy_encoder_pickle_with_shared_memory():
+def test_msgpack_numpy_encoder_pickle_with_shared_memory() -> None:
     """Test pickling encoder with shared memory parameters."""
     # Create test data
     original_array = np.array([1, 2, 3, 4, 5], dtype=np.int64)
@@ -186,7 +186,7 @@ def test_msgpack_numpy_encoder_pickle_with_shared_memory():
     assert decoded_original.value == decoded_unpickled.value == 123
 
 
-def test_msgpack_numpy_encoder_pickle_preserves_parameters():
+def test_msgpack_numpy_encoder_pickle_preserves_parameters() -> None:
     """Test that pickling preserves encoder parameters correctly."""
     # Test different parameter combinations
     test_cases = [

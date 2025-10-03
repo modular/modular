@@ -25,7 +25,7 @@ scatter_set_constant = F.functional(kernels.scatter_set_constant)
 @pytest.mark.skipif(
     DEVICE.is_host, reason="moe_create_indices only supports GPU devices"
 )
-def test_custom():
+def test_custom() -> None:
     indices = Tensor.ones([4], dtype=DType.int32, device=DEVICE)
     token_expert_order, *_rest = moe_create_indices(indices, 8)
     token_expert_order._sync_realize()
@@ -35,7 +35,7 @@ def test_custom():
 @pytest.mark.skipif(
     DEVICE.is_host, reason="scatter_set_constant only supports GPU devices"
 )
-def test_inplace_custom():
+def test_inplace_custom() -> None:
     values = Tensor.zeros([2, 2])
     indices = Tensor.ones([1, 1], dtype=DType.int32)
     scatter_set_constant(values, indices, 5.0)

@@ -26,7 +26,7 @@ REDUCTION = [
 
 
 @pytest.mark.parametrize("op", REDUCTION)
-def test_reduction(op):  # noqa: ANN001
+def test_reduction(op) -> None:  # noqa: ANN001
     tensor = Tensor.zeros([10, 10], dtype=DType.float32, device=DEVICE)
     result = op(tensor, axis=-1)
     result._sync_realize()
