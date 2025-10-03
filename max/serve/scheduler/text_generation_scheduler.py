@@ -180,14 +180,12 @@ class TokenGenerationScheduler(Scheduler):
         # execute the batch
         responses = self.pipeline.execute(inputs)
 
-        # Process each batch (usually just one unless using data parallelism)
-        for executed_batch in inputs.batches:
-            # If there is a chunked request, we put it back into the request queue
-            add_newly_encoded_reqs_to_tg_batch(
-                executed_batch,
-                responses,
-                self.batch_constructor,
-            )
+        # If there is a chunked request, we put it back into the request queue
+        add_newly_encoded_reqs_to_tg_batch(
+            inputs.batch,
+            responses,
+            self.batch_constructor,
+        )
 
         # remove terminated requests from the batch
         num_terminated_reqs = release_terminated_requests(
