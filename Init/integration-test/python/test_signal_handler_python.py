@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 
-def test_python_stack_trace_in_signal_handler():
+def test_python_stack_trace_in_signal_handler() -> None:
     """Test that Python stack traces are captured in signal handler output."""
 
     # Use the test script file in the same directory
