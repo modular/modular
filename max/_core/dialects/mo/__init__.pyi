@@ -267,9 +267,6 @@ class ChainAttr(max._core.Attribute):
 class DTypeAttr(max._core.Attribute):
     """This attribute holds the data type of a tensor."""
 
-    @overload
-    def __init__(self, dtype: max._core.dtype.DType) -> None: ...
-    @overload
     def __init__(self, dtype: max._core.dtype.DType) -> None: ...
     @property
     def dtype(self) -> max._core.dtype.DType: ...

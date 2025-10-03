@@ -6,8 +6,6 @@ import enum
 from collections.abc import Callable, Sequence
 from typing import overload
 
-import max._mlir.ir
-import mlir
 import typing_extensions
 
 class DiagnosticSeverity(enum.Enum):
@@ -153,14 +151,14 @@ class Location:
     """Gets the Location bound to the current thread or raises ValueError"""
 
     @staticmethod
-    def unknown(context: max._mlir.ir.Context | None = None) -> Location:
+    def unknown(context: Context | None = None) -> Location:
         """Gets a Location representing an unknown location"""
 
     @staticmethod
     def callsite(
         callee: Location,
         frames: Sequence[Location],
-        context: max._mlir.ir.Context | None = None,
+        context: Context | None = None,
     ) -> Location:
         """Gets a Location representing a caller and callsite"""
 
@@ -172,10 +170,7 @@ class Location:
     @overload
     @staticmethod
     def file(
-        filename: str,
-        line: int,
-        col: int,
-        context: max._mlir.ir.Context | None = None,
+        filename: str, line: int, col: int, context: Context | None = None
     ) -> Location:
         """Gets a Location representing a file, line and column"""
 
@@ -187,7 +182,7 @@ class Location:
         start_col: int,
         end_line: int,
         end_col: int,
-        context: max._mlir.ir.Context | None = None,
+        context: Context | None = None,
     ) -> Location:
         """Gets a Location representing a file, line and column range"""
 
@@ -206,7 +201,7 @@ class Location:
     def fused(
         locations: Sequence[Location],
         metadata: Attribute | None = None,
-        context: max._mlir.ir.Context | None = None,
+        context: Context | None = None,
     ) -> Location:
         """Gets a Location representing a fused location with optional metadata"""
 
@@ -217,7 +212,7 @@ class Location:
     def name(
         name: str,
         childLoc: Location | None = None,
-        context: max._mlir.ir.Context | None = None,
+        context: Context | None = None,
     ) -> Location:
         """
         Gets a Location representing a named location with optional child location
@@ -230,7 +225,7 @@ class Location:
     def child_loc(self) -> Location: ...
     @staticmethod
     def from_attr(
-        attribute: Attribute, context: max._mlir.ir.Context | None = None
+        attribute: Attribute, context: Context | None = None
     ) -> Location:
         """Gets a Location from a LocationAttr"""
 
@@ -250,7 +245,7 @@ class Location:
 class Module:
     @overload
     @staticmethod
-    def parse(asm: str, context: max._mlir.ir.Context | None = None) -> Module:
+    def parse(asm: str, context: Context | None = None) -> Module:
         """
         Parses a module's assembly format from a string.
 
@@ -261,13 +256,9 @@ class Module:
 
     @overload
     @staticmethod
-    def parse(
-        asm: bytes, context: max._mlir.ir.Context | None = None
-    ) -> Module: ...
+    def parse(asm: bytes, context: Context | None = None) -> Module: ...
     @staticmethod
-    def parseFile(
-        path: str, context: max._mlir.ir.Context | None = None
-    ) -> Module:
+    def parseFile(path: str, context: Context | None = None) -> Module:
         """
         Parses a module's assembly format from a string.
 
@@ -341,10 +332,7 @@ class Operation(_OperationBase):
 
     @staticmethod
     def parse(
-        source: str,
-        *,
-        source_name: str = "",
-        context: max._mlir.ir.Context | None = None,
+        source: str, *, source_name: str = "", context: Context | None = None
     ) -> OpView:
         """
         Parses an operation. Supports both text assembly format and binary bytecode format.
@@ -398,7 +386,7 @@ class OpView(_OperationBase):
     @classmethod
     def parse(*args, **kwargs):
         r"""
-        (cls: object, source: str, *, source_name: str = \'\', context: max._mlir.ir.Context | None = None) -> max._mlir._mlir_libs._mlir.ir.OpView
+        (cls: object, source: str, *, source_name: str = \'\', context: Context | None = None) -> max._mlir._mlir_libs._mlir.ir.OpView
 
         Parses a specific, generated OpView based on class level attributes
         """
@@ -548,9 +536,7 @@ class Attribute:
         """Casts the passed attribute to the generic Attribute"""
 
     @staticmethod
-    def parse(
-        asm: str, context: max._mlir.ir.Context | None = None
-    ) -> Attribute:
+    def parse(asm: str, context: Context | None = None) -> Attribute:
         """
         Parses an attribute from an assembly form. Raises an MLIRError on failure.
         """
@@ -595,7 +581,7 @@ class Type:
         """Casts the passed type to the generic Type"""
 
     @staticmethod
-    def parse(asm: str, context: max._mlir.ir.Context | None = None) -> Type:
+    def parse(asm: str, context: Context | None = None) -> Type:
         """
         Parses the assembly form of a type.
 
@@ -689,7 +675,7 @@ class Value:
 
     @overload
     def replace_all_uses_except(
-        self, with_: Value, exceptions: Sequence[Operation]
+        self, with_: Value, exceptions: list
     ) -> None: ...
     @overload
     def replace_all_uses_except(
@@ -1001,19 +987,17 @@ class AffineExpr:
 
     @staticmethod
     def get_constant(
-        value: int, context: max._mlir.ir.Context | None = None
+        value: int, context: Context | None = None
     ) -> AffineConstantExpr:
         """Gets a constant affine expression with the given value."""
 
     @staticmethod
-    def get_dim(
-        position: int, context: max._mlir.ir.Context | None = None
-    ) -> AffineDimExpr:
+    def get_dim(position: int, context: Context | None = None) -> AffineDimExpr:
         """Gets an affine expression of a dimension at the given position."""
 
     @staticmethod
     def get_symbol(
-        position: int, context: max._mlir.ir.Context | None = None
+        position: int, context: Context | None = None
     ) -> AffineSymbolExpr:
         """Gets an affine expression of a symbol at the given position."""
 
@@ -1026,7 +1010,7 @@ class AffineConstantExpr(AffineExpr):
     def isinstance(other: AffineExpr) -> bool: ...
     @staticmethod
     def get(
-        value: int, context: max._mlir.ir.Context | None = None
+        value: int, context: Context | None = None
     ) -> AffineConstantExpr: ...
     @property
     def value(self) -> int: ...
@@ -1036,9 +1020,7 @@ class AffineDimExpr(AffineExpr):
     @staticmethod
     def isinstance(other: AffineExpr) -> bool: ...
     @staticmethod
-    def get(
-        position: int, context: max._mlir.ir.Context | None = None
-    ) -> AffineDimExpr: ...
+    def get(position: int, context: Context | None = None) -> AffineDimExpr: ...
     @property
     def position(self) -> int: ...
 
@@ -1048,7 +1030,7 @@ class AffineSymbolExpr(AffineExpr):
     def isinstance(other: AffineExpr) -> bool: ...
     @staticmethod
     def get(
-        position: int, context: max._mlir.ir.Context | None = None
+        position: int, context: Context | None = None
     ) -> AffineSymbolExpr: ...
     @property
     def position(self) -> int: ...
@@ -1107,7 +1089,7 @@ class AffineMap:
     def __hash__(self) -> int: ...
     @staticmethod
     def compress_unused_symbols(
-        arg0: list, arg1: max._mlir.ir.Context, /
+        arg0: list, arg1: Context, /
     ) -> list[AffineMap]: ...
     @property
     def context(self) -> Context:
@@ -1121,29 +1103,25 @@ class AffineMap:
         dim_count: int,
         symbol_count: int,
         exprs: list,
-        context: max._mlir.ir.Context | None = None,
+        context: Context | None = None,
     ) -> AffineMap:
         """Gets a map with the given expressions as results."""
 
     @staticmethod
-    def get_constant(
-        value: int, context: max._mlir.ir.Context | None = None
-    ) -> AffineMap:
+    def get_constant(value: int, context: Context | None = None) -> AffineMap:
         """Gets an affine map with a single constant result"""
 
     @staticmethod
-    def get_empty(context: max._mlir.ir.Context | None = None) -> AffineMap:
+    def get_empty(context: Context | None = None) -> AffineMap:
         """Gets an empty affine map."""
 
     @staticmethod
-    def get_identity(
-        n_dims: int, context: max._mlir.ir.Context | None = None
-    ) -> AffineMap:
+    def get_identity(n_dims: int, context: Context | None = None) -> AffineMap:
         """Gets an identity map with the given number of dimensions."""
 
     @staticmethod
     def get_minor_identity(
-        n_dims: int, n_results: int, context: max._mlir.ir.Context | None = None
+        n_dims: int, n_results: int, context: Context | None = None
     ) -> AffineMap:
         """
         Gets a minor identity map with the given number of dimensions and results.
@@ -1151,7 +1129,7 @@ class AffineMap:
 
     @staticmethod
     def get_permutation(
-        permutation: Sequence[int], context: max._mlir.ir.Context | None = None
+        permutation: Sequence[int], context: Context | None = None
     ) -> AffineMap:
         """Gets an affine map that permutes its inputs."""
 
@@ -1200,13 +1178,11 @@ class IntegerSet:
         num_symbols: int,
         exprs: list,
         eq_flags: Sequence[bool],
-        context: max._mlir.ir.Context | None = None,
+        context: Context | None = None,
     ) -> IntegerSet: ...
     @staticmethod
     def get_empty(
-        num_dims: int,
-        num_symbols: int,
-        context: max._mlir.ir.Context | None = None,
+        num_dims: int, num_symbols: int, context: Context | None = None
     ) -> IntegerSet: ...
     def get_replaced(
         self,
@@ -1277,7 +1253,7 @@ class DenseBoolArrayAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        values: Sequence, context: max._mlir.ir.Context | None = None
+        values: Sequence, context: Context | None = None
     ) -> DenseBoolArrayAttr:
         """Gets a uniqued dense array attribute"""
 
@@ -1305,7 +1281,7 @@ class DenseI8ArrayAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        values: Sequence[int], context: max._mlir.ir.Context | None = None
+        values: Sequence[int], context: Context | None = None
     ) -> DenseI8ArrayAttr:
         """Gets a uniqued dense array attribute"""
 
@@ -1333,7 +1309,7 @@ class DenseI16ArrayAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        values: Sequence[int], context: max._mlir.ir.Context | None = None
+        values: Sequence[int], context: Context | None = None
     ) -> DenseI16ArrayAttr:
         """Gets a uniqued dense array attribute"""
 
@@ -1361,7 +1337,7 @@ class DenseI32ArrayAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        values: Sequence[int], context: max._mlir.ir.Context | None = None
+        values: Sequence[int], context: Context | None = None
     ) -> DenseI32ArrayAttr:
         """Gets a uniqued dense array attribute"""
 
@@ -1389,7 +1365,7 @@ class DenseI64ArrayAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        values: Sequence[int], context: max._mlir.ir.Context | None = None
+        values: Sequence[int], context: Context | None = None
     ) -> DenseI64ArrayAttr:
         """Gets a uniqued dense array attribute"""
 
@@ -1417,7 +1393,7 @@ class DenseF32ArrayAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        values: Sequence[float], context: max._mlir.ir.Context | None = None
+        values: Sequence[float], context: Context | None = None
     ) -> DenseF32ArrayAttr:
         """Gets a uniqued dense array attribute"""
 
@@ -1445,7 +1421,7 @@ class DenseF64ArrayAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        values: Sequence[float], context: max._mlir.ir.Context | None = None
+        values: Sequence[float], context: Context | None = None
     ) -> DenseF64ArrayAttr:
         """Gets a uniqued dense array attribute"""
 
@@ -1472,9 +1448,7 @@ class ArrayAttr(Attribute):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(
-        attributes: list, context: max._mlir.ir.Context | None = None
-    ) -> ArrayAttr:
+    def get(attributes: list, context: Context | None = None) -> ArrayAttr:
         """Gets a uniqued Array attribute"""
 
     def __getitem__(self, arg: int, /) -> Attribute: ...
@@ -1500,9 +1474,7 @@ class BoolAttr(Attribute):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(
-        value: bool, context: max._mlir.ir.Context | None = None
-    ) -> BoolAttr:
+    def get(value: bool, context: Context | None = None) -> BoolAttr:
         """Gets an uniqued bool attribute"""
 
     @property
@@ -1590,9 +1562,7 @@ class DenseElementsAttr(Attribute):
     @overload
     @staticmethod
     def get(
-        attrs: list,
-        type: Type | None = None,
-        context: max._mlir.ir.Context | None = None,
+        attrs: list, type: Type | None = None, context: Context | None = None
     ) -> DenseElementsAttr:
         """
         Gets a DenseElementsAttr from a Python list of attributes.
@@ -1719,9 +1689,7 @@ class DictAttr(Attribute):
     def __contains__(self, arg: str, /) -> bool: ...
     def __len__(self) -> int: ...
     @staticmethod
-    def get(
-        value: dict = {}, context: max._mlir.ir.Context | None = None
-    ) -> DictAttr:
+    def get(value: dict = {}, context: Context | None = None) -> DictAttr:
         """Gets an uniqued dict attribute"""
 
     @overload
@@ -1744,7 +1712,7 @@ class SymbolRefAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        symbols: Sequence[str], context: max._mlir.ir.Context | None = None
+        symbols: Sequence[str], context: Context | None = None
     ) -> SymbolRefAttr:
         """Gets a uniqued SymbolRef attribute from a list of symbol names"""
 
@@ -1766,9 +1734,7 @@ class FlatSymbolRefAttr(Attribute):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(
-        value: str, context: max._mlir.ir.Context | None = None
-    ) -> FlatSymbolRefAttr:
+    def get(value: str, context: Context | None = None) -> FlatSymbolRefAttr:
         """Gets a uniqued FlatSymbolRef attribute"""
 
     @property
@@ -1819,21 +1785,21 @@ class FloatAttr(Attribute):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(
-        type: Type, value: float, loc: max._mlir.ir.Location | None = None
+    def get(type: Type, value: float, loc: Location | None = None) -> FloatAttr:
+        """Gets an uniqued float point attribute associated to a type"""
+
+    @staticmethod
+    def get_unchecked(
+        type: Type, value: float, context: Context | None = None
     ) -> FloatAttr:
         """Gets an uniqued float point attribute associated to a type"""
 
     @staticmethod
-    def get_f32(
-        value: float, context: max._mlir.ir.Context | None = None
-    ) -> FloatAttr:
+    def get_f32(value: float, context: Context | None = None) -> FloatAttr:
         """Gets an uniqued float point attribute associated to a f32 type"""
 
     @staticmethod
-    def get_f64(
-        value: float, context: max._mlir.ir.Context | None = None
-    ) -> FloatAttr:
+    def get_f64(value: float, context: Context | None = None) -> FloatAttr:
         """Gets an uniqued float point attribute associated to a f64 type"""
 
     @property
@@ -1899,16 +1865,12 @@ class StringAttr(Attribute):
     def __repr__(self) -> str: ...
     @overload
     @staticmethod
-    def get(
-        value: str, context: max._mlir.ir.Context | None = None
-    ) -> StringAttr:
+    def get(value: str, context: Context | None = None) -> StringAttr:
         """Gets a uniqued string attribute"""
 
     @overload
     @staticmethod
-    def get(
-        value: bytes, context: max._mlir.ir.Context | None = None
-    ) -> StringAttr: ...
+    def get(value: bytes, context: Context | None = None) -> StringAttr: ...
     @staticmethod
     def get_typed(type: Type, value: str) -> StringAttr:
         """Gets a uniqued string attribute associated to a type"""
@@ -1935,9 +1897,7 @@ class TypeAttr(Attribute):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(
-        value: Type, context: max._mlir.ir.Context | None = None
-    ) -> TypeAttr:
+    def get(value: Type, context: Context | None = None) -> TypeAttr:
         """Gets a uniqued Type attribute"""
 
     @property
@@ -1957,7 +1917,7 @@ class UnitAttr(Attribute):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> UnitAttr:
+    def get(context: Context | None = None) -> UnitAttr:
         """Create a Unit attribute."""
 
 class StridedLayoutAttr(Attribute):
@@ -1975,15 +1935,13 @@ class StridedLayoutAttr(Attribute):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        offset: int,
-        strides: Sequence[int],
-        context: max._mlir.ir.Context | None = None,
+        offset: int, strides: Sequence[int], context: Context | None = None
     ) -> StridedLayoutAttr:
         """Gets a strided layout attribute."""
 
     @staticmethod
     def get_fully_dynamic(
-        rank: int, context: max._mlir.ir.Context | None = None
+        rank: int, context: Context | None = None
     ) -> StridedLayoutAttr:
         """
         Gets a strided layout attribute with dynamic offset and strides of a given rank.
@@ -1998,9 +1956,7 @@ class StridedLayoutAttr(Attribute):
         """Returns the value of the float point attribute"""
 
 class InferTypeOpInterface:
-    def __init__(
-        self, object: object, context: max._mlir.ir.Context | None = None
-    ) -> None:
+    def __init__(self, object: object, context: Context | None = None) -> None:
         """
         Creates an interface from a given operation/opview object or from a
         subclass of OpView. Raises ValueError if the operation does not implement the
@@ -2024,8 +1980,8 @@ class InferTypeOpInterface:
         attributes: Attribute | None = None,
         properties: typing_extensions.CapsuleType | None = None,
         regions: Sequence[Region] | None = None,
-        context: max._mlir.ir.Context | None = None,
-        loc: max._mlir.ir.Location | None = None,
+        context: Context | None = None,
+        loc: Location | None = None,
     ) -> list[Type]:
         """
         Given the arguments required to build an operation, attempts to infer
@@ -2071,9 +2027,7 @@ class ShapedTypeComponents:
         """
 
 class InferShapedTypeOpInterface:
-    def __init__(
-        self, object: object, context: max._mlir.ir.Context | None = None
-    ) -> None:
+    def __init__(self, object: object, context: Context | None = None) -> None:
         """
         Creates an interface from a given operation/opview object or from a
         subclass of OpView. Raises ValueError if the operation does not implement the
@@ -2097,8 +2051,8 @@ class InferShapedTypeOpInterface:
         attributes: Attribute | None = None,
         regions: typing_extensions.CapsuleType | None = None,
         properties: Sequence[Region] | None = None,
-        context: max._mlir.ir.Context | None = None,
-        loc: max._mlir.ir.Location | None = None,
+        context: Context | None = None,
+        loc: Location | None = None,
     ) -> list[ShapedTypeComponents]:
         """
         Given the arguments required to build an operation, attempts to infer
@@ -2117,21 +2071,15 @@ class IntegerType(Type):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get_signless(
-        width: int, context: max._mlir.ir.Context | None = None
-    ) -> IntegerType:
+    def get_signless(width: int, context: Context | None = None) -> IntegerType:
         """Create a signless integer type"""
 
     @staticmethod
-    def get_signed(
-        width: int, context: max._mlir.ir.Context | None = None
-    ) -> IntegerType:
+    def get_signed(width: int, context: Context | None = None) -> IntegerType:
         """Create a signed integer type"""
 
     @staticmethod
-    def get_unsigned(
-        width: int, context: max._mlir.ir.Context | None = None
-    ) -> IntegerType:
+    def get_unsigned(width: int, context: Context | None = None) -> IntegerType:
         """Create an unsigned integer type"""
 
     @property
@@ -2177,7 +2125,7 @@ class IndexType(Type):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> IndexType:
+    def get(context: Context | None = None) -> IndexType:
         """Create a index type."""
 
 class Float4E2M1FNType(FloatType):
@@ -2192,7 +2140,7 @@ class Float4E2M1FNType(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float4E2M1FNType:
+    def get(context: Context | None = None) -> Float4E2M1FNType:
         """Create a float4_e2m1fn type."""
 
 class Float6E2M3FNType(FloatType):
@@ -2207,7 +2155,7 @@ class Float6E2M3FNType(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float6E2M3FNType:
+    def get(context: Context | None = None) -> Float6E2M3FNType:
         """Create a float6_e2m3fn type."""
 
 class Float6E3M2FNType(FloatType):
@@ -2222,7 +2170,7 @@ class Float6E3M2FNType(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float6E3M2FNType:
+    def get(context: Context | None = None) -> Float6E3M2FNType:
         """Create a float6_e3m2fn type."""
 
 class Float8E4M3FNType(FloatType):
@@ -2237,7 +2185,7 @@ class Float8E4M3FNType(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float8E4M3FNType:
+    def get(context: Context | None = None) -> Float8E4M3FNType:
         """Create a float8_e4m3fn type."""
 
 class Float8E5M2Type(FloatType):
@@ -2252,7 +2200,7 @@ class Float8E5M2Type(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float8E5M2Type:
+    def get(context: Context | None = None) -> Float8E5M2Type:
         """Create a float8_e5m2 type."""
 
 class Float8E4M3Type(FloatType):
@@ -2267,7 +2215,7 @@ class Float8E4M3Type(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float8E4M3Type:
+    def get(context: Context | None = None) -> Float8E4M3Type:
         """Create a float8_e4m3 type."""
 
 class Float8E4M3FNUZType(FloatType):
@@ -2282,7 +2230,7 @@ class Float8E4M3FNUZType(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float8E4M3FNUZType:
+    def get(context: Context | None = None) -> Float8E4M3FNUZType:
         """Create a float8_e4m3fnuz type."""
 
 class Float8E4M3B11FNUZType(FloatType):
@@ -2297,9 +2245,7 @@ class Float8E4M3B11FNUZType(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(
-        context: max._mlir.ir.Context | None = None,
-    ) -> Float8E4M3B11FNUZType:
+    def get(context: Context | None = None) -> Float8E4M3B11FNUZType:
         """Create a float8_e4m3b11fnuz type."""
 
 class Float8E5M2FNUZType(FloatType):
@@ -2314,7 +2260,7 @@ class Float8E5M2FNUZType(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float8E5M2FNUZType:
+    def get(context: Context | None = None) -> Float8E5M2FNUZType:
         """Create a float8_e5m2fnuz type."""
 
 class Float8E3M4Type(FloatType):
@@ -2329,7 +2275,7 @@ class Float8E3M4Type(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float8E3M4Type:
+    def get(context: Context | None = None) -> Float8E3M4Type:
         """Create a float8_e3m4 type."""
 
 class Float8E8M0FNUType(FloatType):
@@ -2344,7 +2290,7 @@ class Float8E8M0FNUType(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> Float8E8M0FNUType:
+    def get(context: Context | None = None) -> Float8E8M0FNUType:
         """Create a float8_e8m0fnu type."""
 
 class BF16Type(FloatType):
@@ -2359,7 +2305,7 @@ class BF16Type(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> BF16Type:
+    def get(context: Context | None = None) -> BF16Type:
         """Create a bf16 type."""
 
 class F16Type(FloatType):
@@ -2374,7 +2320,7 @@ class F16Type(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> F16Type:
+    def get(context: Context | None = None) -> F16Type:
         """Create a f16 type."""
 
 class FloatTF32Type(FloatType):
@@ -2389,7 +2335,7 @@ class FloatTF32Type(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> FloatTF32Type:
+    def get(context: Context | None = None) -> FloatTF32Type:
         """Create a tf32 type."""
 
 class F32Type(FloatType):
@@ -2404,7 +2350,7 @@ class F32Type(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> F32Type:
+    def get(context: Context | None = None) -> F32Type:
         """Create a f32 type."""
 
 class F64Type(FloatType):
@@ -2419,7 +2365,7 @@ class F64Type(FloatType):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> F64Type:
+    def get(context: Context | None = None) -> F64Type:
         """Create a f64 type."""
 
 class NoneType(Type):
@@ -2434,7 +2380,7 @@ class NoneType(Type):
     def typeid(self) -> TypeID: ...
     def __repr__(self) -> str: ...
     @staticmethod
-    def get(context: max._mlir.ir.Context | None = None) -> NoneType:
+    def get(context: Context | None = None) -> NoneType:
         """Create a none type."""
 
 class ComplexType(Type):
@@ -2548,7 +2494,18 @@ class VectorType(ShapedType):
         *,
         scalable: list | None = None,
         scalable_dims: Sequence[int] | None = None,
-        loc: max._mlir.ir.Location | None = None,
+        loc: Location | None = None,
+    ) -> VectorType:
+        """Create a vector type"""
+
+    @staticmethod
+    def get_unchecked(
+        shape: Sequence[int],
+        element_type: Type,
+        *,
+        scalable: list | None = None,
+        scalable_dims: Sequence[int] | None = None,
+        context: Context | None = None,
     ) -> VectorType:
         """Create a vector type"""
 
@@ -2573,7 +2530,16 @@ class RankedTensorType(ShapedType):
         shape: Sequence[int],
         element_type: Type,
         encoding: Attribute | None = None,
-        loc: max._mlir.ir.Location | None = None,
+        loc: Location | None = None,
+    ) -> RankedTensorType:
+        """Create a ranked tensor type"""
+
+    @staticmethod
+    def get_unchecked(
+        shape: Sequence[int],
+        element_type: Type,
+        encoding: Attribute | None = None,
+        context: Context | None = None,
     ) -> RankedTensorType:
         """Create a ranked tensor type"""
 
@@ -2593,7 +2559,13 @@ class UnrankedTensorType(ShapedType):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        element_type: Type, loc: max._mlir.ir.Location | None = None
+        element_type: Type, loc: Location | None = None
+    ) -> UnrankedTensorType:
+        """Create a unranked tensor type"""
+
+    @staticmethod
+    def get_unchecked(
+        element_type: Type, context: Context | None = None
     ) -> UnrankedTensorType:
         """Create a unranked tensor type"""
 
@@ -2614,7 +2586,17 @@ class MemRefType(ShapedType):
         element_type: Type,
         layout: Attribute | None = None,
         memory_space: Attribute | None = None,
-        loc: max._mlir.ir.Location | None = None,
+        loc: Location | None = None,
+    ) -> MemRefType:
+        """Create a memref type"""
+
+    @staticmethod
+    def get_unchecked(
+        shape: Sequence[int],
+        element_type: Type,
+        layout: Attribute | None = None,
+        memory_space: Attribute | None = None,
+        context: Context | None = None,
     ) -> MemRefType:
         """Create a memref type"""
 
@@ -2648,7 +2630,15 @@ class UnrankedMemRefType(ShapedType):
     def get(
         element_type: Type,
         memory_space: Attribute | None,
-        loc: max._mlir.ir.Location | None = None,
+        loc: Location | None = None,
+    ) -> UnrankedMemRefType:
+        """Create a unranked memref type"""
+
+    @staticmethod
+    def get_unchecked(
+        element_type: Type,
+        memory_space: Attribute | None,
+        context: Context | None = None,
     ) -> UnrankedMemRefType:
         """Create a unranked memref type"""
 
@@ -2670,14 +2660,14 @@ class TupleType(Type):
     @overload
     @staticmethod
     def get_tuple(
-        elements: Sequence[Type], context: max._mlir.ir.Context | None = None
+        elements: Sequence[Type], context: Context | None = None
     ) -> TupleType:
         """Create a tuple type"""
 
     @overload
     @staticmethod
     def get_tuple(
-        elements: Sequence[Type], context: mlir.ir.Context | None = None
+        elements: Sequence[Type], context: Context | None = None
     ) -> TupleType: ...
     def get_type(self, pos: int) -> Type:
         """Returns the pos-th type in the tuple type."""
@@ -2702,7 +2692,7 @@ class FunctionType(Type):
     def get(
         inputs: Sequence[Type],
         results: Sequence[Type],
-        context: max._mlir.ir.Context | None = None,
+        context: Context | None = None,
     ) -> FunctionType:
         """Gets a FunctionType from a list of input and result types"""
 
@@ -2711,7 +2701,7 @@ class FunctionType(Type):
     def get(
         inputs: Sequence[Type],
         results: Sequence[Type],
-        context: mlir.ir.Context | None = None,
+        context: Context | None = None,
     ) -> FunctionType: ...
     @property
     def inputs(self) -> list:
@@ -2734,9 +2724,7 @@ class OpaqueType(Type):
     def __repr__(self) -> str: ...
     @staticmethod
     def get(
-        dialect_namespace: str,
-        buffer: str,
-        context: max._mlir.ir.Context | None = None,
+        dialect_namespace: str, buffer: str, context: Context | None = None
     ) -> OpaqueType:
         """Create an unregistered (opaque) dialect type."""
 

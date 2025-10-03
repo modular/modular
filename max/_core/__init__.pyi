@@ -10,10 +10,8 @@ import enum
 from collections.abc import Iterator, Sequence
 from typing import Generic, TypeVar
 
-from max.mlir import Attribute as MlirAttribute
-from max.mlir import Block as MlirBlock
+import max._mlir.ir
 from max.mlir import Context, Location
-from max.mlir import Type as MlirType
 from max.mlir import Value as MlirValue
 
 from . import (
@@ -43,7 +41,7 @@ from . import (
 
 class Attribute:
     @staticmethod
-    def _from_cmlir(arg: MlirAttribute, /) -> Attribute: ...
+    def _from_cmlir(arg: max._mlir.ir.Attribute, /) -> Attribute: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
     @property
@@ -67,7 +65,7 @@ class TypeID:
 
 class Type:
     @staticmethod
-    def _from_cmlir(arg: MlirType, /) -> Type: ...
+    def _from_cmlir(arg: max._mlir.ir.Type, /) -> Type: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
     @property
@@ -103,7 +101,7 @@ class InsertPoint:
 
 class Block:
     @staticmethod
-    def _from_cmlir(arg: MlirBlock, /) -> Block: ...
+    def _from_cmlir(arg: max._mlir.ir.Block, /) -> Block: ...
     @property
     def arguments(self) -> Sequence[Value]: ...
     @property
