@@ -578,7 +578,7 @@ fn foo(name: MyString):
     print("MyString")
 
 fn call_foo():
-    alias string: StringLiteral = "Hello"
+    alias string = "Hello"
     # foo(string) # error: ambiguous call to 'foo' ... This call is ambiguous because two `foo` functions match it
     foo(MyString(string))
 ```
