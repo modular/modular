@@ -311,15 +311,11 @@ fn _dtype_to_nvshmem_type[
 # ===-----------------------------------------------------------------------===#
 
 
-# TODO: calculate how many jobs are set to launch on the current node and number
-# of devices, splitting up jobs evenly between devices. To enable launching
-# multiple kernels on the same device, and avoid initializing DeviceContext
-# twice. This doesn't work in MPI and UID initialization examples, but does
-# in nvshmem_init examples, so follow that logic.
+# Run one GPU per process
 fn nvshmemx_init() raises:
     var _argv = argv()
     var argc = len(_argv)
-    var mpi_status = MPI_Init(argc, _argv)
+    MPI_Init(argc, _argv)
 
     # Get MPI rank and size
     var rank = c_int(0)
@@ -343,6 +339,30 @@ fn nvshmemx_init() raises:
     # Check initialization status
     if nvshmemx_init_status() != 2:
         raise Error("failed to initialize NVSHMEM")
+
+
+# Modular specific init, run one GPU per thread and return associated DeviceContext
+fn nvshmemx_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
+    var ctx = DeviceContext(mype_node)
+    ctx.set_as_current()
+
+    # Initialize NVSHMEM with MPI
+    var mpi_comm = get_mpi_comm_world()
+    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    attr.args.uid_args.myrank = mype_node
+    attr.args.uid_args.nranks = npes_node
+
+    var status = nvshmemx_hostlib_init_attr(
+        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
+    )
+    if status:
+        raise Error("failed to initialize NVSHMEM with status:", status)
+    # Check initialization status
+    status = nvshmemx_init_status()
+    if status != 2:
+        raise Error("failed to initialize NVSHMEM with status:", status)
+
+    return ctx
 
 
 fn nvshmemx_hostlib_init_attr(

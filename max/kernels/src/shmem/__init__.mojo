@@ -83,5 +83,12 @@ from .shmem_api import (
     shmem_signal_wait_until,
     shmem_team_my_pe,
 )
+from ._mpi import (
+    MPI_Comm_rank,
+    MPI_Comm_size,
+    MPI_Finalize,
+    MPI_Init,
+    get_mpi_comm_world,
+)
 from .shmem_buffer import SHMEMBuffer
-from .shmem_context import SHMEMContext
+from .shmem_context import SHMEMContext, shmem_launch

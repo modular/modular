@@ -57,3 +57,4 @@ def main():
 
     shmem_free(destination)
     shmem_finalize()
+    MPI_Finalize()

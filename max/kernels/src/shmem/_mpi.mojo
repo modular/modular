@@ -59,22 +59,26 @@ alias MPIComm = UnsafePointer[OpaquePointer]
 # ===-----------------------------------------------------------------------===#
 
 
-fn MPI_Init(argc: Int, argv: VariadicList[StaticString]) raises -> c_int:
+fn MPI_Init(argc: Int, argv: VariadicList[StaticString]) raises:
     """Initialize MPI."""
-    return _get_mpi_function[
+    var result = _get_mpi_function[
         "MPI_Init",
         fn (
             UnsafePointer[Int], UnsafePointer[VariadicList[StaticString]]
         ) -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
+    if result != 0:
+        raise Error("failed to initialize MPI with error code:", result)
 
 
-fn MPI_Finalize() raises -> c_int:
+fn MPI_Finalize() raises:
     """Finalize MPI."""
-    return _get_mpi_function[
+    var result = _get_mpi_function[
         "MPI_Finalize",
         fn () -> c_int,
     ]()()
+    if result != 0:
+        raise Error("failed to finalize MPI with error code:", result)
 
 
 fn MPI_Comm_rank(comm: MPIComm, rank: UnsafePointer[c_int]) raises -> c_int:

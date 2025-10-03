@@ -146,7 +146,6 @@ alias SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
 alias SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
 alias SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
 
-
 # ===----------------------------------------------------------------------=== #
 # 1: Library Setup, Exit, and Query Routines
 # ===----------------------------------------------------------------------=== #
@@ -176,10 +175,34 @@ fn shmem_init() raises:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmemx_init()
+        nvshmemx_init()
     else:
         return CompilationTarget.unsupported_target_error[
             operation="shmem_init"
+        ]()
+
+
+fn shmem_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
+    """Modular specific initialization that enables launching one GPU per thread.
+    You must provide the `mype_node` (Processing Element ID) and `npes_node`
+    (Number of processing elements) for the single node.
+
+    It returns a `DeviceContext` which is ready for `SHMEM` operations.
+
+    Arguments:
+        mype_node: (my) (p)rocessing (e)lement ID on this (node)
+        npes_node: (n)umber of (p)rocessing (e)lements on this (node)
+
+    Raises:
+        If SHMEM initialization fails.
+    """
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        return nvshmemx_init(mype_node, npes_node)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            DeviceContext, operation="shmem_init"
         ]()
 
 
@@ -214,10 +237,6 @@ fn shmem_finalize():
     @parameter
     if has_nvidia_gpu_accelerator():
         nvshmemx_hostlib_finalize()
-        try:
-            _ = MPI_Finalize()
-        except e:
-            pass
     else:
         return CompilationTarget.unsupported_target_error[
             operation="shmem_finalize",
