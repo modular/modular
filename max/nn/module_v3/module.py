@@ -176,11 +176,13 @@ class Module:
 
         Args:
             f: The transformation to apply to each parameter.
-                The transformation takes two arguments, a name and a tensor.
+                The transformation takes two arguments, a name and a tensor:
+
                 - The name is the qualified name of the parameter
-                    with respect to the module on which `apply_to_parameters`
-                    was called.
-                - The tensor is the current value of that parameter
+                  with respect to the module on which `apply_to_parameters`
+                  was called.
+                - The tensor is the current value of that parameter.
+
                 The return value of this function is the new value that will
                 replace the value at that name in the module tree.
         """
@@ -227,7 +229,8 @@ class Module:
         initializing LoRA weights.
 
         Args:
-            lookup: The lookup function for each parameter.
+            lookup: The lookup function for each parameter:
+
                 - The argument to the lookup function is the qualified name
                   of the parameter with respect to the module on which
                   `load_state` was called.
@@ -297,11 +300,13 @@ class Module:
 
         Args:
             f: The transformation to apply to each parameter.
-                The transformation takes two arguments, a name and a tensor.
+                The transformation takes two arguments, a name and a tensor:
+
                 - The name is the qualified name of the parameter
-                    with respect to the module on which `map_parameters`
-                    was called.
-                - The tensor is the current value of that parameter
+                  with respect to the module on which `map_parameters`
+                  was called.
+                - The tensor is the current value of that parameter.
+
                 The return value of this function is the new value that will
                 replace the value at that name in the module tree.
 
@@ -428,7 +433,6 @@ def _module_dataclass_rich_repr(self: DataclassInstance):
 
 
 @dataclass_transform()
-@functools.wraps(dataclasses.dataclass)
 def module_dataclass(
     cls: type[Module] | None = None, /, *, repr: bool = False, **kwargs
 ):

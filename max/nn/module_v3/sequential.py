@@ -99,7 +99,7 @@ class Sequential(ModuleList):
         """Constructs a sequential from a sequence of modules.
 
         Following PyTorch, Sequential takes its inputs as a variadic
-        rather than an iterable. Use the splat operator (*seq) to make
+        rather than an iterable. Use the splat operator (`*seq`) to make
         a Sequential from an iterable.
 
         .. code-block:: python
