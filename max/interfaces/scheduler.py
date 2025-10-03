@@ -18,7 +18,7 @@ class Scheduler(ABC):
     """Abstract base class defining the interface for schedulers."""
 
     @abstractmethod
-    def run_iteration(self):
+    def run_iteration(self):  # noqa: ANN201
         """The core scheduler routine that creates and executes batches.
 
         This method should implement the core scheduling logic including:

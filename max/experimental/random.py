@@ -46,7 +46,7 @@ gaussian_like = functional(ops.random.gaussian)
 normal_like = gaussian_like
 
 
-def uniform(
+def uniform(  # noqa: ANN201
     shape: ShapeLike = (),
     range: tuple[float, float] = (0, 1),
     *,
@@ -98,7 +98,7 @@ def uniform(
     return uniform_like(type, range=range)
 
 
-def gaussian(
+def gaussian(  # noqa: ANN201
     shape: ShapeLike = (),
     mean: float = 0.0,
     std: float = 1.0,

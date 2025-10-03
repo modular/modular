@@ -76,7 +76,7 @@ def traced(
     if inspect.iscoroutinefunction(func):
 
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args, **kwargs):  # noqa: ANN202
             if is_profiling_enabled():
                 with Trace(message, color):
                     return await func(*args, **kwargs)
@@ -86,7 +86,7 @@ def traced(
     else:
 
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args, **kwargs):  # noqa: ANN202
             if is_profiling_enabled():
                 with Trace(message, color):
                     return func(*args, **kwargs)

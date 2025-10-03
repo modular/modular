@@ -161,7 +161,7 @@ def traced(
     if inspect.iscoroutinefunction(func):
 
         @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
+        async def async_wrapper(*args, **kwargs):  # noqa: ANN202
             async with _TraceContext(message, color):
                 return await func(*args, **kwargs)
 
@@ -170,7 +170,7 @@ def traced(
     else:
 
         @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
+        def sync_wrapper(*args, **kwargs):  # noqa: ANN202
             with _TraceContext(message, color):
                 return func(*args, **kwargs)
 
@@ -316,7 +316,7 @@ class Tracer:
 # ---------------------------------------------------------------------------
 
 
-def _motr_task_factory(loop: asyncio.AbstractEventLoop, coro, *args, **kwargs):  # noqa: ANN001
+def _motr_task_factory(loop: asyncio.AbstractEventLoop, coro, *args, **kwargs):  # noqa: ANN001, ANN202
     """Creates asyncio tasks with proper MOTR trace context synchronization.
 
     Every freshly-created Task inherits the caller's ContextVars, including
@@ -348,7 +348,7 @@ class _MotrEventLoopPolicy(asyncio.DefaultEventLoopPolicy):
     trace context management for all asyncio tasks.
     """
 
-    def new_event_loop(self):
+    def new_event_loop(self):  # noqa: ANN202
         """Creates a new event loop with MOTR task factory installed."""
         loop = super().new_event_loop()
         loop.set_task_factory(_motr_task_factory)
@@ -428,7 +428,7 @@ def _patch_uvloop_policy() -> None:
         integration.
         """
 
-        def new_event_loop(self):
+        def new_event_loop(self):  # noqa: ANN202
             """Creates a new event loop with MOTR task factory installed."""
             loop = super().new_event_loop()
             loop.set_task_factory(_motr_task_factory)

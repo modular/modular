@@ -213,7 +213,7 @@ class CustomOp:
         assert isinstance(num_dps_outputs, builtin.IntegerAttr)
         return num_dps_outputs.value
 
-    def op(self, *args: TensorValue, result_types: Sequence[TensorType]):
+    def op(self, *args: TensorValue, result_types: Sequence[TensorType]):  # noqa: ANN201
         # Infer custom op device from inputs
         device = next(
             itertools.chain(
@@ -442,7 +442,7 @@ class MaxOp:
         # - Generally users shouldn't be putting this marshalling into their
         #   inner loop. Gains are much more substantial for larger graphs
         #   which can take advantage of MAX's automatic kernel fusion.
-        def fast_from_dlpack(t: torch.Tensor):
+        def fast_from_dlpack(t: torch.Tensor):  # noqa: ANN202
             if t.device.type == "cuda":
                 stream = torch.cuda.current_stream(t.device).cuda_stream
                 device = max_device(t.device)

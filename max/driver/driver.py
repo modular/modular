@@ -56,12 +56,12 @@ class DeviceSpec:
             )
 
     @staticmethod
-    def cpu(id: int = -1):
+    def cpu(id: int = -1):  # noqa: ANN205
         """Creates a CPU device specification."""
         return DeviceSpec(id, "cpu")
 
     @staticmethod
-    def accelerator(id: int = 0):
+    def accelerator(id: int = 0):  # noqa: ANN205
         """Creates an accelerator (GPU) device specification."""
         return DeviceSpec(id, "gpu")
 
