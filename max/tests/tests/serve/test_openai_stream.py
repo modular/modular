@@ -24,7 +24,7 @@ MAX_CHUNK_TO_READ_BYTES: int = 1024 * 10
 
 
 @pytest.fixture(autouse=True)
-def reset_sse_appstatus():
+def reset_sse_appstatus() -> None:
     """
     Fixture that resets the appstatus event in the sse_starlette app.
 
