@@ -29,7 +29,7 @@ shared_tensor_types = st.shared(
 MAX_CONCAT_SIZE = 100
 
 
-def with_dim(shape: Shape, axis: int, dim: StaticDim):
+def with_dim(shape: Shape, axis: int, dim: StaticDim):  # noqa: ANN201
     shape = Shape(shape)
     shape[axis] = dim
     return shape

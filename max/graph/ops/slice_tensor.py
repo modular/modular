@@ -186,7 +186,7 @@ def _stack_scalars(vals: Iterable[TensorValue]) -> TensorValue:
     return Graph.current._add_op(rmo.concat, vals, axis=axis)[0].tensor
 
 
-def _slice_and_output_tensors(
+def _slice_and_output_tensors(  # noqa: ANN202
     x: BufferValue | TensorValue, indices: SliceIndices
 ):
     if not x.shape:

@@ -1155,7 +1155,7 @@ async def chat_session_driver(
     return session_outputs
 
 
-async def benchmark(
+async def benchmark(  # noqa: ANN201
     backend: str,
     chat: bool,
     api_url: str,

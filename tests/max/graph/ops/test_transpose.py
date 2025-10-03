@@ -125,7 +125,7 @@ def test_transpose_error_axis_2_out_of_bounds() -> None:
 shared_shapes_rank_gt_0 = st.shared(shapes(min_rank=1))
 
 
-def invalid_axes(rank: int):
+def invalid_axes(rank: int):  # noqa: ANN201
     return st.one_of(
         st.integers(max_value=-rank - 1), st.integers(min_value=rank)
     )

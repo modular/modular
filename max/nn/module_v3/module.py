@@ -199,7 +199,7 @@ class Module:
                 )
             )
 
-    def load_state(self, lookup: Callable[[str], DLPackArray]):
+    def load_state(self, lookup: Callable[[str], DLPackArray]):  # noqa: ANN201
         """Replaces each parameter in the module and its descendents.
 
         The transformation is applied in-place, updating the module's values
@@ -342,7 +342,7 @@ class Module:
         return self
 
     @contextlib.contextmanager
-    def _mapped_parameters(self, f: Callable[[str, Tensor], Tensor]):
+    def _mapped_parameters(self, f: Callable[[str, Tensor], Tensor]):  # noqa: ANN202
         parameters = dict(self.parameters)
         try:
             self.apply_to_parameters(f)
@@ -381,7 +381,7 @@ class Module:
             # Wrap the graph inputs in Tensors
             inputs = [Tensor(value=input.tensor) for input in graph.inputs]
 
-            def as_weight(name: str, tensor: Tensor):
+            def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
                 return F.constant_external(name, tensor.type)
 
             # Temporarily replace the parameters with external constants
@@ -423,7 +423,7 @@ class Module:
         return pretty_repr(self)
 
 
-def _module_dataclass_rich_repr(self: DataclassInstance):
+def _module_dataclass_rich_repr(self: DataclassInstance):  # noqa: ANN202
     for field in dataclasses.fields(self):
         value = getattr(self, field.name)
         if isinstance(value, Tensor):
@@ -435,7 +435,7 @@ def _module_dataclass_rich_repr(self: DataclassInstance):
 
 
 @dataclass_transform()
-def module_dataclass(
+def module_dataclass(  # noqa: ANN201
     cls: type[Module] | None = None, /, *, repr: bool = False, **kwargs
 ):
     """Decorate a Module subclass as a dataclass.

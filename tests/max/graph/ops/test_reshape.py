@@ -56,7 +56,7 @@ def test_reshape() -> None:
         )
 
 
-def subseqs(c: Collection):
+def subseqs(c: Collection):  # noqa: ANN201
     if not c:
         return st.just(type(c)())
     subseq_indices = st.sets(st.sampled_from(range(len(c))))
@@ -65,7 +65,7 @@ def subseqs(c: Collection):
     )
 
 
-def negative_one_reshape(shapes):  # noqa: ANN001
+def negative_one_reshape(shapes):  # noqa: ANN001, ANN201
     return (
         shapes.flatmap(subseqs)
         .map(lambda subseq: [*subseq, -1])
@@ -131,7 +131,7 @@ def test_reshapes__zero_dim(
         graph.output(out)
 
 
-def shapes_plus_ones(shapes=shapes()):  # noqa: ANN001
+def shapes_plus_ones(shapes=shapes()):  # noqa: ANN001, ANN201
     ones = st.lists(st.just(1))
     shapes = shapes.flatmap(lambda shape: ones.map(lambda ones: shape + ones))
     return shapes.flatmap(st.permutations)

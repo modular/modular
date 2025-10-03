@@ -30,7 +30,7 @@ class StopWatch:
     """
 
     @classmethod
-    def start(cls):
+    def start(cls):  # noqa: ANN206
         sw = cls()
         sw.reset()
         return sw

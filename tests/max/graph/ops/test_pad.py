@@ -35,7 +35,7 @@ def padded_size(shape: Shape, padding: list[int]) -> int:
     return total
 
 
-def paddings_for(input_types, low=0, high=16):  # noqa: ANN001
+def paddings_for(input_types, low=0, high=16):  # noqa: ANN001, ANN201
     return input_types.flatmap(
         lambda type: st.lists(
             st.integers(min_value=low, max_value=high),

@@ -156,7 +156,7 @@ class _ThreadingOnlyTqdmLock(TqdmDefaultWriteLock):
 
 
 @contextlib.contextmanager
-def _hf_tqdm_using_threading_only_lock():
+def _hf_tqdm_using_threading_only_lock():  # noqa: ANN202
     """Use a threading-only lock if there is no existing write lock.
 
     If a write lock already exists, it is not replaced.  The sole purpose of

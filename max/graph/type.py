@@ -340,7 +340,7 @@ class _TensorTypeBase(Type[MlirType]):
 
         return math.prod(int(dim) for dim in self.shape)
 
-    def cast(self, dtype: DType):
+    def cast(self, dtype: DType):  # noqa: ANN202
         """Constructs a new tensor type of the same shape with the new `dtype`.
 
         Args:

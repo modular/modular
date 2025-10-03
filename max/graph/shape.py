@@ -32,7 +32,7 @@ class Shape(list[Dim]):
         super().__init__(Dim(dim) for dim in dims)
 
     @property
-    def rank(self):
+    def rank(self):  # noqa: ANN201
         return len(self)
 
     def to_mlir(self) -> mosh.ShapeAttr:

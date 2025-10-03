@@ -67,7 +67,7 @@ def __set_torch_memory_limit() -> None:
         )
 
 
-def run():
+def run():  # noqa: ANN201
     # Allow opt-out of using $TEST_TMPDIR for HF_HOME for performance reasons in
     # special cases
     if os.environ.get("HF_ESCAPES_SANDBOX") != "1":

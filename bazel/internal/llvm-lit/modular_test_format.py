@@ -28,7 +28,7 @@ _EXTERNAL_PATH_REGEX = re.compile(
 
 
 class ModularShTest(ShTest):
-    def execute(self, test, litConfig):  # noqa: ANN001
+    def execute(self, test, litConfig):  # noqa: ANN001, ANN201
         result = lit.TestRunner.executeShTest(
             test,
             litConfig,

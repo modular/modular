@@ -119,7 +119,7 @@ def _delete_matching_cached_files(
 #    https://docs.python.org/3/library/importlib.html#importlib.machinery.ExtensionFileLoader
 #    https://peps.python.org/pep-0489/#module-creation-phase
 class MojoImporter:
-    def find_spec(
+    def find_spec(  # noqa: ANN201
         self,
         name: str,
         import_path: Optional[Sequence[str]],

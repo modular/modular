@@ -148,7 +148,7 @@ class GGUFWeights(Weights):
         """The current weight name or prefix."""
         return self._prefix
 
-    def items(self):
+    def items(self):  # noqa: ANN201
         """Iterate through all allocable weights that start with the prefix."""
         for name in self._tensors:
             if name.startswith(self._prefix):

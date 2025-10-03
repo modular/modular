@@ -215,7 +215,7 @@ class _GraphWeight:
     value: TensorValue
 
 
-def _location(ignore_frames: int = 1):
+def _location(ignore_frames: int = 1):  # noqa: ANN202
     """Creates an MLIR Location with the current Python call stack."""
     if not mlir.Context.current:
         raise RuntimeError("Can't create location: No MLIR context active")
@@ -568,7 +568,7 @@ class Graph:
 
     @staticmethod
     @contextlib.contextmanager
-    def _async_region():
+    def _async_region():  # noqa: ANN205
         """Create a region of the graph with tasks guaranteed to execute
         independently.
 
@@ -635,7 +635,7 @@ class Graph:
             CURRENT_GRAPH.reset(token)
 
     @contextlib.contextmanager
-    def _local_weights_and_chain(self):
+    def _local_weights_and_chain(self):  # noqa: ANN202
         """Creates a local scope for weights and chain state modifications.
 
         Provides a context manager that creates an isolated scope where the
@@ -660,7 +660,7 @@ class Graph:
             self.device_chains = device_chains
 
     @contextlib.contextmanager
-    def _block(self, block: mlir.Block):
+    def _block(self, block: mlir.Block):  # noqa: ANN202
         with self._local_weights_and_chain():
             current_block, self._current_block = self._current_block, block
             try:
@@ -669,7 +669,7 @@ class Graph:
                 self._current_block = current_block
 
     @contextlib.contextmanager
-    def _pause_verification(self):
+    def _pause_verification(self):  # noqa: ANN202
         """Temporarily disable verification."""
         old_value = self._should_verify_ops
         try:
@@ -684,7 +684,7 @@ class Graph:
                 op.verify()
 
     @contextlib.contextmanager
-    def _capturing_mlir_diagnostics(self):
+    def _capturing_mlir_diagnostics(self):  # noqa: ANN202
         diagnostics = []
 
         def handler(d: mlir.Diagnostic) -> bool:

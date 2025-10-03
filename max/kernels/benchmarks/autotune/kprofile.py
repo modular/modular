@@ -77,7 +77,7 @@ def specs_to_df(specs: list[str]) -> pd.DataFrame:
     return df
 
 
-def extract_pivots_df(df: pd.DataFrame, exclude: Optional[list[str]] = None):
+def extract_pivots_df(df: pd.DataFrame, exclude: Optional[list[str]] = None):  # noqa: ANN201
     if exclude is None:
         exclude = []
     # df = specs_to_df(x_labels)
@@ -96,12 +96,12 @@ def extract_pivots_df(df: pd.DataFrame, exclude: Optional[list[str]] = None):
     return pivot_columns, non_pivot_columns
 
 
-def extract_pivots(x_labels: list[str], exclude: Optional[list[str]] = None):
+def extract_pivots(x_labels: list[str], exclude: Optional[list[str]] = None):  # noqa: ANN201
     df = specs_to_df(x_labels)
     return extract_pivots_df(df=df, exclude=exclude)
 
 
-def load_pickle(path):  # noqa: ANN001
+def load_pickle(path):  # noqa: ANN001, ANN201
     with open(path, "rb") as handle:
         return pickle.load(handle)
 
@@ -114,7 +114,7 @@ def dump_yaml(obj, out_path) -> None:  # noqa: ANN001
     yaml.dump(obj, sys.stdout, sort_keys=False)
 
 
-def top_idx(x, top_percentage=0.05):  # noqa: ANN001
+def top_idx(x, top_percentage=0.05):  # noqa: ANN001, ANN201
     # calculate the threshold to pick top_percentage of the results
     threshold = (top_percentage + (np.min(x) / np.max(x))) * np.max(x)
     return x.where(x < threshold).dropna().index
@@ -132,7 +132,7 @@ def replace_vals_snippet(p_spec, snippet_path) -> str:  # noqa: ANN001
     return c
 
 
-def find_common_params(subset):  # noqa: ANN001
+def find_common_params(subset):  # noqa: ANN001, ANN201
     spec_list = []
     for index, row in subset.iterrows():  # noqa: B007
         p = spec_to_dict(row["spec"])
@@ -164,7 +164,7 @@ def df_to_console_table(
         style = col_style.get(c, None)
         table.add_column(c, justify="left", style=style)
 
-    def wrap(x):  # noqa: ANN001
+    def wrap(x):  # noqa: ANN001, ANN202
         return "\n".join(x.split("/"))
 
     for row in df.itertuples(index=index):
@@ -238,7 +238,7 @@ class KbenchPKL:
         return f
 
 
-def df_round_floats(df, prec=3):  # noqa: ANN001
+def df_round_floats(df, prec=3):  # noqa: ANN001, ANN201
     "Round values in dataframe to specified precision"
     for c in df.columns:
         if df.dtypes[c] in (np.float64, np.float32):
@@ -377,7 +377,7 @@ def diff_baseline(
     # Find the common pivots between all pkl's if none specified
     if not pivots:
 
-        def intersection(a: list, b: list):
+        def intersection(a: list, b: list):  # noqa: ANN202
             return [x for x in a if x in b]
 
         _, pivots = extract_pivots(
@@ -467,7 +467,7 @@ def codegen_snippet(
     print(f"wrote results to [{abs_output_path}]")
 
 
-def yaml_reference_handling(s: str):
+def yaml_reference_handling(s: str):  # noqa: ANN201
     # all of them should be uniq
     ref_pattern = re.compile(r"('<<'[\s]*:[\s]*'*)([^']*)'")
     refs = re.findall(ref_pattern, s)
@@ -565,7 +565,7 @@ class ComplexParamList(click.Option):
         --pivot=[M] --pivot=[N] --pivot=[K] is equivalent to --pivot=[M,N,K] and vice versa.
     """
 
-    def type_cast_value(self, ctx, value_in):  # noqa: ANN001
+    def type_cast_value(self, ctx, value_in):  # noqa: ANN001, ANN201
         """DO NOT REMOVE this function, it is called from ctx in click."""
         p = []
         assert isinstance(value_in, list)

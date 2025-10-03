@@ -55,7 +55,7 @@ class ProfileFormat(ProfileFormatMetadata, Enum):
 
     @lru_cache
     @staticmethod
-    def members():
+    def members():  # noqa: ANN205
         return {member.label: member for member in ProfileFormat}
 
     @classmethod
@@ -78,7 +78,7 @@ class ProfileSession:
     )
 
     @classmethod
-    def default_profiler(cls):
+    def default_profiler(cls):  # noqa: ANN206
         # "disabled" is actually the only async_mode that records coroutine
         # frames across all (vs. just one) event loops.
         return Profiler(
@@ -89,7 +89,7 @@ class ProfileSession:
 PROFILE_SESSION_VAR = ContextVar("profile_session", default=ProfileSession())  # noqa: B039
 
 
-def profile_in_session():
+def profile_in_session():  # noqa: ANN201
     return PROFILE_SESSION_VAR.get().request_id is not None
 
 
@@ -103,7 +103,7 @@ def write_profile(profiler: Profiler, session: ProfileSession) -> None:
         out.write(profiler.output(renderer=profile_format.renderer_cls()))
 
 
-async def profile_call(profiler: Profiler, call: Callable):
+async def profile_call(profiler: Profiler, call: Callable):  # noqa: ANN201
     session = PROFILE_SESSION_VAR.get()
     if not session.request_id:
         # Not currently profiling.
@@ -123,7 +123,7 @@ def register_debug(app: FastAPI, settings: DebugSettings) -> None:
         profiler = ProfileSession.default_profiler()
 
         @app.middleware("http")
-        async def profile_session(request: Request, call_next: Callable):
+        async def profile_session(request: Request, call_next: Callable):  # noqa: ANN202
             params = request.query_params
             profiling = params.get("profile", False)
 

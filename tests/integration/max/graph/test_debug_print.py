@@ -47,7 +47,7 @@ def compiled_model(session: InferenceSession) -> Model:
 
 
 @pytest.fixture(scope="module")
-def compiled_buffer_model(session: InferenceSession):
+def compiled_buffer_model(session: InferenceSession):  # noqa: ANN201
     def print_input(x: BufferValue) -> BufferValue:
         x.print("test_x_value")
         return x

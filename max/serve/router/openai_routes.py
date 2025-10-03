@@ -211,7 +211,7 @@ class OpenAIChatResponseGenerator(
         self.stream_options = stream_options
         self.parser = parser
 
-    async def stream(self, request: TextGenerationRequest):
+    async def stream(self, request: TextGenerationRequest):  # noqa: ANN201
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -1000,7 +1000,7 @@ def _process_log_probabilities(
 class OpenAICompletionResponseGenerator(
     OpenAIResponseGenerator[CreateCompletionResponse]
 ):
-    async def stream(self, request: TextGenerationRequest):
+    async def stream(self, request: TextGenerationRequest):  # noqa: ANN201
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)

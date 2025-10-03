@@ -2444,7 +2444,7 @@ def topk_fused_sampling(
     )[0].tensor
 
 
-def sgmv_kernel(
+def sgmv_kernel(  # noqa: ANN201
     input: TensorValue,
     lora: TensorValue,
     lora_ids: TensorValue,

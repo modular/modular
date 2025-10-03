@@ -134,7 +134,7 @@ class ModularWhisperAttention(nn.Module):
         return O, None, None
 
 
-def get_model(device: torch.device, backend: str):
+def get_model(device: torch.device, backend: str):  # noqa: ANN201
     # Load model configuration first.
     config = WhisperConfig.from_pretrained("openai/whisper-tiny.en")
     # Modify to get more GPU-friendly tensor shapes (here, divisible by 8).

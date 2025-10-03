@@ -328,7 +328,7 @@ class AlgebraicDim(Dim):
         )
 
     @classmethod
-    def apply(cls, op: kgen.POC, *operands: DimLike):
+    def apply(cls, op: kgen.POC, *operands: DimLike):  # noqa: ANN206
         # kgen.ParamOperatorAttr eagerly folds on construction!
         #  - this can return static or symbolic dims
         #  - let Dim decide what type to returtn
@@ -344,7 +344,7 @@ class AlgebraicDim(Dim):
         }
         formatter = formatters[format_spec or "str"]
 
-        def format(dim: Dim):
+        def format(dim: Dim):  # noqa: ANN202
             formatted = formatter(dim)
             return (
                 f"({formatted})" if isinstance(dim, AlgebraicDim) else formatted

@@ -20,7 +20,7 @@ try:
     from IPython.core.magic import register_cell_magic  # type: ignore
 except ImportError:
 
-    def register_cell_magic(fn):  # noqa: ANN001
+    def register_cell_magic(fn):  # noqa: ANN001, ANN201
         return fn
 
 

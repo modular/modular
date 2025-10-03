@@ -678,7 +678,7 @@ def main(args: argparse.Namespace) -> None:
             )
 
             # code_debug is a long-context dataset based on InfiniteBench
-            def sample_requests_func(
+            def sample_requests_func(  # noqa: ANN202
                 dataset_path: str,
                 num_requests: int,
                 tokenizer: PreTrainedTokenizerBase,

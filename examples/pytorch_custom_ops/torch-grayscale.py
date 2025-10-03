@@ -22,7 +22,7 @@ from max.graph import ops
 
 
 @max.torch.graph_op
-def max_grayscale(pic: max.graph.TensorValue):
+def max_grayscale(pic: max.graph.TensorValue):  # noqa: ANN201
     scaled = pic.cast(DType.float32) * np.array([0.21, 0.71, 0.07])
     grayscaled = ops.sum(scaled, axis=-1).cast(pic.dtype)
     # max reductions don't remove the dimension, need to squeeze
@@ -30,7 +30,7 @@ def max_grayscale(pic: max.graph.TensorValue):
 
 
 @torch.compile
-def grayscale(pic: torch.Tensor):
+def grayscale(pic: torch.Tensor):  # noqa: ANN201
     output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
     max_grayscale(output, pic)  # Call as destination-passing style
     return output

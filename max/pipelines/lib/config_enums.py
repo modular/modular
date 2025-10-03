@@ -99,7 +99,7 @@ class SupportedEncoding(str, Enum):
     gptq = "gptq"
 
     @classmethod
-    def parse_from_file_name(cls, name: str):
+    def parse_from_file_name(cls, name: str):  # noqa: ANN206
         # TODO(AITLIB-127): Robustify detection of quantization encoding
         name = name.lower()
         if "f32" in name or "fp32" in name or "float32" in name:

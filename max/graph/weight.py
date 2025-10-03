@@ -600,7 +600,7 @@ class Weight(TensorValue):
         return shards
 
 
-def _add_weight_to_graph(weight: Weight):
+def _add_weight_to_graph(weight: Weight):  # noqa: ANN202
     try:
         current_graph = graph.Graph.current
     except LookupError:

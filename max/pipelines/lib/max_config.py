@@ -1023,7 +1023,7 @@ class MAXConfig:
                 self._config_instance = config_instance
                 self._original_parse_args = parser_instance.parse_args
 
-            def parse_args(  # type: ignore[override]
+            def parse_args(  # type: ignore[override]  # noqa: ANN202
                 self,
                 args: list[str] | None = None,
                 namespace: argparse.Namespace | None = None,

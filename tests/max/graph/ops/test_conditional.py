@@ -40,10 +40,10 @@ def test_conditional_with_results() -> None:
     with Graph("conditional_with_returns", input_types=()) as graph:
         cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
-        def then_fn():
+        def then_fn():  # noqa: ANN202
             return ops.constant(1, DType.int32, device=DeviceRef.CPU())
 
-        def else_fn():
+        def else_fn():  # noqa: ANN202
             return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
         result = ops.cond(
@@ -63,10 +63,10 @@ def test_conditional_type_check() -> None:
     with Graph("conditional_type_check", input_types=()) as graph:
         cond = ops.constant(False, dtype=DType.bool, device=DeviceRef.CPU())
 
-        def then_fn():
+        def then_fn():  # noqa: ANN202
             return ops.constant(1.0, DType.float32, device=DeviceRef.CPU())
 
-        def else_fn():
+        def else_fn():  # noqa: ANN202
             return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
         try:

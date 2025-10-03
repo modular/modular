@@ -1296,7 +1296,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         we have vision and language models (graph) loaded.
         """
 
-        def build_vision_model():
+        def build_vision_model():  # noqa: ANN202
             logger.info("Building and compiling vision model...")
             before = time.perf_counter()
             vision_model_graph = self._llama3_vision_vision_graph()
@@ -1310,7 +1310,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             )
             return vision_model
 
-        def build_language_model():
+        def build_language_model():  # noqa: ANN202
             logger.info("Building and compiling language model...")
             before = time.perf_counter()
             language_model_graph = self._llama3_vision_language_graph()

@@ -70,7 +70,7 @@ def _process_input_signal(
     return input_tensor
 
 
-def irfft(
+def irfft(  # noqa: ANN201
     input_tensor: StrongTensorValueLike,
     n: int | None = None,
     axis: int = -1,

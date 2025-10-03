@@ -24,7 +24,7 @@ from max.graph.quantization import QuantizationEncoding
 
 
 # Helper function to create tensor types with specific dtypes
-def tensor_types_with_dtype(dtype: DType, **kwargs):
+def tensor_types_with_dtype(dtype: DType, **kwargs):  # noqa: ANN201
     return tensor_types(dtypes=st.just(dtype), **kwargs)
 
 

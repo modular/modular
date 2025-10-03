@@ -31,7 +31,7 @@ from max.graph import DeviceRef, Dim, StaticDim, TensorType, ops
 shared_shapes = st.shared(shapes())
 
 
-def with_dim(base_type: TensorType, dim: Dim, axis: int):
+def with_dim(base_type: TensorType, dim: Dim, axis: int):  # noqa: ANN201
     # Create a tensor with a static dimension on the specified axis
     # If negative, update the axis for the new dim
     return TensorType(
