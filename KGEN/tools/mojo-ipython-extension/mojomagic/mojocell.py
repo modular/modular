@@ -72,7 +72,7 @@ def _dllpath() -> pathlib.Path:
     return path
 
 
-def _load_dll():
+def _load_dll():  # noqa: ANN202
     dll_path = _dllpath().as_posix()
     sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
     lib = ctypes.CDLL(dll_path, ctypes.RTLD_GLOBAL)
@@ -80,7 +80,7 @@ def _load_dll():
     return lib
 
 
-def _load_function():
+def _load_function():  # noqa: ANN202
     funcname = "iPythonMagicMojoCellExecute"
     lib = _load_dll()
     func = getattr(lib, funcname)
@@ -100,7 +100,7 @@ def _parse_options(line: str) -> dict:
     parses value to bool(False) if lowercase value is false, 0, off, no or empty
     """
 
-    def parse_part(part):  # noqa: ANN001
+    def parse_part(part):  # noqa: ANN001, ANN202
         parts = part.split("=", 1)
         if len(parts) == 1:
             return (parts[0], True)
@@ -202,7 +202,7 @@ class _MojoMagic(IPython.core.magic.Magics):
 
         symbols = (name for name in dir(module) if not name.startswith("__"))
 
-        def wrapper(*args, name):  # noqa: ANN001
+        def wrapper(*args, name):  # noqa: ANN001, ANN202
             mojofunc = self.symbol_table[name]
             return mojofunc(*args)
 

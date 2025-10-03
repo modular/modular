@@ -260,7 +260,7 @@ class MojoKernel(Kernel):
             raise RuntimeError("Unable to locate `MojoJupyter` library.")
         return ctypes.cdll.LoadLibrary(str(mojoJupyterPath))
 
-    def do_execute(
+    def do_execute(  # noqa: ANN201
         self,
         code: str,
         silent: bool = False,
@@ -337,7 +337,7 @@ class MojoKernel(Kernel):
                 "execution_count": self.execution_count,
             }
 
-    def do_complete(self, code: str, cursor_pos: int):
+    def do_complete(self, code: str, cursor_pos: int):  # noqa: ANN201
         """Find code completions for the given code and cursor position."""
 
         # The type of the completion function, it takes a completion label.
