@@ -47,7 +47,7 @@ def functional(op: Op) -> Op:
         return tensor.Tensor.from_graph_value(result)
 
     @functools.wraps(op)
-    def wrapped(*args, **kwargs):
+    def wrapped(*args, **kwargs):  # noqa: ANN202
         try:
             graph = Graph.current
         except LookupError:

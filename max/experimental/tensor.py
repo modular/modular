@@ -82,7 +82,7 @@ T = TypeVar("T")
 
 
 @contextlib.contextmanager
-def contextvar_context(var: ContextVar[T], value: T):
+def contextvar_context(var: ContextVar[T], value: T):  # noqa: ANN201
     token = var.set(value)
     try:
         yield
@@ -109,12 +109,12 @@ def defaults(
     return (dtype or _default_dtype(device)), device
 
 
-def default_device(device: Device):
+def default_device(device: Device):  # noqa: ANN201
     """Context manager for setting the default device for tensors."""
     return contextvar_context(_DEFAULT_DEVICE, device)
 
 
-def default_dtype(dtype: DType):
+def default_dtype(dtype: DType):  # noqa: ANN201
     """Context manager for setting the default dtype for tensors."""
     return contextvar_context(_DEFAULT_DTYPE, dtype)
 
@@ -418,7 +418,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return self
 
     @property
-    async def realize(self):
+    async def realize(self):  # noqa: ANN201
         """Force the tensor to realize if it is not already."""
         return await self
 
@@ -461,7 +461,7 @@ class Tensor(DLPackArray, HasTensorValue):
     def __bool__(self) -> bool:
         return bool(self.item())
 
-    def _values(self):
+    def _values(self):  # noqa: ANN202
         self._sync_realize()
         dt = self.driver_tensor.to(CPU())
         for idx in dt._iterate_indices():
@@ -495,7 +495,7 @@ class Tensor(DLPackArray, HasTensorValue):
         # Tensors are value-semantic
         return self
 
-    def item(self):
+    def item(self):  # noqa: ANN201
         if self.num_elements() != 1:
             raise TypeError()
         self._sync_realize()
