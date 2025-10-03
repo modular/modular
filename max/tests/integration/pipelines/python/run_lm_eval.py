@@ -18,7 +18,7 @@ def monkeypatch_api_timeout() -> None:
     old_client_session = getattr(api_models, "ClientSession")  # noqa: B009
 
     @functools.wraps(old_client_session)
-    def wrapped_client_session(*args, **kwargs):
+    def wrapped_client_session(*args, **kwargs):  # noqa: ANN202
         kwargs["timeout"] = aiohttp.ClientTimeout(total=None)
         return old_client_session(*args, **kwargs)
 

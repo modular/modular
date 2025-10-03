@@ -373,7 +373,7 @@ def test_where() -> None:
 
 def test_functional_returns_tensor() -> None:
     @F.functional
-    def returns_tensor():
+    def returns_tensor():  # noqa: ANN202
         return Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
 
     result = returns_tensor()

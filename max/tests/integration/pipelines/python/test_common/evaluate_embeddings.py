@@ -18,7 +18,7 @@ from max.interfaces import (
 from max.pipelines import EmbeddingsPipeline
 
 
-def encode(
+def encode(  # noqa: ANN201
     pipeline: EmbeddingsPipeline,
     tokenizer: PipelineTokenizer,
     prompts: Iterable[str],

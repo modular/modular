@@ -162,7 +162,7 @@ def fp8_gemm_kernel(
     tl.store(c_ptrs, c, mask=mask)
 
 
-def fp8_gemm(
+def fp8_gemm(  # noqa: ANN201
     a: torch.Tensor, a_s: torch.Tensor, b: torch.Tensor, b_s: torch.Tensor
 ):
     """
@@ -240,7 +240,7 @@ def create_max_fp8_result(
     K = input_tensor.shape[-1]
     N = weight_tensor.shape[0]
 
-    def _build_graph():
+    def _build_graph():  # noqa: ANN202
         with Graph(
             "fp8_matmul",
             input_types=(

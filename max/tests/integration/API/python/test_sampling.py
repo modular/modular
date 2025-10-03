@@ -642,7 +642,7 @@ def test_top_p_sampling(session: InferenceSession) -> None:
     max_k_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
     temperature_type = TensorType(DType.float32, [1], device=device_ref)
 
-    def create_sampling_graph():
+    def create_sampling_graph():  # noqa: ANN202
         with Graph(
             "top_p_sampling",
             input_types=(
@@ -901,7 +901,7 @@ def test_batch_sampling_arguments(session: InferenceSession) -> None:
     test_temperature_sampling()
 
 
-def rejection_sampler_reference(
+def rejection_sampler_reference(  # noqa: ANN201
     target_probs: torch.Tensor,  # [batch_size, k, vocab_size]
     draft_probs: torch.Tensor,  # [batch_size, k, vocab_size]
     draft_token_ids: torch.Tensor,  # [batch_size, k]

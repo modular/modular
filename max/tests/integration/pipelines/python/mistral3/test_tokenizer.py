@@ -45,7 +45,7 @@ def mock_tokenizer_base(mocker: MockerFixture) -> None:
 
 
 @pytest.fixture
-def sample_chat_template():
+def sample_chat_template():  # noqa: ANN201
     """Sample chat template for testing (simplified version of real Mistral template)."""
     return {
         "chat_template": "{%- set today = strftime_now(\"%Y-%m-%d\") %}\n{{- bos_token }}\n{%- for message in messages %}\n    {%- if message['role'] == 'user' %}\n        {{- '[INST]' + message['content'] + '[/INST]' }}\n    {%- elif message['role'] == 'assistant' %}\n        {{- message['content'] + eos_token }}\n    {%- endif %}\n{%- endfor %}"

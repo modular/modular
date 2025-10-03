@@ -40,7 +40,7 @@ ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-7
 
 
-def torch_freqs_cis(dim: int, theta: float):
+def torch_freqs_cis(dim: int, theta: float):  # noqa: ANN201
     freqs = 1.0 / (
         theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim)
     )
@@ -52,7 +52,7 @@ def torch_freqs_cis(dim: int, theta: float):
     return freqs_cis
 
 
-def torch_llama3_freqs_cis(
+def torch_llama3_freqs_cis(  # noqa: ANN201
     dim: int,
     theta: float,
     factor: float,
@@ -90,7 +90,7 @@ def torch_llama3_freqs_cis(
     return freqs_cis
 
 
-def torch_dynamic_rope_freqs_cis(dim: int, theta: float, max_seq_len: int):
+def torch_dynamic_rope_freqs_cis(dim: int, theta: float, max_seq_len: int):  # noqa: ANN201
     inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2) / dim))
     t = torch.arange(max_seq_len * 2.0, dtype=torch.float32)
     freqs = torch.outer(t, inv_freq)
@@ -104,7 +104,7 @@ class RopeParams:
     theta: float
 
     @property
-    def head_dim(self):
+    def head_dim(self):  # noqa: ANN201
         return self.dim // self.n_heads
 
 

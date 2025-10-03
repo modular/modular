@@ -40,12 +40,12 @@ class SuperModule(Module):
 
 
 @pytest.fixture
-def test_module():
+def test_module():  # noqa: ANN201
     return TestModule(a=Tensor.constant(1), sub=SubModule(b=Tensor.constant(2)))
 
 
 @pytest.fixture
-def super_module(test_module: TestModule):
+def super_module(test_module: TestModule):  # noqa: ANN201
     return SuperModule(mod=test_module)
 
 
@@ -169,7 +169,7 @@ def test_apply_to_parameters__qualified_names(test_module: TestModule) -> None:
     names = set()
     expected = dict(test_module.parameters).keys()
 
-    def lookup(name: str, tensor: Tensor):
+    def lookup(name: str, tensor: Tensor):  # noqa: ANN202
         names.add(name)
         return tensor
 
@@ -208,7 +208,7 @@ def test_load_state_simple_dict_lookup_failure(test_module: TestModule) -> None:
 
 
 def test_load_state_name_remapping(test_module: TestModule) -> None:
-    def remap_name(name: str):
+    def remap_name(name: str):  # noqa: ANN202
         name = re.sub(r"\bsub\.", "feed_forward.", name)
         return name
 

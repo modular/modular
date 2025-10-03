@@ -111,7 +111,7 @@ def max_flash_attention_with_sinks(
         DeviceRef.GPU(),
     )
 
-    def build_graph():
+    def build_graph():  # noqa: ANN202
         with Graph(
             "flash_attention_with_sinks",
             input_types=[

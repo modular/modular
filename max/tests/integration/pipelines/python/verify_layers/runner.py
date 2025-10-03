@@ -21,7 +21,7 @@ from verify_layers.capture import (
 from verify_layers.comparison import compare_layer_outputs
 
 
-def run_layer_verification(
+def run_layer_verification(  # noqa: ANN201
     device_type: str,
     devices: str,
     pipeline: str,

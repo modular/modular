@@ -23,7 +23,7 @@ from transformers import (
 )
 
 
-def run_text_generation(
+def run_text_generation(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer
     | PreTrainedTokenizerFast
@@ -65,7 +65,7 @@ def run_text_generation(
     )
 
 
-def run_text_generation_with_custom_image_processing(
+def run_text_generation_with_custom_image_processing(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer
     | PreTrainedTokenizerFast

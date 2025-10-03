@@ -69,7 +69,7 @@ ENCODING_TO_TORCH_DTYPE: dict[str, torch.dtype] = {
 
 
 @contextmanager
-def maybe_log_hf_downloads(enable_logging: bool):
+def maybe_log_hf_downloads(enable_logging: bool):  # noqa: ANN201
     """Context manager that conditionally logs HuggingFace file downloads."""
     if not enable_logging:
         yield
@@ -77,7 +77,7 @@ def maybe_log_hf_downloads(enable_logging: bool):
 
     original_hf_hub_download = huggingface_hub.hf_hub_download
 
-    def logged_hf_hub_download(*args, **kwargs):
+    def logged_hf_hub_download(*args, **kwargs):  # noqa: ANN202
         repo_id = kwargs.get("repo_id") or (
             args[0] if len(args) > 0 else "unknown"
         )
@@ -1181,7 +1181,7 @@ def _detect_hf_flakes(
         return all_exceptions
 
     @functools.wraps(inner)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args, **kwargs):  # noqa: ANN202
         try:
             return inner(*args, **kwargs)
         except Exception as exc:

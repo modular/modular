@@ -286,7 +286,7 @@ def attention_weights(
 
     std = 0.008
 
-    def random_weight(*size):
+    def random_weight(*size):  # noqa: ANN202
         return torch.normal(0, std, size, dtype=dtype)
 
     return {

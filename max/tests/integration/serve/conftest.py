@@ -55,7 +55,7 @@ class SleepyEchoTokenGenerator(EchoTokenGenerator):
 
 
 # This has to be picklable and lambdas are not picklable
-def echo_factory():
+def echo_factory():  # noqa: ANN201
     return SleepyEchoTokenGenerator()
 
 
@@ -80,12 +80,12 @@ def echo_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
 
 
 @pytest.fixture(scope="session")
-def pipeline_config(request: pytest.FixtureRequest):
+def pipeline_config(request: pytest.FixtureRequest):  # noqa: ANN201
     return request.param
 
 
 @pytest.fixture(scope="session")
-def settings_config(request: pytest.FixtureRequest):
+def settings_config(request: pytest.FixtureRequest):  # noqa: ANN201
     """Fixture to control settings configuration"""
     return getattr(request, "param", {"MAX_SERVE_USE_HEARTBEAT": True})
 

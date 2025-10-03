@@ -16,7 +16,7 @@ from pytest_mock import MockerFixture
 
 
 @pytest.fixture(autouse=True)
-def clear_hooks_between_tests():
+def clear_hooks_between_tests():  # noqa: ANN201
     yield
     clear_hooks()
 

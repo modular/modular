@@ -587,7 +587,7 @@ class KLDivergenceValidator(DistanceValidatorBase):
         return "kl"
 
     @staticmethod
-    def _pretty_names():
+    def _pretty_names():  # noqa: ANN205
         return ["KL Divergence"]
 
     def threshold_str(self) -> str:
@@ -831,7 +831,7 @@ def _print_diff_table(
     table.print()
 
 
-def _is_close(
+def _is_close(  # noqa: ANN202
     a: numpy.typing.NDArray,
     b: numpy.typing.NDArray,
     absolute_tolerance: float,

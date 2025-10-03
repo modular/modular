@@ -14,7 +14,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.nn import GroupNorm
 
 
-def max_group_norm(
+def max_group_norm(  # noqa: ANN201
     gpu_session: InferenceSession,
     input_tensor: torch.Tensor,
     num_groups: int,

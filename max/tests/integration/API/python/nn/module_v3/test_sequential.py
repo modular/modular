@@ -21,7 +21,7 @@ class TestModule(Module):
         return x + self.a
 
 
-def strip_margin(s: str, margin_character: str = "|"):
+def strip_margin(s: str, margin_character: str = "|"):  # noqa: ANN201
     return re.sub(
         rf"^\s*\{margin_character}", "", s.strip(), flags=re.MULTILINE
     )

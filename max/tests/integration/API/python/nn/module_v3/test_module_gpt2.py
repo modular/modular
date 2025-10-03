@@ -34,7 +34,7 @@ from max.nn.module_v3 import (
 #   a valid MLIR context and so the whole function has to be
 #   wrapped in @F.functional.
 @F.functional
-def causal_mask(
+def causal_mask(  # noqa: ANN201
     sequence_length: DimLike,
     num_tokens: DimLike,
     *,
@@ -69,11 +69,11 @@ class MultiHeadAttention(Module):
         self.out_proj = Linear(out_dim, out_dim)
 
     @property
-    def in_dim(self):
+    def in_dim(self):  # noqa: ANN201
         return self.query.in_dim
 
     @property
-    def out_dim(self):
+    def out_dim(self):  # noqa: ANN201
         return self.query.out_dim
 
     def __call__(self, x: Tensor) -> Tensor:
@@ -233,12 +233,12 @@ class GPTModel(Module):
 
 
 @pytest.fixture
-def device():
+def device():  # noqa: ANN201
     yield Accelerator() if accelerator_count() else CPU()
 
 
 @pytest.fixture
-def gpt_model(device: Device):
+def gpt_model(device: Device):  # noqa: ANN201
     model = GPTModel(
         dim=64,
         num_layers=2,

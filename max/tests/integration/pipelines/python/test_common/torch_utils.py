@@ -33,7 +33,7 @@ def _create_logits_store() -> tuple[list[dict], Callable]:
     """
     saved_logits = []
 
-    def store_logits(input_ids: torch.LongTensor, scores: torch.FloatTensor):
+    def store_logits(input_ids: torch.LongTensor, scores: torch.FloatTensor):  # noqa: ANN202
         _ = input_ids  # Unused.
         # Currently always passing in one batch at a time.
         scores_np = scores[0].cpu().detach().numpy()
@@ -50,7 +50,7 @@ def _create_logits_store() -> tuple[list[dict], Callable]:
     return saved_logits, store_logits
 
 
-def run_text_generation(
+def run_text_generation(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer
     | PreTrainedTokenizerFast
@@ -99,7 +99,7 @@ def run_text_generation(
     )
 
 
-def run_text_generation_with_custom_image_processing(
+def run_text_generation_with_custom_image_processing(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,
@@ -150,7 +150,7 @@ def run_text_generation_with_custom_image_processing(
     return results
 
 
-def run_embeddings_generation(
+def run_embeddings_generation(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,

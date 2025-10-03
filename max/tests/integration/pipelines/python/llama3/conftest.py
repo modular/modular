@@ -57,7 +57,7 @@ def session() -> InferenceSession:
 
 
 @pytest.fixture(scope="session")
-def llama_3_1_8b_instruct_local_path():
+def llama_3_1_8b_instruct_local_path():  # noqa: ANN201
     assert isinstance(LLAMA_3_1_HF_REVISION, str), (
         "LLAMA_3_1_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -75,7 +75,7 @@ def llama_3_1_8b_instruct_local_path():
 
 
 @pytest.fixture
-def llama_3_1_8b_lora_local_path():
+def llama_3_1_8b_lora_local_path():  # noqa: ANN201
     assert isinstance(LLAMA_3_1_LORA_HF_REVISION, str), (
         "LLAMA_3_1_LORA_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -93,7 +93,7 @@ def llama_3_1_8b_lora_local_path():
 
 
 @pytest.fixture
-def smollm2_135m_local_path():
+def smollm2_135m_local_path():  # noqa: ANN201
     assert isinstance(SMOLLM2_HF_REVISION, str), (
         "SMOLLM2_HF_REVISION must be a string and present in hf-repo-lock.tsv"
     )

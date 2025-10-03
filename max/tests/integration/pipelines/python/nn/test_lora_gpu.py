@@ -108,7 +108,7 @@ def create_lora_buffers(
     return lora_A_buffer, lora_B_buffer
 
 
-def setup_session_and_device(is_gpu: bool):
+def setup_session_and_device(is_gpu: bool):  # noqa: ANN201
     """Setup inference session and device."""
     device = Accelerator(0) if is_gpu else CPU()
     session = InferenceSession(devices=[device])
@@ -290,7 +290,7 @@ class TorchRoPEAttentionWithLoRA(nn.Module):
         self._cos_sin_cached = None
         self._seq_len_cached = 0
 
-    def _get_cos_sin(self, seq_len: int, device: torch.device):
+    def _get_cos_sin(self, seq_len: int, device: torch.device):  # noqa: ANN202
         if seq_len > self._seq_len_cached:
             self._seq_len_cached = seq_len
             t = torch.arange(seq_len, device=device, dtype=self.inv_freq.dtype)

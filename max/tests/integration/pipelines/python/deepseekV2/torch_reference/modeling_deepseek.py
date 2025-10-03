@@ -68,7 +68,7 @@ logger = logging.get_logger(__name__)
 _CONFIG_FOR_DOC = "DeepseekV2Config"
 
 
-def _get_unpad_data(attention_mask):  # noqa: ANN001
+def _get_unpad_data(attention_mask):  # noqa: ANN001, ANN202
     seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
     indices = torch.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
     max_seqlen_in_batch = seqlens_in_batch.max().item()
@@ -91,7 +91,7 @@ class DeepseekV2RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
 
-    def forward(self, hidden_states):  # noqa: ANN001
+    def forward(self, hidden_states):  # noqa: ANN001, ANN201
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
@@ -147,7 +147,7 @@ class DeepseekV2RotaryEmbedding(nn.Module):
             "sin_cached", emb.sin().to(dtype), persistent=False
         )
 
-    def forward(self, x, seq_len=None):  # noqa: ANN001
+    def forward(self, x, seq_len=None):  # noqa: ANN001, ANN201
         # x: [bs, num_attention_heads, seq_len, head_size]
         if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
             self._set_cos_sin_cache(
@@ -238,7 +238,7 @@ class DeepseekV2DynamicNTKScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
 
 
 # Inverse dim formula to find dim based on number of rotations
-def yarn_find_correction_dim(
+def yarn_find_correction_dim(  # noqa: ANN201
     num_rotations,  # noqa: ANN001
     dim,  # noqa: ANN001
     base=10000,  # noqa: ANN001
@@ -250,7 +250,7 @@ def yarn_find_correction_dim(
 
 
 # Find dim range bounds based on rotations
-def yarn_find_correction_range(
+def yarn_find_correction_range(  # noqa: ANN201
     low_rot,  # noqa: ANN001
     high_rot,  # noqa: ANN001
     dim,  # noqa: ANN001
@@ -266,13 +266,13 @@ def yarn_find_correction_range(
     return max(low, 0), min(high, dim - 1)  # Clamp values just in case
 
 
-def yarn_get_mscale(scale=1, mscale=1):  # noqa: ANN001
+def yarn_get_mscale(scale=1, mscale=1):  # noqa: ANN001, ANN201
     if scale <= 1:
         return 1.0
     return 0.1 * mscale * math.log(scale) + 1.0
 
 
-def yarn_linear_ramp_mask(min, max, dim):  # noqa: ANN001
+def yarn_linear_ramp_mask(min, max, dim):  # noqa: ANN001, ANN201
     if min == max:
         max += 0.001  # Prevent singularity
 
@@ -355,7 +355,7 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
 
 
 # Copied from transformers.models.llama.modeling_llama.rotate_half
-def rotate_half(x):  # noqa: ANN001
+def rotate_half(x):  # noqa: ANN001, ANN201
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
@@ -363,7 +363,7 @@ def rotate_half(x):  # noqa: ANN001
 
 
 # Copied from transformers.models.llama.modeling_llama.apply_rotary_pos_emb
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):  # noqa: ANN001
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):  # noqa: ANN001, ANN201
     """Applies Rotary Position Embedding to the query and key tensors.
     Args:
         q (`torch.Tensor`): The query tensor.
@@ -426,7 +426,7 @@ class DeepseekV2MLP(nn.Module):
         )
         self.act_fn = ACT2FN[config.hidden_act]
 
-    def forward(self, x):  # noqa: ANN001
+    def forward(self, x):  # noqa: ANN001, ANN201
         down_proj = self.down_proj(
             self.act_fn(self.gate_proj(x)) * self.up_proj(x)
         )
@@ -460,7 +460,7 @@ class MoEGate(nn.Module):
 
         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
 
-    def forward(self, hidden_states):  # noqa: ANN001
+    def forward(self, hidden_states):  # noqa: ANN001, ANN201
         bsz, seq_len, h = hidden_states.shape
         ### compute gating score
         hidden_states = hidden_states.view(-1, h)
@@ -553,14 +553,14 @@ class AddAuxiliaryLoss(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, x, loss):  # noqa: ANN001
+    def forward(ctx, x, loss):  # noqa: ANN001, ANN205
         assert loss.numel() == 1
         ctx.dtype = loss.dtype
         ctx.required_aux_loss = loss.requires_grad
         return x
 
     @staticmethod
-    def backward(ctx, grad_output):  # noqa: ANN001
+    def backward(ctx, grad_output):  # noqa: ANN001, ANN205
         grad_loss = None
         if ctx.required_aux_loss:
             grad_loss = torch.ones(
@@ -619,7 +619,7 @@ class DeepseekV2MoE(nn.Module):
                 config=config, intermediate_size=intermediate_size
             )
 
-    def forward(self, hidden_states):  # noqa: ANN001
+    def forward(self, hidden_states):  # noqa: ANN001, ANN201
         identity = hidden_states
         orig_shape = hidden_states.shape
         topk_idx, topk_weight, aux_loss = self.gate(hidden_states)
@@ -648,7 +648,7 @@ class DeepseekV2MoE(nn.Module):
         return y
 
     @torch.no_grad()
-    def moe_infer(self, x, topk_ids, topk_weight):  # noqa: ANN001
+    def moe_infer(self, x, topk_ids, topk_weight):  # noqa: ANN001, ANN201
         cnts = topk_ids.new_zeros((topk_ids.shape[0], len(self.experts)))
         cnts.scatter_(1, topk_ids, 1)
         tokens_per_expert = cnts.sum(dim=0)
@@ -869,7 +869,7 @@ class DeepseekV2Attention(nn.Module):
             else:
                 raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 
-    def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
+    def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):  # noqa: ANN202
         return (
             tensor.view(bsz, seq_len, self.num_heads, self.v_head_dim)
             .transpose(1, 2)
@@ -1165,7 +1165,7 @@ class DeepseekV2FlashAttention2(DeepseekV2Attention):
 
         return attn_output, attn_weights, past_key_value
 
-    def _flash_attention_forward(
+    def _flash_attention_forward(  # noqa: ANN202
         self,
         query_states,  # noqa: ANN001
         key_states,  # noqa: ANN001
@@ -1248,7 +1248,7 @@ class DeepseekV2FlashAttention2(DeepseekV2Attention):
 
         return attn_output
 
-    def _upad_input(
+    def _upad_input(  # noqa: ANN202
         self,
         query_layer,  # noqa: ANN001
         key_layer,  # noqa: ANN001
@@ -1535,7 +1535,7 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    def get_input_embeddings(self):
+    def get_input_embeddings(self):  # noqa: ANN201
         return self.embed_tokens
 
     def set_input_embeddings(self, value) -> None:  # noqa: ANN001
@@ -1727,13 +1727,13 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    def get_input_embeddings(self):
+    def get_input_embeddings(self):  # noqa: ANN201
         return self.model.embed_tokens
 
     def set_input_embeddings(self, value) -> None:  # noqa: ANN001
         self.model.embed_tokens = value
 
-    def get_output_embeddings(self):
+    def get_output_embeddings(self):  # noqa: ANN201
         return self.lm_head
 
     def set_output_embeddings(self, new_embeddings) -> None:  # noqa: ANN001
@@ -1742,7 +1742,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
     def set_decoder(self, decoder) -> None:  # noqa: ANN001
         self.model = decoder
 
-    def get_decoder(self):
+    def get_decoder(self):  # noqa: ANN201
         return self.model
 
     @add_start_docstrings_to_model_forward(DeepseekV2_INPUTS_DOCSTRING)
@@ -1839,7 +1839,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
             attentions=outputs.attentions,
         )
 
-    def prepare_inputs_for_generation(
+    def prepare_inputs_for_generation(  # noqa: ANN201
         self,
         input_ids,  # noqa: ANN001
         past_key_values=None,  # noqa: ANN001
@@ -1906,7 +1906,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
         return model_inputs
 
     @staticmethod
-    def _reorder_cache(past_key_values, beam_idx):  # noqa: ANN001
+    def _reorder_cache(past_key_values, beam_idx):  # noqa: ANN001, ANN205
         reordered_past = ()
         for layer_past in past_key_values:
             reordered_past += (
@@ -1941,7 +1941,7 @@ class DeepseekV2ForSequenceClassification(DeepseekV2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    def get_input_embeddings(self):
+    def get_input_embeddings(self):  # noqa: ANN201
         return self.model.embed_tokens
 
     def set_input_embeddings(self, value) -> None:  # noqa: ANN001

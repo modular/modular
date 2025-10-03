@@ -39,7 +39,7 @@ class SpeculativeDecodingSetup:
 
 
 @pytest.fixture(scope="function")
-def setup_speculative_decoding_pipeline(num_steps: int = 10):
+def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
@@ -595,7 +595,7 @@ def test_kv_cache_claiming_protocol() -> None:
     def track_external_claim(request_id: RequestID) -> None:
         call_order.append(("external_claim", request_id))
 
-    def track_fetch(batch: dict[RequestID, TextContext], num_steps: int):
+    def track_fetch(batch: dict[RequestID, TextContext], num_steps: int):  # noqa: ANN202
         call_order.append(
             ("fetch", [ctx.request_id for ctx in batch], num_steps)  # type: ignore
         )

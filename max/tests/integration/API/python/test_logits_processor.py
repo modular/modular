@@ -155,7 +155,7 @@ class TestLogitsProcessor:
 class TestApplyLogitsProcessors:
     """Test suite for apply_logits_processors function."""
 
-    def create_context_batch(self):
+    def create_context_batch(self):  # noqa: ANN201
         """Returns a batch of two contexts with different logits processors."""
 
         # In the functions below, each element must be individually assigned

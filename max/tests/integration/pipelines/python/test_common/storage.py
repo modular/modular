@@ -77,7 +77,7 @@ def _rgba_to_rgb(
     return converted
 
 
-def _convert_image_mode(image: Image.Image, to_mode: str):
+def _convert_image_mode(image: Image.Image, to_mode: str):  # noqa: ANN202
     if image.mode == to_mode:
         return image
     elif image.mode == "RGBA" and to_mode == "RGB":

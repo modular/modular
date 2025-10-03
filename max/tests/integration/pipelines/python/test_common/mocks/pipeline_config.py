@@ -104,7 +104,7 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        def mock_from_pretrained(
+        def mock_from_pretrained(  # noqa: ANN202
             model_name_or_path: str | os.PathLike[str], **kwargs: Any
         ):
             # Create a mock config with the correct architectures based on model
