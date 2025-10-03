@@ -2223,14 +2223,11 @@ struct ConvertPOPCallLLVMIntrinsic
   }
 };
 
-//===----------------------------------------------------------------------===//
-// ConvertPOPCallToAIRIntrinsic
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPCallToAIRIntrinsic
-    : public ConvertSymbolOpToLLVM<CallLLVMIntrinsicOp> {
-  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
-
+template <typename OpT>
+struct ConvertSymbolOpToAIR : public ConvertSymbolOpToLLVM<OpT> {
+  using BaseT = ConvertSymbolOpToLLVM<OpT>;
+  using BaseT::BaseT;
+  using BaseT::symtab;
   // Helper function to mangle type according to LLVM's mangling of args of
   // intrinsics.
   // See LLVM's getMangledTypeStr
@@ -2259,6 +2256,57 @@ struct ConvertPOPCallToAIRIntrinsic
     return airFunctionName != "air.wg.barrier";
   }
 
+  LLVM::LLVMFuncOp createAIRFunction(ConversionPatternRewriter &rewriter,
+                                     ModuleOp module, Location loc,
+                                     std::string unmangledFuncName,
+                                     ValueRange operands,
+                                     TypeRange resultTypes) const {
+    SmallVector<Type> argTypes;
+    for (Value value : operands)
+      argTypes.push_back(value.getType());
+
+    // Convert AIR intrinsic to regular function call with mangled argument
+    // types. Additionally remove "llvm." prefix to get
+    // "air.function_name.<type0>.<type1>..."
+    // TODO: Support result type if it's different to type of argument
+    if (requiresMangling(unmangledFuncName)) {
+      SmallVector<Type> uniqueTypes(argTypes.begin(), argTypes.end());
+      for (auto it = uniqueTypes.begin(), ei = llvm::unique(uniqueTypes);
+           it != ei; ++it) {
+        unmangledFuncName += "." + mangleType(*it);
+      }
+    }
+
+    auto func = symtab.template lookup<LLVM::LLVMFuncOp>(unmangledFuncName);
+    if (!func) {
+      // Create LLVM function type from the intrinsic operation
+
+      Type returnType = resultTypes.empty()
+                            ? LLVM::LLVMVoidType::get(rewriter.getContext())
+                            : resultTypes[0];
+      auto llvmFuncType = LLVM::LLVMFunctionType::get(returnType, argTypes);
+
+      // Get or create the AIR function declaration
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToStart(module.getBody());
+      func = rewriter.create<LLVM::LLVMFuncOp>(loc, unmangledFuncName,
+                                               llvmFuncType);
+      symtab.insert(func);
+    }
+    return func;
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPCallToAIRIntrinsic
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPCallToAIRIntrinsic
+    : public ConvertSymbolOpToAIR<CallLLVMIntrinsicOp> {
+  using BaseT = ConvertSymbolOpToAIR<CallLLVMIntrinsicOp>;
+  using BaseT::BaseT;
+  using BaseT::createAIRFunction;
+
   LogicalResult
   matchAndRewrite(CallLLVMIntrinsicOp op, CallLLVMIntrinsicOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
@@ -2276,47 +2324,109 @@ struct ConvertPOPCallToAIRIntrinsic
     if (!isMetalTriple(target.getTriple()))
       return failure();
 
-    SmallVector<Value> newOperands =
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
-    SmallVector<Type> argTypes;
-    for (Value value : newOperands)
-      argTypes.push_back(value.getType());
-
-    // Convert AIR intrinsic to regular function call with mangled argument
-    // types. Additionally remove "llvm." prefix to get
-    // "air.function_name.<type0>.<type1>..."
-    // TODO: Support result type if it's different to type of argument
-    std::string airFunctionName = intrinsicName.drop_front(5).str();
-    if (requiresMangling(airFunctionName)) {
-      SmallVector<Type> uniqueTypes(argTypes.begin(), argTypes.end());
-      for (auto it = uniqueTypes.begin(), ei = llvm::unique(uniqueTypes);
-           it != ei; ++it) {
-        airFunctionName += "." + mangleType(*it);
-      }
-    }
-
-    auto moduleOp = op->getParentOfType<mlir::ModuleOp>();
-    if (!moduleOp)
+    auto module = op->getParentOfType<mlir::ModuleOp>();
+    if (!module)
       return failure();
 
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(airFunctionName);
-    if (!func) {
-      // Create LLVM function type from the intrinsic operation
+    SmallVector<Value> newOperands =
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
 
-      Type returnType = op.getResultTypes().empty()
-                            ? LLVM::LLVMVoidType::get(op.getContext())
-                            : types[0];
-      auto llvmFuncType = LLVM::LLVMFunctionType::get(returnType, argTypes);
+    std::string airFunctionName = intrinsicName.drop_front(5).str();
+    LLVM::LLVMFuncOp func = createAIRFunction(
+        rewriter, module, op.getLoc(), airFunctionName, newOperands, types);
 
-      // Get or create the AIR function declaration
-      OpBuilder::InsertionGuard guard(rewriter);
-      rewriter.setInsertionPointToStart(moduleOp.getBody());
-      func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), airFunctionName,
-                                               llvmFuncType);
-      symtab.insert(func);
-    }
     // Replace the intrinsic call with a regular function call
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, newOperands);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPMinToAIR
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPMinToAIR : public ConvertSymbolOpToAIR<MinOp> {
+  using BaseT = ConvertSymbolOpToAIR<MinOp>;
+  using BaseT::BaseT;
+  using BaseT::createAIRFunction;
+
+  LogicalResult
+  matchAndRewrite(MinOp op, MinOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    SmallVector<Type> types;
+    if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
+      return failure();
+
+    auto module = op->getParentOfType<mlir::ModuleOp>();
+    if (!module)
+      return failure();
+
+    SmallVector<Value> operands = adaptor.getOperands();
+    KGENDType dtype = *op.getType().getResolvedDType();
+
+    std::string funcName;
+
+    if (dtype.isSInt() || dtype.isIndex()) {
+      funcName = "air.min.s";
+    } else if (dtype.isBool() || dtype.isUInt() || dtype.isUIndex()) {
+      funcName = "air.min.u";
+    } else {
+      // That corresponds to fp min with precise fp model.
+      // TODO: With 'fast' fp model support, use `air.fast_min` intrinsic
+      // instead.
+      funcName = "air.min";
+    }
+
+    LLVM::LLVMFuncOp func = createAIRFunction(rewriter, module, op.getLoc(),
+                                              funcName, operands, types);
+
+    // Replace the intrinsic call with a regular function call
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, operands);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPMaxToAIR
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPMaxToAIR : public ConvertSymbolOpToAIR<MaxOp> {
+  using BaseT = ConvertSymbolOpToAIR<MaxOp>;
+  using BaseT::BaseT;
+  using BaseT::createAIRFunction;
+
+  LogicalResult
+  matchAndRewrite(MaxOp op, MaxOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    SmallVector<Type> types;
+    if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
+      return failure();
+
+    auto module = op->getParentOfType<mlir::ModuleOp>();
+    if (!module)
+      return failure();
+
+    SmallVector<Value> operands = adaptor.getOperands();
+    KGENDType dtype = *op.getType().getResolvedDType();
+
+    std::string funcName;
+
+    if (dtype.isSInt() || dtype.isIndex()) {
+      funcName = "air.max.s";
+    } else if (dtype.isBool() || dtype.isUInt() || dtype.isUIndex()) {
+      funcName = "air.max.u";
+    } else {
+      // That corresponds to fp max with precise fp model.
+      // TODO: With 'fast' fp model support, use `air.fast_max` intrinsic
+      // instead.
+      funcName = "air.max";
+    }
+
+    LLVM::LLVMFuncOp func = createAIRFunction(rewriter, module, op.getLoc(),
+                                              funcName, operands, types);
+
+    // Replace the intrinsic call with a regular function call
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, operands);
     return success();
   }
 };
@@ -2618,6 +2728,10 @@ void LowerPOPToLLVMPass::runOnOperation() {
     StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
     return intrinsicName.starts_with("llvm.air.");
   });
+
+  // These POP operations will be lowered to AIR intrinsics.
+  target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp>(
+      [&](Operation *op) { return isMetalTriple(targetInfo.getTriple()); });
 
   POPToLLVMTypeConverter typeConverter(targetInfo);
 
@@ -3119,12 +3233,17 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
     return !intrinsicName.starts_with("llvm.air.");
   });
 
+  // These POP operations will be lowered to AIR intrinsics.
+  target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp>(
+      [&](Operation *op) { return !isMetalTriple(targetInfo.getTriple()); });
+
   // Convert external calls.
   target.addIllegalOp<GlobalAllocOp, ExternalCallOp, ExternPointerSymbolOp>();
   patterns.insert<ConvertPOPGlobalAlloc, ConvertPOPExternalCall,
                   ConvertExternPointerSymbol, ConvertPOPAlignedAlloc,
                   ConvertPOPAlignedFree, ConvertPOPNoAliasPointerCast,
-                  ConvertPOPCallToAIRIntrinsic>(typeConverter, symtab);
+                  ConvertPOPCallToAIRIntrinsic, ConvertPOPMinToAIR,
+                  ConvertPOPMaxToAIR>(typeConverter, symtab);
 
   // Convert global constants.
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;

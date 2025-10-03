@@ -245,4 +245,60 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
     %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.air.cos", (%input) : (!kgen.struct<(!pop.simd<2, f16>)>) -> !pop.simd<2, f16>
     llvm.return
   }
+
+  // CHECK-LABEL: @test_air_min_f16_mangling
+  kgen.func @test_air_min_f16_mangling(%arg0: !pop.scalar<f16>, %arg1: !pop.scalar<f16>) {
+    // CHECK: llvm.call @air.min.f16
+    %0 = pop.min %arg0, %arg1 : !pop.scalar<f16>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_min_si32_mangling
+  kgen.func @test_air_min_si32_mangling(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) {
+    // CHECK: llvm.call @air.min.s.i32
+    %0 = pop.min %arg0, %arg1 : !pop.scalar<si32>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_min_ui32_mangling
+  kgen.func @test_air_min_ui32_mangling(%arg0: !pop.scalar<ui32>, %arg1: !pop.scalar<ui32>) {
+    // CHECK: llvm.call @air.min.u.i32
+    %0 = pop.min %arg0, %arg1 : !pop.scalar<ui32>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_min_v2i32_mangling
+  kgen.func @test_air_min_v2i32_mangling(%arg0: !pop.simd<2, ui32>, %arg1: !pop.simd<2, ui32>) {
+    // CHECK: llvm.call @air.min.u.v2i32
+    %0 = pop.min %arg0, %arg1 : !pop.simd<2, ui32>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_max_f16_mangling
+  kgen.func @test_air_max_f16_mangling(%arg0: !pop.scalar<f16>, %arg1: !pop.scalar<f16>) {
+    // CHECK: llvm.call @air.max.f16
+    %0 = pop.max %arg0, %arg1 : !pop.scalar<f16>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_max_si32_mangling
+  kgen.func @test_air_max_si32_mangling(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) {
+    // CHECK: llvm.call @air.max.s.i32
+    %0 = pop.max %arg0, %arg1 : !pop.scalar<si32>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_max_ui32_mangling
+  kgen.func @test_air_max_ui32_mangling(%arg0: !pop.scalar<ui32>, %arg1: !pop.scalar<ui32>) {
+    // CHECK: llvm.call @air.max.u.i32
+    %0 = pop.max %arg0, %arg1 : !pop.scalar<ui32>
+    llvm.return
+  }
+
+  // CHECK-LABEL: @test_air_max_v2i32_mangling
+  kgen.func @test_air_max_v2i32_mangling(%arg0: !pop.simd<2, ui32>, %arg1: !pop.simd<2, ui32>) {
+    // CHECK: llvm.call @air.max.u.v2i32
+    %0 = pop.max %arg0, %arg1 : !pop.simd<2, ui32>
+    llvm.return
+  }
 }
