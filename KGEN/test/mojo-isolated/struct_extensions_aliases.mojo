@@ -55,10 +55,11 @@ __extension Spaceship:
 
 # CHECK-LABEL: lit.fn @"test_function()"
 fn test_function():
-    # This should work - accessing aliases from extensions
-    # CHECK: lit.alias.decl *"MySpeed`"
+    # Note how this is resolving to ZInt right here, it means the lookup worked.
+    # CHECK: lit.alias.decl *"MySpeed`": !ZInt
     alias MySpeed = Spaceship.MaxSpeed
-    # CHECK: lit.var.decl "speed"
+    # Note how this is resolving to ZInt right here, it means the lookup worked.
+    # CHECK: lit.var.decl "speed" var : !lit.ref<!ZInt,
     var speed = MySpeed
 
 # // -----
@@ -68,9 +69,6 @@ fn test_function():
 trait Copyable:
     fn __copyinit__(out self, other: Self):
         ...
-
-    fn copy(self) -> Self:
-        return Self.__copyinit__(self)
 
 
 trait ImplicitlyCopyable(Copyable):
@@ -90,5 +88,86 @@ __extension Spaceship:
 
     # CHECK-LABEL: lit.fn @"get_max_speed
     fn get_max_speed(self: Spaceship) -> ZInt:
-        # CHECK: %0 = kgen.param.materialize: !ZInt =
+        # Note how it's ZInt right here, it means the lookup worked.
+        # CHECK: kgen.param.materialize: !ZInt
         return ZInt(MaxSpeed)
+
+# // -----
+
+# Test an extension method accessing a struct alias via self argument.
+
+trait Copyable:
+    fn __copyinit__(out self, other: Self):
+        ...
+trait ImplicitlyCopyable(Copyable):
+    pass
+
+struct ZInt(ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+    fn __init__(out self, other: ZInt):
+        pass
+
+struct Rocket:
+    alias DefaultFuel = ZInt()
+    var fuel: ZInt
+
+__extension Rocket:
+    # CHECK-LABEL: lit.fn @"get_default_fuel
+    fn get_default_fuel(self) -> ZInt:
+        # Note how it's ZInt right here, it means the lookup worked.
+        # CHECK: kgen.param.materialize: !ZInt
+        return self.DefaultFuel  # access via self
+
+## // -----
+
+# Tests an extension's alias accessing its struct's parameter declaration.
+
+trait AnyType:
+    pass
+
+struct Rocket[T: AnyType]:
+    pass
+
+__extension Rocket:
+    alias FuelType = T
+
+# // -----
+
+# Test accessing a generic struct's extension's alias
+# Also tests calling an extension method on a generic container
+
+trait Copyable:
+    fn __copyinit__(out self, other: Self):
+        ...
+
+trait ImplicitlyCopyable(Copyable):
+    pass
+
+struct ZInt(ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+    fn __init__(out self, other: ZInt):
+        pass
+
+struct Container[T: ImplicitlyCopyable]:
+    var data: T
+
+__extension Container:
+    alias ElementType = T
+    alias DefaultSize = ZInt()
+
+    fn get_element_via_self(self: Container[T]) -> T:
+        return self.data
+
+# CHECK-LABEL: lit.fn @"test_self_alias_with_generic_1
+fn test_self_alias_with_generic_1(container: Container[ZInt]):
+    # Note how it's ZInt right here, it means the lookup worked.
+    # CHECK: lit.alias.decl *"MyElementType`1": !ImplicitlyCopyable = <!ZInt>
+    alias MyElementType = Container[ZInt].ElementType
+
+# CHECK-LABEL: lit.fn @"test_self_alias_with_generic_2
+fn test_self_alias_with_generic_2(container: Container[ZInt]):
+    # Note how it's ZInt right here, it means the lookup worked.
+    # CHECK: %element = lit.var.decl "element" var : !lit.ref<!ZInt,
+    var element = container.get_element_via_self()

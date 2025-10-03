@@ -14,6 +14,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -432,14 +433,19 @@ SmallVector<VariadicKind>
 LIT::getContextualVariadicParams(ArrayRef<Operation *> ops) {
   SmallVector<VariadicKind> variadics;
   for (Operation *op : ops) {
-    // If we are dealing with a struct or trait, we concatenate their variadic
-    // masks.
+    // If we are dealing with a struct, trait, or extension, we concatenate
+    // their variadic masks. For extensions, use the target struct's variadic
+    // information.
     PogListAttr paramListAttr;
     if (auto structDecl = ::dyn_cast<StructDeclOp>(op))
       paramListAttr = structDecl.getSignature().getParamListAttrs();
     else if (auto traitDecl = ::dyn_cast<TraitDeclOp>(op))
       paramListAttr = traitDecl.getSignature().getParamListAttrs();
-    else
+    else if (auto extensionDecl = ::dyn_cast<ExtensionDeclOp>(op)) {
+      // Extensions inherit parameters from their target struct.
+      // The MojoParser already mirrors these parameters during resolution.
+      paramListAttr = extensionDecl.getSignature().getParamListAttrs();
+    } else
       continue;
 
     for (PogMetadataAttr pogAttr : paramListAttr.getPogs())
