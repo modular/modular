@@ -284,6 +284,48 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     return create_float64(m, p)
 
 
+alias _ascii_lower: Byte = ord("A") ^ ord("a")
+
+
+@always_inline
+fn _is_nan(stripped: StringSlice) -> Bool:
+    alias `n` = Byte(ord("n"))
+    alias `a` = Byte(ord("a"))
+    var ptr = stripped.unsafe_ptr()
+    return stripped.byte_length() == 3 and (
+        (ptr[0] | _ascii_lower == `n`)
+        and (ptr[1] | _ascii_lower == `a`)
+        and (ptr[2] | _ascii_lower == `n`)
+    )
+
+
+@always_inline
+fn _is_inf(stripped: StringSlice) -> Bool:
+    alias `i` = Byte(ord("i"))
+    alias `n` = Byte(ord("n"))
+    alias `f` = Byte(ord("f"))
+    alias `t` = Byte(ord("t"))
+    alias `y` = Byte(ord("y"))
+    var ptr = stripped.unsafe_ptr()
+    var in_start = (ptr[0] | _ascii_lower == `i`) and (
+        ptr[1] | _ascii_lower == `n`
+    )
+    # f was removed previously
+    var is_in = stripped.byte_length() == 2 and in_start
+    return in_start and (
+        is_in
+        or (
+            stripped.byte_length() == 8
+            and (ptr[2] | _ascii_lower == `f`)
+            and (ptr[3] | _ascii_lower == `i`)
+            and (ptr[4] | _ascii_lower == `n`)
+            and (ptr[5] | _ascii_lower == `i`)
+            and (ptr[6] | _ascii_lower == `t`)
+            and (ptr[7] | _ascii_lower == `y`)
+        )
+    )
+
+
 fn _atof(x: StringSlice) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
@@ -305,10 +347,9 @@ fn _atof(x: StringSlice) raises -> Float64:
     sign_and_stripped = get_sign(stripped)
     sign = sign_and_stripped[0]
     stripped = sign_and_stripped[1]
-    lowercase = stripped.lower()
-    if lowercase == "nan":
+    if _is_nan(stripped):
         return FloatLiteral.nan
-    if lowercase == "infinity" or lowercase == "in":  # f was removed previously
+    elif _is_inf(stripped):
         return FloatLiteral.infinity * sign
     try:
         w_and_q = _get_w_and_q_from_float_string(stripped)
