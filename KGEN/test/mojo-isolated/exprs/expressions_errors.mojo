@@ -435,7 +435,7 @@ fn badParamAnd[a: Bool, b: WeirdBoolish]():
   #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}
   alias c = a and b
 
-# expected-error @+1 {{'Self' type may only be used inside a struct or trait}}
+# expected-error @+1 {{'Self' type may only be used inside a struct, trait, or extension}}
 fn badSelf(a: Self):
   var x: Self.field
 

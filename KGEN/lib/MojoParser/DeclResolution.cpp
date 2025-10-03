@@ -3775,6 +3775,27 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
   StructDeclOp structDeclOp =
       cast<StructDeclOp>(structAstDecl.getIfOperation());
 
+  // Copy struct param decls into the extension, so extension methods and
+  // aliases can reference the struct's param decls.
+  for (ParamDeclAttr param : structDeclOp.getParams()) {
+    StringAttr demangledName =
+        StringAttr::get(getContext(), demangleParameterName(param.getName()));
+    addFullyResolvedDecl(PValue(ParamDeclRefAttr::get(param)), demangledName,
+                         extensionDecl.getLoc(), &extensionDecl);
+  }
+  // Set extension's parameters to match target struct. This is to make it so
+  // the verifier can see the param-decls and be aware of them when it's
+  // verifying their param-refs.
+  // TODO(MOCO-522): Definitely need arcana docs here.
+  // TODO(MOCO-522): Possibly-related problem: there might be parts of the
+  // compiler that assume a method is contained by a *struct* specifically, and
+  // that could cause problems when the method introduces its own param decls,
+  // see https://github.com/modularml/modular/pull/69012.
+  if (!structDeclOp.getParams().empty()) {
+    extensionDeclOp.setParamsAttr(structDeclOp.getParamsAttr());
+    extensionDeclOp.setSignature(structDeclOp.getSignature());
+  }
+
   // Push the struct's debug scope for this extension if necessary so that
   // nested operations have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -3790,7 +3811,7 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
     for (auto &[declName, extensionMemberDecls] : *extensionDecl.declsInScope) {
       ASTDecl *firstExtensionMemberDecl = extensionMemberDecls.front();
 
-      // Skip parameter declarations - they are intentionally inherited from the
+      // Skip parameter declarations, they are intentionally inherited from the
       // struct, the extension has an ASTDecl for every param declaration from
       // the target struct. If this is a ParamDeclRefAttr, skip it.
       if (CValue cval = firstExtensionMemberDecl->getIfIRValue())

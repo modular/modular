@@ -442,6 +442,22 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       return evaluator.getReboundAttribute(aliasValue);
     }
 
+    if (auto extensionDecl = dyn_cast<ExtensionDeclOp>(parent)) {
+      auto targetStructRef = extensionDecl.getTargetStruct();
+      assert(targetStructRef && "Extension target struct not resolved somehow");
+      // TODO(MOCO-522): Bring in the walking from the struct case, with a nice
+      // test too.
+      ASTDecl &structAstDecl =
+          emitter.shared.declResolver->getDeclForTypeSymbol(*targetStructRef);
+      StructDeclOp structDeclOp =
+          cast<StructDeclOp>(structAstDecl.getIfOperation());
+      assert(decl.getValueAttr() && "Extension's alias should have value");
+      TypedAttr aliasValue = decl.getValueAttr();
+      ParserParameterEvaluator evaluator(emitter.shared,
+                                         structDeclOp.getParams(), paramValues);
+      return evaluator.getReboundAttribute(aliasValue);
+    }
+
     // Ignore 'if' and other control flow things.
     parent = parent->getParentOp();
   }
@@ -511,10 +527,12 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   assert(kind == kSelfLiteral && "Unknown simple literal kind");
   // Self resolves to the type of the enclosing structure type.
   ASTDecl *astDecl =
-      emitter.declScope.getNearestDeclOfType<StructDeclOp, TraitDeclOp>();
+      emitter.declScope
+          .getNearestDeclOfType<StructDeclOp, TraitDeclOp, ExtensionDeclOp>();
   if (!astDecl) {
-    emitter.emitError(getLoc(),
-                      "'Self' type may only be used inside a struct or trait");
+    emitter.emitError(
+        getLoc(),
+        "'Self' type may only be used inside a struct, trait, or extension");
     return {};
   }
 
