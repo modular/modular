@@ -27,7 +27,7 @@ from shmem import *
 alias min_size = 1024 * 1024 * 32
 alias max_size = min_size * 16
 alias num_blocks = 32
-alias threads_per_block = 512
+alias threads_per_block = 256
 alias iters = 4
 alias warmup_iters = 1
 alias step_factor = 2

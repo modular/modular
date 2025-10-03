@@ -51,5 +51,6 @@ def main():
     ctx.synchronize()
 
     var mype = shmem_my_pe()
+    var npes = shmem_n_pes()
     print("PE:", mype, "received message:", msg)
-    assert_equal(msg, (mype + 1) % shmem_n_pes())
+    assert_equal(msg, (mype - 1 + npes) % npes)

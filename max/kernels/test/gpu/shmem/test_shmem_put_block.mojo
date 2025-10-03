@@ -14,7 +14,7 @@
 # REQUIRES: NVIDIA-GPU
 
 # RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-# RUN: %mojo-build %s -o %t
+# RUN: %mojo-build-no-debug %s -o %t
 # RUN: %mpirun -n $NUM_GPUS %t
 
 from os import abort
