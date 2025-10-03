@@ -44,7 +44,7 @@ capture_list: capture_item (',' capture_item)* [',']
 # modes (e.g., "var", "var^", "read") used by unified closures. Only
 # VAR allows the move marker '^'.
 capture_item: (VAR ['^'] [NAME]) | (READ [NAME]) | (MUT [NAME]) | (REF NAME) | (OWNED NAME)
-metaparams: '[' [typedargslist] ']'
+metaparams: '[' [typedparamslist] ']'
 parameters: '(' [typedargslist] ')'
 result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
 
@@ -66,6 +66,7 @@ convention: VAR | OWNED | OUT | READ | MUT | DEINIT | (REF ['[' test [',' test [
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*
+typedparamslist: ((([convention] ['**'|'*'] tfpdef ['=' test] (where_clause)*)|'/'|'*'|'//') [','])*
 
 tname: NAME [metaparams] [':' (type_test|star_expr)]
 

@@ -90,3 +90,64 @@ def test_multiple_where_clauses():
         "    pass\n"
     )
     assert_mojo_format(source, expected)
+
+
+def test_where_clause_in_params():
+    source = (
+        "fn where_in_params["
+        "x: Bool where x is False, "
+        "y: Int where y > 0 and x is True]():\n"
+        "    pass\n"
+    )
+    expected = (
+        "fn where_in_params[\n"
+        "    x: Bool where x is False, y: Int where y > 0 and x is True\n"
+        "]():\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_long_where_clause_in_params():
+    source = (
+        "fn where_in_params["
+        "x: Bool where x and y + z and a == b and c == d and (e == f or g) and xx == yy and zz == aa or (ds or dd), "
+        "y: Int where y > 0 and x is True]():\n"
+        "    pass\n"
+    )
+    expected = (
+        "fn where_in_params[\n"
+        "    x: Bool where (\n"
+        "        x\n"
+        "        and y + z\n"
+        "        and a == b\n"
+        "        and c == d\n"
+        "        and (e == f or g)\n"
+        "        and xx == yy\n"
+        "        and zz == aa\n"
+        "        or (ds or dd)\n"
+        "    ),\n"
+        "    y: Int where y > 0 and x is True,\n"
+        "]():\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_multiple_where_clauses_in_params():
+    source = (
+        "fn where_in_params["
+        "x: Bool where x and y + z and a == b where c == d and (e == f or g) and xx == yy where zz == aa or (ds or dd), "
+        "y: Int where y > 0 where x is True]():\n"
+        "    pass\n"
+    )
+    expected = (
+        "fn where_in_params[\n"
+        "    x: Bool where x and y + z and a == b where (\n"
+        "        c == d and (e == f or g) and xx == yy\n"
+        "    ) where zz == aa or (ds or dd),\n"
+        "    y: Int where y > 0 where x is True,\n"
+        "]():\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)

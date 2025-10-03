@@ -97,6 +97,7 @@ VARARGS_PARENTS: Final = {
     syms.metaparams,
     syms.trailer,  # single argument to call
     syms.typedargslist,
+    syms.typedparamslist,
     syms.varargslist,  # lambdas
 }
 UNPACKING_PARENTS: Final = {
@@ -248,7 +249,7 @@ def whitespace(
                 }:
                     return NO
 
-                elif prevp.parent.type == syms.typedargslist:
+                elif prevp.parent.type in (syms.typedargslist, syms.typedparamslist):
                     # A bit hacky: if the equal sign has whitespace, it means we
                     # previously found it's a typed argument.  So, we're using
                     # that, too.
@@ -317,7 +318,7 @@ def whitespace(
         if prev and prev.type != token.COMMA:
             return NO
 
-    elif p.type == syms.typedargslist:
+    elif p.type in (syms.typedargslist, syms.typedparamslist):
         # typed function signatures
         if not prev:
             return NO
@@ -652,6 +653,7 @@ def is_one_sequence_between(
             if leaf.parent and leaf.parent.type in {
                 syms.arglist,
                 syms.typedargslist,
+                syms.typedparamslist,
             }:
                 commas += 1
                 break

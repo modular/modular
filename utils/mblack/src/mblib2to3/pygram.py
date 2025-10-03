@@ -20,13 +20,10 @@
 
 # Python imports
 import os
-
 from typing import Union
 
 # Local imports
-from .pgen2 import token
-from .pgen2 import driver
-
+from .pgen2 import driver, token
 from .pgen2.grammar import Grammar
 
 # Moved into initialize because mypyc can't handle __file__ (XXX bug)
@@ -143,6 +140,7 @@ class _python_symbols(Symbols):
     trailer: int
     try_stmt: int
     typedargslist: int
+    typedparamslist: int
     varargslist: int
     var_stmt: int
     vfpdef: int

@@ -975,7 +975,7 @@ def delimiter_split(line: Line, features: Collection[Feature] = ()) -> Iterator[
 
         lowest_depth = min(lowest_depth, leaf.bracket_depth)
         if leaf.bracket_depth == lowest_depth:
-            if is_vararg(leaf, within={syms.typedargslist}):
+            if is_vararg(leaf, within={syms.typedargslist, syms.typedparamslist}):
                 trailing_comma_safe = (
                     trailing_comma_safe and Feature.TRAILING_COMMA_IN_DEF in features
                 )
