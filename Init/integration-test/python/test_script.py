@@ -10,7 +10,7 @@ import sys
 import init_bindings
 
 
-def deep_function_3():
+def deep_function_3() -> None:
     """Third level function that triggers the segfault."""
     print(
         "About to trigger SIGSEGV from Python context via C++", file=sys.stderr
@@ -19,17 +19,17 @@ def deep_function_3():
     init_bindings.trigger_segfault_from_cpp()
 
 
-def deep_function_2():
+def deep_function_2() -> None:
     """Second level function in the call stack."""
     deep_function_3()
 
 
-def deep_function_1():
+def deep_function_1() -> None:
     """First level function in the call stack."""
     deep_function_2()
 
 
-def main():
+def main() -> None:
     """Main function that sets up the signal handler and triggers the crash."""
     print("Starting signal handler test", file=sys.stderr)
 
