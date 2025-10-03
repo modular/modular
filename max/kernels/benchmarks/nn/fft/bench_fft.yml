@@ -1,0 +1,114 @@
+name: bench_fft
+file: bench_fft.mojo
+params:
+
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [64, 2]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [32, 4]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [16, 8]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [16, 4, 2]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [8, 8, 2]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [8, 4, 4]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [8, 4, 2, 2]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [8, 2, 2, 2, 2]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [4, 4, 4, 2]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [4, 4, 2, 2, 2]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [4, 2, 2, 2, 2, 2]
+- name: gpu_sequential
+  dtype: DType.float32
+  shape: [2]
+
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [64, 2]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [32, 4]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [16, 8]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [16, 4, 2]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [8, 8, 2]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [8, 4, 4]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [8, 4, 2, 2]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [8, 2, 2, 2, 2]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [4, 4, 4, 2]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [4, 4, 2, 2, 2]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [4, 2, 2, 2, 2, 2]
+- name: cpu_single_threaded
+  dtype: DType.float64
+  shape: [2]
+
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [64, 2]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [32, 4]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [16, 8]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [16, 4, 2]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [8, 8, 2]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [8, 4, 4]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [8, 4, 2, 2]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [8, 2, 2, 2, 2]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [4, 4, 4, 2]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [4, 4, 2, 2, 2]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [4, 2, 2, 2, 2, 2]
+- name: cpu_multi_threaded
+  dtype: DType.float64
+  shape: [2]
