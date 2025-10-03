@@ -17,7 +17,7 @@ from sys.ffi import c_int, c_uint
 from gpu._utils import to_llvm_ptr
 from gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from gpu.host.device_context import (
-    _CharPtr,
+    _ConstCharPtr,
     _checked,
     _DeviceBufferPtr,
     _DeviceContextPtr,
@@ -61,7 +61,7 @@ fn CUDA(ctx: DeviceContext) raises -> CUcontext:
     _checked(
         external_call[
             "AsyncRT_DeviceContext_cuda_context",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[CUcontext],
             _DeviceContextPtr,
         ](
@@ -81,7 +81,7 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
     _checked(
         external_call[
             "AsyncRT_DeviceStream_cuda_stream",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[CUstream],
             _DeviceStreamPtr,
         ](
@@ -100,7 +100,7 @@ fn CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
     _checked(
         external_call[
             "AsyncRT_DeviceFunction_cuda_module",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[CUmodule],
             _DeviceFunctionPtr,
         ](
@@ -115,7 +115,9 @@ fn CUDA_get_current_context() raises -> CUcontext:
     var result = CUcontext()
     # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
     _checked(
-        external_call["AsyncRT_DeviceContext_cuda_current_context", _CharPtr,](
+        external_call[
+            "AsyncRT_DeviceContext_cuda_current_context", _ConstCharPtr
+        ](
             UnsafePointer(to=result),
         )
     )
@@ -309,7 +311,7 @@ fn create_tma_descriptor[
     _checked(
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
-            _CharPtr,
+            _ConstCharPtr,
             OpaquePointer,  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank

@@ -43,7 +43,7 @@ from gpu.host import (
 )
 from gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
 from gpu.host.device_context import (
-    _CharPtr,
+    _ConstCharPtr,
     _checked,
     _DeviceContextPtr,
     _DumpPath,

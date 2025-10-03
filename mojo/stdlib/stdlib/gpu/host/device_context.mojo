@@ -106,7 +106,7 @@ alias _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp]
 alias _DeviceEventPtr = UnsafePointer[_DeviceEventCpp]
 alias _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
 alias _DeviceContextScopePtr = UnsafePointer[_DeviceContextScopeCpp]
-alias _CharPtr = UnsafePointer[UInt8]
+alias _ConstCharPtr = UnsafePointer[UInt8, mut=False]
 alias _IntPtr = UnsafePointer[Int32]
 alias _SizeT = UInt
 
@@ -115,16 +115,18 @@ alias _DumpPath = Variant[Bool, Path, StaticString, fn () capturing -> Path]
 # Define helper methods to call AsyncRT bindings.
 
 
-fn _string_from_owned_charptr(c_str: _CharPtr) -> String:
+fn _string_from_owned_charptr(c_str: _ConstCharPtr) -> String:
     var result = String(unsafe_from_utf8_ptr=c_str)
     # void AsyncRT_DeviceContext_strfree(const char* ptr)
-    external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](c_str)
+    external_call["AsyncRT_DeviceContext_strfree", NoneType, _ConstCharPtr](
+        c_str
+    )
     return result
 
 
 @always_inline
 fn _checked(
-    err: _CharPtr,
+    err: _ConstCharPtr,
     *,
     msg: String = "",
     location: OptionalReg[_SourceLocation] = None,
@@ -137,7 +139,10 @@ fn _checked(
 fn _checked_call[
     func: Some[AnyTrivialRegType]
 ](
-    err: _CharPtr, *, device_context: DeviceContext, location: _SourceLocation
+    err: _ConstCharPtr,
+    *,
+    device_context: DeviceContext,
+    location: _SourceLocation,
 ) raises:
     # Extract the linkage name of the function and strip off everything after
     # the fully qualified name.
@@ -160,7 +165,7 @@ fn _checked_call[
 
 @no_inline
 fn _raise_checked_impl(
-    err_msg: _CharPtr, msg: String, location: _SourceLocation
+    err_msg: _ConstCharPtr, msg: String, location: _SourceLocation
 ) raises:
     var err = _string_from_owned_charptr(err_msg)
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
@@ -280,7 +285,7 @@ struct HostBuffer[dtype: DType](
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_createHostBuffer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceBufferPtr],
                 UnsafePointer[Self._HostPtr],
                 _DeviceContextPtr,
@@ -442,7 +447,7 @@ struct HostBuffer[dtype: DType](
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_createSubBuffer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceBufferPtr],
                 UnsafePointer[UnsafePointer[Scalar[view_type]]],
                 _DeviceBufferPtr,
@@ -590,7 +595,7 @@ struct HostBuffer[dtype: DType](
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_reassignOwnershipTo",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceBufferPtr,
                 _DeviceContextPtr,
             ](self._handle, ctx._handle)
@@ -839,7 +844,7 @@ struct DeviceBuffer[dtype: DType](
             _checked(
                 external_call[
                     "AsyncRT_DeviceContext_createBuffer_sync",
-                    _CharPtr,
+                    _ConstCharPtr,
                     UnsafePointer[_DeviceBufferPtr],
                     UnsafePointer[Self._DevicePtr],
                     _DeviceContextPtr,
@@ -859,7 +864,7 @@ struct DeviceBuffer[dtype: DType](
             _checked(
                 external_call[
                     "AsyncRT_DeviceContext_createBuffer_async",
-                    _CharPtr,
+                    _ConstCharPtr,
                     UnsafePointer[_DeviceBufferPtr],
                     UnsafePointer[Self._DevicePtr],
                     _DeviceContextPtr,
@@ -1032,7 +1037,7 @@ struct DeviceBuffer[dtype: DType](
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_createSubBuffer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceBufferPtr],
                 UnsafePointer[UnsafePointer[Scalar[view_type]]],
                 _DeviceBufferPtr,
@@ -1185,7 +1190,7 @@ struct DeviceBuffer[dtype: DType](
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_reassignOwnershipTo",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceBufferPtr,
                 _DeviceContextPtr,
             ](self._handle, ctx._handle)
@@ -1407,7 +1412,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stream",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceStreamPtr],
                 _DeviceContextPtr,
             ](UnsafePointer(to=result), ctx._handle)
@@ -1467,7 +1472,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_synchronize",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceStreamPtr,
             ](self._handle)
         )
@@ -1490,7 +1495,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_waitForEvent",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceStreamPtr,
                 _DeviceEventPtr,
             ](self._handle, event._handle)
@@ -1534,7 +1539,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_eventRecord",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceStreamPtr,
                 _DeviceEventPtr,
             ](self._handle, event._handle)
@@ -1741,7 +1746,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceStream_eventCreate",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceEventPtr],
                 _DeviceStreamPtr,
             ](UnsafePointer(to=result), stream._handle)
@@ -1764,7 +1769,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueue_event",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceEventPtr],
                 _DeviceContextPtr,
             ](UnsafePointer(to=result), ctx._handle)
@@ -1819,7 +1824,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceEvent_synchronize",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceEventPtr,
             ](self._handle)
         )
@@ -1979,15 +1984,15 @@ struct DeviceFunction[
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceFunctionPtr],
                 _DeviceContextPtr,
-                _CharPtr,
-                _CharPtr,
-                _CharPtr,
+                _ConstCharPtr,
+                _ConstCharPtr,
+                _ConstCharPtr,
                 _SizeT,
                 Int32,
-                _CharPtr,
+                _ConstCharPtr,
                 Int32,
             ](
                 UnsafePointer(to=result),
@@ -2011,9 +2016,9 @@ struct DeviceFunction[
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_copyToConstantMemory",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceFunctionPtr,
-                _CharPtr,
+                _ConstCharPtr,
                 _SizeT,
                 OpaquePointer,
                 _SizeT,
@@ -2299,7 +2304,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                    _CharPtr,
+                    _ConstCharPtr,
                     _DeviceContextPtr,
                     _DeviceFunctionPtr,
                     UInt32,
@@ -2335,7 +2340,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                    _CharPtr,
+                    _ConstCharPtr,
                     _DeviceContextPtr,
                     _DeviceFunctionPtr,
                     UInt32,
@@ -2438,7 +2443,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceStream_enqueueFunctionDirect",
-                    _CharPtr,
+                    _ConstCharPtr,
                 ](
                     stream,
                     self._handle,
@@ -2460,7 +2465,7 @@ struct DeviceFunction[
             _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceStream_enqueueFunctionDirect",
-                    _CharPtr,
+                    _ConstCharPtr,
                 ](
                     stream,
                     self._handle,
@@ -2676,7 +2681,7 @@ struct DeviceFunction[
         _checked_call[Self.func](
             external_call[
                 "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceFunctionPtr,
                 UInt32,
@@ -2746,7 +2751,7 @@ struct DeviceFunction[
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_getAttribute",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[Int32],
                 _DeviceFunctionPtr,
                 Int32,
@@ -2769,7 +2774,7 @@ struct DeviceFunction[
         _checked(
             external_call[
                 "AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[Int32],
                 _DeviceFunctionPtr,
                 Int32,
@@ -2873,15 +2878,15 @@ struct DeviceExternalFunction:
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_loadFunction",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceFunctionPtr],
                 _DeviceContextPtr,
-                _CharPtr,
-                _CharPtr,
-                _CharPtr,
+                _ConstCharPtr,
+                _ConstCharPtr,
+                _ConstCharPtr,
                 _SizeT,
                 Int32,
-                _CharPtr,
+                _ConstCharPtr,
                 Int32,
             ](
                 UnsafePointer(to=result),
@@ -2914,9 +2919,9 @@ struct DeviceExternalFunction:
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_copyToConstantMemory",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceFunctionPtr,
-                _CharPtr,
+                _ConstCharPtr,
                 _SizeT,
                 OpaquePointer,
                 _SizeT,
@@ -2991,7 +2996,7 @@ struct DeviceExternalFunction:
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueueFunctionDirect",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceFunctionPtr,
                 UInt32,
@@ -3038,7 +3043,7 @@ struct DeviceExternalFunction:
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_getAttribute",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[Int32],
                 _DeviceFunctionPtr,
                 Int32,
@@ -3137,7 +3142,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_create",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceContextPtr],
                 UnsafePointer[c_char],
                 Int32,
@@ -3248,7 +3253,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
         var name_ptr = external_call[
             "AsyncRT_DeviceContext_deviceName",
-            _CharPtr,
+            _ConstCharPtr,
             _DeviceContextPtr,
         ](
             self._handle,
@@ -5074,7 +5079,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceTimerPtr],
                 _DeviceContextPtr,
             ](
@@ -5090,7 +5095,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[Int],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
@@ -5151,7 +5156,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         """
 
         _checked(
-            external_call["AsyncRT_DeviceContext_setAsCurrent", _CharPtr](
+            external_call["AsyncRT_DeviceContext_setAsCurrent", _ConstCharPtr](
                 self._handle,
             )
         )
@@ -5198,7 +5203,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceTimerPtr],
                 _DeviceContextPtr,
             ](
@@ -5214,7 +5219,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[Int],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
@@ -5271,7 +5276,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_startTimer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceTimerPtr],
                 _DeviceContextPtr,
             ](
@@ -5287,7 +5292,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_stopTimer",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[Int],
                 _DeviceContextPtr,
                 _DeviceTimerPtr,
@@ -5322,7 +5327,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 UnsafePointer[Scalar[dtype]],
@@ -5356,7 +5361,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 UnsafePointer[Scalar[dtype]],
@@ -5389,7 +5394,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 UnsafePointer[Scalar[dtype]],
                 _DeviceBufferPtr,
@@ -5422,7 +5427,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 UnsafePointer[Scalar[dtype]],
                 _DeviceBufferPtr,
@@ -5481,7 +5486,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
@@ -5513,7 +5518,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
@@ -5545,7 +5550,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
@@ -5577,7 +5582,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoD_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 _DeviceBufferPtr,
@@ -5623,7 +5628,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_setMemory_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 UInt64,
@@ -5670,7 +5675,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_setMemory_async",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
                 UInt64,
@@ -5756,7 +5761,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_eventCreate",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceEventPtr],
                 _DeviceContextPtr,
                 EventFlags,
@@ -5776,7 +5781,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_streamPriorityRange",
-                _CharPtr,
+                _ConstCharPtr,
             ](
                 UnsafePointer(to=least_priority),
                 UnsafePointer(to=greatest_priority),
@@ -5801,7 +5806,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_streamCreate",
-                _CharPtr,
+                _ConstCharPtr,
             ](UnsafePointer(to=result), self._handle, flags)
         )
         return DeviceStream(result)
@@ -5834,7 +5839,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_streamCreateWithPriority",
-                _CharPtr,
+                _ConstCharPtr,
             ](UnsafePointer(to=result), flags, c_int(priority), self._handle)
         )
         return DeviceStream(result)
@@ -5849,7 +5854,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_synchronize",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
             ](
                 self._handle,
@@ -5895,7 +5900,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueue_wait_for_context",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceContextPtr,
             ](self._handle, other._handle)
@@ -5932,7 +5937,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_getApiVersion",
-                _CharPtr,
+                _ConstCharPtr,
                 _IntPtr,
                 _DeviceContextPtr,
             ](
@@ -5972,7 +5977,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_getAttribute",
-                _CharPtr,
+                _ConstCharPtr,
                 _IntPtr,
                 _DeviceContextPtr,
                 Int,
@@ -6010,7 +6015,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             _checked(
                 external_call[
                     "AsyncRT_DeviceContext_isCompatible",
-                    _CharPtr,
+                    _ConstCharPtr,
                     _DeviceContextPtr,
                 ](
                     self._handle,
@@ -6075,7 +6080,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_computeCapability",
-                _CharPtr,
+                _ConstCharPtr,
                 _IntPtr,
                 _DeviceContextPtr,
             ](UnsafePointer(to=compute_capability), self._handle),
@@ -6144,7 +6149,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_getMemoryInfo",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 UnsafePointer[_SizeT],
                 UnsafePointer[_SizeT],
@@ -6198,7 +6203,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_canAccess",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[Bool],
                 _DeviceContextPtr,
                 _DeviceContextPtr,
@@ -6259,7 +6264,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enablePeerAccess",
-                _CharPtr,
+                _ConstCharPtr,
                 _DeviceContextPtr,
                 _DeviceContextPtr,
             ](
@@ -6284,7 +6289,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_supportsMulticast",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[Bool],
                 _DeviceContextPtr,
             ](
@@ -6330,7 +6335,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             external_call[
                 "AsyncRT_DeviceContext_numberOfDevices",
                 Int32,
-                _CharPtr,
+                _ConstCharPtr,
             ](
                 api.unsafe_ptr(),
             )
@@ -6372,7 +6377,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enableAllPeerAccess",
-                _CharPtr,
+                _ConstCharPtr,
             ]()
         )
 
@@ -6405,7 +6410,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_allocate",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceMulticastBufferPtr],
                 _SizeT,
                 UnsafePointer[_DeviceContextPtr],
@@ -6433,7 +6438,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_unicastBufferFor",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceBufferPtr],
                 UnsafePointer[UnsafePointer[Scalar[dtype]]],
                 _DeviceMulticastBufferPtr,
@@ -6459,7 +6464,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_multicastBufferFor",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceBufferPtr],
                 UnsafePointer[UnsafePointer[Scalar[dtype]]],
                 _DeviceMulticastBufferPtr,
@@ -6521,7 +6526,7 @@ struct _DeviceContextScope:
         _checked(
             external_call[
                 "AsyncRT_DeviceContextScope_create",
-                _CharPtr,
+                _ConstCharPtr,
                 UnsafePointer[_DeviceContextScopePtr],
                 _DeviceContextPtr,
             ](

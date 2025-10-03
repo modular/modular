@@ -36,7 +36,7 @@ from gpu.host import (
     LaunchAttribute,
 )
 from gpu.host.device_context import (
-    _CharPtr,
+    _ConstCharPtr,
     _checked,
     _DeviceContextPtr,
     _DumpPath,
