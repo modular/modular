@@ -52,15 +52,15 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 try:
-    from .benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from .benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ServingBenchmarkConfig,
         parse_benchmark_args,
     )
-    from .benchmark_cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from .benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         CpuMetricsCollector,
         collect_pids_for_port,
     )
-    from .benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from .benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
         BenchmarkDataset,
@@ -74,22 +74,22 @@ try:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
-    from .metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from .benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
 except ImportError:
-    from benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ServingBenchmarkConfig,
         parse_benchmark_args,
     )
-    from benchmark_cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         CpuMetricsCollector,
         collect_pids_for_port,
     )
-    from benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
         BenchmarkDataset,
@@ -103,7 +103,7 @@ except ImportError:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
-    from metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
         StandardPercentileMetrics,

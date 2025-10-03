@@ -37,8 +37,11 @@ from huggingface_hub import hf_hub_download
 from dataclasses import dataclass, field
 
 import pyarrow.parquet
-from benchmark_config import BaseBenchmarkConfig
-from benchmark_datasets import BenchmarkDataset, CodeDebugBenchmarkDataset
+from benchmark_shared.config import BaseBenchmarkConfig
+from benchmark_shared.datasets import (
+    BenchmarkDataset,
+    CodeDebugBenchmarkDataset,
+)
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
     PipelinesFactory,
@@ -664,7 +667,7 @@ def main(args: argparse.Namespace) -> None:
 
         # TODO: benchmark_throughput.py should be refactored to use the BenchmarkDataset class.
         # Some of the fetch_dataset_from_hf() logic have different filenames
-        # than the ones defined in benchmark_datasets.py. These should be reconciled.
+        # than the ones defined in benchmark_shared.datasets. These should be reconciled.
         if args.dataset_name == "code_debug":
             benchmark_dataset = BenchmarkDataset.from_flags(
                 dataset_name=args.dataset_name,

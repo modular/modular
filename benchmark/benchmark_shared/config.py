@@ -24,18 +24,9 @@ from typing import Any, Optional
 
 import yaml
 
-try:
-    from .benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore]
-        DATASET_REGISTRY,
-        DatasetMode,
-    )
-except ImportError:
-    from benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        DATASET_REGISTRY,
-        DatasetMode,
-    )
+from .datasets import DATASET_REGISTRY, DatasetMode
 
-logger = logging.getLogger("max.benchmark")
+logger = logging.getLogger(__name__)
 
 from max.pipelines.lib import (  # type: ignore[import-not-found, unused-ignore, no-redef]
     MAXConfig,

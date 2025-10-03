@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 
 modular_py_library(
     name = "benchmark_serving_lib",
@@ -11,11 +12,12 @@ modular_py_library(
     ),
     data = [
         ":benchmark_config_yaml_files",
-    ] + glob(["datasets/**/*"]),
+    ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max/diagnostics",
+        "//open-source/max/benchmark/benchmark_shared",
         requirement("aiohttp"),
         requirement("datasets"),
         requirement("huggingface-hub"),
@@ -36,11 +38,8 @@ modular_py_binary(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        ":benchmark_config",
-        ":benchmark_cpu_metrics",
-        ":benchmark_datasets",
-        ":metrics",
         "//SDK/lib/API/python/max/diagnostics",
+        "//open-source/max/benchmark/benchmark_shared",
         requirement("aiohttp"),
         requirement("datasets"),
         requirement("huggingface-hub"),
@@ -51,60 +50,9 @@ modular_py_binary(
     ],
 )
 
-modular_py_library(
-    name = "metrics",
-    srcs = ["metrics.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [requirement("numpy")],
-)
-
-modular_py_library(
-    name = "benchmark_config",
-    srcs = ["benchmark_config.py"],
-    data = [
-        ":benchmark_config_yaml_files",
-    ],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":benchmark_datasets",
-        "//SDK/lib/API/python/max/pipelines/lib",
-        requirement("pyyaml"),
-    ],
-)
-
-modular_py_library(
-    name = "benchmark_cpu_metrics",
-    srcs = ["benchmark_cpu_metrics.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("psutil"),
-    ],
-)
-
-modular_py_library(
-    name = "benchmark_datasets",
-    srcs = ["benchmark_datasets.py"],
-    data = glob(["datasets/**/*"]),
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        requirement("datasets"),
-        requirement("huggingface-hub"),
-        requirement("numpy"),
-        requirement("msgspec"),
-        requirement("pillow"),
-        requirement("transformers"),
-    ],
-)
-
 modular_py_binary(
     name = "benchmark_throughput",
-    srcs = [
-        "benchmark_throughput.py",
-    ],
+    srcs = ["benchmark_throughput.py"],
     data = [
         ":yaml_files",
         # TODO: Why do we need these?
@@ -114,12 +62,11 @@ modular_py_binary(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        ":benchmark_config",
-        ":benchmark_datasets",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/serve",
+        "//open-source/max/benchmark/benchmark_shared",
         requirement("click"),
         requirement("msgspec"),
         requirement("pyarrow"),
@@ -144,16 +91,15 @@ modular_py_binary(
 pkg_files(
     name = "benchmark_config_yaml_files",
     srcs = glob(["configs/*.yaml"]),
+    # Used under the internal path, but not under the OSS path.
+    # TODO: Remove when we no longer have internal symlinking to OSS.
+    tags = [ALLOW_UNUSED_TAG],
     visibility = ["//visibility:public"],
 )
 
 pkg_files(
     name = "python_files",
-    srcs = glob(
-        [
-            "**/*.py",
-        ],
-    ),
+    srcs = glob(["**/*.py"]) + ["//open-source/max/benchmark/benchmark_shared:python_files"],
     prefix = "benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
     visibility = ["//visibility:public"],
@@ -162,12 +108,8 @@ pkg_files(
 pkg_files(
     name = "yaml_files",
     srcs = glob(
-        [
-            "**/*.yaml",
-        ],
-        exclude = [
-            "serving-benchmarking/**",
-        ],
+        ["**/*.yaml"],
+        exclude = ["serving-benchmarking/**"],
     ),
     prefix = "benchmark",
     visibility = ["//visibility:public"],
