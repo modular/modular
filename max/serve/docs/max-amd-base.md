@@ -1,11 +1,11 @@
 <!-- markdownlint-disable -->
 
-# MAX AMD full container
+# MAX AMD base container
 
-The `max-amd` container delivers high-performance inference on AMD GPUs using
-the MAX framework, with full support for PyTorch GPU and ROCm. It provides a
-ready-to-use environment for running LLMs with optimized performance on AMD
-hardware.
+The `max-amd-base` container delivers high-performance inference on AMD GPUs
+using the MAX framework, with minimal dependencies and full support for ROCm. It
+provides a ready-to-use environment for running LLMs with optimized performance
+on AMD hardware.
 
 The MAX container is compatible with the OpenAI API specification and optimized
 for GPU deployment. For details on container contents and hardware
@@ -14,7 +14,7 @@ in the MAX documentation.
 
 ### **Quickstart**
 
-You can run an LLM on an AMD GPU using the latest MAX AMD full container with
+You can run an LLM on an AMD GPU using the latest MAX AMD base container with
 the following command:
 
 ```bash
@@ -28,7 +28,7 @@ docker run \
   --device /dev/kfd \
   --device /dev/dri \
   -p 8000:8000 \
-  modular/max-amd:<version> \
+  modular/max-amd-base:<version> \
   --model <model-provider/model-id>
 ```
 
@@ -51,11 +51,11 @@ with the latest nightly version.
 
 Stable
 
-- max-amd:25.X
+- max-amd-base:25.X
 
 Nightlies
 
-- max-amd:25.X.0.devYYYYMMDD
+- max-amd-base:25.X.0.devYYYYMMDD
 
 ### **Documentation**
 
