@@ -154,7 +154,7 @@ def test_scalar_constant_integral(dtype: DType) -> None:
 
 
 @given(name=..., type=...)
-def test_constant_external(name: str, type: TensorType):
+def test_constant_external(name: str, type: TensorType) -> None:
     with Graph("constants", input_types=()) as graph:
         weight = ops.constant_external(name, type)
         assert weight.type == type

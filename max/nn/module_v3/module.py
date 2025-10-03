@@ -134,7 +134,9 @@ class Module:
             for name, descendent in child.descendents:
                 yield f"{prefix}.{name}", descendent
 
-    def apply_to_local_parameters(self, f: Callable[[str, Tensor], Tensor]):
+    def apply_to_local_parameters(
+        self, f: Callable[[str, Tensor], Tensor]
+    ) -> None:
         """Applies a transformation to each local parameter tensor on the Module.
 
         The transformation is applied in-place, updating the module's values.
@@ -159,7 +161,7 @@ class Module:
         for name, attr in self.local_parameters:
             setattr(self, name, f(name, attr))
 
-    def apply_to_parameters(self, f: Callable[[str, Tensor], Tensor]):
+    def apply_to_parameters(self, f: Callable[[str, Tensor], Tensor]) -> None:
         """Applies a transformation to each parameter tensor on the Module
         and its descendents.
 
@@ -243,7 +245,7 @@ class Module:
 
     def load_state_dict(
         self, state: Mapping[str, DLPackArray], strict: bool = True
-    ):
+    ) -> None:
         """Replaces each parameter in the module and its descendents.
 
         The transformation is applied in-place, updating the module's values

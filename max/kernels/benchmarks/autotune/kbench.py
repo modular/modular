@@ -1108,7 +1108,7 @@ class Scheduler:
         t_build_total: float = 0.0,
         t_elapsed_total: float = 0.0,
         verbose: bool = False,
-    ):
+    ) -> None:
         output_lines = []
         output_dict: dict[str, Any] = {}
 

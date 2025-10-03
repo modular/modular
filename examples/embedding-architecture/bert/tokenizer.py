@@ -26,7 +26,7 @@ class BertTextTokenizer(TextTokenizer):
         # Update the cached EOS token ID after configuration
         self._cached_eos = self._get_eos_token_id()
 
-    def _configure_eos_token(self):
+    def _configure_eos_token(self) -> None:
         """Configure EOS token for BERT models that don't have one."""
         # Try different ways to access the underlying HF tokenizer
         hf_tokenizer = None

@@ -826,7 +826,9 @@ class PipelineConfig(MAXConfig):
             quantization_encoding_str = f"{quantization_encoding_str} (cast from {self.model_config._applied_dtype_cast_from})"
 
         # Helper function to log kvcache config details
-        def _log_kvcache_details(config: KVCacheConfig, indent: str = "    "):
+        def _log_kvcache_details(
+            config: KVCacheConfig, indent: str = "    "
+        ) -> None:
             logger.info(
                 f"{indent}cache_strategy         : {config.cache_strategy}"
             )

@@ -27,7 +27,7 @@ class SchedulerProgress(Enum):
     NO_PROGRESS = "no_progress"
 
 
-async def sleep_with_backoff(count_no_progress: int):
+async def sleep_with_backoff(count_no_progress: int) -> None:
     """A basic strategy to avoid busy waiting.
 
     This function sleeps with a linear backoff.

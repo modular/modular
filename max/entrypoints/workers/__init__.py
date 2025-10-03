@@ -76,7 +76,7 @@ def start_workers(
 ) -> None:
     global _shutdown_event
 
-    async def run_workers():
+    async def run_workers() -> None:
         global _shutdown_event
 
         # Create shutdown event for coordinating graceful shutdown

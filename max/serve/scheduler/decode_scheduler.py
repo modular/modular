@@ -222,7 +222,7 @@ class DecodeScheduler(Scheduler):
             self.prefill_reqs[req_id] = context
             self.send_prefill_request(req_id, context, dst_idxs)
 
-    def _handle_cancelled_requests(self):
+    def _handle_cancelled_requests(self) -> None:
         while True:
             try:
                 for request_id in self.cancel_queue.get_nowait():

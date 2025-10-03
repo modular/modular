@@ -58,7 +58,7 @@ def test_error_handling() -> None:
         mojo_module.MojoPair(42, "not_a_number")
 
 
-def test_keyword_arguments():
+def test_keyword_arguments() -> None:
     """Test that keyword arguments work in __init__ methods."""
     # Test basic keyword arguments
     pair = mojo_module.MojoPair(first=42, second=10)
