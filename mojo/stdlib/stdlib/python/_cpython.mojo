@@ -386,7 +386,7 @@ struct PyType_Spec:
     - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
     """
 
-    var name: UnsafePointer[c_char]
+    var name: UnsafePointer[c_char, mut=False]
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
@@ -624,10 +624,10 @@ struct PyModuleDef(Movable, Representable, Stringable, Writable):
 
     var base: PyModuleDef_Base
 
-    var name: UnsafePointer[c_char]
+    var name: UnsafePointer[c_char, mut=False]
     """Name for the new module."""
 
-    var docstring: UnsafePointer[c_char]
+    var docstring: UnsafePointer[c_char, mut=False]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
@@ -2356,7 +2356,7 @@ struct CPython(Defaultable, Movable):
     # TODO: fix signature to take unicode and size as args
     fn PyUnicode_AsUTF8AndSize(
         self, obj: PyObjectPtr
-    ) -> StringSlice[MutableAnyOrigin]:
+    ) -> StringSlice[ImmutableAnyOrigin]:
         """Return a pointer to the UTF-8 encoding of the Unicode object, and
         store the size of the encoded representation (in bytes) in `size`.
 
@@ -2365,7 +2365,7 @@ struct CPython(Defaultable, Movable):
         """
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
-        return StringSlice[MutableAnyOrigin](
+        return StringSlice[ImmutableAnyOrigin](
             ptr=ptr.bitcast[Byte](), length=UInt(length)
         )
 
@@ -2609,7 +2609,7 @@ struct CPython(Defaultable, Movable):
     fn PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: UnsafePointer[c_char],
+        name: UnsafePointer[c_char, mut=False],
         value: PyObjectPtr,
     ) -> c_int:
         """Add an object to `module` as `name`.

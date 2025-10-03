@@ -211,7 +211,11 @@ struct String(
             data: The static constant string to refer to.
         """
         self._len_or_data = data._slice._len
-        self._ptr_or_data = data._slice._data
+        # TODO: Validate the safety of this.
+        # Safety: This should be safe since we set `capacity_or_data` to 0.
+        # Meaning any mutation will cause us to either reallocate or inline
+        # the string.
+        self._ptr_or_data = data._slice._data.origin_cast[True]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0

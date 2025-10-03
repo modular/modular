@@ -740,14 +740,21 @@ struct HostBuffer[dtype: DType](
         ]()
         self._host_ptr[idx] = val
 
-    fn as_span(ref self, out span: Span[Scalar[dtype], __origin_of(self)]):
+    fn as_span[
+        mut: Bool, origin: Origin[mut], //
+    ](ref [origin]self) -> Span[Scalar[dtype], origin]:
         """
         Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
 
         Returns:
             A `Span` pointing to the underlying memory of the `HostBuffer`.
         """
-        return {ptr = self._host_ptr, length = UInt(len(self))}
+        # Safety: We are casting the pointer to the mutability and origin of
+        # self and `_host_ptr` is already mutable.
+        return {
+            ptr = self._host_ptr.origin_cast[mut, origin](),
+            length = UInt(len(self)),
+        }
 
 
 struct DeviceBuffer[dtype: DType](

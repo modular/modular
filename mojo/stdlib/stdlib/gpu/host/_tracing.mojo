@@ -206,7 +206,7 @@ struct _C_EventAttributes:
     var message_type: Int32
     """Message type specified in this attribute structure."""
 
-    var message: UnsafePointer[UInt8]
+    var message: UnsafePointer[UInt8, mut=False]
     """Message assigned to this attribute structure."""
 
 
