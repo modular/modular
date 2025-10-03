@@ -30,7 +30,13 @@ static bool isMetaType(Type type) {
     return isMetaType(genType.getBody());
   if (auto param = dyn_cast<ParamType>(type))
     return isa<StructMetaType, AnyTraitType>(param.getParam().getType());
-  return isa<TypeType, StructMetaType, TraitType, AnyTraitType>(type);
+  if (isa<TypeType, StructMetaType, TraitType, AnyTraitType>(type))
+    return true;
+
+  auto canType = getCanonicalType(type);
+  if (canType != type)
+    return isMetaType(canType);
+  return false;
 }
 
 bool LIT::isTypeExpr(TypedAttr attr) { return isMetaType(attr.getType()); }

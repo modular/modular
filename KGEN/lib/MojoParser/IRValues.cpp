@@ -283,7 +283,8 @@ Value VariantValueStorageBase::getMValueReference() const {
 }
 
 RefType VariantValueStorageBase::getMValueType() const {
-  return cast<RefType>(getMValueReference().getType());
+  Type mlirType = getMValueReference().getType();
+  return cast<RefType>(ASTType(mlirType).stripTopLevelSugar());
 }
 
 /// Given an S*Value, return the underlying register.

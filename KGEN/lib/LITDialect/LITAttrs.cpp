@@ -1205,7 +1205,7 @@ static bool canElideSugaredBuiltinApply(TypedAttr attr) {
   if (auto structType = dyn_cast<LIT::StructType>(attr.getType()))
     typeName = structType.getSymbol().getLeafReference().strref();
 
-  if (typeName == "Origin" || typeName == "Bool")
+  if (typeName == "Origin")
     return true; // FIXME: Not principled.
 
   /// A StructAttr is due to an inline @always_inline("builtin") initializer.

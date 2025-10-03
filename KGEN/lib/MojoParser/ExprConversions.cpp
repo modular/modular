@@ -811,6 +811,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
                                    SharedState &shared) {
   if (fromType.isEqualCanon(toType))
     return true; // No rebind needed!
+  toType = getCanonicalType(toType);
+  fromType = getCanonicalType(fromType);
 
   // Trait metatypes are allowed to upcast to trivial types.
   if (isa<TypeType>(toType)) {
@@ -1202,6 +1204,13 @@ ParseResult IREmitter::coerceTypesToEachOther(
       configEmitter(/*isLHS*/ false);
       rhs = emitCValue({rhs, rhsExpr}, EC_CondExpr, mat);
     }
+  }
+
+  // Ensure sugar types agree.
+  if (lhs && rhs &&
+      lhs.getRValueType().mlirType != rhs.getRValueType().mlirType) {
+    configEmitter(/*isLHS*/ false);
+    rhs = rebindValue({rhs, rhsExpr}, lhs.getRValueType());
   }
 
   return success(lhs && rhs);
