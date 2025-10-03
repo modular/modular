@@ -1113,9 +1113,20 @@ TypedAttr CallEmitter::emitCallInParamContext(
   if (auto result =
           emitter.shared.foldInlineBuiltinFunction(operands, loc,
                                                    /*isError*/ false)) {
-    // Maintain sugar so diagnostics don't show the inlined function call.
+    // Maintain sugar so diagnostics don't show the inlined function call.  If
+    // the operands of the apply themselves have sugar then we don't have to
+    // retain their canonical form because the canonical rep will discard it
+    // all.
+    SmallVector<TypedAttr> sugaredOperands;
+    for (auto operand : operands) {
+      while (auto sugar = dyn_cast<SugarAttr>(operand))
+        operand = sugar.getSugared();
+      sugaredOperands.push_back(operand);
+    }
+
     Type resultType = boundSigType.getResults().front();
-    auto sugaredCall = ParamOperatorAttr::get(POC::Apply, operands, resultType);
+    auto sugaredCall =
+        ParamOperatorAttr::get(POC::Apply, sugaredOperands, resultType);
     return SugarAttr::get(SugarKind::AlwaysInlineBuiltin, sugaredCall, result);
   }
 
