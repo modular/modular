@@ -55,8 +55,7 @@ from .layer import Layer, Module, Shardable
 
 
 class Linear(Module, Shardable):
-    """
-    Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
+    """Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
 
     This layer implements a fully connected layer where inputs are multiplied
     by a weight matrix and optionally added with a bias vector.
@@ -458,7 +457,8 @@ class ColumnParallelLinear(Linear):
         tied_weight: Weight | None = None,
         **kwargs,
     ) -> None:
-        """
+        """Initializes the column-parallel linear layer.
+
         Args:
             in_dim: The dimensionality of the input space.
             out_dim: The dimensionality of the output space.
@@ -467,6 +467,7 @@ class ColumnParallelLinear(Linear):
                 Weights remain on CPU until sharded and moved to device during
                 computation.
             tied_weight: Optional :obj:`Weight` to tie with this layer.
+            **kwargs: Additional keyword arguments passed to the Linear initializer.
         """
         if len(devices) == 0:
             raise ValueError(
@@ -561,6 +562,14 @@ class LinearV1(Layer):
     """Optional bias tensor for the linear transformation."""
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the linear transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the linear layer.
+        """
         weight = TensorValue(self.weight)
         if weight.type.device != x.type.device:
             weight = weight.to(x.type.device)
@@ -668,6 +677,14 @@ class QLinearV1(LinearV1):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the quantized linear transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the quantized linear layer.
+        """
         assert self.quantization_encoding is not None
         weight = TensorValue(self.weight)
         weight = weight.to(x.type.device)
@@ -717,7 +734,6 @@ class GPTQLinearV1(QLinearV1):
         Returns:
             A :obj:`LinearV1` instance.
         """
-
         assert quantization_config, (
             "QuantizationConfig must be provided for GPTQLinear"
         )
@@ -775,6 +791,14 @@ class GPTQLinearV1(QLinearV1):
             return LinearV1(weight, bias_weight)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the GPTQ quantized linear transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the GPTQ quantized linear layer.
+        """
         assert self.quantization_encoding is not None
         weight = TensorValue(self.weight)
         if self.perm_idx is not None:
@@ -810,8 +834,9 @@ class GPTQLinear(Linear):
         quantization_config: QuantizationConfig | None = None,
         float8_config: Float8Config | None = None,
     ) -> None:
-        """Initializes the linear layer with weights and optional bias with
-        GPTQ quantization.
+        """Initializes the linear layer with weights and optional bias with GPTQ quantization.
+
+        Initializes the layer for GPTQ quantized linear transformations.
 
         Args:
             in_dim: The dimensionality of the input space.
@@ -864,6 +889,14 @@ class GPTQLinear(Linear):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the GPTQLinear transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the GPTQ linear layer.
+        """
         assert self.qweight.quantization_encoding is not None
         qweight_dtype, qweight_shape = self.qweight.original_dtype_and_shape
         qweight = ops.reshape(
@@ -904,8 +937,8 @@ class GPTQLinear(Linear):
 
 @dataclass
 class MLPV1(Layer):
-    """
-    Simple multi-layer perceptron composed of three :obj:`LinearV1` layers.
+    """Simple multi-layer perceptron composed of three :obj:`LinearV1` layers.
+
     Uses SiLU activation function.
 
     .. deprecated:: 25.5
@@ -922,6 +955,14 @@ class MLPV1(Layer):
     """The up projection :obj:`LinearV1` layer."""
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Applies the MLP transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the MLP layers.
+        """
         if (
             self.gate_proj.bias is None
             and self.up_proj.bias is None
@@ -949,7 +990,10 @@ _ACTIVATION_FUNCTIONS = {
 
 @dataclass
 class DistributedGemmConfig:
-    """Configure how distributed GEMM is executed."""
+    """Configure how distributed GEMM is executed.
+
+    Configuration for distributed General Matrix Multiply operations.
+    """
 
     enable_matmul_allreduce: bool
     """If ``True``, use the matmul + all_reduce kernel."""
@@ -970,8 +1014,8 @@ class DistributedGemmConfig:
 
 
 class MLP(Module, Shardable):
-    """
-    Simple multi-layer perceptron composed of three :obj:`Linear` layers.
+    """Simple multi-layer perceptron composed of three :obj:`Linear` layers.
+
     Defaults to SiLU activation function.
     """
 
@@ -988,7 +1032,8 @@ class MLP(Module, Shardable):
         float8_config: Float8Config | None = None,
         dist_gemm_config: DistributedGemmConfig | None = None,
     ) -> None:
-        """
+        """Initializes the MLP layer.
+
         Args:
             dtype: :obj:`DType` to use for the layer weights, which should match the
                 input dtype.
@@ -1053,6 +1098,14 @@ class MLP(Module, Shardable):
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Applies the MLP transformation to the input.
+
+        Args:
+            x: Input tensor to transform.
+
+        Returns:
+            The transformed tensor after applying the MLP layers.
+        """
         if self.quantization_encoding or self.float8_config:
             return self.down_proj(
                 self.activation_function(self.gate_proj(TensorValue(x)))
