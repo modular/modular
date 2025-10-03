@@ -3789,6 +3789,15 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
   if (extensionDecl.declsInScope && structAstDecl.declsInScope) {
     for (auto &[declName, extensionMemberDecls] : *extensionDecl.declsInScope) {
       ASTDecl *firstExtensionMemberDecl = extensionMemberDecls.front();
+
+      // Skip parameter declarations - they are intentionally inherited from the
+      // struct, the extension has an ASTDecl for every param declaration from
+      // the target struct. If this is a ParamDeclRefAttr, skip it.
+      if (CValue cval = firstExtensionMemberDecl->getIfIRValue())
+        if (PValue pval = cval.getIfPValue())
+          if (isa<ParamDeclRefAttr>(pval.get()))
+            continue;
+
       bool isExtensionMethod =
           isa_and_nonnull<FnOp>(firstExtensionMemberDecl->getIfOperation());
       auto it = structAstDecl.declsInScope->find(declName);
