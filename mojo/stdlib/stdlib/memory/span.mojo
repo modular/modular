@@ -26,6 +26,13 @@ from sys import align_of
 from sys.info import simd_width_of
 
 from algorithm import vectorize
+from collections._index_normalization import normalize_index
+from collections.string.string_slice import (
+    _memmem,
+    _memchr,
+    _memrmem,
+    _memrchr,
+)
 from memory import Pointer
 
 
@@ -776,3 +783,166 @@ struct Span[
             "subspan out of bounds.",
         )
         return Self(ptr=self._data + offset, length=length)
+
+    fn find[
+        dtype: DType, //,
+        from_left: Bool = True,
+        single_value: Bool = False,
+        unsafe_dont_normalize: Bool = False,
+    ](
+        self: Span[Scalar[dtype], origin],
+        subseq: Span[mut=False, Scalar[dtype]],
+        start: Int,
+    ) -> Int:
+        """Finds the offset of the first occurrence of `subseq` starting at
+        `start`. If not found, returns `-1`.
+
+        Parameters:
+            dtype: The `DType` of the Scalar.
+            from_left: Whether to search the first occurrence from the left.
+            single_value: Whether to search with the `subseq`s first value.
+            unsafe_dont_normalize: Whether to not normalize the index (no
+                negative indexing, no bounds checks at runtime. There is still
+                a `debug_assert(0 <= start < len(self))`).
+
+        Args:
+            subseq: The sub sequence to find.
+            start: The offset from which to find.
+
+        Returns:
+            The offset of `subseq` relative to the beginning of the `Span`.
+
+        Notes:
+            The function works on an empty span, always returning `-1`.
+        """
+        var _len = len(self)
+
+        if not subseq:
+
+            @parameter
+            if from_left:
+                return 0
+            else:
+                return _len
+
+        var n_s: Int
+
+        # _memXXX implementations already handle when haystack_len == 0
+        @parameter
+        if unsafe_dont_normalize:
+            debug_assert(0 <= start < _len + Int(_len == 0), "out of bounds")
+            n_s = start
+        else:
+            # Normalize the start index to have the same behavior as Python:
+            # Clamp the index to always be within [0, _len]
+            var v = start + (_len & -Int(start < 0))
+            n_s = (v & -Int(0 < v < _len)) + (_len & -Int(v >= _len))
+        var s_ptr = self.unsafe_ptr()
+        var haystack = __type_of(self)(
+            ptr=s_ptr + n_s, length=UInt(_len - n_s)
+        ).get_immutable()
+        var loc: UnsafePointer[Scalar[dtype]]
+
+        @parameter
+        if from_left and not single_value:
+            loc = _memmem(haystack, subseq)
+        elif from_left:
+            loc = _memchr(haystack, subseq.unsafe_ptr()[0])
+        elif not single_value:
+            loc = _memrmem(
+                haystack.unsafe_ptr(),
+                len(haystack),
+                subseq.unsafe_ptr(),
+                len(subseq),
+            )
+        else:
+            loc = _memrchr(
+                haystack.unsafe_ptr(), subseq.unsafe_ptr()[0], len(haystack)
+            )
+
+        # Convert null pointer (0) to -1, and valid pointers to their offset
+        return ((Int(loc) - Int(s_ptr) + 1) & -Int(Bool(loc))) - 1
+
+    fn find[
+        dtype: DType, //, single_value: Bool = False
+    ](
+        self: Span[Scalar[dtype], origin],
+        subseq: Span[mut=False, Scalar[dtype]],
+    ) -> Int:
+        """Finds the offset of the first occurrence of `subseq`. If not found,
+        returns `-1`.
+
+        Parameters:
+            dtype: The `DType` of the Scalar.
+            single_value: Whether to search with the `subseq`s first value.
+
+        Args:
+            subseq: The sub sequence to find.
+
+        Returns:
+            The offset of `subseq` relative to the beginning of the `Span`.
+
+        Notes:
+            The function works on an empty span, always returning `-1`.
+        """
+        return self.find[single_value=single_value, unsafe_dont_normalize=True](
+            subseq, 0
+        )
+
+    @always_inline
+    fn rfind[
+        dtype: DType, //, single_value: Bool = False
+    ](
+        self: Span[Scalar[dtype], origin],
+        subseq: Span[mut=False, Scalar[dtype]],
+        start: Int,
+    ) -> Int:
+        """Finds the offset of the last occurrence of `subseq` starting at
+        `start`. If not found, returns `-1`.
+
+        Parameters:
+            dtype: The `DType` of the Scalar.
+            single_value: Whether to search with the `subseq`s first value.
+
+        Args:
+            subseq: The sub sequence to find.
+            start: The offset from which to find.
+
+        Returns:
+            The offset of `subseq` relative to the beginning of the `Span`.
+
+        Notes:
+            The function works on an empty span, always returning `-1`.
+        """
+        return self.find[from_left=False, single_value=single_value](
+            subseq, start
+        )
+
+    @always_inline
+    fn rfind[
+        dtype: DType, //, single_value: Bool = False
+    ](
+        self: Span[Scalar[dtype], origin],
+        subseq: Span[mut=False, Scalar[dtype]],
+    ) -> Int:
+        """Finds the offset of the last occurrence of `subseq`. If not found,
+        returns `-1`.
+
+        Parameters:
+            dtype: The `DType` of the Scalar.
+            single_value: Whether to search with the `subseq`s first value.
+
+        Args:
+            subseq: The sub sequence to find.
+
+        Returns:
+            The offset of `subseq` relative to the beginning of the `Span`.
+
+        Notes:
+            The function works on an empty span, always returning `-1`.
+        """
+        return self.find[
+            from_left=False,
+            single_value=single_value,
+            unsafe_dont_normalize=True,
+        ](subseq, 0)
