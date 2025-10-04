@@ -22,6 +22,7 @@ from sys import _libc, external_call, is_gpu
 from sys.ffi import c_char
 
 from memory import ArcPointer, memcpy
+from io.write import _WriteBufferStack, _TotalWritableBytes
 
 
 # ===-----------------------------------------------------------------------===#
@@ -90,6 +91,19 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
 # ===-----------------------------------------------------------------------===#
 # Error
 # ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _ErrorWriter(Writer):
+    var data: List[Byte]
+
+    fn write_bytes(mut self, bytes: Span[Byte, _]):
+        self.data.extend(bytes)
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 @register_passable
@@ -204,6 +218,35 @@ struct Error(
 
         buffer.flush()
         self = Error(output)
+
+    # FIXME(#5274): this should use the Writer trait but it doesn't yet accept
+    # capturing write_to functions.
+    @no_inline
+    fn __init__[
+        message_func: fn[W: Writer] (mut writer: W) capturing
+    ](out self: Error):
+        """Construct an Error by executing a function that writes the message.
+
+        Parameters:
+            message_func: The function that writes the message.
+
+        Warning:
+            This function is for temporary internal use only. Due to some
+            language-level limitations, this needs to be a public `__init__`
+            function.
+        """
+
+        # Count the total length of bytes to allocate only once
+        var arg_bytes = _TotalWritableBytes()
+        message_func(arg_bytes)
+        var writer = _ErrorWriter(List[Byte](capacity=arg_bytes.size + 1))
+        var buffer = _WriteBufferStack(writer)
+        message_func(buffer)
+        buffer.flush()
+        writer.data.append(0)
+        self.loaded_length = -(len(writer.data) - 1)
+        self.data = writer.data.steal_data()
+        self.stack_trace = StackTrace(depth=0)
 
     fn __del__(deinit self):
         """Releases memory if allocated."""
