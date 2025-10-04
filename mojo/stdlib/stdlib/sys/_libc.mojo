@@ -107,8 +107,8 @@ fn dup(oldfd: c_int) -> c_int:
 
 @always_inline
 fn execvp(
-    file: UnsafePointer[c_char, mut=False, origin=_],
-    argv: UnsafePointer[UnsafePointer[c_char, mut=False, origin=_]],
+    file: UnsafePointer[c_char, mut=False],
+    argv: UnsafePointer[UnsafePointer[c_char, mut=False]],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
