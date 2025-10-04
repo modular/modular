@@ -18,7 +18,6 @@ from algorithm import parallelize
 from shmem import *
 from shmem._nvshmem import *
 from testing import assert_equal
-from sys import sizeof
 
 
 fn simple_shift_kernel(destination: UnsafePointer[Int32]):
