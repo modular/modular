@@ -24,8 +24,8 @@ from test_common.lora_utils import (
 
 
 def generate_tokens_from_contexts(
-    pipeline: TextGenerationPipeline, contexts: dict[str, TextContext]
-) -> dict[str, list[int]]:
+    pipeline: TextGenerationPipeline, contexts: dict[RequestID, TextContext]
+) -> dict[RequestID, list[int]]:
     """Generate tokens from multiple contexts using the same pipeline.
 
     Args:
@@ -35,7 +35,7 @@ def generate_tokens_from_contexts(
     Returns:
         Dictionary mapping request_id to list of generated tokens
     """
-    all_tokens: dict[str, list[int]] = {req_id: [] for req_id in contexts}
+    all_tokens: dict[RequestID, list[int]] = {req_id: [] for req_id in contexts}
     active_contexts = contexts.copy()
 
     while active_contexts:
@@ -88,11 +88,11 @@ async def test_smollm2_with_lora_adapter() -> None:
     )
 
     base_tokens = generate_tokens_from_contexts(
-        pipeline, {"base": base_context}
-    )["base"]
+        pipeline, {base_context.request_id: base_context}
+    )[base_context.request_id]
     lora_tokens = generate_tokens_from_contexts(
-        pipeline, {"lora": lora_context}
-    )["lora"]
+        pipeline, {lora_context.request_id: lora_context}
+    )[lora_context.request_id]
 
     assert len(base_tokens) > 0
     assert len(lora_tokens) > 0
@@ -136,11 +136,11 @@ async def test_lora_vs_base_comparison() -> None:
     )
 
     base_tokens = generate_tokens_from_contexts(
-        pipeline, {"base": base_context}
-    )["base"]
+        pipeline, {base_context.request_id: base_context}
+    )[base_context.request_id]
     lora_tokens = generate_tokens_from_contexts(
-        pipeline, {"lora": lora_context}
-    )["lora"]
+        pipeline, {lora_context.request_id: lora_context}
+    )[lora_context.request_id]
 
     assert len(base_tokens) > 0
     assert len(lora_tokens) > 0
@@ -167,48 +167,52 @@ async def test_multiple_lora_adapters() -> None:
         top_k=1,
     )
 
+    base_context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID("base"),
+            prompt=prompt,
+            model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
+            sampling_params=sampling_params,
+        )
+    )
+    lora1_context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID("lora1"),
+            prompt=prompt,
+            model_name=lora_paths[0],
+            sampling_params=sampling_params,
+        )
+    )
+    lora2_context = await tokenizer.new_context(
+        TextGenerationRequest(
+            request_id=RequestID("lora2"),
+            prompt=prompt,
+            model_name=lora_paths[1],
+            sampling_params=sampling_params,
+        )
+    )
+
     contexts = {
-        "base": await tokenizer.new_context(
-            TextGenerationRequest(
-                request_id=RequestID("base"),
-                prompt=prompt,
-                model_name="HuggingFaceTB/SmolLM2-135M-Instruct",
-                sampling_params=sampling_params,
-            )
-        ),
-        "lora1": await tokenizer.new_context(
-            TextGenerationRequest(
-                request_id=RequestID("lora1"),
-                prompt=prompt,
-                model_name=lora_paths[0],
-                sampling_params=sampling_params,
-            )
-        ),
-        "lora2": await tokenizer.new_context(
-            TextGenerationRequest(
-                request_id=RequestID("lora2"),
-                prompt=prompt,
-                model_name=lora_paths[1],
-                sampling_params=sampling_params,
-            )
-        ),
+        base_context.request_id: base_context,
+        lora1_context.request_id: lora1_context,
+        lora2_context.request_id: lora2_context,
     }
 
     all_tokens = {
-        "base": generate_tokens_from_contexts(
-            pipeline, {"base": contexts["base"]}
-        )["base"],
-        "lora1": generate_tokens_from_contexts(
-            pipeline, {"lora1": contexts["lora1"]}
-        )["lora1"],
-        "lora2": generate_tokens_from_contexts(
-            pipeline, {"lora2": contexts["lora2"]}
-        )["lora2"],
+        base_context.request_id: generate_tokens_from_contexts(
+            pipeline, {base_context.request_id: base_context}
+        )[base_context.request_id],
+        lora1_context.request_id: generate_tokens_from_contexts(
+            pipeline, {lora1_context.request_id: lora1_context}
+        )[lora1_context.request_id],
+        lora2_context.request_id: generate_tokens_from_contexts(
+            pipeline, {lora2_context.request_id: lora2_context}
+        )[lora2_context.request_id],
     }
 
-    for name, tokens in all_tokens.items():
-        assert len(tokens) > 0, f"No tokens generated for {name}"
-        assert len(tokens) <= 20, f"Too many tokens for {name}: {len(tokens)}"
+    for req_id, tokens in all_tokens.items():
+        assert len(tokens) > 0, f"No tokens generated for {req_id}"
+        assert len(tokens) <= 20, f"Too many tokens for {req_id}: {len(tokens)}"
 
     for context in contexts.values():
         pipeline.release(context.request_id)

@@ -12,6 +12,7 @@ from typing import cast
 import hf_repo_lock
 from max.driver import DeviceSpec
 from max.interfaces import (
+    RequestID,
     SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
@@ -55,7 +56,7 @@ def test_smollm_with_structured_output_gpu(
     'John Mayer is 47 years old.'
     """
 
-    request_id = "request_0"
+    request_id = RequestID("request_0")
     sampling_params = SamplingParams(max_new_tokens=50, top_k=1)
     request = TextGenerationRequest(
         model_name=pipeline_config.model_config.model_path,
