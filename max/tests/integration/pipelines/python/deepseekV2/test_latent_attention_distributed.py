@@ -101,7 +101,7 @@ def _single_gpu_baseline(
     kv_manager = PagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
-        cache_memory=100 * 1024 * 1024,
+        available_cache_memory=100 * 1024 * 1024,
         page_size=128,
         max_batch_size=1,
         max_seq_len=config.max_position_embeddings,

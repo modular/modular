@@ -29,10 +29,7 @@ from max.nn.attention.attention_with_rope import (
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.kv_cache import (
-    PagedCacheValues,
-    PagedKVCacheManager,
-)
+from max.nn.kv_cache import PagedCacheValues, PagedKVCacheManager
 from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
@@ -171,7 +168,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         num_layers=1,
         devices=[device],
         page_size=page_size,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         session=session,
     )
 

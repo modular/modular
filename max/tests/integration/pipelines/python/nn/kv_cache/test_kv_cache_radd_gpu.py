@@ -94,7 +94,7 @@ def test_kv_cache_radd_basic() -> None:
         num_layers=num_layers,
         devices=[device],
         session=session,
-        cache_memory=cache_memory,
+        available_cache_memory=cache_memory,
     )
 
     # Calculate total length and offsets

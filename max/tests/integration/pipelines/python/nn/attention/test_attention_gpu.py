@@ -394,7 +394,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     )
     kv_manager = PagedKVCacheManager(
         kv_params,
-        cache_memory=1024 * 1024 * 32,
+        available_cache_memory=1024 * 1024 * 32,
         page_size=128,
         max_batch_size=2,
         max_seq_len=100,

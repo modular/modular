@@ -74,7 +74,7 @@ def test_kv_cache_ragged_attention(
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
         max_batch_size=2,
         max_seq_len=100,

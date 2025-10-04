@@ -414,7 +414,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         num_layers=1,
         devices=[CPU()],
         session=session,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (

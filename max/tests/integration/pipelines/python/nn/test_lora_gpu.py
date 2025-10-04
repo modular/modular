@@ -626,7 +626,7 @@ def attention_lora_max_output(
 
     kv_manager = PagedKVCacheManager(
         params=kv_params,
-        cache_memory=1024 * 1024,
+        available_cache_memory=1024 * 1024,
         max_batch_size=x.shape[0],
         max_seq_len=seq_len * 2,
         num_layers=1,

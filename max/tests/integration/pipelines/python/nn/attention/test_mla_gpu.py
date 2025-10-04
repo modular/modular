@@ -46,7 +46,7 @@ def test_mla_prefill_plan() -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=page_size,
         max_batch_size=2,
         max_seq_len=100,
@@ -154,7 +154,7 @@ def test_mla_decompress_k_cache() -> None:
 
     kv_manager = PagedKVCacheManager(
         kv_params,
-        cache_memory=1024 * 2 * 576,
+        available_cache_memory=1024 * 2 * 576,
         page_size=page_size,
         max_batch_size=2,
         max_seq_len=100,

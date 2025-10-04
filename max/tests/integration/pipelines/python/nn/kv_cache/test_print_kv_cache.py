@@ -99,7 +99,7 @@ def test_print_kv_cache(dtype: DType) -> None:
         num_layers=1,
         devices=[CPU()],
         session=InferenceSession(devices=[CPU()]),
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
 

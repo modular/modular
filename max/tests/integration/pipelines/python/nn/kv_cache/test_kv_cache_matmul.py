@@ -158,7 +158,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         devices=[CPU()],
         session=session,
         page_size=128,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
     )
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
@@ -350,7 +350,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         devices=[CPU()],
         session=session,
         page_size=128,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -481,7 +481,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     num_layers = 1
     kv_manager = PagedKVCacheManager(
         kv_params,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=page_size,
         max_batch_size=2,
         max_seq_len=100,
@@ -594,7 +594,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         devices=[CPU()],
         session=InferenceSession(devices=[CPU()]),
         page_size=128,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
     )
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(

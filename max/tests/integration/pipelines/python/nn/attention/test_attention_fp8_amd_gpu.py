@@ -89,7 +89,7 @@ def _create_kv_manager(
 
     manager = PagedKVCacheManager(
         params=kv_cache_params,
-        cache_memory=1024 * 1024,
+        available_cache_memory=1024 * 1024,
         max_batch_size=batch_size,
         max_seq_len=seq_len * 2,
         num_layers=1,

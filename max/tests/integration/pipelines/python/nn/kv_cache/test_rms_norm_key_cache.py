@@ -97,7 +97,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         num_layers=1,
         devices=[CPU()],
         session=session,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
 
@@ -176,7 +176,7 @@ def test_partial_rms_norm_key_cache(
         num_layers=1,
         devices=[CPU()],
         session=session,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
 
@@ -269,7 +269,7 @@ def test_rms_norm_new_key_cache(
         num_layers=1,
         devices=[CPU()],
         session=session,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
 
@@ -374,7 +374,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
         num_layers=1,
         devices=[CPU()],
         session=session,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
 
@@ -424,7 +424,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         num_layers=1,
         devices=[CPU()],
         session=session,
-        cache_memory=1024 * 1024 * 1024,
+        available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
 
