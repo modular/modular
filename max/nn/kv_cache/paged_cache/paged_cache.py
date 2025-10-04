@@ -108,7 +108,7 @@ class PagedKVCacheManager:
         num_layers: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        cache_memory: int,
+        available_cache_memory: int,
         zmq_endpoint_base: str | None = None,
         page_size: int = 128,
         enable_runtime_checks: bool = False,
@@ -122,7 +122,7 @@ class PagedKVCacheManager:
             num_layers: The number of layers in the model.
             devices: The devices on which the manager will allocate memory.
             session: The inference session to load ops from.
-            cache_memory: The total amount of memory available for caching.
+            available_cache_memory: The total amount of memory available for caching.
                 This is aggregated across all devices.
             page_size: The number of tokens that will be stored in a single block.
             enable_runtime_checks: Whether to enable runtime correctness checks.
@@ -157,7 +157,7 @@ class PagedKVCacheManager:
         )
 
         # Normalize cache_memory across all devices.
-        cache_memory_per_device = cache_memory // len(devices)
+        cache_memory_per_device = available_cache_memory // len(devices)
 
         # The total number of blocks we'll have per-device.
         self.total_num_pages = int(
@@ -175,7 +175,7 @@ class PagedKVCacheManager:
         single_page_size_bytes_str = to_human_readable_bytes(
             single_page_size_bytes
         )
-        cache_memory_str = to_human_readable_bytes(cache_memory)
+        cache_memory_str = to_human_readable_bytes(available_cache_memory)
         across_x_devices_str = (
             f" across {len(devices)} devices" if len(devices) > 1 else ""
         )

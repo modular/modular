@@ -64,7 +64,7 @@ def load_kv_manager(
                 num_layers=num_layers,
                 devices=devices,
                 session=session,
-                cache_memory=available_cache_memory,
+                available_cache_memory=available_cache_memory,
                 page_size=page_size,
             )
 
@@ -75,7 +75,7 @@ def load_kv_manager(
             num_layers=num_layers,
             devices=devices,
             session=session,
-            cache_memory=available_cache_memory,
+            available_cache_memory=available_cache_memory,
             page_size=page_size,
         )
     else:

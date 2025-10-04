@@ -177,7 +177,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             num_layers=vision_num_layers,
             devices=devices,
             session=session,
-            cache_memory=cache_memory,
+            available_cache_memory=cache_memory,
             page_size=page_size,
         )
 

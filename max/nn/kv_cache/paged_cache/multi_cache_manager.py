@@ -51,7 +51,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         num_layers: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        cache_memory: int,
+        available_cache_memory: int,
         page_size: int = 128,
         enable_runtime_checks: bool = False,
     ) -> None:
@@ -69,7 +69,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
                 parallelism is enabled, the devices will be split into
                 ``params.data_parallel_degree`` groups.
             session: Inference session
-            cache_memory: Total cache memory across all devices
+            available_cache_memory: Total cache memory across all devices
             page_size: Page size in tokens
             enable_runtime_checks: Whether to enable runtime checks
         """
@@ -94,7 +94,9 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         max_batch_size_per_replica = (
             max_batch_size // params.data_parallel_degree
         )
-        cache_memory_per_replica = cache_memory // params.data_parallel_degree
+        cache_memory_per_replica = (
+            available_cache_memory // params.data_parallel_degree
+        )
 
         # The effective total number of pages is .
         num_replicas = params.data_parallel_degree
@@ -114,7 +116,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
                     num_layers=num_layers,
                     devices=devices,
                     session=session,
-                    cache_memory=cache_memory_per_replica,
+                    available_cache_memory=cache_memory_per_replica,
                     page_size=page_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
