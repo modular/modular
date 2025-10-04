@@ -107,7 +107,7 @@ def create_paged_manager(
         num_layers=NUM_LAYERS,
         devices=[device],
         session=session,
-        cache_memory=cache_memory,
+        available_cache_memory=cache_memory,
         page_size=page_size,
         enable_runtime_checks=True,
     )
