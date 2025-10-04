@@ -271,9 +271,9 @@ struct BenchConfig(Copyable, Movable):
     var out_file: Optional[Path]
     """Output file to write results to."""
     var min_runtime_secs: Float64
-    """Upper bound on benchmarking time in secs."""
-    var max_runtime_secs: Float64
     """Lower bound on benchmarking time in secs."""
+    var max_runtime_secs: Float64
+    """Upper bound on benchmarking time in secs."""
     var min_warmuptime_secs: Float64
     """Lower bound on warmup time in secs."""
     var num_warmup_iters: Int
