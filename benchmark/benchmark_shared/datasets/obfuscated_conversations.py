@@ -94,6 +94,7 @@ class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
                     prompt_len=prompt_len,
                     output_len=output_lengths[i],
                     encoded_images=[],
+                    ignore_eos=(output_lengths[i] is not None),
                 )
             )
         return sampled_requests

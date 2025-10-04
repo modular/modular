@@ -76,6 +76,10 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="AxolotlBenchmarkDataset",
         has_multiturn_chat_support=False,
     ),
+    "batch-job": DatasetRegistryEntry(
+        class_name="BatchJobBenchmarkDataset",
+        has_multiturn_chat_support=False,
+    ),
     "code_debug": DatasetRegistryEntry(
         class_name="CodeDebugBenchmarkDataset",
         has_multiturn_chat_support=True,

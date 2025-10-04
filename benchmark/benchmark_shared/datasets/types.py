@@ -14,10 +14,12 @@
 from __future__ import annotations
 
 import base64
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
+from typing import Any
 
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -47,10 +49,11 @@ class OpenAIImage(TypedDict):
 
 @dataclass
 class SampledRequest:
-    prompt_formatted: str
+    prompt_formatted: str | list[dict[str, Any]]
     prompt_len: int
     output_len: int | None
     encoded_images: list[OpenAIImage]
+    ignore_eos: bool
 
 
 MessageSource = Literal["user", "assistant"]
@@ -100,4 +103,50 @@ def encode_image(img: Image.Image) -> OpenAIImage:
     return {
         "type": "image_url",
         "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
+    }
+
+
+def encode_image_from_file_path(file_path: str) -> OpenAIImage:
+    """
+    Read an image file as raw bytes and encode in base64 without any transformations.
+    Preserves the exact original file data and determines MIME type from file extension.
+
+    Args:
+        file_path: Path to the image file
+
+    Returns:
+        OpenAI API image_url content entry with the encoded string
+
+    Raises:
+        ValueError: If the file extension is not supported
+        FileNotFoundError: If the file does not exist
+    """
+    extension_to_mime = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }
+
+    # Check if extension is supported
+    _, ext = os.path.splitext(file_path.lower())
+    if ext not in extension_to_mime:
+        supported_exts = ", ".join(extension_to_mime.keys())
+        raise ValueError(
+            f"Unsupported image file extension '{ext}'. "
+            f"Supported extensions: {supported_exts}"
+        )
+
+    # Base64 encode file bytes
+    with open(file_path, "rb") as f:
+        image_bytes = f.read()
+
+    img_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    return {
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:{extension_to_mime[ext]};base64,{img_base64}"
+        },
     }

@@ -63,6 +63,7 @@ try:
     from .benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
+        BatchJobBenchmarkDataset,
         BenchmarkDataset,
         ChatSession,
         CodeDebugBenchmarkDataset,
@@ -92,6 +93,7 @@ except ImportError:
     from benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
+        BatchJobBenchmarkDataset,
         BenchmarkDataset,
         ChatSession,
         CodeDebugBenchmarkDataset,
@@ -1251,7 +1253,7 @@ async def benchmark(  # noqa: ANN201
             test_max_tokens = min_ignore_none(
                 (test_request.output_len, max_output_len)
             )
-            test_ignore_eos = test_request.output_len is not None
+            test_ignore_eos = test_request.ignore_eos
             test_images = test_request.encoded_images
 
         test_input = RequestFuncInput(
@@ -1360,14 +1362,9 @@ async def benchmark(  # noqa: ANN201
                     if time.perf_counter_ns() >= benchmark_should_end_time:
                         break
 
-                # If the request length is pinned, then we use ignore_eos+max_tokens
-                # to force the model's hand into the given request length. Otherwise,
-                # we run until the model generates EOS. Letting the model choose
-                # request lengths has some downsides (e.g., benchmarking is
-                # vulnerable to correctness bugs or even minor optimizations), but
-                # sometimes necessary if we have no other way to set the appropriate
-                # distribution of output lengths.
-                ignore_eos = request.output_len is not None
+                # Use the ignore_eos setting from the dataset.
+                # Each dataset determines whether to respect EOS based on its own logic.
+                ignore_eos = request.ignore_eos
                 max_tokens = min_ignore_none(
                     (request.output_len, max_output_len)
                 )
@@ -1976,6 +1973,16 @@ def main(args: argparse.Namespace) -> None:
             output_lengths=output_lengths,
             shuffle=args.obfuscated_conversations_shuffle,
             seed=args.seed,
+        )
+    elif isinstance(benchmark_dataset, BatchJobBenchmarkDataset):
+        input_requests = benchmark_dataset.sample_requests(
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            output_lengths=output_lengths,
+            shuffle=(
+                args.output_lengths is None and not args.record_output_lengths
+            ),
+            image_dir=args.batch_job_image_dir,
         )
     else:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")

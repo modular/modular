@@ -695,6 +695,7 @@ def main(args: argparse.Namespace) -> None:
                     assert request.output_len is not None, (
                         "output_len is required for CodeDebugBenchmarkDataset"
                     )
+                    assert isinstance(request.prompt_formatted, str)
                     converted.append(
                         RequestPayload(
                             request.prompt_formatted,

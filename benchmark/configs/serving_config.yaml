@@ -101,3 +101,6 @@ benchmark_config:
   max_concurrent_lora_ops: 1
   max_num_loras: 10
   lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+  
+  # Batch job dataset parameters
+  batch_job_image_dir: null  # When set, use file references instead of embedded images

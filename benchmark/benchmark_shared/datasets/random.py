@@ -77,6 +77,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         sessions: list[ChatSession] = []
         for session_id, first_turn in enumerate(first_turns):
+            assert isinstance(first_turn.prompt_formatted, str)
             messages = [
                 build_chat_message(
                     "user", first_turn.prompt_formatted, tokenizer
@@ -94,6 +95,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 follow_up_turn = follow_up_turns[
                     session_id * (num_turns - 1) + i
                 ]
+                assert isinstance(follow_up_turn.prompt_formatted, str)
                 messages.append(
                     build_chat_message(
                         "user", follow_up_turn.prompt_formatted, tokenizer
@@ -257,6 +259,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     prompt_len=input_len_actual,
                     output_len=int(output_lens[i]),
                     encoded_images=images,
+                    ignore_eos=(output_lens[i] is not None),
                 )
             )
 

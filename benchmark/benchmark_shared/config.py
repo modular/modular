@@ -341,6 +341,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "group_description": "Parameters specific to different dataset types and workloads",
         },
     )
+    batch_job_image_dir: Optional[str] = field(
+        default=None, metadata={"group": "Dataset-Specific Parameters"}
+    )
     obfuscated_conversations_average_output_len: int = field(
         default=175, metadata={"group": "Dataset-Specific Parameters"}
     )
@@ -515,6 +518,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
             "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",
             "arxiv_summarization_input_len": "Number of input tokens per request, used only for arxiv-summarization dataset.",
+            "batch_job_image_dir": "Directory where server can access images for batch-job dataset (file reference mode). If not specified, uses embedded base64 mode.",
             "obfuscated_conversations_average_output_len": "Average output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_shuffle": "Shuffle the obfuscated-conversations dataset.",

@@ -75,6 +75,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
         sessions: list[ChatSession] = []
         for session_id, input_request in enumerate(input_requests):
+            assert isinstance(input_request.prompt_formatted, str)
             messages = [
                 build_chat_message(
                     "user", input_request.prompt_formatted, tokenizer
@@ -165,6 +166,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     prompt_len=prompt_len,
                     output_len=output_len,
                     encoded_images=[],
+                    ignore_eos=(output_len is not None),
                 )
             )
 

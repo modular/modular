@@ -100,6 +100,7 @@ class ShareGPTBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     prompt_len=prompt_len,
                     output_len=output_len,
                     encoded_images=[],
+                    ignore_eos=(output_len is not None),
                 )
             )
 

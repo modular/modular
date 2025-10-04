@@ -13,6 +13,7 @@
 
 from .arxiv_summarization import ArxivSummarizationBenchmarkDataset
 from .axolotl import AxolotlBenchmarkDataset
+from .batch_job import BatchJobBenchmarkDataset
 from .code_debug import CodeDebugBenchmarkDataset
 from .huggingface import HuggingFaceBenchmarkDataset
 from .interface import BenchmarkDataset
@@ -29,6 +30,7 @@ __all__ = [
     "DATASET_REGISTRY",
     "ArxivSummarizationBenchmarkDataset",
     "AxolotlBenchmarkDataset",
+    "BatchJobBenchmarkDataset",
     "BenchmarkDataset",
     "ChatSession",
     "CodeDebugBenchmarkDataset",
