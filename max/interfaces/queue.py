@@ -96,7 +96,6 @@ class MAXPullQueue(Protocol, Generic[PullItemType]):
         ...
 
 
-@traced
 def drain_queue(
     pull_queue: MAXPullQueue[PullItemType], max_items: int | None = None
 ) -> list[PullItemType]:
