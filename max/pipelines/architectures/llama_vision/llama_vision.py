@@ -389,10 +389,17 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         # Step the text KV manager as usual for autoregressive text generation.
         self.text_kv_manager.step(batch)
 
-    def external_claim(self, request_id: RequestID) -> None:
+    def get_or_recommend_replica(self, _: InputContext) -> int:
+        """Return idx of the replica that should be used for the given request."""
+        # As there is only one replica, we always return 0
+        return 0
+
+    def external_claim(
+        self, request_id: RequestID, replica_idx: int = 0
+    ) -> None:
         """Reserves sequence IDs for the given request ID in both modalities' KV caches."""
-        self.text_kv_manager.external_claim(request_id)
-        self.vision_kv_manager.external_claim(request_id)
+        self.text_kv_manager.external_claim(request_id, replica_idx)
+        self.vision_kv_manager.external_claim(request_id, replica_idx)
 
     def release(self, request_id: RequestID) -> None:
         """Marks the sequence complete for both modalities' KV caches."""

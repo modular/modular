@@ -146,6 +146,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         return self._request_to_replica_idx[context.request_id]
 
     def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
+        """Return idx of the replica that should be used for the given request."""
         if context.request_id in self._request_to_replica_idx:
             return self._request_to_replica_idx[context.request_id]
 
@@ -236,16 +237,14 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         self._request_count_per_replica[replica_idx] -= 1
         self._replica_managers[replica_idx].release(request_id)
 
-    def external_claim(self, request_id: RequestID) -> None:
-        raise ValueError(
-            "Please call external_claim_for_replica instead of external_claim "
-            "when using MultiPagedKVCacheManager."
-        )
-
-    def external_claim_for_replica(
-        self, replica_idx: int, request_id: RequestID
+    def external_claim(
+        self, request_id: RequestID, replica_idx: int = -1
     ) -> None:
         """Reserve a sequence ID for the given request ID."""
+        if replica_idx == -1:
+            raise ValueError(
+                "replica_idx must be specified for MultiPagedKVCacheManager"
+            )
         if request_id in self._request_to_replica_idx:
             raise ValueError(
                 f"Request ID {request_id} is already claimed for replica {self._request_to_replica_idx[request_id]}"

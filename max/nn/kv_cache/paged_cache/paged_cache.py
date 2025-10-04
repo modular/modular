@@ -783,8 +783,19 @@ class PagedKVCacheManager:
             )
         return kv_cache_inputs
 
-    def external_claim(self, request_id: RequestID) -> None:
+    def get_or_recommend_replica(self, _: TextGenerationContext) -> int:
+        """Return idx of the replica that should be used for the given request."""
+        # As there is only one replica, we always return 0
+        return 0
+
+    def external_claim(
+        self, request_id: RequestID, replica_idx: int = 0
+    ) -> None:
         """Reserve a sequence ID for the given request ID."""
+        if replica_idx != 0:
+            raise ValueError(
+                "PagedKVCacheManager does not support multiple replicas"
+            )
         if request_id in self._request_to_seq_id:
             raise ValueError(f"Request ID {request_id} is already claimed")
 

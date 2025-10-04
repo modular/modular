@@ -588,38 +588,31 @@ class GenerateMixin(
         # by replica.
         batches: list[dict[RequestID, T]] = []
         batch_to_replica_idx: dict[RequestID, int] = {}
-        if data_parallel_degree > 1:
-            if len(kv_managers) > 1:
-                # We don't support speculative decoding when data parallelism is
-                # enabled, because the KV cache managers might place the same
-                # context on different devices/replicas.
-                raise ValueError(
-                    "Having multiple KV managers (e.g. when using"
-                    " speculative decoding) is not supported when data "
-                    "parallelism is enabled."
-                )
-            kv_manager = kv_managers[0]
-            assert isinstance(
-                kv_manager,
-                MultiPagedKVCacheManager,
+        if data_parallel_degree > 1 and len(kv_managers) > 1:
+            # We don't support speculative decoding when data parallelism is
+            # enabled, because the KV cache managers might place the same
+            # context on different devices/replicas.
+            raise ValueError(
+                "Having multiple KV managers (e.g. when using"
+                " speculative decoding) is not supported when data "
+                "parallelism is enabled."
             )
-            batches = [{} for _ in range(data_parallel_degree)]
-            for context in context_batch:
-                replica_idx = kv_manager.get_or_recommend_replica(context)
-                kv_manager.external_claim_for_replica(
-                    replica_idx, context.request_id
-                )
-                batches[replica_idx][context.request_id] = context
-                batch_to_replica_idx[context.request_id] = replica_idx
-        else:
-            batches = [
-                {context.request_id: context for context in context_batch}
-            ]
-            for context in context_batch:
-                for kv_manager in self.kv_managers:
-                    kv_manager.external_claim(context.request_id)
-                batches[0][context.request_id] = context
-                batch_to_replica_idx[context.request_id] = 0
+        if data_parallel_degree > 1 and not isinstance(
+            kv_managers[0], MultiPagedKVCacheManager
+        ):
+            raise ValueError(
+                "MultiPagedKVCacheManager is required when data parallelism is enabled."
+            )
+        batches = [{} for _ in range(data_parallel_degree)]
+        for context in context_batch:
+            req_id = context.request_id
+            # Use whatever replica the main models KVCache recommends.
+            replica_idx = kv_managers[0].get_or_recommend_replica(context)
+            # Claim the slot for all kv_managers (eg: main + draft model)
+            for kv_manager in self.kv_managers:
+                kv_manager.external_claim(req_id, replica_idx=replica_idx)
+            batches[replica_idx][req_id] = context
+            batch_to_replica_idx[req_id] = replica_idx
         inputs = TextGenerationInputs(
             batches=batches,
             num_steps=self.pipeline_config.max_num_steps,
@@ -897,21 +890,9 @@ class TextGenerationPipeline(
                 if not self._pipeline_model.kv_manager.contains(
                     context.request_id
                 ):
-                    if (
-                        self._pipeline_config.model_config.data_parallel_degree
-                        > 1
-                    ):
-                        assert isinstance(
-                            self._pipeline_model.kv_manager,
-                            MultiPagedKVCacheManager,
-                        )
-                        self._pipeline_model.kv_manager.external_claim_for_replica(
-                            replica_idx, context.request_id
-                        )
-                    else:
-                        self._pipeline_model.kv_manager.external_claim(
-                            context.request_id
-                        )
+                    self._pipeline_model.kv_manager.external_claim(
+                        context.request_id, replica_idx=replica_idx
+                    )
 
                 # Update num_steps.
                 num_steps = self.calculate_num_steps(num_steps, context)
