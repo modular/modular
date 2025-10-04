@@ -2064,6 +2064,89 @@ def quantize_dynamic_scaled_float8(
     return result[0].tensor, result[1].tensor
 
 
+def batched_quantize_dynamic_scaled_float8(
+    input: TensorValue,
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
+    scale_ub: float = 1200.0,
+    group_size_or_per_token: int = -1,
+    out_type: DType = DType.float8_e4m3fn,
+    scales_type: DType = DType.bfloat16,
+) -> tuple[TensorValue, TensorValue]:
+    """
+    Dynamically quantize the input tensor to fp8.
+
+    Args:
+        input: The input tensor to quantize. Shape: [batch_size, seq_len, hidden_size]
+        scale_ub: The upper bound of the scale factor.
+        group_size_or_per_token: The group size for quantization. When set to -1,
+            the quantization is column-wise.
+        out_type: The type of the output tensor.
+        scales_type: The type of the scales tensor.
+
+    Returns:
+        The quantized tensor and the scales.
+    """
+
+    if input.rank != 3:
+        raise ValueError("input must be rank 3 tensor")
+
+    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
+
+    if scales_type not in (DType.float32, DType.bfloat16, DType.float16):
+        raise ValueError("scales_type must be float32, bfloat16, or float16")
+
+    group_size = (
+        group_size_or_per_token
+        if group_size_or_per_token != -1
+        else input.shape[2]
+    )
+
+    a_scales_dim1 = input.shape[1]
+    if input_scale_spec.is_block or weight_scale_spec.is_block:
+        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
+            raise ValueError(
+                "both input and weight must be blockwise scaled for blockwise scaling"
+            )
+
+        # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
+        padding_size = 16 // scales_type.size_in_bytes
+        a_scales_dim1 = (
+            (input.shape[1] + padding_size - 1) // padding_size
+        ) * padding_size
+
+    result = ops.custom(
+        "mo.batched.quantize.dynamic.scaled.fp8",
+        device=input.device,
+        values=[
+            input,
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1], input.shape[2]],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[
+                    input.shape[0],
+                    input.shape[2] // group_size,
+                    a_scales_dim1,
+                ],
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "group_size_or_per_token": group_size_or_per_token,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
 def dynamic_scaled_matmul(
     a: TensorValue,
     b: TensorValue,

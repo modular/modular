@@ -74,6 +74,7 @@ from linalg.fp8_quantization import (
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
+    batched_quantize_dynamic_scaled_fp8,
 )
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
@@ -8631,6 +8632,34 @@ struct QuantizeDynamicScaledFloat8:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
         quantize_dynamic_scaled_fp8[group_size_or_per_token](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(scales),
+            managed_tensor_slice_to_ndbuffer(input),
+            scale_ub,
+            ctx.get_device_context(),
+        )
+
+
+@compiler.register("mo.batched.quantize.dynamic.scaled.fp8")
+struct BatchedQuantizeDynamicScaledFloat8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType, //,
+        group_size_or_per_token: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=3],
+        scales: OutputTensor[dtype=scales_type, rank=3],
+        input: InputTensor[dtype=input_type, rank=3],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        batched_quantize_dynamic_scaled_fp8[group_size_or_per_token](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(scales),
             managed_tensor_slice_to_ndbuffer(input),

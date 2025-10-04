@@ -223,6 +223,127 @@ fn quantize_fp8_kernel[
             )
 
 
+@always_inline
+fn batched_quantize_dynamic_scaled_fp8[
+    out_dtype: DType,
+    in_dtype: DType,
+    scales_dtype: DType, //,
+    group_size_or_per_token: Int,
+](
+    scaled_output: NDBuffer[mut=True, out_dtype, 3, MutableAnyOrigin],
+    scales: NDBuffer[mut=True, scales_dtype, 3, MutableAnyOrigin],
+    input: NDBuffer[in_dtype, 3, *_],
+    scale_ub: Float32,
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        scales_dtype in (DType.bfloat16, DType.float16, DType.float32),
+        "scales dtype should be bfloat16, float16 or float32",
+    ]()
+    constrained[
+        out_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz),
+        "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
+    ]()
+
+    alias group_size = input.shape.get[
+        2
+    ]() if group_size_or_per_token == -1 else group_size_or_per_token
+    alias n_groups = input.shape.get[2]() // group_size
+    var batch_size = input.dim[0]()
+    alias simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
+    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    alias warps_per_block = min(
+        ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
+    )
+
+    alias kernel = batched_quantize_fp8_kernel[
+        out_dtype,
+        scales_dtype,
+        in_dtype,
+        warps_per_block,
+        group_size,
+    ]
+
+    # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
+    # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
+    var expected_input: NDBuffer[in_dtype, 3, MutableAnyOrigin] = input
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        scaled_output,
+        scales,
+        expected_input,
+        scale_ub.cast[scales_dtype](),
+        grid_dim=(input.dim[1](), n_groups, batch_size),
+        block_dim=warps_per_block * WARP_SIZE,
+        attributes=pdl_launch_attributes(),
+    )
+
+
+fn batched_quantize_fp8_kernel[
+    out_type: DType,
+    scales_type: DType,
+    in_type: DType,
+    warps_per_block: Int,
+    group_size: Int,
+](
+    output: NDBuffer[mut=True, out_type, 3, MutableAnyOrigin],
+    scales: NDBuffer[mut=True, scales_type, 3, MutableAnyOrigin],
+    input: NDBuffer[in_type, 3, MutableAnyOrigin],
+    scale_ub: Scalar[scales_type],
+):
+    alias simd_width = simd_width_of[in_type]()
+    alias num_threads = warps_per_block * WARP_SIZE
+    alias use_warp_tiling = group_size <= num_threads * simd_width
+    alias fp8_max = Scalar[out_type].MAX_FINITE
+
+    var input_vec = SIMD[in_type, simd_width](0)
+    var thread_max = Scalar[in_type](0)
+
+    var tid = thread_idx.x
+    var row = Int(block_idx.x)
+    var group_idx = Int(block_idx.y)
+    var batch_idx = Int(block_idx.z)
+
+    with PDL():
+        for i in range(tid, group_size // simd_width, num_threads):
+            var idx: Int = i * simd_width + group_idx * group_size
+            input_vec = input.load[width=simd_width](batch_idx, row, idx)
+            thread_max = max(thread_max, abs(input_vec).reduce_max())
+
+        var group_max = block.max[block_size=num_threads, broadcast=True](
+            thread_max
+        )
+
+        var scale_factor = (
+            min(group_max.cast[scales_type](), scale_ub)
+            / fp8_max.cast[scales_type]()
+        )
+
+        if tid == 0:
+            scales.store[width=1](
+                IndexList[3](batch_idx, group_idx, row), scale_factor
+            )
+
+        for i in range(tid, group_size // simd_width, num_threads):
+            var idx: Int = i * simd_width + group_idx * group_size
+
+            @parameter
+            if use_warp_tiling:
+                pass
+            else:
+                input_vec = input.load[width=simd_width](batch_idx, row, idx)
+
+            var output_vec = input_vec.cast[scales_type]() / scale_factor
+
+            output_vec = max(
+                SIMD[scales_type, simd_width](-fp8_max),
+                min(SIMD[scales_type, simd_width](fp8_max), output_vec),
+            )
+            output.store[width=simd_width](
+                IndexList[3](batch_idx, row, idx), output_vec.cast[out_type]()
+            )
+
+
 ########################################################
 # scaled fp8 matmul
 ########################################################
