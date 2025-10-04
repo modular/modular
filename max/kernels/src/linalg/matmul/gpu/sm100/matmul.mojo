@@ -1872,16 +1872,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias BN = MMA_N // cta_group
     alias BK = config.block_tile_shape[2]
 
-    # constraint for bfloat16 matmul
     constrained[
-        (a_type != DType.bfloat16) or (MMA_M != 128) or (MMA_N % 32 == 0),
+        (MMA_M != 128) or (MMA_N % 32 == 0),
         "if MMA_M is 128, then MMA_N must be a multiple of 32",
-    ]()
-
-    # constraint for fp8 matmul
-    constrained[
-        (a_type != DType.float8_e4m3fn) or (MMA_N % 64 == 0),
-        "MMA_N must be a multiple of 64 for fp8 matmul",
     ]()
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B

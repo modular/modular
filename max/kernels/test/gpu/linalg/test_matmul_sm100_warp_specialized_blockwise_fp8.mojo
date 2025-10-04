@@ -360,7 +360,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             for mma_m_scale in range(1, 3):
 
                 @parameter
-                for mma_n_scale in range(4, 17, 4):
+                for mma_n_scale in [2, 4, 6, 8, 10, 12, 16]:
                     alias block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )
@@ -413,7 +413,7 @@ def main():
         for mma_m_scale in range(1, 3):
 
             @parameter
-            for mma_n_scale in range(4, 17, 4):
+            for mma_n_scale in [2, 4, 6, 8, 10, 12, 16]:
                 alias block_tile_shape = Index(
                     64 * mma_m_scale, 8 * mma_n_scale, BK
                 )

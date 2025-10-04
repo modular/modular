@@ -223,12 +223,6 @@ def main():
                     if mma_m_scale == 1 and mma_n_scale % 2 != 0:
                         continue
 
-                    # TODO: support the increments of 8 for float 8 dtype at a later point
-                    # currently it works with increments of BN = 32
-                    @parameter
-                    if mma_n_scale % 4 != 0:
-                        continue
-
                     alias block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )

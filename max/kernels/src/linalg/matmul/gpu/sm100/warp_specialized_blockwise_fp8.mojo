@@ -759,10 +759,14 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
 
+    constrained[cta_group == 2, "Only support cta_group = 2"]()
     constrained[BK == 128, "Only support BK = 128"]()
     constrained[
-        BN <= BK or gcd(BN, BK) == BN - BK,
-        "BN <= BK or gcd(BN, BK) == BN - BK",
+        MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK,
+        "MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK. MMA_N="
+        + String(MMA_N)
+        + ", GCD="
+        + String(gcd(MMA_N, BK)),
     ]()
 
     alias num_m_mmas = BM // (mma_shape[0] // cta_group)
@@ -1286,7 +1290,11 @@ fn sm100_warp_specialized_blockwise_fp8[
     alias BK = config.block_tile_shape[2]
 
     constrained[
-        MMA_N % 64 == 0, "BN must be multiple of 32. BN=" + String(BN)
+        (MMA_M != 128) or (MMA_N % 32 == 0),
+        "if MMA_M is 128, then MMA_N must be a multiple of 32, MMA_N="
+        + String(MMA_N)
+        + ", MMA_M="
+        + String(MMA_M),
     ]()
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
