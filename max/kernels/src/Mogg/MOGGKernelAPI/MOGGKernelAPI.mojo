@@ -75,6 +75,10 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
 )
+from linalg.grouped_matmul_sm100_blockwise_fp8 import (
+    grouped_matmul_dynamic_scaled_fp8,
+)
+from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
@@ -7052,6 +7056,102 @@ struct Struct_grouped_matmul_ragged:
             managed_tensor_slice_to_ndbuffer(expert_ids),
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.matmul.dynamic.scaled.fp8")
+struct Struct_grouped_matmul_dynamic_scaled_fp8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType, //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2],
+        a: InputTensor[dtype=a_type, rank=2],
+        b: InputTensor[dtype=b_type, rank=3],
+        a_scales: InputTensor[dtype=a_scales_type, rank=2],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3],
+        expert_start_indices: InputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: InputTensor[dtype = DType.int32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            (
+                "grouped dynamic scaled matmul only support GPUs with native"
+                " FP8 support"
+            ),
+        ]()
+        cuda_ctx = context.get_device_context()
+        grouped_matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(a_scales),
+            managed_tensor_slice_to_ndbuffer(b_scales),
+            managed_tensor_slice_to_ndbuffer(expert_start_indices),
+            managed_tensor_slice_to_ndbuffer(expert_ids),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.batched.matmul.dynamic.scaled.fp8")
+struct Struct_batched_matmul_dynamic_scaled_fp8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType, //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=3],
+        a: InputTensor[dtype=a_type, rank=3],
+        b: InputTensor[dtype=b_type, rank=3],
+        a_scales: InputTensor[dtype=a_scales_type, rank=3],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3],
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            (
+                "batched dynamic scaled matmul only support GPUs with native"
+                " FP8 support"
+            ),
+        ]()
+        cuda_ctx = context.get_device_context()
+        batched_matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(a_scales),
+            managed_tensor_slice_to_ndbuffer(b_scales),
             cuda_ctx,
         )
 

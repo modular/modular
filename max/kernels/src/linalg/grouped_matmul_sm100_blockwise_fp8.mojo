@@ -13,7 +13,7 @@
 from collections import OptionalReg
 from math import ceildiv, gcd
 from sys import align_of, size_of
-
+from gpu.host.info import B200
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier
@@ -52,6 +52,8 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
     accum_type: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -81,9 +83,9 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutableAnyOrigin],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        accum_type, a_scales_tile_layout, a_scales_desc_layout
+        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    b_scales: LayoutTensor[accum_type, b_scales_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
     constrained[transpose_b, "Only support transposed B"]()
@@ -134,7 +136,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     alias a_scales_k = a_scales_layout.shape[0].value()
 
     b_scales_2d = LayoutTensor[
-        accum_type,
+        b_scales_type,
         Layout.row_major(b_scales_expert * b_scales_n, b_scales_k),
         b_scales.origin,
         address_space = b_scales.address_space,
@@ -482,7 +484,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    accum_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
     *,
     transpose_b: Bool,
     umma_shape: IndexList[3],
@@ -494,10 +497,10 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     c: LayoutTensor[c_type, c_layout, *_, **_],
     a: LayoutTensor[a_type, a_layout, *_, **_],
     b: LayoutTensor[b_type, b_layout, *_, **_],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, *_, **_],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, *_, **_],
     a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, *_, **_],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, *_, **_],
-    a_scales: LayoutTensor[accum_type, a_scales_layout, *_, **_],
-    b_scales: LayoutTensor[accum_type, b_scales_layout, *_, **_],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -511,6 +514,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         a_type == b_type and a_type is DType.float8_e4m3fn,
         "Only support float8_e4m3fn for A and B",
     ]()
+
+    alias accum_type = get_accum_type[a_type]()
 
     alias num_experts = b_layout.shape[0].value()
     alias N = c_layout.shape[1].value()
@@ -548,8 +553,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
 
     var logger = Logger()
     logger.info(
-        "Executing Grouped 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
-        " 128)"
+        "Executing SM100 Basic Grouped 1D2D Blockwise Scaled FP8 GEMM"
+        " (BLOCK_SCALE_SIZE = 128)"
     )
     logger.info("Max tokens per expert: ", max_num_tokens_per_expert)
     logger.info("Number of active experts: ", num_active_experts)
@@ -593,6 +598,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         a_type,
         b_type,
         c_type,
+        a_scales_type,
+        b_scales_type,
         accum_type,
         __type_of(a).layout,
         __type_of(b).layout,
@@ -633,4 +640,80 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         block_dim=(block_dim),
         shared_mem_bytes=Int(smem_use),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+    )
+
+
+fn grouped_matmul_dynamic_scaled_fp8[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
+    input_scale_granularity: StaticString,
+    weight_scale_granularity: StaticString,
+    transpose_b: Bool = False,
+    target: StaticString = "cpu",
+](
+    c: NDBuffer[mut=True, c_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[b_type, 3, _, _],
+    a_scales: NDBuffer[a_scales_type, 2, _, _],
+    b_scales: NDBuffer[b_scales_type, 3, _, _],
+    a_offsets: NDBuffer[DType.uint32, 1, _, _],
+    expert_ids: NDBuffer[DType.int32, 1, _, _],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    constrained[ctx.default_device_info is B200, "Only support B200"]()
+    constrained[transpose_b, "Only support transpose_b = True"]()
+    constrained[
+        c_type == DType.float32,
+        "output dtype should be float32",
+    ]()
+    constrained[
+        a_type == b_type == DType.float8_e4m3fn,
+        "input A and B dtype should be float8_e4m3fn",
+    ]()
+    constrained[
+        a_scales_type == b_scales_type == DType.float32,
+        "input A and B scales dtype should be float32",
+    ]()
+    constrained[
+        input_scale_granularity == "block"
+        and weight_scale_granularity == "block",
+        "Only support block-wise scale granularity",
+    ]()
+
+    var a_tensor = from_ndbuffer_row_major(a)
+    var b_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = from_ndbuffer_row_major(c)
+    var a_scales_tensor = from_ndbuffer_row_major(a_scales)
+    var b_scales_tensor = from_ndbuffer_row_major(b_scales)
+    var a_offsets_tensor = from_ndbuffer_row_major(a_offsets)
+    var expert_ids_tensor = from_ndbuffer_row_major(expert_ids)
+
+    # alias num_experts = b.shape.get[0]()
+    # alias N = b.shape.get[1]()
+    # alias K = b.shape.get[2]()
+    # var seq_len = a.dim[0]()
+
+    alias umma_shape: IndexList[3] = Index(64, 64, 32)
+    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+
+    grouped_matmul_sm100_blockwise_scaled_fp8[
+        transpose_b=transpose_b,
+        umma_shape=umma_shape,
+        block_tile_shape=block_tile_shape,
+    ](
+        c_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
+        a_offsets_tensor,
+        expert_ids_tensor,
+        max_num_tokens_per_expert,
+        num_active_experts,
+        ctx,
     )

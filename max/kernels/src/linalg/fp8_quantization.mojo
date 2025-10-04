@@ -238,9 +238,6 @@ fn matmul_dynamic_scaled_fp8[
     input_scale_granularity: StaticString,
     weight_scale_granularity: StaticString,
     transpose_b: Bool = False,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
@@ -641,7 +638,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     a_scale_layout: Layout,
     b_scale_layout: Layout,
     a_offsets_layout: Layout,
-    expert_ids_layout: Layout,
+    expert_ids_layout: Layout, //,
     *,
     BLOCK_DIM_N: Int = 32,
     BLOCK_DIM_M: Int = 16,

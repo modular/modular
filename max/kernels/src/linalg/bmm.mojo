@@ -38,7 +38,7 @@ from logger import Logger
 from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-
+from gpu.host.info import B200
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
@@ -1264,8 +1264,8 @@ fn bmm_sm100_blockwise_scaled_fp8[
 
     var logger = Logger()
     logger.info(
-        "Executing Basic 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
-        " 128)"
+        "Executing SM100 Basic Batched 1D2D Blockwise Scaled FP8 GEMM"
+        " (BLOCK_SCALE_SIZE = 128)"
     )
     logger.info(
         "Problem Shape: MNK=[", batch_size, ", ", M, ", ", N, ", ", K, "]"
@@ -1350,3 +1350,57 @@ fn bmm_sm100_blockwise_scaled_fp8[
         shared_mem_bytes=Int(smem_use),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
+
+
+fn batched_matmul_dynamic_scaled_fp8[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
+    input_scale_granularity: StaticString,
+    weight_scale_granularity: StaticString,
+    transpose_b: Bool = False,
+    target: StaticString = "cpu",
+](
+    c: NDBuffer[mut=True, c_type, 3, _, _],
+    a: NDBuffer[a_type, 3, _, _],
+    b: NDBuffer[b_type, 3, _, _],
+    a_scales: NDBuffer[a_scales_type, 3, _, _],
+    b_scales: NDBuffer[b_scales_type, 3, _, _],
+    ctx: DeviceContext,
+) raises:
+    constrained[ctx.default_device_info is B200, "Only support B200"]()
+    constrained[c_type == DType.float32, "output dtype should be float32"]()
+    constrained[
+        a_type == b_type == DType.float8_e4m3fn,
+        "input A and B dtype should be float8_e4m3fn",
+    ]()
+    constrained[
+        a_scales_type == b_scales_type == DType.float32,
+        "input A and B scales dtype should be float32",
+    ]()
+
+    constrained[
+        input_scale_granularity == "block"
+        and weight_scale_granularity == "block",
+        "Only support block-wise scale granularity",
+    ]()
+
+    var a_tensor = from_ndbuffer_row_major(a)
+    var b_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = from_ndbuffer_row_major(c)
+    var a_scales_tensor = from_ndbuffer_row_major(a_scales)
+    var b_scales_tensor = from_ndbuffer_row_major(b_scales)
+
+    alias umma_shape = Index(64, 64, 32)
+    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
+    alias swizzle = TensorMapSwizzle.SWIZZLE_128B
+
+    bmm_sm100_blockwise_scaled_fp8[
+        transpose_b=transpose_b,
+        umma_shape=umma_shape,
+        block_tile_shape=block_tile_shape,
+        a_swizzle=swizzle,
+        b_swizzle=swizzle,
+    ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
