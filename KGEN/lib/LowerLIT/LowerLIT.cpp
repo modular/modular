@@ -263,13 +263,18 @@ struct LITLowerer {
   void lowerNestedFunction(FnOp func);
   /// Lower LIT dialect operations in a function body.
   void lowerLITOps(FnOp func);
-  /// Lower a lit.fn to kgen.generator.
-  LogicalResult lowerLITFunc(FnOp func, Block::iterator mainSymbolTablePosIter,
-                             const Twine &parentPrefix);
-  LogicalResult lowerLITFunc(FnOp func, Block::iterator mainSymbolTablePosIter,
-                             const Twine &parentPrefix,
-                             ArrayRef<ParamDeclAttr> parentInputParams,
-                             ArrayRef<VariadicKind> parentVariadics);
+
+  /// Lower a function from LIT FnOp to KGEN GeneratorOp.
+  /// Caller must handle removal of the original symbol and pass the
+  /// pre-calculated mangled name as `newName` beforehand, since different
+  /// contexts (top-level vs nested, struct methods) have different
+  /// requirements. This function handles symbol table invalidation.
+  LogicalResult lowerFunction(FnOp func,
+                              ArrayRef<ParamDeclAttr> parentInputParams,
+                              ArrayRef<VariadicKind> parentVariadics,
+                              Block::iterator mainSymbolTablePosIter,
+                              StringAttr newName);
+
   /// Lower lit.struct.decl and its nested structures.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                 Block::iterator mainSymbolTablePosIter);
@@ -277,9 +282,13 @@ struct LITLowerer {
   LogicalResult lowerTraitDecl(TraitDeclOp traitDecl,
                                Block::iterator mainSymbolTablePosIter);
   /// Lower the constructs within the body of a module decl.
+  /// isTopLevel indicates whether operations in this module body are direct
+  /// children of the top-level symbol table (true) or nested within other
+  /// operations like FileModuleOp/PackageOp (false). This determines the
+  /// removal strategy for operations.
   LogicalResult lowerModuleDecl(Block *moduleBody,
-                                Block::iterator mainSymbolTablePosIter = {},
-                                const Twine &parentPrefix = {});
+                                Block::iterator mainSymbolTablePosIter,
+                                bool isTopLevel);
 
   SymbolTable &getTopLevelSymbolTable() {
     return symbolTables.getTopLevelSymbolTable();
@@ -377,8 +386,9 @@ void LITLowerer::lowerLITOps(FnOp func) {
   });
 }
 
-/// Flatten the name of the given symbol operation and insert it in the given
-/// symbol table with that flattened name. Returns the flattened symbol name.
+/// Rename the given symbol operation to its flattened/mangled name, remove it
+/// from its current position, and reinsert it at the specified location in the
+/// symbol table. Returns the flattened symbol name.
 template <typename T>
 static StringAttr
 flattenNameAndReinsertOp(T op, SymbolTable &symbolTable,
@@ -402,29 +412,26 @@ flattenNameAndReinsertOp(T op, SymbolTable &symbolTable,
   return mangled.mangled;
 }
 
-LogicalResult LITLowerer::lowerLITFunc(FnOp func,
-                                       Block::iterator mainSymbolTablePosIter,
-                                       const Twine &parentPrefix) {
-  return lowerLITFunc(func, mainSymbolTablePosIter, parentPrefix,
-                      /*parentInputParams=*/{},
-                      /*parentVariadics=*/{});
-}
-
-/// This lowers a top level (not nested function) lit.fn to a kgen.generator.
-/// If this is a method of a struct, the struct my have parameters indicated by
-/// parentInputParams.
 LogicalResult
-LITLowerer::lowerLITFunc(FnOp func, Block::iterator mainSymbolTablePosIter,
-                         const Twine &parentPrefix,
-                         ArrayRef<ParamDeclAttr> parentInputParams,
-                         ArrayRef<VariadicKind> parentVariadics) {
-  // Update the function name, incorporating the parent prefix.
-  if (!parentPrefix.isTriviallyEmpty()) {
-    StringAttr newName = flattenNameAndReinsertOp(
-        func, getTopLevelSymbolTable(), mainSymbolTablePosIter);
+LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
+                          ArrayRef<VariadicKind> parentVariadics,
+                          Block::iterator mainSymbolTablePosIter,
+                          StringAttr newName) {
+  // Caller is responsible for removing `func` since removal patterns differ:
+  // - Top-level functions: symbolTable.remove()
+  //   (Top-level functions are tracked in the symbol table and must be removed
+  //   via symbolTable.remove() to maintain symbol table integrity)
+  // - Nested functions: op->remove()
+  //   (Nested functions are not tracked in the symbol table and can be removed
+  //   directly from their parent operation)
+  // Invalidate the symbol table for this FnOp. All FnOps have the SymbolTable
+  // trait, so the SymbolTableCollection needs to be notified before erasure.
+  getSymbolTableCollection().invalidateSymbolTable(func);
 
-    // If this function has a subprogram attached, update its information to
-    // account for the new name.
+  // If this function has a subprogram attached, update its information to
+  // account for the new name.
+  if (newName != func.getSymNameAttr()) {
+    func.setName(newName);
     DebugInfo::updateSubprogram(func, newName);
   }
 
@@ -479,11 +486,9 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator mainSymbolTablePosIter,
   // Move over the body.
   newFunc.getBodyRegion().takeBody(func.getBodyRegion());
 
-  // Move over the symbol, and we're done.
-  Block::iterator genIter = func->getIterator();
-  getTopLevelSymbolTable().remove(func);
-  getTopLevelSymbolTable().insert(newFunc, genIter);
-  getSymbolTableCollection().invalidateSymbolTable(func);
+  // Insert the lowered GeneratorOp and cleanup the original FnOp.
+  // Caller should have already removed the LIT function from its parent.
+  getTopLevelSymbolTable().insert(newFunc, mainSymbolTablePosIter);
   func.erase();
   return success();
 }
@@ -576,9 +581,15 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
     SmallVector<VariadicKind> variadics = llvm::map_to_vector(
         structDecl.getSignature().getParamListAttrs().getPogs(),
         [](PogMetadataAttr pogAttr) { return pogAttr.getVariadic(); });
-    if (failed(lowerLITFunc(func, structDecl->getIterator(),
-                            structName.getValue() + "::",
-                            structDecl.getInputParams(), variadics)))
+
+    // Calculate new name, mangled if not top level. Must be before
+    // removal since MangledSymbol::mangle crawls up the ancestors.
+    StringAttr nameToUse = MangledSymbol::mangle(func).mangled;
+    // This is out here because removal is different for each
+    // lowerFunction caller.
+    func->remove();
+    if (failed(lowerFunction(func, structDecl.getInputParams(), variadics,
+                             mainSymbolTablePosIter, nameToUse)))
       return failure();
   }
 
@@ -595,8 +606,8 @@ LogicalResult
 LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
                            Block::iterator mainSymbolTablePosIter) {
   // Update the name of this trait, incorporating any parents.
-  StringAttr traitName = flattenNameAndReinsertOp(
-      traitDecl, getTopLevelSymbolTable(), mainSymbolTablePosIter);
+  flattenNameAndReinsertOp(traitDecl, getTopLevelSymbolTable(),
+                           mainSymbolTablePosIter);
 
   // Process operations within the trait body.
   for (Operation &member : llvm::make_early_inc_range(
@@ -613,9 +624,15 @@ LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
         SmallVector<VariadicKind> variadics = llvm::map_to_vector(
             traitDecl.getSignature().getParamListAttrs().getPogs(),
             [](PogMetadataAttr pogAttr) { return pogAttr.getVariadic(); });
-        if (failed(lowerLITFunc(func, traitDecl->getIterator(),
-                                traitName.getValue() + "::",
-                                traitDecl.getInputParams(), variadics)))
+
+        // Calculate new name, mangled if not top level. Must be before
+        // removal since MangledSymbol::mangle crawls up the ancestors.
+        StringAttr nameToUse = MangledSymbol::mangle(func).mangled;
+        // This is out here because removal is different for each
+        // lowerFunction caller.
+        func->remove();
+        if (failed(lowerFunction(func, traitDecl.getInputParams(), variadics,
+                                 mainSymbolTablePosIter, nameToUse)))
           return failure();
       }
     }
@@ -623,6 +640,8 @@ LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
   }
 
   getTopLevelSymbolTable().erase(traitDecl);
+  // invalidateSymbolTable since we're removing from the top-level
+  // symbol table.
   getSymbolTableCollection().invalidateSymbolTable(traitDecl);
   return success();
 }
@@ -658,16 +677,26 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
 LogicalResult
 LITLowerer::lowerModuleDecl(Block *moduleBody,
                             Block::iterator mainSymbolTablePosIter,
-                            const Twine &parentPrefix) {
-  bool isTopLevel = mainSymbolTablePosIter == Block::iterator();
+                            bool isTopLevel) {
   for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
     // If we are already in the symbol table, use the the operations iterator.
     auto opSymTableIt = isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
 
     LogicalResult result =
         TypeSwitch<Operation *, LogicalResult>(&op)
-            .Case([&](FnOp op) {
-              return lowerLITFunc(op, opSymTableIt, parentPrefix);
+            .Case([&](LIT::FnOp op) {
+              // Calculate new name, mangled if not top level. Must be before
+              // removal since MangledSymbol::mangle crawls up the ancestors.
+              StringAttr nameToUse = !isTopLevel
+                                         ? MangledSymbol::mangle(op).mangled
+                                         : op.getSymNameAttr();
+              // Function removal is handled at call site because top-level and
+              // nested functions require different removal strategies.
+              if (isTopLevel)
+                getTopLevelSymbolTable().remove(op);
+              else
+                op->remove();
+              return lowerFunction(op, {}, {}, opSymTableIt, nameToUse);
             })
             .Case([&](StructDeclOp op) {
               return lowerStructDecl(op, opSymTableIt);
@@ -683,7 +712,7 @@ LITLowerer::lowerModuleDecl(Block *moduleBody,
               // Lower the constructs within the body.
               Block *fileBody = op.getBody();
               if (failed(lowerModuleDecl(fileBody, opSymTableIt,
-                                         parentPrefix + op.getName() + "::")))
+                                         /*isTopLevel=*/false)))
                 return failure();
 
               // If the package has already been compiled, insert a link
@@ -698,6 +727,8 @@ LITLowerer::lowerModuleDecl(Block *moduleBody,
                   op->getIterator(), fileBody->getOperations(),
                   fileBody->begin(), fileBody->end());
 
+              // invalidateSymbolTable since we're removing from the top-level
+              // symbol table.
               getSymbolTableCollection().invalidateSymbolTable(op);
               op->erase();
               return mlir::success();
@@ -924,7 +955,8 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
           module, symtab.getTopLevelSymbolTable(), structDecls);
       LITLowerer lowerer(symtab, renamedSymbols, singletonTypeHelper,
                          structDecls);
-      if (failed(lowerer.lowerModuleDecl(module.getBody())))
+      if (failed(lowerer.lowerModuleDecl(module.getBody(), Block::iterator(),
+                                         /*isTopLevel=*/true)))
         return signalPassFailure();
       lowerAttributesAndTypes(module, renamedSymbols, singletonTypeHelper,
                               lowerer.symbolDroppedParamDecls, structDecls);

@@ -40,7 +40,11 @@ struct StructDecls {
   LogicalResult process(ModuleOp module, SymbolTable &symtab);
 
   /// Lookup a struct decl.
-  StructDecl &get(StringAttr name) { return structDecls.find(name)->second; }
+  StructDecl &get(StringAttr name) {
+    auto it = structDecls.find(name);
+    assert(it != structDecls.end() && "struct decl not found");
+    return it->second;
+  }
 
   /// A map from struct name and field name to index. Used for lowering `insert`
   /// and `extract` ops.
