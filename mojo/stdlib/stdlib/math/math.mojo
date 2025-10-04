@@ -430,6 +430,10 @@ fn exp2[
         ](x)
 
     @parameter
+    if is_apple_gpu() and dtype in (DType.float16, DType.float32):
+        return _llvm_unary_fn["llvm.air.exp2"](x)
+
+    @parameter
     if dtype is DType.float32:
         return _exp2_float32(x._refine[DType.float32]())._refine[dtype]()
     elif dtype is DType.float64:
