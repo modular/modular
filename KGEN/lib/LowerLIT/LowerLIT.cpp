@@ -278,6 +278,10 @@ struct LITLowerer {
   /// Lower lit.struct.decl and its nested structures.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                 Block::iterator mainSymbolTablePosIter);
+  /// Lower lit.extension.decl and its nested structures.
+  LogicalResult lowerExtensionDecl(ExtensionDeclOp extensionDecl,
+                                   Block::iterator mainSymbolTablePosIter);
+
   /// Lower lit.trait.decl and its nested structures.
   LogicalResult lowerTraitDecl(TraitDeclOp traitDecl,
                                Block::iterator mainSymbolTablePosIter);
@@ -289,6 +293,16 @@ struct LITLowerer {
   LogicalResult lowerModuleDecl(Block *moduleBody,
                                 Block::iterator mainSymbolTablePosIter,
                                 bool isTopLevel);
+
+  /// Recursively process all structs in the module hierarchy.
+  LogicalResult lowerAllStructs(Block *moduleBody,
+                                Block::iterator mainSymbolTablePosIter,
+                                bool isTopLevel);
+
+  /// Recursively process all extensions in the module hierarchy.
+  LogicalResult lowerAllExtensions(Block *moduleBody,
+                                   Block::iterator mainSymbolTablePosIter,
+                                   bool isTopLevel);
 
   SymbolTable &getTopLevelSymbolTable() {
     return symbolTables.getTopLevelSymbolTable();
@@ -603,6 +617,62 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
 }
 
 LogicalResult
+LITLowerer::lowerExtensionDecl(ExtensionDeclOp extensionDecl,
+                               Block::iterator mainSymbolTablePosIter) {
+  SymbolRefAttr targetStructRef = extensionDecl.getTargetStruct().value();
+
+  // Flatten the symbol reference to get the proper name for lookup
+  StringAttr structName = flattenSymbolRefAttr(targetStructRef).getAttr();
+
+  StructDecl &targetStructDeclInfo = structDecls.get(structName);
+
+  Operation *kgenOp = getTopLevelSymbolTable().lookupSymbolIn(
+      getTopLevelSymbolTable().getOp(), targetStructDeclInfo.symRef);
+  if (!kgenOp) {
+    return extensionDecl.emitError("cannot find extension target struct");
+  }
+
+  StructGeneratorOp kgenStructGenOp = dyn_cast<StructGeneratorOp>(kgenOp);
+  if (!kgenStructGenOp) {
+    return extensionDecl.emitError("extension target is not a struct");
+  }
+
+  for (Operation &member : llvm::make_early_inc_range(
+           extensionDecl.getFields().front().getOperations())) {
+    assert(!isa<StructFieldOp>(member) && "Extensions can't have fields");
+    if (isa<AliasDeclOp>(member)) {
+      member.erase();
+      continue;
+    }
+
+    auto func = dyn_cast<FnOp>(member);
+    if (!func)
+      return member.emitError("unsupported op in lit lowering");
+    ArrayRef<ParamDeclAttr> inputParams = targetStructDeclInfo.decls;
+    SmallVector<VariadicKind> variadics(inputParams.size(), VariadicKind::None);
+
+    StringAttr nameToUse = MangledSymbol::mangle(func).mangled;
+    func->remove();
+    if (failed(lowerFunction(func, inputParams, variadics,
+                             mainSymbolTablePosIter, nameToUse)))
+      return failure();
+  }
+  // Invalidate symbol table before erasing to maintain consistency.
+  getSymbolTableCollection().invalidateSymbolTable(extensionDecl);
+  // Remove from symbol table if present, otherwise erase directly.
+  // Note: Unlike StructDecl, we don't use flattenNameAndReinsertOp since we're
+  // just erasing, not moving it first.
+  // TODO(MOCO-522): Either move this first too, or change that about
+  // structs/traits.
+  if (getTopLevelSymbolTable().lookup(extensionDecl.getSymNameAttr())) {
+    getTopLevelSymbolTable().erase(extensionDecl);
+  } else {
+    extensionDecl.erase();
+  }
+  return success();
+}
+
+LogicalResult
 LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
                            Block::iterator mainSymbolTablePosIter) {
   // Update the name of this trait, incorporating any parents.
@@ -675,6 +745,71 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
 }
 
 LogicalResult
+LITLowerer::lowerAllStructs(Block *moduleBody,
+                            Block::iterator mainSymbolTablePosIter,
+                            bool isTopLevel) {
+
+  for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
+    if (auto structDecl = dyn_cast<StructDeclOp>(op)) {
+      // TODO(MOCO-522): Arcana docs on how we handle iterators in LowerLIT.
+      Block::iterator childMainSymbolTablePos =
+          mainSymbolTablePosIter == Block::iterator() ? op.getIterator()
+                                                      : mainSymbolTablePosIter;
+      if (failed(lowerStructDecl(structDecl, childMainSymbolTablePos)))
+        return failure();
+    } else if (auto fileModule = dyn_cast<LIT::FileModuleOp>(op)) {
+      // TODO(MOCO-522): Arcana docs on how we handle iterators in LowerLIT.
+      Block::iterator childMainSymbolTablePos =
+          mainSymbolTablePosIter == Block::iterator() ? op.getIterator()
+                                                      : mainSymbolTablePosIter;
+      if (failed(lowerAllStructs(fileModule.getBody(), childMainSymbolTablePos,
+                                 /*isTopLevel=*/false)))
+        return failure();
+    } else if (auto package = dyn_cast<LIT::PackageOp>(op)) {
+      // TODO(MOCO-522): Arcana docs on how we handle iterators in LowerLIT.
+      Block::iterator childMainSymbolTablePos =
+          mainSymbolTablePosIter == Block::iterator() ? op.getIterator()
+                                                      : mainSymbolTablePosIter;
+      if (failed(lowerAllStructs(package.getBody(), childMainSymbolTablePos,
+                                 /*isTopLevel=*/false)))
+        return failure();
+    }
+  }
+  return success();
+}
+
+LogicalResult
+LITLowerer::lowerAllExtensions(Block *moduleBody,
+                               Block::iterator mainSymbolTablePosIter,
+                               bool isTopLevel) {
+  for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
+    if (auto extensionDecl = dyn_cast<ExtensionDeclOp>(op)) {
+      // TODO(MOCO-522): Arcana docs on how we handle iterators in LowerLIT.
+      auto extensionPos =
+          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
+      if (failed(lowerExtensionDecl(extensionDecl, extensionPos)))
+        return failure();
+    } else if (auto fileModule = dyn_cast<LIT::FileModuleOp>(op)) {
+      // TODO(MOCO-522): Arcana docs on how we handle iterators in LowerLIT.
+      Block::iterator childMainSymbolTablePos =
+          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
+      if (failed(lowerAllExtensions(fileModule.getBody(),
+                                    childMainSymbolTablePos,
+                                    /*isTopLevel=*/false)))
+        return failure();
+    } else if (auto package = dyn_cast<LIT::PackageOp>(op)) {
+      // TODO(MOCO-522): Arcana docs on how we handle iterators in LowerLIT.
+      Block::iterator childMainSymbolTablePos =
+          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
+      if (failed(lowerAllExtensions(package.getBody(), childMainSymbolTablePos,
+                                    /*isTopLevel=*/false)))
+        return failure();
+    }
+  }
+  return success();
+}
+
+LogicalResult
 LITLowerer::lowerModuleDecl(Block *moduleBody,
                             Block::iterator mainSymbolTablePosIter,
                             bool isTopLevel) {
@@ -699,7 +834,15 @@ LITLowerer::lowerModuleDecl(Block *moduleBody,
               return lowerFunction(op, {}, {}, opSymTableIt, nameToUse);
             })
             .Case([&](StructDeclOp op) {
-              return lowerStructDecl(op, opSymTableIt);
+              // Structs should have been processed earlier by lowerAllStructs.
+              assert(false && "Structs should have been lowered already");
+              return failure();
+            })
+            .Case([&](ExtensionDeclOp op) {
+              // Extensions should have been processed earlier by
+              // lowerAllExtensions.
+              assert(false && "Extensions should have been lowered already");
+              return failure();
             })
             .Case([&](TraitDeclOp op) {
               return lowerTraitDecl(op, opSymTableIt);
@@ -955,6 +1098,18 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
           module, symtab.getTopLevelSymbolTable(), structDecls);
       LITLowerer lowerer(symtab, renamedSymbols, singletonTypeHelper,
                          structDecls);
+      // Lower all structs first, so that extensions can find them when they
+      // need to look up struct info.
+      if (failed(lowerer.lowerAllStructs(module.getBody(), Block::iterator(),
+                                         /*isTopLevel=*/true)))
+        return signalPassFailure();
+
+      // Lower all extensions now that the structs' info exists.
+      if (failed(lowerer.lowerAllExtensions(module.getBody(), Block::iterator(),
+                                            /*isTopLevel=*/true)))
+        return signalPassFailure();
+
+      // Now lower away everything else including modules etc.
       if (failed(lowerer.lowerModuleDecl(module.getBody(), Block::iterator(),
                                          /*isTopLevel=*/true)))
         return signalPassFailure();

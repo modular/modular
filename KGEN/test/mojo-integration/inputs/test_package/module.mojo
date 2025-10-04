@@ -5,6 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
+@fieldwise_init
+struct PlainStruct:
+    pass
+
+
 fn identity[T: Movable](var data: T) -> T:
     return data^
 

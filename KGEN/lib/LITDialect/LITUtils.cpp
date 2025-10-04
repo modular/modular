@@ -904,6 +904,9 @@ MangledSymbol MangledSymbol::mangle(mlir::SymbolOpInterface op) {
         .Case([&](TraitDeclOp op) {
           out.structNames.push_back(op.getNameAttr());
         })
+        .Case([&](ExtensionDeclOp op) {
+          out.structNames.push_back(op.getNameAttr());
+        })
         .Case<FileModuleOp, PackageOp>(
             [&](auto op) { out.moduleNames.push_back(op.getNameAttr()); });
   }
