@@ -73,9 +73,16 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
     for i in range(3):
         for j in range(3):
             if data[i, j] != expected_output[i, j]:
-                raise "data[" + String(i) + ", " + String(j) + "] = " + String(
-                    data[i, j]
-                ) + " != " + String(expected_output[i, j])
+                raise Error(
+                    "data[",
+                    i,
+                    ", ",
+                    j,
+                    "] = ",
+                    data[i, j],
+                    " != ",
+                    expected_output[i, j],
+                )
 
     data_ptr.free()
     expected_output_ptr.free()
