@@ -709,6 +709,7 @@ PIPELINES = {
     ),
     "meta-llama/Llama-3.1-8B-Instruct-data-parallel-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
         run=_make_pipeline_runner(
             pipeline="llama3.1-8b-data-parallel",
             encoding="bfloat16",
