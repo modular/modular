@@ -77,7 +77,7 @@ def test_claim_until_full() -> None:
     for i in range(max_batch_size):
         context = create_text_context(np.empty(i))
         replica_idx = kv_manager.get_or_recommend_replica(context)
-        kv_manager.external_claim_for_replica(replica_idx, context.request_id)
+        kv_manager.external_claim(context.request_id, replica_idx=replica_idx)
         batch.append((replica_idx, context))
 
     new_context = create_text_context(np.empty(i))
@@ -85,7 +85,7 @@ def test_claim_until_full() -> None:
     # Check that all slots have been claimed.
     for i in range(num_devices):
         with pytest.raises(ValueError, match="No available sequence"):
-            kv_manager.external_claim_for_replica(i, new_context.request_id)
+            kv_manager.external_claim(new_context.request_id, replica_idx=i)
 
     # Release a slot.
     replica_idx, context = batch[0]
@@ -97,7 +97,7 @@ def test_claim_until_full() -> None:
     assert new_replica_idx == replica_idx
 
     # Check that the new context can be claimed using the released slot.
-    kv_manager.external_claim_for_replica(replica_idx, new_context.request_id)
+    kv_manager.external_claim(new_context.request_id, replica_idx=replica_idx)
     assert kv_manager.contains(new_context.request_id)
 
 
@@ -113,7 +113,7 @@ def test_step() -> None:
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len))
         replica_idx = kv_manager.get_or_recommend_replica(context)
-        kv_manager.external_claim_for_replica(replica_idx, context.request_id)
+        kv_manager.external_claim(context.request_id, replica_idx=replica_idx)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
@@ -156,7 +156,7 @@ def test_increment_cache_lengths() -> None:
     batch = []
     for prompt_len, replica_idx in zip(prompt_lens, replica_idxs):
         context = create_text_context(np.empty(prompt_len))
-        kv_manager.external_claim_for_replica(replica_idx, context.request_id)
+        kv_manager.external_claim(context.request_id, replica_idx=replica_idx)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 

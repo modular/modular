@@ -388,7 +388,7 @@ def _run_distributed_dp(
     seq_len = total_tokens if use_prefill else 1
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
-        kv_manager.external_claim_for_replica(replica_idx, ctx.request_id)
+        kv_manager.external_claim(ctx.request_id, replica_idx=replica_idx)
         batch.append(ctx)
 
     if use_prefill:
