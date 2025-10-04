@@ -104,6 +104,7 @@ TRAIT: Final = 71
 DEINIT: Final = 72
 UNIFIED: Final = 73
 WHERE: Final = 74
+EXTENSION: Final = 75
 NT_OFFSET: Final = 256
 # --end constants--
 

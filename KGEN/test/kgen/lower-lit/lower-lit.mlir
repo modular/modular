@@ -370,7 +370,6 @@ lit.fn @removeMetadata[imm a](%arg0: !lit.ref<index, imm a> mut) throws -> !kgen
 // CHECK-NOT: lit.file_module
 
 lit.file_module @module {
-  // CHECK: kgen.generator @"module::test"()
   lit.fn @test()  {
     kgen.return
   }
@@ -385,6 +384,7 @@ lit.file_module @module {
   }
 
   // CHECK-LABEL: kgen.struct.generator @"module::Adder"<size>
+  // CHECK: kgen.generator @"module::test"()
 }
 
 // CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.struct<() memoryOnly>)
@@ -647,3 +647,41 @@ lit.struct.decl @String {
       kgen.return %none : !kgen.none
     }
 }
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// Struct Extensions
+//===----------------------------------------------------------------------===//
+
+// Test struct then extension (normal order)
+lit.struct.decl @TestStruct1 {
+}
+
+// CHECK-LABEL: kgen.struct.generator @TestStruct1
+
+lit.extension.decl @"extension:TestStruct1" attributes {targetStruct = @TestStruct1} {
+  // CHECK-LABEL: kgen.generator @"extension:TestStruct1::extension_method"
+  lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct1>, mut O> read_mem) -> index {
+    %result = kgen.param.constant: index = <42>
+    kgen.return %result : index
+  }
+}
+
+// -----
+
+// Test extension declared before its target struct
+// CHECK-LABEL: kgen.generator @"extension:TestStruct2::extension_method"
+
+// CHECK-LABEL: kgen.struct.generator @TestStruct2
+lit.extension.decl @"extension:TestStruct2" attributes {targetStruct = @TestStruct2} {
+  lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct2>, mut O> read_mem) -> index {
+    %result = kgen.param.constant: index = <1>
+    kgen.return %result : index
+  }
+}
+
+lit.struct.decl @TestStruct2 {
+}
+
+// TODO(MOCO-522): Add tests for aliases in extensions into LowerLIT

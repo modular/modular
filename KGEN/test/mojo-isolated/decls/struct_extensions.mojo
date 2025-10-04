@@ -183,4 +183,5 @@ fn launch_ship(mut ship: Spaceship):
     # CHECK-SAME: <:!Flying !Spaceship>
     launch_flying(ship)
 
+
 # TODO(MOCO-522): Add tests for aliases in extensions

@@ -141,14 +141,15 @@ class Line:
 
     @property
     def is_class(self) -> bool:
-        """Is this line a class/struct/trait definition?"""
+        """Is this line a class/struct/trait/extension definition?"""
         return bool(self) and (
             (
                 self.leaves[0].type == token.NAME
-                and self.leaves[0].value in ("class", "struct", "trait")
+                and self.leaves[0].value in ("class", "struct", "trait", "__extension")
             )
             or self.leaves[0].type == token.STRUCT
             or self.leaves[0].type == token.TRAIT
+            or self.leaves[0].type == token.EXTENSION
         )
 
     @property
@@ -456,10 +457,10 @@ class Line:
 
     def __str__(self) -> str:
         """Render the line."""
-        # Auto-sort struct/trait conformances for Mojo
+        # Auto-sort struct/trait/extension conformances for Mojo
         if self.is_class and (
-            self.leaves[0].type in (token.STRUCT, token.TRAIT) or
-            (self.leaves[0].type == token.NAME and self.leaves[0].value in ("struct", "trait"))
+            self.leaves[0].type in (token.STRUCT, token.TRAIT, token.EXTENSION) or
+            (self.leaves[0].type == token.NAME and self.leaves[0].value in ("struct", "trait", "__extension"))
         ):
             # Find LPAR and RPAR, but only if not inside square brackets
             lpar_idx = None

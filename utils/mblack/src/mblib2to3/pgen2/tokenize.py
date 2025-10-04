@@ -476,7 +476,8 @@ def generate_tokens(
         "trait": TRAIT,
         "ref": REF,
         "unified": UNIFIED,
-        "where": WHERE
+        "where": WHERE,
+        "__extension": EXTENSION
     }
 
     strstart: Tuple[int, int]
