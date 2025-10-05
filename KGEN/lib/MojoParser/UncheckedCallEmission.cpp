@@ -1116,16 +1116,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
     // the operands of the apply themselves have sugar then we don't have to
     // retain their canonical form because the canonical rep will discard it
     // all.
-    SmallVector<TypedAttr> sugaredOperands;
-    for (auto operand : operands) {
-      while (auto sugar = dyn_cast<SugarAttr>(operand))
-        operand = sugar.getSugared();
-      sugaredOperands.push_back(operand);
-    }
-
     Type resultType = boundSigType.getResults().front();
-    auto sugaredCall =
-        ParamOperatorAttr::get(POC::Apply, sugaredOperands, resultType);
+    auto sugaredCall = ParamOperatorAttr::get(POC::Apply, operands, resultType);
     return SugarAttr::get(SugarKind::AlwaysInlineBuiltin, sugaredCall, result);
   }
 
