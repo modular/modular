@@ -2381,8 +2381,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   auto sig = TypeSignatureType::remapToSignature(
       silenceErrors(getContext()), paramsArrayAttr,
       paramSignature.getParamListAttr());
-  if (!sig)
-    return failure();
+  assert(sig && "could not remap signature");
   structOp.setParamsAttr(paramsArrayAttr);
   structOp.setSignature(sig);
 

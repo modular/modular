@@ -107,7 +107,6 @@ __extension BaseStruct:
         return self.colliding
 
 fn test_collisions(s: BaseStruct):
-    # expected-error @below {{'index' does not implement the '__call__' method}}
     var result = s.colliding()
 
 
@@ -127,7 +126,6 @@ __extension BaseStruct:
         return self.colliding
 
 fn test_collisions(s: BaseStruct):
-    # expected-error @below {{'index' does not implement the '__call__' method}}
     var result = s.colliding()
 
 

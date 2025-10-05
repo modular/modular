@@ -1779,6 +1779,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     LookupResult lookup =
         shared.lookupAndResolveDecl(spelling, getLoc(), *containerDecl,
                                     /*searchParentScopes=*/false);
+    if (lookup.isErroneous())
+      return {}; // Error already diagnosed.
     if (lookup.isSuccess()) {
       ArrayRef<ASTDecl *> foundDecls = lookup.getIfSuccess();
       memberDecls.append(foundDecls.begin(), foundDecls.end());
