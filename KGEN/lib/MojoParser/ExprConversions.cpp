@@ -713,8 +713,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // ...we'll now produce the `ship_func_thunk[ZC, read_ship[ZC]]`.
 
   // First, cast the callee to the reduced actual type.
-  TypedAttr calleeParam =
-      ParamOperatorAttr::get(POC::Rebind, callee.get(), reducedActual);
+  auto calleeParam = ParamOperatorAttr::getRebind(callee.get(), reducedActual);
 
   // Assemble the parameters (`ZC, read_ship[ZC]`) that we'll bind to the thunk.
   ParserParameterEvaluator evaluator(emitter.shared);
@@ -739,8 +738,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       ParameterExprArrayAttr::get(ctx, evaluator.getIndexBindings()));
 
   // Finally, cast the result back to the expected type.
-  return emitter.emitCResult(
-      ParamOperatorAttr::get(POC::Rebind, {symbol}, expected), expr, dest);
+  return emitter.emitCResult(ParamOperatorAttr::getRebind(symbol, expected),
+                             expr, dest);
 }
 
 static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
@@ -764,8 +763,8 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
 
   // Otherwise, since this is not a function, and its still convertible, that
   // means only the input param metadata can differ. Emit a simple rebind.
-  return emitter.emitCResult(
-      ParamOperatorAttr::get(POC::Rebind, {genAttr}, expected), expr, dest);
+  return emitter.emitCResult(ParamOperatorAttr::getRebind(genAttr, expected),
+                             expr, dest);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1229,7 +1228,7 @@ PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
   if (isa<TypeType>(toType) && isa<TraitType>(value.getType()))
     return TypeParamAttr::get(ASTType(value), toType);
 
-  return ParamOperatorAttr::get(POC::Rebind, value.get(), toType);
+  return ParamOperatorAttr::getRebind(value.get(), toType);
 }
 
 CValue IREmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,

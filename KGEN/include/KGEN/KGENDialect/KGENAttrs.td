@@ -1228,6 +1228,11 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     /// must have `index` type.
     static TypedAttr getSub(TypedAttr lhs, TypedAttr rhs);
 
+    /// Helper to build a rebind operation.
+    static TypedAttr getRebind(TypedAttr operand, Type resultType) {
+      return get(POC::Rebind, {operand}, resultType);
+    }
+
     /// If the specified attribute is a rebind, return its operand, otherwise
     /// return the rebind itself.
     static TypedAttr stripRebind(TypedAttr src);

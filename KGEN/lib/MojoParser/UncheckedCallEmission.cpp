@@ -1069,8 +1069,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
   if (calleeSig.getNumImplicitOriginDecls()) {
     implicitOriginRefEraser.emplace();
     boundSigType = implicitOriginRefEraser->replaceSignature(calleeSig);
-    operands[0] =
-        ParamOperatorAttr::get(POC::Rebind, operands[0], boundSigType);
+    operands[0] = ParamOperatorAttr::getRebind(operands[0], boundSigType);
   }
 
   auto argTypes = boundSigType.getArguments();
@@ -1100,7 +1099,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
     // Emit a rebind if the refined type does not match the callee arg type.
     if (arg.getType() != calleeArgType)
-      arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);
+      arg = ParamOperatorAttr::getRebind(arg, calleeArgType);
     operands.push_back(arg);
   }
 

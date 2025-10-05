@@ -324,7 +324,7 @@ ParamBindings::verifyBindingsImpl(
   auto setParamValue = [&](TypedAttr value, Type requestedType) {
     // The canonical types must match, now make sure sugar aligns.
     if (value.getType() != requestedType)
-      value = ParamOperatorAttr::get(POC::Rebind, {value}, requestedType);
+      value = ParamOperatorAttr::getRebind(value, requestedType);
     evaluator.appendIndexBinding(value);
     newBindings.push_back(value);
   };
@@ -632,7 +632,7 @@ ParamBindings::verifyBindingsImpl(
 
       // Realign sugar.
       if (pValue.getType().mlirType != expectedType)
-        pValue = ParamOperatorAttr::get(POC::Rebind, {pValue}, expectedType);
+        pValue = ParamOperatorAttr::getRebind(pValue, expectedType);
 
       elements.emplace_back(pValue);
       // Passing `_` to a variadic is not allowed. Users should pass `*_` to
