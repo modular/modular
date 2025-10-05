@@ -308,7 +308,7 @@ struct CodepointSliceIter[
 
 
 struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
-    ImplicitlyCopyable, Movable, Sized
+    ImplicitlyCopyable, Iterable, Iterator, Movable, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
@@ -318,6 +318,9 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         origin: Origin of the underlying string data.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias Element = Codepoint
 
     var _slice: StringSlice[origin]
@@ -340,7 +343,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     # ===-------------------------------------------------------------------===#
 
     @doc_private
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -2359,6 +2362,95 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             The joined string.
         """
         return String(elems, sep=self)
+
+    fn is_ascii(self) -> Bool:
+        """Return whether the values in the string are all ASCII.
+
+        Returns:
+            Whether the values in the string are all ASCII.
+        """
+
+        @parameter
+        fn _is_ascii[w: Int](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+            return v.lt(0b1000_0000)
+
+        # FIXME(#5341): this should be map_reduce[_is_ascii, bool_and_fn]()
+        return self.as_bytes().count[func=_is_ascii]() == UInt(
+            self.byte_length()
+        )
+
+    fn is_like[value: StringSlice[mut=False]](self) -> Bool:
+        """Whether the string is like the given value. This is the equivalent
+        of doing `self.lower() == value.lower()`, but optimized.
+
+        Parameters:
+            value: The given value to compare against.
+
+        Returns:
+            Whether the string is like the given value.
+        """
+
+        @parameter
+        if value.is_ascii():
+            alias `A` = Byte(ord("A"))
+            alias `a` = Byte(ord("a"))
+            alias `z` = Byte(ord("z"))
+            alias ascii_lower = `A` ^ `a`
+            alias length = value.byte_length()
+            var data = self.as_bytes()
+            var result = self.byte_length() == length
+            if not result:
+                return False
+
+            @parameter
+            for i in range(length):
+                alias char = value.as_bytes().unsafe_get(i)
+                alias lowercase = char | ascii_lower
+
+                @parameter
+                if `a` <= lowercase <= `z`:
+                    result &= (data.unsafe_get(i) | ascii_lower) == lowercase
+                else:
+                    result &= data.unsafe_get(i) == char
+            return result
+        else:
+            alias lowered = value.lower()
+            return self.is_like[value_is_lowered=True](
+                lowered.as_string_slice()
+            )
+
+    fn is_like[
+        value_is_lowered: Bool = False
+    ](self, value: StringSlice[mut=False]) -> Bool:
+        """Whether the string is like the given value. This is the equivalent
+        of doing `self.lower() == value.lower()`, but optimized.
+
+        Parameters
+            value_is_lowered: Whether the value to compare against is already
+                lowered.
+
+        Args:
+            value: The given value to compare against.
+
+        Returns:
+            Whether the string is like the given value.
+        """
+
+        var self_codepoints = self.codepoints()
+        var value_codepoints = value.codepoints()
+        var result = len(self_codepoints) == len(value_codepoints)
+        if not result:
+            return False
+
+        for self_c, value_c in zip(self_codepoints, value_codepoints):
+
+            @parameter
+            if value_is_lowered:
+                result &= self_c.lower() == value_c
+            else:
+                result &= self_c.lower() == value_c.lower()
+
+        return result
 
 
 # ===-----------------------------------------------------------------------===#

@@ -1051,6 +1051,96 @@ def test_merge():
     _ = cond(True, a, b)
 
 
+def test_is_like():
+    var elems = String("Mojo")
+    assert_true(elems.is_like[value="MOJO"]())
+    assert_true(elems.is_like[value="mojo"]())
+    assert_true(elems.is_like[value="MoJo"]())
+    assert_true(elems.is_like[value="mOjO"]())
+    assert_true(elems.is_like("MOJO"))
+    assert_true(elems.is_like("mojo"))
+    assert_true(elems.is_like("MoJo"))
+    assert_true(elems.is_like("mOjO"))
+    elems = "Mojo\x10\x11\x12"
+    assert_true(elems.is_like[value="MOJO\x10\x11\x12"]())
+    assert_true(elems.is_like[value="mojo\x10\x11\x12"]())
+    assert_true(elems.is_like[value="MoJo\x10\x11\x12"]())
+    assert_true(elems.is_like[value="mOjO\x10\x11\x12"]())
+    assert_true(elems.is_like("MOJO\x10\x11\x12"))
+    assert_true(elems.is_like("mojo\x10\x11\x12"))
+    assert_true(elems.is_like("MoJo\x10\x11\x12"))
+    assert_true(elems.is_like("mOjO\x10\x11\x12"))
+    assert_false(elems.is_like[value="mOjO012"]())
+    assert_false(elems.is_like("mOjO012"))
+    elems = "🔥Mojo🔥"
+    assert_true(elems.is_like[value="🔥MOJO🔥"]())
+    assert_true(elems.is_like[value="🔥mojo🔥"]())
+    assert_true(elems.is_like[value="🔥MoJo🔥"]())
+    assert_true(elems.is_like[value="🔥mOjO🔥"]())
+    assert_true(elems.is_like("🔥MOJO🔥"))
+    assert_true(elems.is_like("🔥mojo🔥"))
+    assert_true(elems.is_like("🔥MoJo🔥"))
+    assert_true(elems.is_like("🔥mOjO🔥"))
+    elems = "Ñanduti"
+    assert_true(elems.is_like[value="ÑANDUTI"]())
+    assert_true(elems.is_like[value="ñanduti"]())
+    assert_true(elems.is_like[value="ÑaNdUtI"]())
+    assert_true(elems.is_like[value="ñAnDuTi"]())
+    assert_true(elems.is_like("ÑANDUTI"))
+    assert_true(elems.is_like("ñanduti"))
+    assert_true(elems.is_like("ÑaNdUtI"))
+    assert_true(elems.is_like("ñAnDuTi"))
+
+    # special cases we are ignoring
+    elems = "SS"
+    assert_false(elems.is_like("ß"))
+    assert_false(elems.is_like("ẞ"))
+    assert_true(StaticString("ß").is_like("ẞ"))
+    assert_true(StaticString("ẞ").is_like("ß"))
+    mappings: List[(StaticString, StaticString)] = {
+        {"ŉ", "ʼN"},
+        {"ǰ", "J̌"},
+        {"և", "ԵՒ"},
+        {"ẖ", "H̱"},
+        {"ẗ", "T̈"},
+        {"ẘ", "W̊"},
+        {"ẙ", "Y̊"},
+        {"ẚ", "Aʾ"},
+        {"ὐ", "Υ̓"},
+        {"ᾶ", "Α͂"},
+        {"ῆ", "Η͂"},
+        {"ῖ", "Ι͂"},
+        {"ῤ", "Ρ̓"},
+        {"ῦ", "Υ͂"},
+        {"ῶ", "Ω͂"},
+        {"ﬀ", "FF"},
+        {"ﬁ", "FI"},
+        {"ﬂ", "FL"},
+        {"ﬅ", "ST"},
+        {"ﬆ", "ST"},
+        {"ﬓ", "ՄՆ"},
+        {"ﬔ", "ՄԵ"},
+        {"ﬕ", "ՄԻ"},
+        {"ﬖ", "ՎՆ"},
+        {"ﬗ", "ՄԽ"},
+        {"ΐ", "Ϊ́"},
+        {"ΰ", "Ϋ́"},
+        {"ὒ", "Υ̓̀"},
+        {"ὔ", "Υ̓́"},
+        {"ὖ", "Υ̓͂"},
+        {"ῒ", "Ϊ̀"},
+        {"ΐ", "Ϊ́"},
+        {"ῗ", "Ϊ͂"},
+        {"ῢ", "Ϋ̀"},
+        {"ΰ", "Ϋ́"},
+        {"ῧ", "Ϋ͂"},
+        {"ﬃ", "FFI"},
+        {"ﬄ", "FFL"},
+    }
+    for lower, upper in mappings:
+        assert_false(upper.is_like(lower))
+
+
 def main():
     var suite = TestSuite()
 
@@ -1090,5 +1180,6 @@ def main():
     suite.test[test_replace]()
     suite.test[test_join]()
     suite.test[test_string_slice_intern]()
+    suite.test[test_is_like]()
 
     suite^.run()
