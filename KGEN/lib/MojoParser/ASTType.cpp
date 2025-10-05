@@ -139,8 +139,7 @@ bool ASTType::isEqualCanon(ASTType other) const {
 /// canonicalize it.
 ASTType ASTType::stripTopLevelSugar() const {
   if (auto paramRef = dyn_cast_or_null<ParamType>(mlirType))
-    if (auto sugar = dyn_cast<SugarAttr>(paramRef.getParam()))
-      return ASTType(sugar.getOriginal()).stripTopLevelSugar();
+    return ASTType(SugarAttr::stripTopLevelSugar(paramRef.getParam()));
   return *this;
 }
 

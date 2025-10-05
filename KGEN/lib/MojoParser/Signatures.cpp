@@ -690,8 +690,10 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
                                                        : defaultPos;
   auto emitDefaultIfPossible = [&]() -> PValue {
     if (const ExprNode *initExpr = arg.initExpr) {
-      if (PValue value = emitter.emitExprPValue(initExpr, exprContext, type))
-        return value;
+      if (PValue value = emitter.emitExprPValue(initExpr, exprContext, type)) {
+        // Align sugar.
+        return ParamOperatorAttr::get(POC::Rebind, {value}, type);
+      }
       arg.isErroneous = true;
       return UnknownAttr::get(type);
     }

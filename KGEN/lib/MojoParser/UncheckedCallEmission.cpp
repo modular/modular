@@ -751,20 +751,20 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   SmallPtrSet<Attribute, 2> destOrigins, destContainerOrigins;
 
   // processRawOrigin takes apart origin unions for us.
-  processRawOrigin(
-      cast<RefType>(destBuffer.getType()).getOrigin(), [&](TypedAttr origin) {
-        // AnyOrigin is assumed to be ok since it is used for
-        // UnsafePointer etc.  We don't want to track it.
-        if (isa<AnyOriginAttr>(origin))
-          return;
-        // We want to track the fully field sensitive origin, and
-        // the containing origins.
-        destOrigins.insert(origin);
-        while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
-          origin = fieldAttr.getBase();
-          destContainerOrigins.insert(origin);
-        }
-      });
+  auto refOrigin = cast<RefType>(destBuffer.getType()).getOrigin();
+  processRawOrigin(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
+    // AnyOrigin is assumed to be ok since it is used for
+    // UnsafePointer etc.  We don't want to track it.
+    if (isa<AnyOriginAttr>(origin))
+      return;
+    // We want to track the fully field sensitive origin, and
+    // the containing origins.
+    destOrigins.insert(origin);
+    while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
+      origin = fieldAttr.getBase();
+      destContainerOrigins.insert(origin);
+    }
+  });
 
   // Check to see if any of the the origins they may be accessing are the
   // origin in question.  If any of them is a possible reference to the

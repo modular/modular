@@ -186,7 +186,7 @@ static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
 static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
                                         FnTypeGeneratorType signature,
                                         bool isRefResult) {
-  std::string signatureLifetime =
+  std::string originString =
       getSignatureOrigin(shared, refType.getOrigin(), signature, isRefResult);
 
   // Include the address space if it is non-default.
@@ -200,15 +200,15 @@ static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
         addrSpace = extractAttr2.getStructValue();
       }
     }
-    if (!signatureLifetime.empty())
-      signatureLifetime += ", ";
-    signatureLifetime += generatePValueString(shared, addrSpace);
+    if (!originString.empty())
+      originString += ", ";
+    originString += generatePValueString(shared, addrSpace);
   }
 
-  if (signatureLifetime.empty())
+  if (originString.empty())
     return std::string();
 
-  return "[" + signatureLifetime + "] ";
+  return "[" + originString + "] ";
 }
 
 /// Generate a user-readable representation of the given type and variadic kind,

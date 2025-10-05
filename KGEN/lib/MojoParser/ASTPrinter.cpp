@@ -40,6 +40,49 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol, bool isFunc) {
   return name;
 }
 
+/// Try to extract a symbol reference and parameter list from a function callee.
+/// Returns the symbol being called and the parameters, or a null symbol if
+/// decoding failed.
+static std::pair<SymbolRefAttr, ArrayRef<TypedAttr>>
+tryGetSymbolNameAndParams(TypedAttr param) {
+  param = ParamOperatorAttr::stripRebind(param);
+  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param))
+    return {symbolCst.getSymbol(), symbolCst.getParamValues()};
+  return {{}, {}};
+}
+
+/// If the value is a call to an implicit constructor of the value's type,
+/// remove it, otherwise leave the value alone.
+///
+/// When shared is specified, this makes sure to only strip implicit
+/// constructors, but when it is null it will always strip all constructors.
+static void removeImplicitCtorCall(TypedAttr &value, SharedState *shared) {
+  // Implicit constructors are always calls.
+  auto op = dyn_cast<ParamOperatorAttr>(value);
+  if (!op ||
+      (op.getOpcode() != POC::Apply &&
+       op.getOpcode() != POC::ApplyResultSlot) ||
+      op.getOperands().size() != 2) // callee and value to convert.
+    return;
+
+  auto [nameAttr, calleeParams] =
+      tryGetSymbolNameAndParams(op.getOperands()[0]);
+  if (!nameAttr)
+    return;
+  StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
+  if (!name.starts_with("__init__"))
+    return;
+
+  if (shared) {
+    ASTDecl *decl = shared->getDeclResolver().getDeclForFuncSymbol(nameAttr);
+    auto calleeFn = cast<FnOp>(decl->getIfOperation());
+    if (!calleeFn.getImplicitConversion())
+      return; // If it's not an implicit conversion, don't remove it.
+  }
+
+  value = op.getOperands()[1];
+}
+
 // Get the name of the enclosing struct from the function symbol reference.
 static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
   if (symbol.getNestedReferences().size() >= 2)
@@ -228,17 +271,6 @@ static BodyT printGeneratorInterface(raw_ostream &os,
   os << ']';
 
   return body;
-}
-
-/// Try to extract a symbol reference and parameter list from a function callee.
-/// Returns the symbol being called and the parameters, or a null symbol if
-/// decoding failed.
-static std::pair<SymbolRefAttr, ArrayRef<TypedAttr>>
-tryGetSymbolNameAndParams(TypedAttr param) {
-  param = ParamOperatorAttr::stripRebind(param);
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param))
-    return {symbolCst.getSymbol(), symbolCst.getParamValues()};
-  return {{}, {}};
 }
 
 /// If the parameter being referenced is an auto-parameterization of the
@@ -500,7 +532,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         // Helper function to check if this is a literal wrapper by name
         auto isLiteralWrapperName = [](StringRef structName) {
           return structName == "StringLiteral" || structName == "IntLiteral" ||
-                 structName == "FloatLiteral";
+                 structName == "FloatLiteral" || structName == "Origin";
         };
 
         // Helper function to try printing just the literal value
@@ -957,8 +989,12 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
   if (isa<StructExtractAttr, ParamIndexRefAttr, ParamOperatorAttr>(param))
     return printParam(os, param, diagShared);
 
-  if (auto sugar = dyn_cast<SugarAttr>(param))
-    return printOriginParam(os, sugar.getSugared(), diagShared);
+  if (auto sugar = dyn_cast<SugarAttr>(param)) {
+    param = sugar.getSugared();
+    // Remove implicit Origin ctor calls to reduce noise since they're implicit.
+    removeImplicitCtorCall(param, diagShared);
+    return printOriginParam(os, param, diagShared);
+  }
 
   param.dump();
   llvm_unreachable("unknown origin parameter");
@@ -1073,10 +1109,12 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
 
   auto printRef = [&](RefType refType) {
     os << "ref [";
-    printOriginParam(os, refType.getOrigin(), diagShared);
+    printOriginParam(
+        os, OriginType::stripMutCastAndFieldExtract(refType.getOrigin()),
+        diagShared);
     if (!refType.isDefaultAddrSpace()) {
       os << ", ";
-      printParam(os, refType.getOrigin(), diagShared);
+      printParam(os, refType.getAddressSpace(), diagShared);
     }
     os << "] ";
   };
@@ -1246,39 +1284,12 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   }
 }
 
-/// If the value is a call to an implicit constructor of the value's type,
-/// remove it, otherwise leave the value alone.
-static void removeImplicitCtorCall(TypedAttr &value, SharedState &shared) {
-  // Implicit constructors are always calls.
-  auto op = dyn_cast<ParamOperatorAttr>(value);
-  if (!op ||
-      (op.getOpcode() != POC::Apply &&
-       op.getOpcode() != POC::ApplyResultSlot) ||
-      op.getOperands().size() != 2) // callee and value to convert.
-    return;
-
-  auto [nameAttr, calleeParams] =
-      tryGetSymbolNameAndParams(op.getOperands()[0]);
-  if (!nameAttr)
-    return;
-  StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
-  if (!name.starts_with("__init__"))
-    return;
-
-  ASTDecl *decl = shared.getDeclResolver().getDeclForFuncSymbol(nameAttr);
-  auto calleeFn = cast<FnOp>(decl->getIfOperation());
-  if (!calleeFn.getImplicitConversion())
-    return; // If it's not an implicit conversion, don't remove it.
-
-  value = op.getOperands()[1];
-}
-
 /// This is the same as printParam, but is only used user pretty printing
 /// circumstances (not mangling) after emitting a type annotation.  This
 /// avoids printing obvious implicit conversion calls.
 void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
                                   SharedState &shared) {
-  removeImplicitCtorCall(value, shared);
+  removeImplicitCtorCall(value, &shared);
 
   // It is pretty common for function arguments to use default conversions
   // from the actual value they want, and may not be an

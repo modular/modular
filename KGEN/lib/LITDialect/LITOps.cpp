@@ -1785,22 +1785,26 @@ LogicalResult RefPackCreateOp::verify() {
 /// out the RefPackCreateOp (or ParamConstantOp) that formed it.  This is
 /// guaranteed to succeed immediately during/after the parser, not later.
 Value RefPackCreateOp::findRefPackCreate(Value val) {
-  /// This code grovels through the IR, looking for the standard pattern of:
-  ///
-  ///   %1 = lit.ref.pack.create(...)
-  ///   %anonymous2A_0 = lit.var.decl "anonymous*"
-  ///   lit.call VariadicPack::__init__(%anonymous2A_0, %1, ...)
-  ///   %4 = lit.load.consume / lit.ref.load %anonymous2A_0  <<= we are here.
-  ///
-  /// This happens because we're passing the VariadicPack to the callee, and
-  /// it has a memory-style init.
+  // Strip off sugar casts.
+  while (RebindOp rebind = dyn_cast<RebindOp>(val.getDefiningOp()))
+    val = rebind.getInput();
+
+  // This code grovels through the IR, looking for the standard pattern of:
+  //
+  //   %1 = lit.ref.pack.create(...)
+  //   %anonymous2A_0 = lit.var.decl "anonymous*"
+  //   lit.call VariadicPack::__init__(%anonymous2A_0, %1, ...)
+  //   %4 = lit.load.consume / lit.ref.load %anonymous2A_0  <<= we are here.
+  //
+  // This happens because we're passing the VariadicPack to the callee, and
+  // it has a memory-style init.
   Value loadOperand;
 
   // VariadicPack is a @register_passable type so it often is immediately
   // available.  However, it gets passed by-ref to function calls.
   // If the operand is already a reference to a pack, then use it.  Otherwise
   // we must have a register pack.  Figure out how it is formed.
-  if (::isa<RefType>(val.getType())) {
+  if (::isa<RefType>(getCanonicalType(val.getType()))) {
     loadOperand = val;
     if (auto immOp = val.getDefiningOp<RefImmutOp>())
       loadOperand = immOp.getOperand();
