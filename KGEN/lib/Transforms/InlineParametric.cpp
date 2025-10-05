@@ -277,8 +277,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     ParamDeclAttr decl = mangler.mangleDecl(origDecl, needsMangling);
     auto declOp = b.create<ParamDeclareOp>(
         call.getLoc(), decl,
-        ParamOperatorAttr::get(b.getContext(), POC::Rebind, value,
-                               decl.getType()));
+        ParamOperatorAttr::getRebind(value, decl.getType()));
     // Register the new declaration.
     propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
   }

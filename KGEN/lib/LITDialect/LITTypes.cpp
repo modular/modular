@@ -1550,7 +1550,7 @@ LIT::getUnboundSpecializedSignature(FnTypeGeneratorType type,
     TypedAttr value = binding;
     Type unboundType = evaluator.getReboundType(type);
     if (unboundType != value.getType())
-      value = ParamOperatorAttr::get(POC::Rebind, value, unboundType);
+      value = ParamOperatorAttr::getRebind(value, unboundType);
     evaluator.appendIndexBinding(value);
     unboundBindings.push_back(value);
   }

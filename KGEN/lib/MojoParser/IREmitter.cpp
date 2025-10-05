@@ -1049,7 +1049,7 @@ Value IREmitter::emitRebindOpIfNeeded(Value value, Type destType, SMLoc loc) {
 CValue IREmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
   // Materialize a parameter rebind.
   if (auto pvalue = value.ir.getIfPValue())
-    return ParamOperatorAttr::get(POC::Rebind, pvalue.get(), destType);
+    return ParamOperatorAttr::getRebind(pvalue.get(), destType);
   if (auto dlValue = value.ir.getIfDLValue()) {
     dlValue->elementType = destType;
     return dlValue;
@@ -1102,6 +1102,7 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   auto cValue = value.getIfCValue();
   if (!cValue)
     return emitCValue({value, expr}, dest);
+  value = {}; // Only use cValue below.
 
   // OK, if there is a destination specified, handle them by converging the set
   // of value types we have.
@@ -1119,9 +1120,20 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
       // null result case as well.
       if (!dest.isSpecified())
         return cValue;
-      value = cValue;
-      assert(value);
+      assert(cValue);
     }
+
+    // At this point the canonical types line up, but the sugar may not.  Align
+    // the sugar so clients don't have to deal with it.
+    if (requiredType.mlirType != rvType.mlirType) {
+      auto rebindType = requiredType;
+      if (cValue.isMValue())
+        rebindType = cValue.getMValueType().getWithElement(requiredType);
+      cValue = rebindValue({cValue, expr}, rebindType);
+      if (!cValue)
+        return {};
+    }
+    rvType = cValue.getRValueType();
   }
 
   // If the destination is just a required type, then we now know it must agree
@@ -1139,7 +1151,7 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
     // The client directly filled in an LValue we provided which is great, but
     // that LValue we provided took ownership of the value, so we need to return
     // the result as a borrow, not an owned reference.
-    auto memValue = value.getIfMRValue();
+    auto memValue = cValue.getIfMRValue();
     assert(memValue && "Must be an MRValue providing result");
     return MBValue(memValue);
   }

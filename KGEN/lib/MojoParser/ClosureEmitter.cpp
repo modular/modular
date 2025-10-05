@@ -1432,7 +1432,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
         shared.getEvaluationContext(),
         ParameterExprArrayAttr::get(ctx, totalParams));
     if (funcSymbol.getType() != fieldType)
-      funcSymbol = ParamOperatorAttr::get(POC::Rebind, funcSymbol, fieldType);
+      funcSymbol = ParamOperatorAttr::getRebind(funcSymbol, fieldType);
     auto createClosure =
         builder.create<CreateClosureOp>(funcSymbol, ValueRange());
     storeField(builder, init.getArgument(1), createClosure, fieldName);

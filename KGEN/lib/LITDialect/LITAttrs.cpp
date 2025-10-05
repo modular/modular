@@ -1358,8 +1358,7 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
           // The parameter values must line up with the declared types of the
           // generator, but need to be canonicalized within themselves.
           if (canParam.getType() != param.getType())
-            canParam = ParamOperatorAttr::get(POC::Rebind, {canParam},
-                                              param.getType());
+            canParam = ParamOperatorAttr::getRebind(canParam, param.getType());
           canBindings.push_back(canParam);
           changed |= canParam != param;
         }
