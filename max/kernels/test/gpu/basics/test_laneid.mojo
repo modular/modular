@@ -20,7 +20,7 @@ from testing import assert_equal
 
 fn kernel(
     output: UnsafePointer[Float32],
-    size: Int,
+    size: UInt,
 ):
     var global_tid = global_idx.x
     if global_tid >= size:
@@ -30,7 +30,7 @@ fn kernel(
 
 fn test_grid_dim(ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
-    alias buffer_size = block_size
+    alias buffer_size = UInt(block_size)
     var output_host = UnsafePointer[Float32].alloc(buffer_size)
 
     for i in range(buffer_size):
@@ -40,8 +40,8 @@ fn test_grid_dim(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(output_buffer, output_host)
 
-    ctx.enqueue_function_checked[kernel, kernel](
-        output_buffer,
+    ctx.enqueue_function[kernel](
+        output_buffer.unsafe_ptr(),
         buffer_size,
         grid_dim=1,
         block_dim=WARP_SIZE,

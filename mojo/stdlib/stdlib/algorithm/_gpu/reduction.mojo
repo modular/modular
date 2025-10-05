@@ -368,17 +368,18 @@ fn reduce_launch[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
-    alias kernel = reduce_kernel[
-        rank,
-        num_reductions,
-        BLOCK_SIZE,
-        input_fn,
-        output_fn,
-        reduce_fn,
-        dtype,
-        packing_factor,
-    ]
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function[
+        reduce_kernel[
+            rank,
+            num_reductions,
+            BLOCK_SIZE,
+            input_fn,
+            output_fn,
+            reduce_fn,
+            dtype,
+            packing_factor,
+        ]
+    ](
         shape,
         axis,
         init,

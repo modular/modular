@@ -209,9 +209,7 @@ fn _sqrt_nvvm(x: SIMD, out res: __type_of(x)):
 
     @parameter
     for i in range(x.size):
-        res[i] = llvm_intrinsic[
-            instruction, Scalar[x.dtype], has_side_effect=False
-        ](x[i])
+        res[i] = _llvm_unary_fn[instruction](x[i])
 
 
 @always_inline
@@ -252,11 +250,9 @@ fn sqrt[
             return _sqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
         return _sqrt_nvvm(x)
     elif is_apple_gpu():
-        return llvm_intrinsic[
-            "llvm.air.sqrt", __type_of(x), has_side_effect=False
-        ](x)
+        return _llvm_unary_fn["llvm.air.sqrt"](x)
 
-    return llvm_intrinsic["llvm.sqrt", __type_of(x), has_side_effect=False](x)
+    return _llvm_unary_fn["llvm.sqrt"](x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -275,9 +271,7 @@ fn _rsqrt_nvvm(x: SIMD, out res: __type_of(x)):
 
     @parameter
     for i in range(x.size):
-        res[i] = llvm_intrinsic[
-            instruction, Scalar[x.dtype], has_side_effect=False
-        ](x[i])
+        res[i] = _llvm_unary_fn[instruction](x[i])
 
 
 @always_inline
@@ -314,7 +308,7 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 
         return rsqrt(x.cast[DType.float32]()).cast[dtype]()
     elif is_apple_gpu():
-        return llvm_intrinsic["llvm.air.rsqrt", __type_of(x)](x)
+        return _llvm_unary_fn["llvm.air.rsqrt"](x)
 
     return 1 / sqrt(x)
 
@@ -335,9 +329,7 @@ fn _recip_nvvm(x: SIMD, out res: __type_of(x)):
 
     @parameter
     for i in range(x.size):
-        res[i] = llvm_intrinsic[
-            instruction, Scalar[x.dtype], has_side_effect=False
-        ](x[i])
+        res[i] = _llvm_unary_fn[instruction](x[i])
 
 
 @always_inline
@@ -436,6 +428,10 @@ fn exp2[
         return _call_amdgcn_intrinsic[
             String("llvm.amdgcn.exp2.", _get_amdgcn_type_suffix[dtype]())
         ](x)
+
+    @parameter
+    if is_apple_gpu() and dtype in (DType.float16, DType.float32):
+        return _llvm_unary_fn["llvm.air.exp2"](x)
 
     @parameter
     if dtype is DType.float32:
@@ -1406,9 +1402,7 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     if size_of[dtype]() < size_of[DType.float32]():
         return acos(x.cast[DType.float32]()).cast[dtype]()
     elif dtype is DType.float64:
-        return llvm_intrinsic["llvm.acos", __type_of(x), has_side_effect=False](
-            x
-        )
+        return _llvm_unary_fn["llvm.acos"](x)
 
     # For F32 types, use the Remez approximation found in Sleef with range
     # splitting to improve accuracy.
@@ -1488,9 +1482,7 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     if size_of[dtype]() < size_of[DType.float32]():
         return asin(x.cast[DType.float32]()).cast[dtype]()
     elif dtype is DType.float64:
-        return llvm_intrinsic["llvm.asin", __type_of(x), has_side_effect=False](
-            x
-        )
+        return _llvm_unary_fn["llvm.asin"](x)
 
     # For F32 types, use the Remez approximation found in Sleef with range
     # splitting to improve accuracy.
@@ -1632,18 +1624,12 @@ fn cos[
         The `cos` of the input.
     """
 
-    @always_inline
-    fn llvm_cos(v: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return llvm_intrinsic["llvm.cos", __type_of(v), has_side_effect=False](
-            v
-        )
-
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
         return cos(x.cast[DType.float32]()).cast[dtype]()
 
     if is_compile_time():
-        return llvm_cos(x)
+        return _llvm_unary_fn["llvm.cos"](x)
 
     @parameter
     if is_nvidia_gpu() and dtype is DType.float32:
@@ -1651,11 +1637,9 @@ fn cos[
             instruction="cos.approx.ftz.f32", constraints="=f,f"
         ](x)
     elif is_apple_gpu():
-        return llvm_intrinsic[
-            "llvm.air.cos", __type_of(x), has_side_effect=False
-        ](x)
+        return _llvm_unary_fn["llvm.air.cos"](x)
     else:
-        return llvm_cos(x)
+        return _llvm_unary_fn["llvm.cos"](x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1682,18 +1666,12 @@ fn sin[
         The `sin` of the input.
     """
 
-    @always_inline
-    fn llvm_sin(v: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return llvm_intrinsic["llvm.sin", __type_of(v), has_side_effect=False](
-            v
-        )
-
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
         return sin(x.cast[DType.float32]()).cast[dtype]()
 
     if is_compile_time():
-        return llvm_sin(x)
+        return _llvm_unary_fn["llvm.sin"](x)
 
     @parameter
     if is_nvidia_gpu() and dtype is DType.float32:
@@ -1701,11 +1679,9 @@ fn sin[
             instruction="sin.approx.ftz.f32", constraints="=f,f"
         ](x)
     elif is_apple_gpu():
-        return llvm_intrinsic[
-            "llvm.air.sin", __type_of(x), has_side_effect=False
-        ](x)
+        return _llvm_unary_fn["llvm.air.sin"](x)
     else:
-        return llvm_sin(x)
+        return _llvm_unary_fn["llvm.sin"](x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1972,9 +1948,7 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
                 * log10_2
             )
     elif is_amd_gpu():
-        return llvm_intrinsic[
-            "llvm.log10", __type_of(x), has_side_effect=False
-        ](x)
+        return _llvm_unary_fn["llvm.log10"](x)
 
     return _call_libm["log10"](x)
 
@@ -3087,6 +3061,15 @@ fn clamp[
 
 
 @always_inline("nodebug")
+fn _llvm_unary_fn[
+    dtype: DType,
+    width: Int, //,
+    fn_name: StaticString,
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    return llvm_intrinsic[fn_name, __type_of(x), has_side_effect=False](x)
+
+
+@always_inline("nodebug")
 fn _call_libm[
     dtype: DType,
     width: Int, //,
@@ -3233,9 +3216,7 @@ fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: __type_of(x)):
 
     @parameter
     for i in range(x.size):
-        res[i] = llvm_intrinsic[intrin, Scalar[x.dtype], has_side_effect=False](
-            x[i]
-        )
+        res[i] = _llvm_unary_fn[intrin](x[i])
 
 
 @always_inline
