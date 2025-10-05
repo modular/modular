@@ -642,25 +642,21 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     }
   }
 
-  // We look through non-builtin-apply sugar, but expect builtin applies to line
-  // up exactly for the purposes of param inference.  This is to match user
-  // expectations: an alias of Int should be treated the same as Int, but a call
-  // to x+y shouldn't be treated the same as y+x unless canonically equal.
-  if (auto actualSugar = dyn_cast<SugarAttr>(actualAttr)) {
-    if (actualSugar.getKind() != SugarKind::AlwaysInlineBuiltin)
-      return matchParams(actualSugar.getOriginal(), expectedAttr);
-    if (auto expectedSugar = dyn_cast<SugarAttr>(expectedAttr)) {
-      if (expectedSugar.getKind() == SugarKind::AlwaysInlineBuiltin) {
-        if (actualSugar.getCanonical() == expectedSugar.getCanonical())
-          return success();
-        return matchParams(actualSugar.getSugared(),
-                           expectedSugar.getSugared());
-      }
-    }
-  } else if (auto expectedSugar = dyn_cast<SugarAttr>(expectedAttr)) {
-    if (expectedSugar.getKind() != SugarKind::AlwaysInlineBuiltin)
-      return matchParams(actualAttr, expectedSugar.getOriginal());
+  // We look through non-builtin-apply sugar always.  For builtin apply's, we
+  // want to do inference on the sugar itself, because we want to treat x+y
+  // as unequal to y+x unless canonically equal.
+  auto actualSugar = dyn_cast<SugarAttr>(actualAttr);
+  auto expectedSugar = dyn_cast<SugarAttr>(expectedAttr);
+  if (actualSugar && expectedSugar &&
+      expectedSugar.getKind() == SugarKind::AlwaysInlineBuiltin) {
+    if (actualSugar.getCanonical() == expectedSugar.getCanonical())
+      return success();
+    return matchParams(actualSugar.getSugared(), expectedSugar.getSugared());
   }
+  if (actualSugar)
+    return matchParams(actualSugar.getOriginal(), expectedAttr);
+  if (expectedSugar)
+    return matchParams(actualAttr, expectedSugar.getOriginal());
 
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << "\n");
@@ -694,9 +690,11 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 
   // If it is an extract from a known struct, then we know there is one field in
   // the struct - we can form a StructAttr around our actual value and recurse.
-  if (auto expExtract = dyn_cast<LIT::StructExtractAttr>(expected)) {
+  if (auto expExtract = dyn_cast<LIT::StructExtractAttr>(
+          SugarAttr::stripTopLevelSugar(expected))) {
     // If these are two lined up extracts, look through them.
-    if (auto actExtract = dyn_cast<LIT::StructExtractAttr>(actual)) {
+    if (auto actExtract = dyn_cast<LIT::StructExtractAttr>(
+            SugarAttr::stripTopLevelSugar(actual))) {
       if (expExtract.getField() != actExtract.getField())
         return failure();
       return matchSingleEltStruct(actExtract.getStructValue(),

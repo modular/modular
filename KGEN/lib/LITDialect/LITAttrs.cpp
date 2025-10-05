@@ -1290,6 +1290,14 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
   return get(kind, sugared, original);
 }
 
+/// Remove any top-level sugar nodes from this type, but don't fully
+/// canonicalize it.
+TypedAttr SugarAttr::stripTopLevelSugar(TypedAttr value) {
+  while (auto sugar = dyn_cast<SugarAttr>(value))
+    value = sugar.getOriginal();
+  return value;
+}
+
 static Attribute getLocalCanonical(Attribute attr) {
   // SugarAttr maintains its canonical form directly so we don't need to walk.
   if (auto sugar = dyn_cast<SugarAttr>(attr))

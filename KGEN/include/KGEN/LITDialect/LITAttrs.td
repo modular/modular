@@ -1033,6 +1033,12 @@ def LIT_SugarAttr : LITTypedAttr<"Sugar", "sugar"> {
                   "TypedAttr":$original, "TypedAttr":$canonical, "Type":$type),
                    "", "TypedAttr">,
   ];
+
+  let extraClassDeclaration = [{
+    /// Remove any top-level sugar nodes from this type, but don't fully
+    /// canonicalize it.
+    static TypedAttr stripTopLevelSugar(TypedAttr value);
+  }];
 }
 
 #endif // KGEN_LITDIALECT_LITATTRS_TD

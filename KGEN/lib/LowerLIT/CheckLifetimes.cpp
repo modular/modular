@@ -1049,8 +1049,11 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(TypedAttr origin) {
   SmallVector<ValueRef> result;
 
+  // FIXME: This isn't digging into apply expressions and other things that
+  // could be laundering origins.
+
   // Look through imm cast and unions to find the underlying attrs.
-  processRawOrigin(origin, [&](TypedAttr raw) {
+  processRawOrigin(getCanonicalAttr(origin), [&](TypedAttr raw) {
     auto [valueRef, type] = getValueRefAndTypeForOrigin(raw);
     if (valueRef) {
       result.push_back(valueRef);

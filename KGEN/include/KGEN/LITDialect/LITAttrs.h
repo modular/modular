@@ -54,6 +54,8 @@ getContextualVariadicParams(ArrayRef<Operation *> ops);
 /// This invokes the specified closure on each origin element.
 template <typename T>
 static inline void processRawOrigin(TypedAttr origin, T &&fn) {
+  assert(!isa<SugarAttr>(origin) && "origins should be canonicalized");
+
   // Expand origin unions into their members, we know they will canonicalize
   // nested unions into a single one.
   if (auto unionAttr =

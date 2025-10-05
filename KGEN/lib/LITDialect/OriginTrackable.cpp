@@ -731,8 +731,10 @@ CachedOriginFinder::findOriginsIn(ArrayRef<Type> types,
   // that we know cannot have origins.
   DenseMap<const void *, bool> visited;
   for (Type type : types)
-    scanForOrigins(type, typesAndAttrsWithoutOrigins, visited, results);
+    scanForOrigins(getCanonicalType(type), typesAndAttrsWithoutOrigins, visited,
+                   results);
   for (TypedAttr capture : captures)
-    scanForOrigins(capture, typesAndAttrsWithoutOrigins, visited, results);
+    scanForOrigins(getCanonicalAttr(capture), typesAndAttrsWithoutOrigins,
+                   visited, results);
   return results;
 }
