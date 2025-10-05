@@ -37,11 +37,24 @@ from huggingface_hub import hf_hub_download
 from dataclasses import dataclass, field
 
 import pyarrow.parquet
-from benchmark_shared.config import BaseBenchmarkConfig
-from benchmark_shared.datasets import (
-    BenchmarkDataset,
-    CodeDebugBenchmarkDataset,
-)
+
+# We do this to sidestep certain internal workflows that may not install benchmark_shared
+# as a local package.
+try:
+    from .benchmark_shared.config import (  # type: ignore[import-not-found]
+        BaseBenchmarkConfig,
+    )
+    from .benchmark_shared.datasets import (  # type: ignore[import-not-found]
+        BenchmarkDataset,
+        CodeDebugBenchmarkDataset,
+    )
+except ImportError:
+    from benchmark_shared.config import BaseBenchmarkConfig
+    from benchmark_shared.datasets import (
+        BenchmarkDataset,
+        CodeDebugBenchmarkDataset,
+    )
+
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
     PipelinesFactory,
