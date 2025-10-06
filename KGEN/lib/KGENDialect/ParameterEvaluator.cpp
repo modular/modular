@@ -220,6 +220,33 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
       result = replaceImpl(op.getOperands()[1], rootDepth);
     if (!result)
       return nullptr;
+  } else if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
+    bool changed = false;
+    // BindParamsAttr must always be re-created using an Evaluation Context.
+    SmallVector<TypedAttr> newParamValues;
+    for (auto param : bindParams.getParamValues()) {
+      auto newParam = replaceImpl(param, rootDepth);
+      if (!newParam)
+        return nullptr;
+      changed |= newParam != param;
+      newParamValues.push_back(cast<TypedAttr>(newParam));
+    }
+
+    Attribute newGenerator = replaceImpl(bindParams.getGenerator(), rootDepth);
+    if (!newGenerator)
+      return nullptr;
+    changed |= newGenerator != bindParams.getGenerator();
+
+    Type newType = replaceImpl(bindParams.getType(), rootDepth);
+    if (!newType)
+      return nullptr;
+    changed |= newType != bindParams.getType();
+
+    if (changed)
+      return BindParamsAttr::get(bindParams.getContext(),
+                                 cast<TypedAttr>(newGenerator), newParamValues,
+                                 newType, getEvaluationContext());
+    return bindParams;
   } else {
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;

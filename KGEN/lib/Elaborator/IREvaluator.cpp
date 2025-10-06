@@ -130,8 +130,6 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
     return cast<TypedAttr>(symOr.takeValue());
   }
 
-  if (auto bindParams = dyn_cast<BindParamsAttr>(attr))
-    return evaluateBindParams(bindParams);
   if (auto getWitnessEntry = dyn_cast<GetWitnessAttr>(attr))
     return evaluateGetWitnessAttr(getWitnessEntry);
   if (auto getLinkageNameAttr = dyn_cast<GetLinkageNameAttr>(attr))
@@ -373,13 +371,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
     return failure();
   }
   return {ptr};
-}
-
-FailureOr<TypedAttr>
-IREvaluator::evaluateBindParams(BindParamsAttr bindParams) {
-  // Simply re-construct the bind params with the current evaluation context.
-  return BindParamsAttr::get(bindParams.getGenerator(),
-                             bindParams.getParamValues(), this);
 }
 
 FailureOr<TypedAttr>

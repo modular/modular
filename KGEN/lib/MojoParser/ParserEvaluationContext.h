@@ -31,9 +31,6 @@ private:
   friend class SharedState;
   ParserEvaluationContext(SharedState &shared) : shared(shared) {}
 
-  FailureOr<TypedAttr> evaluateBindParams(TypedAttr generator,
-                                          ArrayRef<TypedAttr> paramValues);
-
   FailureOr<TypedAttr> evaluateGetWitness(TypedAttr typeParam,
                                           StringAttr traitName,
                                           StringAttr witnessName, Type type);
