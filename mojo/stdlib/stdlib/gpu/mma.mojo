@@ -115,6 +115,12 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     RDNA4 additional operations:
         - F32 = FP8 * FP8 + F32 (16x16x32 shape, native hardware support)
 
+    RDNA WMMA supports multiple sizes:
+        - Size 4: single wave
+        - Size (8,8,8,8): Wave32 mode with 8 accumulator registers
+        - Size (8,8,32,32): packed operations (split into multiple WMMA ops)
+        - All use the same 16x16x16 intrinsic
+
     FP8 support by generation:
         - RDNA4: Native FP8/BF8 via llvm.amdgcn.wmma.f32.16x16x32.fp8
           - Supports E4M3 (float8_e4m3fn) and E5M2 (float8_e5m2) formats
@@ -188,10 +194,11 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ):
 
             @parameter
-            if _has_shape[4](a.size, b.size, c.size, d.size):
-                alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
-                return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
-            elif _has_shape[(8, 8, 32, 32)](a.size, b.size, c.size, d.size):
+            if (
+                _has_shape[4](a.size, b.size, c.size, d.size)
+                or _has_shape[(8, 8, 8, 8)](a.size, b.size, c.size, d.size)
+                or _has_shape[(8, 8, 32, 32)](a.size, b.size, c.size, d.size)
+            ):
                 alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
                 return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
             else:
