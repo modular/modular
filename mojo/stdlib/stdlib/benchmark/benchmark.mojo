@@ -405,8 +405,8 @@ fn run[
 
     Args:
         max_iters: Max number of iterations to run (default `1_000_000_000`).
-        min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
-        max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `2`).
+        max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
         max_batch_size: The maximum number of iterations to perform per time
             measurement.
 
@@ -454,8 +454,8 @@ fn run[
 
     Args:
         max_iters: Max number of iterations to run (default `1_000_000_000`).
-        min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
-        max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `2`).
+        max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
         max_batch_size: The maximum number of iterations to perform per time
             measurement.
 
@@ -491,8 +491,8 @@ fn run[
 
     Args:
         max_iters: Max number of iterations to run (default `1_000_000_000`).
-        min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
-        max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `2`).
+        max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
         max_batch_size: The maximum number of iterations to perform per time
             measurement.
 
@@ -540,8 +540,8 @@ fn run[
 
     Args:
         max_iters: Max number of iterations to run (default `1_000_000_000`).
-        min_runtime_secs: Upper bound on benchmarking time in secs (default `2`).
-        max_runtime_secs: Lower bound on benchmarking time in secs (default `60`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `2`).
+        max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
         max_batch_size: The maximum number of iterations to perform per time
             measurement.
 
@@ -600,18 +600,20 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
     var min_time_ns = Int(opts.min_runtime_secs * 1_000_000_000)
     var max_time_ns = Int(opts.max_runtime_secs * 1_000_000_000)
 
-    while time_elapsed < min_time_ns:
-        if time_elapsed > max_time_ns or total_iters > opts.max_iters:
-            break
-
+    # Continue until min_time_ns has elapsed and either max_time_ns or max_iters
+    # is achieved
+    while time_elapsed < max_time_ns:
         var n = Float64(opts.max_batch_size)
         if opts.max_batch_size == 0:
             # We now count the next batchSize. A user might run the benchmark
             # with no warmup phase, so we need to make sure the divisor is not
             # zero.
-            # Compute the next batch size.
             if prev_dur > 0:
-                n = 1.2 * min_time_ns * prev_iters / Float64(prev_dur)
+                # Propose batch size which lasts at least min_time_ns or opts.max_iters
+                n = opts.max_iters
+                if min_time_ns > 0:
+                    n = 1.2 * min_time_ns * prev_iters / Float64(prev_dur)
+
             # We should not grow too fast, so we cap it to only 10x the growth
             # from the prior iteration. Fast growth can happen when the function
             # is too fast.
@@ -621,6 +623,16 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
             n = max(n, prev_iters + 1)
             # The batch size should not be larger than 1.0e9.
             n = min(n, 1.0e9)
+            # Process at least one batch. i.e. Ensure n does not exceed opts.max_iters on the first iteration
+            if total_iters == 0:
+                n = min(n, opts.max_iters)
+
+        # Respect hard limit of opts.max_iters if min_time_ns has elapsed
+        if (
+            time_elapsed >= min_time_ns
+            and (total_iters + Int(n)) > opts.max_iters
+        ):
+            break
 
         prev_dur = opts.timing_fn(Int(n))
         prev_iters = Int(n)
@@ -639,17 +651,15 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
 fn _is_significant_measurement(
     idx: Int, batch: Batch, num_batches: Int, opts: _RunOptions
 ) -> Bool:
-    # The measurement number of iteration is the same as the requested
-    # maxBatchSize and the measurement duration exceeded the requested min
-    # runtime.
-    if (
-        opts.max_batch_size
-        and batch.iterations >= opts.max_batch_size
-        and Float64(batch.duration) >= opts.min_runtime_secs
-    ):
+    # When a fixed batch size is requested (opts.max_batch_size != 0),
+    # the measurement is considered valid if the actual number of iterations
+    # performed equals or exceeds the requested batch size.
+    if opts.max_batch_size and batch.iterations >= opts.max_batch_size:
         return True
 
-    # This measurement occurred in the last 10% of the run.
+    # All or part of this measurement occurred in the last 10% of batches.
+    # Note: Using >= may include one extra measurement but preserves existing
+    # timing behavior.  This will be addressed in the near future.
     if Float64(idx + 1) >= 0.9 * num_batches:
         return True
 
