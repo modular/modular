@@ -82,7 +82,12 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
         shm_arr: npt.NDArray[Any] = np.ndarray(
             arr.shape, arr.dtype, buffer=shm.buf
         )
-        shm_arr[:] = arr
+
+        # Handle 0-dimensional arrays (scalars) differently
+        if arr.ndim == 0:
+            shm_arr[()] = arr
+        else:
+            shm_arr[:] = arr
 
         # Close our handle but don't unlink - let the consumer handle cleanup.
         shm.close()
