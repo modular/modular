@@ -614,8 +614,10 @@ fn async_copy[
     l2_prefetch: OptionalReg[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
-    dst: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
+    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL, **_],
+    dst: UnsafePointer[
+        Scalar[dtype], mut=True, address_space = AddressSpace.SHARED, **_
+    ],
     src_size: Int32 = Int32(size),
     predicate: Bool = False,
 ):
@@ -1022,7 +1024,9 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     *,
     cta_group: Int = 1,
 ](
-    dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
+    dst_mem: UnsafePointer[
+        dst_type, mut=True, origin=_, address_space = GPUAddressSpace.SHARED
+    ],
     tma_descriptor: OpaquePointer,
     mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
     coords: IndexList[rank],
@@ -1169,7 +1173,9 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     *,
     cta_group: Int = 1,
 ](
-    dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
+    dst_mem: UnsafePointer[
+        dst_type, mut=True, origin=_, address_space = GPUAddressSpace.SHARED
+    ],
     tma_descriptor: OpaquePointer,
     mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
     coords: IndexList[rank],
@@ -1290,7 +1296,9 @@ fn cp_async_bulk_tensor_global_shared_cta[
     /,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
+    src_mem: UnsafePointer[
+        src_type, address_space = GPUAddressSpace.SHARED, **_
+    ],
     tma_descriptor: OpaquePointer,
     coords: IndexList[rank],
 ):
@@ -1357,7 +1365,9 @@ fn cp_async_bulk_tensor_reduce[
     reduction_kind: ReduceOp,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
+    src_mem: UnsafePointer[
+        src_type, address_space = GPUAddressSpace.SHARED, **_
+    ],
     tma_descriptor: OpaquePointer,
     coords: IndexList[rank],
 ):
@@ -1442,7 +1452,11 @@ fn _load_impl[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
+    ]
+) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
     This function provides low-level control over cache behavior and memory access patterns
@@ -1469,10 +1483,6 @@ fn _load_impl[
         - Prefetch size must be 64, 128, or 256 bytes if specified.
         - Read-only not supported on AMD GPUs.
     """
-    constrained[
-        ptr.address_space == _GPUAddressSpace.GENERIC,
-        "must be global address space",
-    ]()
     constrained[dtype.is_numeric(), "type must be numeric"]()
 
     @parameter
@@ -1594,7 +1604,11 @@ fn load[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
-](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
+    ]
+) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
@@ -1636,7 +1650,12 @@ fn load[
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
-](ptr: UnsafePointer[Scalar[dtype]], offset: OffsetType) -> SIMD[dtype, width]:
+](
+    ptr: UnsafePointer[
+        Scalar[dtype], address_space = _GPUAddressSpace.GENERIC, **_
+    ],
+    offset: OffsetType,
+) -> SIMD[dtype, width]:
     """Loads data from global memory with an offset into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
@@ -1752,7 +1771,9 @@ fn multimem_ld_reduce[
     accum_type: DType = get_accum_type[dtype](),
     output_width: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    addr: UnsafePointer[
+        Scalar[dtype], mut=False, address_space = AddressSpace.GLOBAL, **_
+    ],
 ) -> StaticTuple[SIMD[dtype, output_width], count]:
     """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
 
@@ -1872,7 +1893,9 @@ fn multimem_ld_reduce[
     consistency: Consistency,
     accum_type: DType = get_accum_type[dtype](),
 ](
-    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    addr: UnsafePointer[
+        Scalar[dtype], mut=False, address_space = AddressSpace.GLOBAL, **_
+    ],
 ) -> SIMD[dtype, simd_width]:
     """Simplified multimem_ld_reduce that automatically calculates optimal packing.
 
@@ -1983,7 +2006,9 @@ fn multimem_st[
     consistency: Consistency,
     width: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    addr: UnsafePointer[
+        Scalar[dtype], mut=True, origin=_, address_space = AddressSpace.GLOBAL
+    ],
     values: StaticTuple[SIMD[dtype, width], count],
 ) -> None:
     """Stages an inline multimem.st instruction.
