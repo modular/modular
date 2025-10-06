@@ -111,6 +111,36 @@ fn raising_finally():
         return
 
 
+@fieldwise_init
+struct MoveMe(Copyable, Movable):
+    pass
+
+
+fn moved(var x: MoveMe):
+    print("moved called")
+    pass
+
+
+# We should not report `use of uninitialized value 'x'`
+fn raising_finally_no_use_of_uninit():
+    var x = MoveMe()
+
+    try:
+        try:
+            raise_fn()
+
+            moved(x^)
+            return
+        except _:
+            moved(x^)
+            return
+        finally:
+            raise_fn()
+            return
+    except _:
+        return
+
+
 def main():
     # CHECK-LABEL: == try-finally
     print("== try-finally")
@@ -166,3 +196,8 @@ def main():
     # CHECK-NEXT: finally inner
     # CHECK-NEXT: except outer
     raising_finally()
+
+    # Should only call `fn moved` once.
+    # CHECK-NEXT: moved called
+    # CHECK-NOT: moved called
+    raising_finally_no_use_of_uninit()
