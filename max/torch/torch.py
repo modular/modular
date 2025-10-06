@@ -9,11 +9,11 @@ from __future__ import annotations
 import inspect
 import itertools
 import threading
-from collections.abc import Hashable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from concurrent import futures
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Union, overload
+from typing import Any, overload
 
 from max import mlir
 from max._core import Attribute
@@ -147,8 +147,8 @@ class CustomOpLibrary:
         return result
 
 
-ParametersDict = Mapping[str, Union[bool, int, str, DType]]
-ParameterKey = tuple[str, Union[bool, int, str, DType]]
+ParametersDict = Mapping[str, bool | int | str | DType]
+ParameterKey = tuple[str, bool | int | str | DType]
 
 CompiledModelKey = tuple[Hashable, ...]
 
@@ -387,7 +387,9 @@ class MaxOp:
                 iterable_results = []
             else:
                 iterable_results = results
-            for input, result in zip(graph.inputs, iterable_results):
+            for input, result in zip(
+                graph.inputs, iterable_results, strict=False
+            ):
                 input.buffer[...] = result.tensor
 
             graph.output()

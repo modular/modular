@@ -40,12 +40,11 @@ Examples:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, TypeAlias
 
 import max.driver as md
-from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from .context import InputContext

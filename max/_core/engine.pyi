@@ -10,7 +10,7 @@ import enum
 import inspect
 import os
 from collections.abc import Mapping
-from typing import Any, Union, overload
+from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
@@ -18,7 +18,7 @@ from max import mlir
 from max._core.driver import Tensor
 from max._core_types.driver import DLPackArray
 
-InputType = Union[DLPackArray, Tensor, MojoValue, int, float, bool]
+InputType = DLPackArray | Tensor | MojoValue | int | float | bool
 
 class TensorSpec:
     """

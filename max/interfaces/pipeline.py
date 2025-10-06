@@ -10,9 +10,7 @@ to communicate operation outcomes, including success and cancellation states.
 """
 
 from abc import ABC, abstractmethod
-from typing import Generic, Protocol, TypeVar, runtime_checkable
-
-from typing_extensions import TypeAlias
+from typing import Generic, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from .request import RequestID
 
