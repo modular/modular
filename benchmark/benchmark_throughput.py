@@ -27,34 +27,17 @@ import random
 import time
 import warnings
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from huggingface_hub import hf_hub_download
-
-# MODULAR MAX BEGIN
-# isort: split
-from dataclasses import dataclass, field
-
 import pyarrow.parquet
-
-# We do this to sidestep certain internal workflows that may not install benchmark_shared
-# as a local package.
-try:
-    from .benchmark_shared.config import (  # type: ignore[import-not-found]
-        BaseBenchmarkConfig,
-    )
-    from .benchmark_shared.datasets import (  # type: ignore[import-not-found]
-        BenchmarkDataset,
-        CodeDebugBenchmarkDataset,
-    )
-except ImportError:
-    from benchmark_shared.config import BaseBenchmarkConfig
-    from benchmark_shared.datasets import (
-        BenchmarkDataset,
-        CodeDebugBenchmarkDataset,
-    )
-
+from benchmark_shared.config import BaseBenchmarkConfig
+from benchmark_shared.datasets import (
+    BenchmarkDataset,
+    CodeDebugBenchmarkDataset,
+)
+from huggingface_hub import hf_hub_download
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
     PipelinesFactory,
@@ -83,8 +66,6 @@ from max.serve.telemetry.metrics import NoopClient
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-
-# MODULAR MAX END
 
 
 @dataclass
