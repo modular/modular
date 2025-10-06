@@ -27,7 +27,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from gpu.host.info import is_gpu
 from gpu.memory import (
     AddressSpace,
@@ -2118,10 +2118,14 @@ fn gpu_qint4_repack_GPTQ[
             False,
         ]
 
-        cuda_ctx.enqueue_function[repack](
+        var null_tensor = LayoutTensor[DType.int32, Layout()](
+            UnsafePointer[Int32]()
+        )
+
+        cuda_ctx.enqueue_function_checked[repack, repack](
             tensor_b,
             tensor_packed_b,
-            UnsafePointer[Int32](),
+            null_tensor,
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
             shared_mem_bytes=smem_usage,
