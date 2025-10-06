@@ -464,6 +464,9 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
 
   // Can simplify if the generator is a GeneratorAttr.
   if (auto genAttr = dyn_cast<GeneratorAttr>(generator)) {
+    assert(
+        evalContext &&
+        "A foldable BindParamsAttr must be created with an evaluation context");
     // If the params are fully bound, just return the specialized generator.
     if (paramValues.size() == genAttr.getInputParamTypes().size()) {
       GeneratorAttr specializedGenerator =

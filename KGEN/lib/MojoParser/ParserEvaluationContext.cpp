@@ -18,9 +18,6 @@ using namespace LIT;
 FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
   // Handle simplifiable cases here.
-  if (auto bindParams = dyn_cast<BindParamsAttr>(attr))
-    return evaluateBindParams(bindParams.getGenerator(),
-                              bindParams.getParamValues());
   if (auto getWitness = dyn_cast<GetWitnessAttr>(attr))
     return evaluateGetWitness(
         getWitness.getTypeValue(), getWitness.getTraitName(),
@@ -30,17 +27,6 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
   // the parser won't be able to evaluate everything. The user is expected to
   // use rebind in these cases.
   return failure();
-}
-
-//===----------------------------------------------------------------------===//
-// BindParamsAttr
-//===----------------------------------------------------------------------===//
-
-FailureOr<TypedAttr>
-ParserEvaluationContext::evaluateBindParams(TypedAttr generator,
-                                            ArrayRef<TypedAttr> paramValues) {
-  // Simply re-construct the bind params with the current evaluation context.
-  return BindParamsAttr::get(generator, paramValues, this);
 }
 
 //===----------------------------------------------------------------------===//

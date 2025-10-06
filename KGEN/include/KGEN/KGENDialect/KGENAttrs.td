@@ -610,8 +610,7 @@ def KGEN_GetTypeNameAttr : KGEN_ExprAttr<"GetTypeName", "get_type_name",
 // BindParams
 //===----------------------------------------------------------------------===//
 
-def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params",
-    [ContextuallyEvaluatedAttrInterface]> {
+def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
   let summary = "Bind params onto an expression with generator type.";
   let description = [{
     The `#kgen.bind_params` attribute is used to bind parameters onto a

@@ -78,7 +78,6 @@ private:
   FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op);
   FailureOr<StringAttr> evaluateStringPart(TypedAttr part);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
-  FailureOr<TypedAttr> evaluateBindParams(BindParamsAttr bindParams);
   FailureOr<TypedAttr> evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry);
   FailureOr<TypedAttr>
   evaluateGetLinkageNameAttr(GetLinkageNameAttr getLinkageNameAttr);
