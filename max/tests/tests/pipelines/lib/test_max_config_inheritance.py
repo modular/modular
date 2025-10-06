@@ -11,7 +11,6 @@ import enum
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
 
 import pytest
 import yaml
@@ -437,14 +436,14 @@ class TestMAXConfigInheritance:
             _config_file_section_name: str = "union_inheritance_test_config"
 
             # Test both union syntaxes
-            optional_int_old: Optional[int] = None
+            optional_int_old: int | None = None
             optional_int_new: int | None = None
             required_str: str = "default"
 
             @staticmethod
             def help() -> dict[str, str]:
                 return {
-                    "optional_int_old": "Optional int using Optional[int] syntax",
+                    "optional_int_old": "Optional int using int | None syntax",
                     "optional_int_new": "Optional int using int | None syntax",
                     "required_str": "Required string field",
                 }

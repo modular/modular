@@ -6,7 +6,7 @@
 
 import queue
 from collections import OrderedDict
-from typing import Union, cast
+from typing import cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -62,7 +62,7 @@ def create_mock_pipeline() -> Mock:
 
 def create_scheduler() -> tuple[
     TokenGenerationScheduler,
-    MAXPushQueue[Union[TextContext, TextAndVisionContext]],
+    MAXPushQueue[TextContext | TextAndVisionContext],
     MAXPullQueue[dict[RequestID, SchedulerResult[TextGenerationOutput]]],
     MAXPushQueue[list[RequestID]],
 ]:
@@ -73,7 +73,7 @@ def create_scheduler() -> tuple[
         target_tokens_per_batch_ce=32,
     )
 
-    request_queue: queue.Queue[Union[TextContext, TextAndVisionContext]] = (
+    request_queue: queue.Queue[TextContext | TextAndVisionContext] = (
         queue.Queue()
     )
     response_queue: queue.Queue[

@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import queue
 import time
-from typing import Callable, TypeVar, cast
+from collections.abc import Callable
+from typing import TypeVar, cast
 
 from max.driver import CPU, Device
 from max.interfaces import RequestID, SchedulerResult, TextGenerationOutput

@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 from unittest.mock import Mock
 
 import numpy as np
@@ -35,10 +34,10 @@ def create_mock_lora_manager(max_num_loras: int = 2) -> Mock:
     manager._active_loras = active_loras
     manager._all_loras = all_loras
 
-    def is_lora(model_name: Optional[str]) -> bool:
+    def is_lora(model_name: str | None) -> bool:
         return bool(model_name and model_name.startswith("lora_"))
 
-    def is_active_lora(model_name: Optional[str]) -> bool:
+    def is_active_lora(model_name: str | None) -> bool:
         return model_name in manager._active_loras if model_name else False
 
     def activate_adapter(model_name: str) -> None:
@@ -102,7 +101,7 @@ def create_mock_pipeline_with_lora(lora_manager: Mock) -> Mock:
 
 
 def create_lora_context(
-    seq_len: int = 30, start_idx: int = 0, model_name: Optional[str] = None
+    seq_len: int = 30, start_idx: int = 0, model_name: str | None = None
 ) -> TextContext:
     """Create a TextContext with optional LoRA model name."""
     tokens = np.ones(seq_len, dtype=np.int32)

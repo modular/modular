@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import tempfile
 from dataclasses import dataclass, field, fields
-from typing import Optional, Union
 
 import pytest
 import yaml
@@ -439,27 +438,27 @@ class TestMAXConfigTypeConversion:
 
     def test_optional_type_conversion(self) -> None:
         """Test conversion of Optional types."""
-        # Test Optional[int] with valid value.
+        # Test int | None with valid value.
         result = convert_max_config_value(
-            TestConfig, "42", Optional[int], "optional_int"
+            TestConfig, "42", int | None, "optional_int"
         )
         assert result == 42
 
-        # Test Optional[int] with None.
+        # Test int | None with None.
         result = convert_max_config_value(
-            TestConfig, None, Optional[int], "optional_int"
+            TestConfig, None, int | None, "optional_int"
         )
         assert result is None
 
-        # Test Optional[bool] with valid value.
+        # Test bool | None with valid value.
         result = convert_max_config_value(
-            TestConfig, "true", Optional[bool], "optional_bool"
+            TestConfig, "true", bool | None, "optional_bool"
         )
         assert result is True
 
-        # Test Optional[bool] with None.
+        # Test bool | None with None.
         result = convert_max_config_value(
-            TestConfig, None, Optional[bool], "optional_bool"
+            TestConfig, None, bool | None, "optional_bool"
         )
         assert result is None
 
@@ -467,19 +466,19 @@ class TestMAXConfigTypeConversion:
         """Test conversion of Union types."""
         # Test Union[int, str] with int.
         result = convert_max_config_value(
-            TestConfig, "42", Union[int, str], "union_field"
+            TestConfig, "42", int | str, "union_field"
         )
         assert result == 42
 
         # Test Union[int, str] with string that can't be converted to int.
         result = convert_max_config_value(
-            TestConfig, "hello", Union[int, str], "union_field"
+            TestConfig, "hello", int | str, "union_field"
         )
         assert result == "hello"
 
         # Test Union[bool, str] with boolean string.
         result = convert_max_config_value(
-            TestConfig, "true", Union[bool, str], "union_field"
+            TestConfig, "true", bool | str, "union_field"
         )
         assert result is True
 
@@ -487,13 +486,13 @@ class TestMAXConfigTypeConversion:
         """Test conversion of complex nested types."""
         # Test Optional[list[str]].
         result = convert_max_config_value(
-            TestConfig, ["item1", "item2"], Optional[list[str]], "optional_list"
+            TestConfig, ["item1", "item2"], list[str] | None, "optional_list"
         )
         assert result == ["item1", "item2"]
 
         # Test Optional[list[str]] with None.
         result = convert_max_config_value(
-            TestConfig, None, Optional[list[str]], "optional_list"
+            TestConfig, None, list[str] | None, "optional_list"
         )
         assert result is None
 
@@ -899,15 +898,15 @@ class TestMAXConfigCLIArgParsers:
             _config_file_section_name: str = "union_test_config"
 
             # Test both union syntaxes
-            optional_int_old: Optional[int] = None
+            optional_int_old: int | None = None
             optional_int_new: int | None = None
-            optional_str_old: Optional[str] = None
+            optional_str_old: str | None = None
             optional_str_new: str | None = None
 
             @staticmethod
             def help() -> dict[str, str]:
                 return {
-                    "optional_int_old": "Optional int using Optional[int] syntax",
+                    "optional_int_old": "Optional int using int | None syntax",
                     "optional_int_new": "Optional int using int | None syntax",
                     "optional_str_old": "Optional str using Optional[str] syntax",
                     "optional_str_new": "Optional str using str | None syntax",

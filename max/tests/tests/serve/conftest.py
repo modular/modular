@@ -6,7 +6,6 @@
 
 import os
 from pathlib import Path
-from typing import Union
 
 import pytest
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -28,7 +27,7 @@ def fixture_testdatadirectory() -> Path:
 @pytest.fixture(scope="session")
 def fixture_tokenizer(
     fixture_testdatadirectory: Path,
-) -> Union[PreTrainedTokenizerFast, PreTrainedTokenizer]:
+) -> PreTrainedTokenizerFast | PreTrainedTokenizer:
     tokenizer = AutoTokenizer.from_pretrained(fixture_testdatadirectory)
     return tokenizer
 
