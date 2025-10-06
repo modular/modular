@@ -11,44 +11,44 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string._unicode_lookups import *
-
-from memory import Span
-
-
-fn _uppercase_mapping_index(rune: Codepoint) -> Int:
-    """Return index for upper case mapping or -1 if no mapping is given."""
-    return _to_index[has_uppercase_mapping](rune)
-
-
-fn _uppercase_mapping2_index(rune: Codepoint) -> Int:
-    """Return index for upper case mapping converting the rune to 2 runes, or -1 if no mapping is given.
-    """
-    return _to_index[has_uppercase_mapping2](rune)
+from collections.string._unicode_lookups import (
+    has_uppercase_mapping,
+    has_lowercase_mapping,
+    uppercase_mapping,
+    lowercase_mapping,
+    has_uppercase_mapping2,
+    uppercase_mapping2,
+    has_uppercase_mapping3,
+    uppercase_mapping3,
+)
+from sys import is_compile_time
 
 
-fn _uppercase_mapping3_index(rune: Codepoint) -> Int:
-    """Return index for upper case mapping converting the rune to 3 runes, or -1 if no mapping is given.
-    """
-    return _to_index[has_uppercase_mapping3](rune)
-
-
-fn _lowercase_mapping_index(rune: Codepoint) -> Int:
-    """Return index for lower case mapping or -1 if no mapping is given."""
-    return _to_index[has_lowercase_mapping](rune)
+fn _global_cst[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
+    var ptr = __mlir_op.`pop.global_constant`[
+        value=value, _type = UnsafePointer[T]._mlir_type
+    ]()
+    return UnsafePointer[T](ptr)[]
 
 
 @always_inline
-fn _to_index[lookup: List[UInt32, **_]](rune: Codepoint) -> Int:
-    """Find index of rune in lookup with binary search.
-    Returns -1 if not found."""
+fn _maybe_get_index[
+    lookup: InlineArray[UInt32, **_]
+](rune: Codepoint) -> Optional[UInt]:
+    if is_compile_time():
+        return Span(materialize[lookup]())._binary_search_index(rune.to_u32())
+    return Span(_global_cst[lookup]())._binary_search_index(rune.to_u32())
 
-    var result = materialize[lookup]()._binary_search_index(rune.to_u32())
 
-    if result:
-        return Int(result.unsafe_value())
-    else:
-        return -1
+@always_inline
+fn _get_mapping[
+    inner_size: Int,
+    outer_size: Int, //,
+    mapping: InlineArray[SIMD[DType.uint32, inner_size], outer_size],
+](index: UInt) -> SIMD[DType.uint32, inner_size]:
+    if is_compile_time():
+        return materialize[mapping]().unsafe_get(index)
+    return _global_cst[mapping]().unsafe_get(index)
 
 
 # TODO:
@@ -64,45 +64,34 @@ fn _get_uppercase_mapping(
     """
     var array = InlineArray[Codepoint, 3](fill=Codepoint(0))
 
-    var index1 = _uppercase_mapping_index(char)
-    if index1 != -1:
-        var rune = materialize[uppercase_mapping]()[index1]
+    if index := _maybe_get_index[has_uppercase_mapping](char):
+        var rune = _get_mapping[uppercase_mapping](index.unsafe_value())
         array[0] = Codepoint(unsafe_unchecked_codepoint=rune)
         return Tuple(UInt(1), array)
-
-    var index2 = _uppercase_mapping2_index(char)
-    if index2 != -1:
-        var runes = materialize[uppercase_mapping2]()[index2]
+    elif index := _maybe_get_index[has_uppercase_mapping2](char):
+        var runes = _get_mapping[uppercase_mapping2](index.unsafe_value())
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         return Tuple(UInt(2), array)
-
-    var index3 = _uppercase_mapping3_index(char)
-    if index3 != -1:
-        var runes = materialize[uppercase_mapping3]()[index3]
+    elif index := _maybe_get_index[has_uppercase_mapping3](char):
+        var runes = _get_mapping[uppercase_mapping3](index.unsafe_value())
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         array[2] = Codepoint(unsafe_unchecked_codepoint=runes[2])
         return Tuple(UInt(3), array)
-
-    return None
+    else:
+        return None
 
 
 fn _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
-    var index: Optional[UInt] = materialize[
-        has_lowercase_mapping
-    ]()._binary_search_index(char.to_u32())
-
-    if index:
-        # SAFETY: We just checked that `result` is present.
-        var codepoint = materialize[lowercase_mapping]()[index.unsafe_value()]
-
-        # SAFETY:
-        #   We know this is a valid `Codepoint` because the mapping data tables
-        #   contain only valid codepoints.
-        return Codepoint(unsafe_unchecked_codepoint=codepoint)
-    else:
+    var index = _maybe_get_index[has_lowercase_mapping](char)
+    if not index:
         return None
+    # SAFETY:
+    #   We know this is a valid `Codepoint` because the mapping data tables
+    #   contain only valid codepoints.
+    var value = _get_mapping[lowercase_mapping](index.unsafe_value())
+    return Codepoint(unsafe_unchecked_codepoint=value)
 
 
 fn is_uppercase(s: StringSlice[mut=False]) -> Bool:
@@ -118,18 +107,14 @@ fn is_uppercase(s: StringSlice[mut=False]) -> Bool:
     """
     var found = False
     for char in s.codepoints():
-        var index = _lowercase_mapping_index(char)
-        if index != -1:
+        if _maybe_get_index[has_lowercase_mapping](char):
             found = True
             continue
-        index = _uppercase_mapping_index(char)
-        if index != -1:
+        elif _maybe_get_index[has_uppercase_mapping](char):
             return False
-        index = _uppercase_mapping2_index(char)
-        if index != -1:
+        elif _maybe_get_index[has_uppercase_mapping2](char):
             return False
-        index = _uppercase_mapping3_index(char)
-        if index != -1:
+        elif _maybe_get_index[has_uppercase_mapping3](char):
             return False
     return found
 
@@ -147,20 +132,16 @@ fn is_lowercase(s: StringSlice[mut=False]) -> Bool:
     """
     var found = False
     for char in s.codepoints():
-        var index = _uppercase_mapping_index(char)
-        if index != -1:
+        if _maybe_get_index[has_uppercase_mapping](char):
             found = True
             continue
-        index = _uppercase_mapping2_index(char)
-        if index != -1:
+        elif _maybe_get_index[has_uppercase_mapping2](char):
             found = True
             continue
-        index = _uppercase_mapping3_index(char)
-        if index != -1:
+        elif _maybe_get_index[has_uppercase_mapping3](char):
             found = True
             continue
-        index = _lowercase_mapping_index(char)
-        if index != -1:
+        elif _maybe_get_index[has_lowercase_mapping](char):
             return False
     return found
 
@@ -181,15 +162,15 @@ fn to_lowercase(s: StringSlice[mut=False]) -> String:
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
             data[input_offset:]
         )
-        var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
-        if lowercase_char_opt is None:
-            result.write_bytes(
-                data[input_offset : input_offset + rune_and_size[1]]
-            )
+        ref rune = rune_and_size[0]
+        ref size = rune_and_size[1]
+        var maybe_replace = _get_lowercase_mapping(rune)
+        if maybe_replace:
+            result += String(maybe_replace.unsafe_value())
         else:
-            result += String(lowercase_char_opt.unsafe_value())
+            result.write_bytes(data[input_offset : input_offset + size])
 
-        input_offset += rune_and_size[1]
+        input_offset += size
 
     return result^
 
@@ -210,28 +191,28 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
             data[input_offset:]
         )
-        var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
+        ref rune = rune_and_size[0]
+        ref size = rune_and_size[1]
+        var maybe_replace = _get_uppercase_mapping(rune)
 
-        if uppercase_replacement_opt:
+        if maybe_replace:
             # A given character can be replaced with a sequence of characters
             # up to 3 characters in length. A fixed size `Codepoint` array is
             # returned, along with a `count` (1, 2, or 3) of how many
             # replacement characters are in the uppercase replacement sequence.
-            count, uppercase_replacement_chars = (
-                uppercase_replacement_opt.unsafe_value()
-            )
-            for char_idx in range(count):
-                result += String(uppercase_replacement_chars[char_idx])
+            ref count_replace = maybe_replace.unsafe_value()
+            ref count = count_replace[0]
+            ref replace = count_replace[1]
+            for i in range(count):
+                result += String(replace.unsafe_get(i))
         else:
-            result.write_bytes(
-                data[input_offset : input_offset + rune_and_size[1]]
-            )
+            result.write_bytes(data[input_offset : input_offset + size])
 
-        input_offset += rune_and_size[1]
+        input_offset += size
 
     return result^
 
 
-@always_inline
+@always_inline("nodebug")
 fn _estimate_needed_size(byte_len: Int) -> Int:
-    return 3 * (byte_len >> 1) + 1
+    return 3 * (byte_len // 2) + 1
