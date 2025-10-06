@@ -276,3 +276,47 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     assert result[1].request_id == test_data[1].request_id
     assert np.array_equal(result[1].tokens, test_data[1].tokens)
     assert np.allclose(result[1].pixel_values[0], test_data[1].pixel_values[0])
+
+
+def test_shared_memory_default_threshold_usage() -> None:
+    """Test that numpy arrays greater than the shared memory threshold use shared memory."""
+    # Default threshold is 0MB (24 * 1024 * 1024 bytes)
+    threshold = 0
+
+    # Create a large array that exceeds the threshold
+    # Using float32 to reduce memory usage while still exceeding threshold
+    shape = (3, 3)  # Anything above 0 should go through shared memory.
+
+    # Ensure the array is large enough to exceed threshold
+    img = np.random.rand(*shape).astype(np.float32)
+    assert img.nbytes > threshold
+
+    context = TextAndVisionContext(
+        request_id=RequestID("array-test"),
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+        pixel_values=(img,),
+    )
+
+    # Test array through queue
+    test_data = ("test", context)
+    push_queue, pull_queue = ZmqConfig[tuple[str, TextAndVisionContext]](
+        tuple[str, TextAndVisionContext]
+    ).pair()
+
+    push_queue.put_nowait(test_data)
+    time.sleep(1)
+    result = pull_queue.get_nowait()
+
+    # Verify both arrays are correctly transmitted
+    assert result[0] == test_data[0]
+    assert result[1].request_id == test_data[1].request_id
+    assert np.array_equal(result[1].tokens, test_data[1].tokens)
+    assert np.allclose(result[1].pixel_values[0], test_data[1].pixel_values[0])
+
+    # Verify that the array was transmitted using shared memory
+    # by checking that the encoded data contains the shared memory marker
+    encoded = push_queue._serialize(test_data)
+
+    # Large array should use shared memory (contain __shm__ marker)
+    assert b"__shm__" in encoded
