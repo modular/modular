@@ -753,7 +753,7 @@ class ComputeGraph:
                 "This error should have been caught at op creation time."
             ) from e
 
-        for tensor, storage in zip(unrealized, results, strict=False):
+        for tensor, storage in zip(unrealized, results, strict=True):
             # This will eventually support Mojo values also.
             assert isinstance(storage, driver.Tensor)
             tensor.storage = storage
