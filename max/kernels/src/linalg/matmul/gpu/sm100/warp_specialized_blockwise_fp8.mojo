@@ -398,6 +398,7 @@ fn promote_accumulators[
     mma_shape: IndexList[3],
     cta_group: Int,
     CLUSTER_SIZE: Int32,
+    num_output_warps: UInt = 4,
 ](
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
     a_scales_smem_iter: LayoutTensorIter[
@@ -1209,6 +1210,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 consumer_phase.step()
                 accum_pipeline_consumer_state.step()
 
+            # TODO (KERN-2081): investigate why this barrier is needed and if we can move/remove it
+            named_barrier[num_output_warps * WARP_SIZE]()
             # wait for CUDA core promotion to finish and store result
             # scheduler fetch next work
             multi_stage_reg_epilogue[
