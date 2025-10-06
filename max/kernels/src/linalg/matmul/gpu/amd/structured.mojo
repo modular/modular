@@ -530,7 +530,7 @@ struct AmdTileOperator[
                 self.a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
                     k_tile_idx, 0
                 ).vectorize[1, Self.simd_width](),
-                k_tile_idx,
+                UInt(k_tile_idx),
             )
 
         @parameter
@@ -540,7 +540,7 @@ struct AmdTileOperator[
                 self.b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
                     k_tile_idx, 0
                 ).vectorize[1, Self.simd_width](),
-                k_tile_idx,
+                UInt(k_tile_idx),
             )
 
         inlined_assembly[

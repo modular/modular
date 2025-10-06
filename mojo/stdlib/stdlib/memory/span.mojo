@@ -775,4 +775,4 @@ struct Span[
             0 <= offset + length <= len(self),
             "subspan out of bounds.",
         )
-        return Self(ptr=self._data + offset, length=length)
+        return Self(ptr=self._data + offset, length=UInt(length))

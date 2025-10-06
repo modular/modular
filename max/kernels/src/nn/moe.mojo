@@ -447,7 +447,7 @@ fn moe_create_indices_bucket_sort_kernel[
 
         g_offset += start_idx
 
-        if thread_idx.x < Int(total_writes - start_idx):
+        if thread_idx.x < UInt(Int(total_writes - start_idx)):
             token_expert_order[Int(g_offset + thread_idx.x)] = smem[
                 0, start_idx + thread_idx.x
             ]

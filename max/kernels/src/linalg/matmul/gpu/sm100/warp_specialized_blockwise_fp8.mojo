@@ -1407,7 +1407,7 @@ fn sm100_warp_specialized_blockwise_fp8[
     @parameter
     if num_pipeline_stages:
         constrained[
-            num_pipeline_stages.value() <= max_pipeline_stages,
+            num_pipeline_stages.value() <= UInt(max_pipeline_stages),
             "num_pipeline_stages <= max_pipeline_stages",
         ]()
 

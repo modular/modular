@@ -554,8 +554,8 @@ fn shared_memory_epilogue[
         # If more than one chunk is created (happens when 8x4 is used)
         # they will be spaced 8 rows away from each other
 
-        shared_memory_row_upper_half += distribute_rows
-        shared_memory_row_lower_half += distribute_rows
+        shared_memory_row_upper_half += UInt(distribute_rows)
+        shared_memory_row_lower_half += UInt(distribute_rows)
 
     named_barrier[num_output_warps * WARP_SIZE]()
 
@@ -840,17 +840,17 @@ fn multi_stage_store_C[
             @parameter
             if register_based_epilogue:
                 register_epilogue[
-                    MMA_M,
+                    UInt(MMA_M),
                     data_paths,
-                    num_stages,
+                    UInt(num_stages),
                     bits,
-                    stage,
-                    stageN,
+                    UInt(stage),
+                    UInt(stageN),
                     elementwise_compute_lambda_fn.value(),
                     num_output_warps,
                     accum_type,
-                    upper_frag.size,
-                    rep,
+                    UInt(upper_frag.size),
+                    UInt(rep),
                 ](upper_frag, lower_frag, c_row, c_col, N)
 
         # Assume double-buffer for shared memory packing
@@ -886,14 +886,14 @@ fn multi_stage_store_C[
                 @parameter
                 if not register_based_epilogue:
                     shared_memory_epilogue[
-                        MMA_M,
+                        UInt(MMA_M),
                         data_paths,
-                        num_stages,
-                        stage,
-                        stageN,
+                        UInt(num_stages),
+                        UInt(stage),
+                        UInt(stageN),
                         c_smem_warp_tile_upper.dtype,
-                        c_smem_tile.shape[1](),
-                        simd_size,
+                        UInt(c_smem_tile.shape[1]()),
+                        UInt(simd_size),
                         c_smem_warp_tile_upper.layout,
                         c_smem_warp_tile_lower.layout,
                         swizzle,
@@ -902,8 +902,8 @@ fn multi_stage_store_C[
                     ](
                         M,
                         N,
-                        c_col,
-                        c_row,
+                        UInt(c_col),
+                        UInt(c_row),
                         c_smem_warp_tile_upper,
                         c_smem_warp_tile_lower,
                     )
@@ -932,14 +932,14 @@ fn multi_stage_store_C[
                 @parameter
                 if not register_based_epilogue:
                     shared_memory_epilogue[
-                        MMA_M,
+                        UInt(MMA_M),
                         data_paths,
-                        num_stages,
-                        stage,
-                        stageN,
+                        UInt(num_stages),
+                        UInt(stage),
+                        UInt(stageN),
                         c_smem_warp_tile_upper.dtype,
-                        c_smem_tile.shape[1](),
-                        simd_size,
+                        UInt(c_smem_tile.shape[1]()),
+                        UInt(simd_size),
                         c_smem_warp_tile_upper.layout,
                         c_smem_warp_tile_lower.layout,
                         swizzle,
@@ -948,8 +948,8 @@ fn multi_stage_store_C[
                     ](
                         M,
                         N,
-                        c_col,
-                        c_row,
+                        UInt(c_col),
+                        UInt(c_row),
                         c_smem_warp_tile_upper,
                         c_smem_warp_tile_lower,
                     )
@@ -1722,7 +1722,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages: UInt = smem_leftover // producer_consumer_smem_per_stage
+    alias max_pipeline_stages: UInt = UInt(
+        smem_leftover // producer_consumer_smem_per_stage
+    )
 
     constrained[
         max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"

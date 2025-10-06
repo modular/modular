@@ -7083,7 +7083,9 @@ fn _copy_dram_to_local[
         offset_helper(offset.value())
     else:
         var base_ptr = buffer.get_base_ptr()
-        offset_helper(UInt((Int(src.ptr) - base_ptr)) // size_of[src.dtype]())
+        offset_helper(
+            UInt(UInt((Int(src.ptr) - base_ptr)) // size_of[src.dtype]())
+        )
 
 
 @always_inline("nodebug")
