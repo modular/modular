@@ -120,7 +120,7 @@ def test_load_pytorch(session: InferenceSession, graph_testdata: Path) -> None:
 
         assert len(expected) == len(output)
         for n, (expected_tensor, actual_tensor) in enumerate(
-            zip(expected, output, strict=False)
+            zip(expected, output, strict=True)
         ):
             assert isinstance(actual_tensor, Tensor)
             if flat_keys[n] == "bf16":
@@ -170,7 +170,7 @@ def test_load_gguf(session: InferenceSession, graph_testdata: Path) -> None:
 
         assert len(expected) == len(output)
         for n, (expected_tensor, actual_tensor) in enumerate(
-            zip(expected, output, strict=False)
+            zip(expected, output, strict=True)
         ):
             assert isinstance(actual_tensor, Tensor)
             if flat_keys[n] == "bf16":
@@ -226,7 +226,7 @@ def test_load_safetensors(
         output = compiled.execute()
         assert len(expected) == len(output)
         for n, (expected_tensor, actual_tensor) in enumerate(
-            zip(expected, output, strict=False)
+            zip(expected, output, strict=True)
         ):
             assert isinstance(actual_tensor, Tensor)
             if flat_keys[n].endswith("bf16"):

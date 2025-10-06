@@ -154,7 +154,7 @@ def test_increment_cache_lengths() -> None:
     prompt_lens = [3, 4, 7]
     replica_idxs = [0, 0, 1]
     batch = []
-    for prompt_len, replica_idx in zip(prompt_lens, replica_idxs, strict=False):
+    for prompt_len, replica_idx in zip(prompt_lens, replica_idxs, strict=True):
         context = create_text_context(np.empty(prompt_len))
         kv_manager.external_claim(context.request_id, replica_idx=replica_idx)
         kv_manager.maybe_reserve(context, num_steps=1)

@@ -36,5 +36,5 @@ class CommaSeparatedList(Sequence[str]):
         if not isinstance(other, CommaSeparatedList):
             return NotImplemented
         return len(self) == len(other) and all(
-            lhs == rhs for lhs, rhs in zip(self, other, strict=False)
+            lhs == rhs for lhs, rhs in zip(self, other, strict=True)
         )

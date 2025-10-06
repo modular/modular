@@ -12,6 +12,6 @@ def results_match(
     references: list[str], predictions: list[str], **kwargs: Any
 ) -> int:
     total = 0
-    for reference, prediction in zip(references, predictions, strict=False):
+    for reference, prediction in zip(references, predictions, strict=True):
         total += reference in prediction
     return total

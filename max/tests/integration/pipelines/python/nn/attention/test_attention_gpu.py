@@ -315,7 +315,7 @@ def test_cross_attention_gpu(
         zip(  # noqa: RUF007
             hidden_input_row_offsets[:-1],
             hidden_input_row_offsets[1:],
-            strict=False,
+            strict=True,
         )
     ):
         hidden_states_padded[batch_idx, : stop - start] = hidden_states[
@@ -347,7 +347,7 @@ def test_cross_attention_gpu(
         zip(  # noqa: RUF007
             hidden_input_row_offsets[:-1],
             hidden_input_row_offsets[1:],
-            strict=False,
+            strict=True,
         )
     ):
         expected_ragged[start:stop] = expected[batch_idx, : stop - start]

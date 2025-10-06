@@ -118,7 +118,7 @@ def generate_comparison_text_report(
             # Group by component for statistics
             grouped: dict[str, dict[str, list]] = {}
             for i, (name, mse, result) in enumerate(
-                zip(layer_names, mse_values, results, strict=False)
+                zip(layer_names, mse_values, results, strict=True)
             ):
                 comp = get_component_name(name)
                 if comp not in grouped:
@@ -158,7 +158,7 @@ def generate_comparison_text_report(
                     layer_names,
                     mse_values,
                     results,
-                    strict=False,
+                    strict=True,
                 )
             ):
                 mse_str = f"{mse:.6e}" if not np.isinf(mse) else "inf"
@@ -238,7 +238,7 @@ def plot_mse_by_component(
                 colors = cmap(np.linspace(0, 1, len(grouped)))
 
             for (comp_name, data), color in zip(
-                grouped.items(), colors, strict=False
+                grouped.items(), colors, strict=True
             ):
                 plt.plot(
                     data["indices"],
@@ -484,9 +484,7 @@ def check_execution_order_consistency(
         # Find first difference
         differences = []
         for i, (max_norm, torch_norm) in enumerate(
-            zip(
-                max_normalized_sequence, torch_normalized_sequence, strict=False
-            )
+            zip(max_normalized_sequence, torch_normalized_sequence, strict=True)
         ):
             if max_norm != torch_norm:
                 differences.append((i, max_norm, torch_norm))
@@ -620,7 +618,7 @@ def compare_layer_outputs(
 
                     # Continue with all output comparisons
                     for i, (max_out, torch_out) in enumerate(
-                        zip(max_outputs, torch_outputs, strict=False)
+                        zip(max_outputs, torch_outputs, strict=True)
                     ):
                         # Load actual tensor data
                         max_tensor_file = (

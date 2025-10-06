@@ -148,7 +148,7 @@ def generate_max_outputs(
         signal_buffers = [inp.buffer for inp in graph.inputs[1:]]
         outputs = [
             tp_moe_shard(input)
-            for tp_moe_shard, input in zip(tp_moe_shards, inputs, strict=False)
+            for tp_moe_shard, input in zip(tp_moe_shards, inputs, strict=True)
         ]
         outputs = allreduce(outputs, signal_buffers)
         graph.output(*outputs)

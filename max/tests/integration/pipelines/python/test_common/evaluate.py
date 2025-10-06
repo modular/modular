@@ -99,14 +99,14 @@ def run_model(
 
     ids = [RequestID() for _ in requests]
     prompts_by_id = {
-        id: request.prompt for id, request in zip(ids, requests, strict=False)
+        id: request.prompt for id, request in zip(ids, requests, strict=True)
     }
     stored_logits = StoreLogits(ids, tokenizer)
 
     logits_processors: list[LogitsProcessor]
     if reference:
         reference_by_id = {
-            id: reference for id, reference in zip(ids, reference, strict=False)
+            id: reference for id, reference in zip(ids, reference, strict=True)
         }
         replace_logits = ReplaceLogitsWithReference(
             pipeline._devices, reference_by_id
@@ -122,13 +122,11 @@ def run_model(
     batched_ids = _create_batches(ids, batch_size)
 
     for ids_in_batch, requests_in_batch in zip(
-        batched_ids, batched_requests, strict=False
+        batched_ids, batched_requests, strict=True
     ):
         batch = [
             request.to_text_generation_request(id, sampling_params)
-            for id, request in zip(
-                ids_in_batch, requests_in_batch, strict=False
-            )
+            for id, request in zip(ids_in_batch, requests_in_batch, strict=True)
         ]
         outputs = pipeline.generate(batch)
         if print_outputs:

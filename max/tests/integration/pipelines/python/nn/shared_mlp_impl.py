@@ -220,7 +220,7 @@ def mlp_output(
             mlp_outputs = [
                 mlp_shard(x)
                 for mlp_shard, x in zip(
-                    mlp_shards, distributed_inputs, strict=False
+                    mlp_shards, distributed_inputs, strict=True
                 )
             ]
 

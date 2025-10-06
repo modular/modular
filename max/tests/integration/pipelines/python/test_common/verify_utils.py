@@ -239,7 +239,7 @@ class ValidatorBase(ABC):
         # iterate over each `sort_by_idx` and print a table
         max_val_str = ""
         for sort_by_idx, pretty_name in zip(
-            self._indices_to_sort_by(), self._pretty_names(), strict=False
+            self._indices_to_sort_by(), self._pretty_names(), strict=True
         ):
             CONSOLE.print(
                 f"Failures by {pretty_name} ({ref_framework} vs"
@@ -729,7 +729,7 @@ def _print_pareto_tolerances(
     )
     CONSOLE.print("Solutions are:")
     percents = map(percent_passing_rtol_only, pareto)
-    for (atol, rtol), percent in zip(pareto, percents, strict=False):
+    for (atol, rtol), percent in zip(pareto, percents, strict=True):
         CONSOLE.print(
             f"\tAbsolute Tolerance: {atol:.1e}\n\tRelative Tolerance:"
             f" {rtol:.1e}\n\tPercent passing from relative tolerance alone:"
@@ -804,7 +804,7 @@ def _print_diff_table(
     # tensor, the value with the reference framework, the value with the target
     # framework, and the value of the difference.
     diff_information: list[dict[str, Any]] = []
-    diff_recs = list(zip(tensor_indices, element_indices, *data, strict=False))
+    diff_recs = list(zip(tensor_indices, element_indices, *data, strict=True))
 
     diff_recs = sorted(diff_recs, key=lambda el: el[2 + sort_by_idx])
 
@@ -814,7 +814,7 @@ def _print_diff_table(
                 "position": (tensor_i, elem_i),
                 **{
                     name: f"{m:.5e}"
-                    for name, m in zip(column_names, data, strict=False)
+                    for name, m in zip(column_names, data, strict=True)
                 },
             }
         )

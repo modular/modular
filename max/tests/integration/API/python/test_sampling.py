@@ -389,7 +389,7 @@ def test_apply_penalties_to_logits(session: InferenceSession) -> None:
     ref_result = logits_np.clone()
     for i in range(BATCH_SIZE):
         unique_tokens, counts = np.unique(prompt_tokens[i], return_counts=True)
-        for token, count in zip(unique_tokens, counts, strict=False):
+        for token, count in zip(unique_tokens, counts, strict=True):
             if ref_result[i][token] > 0:
                 ref_result[i][token] /= REPETITION_PENALTY_SCALAR
             else:

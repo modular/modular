@@ -410,7 +410,7 @@ def compute_discrepancy_report(
 
     mae_per_prompt, rmse_per_prompt, kl_div_per_prompt = [], [], []
     model_modality: ModelModality | None = None
-    for result, reference in zip(results, references, strict=False):
+    for result, reference in zip(results, references, strict=True):
         verify_matching_prompts(result, reference)
         kl_div = None
         if "embeddings" in result and "embeddings" in reference:
@@ -498,7 +498,7 @@ def calculate_logit_discrepancies(
     steps = 0
 
     for res_token, ref_token in zip(
-        result_values, reference_values, strict=False
+        result_values, reference_values, strict=True
     ):
         res_logits_float64 = res_token["logits"].astype(np.float64)
         ref_logits_float64 = ref_token["logits"].astype(np.float64)
