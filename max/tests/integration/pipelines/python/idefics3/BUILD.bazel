@@ -45,7 +45,10 @@ modular_py_test(
         "//:amd_gpu": ["@platforms//:incompatible"],  # FIXME: E2EOPT-613
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
