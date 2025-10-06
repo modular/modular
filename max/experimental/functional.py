@@ -20,7 +20,8 @@ These operations can be used in both graph construction and eager execution.
 from __future__ import annotations
 
 import functools
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 from typing_extensions import ParamSpec
 
@@ -59,7 +60,7 @@ def functional(op: Op) -> Op:
         if results is None:
             return
         elif isinstance(
-            results, (driver.Tensor, tensor.Tensor, TensorValue, BufferValue)
+            results, driver.Tensor | tensor.Tensor | TensorValue | BufferValue
         ):
             return to_tensor(results)
         return [to_tensor(result) for result in results]

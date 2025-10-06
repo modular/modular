@@ -16,7 +16,7 @@ from collections.abc import Iterable, Mapping
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from typing import Any, Optional, Union, cast
+from typing import Any, cast
 
 import numpy as np
 from max._core.engine import InferenceSession as _InferenceSession
@@ -32,14 +32,14 @@ from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
 # implements the protocol
 
-InputShape = Optional[list[Union[int, str, None]]]
-CustomExtensionType = Union[str, Path, Any]
-CustomExtensionsType = Union[list[CustomExtensionType], CustomExtensionType]
+InputShape = list[int | str | None] | None
+CustomExtensionType = str | Path | Any
+CustomExtensionsType = list[CustomExtensionType] | CustomExtensionType
 
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 
 ScalarType = (int, float, bool, np.generic)
-InputType = Union[DLPackArray, Tensor, MojoValue, int, float, bool, np.generic]
+InputType = DLPackArray | Tensor | MojoValue | int | float | bool | np.generic
 
 
 class GPUProfilingMode(str, Enum):
@@ -75,7 +75,7 @@ def _raise_if_not_contiguous(x: InputType) -> None:
 @traced
 def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
     # Original tensor-only execution path
-    input_impls: list[Union[Tensor, MojoValue]] = []
+    input_impls: list[Tensor | MojoValue] = []
 
     for idx, arg in enumerate(args):
         _raise_if_not_contiguous(arg)
@@ -324,7 +324,7 @@ class InferenceSession:
 
     def load(
         self,
-        model: Union[str, Path, Any],
+        model: str | Path | Any,
         *,
         custom_extensions: CustomExtensionsType | None = None,
         custom_ops_path: str | None = None,
@@ -374,7 +374,7 @@ class InferenceSession:
                 _process_custom_extensions_objects(model.kernel_libraries_paths)  # type: ignore
             )
 
-        if isinstance(model, (str, bytes)):
+        if isinstance(model, str | bytes):
             model = Path(str(model))
 
         if isinstance(model, Path):
@@ -425,7 +425,7 @@ class InferenceSession:
 
     def set_debug_print_options(
         self,
-        style: Union[str, PrintStyle] = PrintStyle.COMPACT,
+        style: str | PrintStyle = PrintStyle.COMPACT,
         precision: int = 6,
         output_directory: str | Path | None = None,
     ) -> None:
@@ -457,9 +457,7 @@ class InferenceSession:
                 output tensors.
         """
         if isinstance(style, str):
-            style = cast(
-                Union[str, PrintStyle], getattr(PrintStyle, style, style)
-            )
+            style = cast(str | PrintStyle, getattr(PrintStyle, style, style))
         if not isinstance(style, PrintStyle):
             raise TypeError(
                 "Invalid debug print style. Please use one of 'COMPACT',"

@@ -15,9 +15,10 @@ from __future__ import annotations
 import asyncio
 import functools
 import inspect
+from collections.abc import Callable
 from contextvars import ContextVar, Token
 from types import TracebackType
-from typing import Any, Callable, Optional, TypeVar, overload
+from typing import Any, TypeVar, overload
 
 from max._core.profiler import (
     MotrTrace,
@@ -51,8 +52,8 @@ class _TraceContext:
         """
         self.trace_message = trace_message
         self.color = color
-        self.trace: Optional[MotrTrace] = None
-        self.user_stack_token: Optional[Token[list[int]]] = None
+        self.trace: MotrTrace | None = None
+        self.user_stack_token: Token[list[int]] | None = None
 
     async def __aenter__(self) -> _TraceContext:
         return self.__enter__()
@@ -208,7 +209,7 @@ class Tracer:
                 :obj:`None`, creates an empty tracer.
             color: The color for the initial trace span. Defaults to "modular_purple".
         """
-        self.trace_stack: list[Optional[MotrTrace]] = []
+        self.trace_stack: list[MotrTrace | None] = []
         self.push(message, color)
 
     def push(

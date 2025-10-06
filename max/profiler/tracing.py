@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import functools
 import inspect
+from collections.abc import Callable
 from types import TracebackType
-from typing import Any, Callable, TypeVar, overload
+from typing import Any, TypeVar, overload
 
 from max._core.profiler import Trace, is_profiling_enabled
 

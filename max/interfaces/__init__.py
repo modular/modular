@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
-from typing import Callable
+from collections.abc import Callable
 
 from .context import (
     BaseContext,

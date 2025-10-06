@@ -9,7 +9,7 @@ import struct
 from collections.abc import Generator, Sequence
 from itertools import product
 from os import PathLike
-from typing import Any, Optional, Union
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -18,8 +18,8 @@ from max.dtype import DType
 
 from .driver import CPU
 
-_IdxElType = Union[int, slice]
-IndexType = Union[Sequence[_IdxElType], _IdxElType]
+_IdxElType = int | slice
+IndexType = Sequence[_IdxElType] | _IdxElType
 ShapeType = Sequence[int]
 
 
@@ -39,9 +39,7 @@ def _repr(self: Tensor) -> str:
     return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.stream})"
 
 
-def _view(
-    self: Tensor, dtype: DType, shape: Optional[ShapeType] = None
-) -> Tensor:
+def _view(self: Tensor, dtype: DType, shape: ShapeType | None = None) -> Tensor:
     """Return a new tensor with the given type and shape that shares the underlying memory.
 
     If the shape is not given, it will be deduced if possible, or a
@@ -110,7 +108,7 @@ def _to_numpy(self: Tensor) -> npt.NDArray[Any]:
         raise
 
 
-def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
+def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
     """Create a tensor from an object implementing the dlpack protocol.
 
     This usually does not result in a copy, and the producer of the object

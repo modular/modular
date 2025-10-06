@@ -12,7 +12,6 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import (
     Generic,
-    Optional,
     Protocol,
     TypeVar,
     runtime_checkable,
@@ -175,7 +174,7 @@ class BackgroundQueueDrainer(Generic[PullItemType]):
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="queue_drainer"
         )
-        self._drain_future: Optional[Future[None]] = None
+        self._drain_future: Future[None] | None = None
 
         # Register cleanup on process exit
         atexit.register(self.stop_draining)

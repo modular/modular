@@ -8,7 +8,8 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import msgspec
 import numpy as np
@@ -276,7 +277,7 @@ def msgpack_eq(a: Any, b: Any) -> bool:
         elif isinstance(self_val, list) or isinstance(self_val, tuple):
             if len(self_val) != len(other_val):
                 return False
-            for s, o in zip(self_val, other_val):
+            for s, o in zip(self_val, other_val, strict=False):
                 if isinstance(s, np.ndarray):
                     if not np.array_equal(s, o):
                         return False
