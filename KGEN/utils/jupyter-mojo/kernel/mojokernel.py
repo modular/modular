@@ -20,7 +20,7 @@ import traceback
 from configparser import ConfigParser
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ipykernel.kernelapp import IPKernelApp
 from ipykernel.kernelbase import Kernel
@@ -265,10 +265,10 @@ class MojoKernel(Kernel):
         code: str,
         silent: bool = False,
         store_history: bool = True,
-        user_expressions: Optional[dict[str, Any]] = None,
+        user_expressions: dict[str, Any] | None = None,
         allow_stdin: bool = False,
         *,
-        cell_id: Optional[str] = None,
+        cell_id: str | None = None,
     ):
         """Execute a code cell."""
         # TODO: Better propagate errors from the kernel execution, process

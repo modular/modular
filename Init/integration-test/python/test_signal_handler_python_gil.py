@@ -9,7 +9,6 @@
 import os
 import subprocess
 import sys
-from typing import Optional
 
 
 def test_signal_handler_with_gil_held() -> None:
@@ -70,7 +69,7 @@ def test_signal_handler_with_gil_held() -> None:
     print("✅ Python stack traces work correctly even with GIL held in C++")
 
 
-def main() -> Optional[int]:
+def main() -> int | None:
     """Run the GIL signal handler test."""
     print("Testing signal handler with GIL held in C++...")
 
