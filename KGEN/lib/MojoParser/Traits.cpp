@@ -748,9 +748,19 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
       providedCanonTrait.getSymbols().end());
   if (auto structOp = dyn_cast_or_null<StructDeclOp>(this->getIfOperation())) {
     llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
+    // Search for extensions in the struct's parent scope.
+    // TODO(MOCO-522): Arcana docs on our orphan rule.
     if (ASTDecl *structParent = this->getParentDecl()) {
       structParent->findExtensionsInScopeForStruct(this->getSymbolRef(),
                                                    uniqueExtensions);
+    }
+    // Search for extensions in the trait's parent scope.
+    // TODO(MOCO-522): Arcana docs on our orphan rule.
+    if (ASTDecl *traitDecl = shared.declResolver->getTraitDecl(trait)) {
+      if (ASTDecl *traitParent = traitDecl->getParentDecl()) {
+        traitParent->findExtensionsInScopeForStruct(this->getSymbolRef(),
+                                                    uniqueExtensions);
+      }
     }
     llvm::SmallVector<ASTDecl *> allExtensions(uniqueExtensions.begin(),
                                                uniqueExtensions.end());
