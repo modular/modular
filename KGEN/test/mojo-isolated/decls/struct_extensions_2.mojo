@@ -40,3 +40,19 @@ __extension Spaceship(Flying):
 # ConformanceOp's immediateParents should match the trait's immediateParents.
 # Since Flying inherits from AnyType, the conformance should have AnyType.
 # CHECK-NEXT: } attributes {immediateParents = #M<symbols[@{{.*}}::@AnyType]>, traitRef = @struct_extensions_2::@Flying}
+
+# // -----
+
+struct ZDType:
+    fn __init__(out self):
+        pass
+
+alias ZScalar = ZSIMD[ZDType(), size=1]
+
+struct ZSIMD[dtype: ZDType, size: Int]:
+    pass
+
+trait ZConvertibleToPython:
+    pass
+__extension ZSIMD(ZConvertibleToPython):
+    pass
