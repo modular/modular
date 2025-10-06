@@ -757,6 +757,14 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
     for (ASTDecl *extDecl : allExtensions) {
       if (auto extOp =
               dyn_cast_or_null<ExtensionDeclOp>(extDecl->getIfOperation())) {
+        // Signature resolve the extension so we can access its canonicalTrait.
+        if (failed(shared.declResolver->resolveSignature(*extDecl,
+                                                         extDecl->getLoc())))
+          continue;
+        // Extensions sometimes don't have canonical traits (like in isolated
+        // tests).
+        if (!extOp.getCanonicalTrait().has_value())
+          continue;
         TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
         for (SymbolRefAttr symbol : extCanonicalTrait.getSymbols()) {
           providedSymbols.push_back(symbol);

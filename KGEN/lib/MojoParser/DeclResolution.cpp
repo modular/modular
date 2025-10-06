@@ -3722,11 +3722,11 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
   // figure out the self type they can use.
   decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structDeclOp));
 
-  // Parse inheritance list using the target struct's scope (which has the
-  // generic parameters) This allows the inheritance list to reference the
-  // struct's generic parameters.
+  // Use the parent scope to resolve the traits in the inheritance list.
+  // TODO(MOCO-522): This might need to change once we have parametric traits,
+  // we might want to resolve from the extension's scope at that point.
   DenseSet<SymbolRefAttr> immediateParents;
-  if (failed(parseOptionalInheritanceList(p, *structAstDecl, decl,
+  if (failed(parseOptionalInheritanceList(p, *parentDecl, decl,
                                           extensionDeclOp.getSymName(), shared,
                                           immediateParents)))
     return failure();
