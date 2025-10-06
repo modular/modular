@@ -122,8 +122,8 @@ public:
         : traitName(name), traitFnName(fnName), closureMethod(closureMethod) {}
     ClosureParent(TraitDeclOp trait, FnOp definingOp,
                   ClosureMethod closureMethod)
-        : traitFnName(*definingOp.getSourceName()), trait(trait),
-          definingFn(definingOp), closureMethod(closureMethod) {}
+        : traitFnName(definingOp ? *definingOp.getSourceName() : ""),
+          trait(trait), definingFn(definingOp), closureMethod(closureMethod) {}
     TraitDeclOp getTrait(ASTDecl &moduleDecl);
     FnOp getDefiningOp(ASTDecl &moduleDecl);
     SymbolRefAttr getSymbolRef(ASTDecl &moduleDecl);
@@ -164,6 +164,22 @@ private:
   addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent,
                             ClosureType closureType,
                             SmallVector<ClosureParent> &closureParents);
+
+  /// Given a trait function, specialize it and add it to the struct.
+  /// Returns
+  /// (a) the new FnOp,
+  /// (b) the parameters of the function minus the origins and remapped to
+  /// reference struct parameters instead of indices
+  /// (c) the result of the function, remapped to reference the struct
+  /// parameters instead of indices.
+  std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
+  pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl);
+  /// Given the wrapper struct, add to the conformance table to enable the
+  /// closure to be used with kernel functions
+  void addConformanceToDevicePassable(ASTDecl &structDecl,
+                                      StructFieldOp devicePassedField,
+                                      ParamDeclAttr impl,
+                                      ParamDeclAttr originSet);
   /// Movable trait is a parent of all closures. Cache its defining op.
   ClosureParent moveParent;
   /// Anytype trait is a parent of all closures. Cache its defining op.

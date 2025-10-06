@@ -445,3 +445,19 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
     fn anotherThing(x: Int) unified {var ^} -> Int:
         useIt(one^)
         return x
+
+
+# // -----
+
+
+# COM: Ensure result type index ref has been replaced
+
+
+# CHECK: lit.struct.decl @"fn[T: {{.*}}, /]() -> T_wrapper_copyable"
+# CHECK-NEXT: lit.struct.field field0
+# CHECK-NEXT:      lit.fn @"__call__
+# CHECK-NEXT:        %1 = lit.ref.struct.ger
+# CHECK-NEXT:        %2 = lit.call[!lit.generator<[1]({{.*}}) -> !kgen.param<T>>
+fn makeIt[T: AnyTrivialRegType](a: T):
+    fn parametric() unified {var a} -> T:
+        return a

@@ -532,6 +532,70 @@ getTraitType(SmallVector<ClosureEmitter::ClosureParent> &closureParents,
   return TraitType::get(moduleDecl.getContext(), symbols);
 }
 
+static SymbolConstantAttr buildSymbol(FnOp impl, ParamDeclAttr implType,
+                                      ParamDeclAttr originSetParam) {
+  MLIRContext *ctx = impl.getContext();
+  SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(impl.getOperation()));
+  // Build symbol by binding struct level parameters and explicit parameters.
+  FuncTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
+  SmallVector<TypedAttr> params;
+  params.push_back(ParamDeclRefAttr::get(implType));
+  params.push_back(ParamDeclRefAttr::get(originSetParam));
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamDeclRefAttr reference) -> TypedAttr {
+    return UnboundAttr::get(reference.getType());
+  });
+  for (auto param : impl.getInputParams().drop_back(
+           impl.getFuncTypeGenerator().getNumImplicitOriginDecls()))
+    params.push_back(
+        cast<TypedAttr>(replacer.replace(ParamDeclRefAttr::get(param))));
+  SymbolConstantAttr symbolConstant =
+      SymbolConstantAttr::get(ctx, implSymbol, params, baseSigGen);
+  return symbolConstant;
+}
+
+std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
+ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  ImplicitLocOpBuilder b(structDeclOp.getLoc(), structDeclOp);
+  b.setInsertionPointToEnd(&structDeclOp.getFields().front());
+  SharedState &shared = structDecl.getShared();
+  // Wrapper signature is the signature of the method on the wrapper struct.
+  // We create it by specializing the trait method by binding the struct type
+  // to the self parameter.
+  FnTypeGeneratorType wrapperSignature = specializeSignature(
+      traitFnOp, structDecl.getTypeDeclSelf(), *shared.declResolver);
+
+  // Calculate the argument types and result types in terms of the named
+  // parameters. Since the name of the parameters have not changed from the
+  // trait definition, we can avoid another remap of the indexed types in
+  // parameters and instead reuse the trait function's input parameters.
+  ArrayRef<ParamDeclAttr> parameters =
+      ArrayRef<ParamDeclAttr>(traitFnOp.getInputParams())
+          .take_front(traitFnOp.getInputParams().size() -
+                      wrapperSignature.getNumImplicitOriginDecls());
+  ParamIndexRefReplacer replacer(parameters);
+  SmallVector<Type> argumentTypes;
+  llvm::append_range(
+      argumentTypes,
+      llvm::map_range(wrapperSignature.getArguments(), [&](Type original) {
+        return replacer.replace(original);
+      }));
+  Type result = replacer.replace(wrapperSignature.getResults().front());
+  auto [op, decl] = synthesizeFunction(
+      structDecl, traitFnOp.getSourceNameAttr(), parameters,
+      wrapperSignature.getParamListAttrs(), argumentTypes,
+      wrapperSignature.getArgConventions(), wrapperSignature.getArgListAttrs(),
+      result, traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
+      wrapperSignature.getFnEffects().setUnified(false).setRegisterPassable(
+          false),
+      "", true, traitFnOp.getInlineLevel());
+  if (traitFnOp.getSelfDeinit())
+    op.setSelfDeinit(true);
+  return {op, parameters, result};
+}
+
 ASTDecl *
 ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
                                     ASTDecl &traitDecl, SMLoc smLocation,
@@ -592,39 +656,8 @@ ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
     FnTypeGeneratorType wrappedSignature =
         specializeSignature(traitFnOp, selfType, *shared.declResolver);
 
-    // Wrapper signature is the signature of the method on the wrapper struct.
-    // We create it by specializing the trait method by binding the struct type
-    // to the self parameter.
-    FnTypeGeneratorType wrapperSignature = specializeSignature(
-        traitFnOp, structDecl.getTypeDeclSelf(), *shared.declResolver);
-
-    // Calculate the argument types and result types in terms of the named
-    // parameters. Since the name of the parameters have not changed from the
-    // trait definition, we can avoid another remap of the indexed types in
-    // parameters and instead reuse the trait function's input parameters.
-    ArrayRef<ParamDeclAttr> parameters =
-        ArrayRef<ParamDeclAttr>(traitFnOp.getInputParams())
-            .take_front(traitFnOp.getInputParams().size() -
-                        wrappedSignature.getNumImplicitOriginDecls());
-    ParamIndexRefReplacer replacer(parameters);
-    SmallVector<Type> argumentTypes;
-    llvm::append_range(
-        argumentTypes,
-        llvm::map_range(wrapperSignature.getArguments(), [&](Type original) {
-          return replacer.replace(original);
-        }));
-    Type result = replacer.replace(wrapperSignature.getResults().front());
-    auto [op, decl] = synthesizeFunction(
-        structDecl, traitFnOp.getSourceNameAttr(), parameters,
-        wrapperSignature.getParamListAttrs(), argumentTypes,
-        wrapperSignature.getArgConventions(),
-        wrapperSignature.getArgListAttrs(), result,
-        traitFnOp.getSpecialFunctionKind(), smLocation, b,
-        wrapperSignature.getFnEffects().setUnified(false).setRegisterPassable(
-            false),
-        "", true, traitFnOp.getInlineLevel());
-    if (traitFnOp.getSelfDeinit())
-      op.setSelfDeinit(true);
+    auto [op, parameters, result] =
+        pushBackTraitFunctionImpl(traitFnOp, structDecl);
 
     // Generate the call op by collecting the operands and rebinding the
     // signature.
@@ -686,28 +719,8 @@ ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
     assert(nameToImpl.contains(name) &&
            "expected all trait ops to be implemented");
     FnOp impl = nameToImpl[name];
-    SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
-        cast<mlir::SymbolOpInterface>(impl.getOperation()));
-    // Build symbol by binding struct level parameters and explicit parameters.
-    FuncTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
-    SmallVector<TypedAttr> params;
-    params.push_back(ParamDeclRefAttr::get(implType));
-    params.push_back(ParamDeclRefAttr::get(originSetParam));
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&](ParamDeclRefAttr reference) -> TypedAttr {
-      return UnboundAttr::get(reference.getType());
-    });
-    for (auto param : impl.getInputParams().drop_back(
-             impl.getFuncTypeGenerator().getNumImplicitOriginDecls()))
-      params.push_back(
-          cast<TypedAttr>(replacer.replace(ParamDeclRefAttr::get(param))));
-
-    SmallVector<ParamDeclAttr> paramDecls;
-    paramDecls.push_back(implType);
-    paramDecls.push_back(originSetParam);
-    llvm::append_range(paramDecls, impl.getInputParams());
     SymbolConstantAttr symbolConstant =
-        SymbolConstantAttr::get(ctx, implSymbol, params, baseSigGen);
+        buildSymbol(impl, implType, originSetParam);
     b.create<WitnessOp>(StringAttr::get(ctx, name), symbolConstant);
   };
 
@@ -2077,6 +2090,43 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   return &captureValueDecl;
 }
 
+static void addConformanceTable(
+    ASTDecl &structDecl, ClosureEmitter::ClosureParent closureParent,
+    ArrayRef<std::pair<StringRef, TypedAttr>> witnesses, ASTDecl &fileModule) {
+  // Insert the new witness into the conformance table.
+  MLIRContext *ctx = structDecl.getContext();
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp.getContext());
+  b.setInsertionPointToEnd(&structDeclOp.getBodyRegion().front());
+  TraitDeclOp traitDeclOp = closureParent.getTrait(fileModule);
+  SymbolRefArrayAttr immediateParents = traitDeclOp.getImmediateParentsAttr();
+  SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
+  StringAttr parentName = b.getStringAttr(getFlattenedSymbolName(parentSymbol));
+  ConformanceOp witnessTable =
+      b.create<ConformanceOp>(parentName, parentSymbol, immediateParents);
+  Block &block = witnessTable.getBody().emplaceBlock();
+  b.setInsertionPointToStart(&block);
+  for (auto [name, newWitness] : witnesses)
+    b.create<WitnessOp>(StringAttr::get(ctx, name), newWitness);
+  // Update the types of the struct wrapper.
+  SymbolRefAttr symbol = closureParent.getSymbolRef(fileModule);
+  TraitType oldTraitType = structDeclOp.getCanonicalTrait();
+  SmallVector<SymbolRefAttr> symbols;
+  llvm::append_range(symbols, oldTraitType.getSymbols());
+  symbols.push_back(symbol);
+  TraitType traitType = TraitType::get(ctx, symbols);
+  structDeclOp.setCanonicalTrait(traitType);
+}
+
+static void addConformanceTable(ASTDecl &structDecl,
+                                ClosureEmitter::ClosureParent closureParent,
+                                TypedAttr newWitness, StringRef name,
+                                ASTDecl &fileModule) {
+  SmallVector<std::pair<StringRef, TypedAttr>> witnesses({{name, newWitness}});
+  addConformanceTable(structDecl, closureParent, witnesses, fileModule);
+}
+
 LogicalResult
 ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
                                                 ASTDecl *traitDecl) {
@@ -2125,28 +2175,11 @@ ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
   PValue newWitness = ov.filterOverloadSetForValueType(
       traitSignature, emitter.getDeclScope(), nullptr);
   if (newWitness) {
-    // Insert the new witness into the conformance table.
-    ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp.getContext());
-    b.setInsertionPointToEnd(&structDeclOp.getBodyRegion().front());
-    SymbolRefArrayAttr immediateParents = traitDeclOp.getImmediateParentsAttr();
-    SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
-        cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
-    StringAttr parentName =
-        b.getStringAttr(getFlattenedSymbolName(parentSymbol));
-    ConformanceOp witnessTable =
-        b.create<ConformanceOp>(parentName, parentSymbol, immediateParents);
-    Block &block = witnessTable.getBody().emplaceBlock();
-    b.setInsertionPointToStart(&block);
-    b.create<WitnessOp>(StringAttr::get(ctx, name), newWitness.get());
-
-    // Update the types of the struct wrapper.
-    SymbolRefAttr symbol = traitDecl->getSymbolRef();
-    TraitType oldTraitType = structDeclOp.getCanonicalTrait();
-    SmallVector<SymbolRefAttr> symbols;
-    llvm::append_range(symbols, oldTraitType.getSymbols());
-    symbols.push_back(symbol);
-    TraitType traitType = TraitType::get(ctx, symbols);
-    structDeclOp.setCanonicalTrait(traitType);
+    ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
+    addConformanceTable(structDecl,
+                        ClosureEmitter::ClosureParent(traitDeclOp, callFunction,
+                                                      ClosureMethod::CALL),
+                        newWitness.get(), name, fileModule);
     return success();
   }
   return failure();
