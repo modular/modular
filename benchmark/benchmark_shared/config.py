@@ -135,7 +135,7 @@ class BaseBenchmarkConfig(MAXConfig):
     """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
 
     # Basic workload parameters
-    num_prompts: int = 1000
+    num_prompts: Optional[int] = None
     """Number of prompts to process."""
 
     seed: int = 0

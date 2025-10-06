@@ -28,6 +28,8 @@ benchmark_config:
   # Backend configuration (throughput-specific)
   backend: "modular"  # choices: modular (throughput benchmarks typically use modular backend only)
 
+  num_prompts: 1000  # Number of prompts to process (throughput-specific)
+
   # Model configuration (throughput-specific extensions)
   quantization_encoding: null  # choices: q4_0, q4_k, q6_k, bfloat16, float32, null
   weight_path: null  # Path for already-downloaded pretrained weight file
