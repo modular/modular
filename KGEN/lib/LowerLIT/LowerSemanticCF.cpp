@@ -49,6 +49,10 @@ struct LowerSemanticCF {
   // needed.
   unsigned loopCounter = 0;
 
+  // Each lowered lit.try gets its own unique ID so we can raise to it if
+  // needed.
+  unsigned tryCounter = 0;
+
   // True if we've emitted an error.
   bool hadError = false;
 
@@ -198,6 +202,7 @@ static LIT::TryOp lowerTryFinally(LIT::TryOp tryOp) {
   }
   OpBuilder b(tryOp);
   auto newTry = cast<LIT::TryOp>(b.create(state));
+  newTry.setLabelAttr(tryOp.getLabelAttr());
   tryOp.erase();
   return newTry;
 }
@@ -433,8 +438,7 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
     b.create<LIT::ErrorReturnOp>(
         b.create<ParamConstantOp>(b.getBoolAttr(true)));
   } else {
-    assert(isa<LIT::TryOp>(opForRaise));
-    b.create<LIT::TryRaiseOp>();
+    b.create<LIT::TryRaiseOp>(cast<LIT::TryOp>(opForRaise).getLabelAttr());
   }
 }
 
@@ -581,6 +585,9 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Process a try op specially to identify dead code and warn.
     if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
+      tryOp.setLabelAttr(
+          StringAttr::get(tryOp->getContext(), "try" + Twine(tryCounter++)));
+
       bool tryBodyRaises = false, tryBodyBreaks = false,
            tryBodyFallsThrough = false;
       lowerBlock(tryOp.getTryRegion().front(), tryBodyRaises, tryBodyBreaks,
@@ -641,6 +648,9 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       // it is transparent to raises and breaks.
       bool finallyFallsThrough = false, finallyRaises = false,
            finallyBreaks = false;
+      // Lower finally block in the context of the current tryOp s.t. the raise
+      // label inside (if any) will be set correctly. The finally region will
+      // then be pasted to other places with the correct label inferred.
       lowerBlock(tryOp.getFinallyRegion().front(), finallyRaises, finallyBreaks,
                  finallyFallsThrough);
       doesRaise |= finallyRaises;

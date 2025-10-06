@@ -1458,10 +1458,17 @@ ErrorTreeOrSuccess TryYieldOp::interpret(ArrayRef<Attribute> operands,
 // TryRaiseOp
 //===----------------------------------------------------------------------===//
 
-bool TryRaiseOp::isParentNode(Operation *op) {
-  if (auto tryOp = dyn_cast<TryOp>(op))
-    return tryOp.getTryRegion().isAncestor((*this)->getParentRegion());
+/// Return true if the operation is a loop and has a matching label.
+static bool isMatchingTry(Operation *op, StringAttr label) {
+  if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
+    assert(tryOp.getLabelAttr() && "LowerSemanticCF ensures labels on lit.try");
+    return tryOp.getLabelAttr() == label;
+  }
   return false;
+}
+
+bool TryRaiseOp::isParentNode(Operation *op) {
+  return isMatchingTry(op, getLabelAttr());
 }
 
 void TryRaiseOp::getBranchTargets(
@@ -1474,6 +1481,11 @@ ErrorTreeOrSuccess TryRaiseOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
   // There should always be a parent TryOp.
   auto tryOp = (*this)->getParentOfType<TryOp>();
+  while (tryOp) {
+    if (isMatchingTry(tryOp, getLabelAttr()))
+      break;
+    tryOp = tryOp->getParentOfType<TryOp>();
+  }
   assert(tryOp && "LowerSemanticCF ensures this before elaboration");
 
   state.transferControlFlowTo(tryOp.getExceptRegion(), operands);

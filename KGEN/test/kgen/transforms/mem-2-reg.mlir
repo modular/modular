@@ -231,12 +231,12 @@ kgen.func @try_region() {
 // CHECK-LABEL: @try_raise
 kgen.func @try_raise(%err: index) -> index {
   %0 = pop.stack_allocation 1 x index
-  // CHECK: %[[R:.*]] = lit.try -> index
-  lit.try {
+  // CHECK: %[[R:.*]] = lit.try "try0" -> index
+  lit.try "try0" {
     %idx0 = index.constant 0
     pop.store %idx0, %0 : !kgen.pointer<index>
-    // CHECK: lit.try.raise %arg0, %idx0 : index, index
-    lit.try.raise %err : index
+    // CHECK: lit.try.raise "try0" %arg0, %idx0 : index, index
+    lit.try.raise "try0" %err : index
   // CHECK: except (%arg1: index, %arg2: index)
   } except (%e: index) {
     // CHECK: yield %arg2

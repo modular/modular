@@ -724,9 +724,35 @@ def LIT_TryOp : LITOp<"try",
 
     The 'finally' region is only present during semantic control-flow
     representation mode and is not modeled through the HLCF abstraction.
+
+    The `label` becomes mandatory after lower-semantic-cf to support raising and
+    transfer control flow to non-immediate try ops, which can happen after
+    pasting a `finally` region that raises into inner scope.
+
+    Example:
+    ```mlir
+    lit.try "OUTTER" {
+      lit.try "INNER" {
+        lit.if ... {
+          ...
+          lit.try.raise "INNER"
+        }
+
+        # finally block pasted before `return`
+        ...
+        lit.try.raise "OUTTER" # transfer control flow to outter scope.
+        return
+      } except {
+        ...
+      }
+    } except (%err: !lit.struct<@Error>) {
+      ...
+    }
+    ```
   }];
 
   let arguments = (ins
+    OptionalAttr<StrAttr>:$label,
     Optional<LIT_RefType>:$err,
     DefaultValuedOptionalAttr<BoolAttr, "false">:$suppressWarnings);
   let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
@@ -734,7 +760,7 @@ def LIT_TryOp : LITOp<"try",
                         VariadicRegion<SizedRegion<1>>:$finallyRegions);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    ($err^ `:` type($err))? (`->` type($results)^)? $tryRegion
+    ($label^)? ($err^ `:` type($err))? (`->` type($results)^)? $tryRegion
     `except` custom<RegionWithArgs>($exceptRegion)
     `else` custom<RegionWithArgs>($elseRegion)
     (`finally` $finallyRegions^)? attr-dict
@@ -742,7 +768,7 @@ def LIT_TryOp : LITOp<"try",
 
   let builders = [
     OpBuilder<(ins "Value":$err, CArg<"bool", "false">:$suppressWarnings),
-      [{ build($_builder, $_state, {}, err, suppressWarnings, 1); }]>,
+      [{ build($_builder, $_state, {}, /*label=*/{}, err, suppressWarnings, 1); }]>,
   ];
 
   let extraClassDeclaration = [{
@@ -787,11 +813,16 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
     propagate an error to the except region.
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let assemblyFormat = "($operands^ `:` type($operands))? attr-dict";
+  let arguments = (ins
+    Variadic<AnyType>:$operands,
+    StrAttr:$label
+  );
+  let assemblyFormat = "$label ($operands^ `:` type($operands))? attr-dict";
 
   let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
+    OpBuilder<(ins "StringAttr": $label), [{
+      build($_builder, $_state, {}, label);
+    }]>
   ];
 }
 

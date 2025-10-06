@@ -173,7 +173,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: %_b = lit.var.decl
     var _b: MemExample
     # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
-    # CHECK-NEXT: lit.try {
+    # CHECK-NEXT: lit.try "{{.*}}" {
     try:
         # CHECK-NEXT: lifetime.start %_b
         # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%_b)
@@ -203,7 +203,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: %c = lit.var.decl
     var c: MemExample
     # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
-    # CHECK-NEXT: lit.try {
+    # CHECK-NEXT: lit.try "{{.*}}" {
     try:
         # CHECK-NEXT: lifetime.start %c
         # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
@@ -232,7 +232,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: %d = lit.var.decl
     var d: MemExample
     # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
-    # CHECK-NEXT: lit.try {
+    # CHECK-NEXT: lit.try "{{.*}}" {
     try:
         # CHECK-NEXT:  hlcf.elif
         # CHECK-NEXT:  hlcf.elif.yield
@@ -551,7 +551,6 @@ fn test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } {bodyIsolated, elseIsolated}
-
 
 
 # CHECK-LABEL: lit.fn @"test_param_for2

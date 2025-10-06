@@ -182,17 +182,17 @@ kgen.func @switch(%arg0: index) {
 // CHECK-LABEL: @reraise_in_try
 kgen.func @reraise_in_try(%err: i32) {
   // CHECK-NEXT: br ^bb1
-  lit.try {
+  lit.try "try0" {
     // CHECK-NEXT: ^bb1:
     // CHECK-NEXT: br ^bb2
-    lit.try {
+    lit.try "try1" {
       // CHECK-NEXT: ^bb2:
       // CHECK: br ^bb3(%{{.*}} : i32)
-      lit.try.raise %err :i32
+      lit.try.raise "try1" %err :i32
     } except (%arg0: i32) {
       // CHECK-NEXT: ^bb3(%{{.*}}: i32):
       // CHECK: br ^bb4(%{{.*}} : i32)
-      lit.try.raise %arg0 :i32
+      lit.try.raise "try0" %arg0 :i32
     } else {
       kgen.unreachable
     }

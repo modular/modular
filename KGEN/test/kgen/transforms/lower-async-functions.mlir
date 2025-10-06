@@ -539,7 +539,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
   // CHECK: [[NIF:%.*]] = kgen.call @foo1
   %result3 = kgen.call @foo1(%arg1) : (index) -> index
-  lit.try {
+  lit.try "try0" {
     hlcf.elif {
       %result = kgen.call @bar(%arg2) : (index) -> i1
       hlcf.elif.yield %result
@@ -558,12 +558,12 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
       // CHECK-NEXT: }
       // CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep %arg0[[[#FRAME10 - 3]]]
       // CHECK-NEXT: [[V12:%.*]] = pop.load [[V11]] : !kgen.pointer<index>
-      // CHECK-NEXT: lit.try.raise [[V12]] : index
+      // CHECK-NEXT: lit.try.raise "try0" [[V12]] : index
       %result2 = kgen.call @foo(%arg2) : (index) -> index
       co.suspend (%hdl) {
         co.suspend.end
       }
-      lit.try.raise %result2 : index
+      lit.try.raise "try0" %result2 : index
     } else {
       hlcf.yield
     }

@@ -903,7 +903,7 @@ struct HasMemExample:
   # CHECK-LABEL: lit.fn @"destroyPotentiallyOverwrittenValueRegardlessOfOutcome
   fn destroyPotentiallyOverwrittenValueRegardlessOfOutcome(mut self):
     # CHECK-NEXT: %__try_error__ = lit.var.dec
-    # CHECK-NEXT: lit.try {
+    # CHECK-NEXT: lit.try "try0" {
     try:
       # CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %self[fh]
       # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
@@ -1068,7 +1068,7 @@ struct IntAndOptional:
 # CHECK: lit.fn @"caught_eh_cleanup
 fn caught_eh_cleanup():
     # CHECK-NEXT: %eh1 = lit.var.decl "eh1"
-    # CHECK-NEXT: lit.try {
+    # CHECK-NEXT: lit.try "{{.*}}" {
     try:
       # CHECK-NEXT: [[NORMALRESULT:%.*]] = lit.var.decl
 
@@ -1091,7 +1091,7 @@ fn caught_eh_cleanup():
       pass
 
     # CHECK: %eh2 = lit.var.decl "eh2"
-    # CHECK-NEXT: lit.try {
+    # CHECK-NEXT: lit.try "{{.*}}" {
     try:
       # CHECK-NEXT: [[NORMALRESULT:%.*]] = lit.var.decl
 

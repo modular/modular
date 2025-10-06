@@ -563,8 +563,8 @@ kgen.func @loop_with_lit_try() {
     hlcf.if %1 {
       hlcf.yield
     } else {
-      lit.try {
-        lit.try.raise
+      lit.try "try0" {
+        lit.try.raise "try0"
       }
       except () {
         lit.try.yield
