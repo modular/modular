@@ -36,3 +36,18 @@ fn bar(a: Mem):
     # expected-error @below {{a function cannot be register passable unless it is unified}}
     fn closure() register_passable {var}:
         use(a)
+
+# COM: ambiguous captures
+
+fn aThing(x: Int) -> Int:
+    return x
+
+
+fn aThing() -> Int:
+    return 5
+
+
+fn definesClosure():
+    # expected-error @below {{ambiguous captured value: aThing}}
+    fn aClosure() unified {var aThing}:
+        pass

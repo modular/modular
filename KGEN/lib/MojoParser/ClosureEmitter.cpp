@@ -1957,10 +1957,15 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
                                          ASTDecl *signatureDecl) {
   SharedState &shared = emitter.shared;
   FnOp funcOp = cast<FnOp>(closure.getIfOperation());
-  ArrayRef<ASTDecl *> results =
-      closure.getParentDecl()->lookupInCurrentScope(name);
-  if (results.size() != 1) {
+  LookupResult lookup = shared.lookupAndResolveDecl(
+      name, location, *closure.getParentDecl(), true);
+  if (!lookup.isSuccess()) {
     shared.emitError(location, "reference to an unknown value: ") << name;
+    return nullptr;
+  }
+  ArrayRef<ASTDecl *> results = lookup.getIfSuccess();
+  if (results.size() > 1) {
+    shared.emitError(location, "ambiguous captured value: ") << name;
     return nullptr;
   }
   ASTDecl *result = results.front();
