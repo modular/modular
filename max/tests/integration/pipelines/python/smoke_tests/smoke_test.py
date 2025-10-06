@@ -103,6 +103,10 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
         "qwen/qwen3-8b": ",max_gen_toks=4096",
     }.get(model, "")
 
+    if task == "chartqa":
+        # Chartqa has a bug in lm-eval, so we use a local version until it's fixed
+        task = str(Path(__file__).parent.resolve() / "chartqa")
+
     return [
         ".venv-lm-eval/bin/python",
         "-m",
@@ -218,11 +222,12 @@ def smoke_test(framework: str, model: str, output_file: Optional[Path]) -> None:
     model = model.lower().strip()
     cmd = get_server_cmd(framework, model)
 
-    # TODO Refactor this to a model list/matrix specfying type of model
-    if any(x in model.lower() for x in ["qwen2.5-vl", "vision", "internvl"]):
-        task = "chartqa"
-    else:
-        task = "gsm8k_cot_llama"
+    # TODO Refactor this to a model list/matrix specifying type of model
+    is_vision_model = any(
+        keyword in model
+        for keyword in ("qwen2.5-vl", "vision", "internvl", "idefics")
+    )
+    task = "chartqa" if is_vision_model else "gsm8k_cot_llama"
 
     # SGLang depends on ninja which is in the serve environment
     env = os.environ.copy()
