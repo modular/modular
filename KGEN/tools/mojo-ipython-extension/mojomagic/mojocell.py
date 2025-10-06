@@ -11,7 +11,7 @@ import os
 import pathlib
 import sys
 import uuid
-from typing import Callable
+from collections.abc import Callable
 
 import IPython  # type: ignore
 
