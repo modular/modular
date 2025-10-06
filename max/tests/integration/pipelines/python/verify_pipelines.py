@@ -709,7 +709,10 @@ PIPELINES = {
     ),
     "meta-llama/Llama-3.1-8B-Instruct-data-parallel-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=[
+            "nvidia-multi",
+            "no-h100",
+        ],  # TODO(MODEL-779): Accuracy issues on H100.
         run=_make_pipeline_runner(
             pipeline="llama3.1-8b-data-parallel",
             encoding="bfloat16",
@@ -767,7 +770,7 @@ PIPELINES = {
     ),
     "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="llama3.3-70b",
             encoding="bfloat16",
@@ -778,7 +781,7 @@ PIPELINES = {
     ),
     "meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="llama4-scout",
             encoding="bfloat16",
@@ -844,7 +847,7 @@ PIPELINES = {
     ),
     "OpenGVLab/InternVL3-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="internvl3-8b-instruct",
             encoding="bfloat16",
@@ -855,7 +858,7 @@ PIPELINES = {
     ),
     "OpenGVLab/InternVL3-14B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="internvl3-14b-instruct",
             encoding="bfloat16",
@@ -865,7 +868,7 @@ PIPELINES = {
     ),
     "OpenGVLab/InternVL3-38B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="internvl3-38b-instruct",
             encoding="bfloat16",
@@ -899,7 +902,7 @@ PIPELINES = {
     ),
     "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="qwen2.5-vl-3b",
             encoding="bfloat16",
@@ -909,7 +912,7 @@ PIPELINES = {
     ),
     "Qwen/Qwen2.5VL-7B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="qwen2.5-vl-7b",
             encoding="bfloat16",
@@ -919,7 +922,7 @@ PIPELINES = {
     ),
     "Qwen/Qwen2.5VL-32B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="qwen2.5-vl-32b",
             encoding="bfloat16",
@@ -1066,7 +1069,7 @@ PIPELINES = {
     ),
     "google/gemma-3-27b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["h100-multi"],
+        tags=["nvidia-multi"],
         run=_make_pipeline_runner(
             pipeline="gemma3-27b",
             encoding="bfloat16",
