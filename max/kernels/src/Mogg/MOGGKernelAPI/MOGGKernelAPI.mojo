@@ -8306,18 +8306,10 @@ struct IndexTensor:
         indices: InputTensor[dtype=indices_type, rank=indices_rank],
         ctx: DeviceContextPtr,
     ) raises:
-        index_tensor[
-            dtype,
-            indices_type,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-            target=target,
-        ](
-            managed_tensor_slice_to_ndbuffer(data),
-            managed_tensor_slice_to_ndbuffer(indices),
-            managed_tensor_slice_to_ndbuffer(output),
+        index_tensor[dtype, indices_type, batch_dims, target=target,](
+            data.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            output.to_layout_tensor(),
             ctx,
         )
 
@@ -8377,7 +8369,7 @@ struct AdvancedIndexingGetItem:
             input_tensor_fn=input_tensor_fn,
             indices_fn=indices_fn,
         ](
-            managed_tensor_slice_to_ndbuffer(out_tensor),
+            out_tensor.to_layout_tensor(),
             input_tensor.strides(),
             ctx,
         )
@@ -8450,7 +8442,7 @@ struct AdvancedIndexingSetItemInplace:
             updates_tensor_fn=updates_tensor_fn,
             indices_fn=indices_fn,
         ](
-            managed_tensor_slice_to_ndbuffer(input_tensor),
+            input_tensor.to_layout_tensor(),
             indices[0].shape(),
             updates.strides(),
             ctx,
