@@ -267,6 +267,7 @@ fn test_element_dynamic_layout() raises:
 
     _ = tensor_Ux8^
     _ = tensor_8xU^
+    storage.free()
 
 
 # CHECK-LABEL: test_element_masked_load

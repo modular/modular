@@ -148,6 +148,12 @@ fn test_case_sampling[
         print(",", end="")
     print("")
 
+    input_ptr.free()
+    output_vals_ptr.free()
+    output_idxs_ptr.free()
+    temperature_ptr.free()
+    seed_ptr.free()
+
 
 fn test_case[
     rank: Int,

@@ -328,8 +328,8 @@ fn test_conv_transposed[
     for i in range(output_size):
         if not all(
             isclose(
-                output_ref.ptr.load[width=simd_size](i),
-                output.ptr.load[width=simd_size](i),
+                output_ref.ptr.load[width=1](i),
+                output.ptr.load[width=1](i),
                 atol=1e-4,  # absolute error tolerance
                 rtol=1e-4,  # relative error tolerance
             )
@@ -338,8 +338,8 @@ fn test_conv_transposed[
             print("filter shape: ", filter_shape)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.ptr.load[width=simd_size](i))
-            print("Actual value: ", output.ptr.load[width=simd_size](i))
+            print("Golden value: ", output_ref.ptr.load[width=1](i))
+            print("Actual value: ", output.ptr.load[width=1](i))
             output_ptr.free()
             output_ref_ptr.free()
             return

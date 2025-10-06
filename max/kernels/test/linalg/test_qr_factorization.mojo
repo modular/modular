@@ -148,3 +148,10 @@ def main():
     var q_mul_qt = create_tensor[DType.float32, a_layout](m, m, q_mul_qt_ptr)
     a_mul_bt[DType.float32](q, q, q_mul_qt)
     all_almost_id(q_mul_qt, atol=atol, rtol=rtol)
+
+    a_ptr.free()
+    a_ptr_copy.free()
+    v_ptr.free()
+    q_ptr.free()
+    q_mul_r_ptr.free()
+    q_mul_qt_ptr.free()
