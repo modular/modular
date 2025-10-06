@@ -62,7 +62,7 @@ def causal_attention_mask_2d_from_imgs(
     block_start_idx = np.cumsum(np.concatenate(([0], num_patches_list[:-1])))
 
     # TODO(KERN-782): This should be -inf but softmax saturates with NaNs.
-    for start, end in zip(block_start_idx, block_end_idx, strict=False):
+    for start, end in zip(block_start_idx, block_end_idx, strict=True):
         fill_matrix[int(start) : int(end), int(start) : int(end)] = 0
 
     # Expand the mask dimensions to match the expected input shape
@@ -108,7 +108,7 @@ def causal_attention_mask_2d(
 
     # For each block, set the diagonal region corresponding to that block to 0.
     # This allows patches within the same block to attend to each other.
-    for start, end in zip(block_start_idx, block_end_idx, strict=False):
+    for start, end in zip(block_start_idx, block_end_idx, strict=True):
         fill_matrix[int(start) : int(end), int(start) : int(end)] = 0
 
     # Expand the mask dimensions to match the expected transformer input shape.

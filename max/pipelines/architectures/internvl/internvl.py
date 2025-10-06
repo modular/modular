@@ -188,7 +188,7 @@ class InternVLDecoderLayer(Module):
         norm_xs = [
             norm_shard(x)
             for norm_shard, x in zip(
-                self.input_layernorm_shards, xs, strict=False
+                self.input_layernorm_shards, xs, strict=True
             )
         ]
 
@@ -202,23 +202,23 @@ class InternVLDecoderLayer(Module):
         )
 
         # Add residual.
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=False)]
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
 
         # Apply post attention layer norm to each shard
         normed_hs = [
             norm_shard(h)
             for norm_shard, h in zip(
-                self.post_attention_layernorm_shards, hs, strict=False
+                self.post_attention_layernorm_shards, hs, strict=True
             )
         ]
         mlp_outs = [
             shard(x)
-            for shard, x in zip(self.mlp_shards, normed_hs, strict=False)
+            for shard, x in zip(self.mlp_shards, normed_hs, strict=True)
         ]
         mlp_outs = self.mlp_allreduce(mlp_outs, signal_buffers)
 
         # Add residual.
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=False)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -352,7 +352,7 @@ class InternVLLanguageModel(Module):
                 image_token_indices=img_tok_indices,
             )
             for h_device, img_embed, img_tok_indices in zip(
-                h, image_embeddings, image_token_indices, strict=False
+                h, image_embeddings, image_token_indices, strict=True
             )
         ]
 
@@ -374,7 +374,7 @@ class InternVLLanguageModel(Module):
         last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
         last_token_h = [
             ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices, strict=False)
+            for h_device, indices in zip(h, last_token_indices, strict=True)
         ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
@@ -382,7 +382,7 @@ class InternVLLanguageModel(Module):
                 [
                     norm_shard(h)
                     for norm_shard, h in zip(
-                        self.norm_shards, last_token_h, strict=False
+                        self.norm_shards, last_token_h, strict=True
                     )
                 ],
                 signal_buffers,
@@ -495,7 +495,7 @@ class InternVisionEmbeddings(Module, Shardable):
             patch_embedding_shards,
             class_embedding_shards,
             position_embedding_shards,
-            strict=False,
+            strict=True,
         ):
             # Create the new sharded embedding.
             sharded = InternVisionEmbeddings(self.config, device)
@@ -697,7 +697,7 @@ class InternVLVisionMLP(Module, Shardable):
 
         shards = []
         for device, fc1_shard, fc2_shard in zip(
-            devices, fc1_shards, fc2_shards, strict=False
+            devices, fc1_shards, fc2_shards, strict=True
         ):
             # Create new MLP instance with the same configuration
             sharded = InternVLVisionMLP(
@@ -1137,7 +1137,7 @@ class InternVisionEncoderLayer(Module):
     ) -> list[TensorValue]:
         """Apply layer scaling to tensors on their respective devices."""
         scale_tensors = [scale_weight.to(device) for device in devices]
-        return [t * s for t, s in zip(tensors, scale_tensors, strict=False)]
+        return [t * s for t, s in zip(tensors, scale_tensors, strict=True)]
 
     def _split_qkv_per_device(
         self, qkv_outs: Sequence[TensorValue]
@@ -1183,7 +1183,7 @@ class InternVisionEncoderLayer(Module):
         # 1. Apply first normalization per device (using per-device instances)
         # x: [1025, 3200]
         norm1_outs = [
-            norm(x) for x, norm in zip(xs, self.norm1_per_device, strict=False)
+            norm(x) for x, norm in zip(xs, self.norm1_per_device, strict=True)
         ]
 
         # 2. Apply QKV projection per device (rowwise)
@@ -1295,7 +1295,7 @@ class InternVisionEncoderLayer(Module):
         hidden_states = [
             out + orig.cast(DType.float32)
             for out, orig in zip(
-                attn_outs_scaled, original_hidden_states, strict=False
+                attn_outs_scaled, original_hidden_states, strict=True
             )
         ]
 
@@ -1303,13 +1303,13 @@ class InternVisionEncoderLayer(Module):
         norm2_outs = [
             norm(hidden).cast(orig_dtype)
             for norm, hidden in zip(
-                self.norm2_per_device, hidden_states, strict=False
+                self.norm2_per_device, hidden_states, strict=True
             )
         ]
 
         # 5. Apply MLP with reshaping using per-device MLPs
         mlp_outs = []
-        for mlp, norm_out in zip(self.mlp_per_device, norm2_outs, strict=False):
+        for mlp, norm_out in zip(self.mlp_per_device, norm2_outs, strict=True):
             batch_size, seq_len, hidden_dim = norm_out.shape
             # Reshape to 2D for MLP
             mlp_out_2d = mlp(
@@ -1331,7 +1331,7 @@ class InternVisionEncoderLayer(Module):
         # Second residual connection
         outputs = [
             out + hidden.cast(orig_dtype)
-            for out, hidden in zip(mlp_outs_scaled, hidden_states, strict=False)
+            for out, hidden in zip(mlp_outs_scaled, hidden_states, strict=True)
         ]
 
         return outputs
@@ -1461,7 +1461,7 @@ class InternVLVisionModel(Module):
         vit_embeds = [
             embed(pixels)
             for embed, pixels in zip(
-                self.embeddings_list, pixel_values, strict=False
+                self.embeddings_list, pixel_values, strict=True
             )
         ]
 
@@ -1516,7 +1516,7 @@ class InternVLVisionModel(Module):
         # Apply mlp1 projection (includes layer norm, fc1, gelu, fc2).
         mlp_out = [
             mlp(embeds)
-            for mlp, embeds in zip(self.mlp1_list, seq_embeds, strict=False)
+            for mlp, embeds in zip(self.mlp1_list, seq_embeds, strict=True)
         ]
         mlp_out = self.allreduce(mlp_out, signal_buffers)
 

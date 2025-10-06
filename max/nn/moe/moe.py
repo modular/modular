@@ -292,7 +292,7 @@ class MoE(Module, Shardable):
         up_list = [expert.up_proj.weight for expert in self.experts]
 
         gate_up_list: list[TensorValue] = []
-        for tensors in zip(gate_list, up_list, strict=False):
+        for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
         return ops.stack(gate_up_list, axis=0).reshape(

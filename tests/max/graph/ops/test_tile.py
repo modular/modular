@@ -39,7 +39,7 @@ def test_tile__valid(input_type: TensorType, repeats: list[int]) -> None:
     with Graph("tiles", input_types=[input_type]) as graph:
         out = ops.tile(graph.inputs[0].tensor, repeats)
         expected_shape = [
-            dim * r for r, dim in zip(repeats, input_type.shape, strict=False)
+            dim * r for r, dim in zip(repeats, input_type.shape, strict=True)
         ]
         assert out.shape == expected_shape
         graph.output(out)
@@ -57,7 +57,7 @@ def test_tile__valid_symbolic(
     with Graph("tiles", input_types=[input_type]) as graph:
         out = ops.tile(graph.inputs[0].tensor, repeats)
         expected_shape = [
-            dim * r for r, dim in zip(repeats, input_type.shape, strict=False)
+            dim * r for r, dim in zip(repeats, input_type.shape, strict=True)
         ]
         assert out.shape == expected_shape
         # TODO(AIPIPE-185): actually enable full graph verification here.

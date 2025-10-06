@@ -153,7 +153,7 @@ def test_concat__mismatched_dims(
         not all(
             d1 == d2
             for i, (d1, d2) in enumerate(
-                zip(type_a.shape, type_b.shape, strict=False)
+                zip(type_a.shape, type_b.shape, strict=True)
             )
             if i != (axis if axis >= 0 else axis + type_a.rank)
         )

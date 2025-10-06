@@ -112,7 +112,7 @@ def expected_slice_shape(shape, index):  # noqa: ANN001, ANN201
 
     expected = (
         expected_dim(dim, idx)
-        for dim, idx in zip(shape, effective_index, strict=False)
+        for dim, idx in zip(shape, effective_index, strict=True)
     )
     return [dim for dim in expected if dim is not None]
 
@@ -507,7 +507,7 @@ def test_slice_int_dims(
         for dim, expected_dim in zip(
             result_type.shape,  # type: ignore
             expected_shape,
-            strict=False,
+            strict=True,
         )
         if isinstance(expected_dim, int)
     )

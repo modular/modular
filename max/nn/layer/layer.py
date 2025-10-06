@@ -574,7 +574,7 @@ def _validate_weight_value(
             # Check each dimension: static dims must match, symbolic dims can vary
             mismatches = []
             for i, (weight_dim, value_dim) in enumerate(
-                zip(weight_shape_dims, shape_tuple, strict=False)
+                zip(weight_shape_dims, shape_tuple, strict=True)
             ):
                 if isinstance(weight_dim, StaticDim):
                     # This is a static dimension - must match exactly

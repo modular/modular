@@ -233,7 +233,7 @@ class Conv2d(Module, Shardable):
 
         shards = []
         for idx, (device, filter_shard) in enumerate(
-            zip(devices, sharded_filters, strict=False)
+            zip(devices, sharded_filters, strict=True)
         ):
             # Create new Conv2d with same configuration.
             sharded = Conv2d(

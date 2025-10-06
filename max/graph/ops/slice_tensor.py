@@ -216,7 +216,7 @@ def _slice_and_output_tensors(  # noqa: ANN202
     # For each dim, convert idx (if int or TensorValue) to slice(idx, idx+1, 1).
     slices_and_outputs = [
         _slice_index_and_output(dim, index)
-        for dim, index in zip(x.shape, full_index, strict=False)
+        for dim, index in zip(x.shape, full_index, strict=True)
     ]
     slices = [s for s, _ in slices_and_outputs]
     unsqueezed_shape = Shape(

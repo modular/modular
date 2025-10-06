@@ -353,7 +353,7 @@ class VisionBlock(Module):
     ) -> list[TensorValue]:
         # Norm 1
         norm1_outs = [
-            norm(x) for norm, x in zip(self.norm1_shards, xs, strict=False)
+            norm(x) for norm, x in zip(self.norm1_shards, xs, strict=True)
         ]
 
         # Attention per device (ragged)
@@ -370,29 +370,29 @@ class VisionBlock(Module):
                 position_embeddings,
                 input_row_offsets,
                 max_seqlen,
-                strict=False,
+                strict=True,
             )
         ]
         # Allreduce attention outputs
         attn_outs = self.allreduce(attn_outs, signal_buffers)
 
         # Residual add
-        hs = [x + a for x, a in zip(xs, attn_outs, strict=False)]
+        hs = [x + a for x, a in zip(xs, attn_outs, strict=True)]
 
         # Norm 2
         norm2_outs = [
-            norm(h) for norm, h in zip(self.norm2_shards, hs, strict=False)
+            norm(h) for norm, h in zip(self.norm2_shards, hs, strict=True)
         ]
 
         # MLP per device
         mlp_outs = [
             mlp(norm_out)
-            for mlp, norm_out in zip(self.mlp_shards, norm2_outs, strict=False)
+            for mlp, norm_out in zip(self.mlp_shards, norm2_outs, strict=True)
         ]
         mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         # Residual add
-        outs = [h + m for h, m in zip(hs, mlp_outs, strict=False)]
+        outs = [h + m for h, m in zip(hs, mlp_outs, strict=True)]
         return outs
 
 
@@ -663,7 +663,7 @@ class VisionTransformer(Module):
                 self.patch_embed_shards,
                 pixel_values,
                 window_index,
-                strict=False,
+                strict=True,
             )
         ]
         seq_len = hs[0].shape[0]
@@ -706,7 +706,7 @@ class VisionTransformer(Module):
         # Apply per-device merger, then concatenate back in original order
         merged = [
             merger(h, signal_buffers=signal_buffers)
-            for merger, h in zip(self.merger_shards, hs, strict=False)
+            for merger, h in zip(self.merger_shards, hs, strict=True)
         ]
         merged = self.merger_allreduce(merged, signal_buffers)
 

@@ -183,7 +183,7 @@ def compute_log_probabilities_ragged(
             for token, logit in zip(
                 lp_tokens[output_index, :-1],
                 lp_logits[output_index, :-1],
-                strict=False,
+                strict=True,
             )
             if token < vocab_size
         ]

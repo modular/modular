@@ -278,7 +278,7 @@ class Linear(Module, Shardable):
 
         shards = []
         for shard_idx, (device, weight_shard) in enumerate(
-            zip(devices, sharded_weights, strict=False)
+            zip(devices, sharded_weights, strict=True)
         ):
             # Create new Linear with same configuration.
             sharded = Linear(
@@ -1210,7 +1210,7 @@ class MLP(Module, Shardable):
             sharded_gate_projs,
             sharded_down_projs,
             sharded_up_projs,
-            strict=False,
+            strict=True,
         ):
             # Create new MLP instance with the sharded layers
             sharded = MLP(

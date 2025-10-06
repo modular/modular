@@ -96,7 +96,7 @@ def fold(
         ):
             L = 1
             for n, (o, k) in enumerate(
-                zip(output_size, kernel_size, strict=False)
+                zip(output_size, kernel_size, strict=True)
             ):
                 L_d = int(
                     (int(o) + 2 * padding[n] - dilation[n] * (int(k) - 1) - 1)

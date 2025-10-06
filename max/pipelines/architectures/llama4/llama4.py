@@ -157,7 +157,7 @@ class Llama4DecoderLayer(Module):
         )
 
         hidden_states = [
-            x + attn_out for x, attn_out in zip(xs, attn_outs, strict=False)
+            x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
         ]
         # Apply post attention layer norm to each shard
         post_norm_states = [
@@ -173,13 +173,13 @@ class Llama4DecoderLayer(Module):
             mlp_outs = [
                 shard(x)
                 for shard, x in zip(
-                    self.feed_forward_shards, post_norm_states, strict=False
+                    self.feed_forward_shards, post_norm_states, strict=True
                 )
             ]
             mlp_outs = self.feed_forward_allreduce(mlp_outs, signal_buffers)
         hidden_states = [
             h + mlp_out
-            for h, mlp_out in zip(hidden_states, mlp_outs, strict=False)
+            for h, mlp_out in zip(hidden_states, mlp_outs, strict=True)
         ]
         return hidden_states
 

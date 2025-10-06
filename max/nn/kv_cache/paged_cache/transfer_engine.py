@@ -399,7 +399,7 @@ class KVTransferEngine:
             )
 
         for i, (local_ta, remote_agent_meta) in enumerate(
-            zip(self.tensor_agents, remote.agents_meta, strict=False)
+            zip(self.tensor_agents, remote.agents_meta, strict=True)
         ):
             if local_ta.bytes_per_page != remote_agent_meta.bytes_per_page:
                 raise ValueError(
@@ -682,7 +682,7 @@ class KVTransferEngine:
             remote = self.remote_connections[remote_name]
             # Invalidate for each agent pair
             for i, (ta, remote_agent_meta) in enumerate(
-                zip(self.tensor_agents, remote.agents_meta, strict=False)
+                zip(self.tensor_agents, remote.agents_meta, strict=True)
             ):
                 status = ta.agent.invalidate_remote_metadata(
                     remote_agent_meta.agent_name

@@ -66,7 +66,7 @@ def test_split_valid_inputs(
         output = ops.split(graph.inputs[0].tensor, split_sizes, axis)
         assert len(output) == len(split_sizes)
 
-        for out_value, size in zip(output, split_sizes, strict=False):
+        for out_value, size in zip(output, split_sizes, strict=True):
             expected_shape = list(input_type.shape)
             expected_shape[axis] = size
             assert out_value.shape == expected_shape
