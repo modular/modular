@@ -103,9 +103,9 @@ lit.fn @conditional_consumption_2(%c: i1, %value: !Error) {
 lit.fn @conditional_consumption_3(%c: i1, %value: !Error) {
   // CHECK-NOT: @Error::@__del__
   hlcf.loop {
-    lit.try {
+    lit.try "try0" {
       hlcf.if %c {
-        lit.try.raise %c : i1
+        lit.try.raise "try0" %c : i1
       } else {
         hlcf.yield
       }
@@ -126,9 +126,9 @@ lit.fn @conditional_consumption_3(%c: i1, %value: !Error) {
 lit.fn @conditional_consumption_4(%c: i1, %value: !Error) {
   // CHECK-NOT: @Error::@__del__
   hlcf.loop {
-    lit.try {
+    lit.try "try0" {
       hlcf.if %c {
-        lit.try.raise %c : i1
+        lit.try.raise "try0" %c : i1
       } else {
         hlcf.yield
       }

@@ -1130,6 +1130,7 @@ private:
   BitVector *breakSet = nullptr;
   /// When analyzing the body of a try, this bitset indicates what a
   /// 'raise' should intersect with.
+  /// TODO: raise set should understand raise label target.
   BitVector *raiseSet = nullptr;
 };
 } // namespace
@@ -2614,8 +2615,8 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   if (!moveCtor)
     return CopyInitSuccess::Failed;
 
-  // moveCtor must have __moveinit__(out self, deinit existing: Self) type.
 #ifndef NDEBUG
+  // moveCtor must have __moveinit__(out self, deinit existing: Self) type.
   FuncType moveSig = cast<FuncTypeGeneratorType>(moveCtor.getType()).getBody();
   assert(moveSig.getNumArguments() == 2);
   assert(moveSig.getArgConvention(0) == ArgConvention::OwnedMem);
@@ -2663,7 +2664,7 @@ struct DestructorInsertion {
   static DestructorInsertion copy(const DestructorInsertion &existing) {
     DestructorInsertion result(existing.valueSet);
     result.consumedValues = existing.consumedValues;
-    result.raiseSet = existing.raiseSet;
+    result.raiseEntryInfo = existing.raiseEntryInfo;
     result.breakSet = existing.breakSet;
     result.continueSet = existing.continueSet;
     result.dryRun = existing.dryRun;
@@ -2720,9 +2721,26 @@ private:
   /// continue blocks before inserting destructors.
   bool dryRun = false;
 
-  /// When analyzing the body of a try, this bitset indicates what a 'raise'
-  /// should produce based on its surrounding 'try's except block's expectation.
-  BitVector *raiseSet = nullptr;
+  /// A simple raise set linked list
+  struct RaiseSetEntry {
+    StringAttr label;
+    /// When analyzing the body of a try, this bitset indicates what a 'raise'
+    /// should produce based on its surrounding 'try's except block's
+    /// expectation with the matching label.
+    BitVector *raiseSet;
+    // A linked list to the previous entry.
+    RaiseSetEntry *prev;
+
+    RaiseSetEntry *getMatchingRaiseSet(StringAttr label) {
+      auto matchingSet = this;
+      while (matchingSet && matchingSet->label != label)
+        matchingSet = matchingSet->prev;
+      return matchingSet;
+    }
+  };
+  /// When analyzing the body of a try, this bitset indicates what a
+  /// 'raise' should intersect with.
+  RaiseSetEntry *raiseEntryInfo = nullptr;
 
   /// When analyzing the body of a loop, these bitset indicates what a 'break'
   /// or 'continue' should produce based on its consumed value set for the
@@ -2751,10 +2769,15 @@ private:
   os << "\n  ";
   valueSet.printBV(consumedValues, os) << "\n";
 
-  if (raiseSet) {
-    os << " raise: ";
-    valueSet.printBV(*raiseSet, os) << "\n";
+  RaiseSetEntry *curr = raiseEntryInfo;
+  os << " raise: {";
+  while (curr) {
+    os << curr->label << " : ";
+    valueSet.printBV(*curr->raiseSet, os) << "\n";
+    curr = curr->prev;
   }
+  os << " }";
+
   if (breakSet) {
     os << " break: ";
     valueSet.printBV(*breakSet, os) << "\n";
@@ -3015,9 +3038,11 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
 
   // A raise will use the consume set that was seen on entry to the enclosing
   // except block.
-  assert(isa<LIT::TryRaiseOp>(op) && "Unknown local control flow op");
-  assert(raiseSet && "Not in a 'try'?");
-  consumedValues = *raiseSet;
+  StringAttr raiseLabel = cast<LIT::TryRaiseOp>(op).getLabelAttr();
+  auto matchingSet = raiseEntryInfo->getMatchingRaiseSet(raiseLabel);
+  //  lower-semantic-cf should guarantee there is a matching set.
+  assert(matchingSet && "No matching 'try'?");
+  consumedValues = *matchingSet->raiseSet;
 }
 
 /// 'if' operations propagate the consume sets into each branch, and use the
@@ -3330,7 +3355,7 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
   // from the bottom of the try.  After processing it, we know what the
   // consumed values are for the exception block.
   auto exceptSets = DestructorInsertion::copy(*this);
-  exceptSets.raiseSet = raiseSet;
+  exceptSets.raiseEntryInfo = raiseEntryInfo;
 
   Region &exceptRegion = tryOp.getExceptRegion();
   exceptSets.scanBlock(exceptRegion.front());
@@ -3341,7 +3366,13 @@ void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
 
   // Ok, finally we process the try body.  Any 'raise's within the try body
   // use the consumed values set on entry to the except block.
-  llvm::SaveAndRestore x(raiseSet, &exceptSets.consumedValues);
+  // Attach current raise set info to the list as we get one scope deeper.
+  RaiseSetEntry curInfo = {
+      tryOp.getLabelAttr(),
+      &exceptSets.consumedValues,
+      raiseEntryInfo,
+  };
+  llvm::SaveAndRestore x(raiseEntryInfo, &curInfo);
   scanBlock(tryOp.getTryRegion().front());
 }
 

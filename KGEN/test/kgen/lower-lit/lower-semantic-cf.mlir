@@ -224,12 +224,12 @@ lit.fn @throwing_calls(
   lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
 
   %error = lit.var.decl "error" synth : !lit.ref<@Error, mut tlt>
-  // CHECK: lit.try {
+  // CHECK: lit.try "try0" {
   lit.try %error : !lit.ref<@Error, mut tlt> {
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call_indirect %f
     // CHECK-NEXT: hlcf.if [[IS_ERR]]
     // CHECK-NEXT:   mark_consumed %result
-    // CHECK-NEXT:   lit.try.raise
+    // CHECK-NEXT:   lit.try.raise "try0"
     // CHECK-NEXT: } else {
     // CHECK-NEXT:   mark_consumed %error
     // CHECK-NEXT:   yield

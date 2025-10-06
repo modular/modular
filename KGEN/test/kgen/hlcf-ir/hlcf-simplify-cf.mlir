@@ -257,8 +257,8 @@ kgen.func @erase_trivial_try() {
 // CHECK-LABEL: @raise_in_try
 kgen.func @raise_in_try(%arg0: index) {
   // CHECK-NEXT: lit.try
-  lit.try {
-    lit.try.raise %arg0 : index
+  lit.try "try0" {
+    lit.try.raise "try0" %arg0 : index
   } except (%e: index) {
     lit.try.yield
   } else {
@@ -271,9 +271,9 @@ kgen.func @raise_in_try(%arg0: index) {
 // CHECK-LABEL: @nested_raise
 kgen.func @nested_raise(%arg0: index) {
   // CHECK-NEXT: lit.try
-  lit.try {
+  lit.try "try0" {
     hlcf.loop {
-      lit.try.raise %arg0 : index
+      lit.try.raise "try0" %arg0 : index
     }
     lit.try.yield
   } except (%e: index) {
@@ -287,11 +287,11 @@ kgen.func @nested_raise(%arg0: index) {
 // CHECK-LABEL: @raise_in_else
 // COM: Make sure the right contextual try is selected.
 kgen.func @raise_in_else(%arg0: index) {
-  // CHECK-NEXT: lit.try {
-  lit.try {
+  // CHECK-NEXT: lit.try "try0" {
+  lit.try "try0" {
     // CHECK-NEXT: foo.op
     "foo.op"() : () -> ()
-    lit.try {
+    lit.try "try1" {
       // CHECK-NEXT: bar.op
       "bar.op"() : () -> ()
       lit.try.yield
@@ -300,8 +300,8 @@ kgen.func @raise_in_else(%arg0: index) {
     } else {
       // CHECK-NEXT: baz.op
       "baz.op"() : () -> ()
-      // CHECK-NEXT: lit.try.raise %arg0
-      lit.try.raise %arg0 : index
+      // CHECK-NEXT: lit.try.raise "try0" %arg0
+      lit.try.raise "try0" %arg0 : index
     }
     lit.try.yield
   // CHECK-NEXT: except

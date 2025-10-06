@@ -83,6 +83,34 @@ fn chris_origin_example(a: Bool, b: Bool):
     print("normal")
 
 
+fn raise_fn() raises:
+    raise Error("in raise_fn")
+
+
+fn raise_cond() -> Bool:
+    return False
+
+
+fn raising_finally():
+    try:
+        try:
+            if raise_cond():
+                print("try inner")
+                raise_fn()
+                return
+            else:
+                return
+        except _:
+            print("except inner")
+            return
+        finally:
+            print("finally inner")
+            raise_fn()
+    except _:
+        print("except outer")
+        return
+
+
 def main():
     # CHECK-LABEL: == try-finally
     print("== try-finally")
@@ -134,3 +162,7 @@ def main():
     # CHECK-NEXT: delete
     # CHECK-NEXT: early
     chris_origin_example(True, True)
+
+    # CHECK-NEXT: finally inner
+    # CHECK-NEXT: except outer
+    raising_finally()
