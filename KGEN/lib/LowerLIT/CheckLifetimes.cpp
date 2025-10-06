@@ -34,6 +34,24 @@ using llvm::BitVector;
 
 static constexpr StringRef extraOriginUsesAttrName = ".mojo.extra.origin.uses";
 namespace {
+/// A simple raise set linked list
+struct RaiseSetEntry {
+  StringAttr label;
+  /// When analyzing the body of a try, this bitset indicates what a 'raise'
+  /// should produce based on its surrounding 'try's except block's
+  /// expectation with the matching label.
+  BitVector *raiseSet;
+  // A linked list to the previous entry.
+  RaiseSetEntry *prev;
+
+  RaiseSetEntry *getMatchingRaiseSet(StringAttr label) {
+    auto matchingSet = this;
+    while (matchingSet && matchingSet->label != label)
+      matchingSet = matchingSet->prev;
+    return matchingSet;
+  }
+};
+
 /// FunctionLikeOp abstracts a function. It defines the interface necessary for
 /// an op to undergo a checklifetimes pass. It is either a ClosureInitOp or FnOp
 struct FunctionLikeOp {
@@ -1131,7 +1149,7 @@ private:
   /// When analyzing the body of a try, this bitset indicates what a
   /// 'raise' should intersect with.
   /// TODO: raise set should understand raise label target.
-  BitVector *raiseSet = nullptr;
+  RaiseSetEntry *raiseEntryInfo = nullptr;
 };
 } // namespace
 
@@ -1147,10 +1165,15 @@ private:
   os << "\n  live = ";
   valueSet.printBV(liveValues, os) << "\n  mutated = ";
 
-  if (raiseSet) {
-    os << " raise: ";
-    valueSet.printBV(*raiseSet, os) << "\n";
+  RaiseSetEntry *curr = raiseEntryInfo;
+  os << " raise: {";
+  while (curr) {
+    os << curr->label << " : ";
+    valueSet.printBV(*curr->raiseSet, os) << "\n";
+    curr = curr->prev;
   }
+  os << " }";
+
   if (breakSet) {
     os << " break: ";
     valueSet.printBV(*breakSet, os) << "\n";
@@ -1731,9 +1754,12 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
     assert(continueSet && "Not in a loop?");
     *continueSet &= liveValues;
   } else {
-    assert(isa<LIT::TryRaiseOp>(op) && "Unknown local CF op");
-    assert(raiseSet && "Not in a 'try'?");
-    *raiseSet &= liveValues;
+    StringAttr label = cast<LIT::TryRaiseOp>(op).getLabelAttr();
+    RaiseSetEntry *matchingSet = raiseEntryInfo->getMatchingRaiseSet(label);
+    //  lower-semantic-cf should guarantee there is a matching set.
+    assert(matchingSet && "No matching 'try'?");
+    // Only merges the set with the matching label.
+    *matchingSet->raiseSet &= liveValues;
   }
 
   // Indicate that all values are live after the terminator so an 'if' will get
@@ -1798,7 +1824,7 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
 void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   UninitializedValueScan bodySets(valueSet);
   // Loops are transparent to raise.
-  bodySets.raiseSet = raiseSet;
+  bodySets.raiseEntryInfo = raiseEntryInfo;
 
   // The default continueSet is the live-in set of values.  This can lose
   // values if some 'continue' path through the body of the loop consumes a
@@ -1851,7 +1877,14 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   // We capture all the common values live-out of raise's as being the live-in
   // to the except block.
   BitVector exceptSet(liveValues.size(), true);
-  bodySets.raiseSet = &exceptSet;
+  // Attach a new entry to the try scope, such that the inner try op only merge
+  // the exceptSet with the matching label.
+  RaiseSetEntry exceptInfo = {
+      tryOp.getLabelAttr(),
+      &exceptSet,
+      raiseEntryInfo,
+  };
+  bodySets.raiseEntryInfo = &exceptInfo;
   bodySets.scanBlock(tryOp.getTryRegion().front());
 
   // The live-ins to the except block are the exceptSet.
@@ -1860,7 +1893,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
   // The live-out set of the bodySet is the live-in to the else block, but
   // exceptions raised in it go out of the try.
-  bodySets.raiseSet = raiseSet;
+  bodySets.raiseEntryInfo = raiseEntryInfo;
   bodySets.scanBlock(tryOp.getElseRegion().front());
 
   // The fall through live values are the intersection from the except and
@@ -2721,23 +2754,6 @@ private:
   /// continue blocks before inserting destructors.
   bool dryRun = false;
 
-  /// A simple raise set linked list
-  struct RaiseSetEntry {
-    StringAttr label;
-    /// When analyzing the body of a try, this bitset indicates what a 'raise'
-    /// should produce based on its surrounding 'try's except block's
-    /// expectation with the matching label.
-    BitVector *raiseSet;
-    // A linked list to the previous entry.
-    RaiseSetEntry *prev;
-
-    RaiseSetEntry *getMatchingRaiseSet(StringAttr label) {
-      auto matchingSet = this;
-      while (matchingSet && matchingSet->label != label)
-        matchingSet = matchingSet->prev;
-      return matchingSet;
-    }
-  };
   /// When analyzing the body of a try, this bitset indicates what a
   /// 'raise' should intersect with.
   RaiseSetEntry *raiseEntryInfo = nullptr;
