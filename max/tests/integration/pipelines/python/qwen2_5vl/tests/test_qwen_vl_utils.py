@@ -145,7 +145,9 @@ class TestOriginalQwenVLUtils:
         assert orig_images is not None
         assert len(max_images) == len(orig_images)
 
-        for i, (max_img, orig_img) in enumerate(zip(max_images, orig_images)):
+        for i, (max_img, orig_img) in enumerate(
+            zip(max_images, orig_images, strict=False)
+        ):
             assert isinstance(max_img, Image.Image)
             assert isinstance(orig_img, Image.Image)
             assert max_img.mode == orig_img.mode
@@ -198,7 +200,7 @@ class TestOriginalQwenVLUtils:
         assert orig_images is not None
         assert len(max_images) == len(orig_images)
 
-        for max_img, orig_img in zip(max_images, orig_images):
+        for max_img, orig_img in zip(max_images, orig_images, strict=False):
             assert isinstance(max_img, Image.Image)
             assert isinstance(orig_img, Image.Image)
             assert max_img.mode == orig_img.mode
@@ -282,7 +284,9 @@ class TestOriginalQwenVLUtils:
         assert len(orig_images) == 3
 
         # Check each image
-        for i, (max_img, orig_img) in enumerate(zip(max_images, orig_images)):
+        for i, (max_img, orig_img) in enumerate(
+            zip(max_images, orig_images, strict=False)
+        ):
             assert isinstance(max_img, Image.Image), (
                 f"MAX image {i} is not PIL Image"
             )
@@ -350,7 +354,9 @@ class TestOriginalQwenVLUtils:
             # Compare images (should be identical)
             if orig_images is not None and max_images is not None:
                 assert len(max_images) == len(orig_images)
-                for max_img, orig_img in zip(max_images, orig_images):
+                for max_img, orig_img in zip(
+                    max_images, orig_images, strict=False
+                ):
                     assert isinstance(max_img, Image.Image)
                     assert isinstance(orig_img, Image.Image)
                     compare_images_numerically(max_img, orig_img)
@@ -361,7 +367,7 @@ class TestOriginalQwenVLUtils:
                 # For videos, the comparison depends on the backend
                 # Since we might have different backends, we'll compare shapes and types
                 for i, (max_vid, orig_vid) in enumerate(
-                    zip(max_videos, orig_videos)
+                    zip(max_videos, orig_videos, strict=False)
                 ):
                     # Check if both are numpy arrays or lists of PIL Images
                     assert type(max_vid) is type(orig_vid), (
@@ -383,7 +389,9 @@ class TestOriginalQwenVLUtils:
                     ):
                         # Both are lists of PIL Images
                         assert len(max_vid) == len(orig_vid)
-                        for max_frame, orig_frame in zip(max_vid, orig_vid):
+                        for max_frame, orig_frame in zip(
+                            max_vid, orig_vid, strict=False
+                        ):
                             assert isinstance(max_frame, Image.Image)
                             assert isinstance(orig_frame, Image.Image)
                             assert max_frame.size == orig_frame.size
@@ -481,7 +489,7 @@ class TestOriginalQwenVLUtils:
         assert len(max_result) == len(orig_result)
 
         # Should extract the same types of elements
-        for max_item, orig_item in zip(max_result, orig_result):
+        for max_item, orig_item in zip(max_result, orig_result, strict=False):
             assert set(max_item.keys()) == set(orig_item.keys())
 
             # Both should identify the same vision content types

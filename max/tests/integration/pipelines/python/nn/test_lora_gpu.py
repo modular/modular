@@ -12,7 +12,6 @@ import dataclasses
 import functools
 import math
 from collections.abc import Mapping
-from typing import Optional, Union
 
 import numpy as np
 import pytest
@@ -234,8 +233,8 @@ class TorchRoPEAttentionWithLoRA(nn.Module):
         self,
         hidden_size: int,
         n_q_heads: int,
-        n_kv_heads: Optional[int] = None,
-        head_dim: Optional[int] = None,
+        n_kv_heads: int | None = None,
+        head_dim: int | None = None,
         theta: float = 10000.0,
         max_seq_len: int = 512,
         rank: int = 8,
@@ -420,7 +419,7 @@ def linear_lora_max_output(
         base_weight.shape, lora_A, lora_B, device, alpha, max_adapters
     )
 
-    state_dict: Mapping[str, Union[DLPackArray, WeightData]] = {
+    state_dict: Mapping[str, DLPackArray | WeightData] = {
         "weight": to_max_weight(base_weight, "weight", CPU()),
         "lora_A.weight": lora_A_buf,
         "lora_B.weight": lora_B_buf,
@@ -564,7 +563,7 @@ def attention_lora_max_output(
         max_adapters,
     )
 
-    state_dict: Mapping[str, Union[DLPackArray, WeightData]] = {
+    state_dict: Mapping[str, DLPackArray | WeightData] = {
         "q_proj.weight": to_max_weight(
             weights.q_weight, "q_proj.weight", CPU()
         ),

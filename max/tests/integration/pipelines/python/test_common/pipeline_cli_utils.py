@@ -34,8 +34,8 @@ class CLITestConfig:
     device_specs_field: list[DeviceSpec] = field(
         default_factory=lambda: [DeviceSpec.cpu()]
     )
-    optional_str_field: Optional[str] = None
-    optional_enum_field: Optional[CLITestEnum] = None
+    optional_str_field: Optional[str] = None  # noqa: UP007
+    optional_enum_field: Optional[CLITestEnum] = None  # noqa: UP007
 
 
 @dataclass

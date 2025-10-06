@@ -42,9 +42,9 @@ def retrieve_mock_text_generation_pipeline(
     eos_token: int,
     seed: int = 42,
     eos_prob: float = 0.1,
-    max_length: Optional[int] = None,
-    max_new_tokens: Union[int, None] = None,
-    device_specs: Optional[list[DeviceSpec]] = None,
+    max_length: int | None = None,
+    max_new_tokens: int | None = None,
+    device_specs: list[DeviceSpec] | None = None,
 ) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
     if eos_token > vocab_size:
         raise ValueError(

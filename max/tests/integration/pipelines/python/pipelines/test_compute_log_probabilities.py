@@ -63,7 +63,9 @@ def _check_log_probabilities_equal(
         expected.top_log_probabilities
     )
     for actual_top, expected_top in zip(
-        actual.top_log_probabilities, expected.top_log_probabilities
+        actual.top_log_probabilities,
+        expected.top_log_probabilities,
+        strict=False,
     ):
         assert actual_top.keys() == expected_top.keys()
         key_order = list(expected_top.keys())
@@ -540,7 +542,7 @@ def test_log_probabilities_randomized(
         batch_echo=packed.batch_echo,
     )
     assert len(outputs) == len(batch)
-    for item, output in zip(batch, outputs):
+    for item, output in zip(batch, outputs, strict=False):
         verify_output(item, output)
 
 
@@ -590,5 +592,5 @@ def test_log_probabilities_randomized_gpu(
         batch_echo=packed.batch_echo,
     )
     assert len(outputs) == len(batch)
-    for item, output in zip(batch, outputs):
+    for item, output in zip(batch, outputs, strict=False):
         verify_output(item, output)

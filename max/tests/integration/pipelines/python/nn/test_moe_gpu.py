@@ -86,7 +86,7 @@ def test_moe_create_indices() -> None:
         unique_experts, counts = np.unique(
             experts_for_tokens, return_counts=True
         )
-        expert_counts = dict(zip(unique_experts, counts))
+        expert_counts = dict(zip(unique_experts, counts, strict=False))
 
         for exp in experts_for_tokens[1:]:
             if exp != current_expert:

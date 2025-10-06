@@ -6,7 +6,6 @@
 
 import pickle
 import re
-from typing import Union
 
 import numpy as np
 import pytest
@@ -420,9 +419,7 @@ def test_context_serializable() -> None:
 
     # Test that we can encode a sample TextContext with MsgPack
     serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(
-        Union[TextContext, TextAndVisionContext]
-    )
+    deserialize = msgpack_numpy_decoder(TextContext | TextAndVisionContext)
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
@@ -447,7 +444,7 @@ def test_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, TextContext) with MsgPack
     serialize = msgpack_numpy_encoder()
     deserialize = msgpack_numpy_decoder(
-        tuple[str, Union[TextContext, TextAndVisionContext]]
+        tuple[str, TextContext | TextAndVisionContext]
     )
     msgpack_encoded = serialize(original_tuple)
     msgpack_decoded = deserialize(msgpack_encoded)
@@ -472,9 +469,7 @@ def test_text_and_vision_context_serializable() -> None:
 
     # Test that we can encode a sample TextAndVisionContext with MsgPack
     serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(
-        Union[TextContext, TextAndVisionContext]
-    )
+    deserialize = msgpack_numpy_decoder(TextContext | TextAndVisionContext)
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
@@ -497,9 +492,7 @@ def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
 
     # Test that we can encode a sample TextAndVisionContext with MsgPack
     serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(
-        Union[TextContext, TextAndVisionContext]
-    )
+    deserialize = msgpack_numpy_decoder(TextContext | TextAndVisionContext)
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
@@ -524,7 +517,7 @@ def test_text_and_vision_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, TextAndVisionContext) with MsgPack
     serialize = msgpack_numpy_encoder()
     deserialize = msgpack_numpy_decoder(
-        tuple[str, Union[TextContext, TextAndVisionContext]]
+        tuple[str, TextContext | TextAndVisionContext]
     )
     msgpack_encoded = serialize(original_tuple)
     msgpack_decoded = deserialize(msgpack_encoded)

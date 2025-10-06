@@ -23,7 +23,7 @@ import os
 import sys
 from collections.abc import Sequence
 from functools import cached_property
-from typing import Optional, cast
+from typing import cast
 
 import click
 import mteb
@@ -166,9 +166,9 @@ logger = logging.getLogger("pipelines_mteb")
 def main(
     *,
     model_library: str,
-    eval_benchmark: Optional[str] = None,
-    eval_task: Optional[str] = None,
-    eval_output_folder: Optional[str] = None,
+    eval_benchmark: str | None = None,
+    eval_task: str | None = None,
+    eval_output_folder: str | None = None,
     list_all: bool,
     **config_kwargs,
 ) -> None:

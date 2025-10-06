@@ -7,8 +7,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any, Callable, TypedDict, TypeVar
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, TypedDict, TypeVar
 
 import numpy as np
 from max import pipelines
@@ -98,13 +98,15 @@ def run_model(
     assert isinstance(hf_tokenizer, PreTrainedTokenizerBase)
 
     ids = [RequestID() for _ in requests]
-    prompts_by_id = {id: request.prompt for id, request in zip(ids, requests)}
+    prompts_by_id = {
+        id: request.prompt for id, request in zip(ids, requests, strict=False)
+    }
     stored_logits = StoreLogits(ids, tokenizer)
 
     logits_processors: list[LogitsProcessor]
     if reference:
         reference_by_id = {
-            id: reference for id, reference in zip(ids, reference)
+            id: reference for id, reference in zip(ids, reference, strict=False)
         }
         replace_logits = ReplaceLogitsWithReference(
             pipeline._devices, reference_by_id
@@ -119,10 +121,14 @@ def run_model(
     batched_requests = _create_batches(requests, batch_size)
     batched_ids = _create_batches(ids, batch_size)
 
-    for ids_in_batch, requests_in_batch in zip(batched_ids, batched_requests):
+    for ids_in_batch, requests_in_batch in zip(
+        batched_ids, batched_requests, strict=False
+    ):
         batch = [
             request.to_text_generation_request(id, sampling_params)
-            for id, request in zip(ids_in_batch, requests_in_batch)
+            for id, request in zip(
+                ids_in_batch, requests_in_batch, strict=False
+            )
         ]
         outputs = pipeline.generate(batch)
         if print_outputs:

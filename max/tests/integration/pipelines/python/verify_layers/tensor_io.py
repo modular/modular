@@ -10,14 +10,13 @@ from __future__ import annotations
 
 import traceback
 from pathlib import Path
-from typing import Optional
 
 import torch
 from max.driver.tensor import load_max_tensor
 from torch.utils.dlpack import from_dlpack
 
 
-def load_max_tensor_data(filepath: Path) -> Optional[torch.Tensor]:
+def load_max_tensor_data(filepath: Path) -> torch.Tensor | None:
     """Load a MAX tensor from .max file and convert to PyTorch tensor."""
     try:
         # Verify saved file exists
@@ -43,7 +42,7 @@ def load_max_tensor_data(filepath: Path) -> Optional[torch.Tensor]:
         return None
 
 
-def load_pytorch_tensor(filepath: Path) -> Optional[torch.Tensor]:
+def load_pytorch_tensor(filepath: Path) -> torch.Tensor | None:
     """Load a PyTorch tensor from .pt file."""
     try:
         tensor = torch.load(filepath, map_location="cpu")

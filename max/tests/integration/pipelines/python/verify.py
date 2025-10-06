@@ -39,7 +39,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 import click
 import numpy as np
@@ -189,7 +189,7 @@ class DiscrepancyReport:
     rmse_per_prompt: list[float]
     """Root mean square error for each prompt."""
 
-    kl_div_per_prompt: Optional[list[float]] = None
+    kl_div_per_prompt: list[float] | None = None
     """KL divergence for each prompt (only for logit outputs)."""
 
     @property
@@ -203,7 +203,7 @@ class DiscrepancyReport:
         return sum(self.rmse_per_prompt) / len(self.rmse_per_prompt)
 
     @property
-    def avg_kl_div(self) -> Optional[float]:
+    def avg_kl_div(self) -> float | None:
         """Calculate average KL divergence across all prompts (only for logit outputs)."""
         if self.kl_div_per_prompt is None:
             return None
@@ -231,20 +231,20 @@ class VerificationResult:
     discrepancy_report: DiscrepancyReport
     """Report containing discrepancy metrics between model outputs."""
 
-    error_message: Optional[str] = None
+    error_message: str | None = None
     """Error message if verification failed, None otherwise."""
 
 
 def verify(
     pipeline_outputs: Path,
     torch_outputs: Path,
-    eval_metric: Optional[Sequence[str]] = None,
-    relative_tolerance: Optional[float] = None,
-    absolute_tolerance: Optional[float] = None,
-    cos_dist_threshold: Optional[float] = None,
-    kl_div_threshold: Optional[float] = None,
-    diff_count: Optional[int] = None,
-    print_suggested_tolerances: Optional[bool] = None,
+    eval_metric: Sequence[str] | None = None,
+    relative_tolerance: float | None = None,
+    absolute_tolerance: float | None = None,
+    cos_dist_threshold: float | None = None,
+    kl_div_threshold: float | None = None,
+    diff_count: int | None = None,
+    print_suggested_tolerances: bool | None = None,
 ) -> VerificationResult:
     """Verify that pipeline outputs match torch outputs within specified tolerances.
 
@@ -266,7 +266,7 @@ def verify(
     # MyPy needs the TypeVar in order to infer the type of the return value
     T = TypeVar("T")
 
-    def val_or(value: Optional[T], default: T) -> T:
+    def val_or(value: T | None, default: T) -> T:
         return value if value is not None else default
 
     # Note: These default value shenanigans are here to simplify the logic
@@ -409,8 +409,8 @@ def compute_discrepancy_report(
         raise ValueError("The two lists must have the same length")
 
     mae_per_prompt, rmse_per_prompt, kl_div_per_prompt = [], [], []
-    model_modality: Optional[ModelModality] = None
-    for result, reference in zip(results, references):
+    model_modality: ModelModality | None = None
+    for result, reference in zip(results, references, strict=False):
         verify_matching_prompts(result, reference)
         kl_div = None
         if "embeddings" in result and "embeddings" in reference:
@@ -497,7 +497,9 @@ def calculate_logit_discrepancies(
     total_kl_div = 0.0
     steps = 0
 
-    for res_token, ref_token in zip(result_values, reference_values):
+    for res_token, ref_token in zip(
+        result_values, reference_values, strict=False
+    ):
         res_logits_float64 = res_token["logits"].astype(np.float64)
         ref_logits_float64 = ref_token["logits"].astype(np.float64)
         mae, rmse = calculate_mae_and_rmse(

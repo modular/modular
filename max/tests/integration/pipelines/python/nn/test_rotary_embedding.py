@@ -5,9 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 import pytest

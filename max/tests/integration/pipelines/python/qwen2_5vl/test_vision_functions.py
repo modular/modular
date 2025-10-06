@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from typing import Union
 
 import numpy as np
 import pytest
@@ -44,7 +43,7 @@ def cu_seqlens_torch(
 
 
 def rot_pos_emb_torch(
-    grid_thw: Union[np.ndarray, torch.Tensor], spatial_merge_size: int
+    grid_thw: np.ndarray | torch.Tensor, spatial_merge_size: int
 ) -> torch.Tensor:
     pos_ids = []
     for t, h, w in grid_thw:

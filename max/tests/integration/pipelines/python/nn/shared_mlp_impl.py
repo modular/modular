@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any, Optional, Union
+from typing import Any
 
 import pytest
 import torch
@@ -72,9 +72,8 @@ class TorchMLP(nn.Module):
         up_proj: torch.Tensor,
         activation_function: str = "silu",
         bias: bool = False,
-        bias_tensors: Optional[
-            tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        ] = None,
+        bias_tensors: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        | None = None,
     ) -> None:
         super().__init__()
         self.gate_proj = torch_linear(
@@ -111,7 +110,7 @@ class WrapModuleForSubgraph(Module):
         subgraph_arg_types: list[Type] = []
 
         def flatten(t: Any, result: list[Type]) -> None:
-            if isinstance(t, (list, tuple)):
+            if isinstance(t, list | tuple):
                 for item in t:
                     flatten(item, result)
             else:
@@ -142,7 +141,7 @@ def mlp_output(
     dtype: DType,
     n_gpus: int = 0,
     has_bias: bool = False,
-    bias: Optional[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+    bias: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     use_subgraphs: bool = True,
     enable_matmul_allreduce: bool = False,
 ) -> Sequence[Tensor]:
@@ -168,7 +167,7 @@ def mlp_output(
             }
         )
 
-    mlp: Union[MLP, WrapModuleForSubgraph]
+    mlp: MLP | WrapModuleForSubgraph
 
     mlp = MLP(
         dtype,
@@ -220,7 +219,9 @@ def mlp_output(
             distributed_inputs = _distribute_value(graph_input, devices)
             mlp_outputs = [
                 mlp_shard(x)
-                for mlp_shard, x in zip(mlp_shards, distributed_inputs)
+                for mlp_shard, x in zip(
+                    mlp_shards, distributed_inputs, strict=False
+                )
             ]
 
             if enable_matmul_allreduce:

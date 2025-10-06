@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pytest
@@ -37,7 +36,7 @@ class RMSNormKeyCacheModel:
     total_seq_len: int
     """Total sequence length: sum(input_row_offsets)."""
 
-    rms_norm_cols: Optional[int] = None
+    rms_norm_cols: int | None = None
     """Number of columns in the RMSNorm operation."""
 
     per_head_norm: bool = True

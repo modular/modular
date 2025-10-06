@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from typing import Optional
-
 import numpy as np
 import pytest
 import torch
@@ -17,12 +15,12 @@ from utils.config_loader import ConfigNames, get_config_loader
 
 
 def get_rope_index_torch(
-    input_ids: Optional[torch.LongTensor] = None,
-    image_grid_thw: Optional[torch.LongTensor] = None,
-    video_grid_thw: Optional[torch.LongTensor] = None,
-    second_per_grid_ts: Optional[torch.Tensor] = None,
-    attention_mask: Optional[torch.Tensor] = None,
-    config: Optional[dict] = None,
+    input_ids: torch.LongTensor | None = None,
+    image_grid_thw: torch.LongTensor | None = None,
+    video_grid_thw: torch.LongTensor | None = None,
+    second_per_grid_ts: torch.Tensor | None = None,
+    attention_mask: torch.Tensor | None = None,
+    config: dict | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     assert config is not None
     vision_config = config["vision_config"]
@@ -231,9 +229,9 @@ def get_rope_index_torch(
 )
 def test_get_rope_index(
     config_name: ConfigNames,
-    image_grid_thw: Optional[torch.Tensor],
-    video_grid_thw: Optional[torch.Tensor],
-    second_per_grid_ts: Optional[torch.Tensor],
+    image_grid_thw: torch.Tensor | None,
+    video_grid_thw: torch.Tensor | None,
+    second_per_grid_ts: torch.Tensor | None,
     test_name: str,
 ) -> None:
     """Test get_rope_index function with basic text-only input."""

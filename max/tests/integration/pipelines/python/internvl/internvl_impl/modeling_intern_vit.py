@@ -12,7 +12,6 @@
 # Licensed under The MIT License [see LICENSE for details]
 # --------------------------------------------------------
 
-from typing import Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -300,9 +299,9 @@ class InternVisionEncoder(nn.Module):
     def forward(
         self,
         inputs_embeds,  # noqa: ANN001
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[tuple, BaseModelOutput]:
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+    ) -> tuple | BaseModelOutput:
         r"""
         Args:
             inputs_embeds (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`):
@@ -396,11 +395,11 @@ class InternVisionModel(PreTrainedModel):
 
     def forward(
         self,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        pixel_embeds: Optional[torch.FloatTensor] = None,
-    ) -> Union[tuple, BaseModelOutputWithPooling]:
+        pixel_values: torch.FloatTensor | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+        pixel_embeds: torch.FloatTensor | None = None,
+    ) -> tuple | BaseModelOutputWithPooling:
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None

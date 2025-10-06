@@ -9,8 +9,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 import torch
 
@@ -21,10 +22,8 @@ class TensorProcessingRule:
 
     layer_pattern: str | list[str]  # Regex pattern to match layer names
     description: str
-    pytorch_transform: Optional[Callable[[Any], Any]] = (
-        None  # torch.Tensor type
-    )
-    max_transform: Optional[Callable[[Any], Any]] = None  # torch.Tensor type
+    pytorch_transform: Callable[[Any], Any] | None = None  # torch.Tensor type
+    max_transform: Callable[[Any], Any] | None = None  # torch.Tensor type
 
 
 def apply_lm_head_rule(tensor: torch.Tensor) -> torch.Tensor:

@@ -8,7 +8,7 @@
 import json
 import os
 import tempfile
-from typing import Any, Optional
+from typing import Any
 
 import hf_repo_lock
 import torch
@@ -34,7 +34,7 @@ def generate_test_lora_adapter(
     output_dir: str,
     lora_rank: int = 8,
     lora_alpha: int = 16,
-    target_modules: Optional[list[str]] = None,
+    target_modules: list[str] | None = None,
 ) -> None:
     """Generate a minimal LoRA adapter for testing.
 
@@ -123,7 +123,7 @@ def create_test_lora_adapter(
     base_model_id: str = REPO_ID,
     lora_rank: int = 8,
     lora_alpha: int = 16,
-    target_modules: Optional[list[str]] = None,
+    target_modules: list[str] | None = None,
     prefix: str = "lora_test",
 ) -> str:
     """Create a temporary LoRA adapter for testing.

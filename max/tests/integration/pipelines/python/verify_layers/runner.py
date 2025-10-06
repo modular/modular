@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import traceback
 from pathlib import Path
-from typing import Optional
 
 from max.entrypoints.cli import DevicesOptionType
 
@@ -26,8 +25,8 @@ def run_layer_verification(  # noqa: ANN201
     devices: str,
     pipeline: str,
     encoding: str,
-    export_path: Optional[Path] = None,
-    layer_data_path: Optional[Path] = None,
+    export_path: Path | None = None,
+    layer_data_path: Path | None = None,
     input_injection: bool = False,
 ):
     """Run layer-by-layer verification for a given pipeline.

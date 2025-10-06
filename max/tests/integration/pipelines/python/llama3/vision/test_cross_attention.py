@@ -281,7 +281,11 @@ def test_cross_attention(
     # Convert to int since torch can't subtract uint32.
     hidden_input_row_offsets = hidden_input_row_offsets.to(dtype=torch.int32)
     for batch_idx, (start, stop) in enumerate(
-        zip(hidden_input_row_offsets[:-1], hidden_input_row_offsets[1:])
+        zip(  # noqa: RUF007
+            hidden_input_row_offsets[:-1],
+            hidden_input_row_offsets[1:],
+            strict=False,
+        )
     ):
         hidden_states_padded[batch_idx, : stop - start] = hidden_states[
             start:stop
@@ -310,7 +314,11 @@ def test_cross_attention(
         shape=[total_seq_len, config.hidden_size], dtype=dtype.to_numpy()
     )
     for batch_idx, (start, stop) in enumerate(
-        zip(hidden_input_row_offsets[:-1], hidden_input_row_offsets[1:])
+        zip(  # noqa: RUF007
+            hidden_input_row_offsets[:-1],
+            hidden_input_row_offsets[1:],
+            strict=False,
+        )
     ):
         expected_ragged[start:stop] = expected[batch_idx, : stop - start]
 

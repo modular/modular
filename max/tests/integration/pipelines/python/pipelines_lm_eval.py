@@ -12,7 +12,7 @@ import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import click
 import python.runfiles
@@ -38,7 +38,7 @@ class PipelineSitter:
     """Owns the pipelines process and manages its startup/shutdown."""
 
     _args: Sequence[str]
-    _proc: Optional[subprocess.Popen]
+    _proc: subprocess.Popen | None
 
     def __init__(self, args: Sequence[str]) -> None:
         self._args = args
@@ -90,13 +90,11 @@ class PipelineSitter:
             logger.info("Pipelines process terminated")
         self._proc = None
 
-    def wait_for_alive(
-        self, probe_port: int, *, timeout: Optional[float]
-    ) -> None:
+    def wait_for_alive(self, probe_port: int, *, timeout: float | None) -> None:
         assert self._proc is not None
         probe_url = f"http://127.0.0.1:{probe_port}/health"
         start_time = time.time()
-        deadline: Optional[float]
+        deadline: float | None
         if timeout is None:
             deadline = None
         else:
@@ -164,14 +162,14 @@ class PipelineSitter:
 )
 @click.option("--mistral-evals-arg", "mistral_evals_args", multiple=True)
 def main(
-    override_pipelines: Optional[Path],
-    pipelines_probe_port: Optional[int],
-    pipelines_probe_timeout: Optional[int],
+    override_pipelines: Path | None,
+    pipelines_probe_port: int | None,
+    pipelines_probe_timeout: int | None,
     pipelines_args: Sequence[str],
     evaluator: str,
-    override_lm_eval: Optional[Path],
+    override_lm_eval: Path | None,
     lm_eval_args: Sequence[str],
-    override_mistral_evals: Optional[Path],
+    override_mistral_evals: Path | None,
     mistral_evals_args: Sequence[str],
 ) -> None:
     """Start pipelines server, run an evaluator, and then shut down server."""

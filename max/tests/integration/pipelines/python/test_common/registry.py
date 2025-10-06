@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for loading and ensuring registry works in test suite."""
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from functools import wraps
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 import pytest
 from max.pipelines import PIPELINE_REGISTRY

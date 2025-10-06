@@ -6,7 +6,7 @@
 """Utilities for working with mock pipeline_model for unit testing"""
 
 from collections.abc import Sequence
-from typing import Optional, cast
+from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -34,7 +34,7 @@ class MockModelInputs(ModelInputs):
         self,
         active_batch_size: int,
         eos_prob: float,
-        kv_cache_inputs: Optional[KVCacheInputs] = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> None:
         self.active_batch_size = active_batch_size
@@ -53,7 +53,7 @@ class MockPipelineModel(PipelineModel):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         devices: list[Device] = [],  # noqa: B006
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         self.pipeline_config = pipeline_config
@@ -165,7 +165,7 @@ class MockPipelineModel(PipelineModel):
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextContext],
-        kv_cache_inputs: Optional[KVCacheInputs] = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         return MockModelInputs(

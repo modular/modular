@@ -14,11 +14,11 @@ import traceback
 
 # Standard library
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, TypeVar, Union
+from typing import Any, TypeVar
 
 # 3rd-party
 import click
@@ -100,10 +100,7 @@ def maybe_log_hf_downloads(enable_logging: bool):  # noqa: ANN201
 class MaxPipelineAndTokenizer:
     """An instantiated MAX pipeline and pieces necessary to run it."""
 
-    pipeline: Union[
-        pipelines.TextGenerationPipeline,
-        pipelines.EmbeddingsPipeline,
-    ]
+    pipeline: pipelines.TextGenerationPipeline | pipelines.EmbeddingsPipeline
     tokenizer: PipelineTokenizer
 
 
@@ -112,13 +109,13 @@ class TorchModelAndDataProcessor:
     """An instantiated Torch model and pieces necessary to run it."""
 
     model: transformers.PreTrainedModel
-    data_processor: Union[
-        transformers.PreTrainedTokenizer,
-        transformers.PreTrainedTokenizerFast,
-        transformers.MllamaProcessor,
-        transformers.PixtralProcessor,
-        InternVLProcessor,
-    ]
+    data_processor: (
+        transformers.PreTrainedTokenizer
+        | transformers.PreTrainedTokenizerFast
+        | transformers.MllamaProcessor
+        | transformers.PixtralProcessor
+        | InternVLProcessor
+    )
 
 
 class PipelineOracle(ABC):
@@ -702,7 +699,7 @@ class GenericOracle(PipelineOracle):
         )
         assert isinstance(
             pipeline,
-            (pipelines.TextGenerationPipeline, pipelines.EmbeddingsPipeline),
+            pipelines.TextGenerationPipeline | pipelines.EmbeddingsPipeline,
         )
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 

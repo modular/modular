@@ -16,7 +16,7 @@ import platform
 import signal
 import tempfile
 from collections.abc import Generator
-from typing import Any, NoReturn, Optional, TypedDict
+from typing import Any, NoReturn, TypedDict
 
 
 class Problem(TypedDict):
@@ -30,14 +30,14 @@ class CheckResult(TypedDict):
     task_id: str
     passed: bool
     result: str
-    completion_id: Optional[int]
+    completion_id: int | None
 
 
 def check_correctness(
     problem: Problem,
     completion: str,
     timeout: float,
-    completion_id: Optional[int] = None,
+    completion_id: int | None = None,
 ) -> CheckResult:
     """
     Evaluates the functional correctness of a completion by running the test
@@ -185,7 +185,7 @@ def chdir(root: str) -> Generator[None, None, None]:
         os.chdir(cwd)
 
 
-def reliability_guard(maximum_memory_bytes: Optional[int] = None) -> None:
+def reliability_guard(maximum_memory_bytes: int | None = None) -> None:
     """
     This disables various destructive functions and prevents the generated code
     from interfering with the test (e.g. fork bomb, killing other processes,

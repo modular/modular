@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, TypeVar
+from typing import TypeVar
 from unittest.mock import patch
 
 from max.pipelines.lib import MEMORY_ESTIMATOR

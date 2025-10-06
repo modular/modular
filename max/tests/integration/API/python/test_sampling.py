@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import json
-from typing import Optional
 
 import llguidance.hf
 import llguidance.numpy
@@ -390,7 +389,7 @@ def test_apply_penalties_to_logits(session: InferenceSession) -> None:
     ref_result = logits_np.clone()
     for i in range(BATCH_SIZE):
         unique_tokens, counts = np.unique(prompt_tokens[i], return_counts=True)
-        for token, count in zip(unique_tokens, counts):
+        for token, count in zip(unique_tokens, counts, strict=False):
             if ref_result[i][token] > 0:
                 ref_result[i][token] /= REPETITION_PENALTY_SCALAR
             else:
@@ -906,9 +905,7 @@ def rejection_sampler_reference(  # noqa: ANN201
     draft_probs: torch.Tensor,  # [batch_size, k, vocab_size]
     draft_token_ids: torch.Tensor,  # [batch_size, k]
     rejection_rand: torch.Tensor,  # [batch_size, k]
-    residual_rand: Optional[
-        torch.Tensor
-    ] = None,  # [batch_size * k, vocab_size]
+    residual_rand: torch.Tensor | None = None,  # [batch_size * k, vocab_size]
 ):
     """
     Rejection sampler reference implementation.
@@ -971,7 +968,7 @@ def rejection_sampler_reference(  # noqa: ANN201
 
     def _multinomial(
         probs: torch.Tensor,
-        residual_rand: Optional[torch.Tensor] = None,
+        residual_rand: torch.Tensor | None = None,
     ) -> torch.Tensor:
         num_samples = 1
         if residual_rand is not None:

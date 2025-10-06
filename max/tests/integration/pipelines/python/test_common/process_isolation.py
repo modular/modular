@@ -8,10 +8,11 @@
 import multiprocessing
 import sys
 import time
+from collections.abc import Callable
 from pickle import PicklingError
 from queue import Empty
 from traceback import format_exc
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 ReturnT = TypeVar("ReturnT")
 

@@ -8,7 +8,7 @@ import math
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
+from typing import Any
 
 import numpy as np
 import numpy.typing
@@ -27,13 +27,13 @@ class ValidationResult:
     """True if we're within tolerances, False otherwise"""
     success: bool
     """The message to print on failure. Not set if success == True"""
-    message: Optional[str] = None
+    message: str | None = None
     """The np.array of target values. Not set if success == True"""
-    target: Optional[numpy.typing.NDArray] = None
+    target: numpy.typing.NDArray | None = None
     """The np.array of reference values. Not set if success == True"""
-    reference: Optional[numpy.typing.NDArray] = None
+    reference: numpy.typing.NDArray | None = None
     """The indices of the failing tolerances. Not set if success == True"""
-    element_indices: Optional[numpy.typing.NDArray] = None
+    element_indices: numpy.typing.NDArray | None = None
     """The metrics to display on failure. Not set if success == True"""
     data: list[numpy.typing.NDArray] = field(default_factory=list)
 
@@ -175,7 +175,7 @@ class ValidatorBase(ABC):
         ref_framework: str,
         target_framework: str,
         results: list[ValidationResultCollection],
-        diff_count: Optional[int] = None,
+        diff_count: int | None = None,
         print_suggested_tolerances: bool = False,
         **kwargs,
     ) -> None:
@@ -239,7 +239,7 @@ class ValidatorBase(ABC):
         # iterate over each `sort_by_idx` and print a table
         max_val_str = ""
         for sort_by_idx, pretty_name in zip(
-            self._indices_to_sort_by(), self._pretty_names()
+            self._indices_to_sort_by(), self._pretty_names(), strict=False
         ):
             CONSOLE.print(
                 f"Failures by {pretty_name} ({ref_framework} vs"
@@ -331,7 +331,7 @@ class MultiValidator(ValidatorBase):
         ref_framework: str,
         target_framework: str,
         results: list[ValidationResultCollection],
-        diff_count: Optional[int] = None,
+        diff_count: int | None = None,
         print_suggested_tolerances: bool = False,
         **kwargs,
     ) -> None:
@@ -615,7 +615,7 @@ _VALIDATORS_BY_NAME: dict[str, type[ValidatorBase]] = {
 
 
 def construct_validator(
-    names: Union[Sequence[str], CommaSeparatedList], **kwargs
+    names: Sequence[str] | CommaSeparatedList, **kwargs
 ) -> ValidatorBase:
     validators: list[ValidatorBase] = []
     for name in names:
@@ -729,7 +729,7 @@ def _print_pareto_tolerances(
     )
     CONSOLE.print("Solutions are:")
     percents = map(percent_passing_rtol_only, pareto)
-    for (atol, rtol), percent in zip(pareto, percents):
+    for (atol, rtol), percent in zip(pareto, percents, strict=False):
         CONSOLE.print(
             f"\tAbsolute Tolerance: {atol:.1e}\n\tRelative Tolerance:"
             f" {rtol:.1e}\n\tPercent passing from relative tolerance alone:"
@@ -804,7 +804,7 @@ def _print_diff_table(
     # tensor, the value with the reference framework, the value with the target
     # framework, and the value of the difference.
     diff_information: list[dict[str, Any]] = []
-    diff_recs = list(zip(tensor_indices, element_indices, *data))
+    diff_recs = list(zip(tensor_indices, element_indices, *data, strict=False))
 
     diff_recs = sorted(diff_recs, key=lambda el: el[2 + sort_by_idx])
 
@@ -812,7 +812,10 @@ def _print_diff_table(
         diff_information.append(
             {
                 "position": (tensor_i, elem_i),
-                **{name: f"{m:.5e}" for name, m in zip(column_names, data)},
+                **{
+                    name: f"{m:.5e}"
+                    for name, m in zip(column_names, data, strict=False)
+                },
             }
         )
 

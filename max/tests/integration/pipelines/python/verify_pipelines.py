@@ -14,10 +14,10 @@ import os
 import sys
 import time
 import traceback
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional, TextIO, Union
+from typing import TextIO
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits
@@ -64,7 +64,7 @@ _VERDICT_EMOJI = {
 @dataclass
 class VerificationVerdict:
     status: VerificationStatus
-    discrepancy_report: Optional[DiscrepancyReport] = None
+    discrepancy_report: DiscrepancyReport | None = None
 
     @property
     def emoji(self) -> str:
@@ -294,9 +294,9 @@ class TagFilterParamType(click.ParamType):
 
     def convert(
         self,
-        value: Union[str, TagFilter],
-        param: Optional[click.Parameter],
-        ctx: Optional[click.Context],
+        value: str | TagFilter,
+        param: click.Parameter | None,
+        ctx: click.Context | None,
     ) -> TagFilter:
         # Unsure why click sometimes tries to re-convert an already-converted
         # value, but it does.
@@ -1154,11 +1154,11 @@ PIPELINES = {
     ),
 )
 def main(
-    report: Optional[TextIO],
-    store_verdicts_json: Optional[Path],
-    load_verdicts_json: Optional[Path],
-    devices_str: Optional[str],
-    pipeline: Optional[str],
+    report: TextIO | None,
+    store_verdicts_json: Path | None,
+    load_verdicts_json: Path | None,
+    devices_str: str | None,
+    pipeline: str | None,
     tag_filter: TagFilter,
     find_tolerances: bool,
     print_suggested_tolerances: bool,

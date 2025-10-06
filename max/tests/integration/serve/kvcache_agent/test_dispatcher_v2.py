@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import queue
 import time
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 import pytest
 from max.serve.kvcache_agent import DispatcherClientV2, DispatcherServerV2

@@ -9,7 +9,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table
@@ -33,7 +33,7 @@ class PrettyTable:
     def __init__(
         self,
         headers: Sequence[Any],
-        title: Optional[str] = None,
+        title: str | None = None,
         paginate: bool = True,
     ) -> None:
         """

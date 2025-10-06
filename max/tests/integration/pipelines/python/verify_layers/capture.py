@@ -12,10 +12,10 @@ import json
 import logging
 import os
 import traceback
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import torch
 from generate_llm_logits import PIPELINE_ORACLES
@@ -353,7 +353,7 @@ class LayerIOCapture:
             layer_capture._active_calls.remove(layer_name)
 
             # Export output tensors
-            if isinstance(result, (list, tuple)):
+            if isinstance(result, list | tuple):
                 outputs = []
                 for i, res in enumerate(result):
                     if isinstance(res, TensorValue):
@@ -539,7 +539,7 @@ class TorchLayerIOCapture:
                     outputs, output_file
                 )
                 layer_data["outputs"].append(output_metadata)
-            elif isinstance(outputs, (list, tuple)):
+            elif isinstance(outputs, list | tuple):
                 for i, output in enumerate(outputs):
                     if isinstance(output, torch.Tensor):
                         output_file = (

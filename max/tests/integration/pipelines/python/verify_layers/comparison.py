@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,12 +34,12 @@ class LayerVerificationResult:
 
     layer_name: str
     passed: bool
-    discrepancy_report: Optional[DiscrepancyReport] = None
-    error_message: Optional[str] = None
-    input_shapes: list[list[Union[int, str]]] = field(default_factory=list)
-    output_shapes: list[list[Union[int, str]]] = field(default_factory=list)
-    mse: Optional[float] = None
-    rms: Optional[float] = None
+    discrepancy_report: DiscrepancyReport | None = None
+    error_message: str | None = None
+    input_shapes: list[list[int | str]] = field(default_factory=list)
+    output_shapes: list[list[int | str]] = field(default_factory=list)
+    mse: float | None = None
+    rms: float | None = None
 
 
 def get_component_name(layer_name: str) -> str:
@@ -118,7 +118,7 @@ def generate_comparison_text_report(
             # Group by component for statistics
             grouped: dict[str, dict[str, list]] = {}
             for i, (name, mse, result) in enumerate(
-                zip(layer_names, mse_values, results)
+                zip(layer_names, mse_values, results, strict=False)
             ):
                 comp = get_component_name(name)
                 if comp not in grouped:
@@ -153,7 +153,13 @@ def generate_comparison_text_report(
 
             # Layer-by-layer results - only numerical data
             for i, (idx, name, mse, result) in enumerate(  # noqa: B007
-                zip(layer_indices, layer_names, mse_values, results)
+                zip(
+                    layer_indices,
+                    layer_names,
+                    mse_values,
+                    results,
+                    strict=False,
+                )
             ):
                 mse_str = f"{mse:.6e}" if not np.isinf(mse) else "inf"
 
@@ -231,7 +237,9 @@ def plot_mse_by_component(
                 cmap = plt.get_cmap("Set3")
                 colors = cmap(np.linspace(0, 1, len(grouped)))
 
-            for (comp_name, data), color in zip(grouped.items(), colors):
+            for (comp_name, data), color in zip(
+                grouped.items(), colors, strict=False
+            ):
                 plt.plot(
                     data["indices"],
                     data["values"],
@@ -476,7 +484,9 @@ def check_execution_order_consistency(
         # Find first difference
         differences = []
         for i, (max_norm, torch_norm) in enumerate(
-            zip(max_normalized_sequence, torch_normalized_sequence)
+            zip(
+                max_normalized_sequence, torch_normalized_sequence, strict=False
+            )
         ):
             if max_norm != torch_norm:
                 differences.append((i, max_norm, torch_norm))
@@ -610,7 +620,7 @@ def compare_layer_outputs(
 
                     # Continue with all output comparisons
                     for i, (max_out, torch_out) in enumerate(
-                        zip(max_outputs, torch_outputs)
+                        zip(max_outputs, torch_outputs, strict=False)
                     ):
                         # Load actual tensor data
                         max_tensor_file = (
@@ -664,7 +674,7 @@ def compare_layer_outputs(
             # Create result using actual loaded shapes if available, otherwise fall back to metadata
             try:
                 # Try to get input shapes from actual tensor data if possible
-                input_shapes: list[list[Union[int, str]]] = []
+                input_shapes: list[list[int | str]] = []
                 for inp in max_layer.get("inputs", []):
                     input_file = (
                         max_export_path / f"{inp['name']}.max"
@@ -684,7 +694,7 @@ def compare_layer_outputs(
                         input_shapes.append(inp.get("shape", []))
 
                 # Try to get output shapes from actual tensor data if possible
-                output_shapes: list[list[Union[int, str]]] = []
+                output_shapes: list[list[int | str]] = []
                 for out in max_layer.get("outputs", []):
                     output_file = max_export_path / f"{out['name']}.max"
                     if output_file.exists():

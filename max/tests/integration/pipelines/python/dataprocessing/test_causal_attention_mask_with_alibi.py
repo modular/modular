@@ -70,7 +70,9 @@ def test_causal_mask_with_alibi__masks_padding(
         start_pos, seq_len, ALIBI_BIAS_MAX, N_HEADS
     )
     for i in range(N_HEADS):
-        for m, sp, sl in zip(mask[:, i, :, :], start_pos, seq_len):
+        for m, sp, sl in zip(
+            mask[:, i, :, :], start_pos, seq_len, strict=False
+        ):
             post_seq_len = sp + sl
             assert np.all(m[:sl, post_seq_len:] <= FILL_VAL)
 
@@ -88,7 +90,7 @@ def test_causal_mask_with_alibi__masks_current_and_later_tokens(
         start_pos, seq_len, ALIBI_BIAS_MAX, N_HEADS
     )
     for i in range(N_HEADS):
-        for m, sp, _ in zip(mask[:, i, :, :], start_pos, seq_len):
+        for m, sp, _ in zip(mask[:, i, :, :], start_pos, seq_len, strict=False):
             for pos, sequence_mask in enumerate(m):
                 # Check that all tokens _after_ this one are masked.
                 assert np.all(sequence_mask[sp + pos + 1 :] <= FILL_VAL)
@@ -107,7 +109,7 @@ def test_causal_mask_with_alibi__does_not_mask_prior_tokens(
         start_pos, seq_len, ALIBI_BIAS_MAX, N_HEADS
     )
     for i in range(N_HEADS):
-        for m, sp, _ in zip(mask[:, i, :, :], start_pos, seq_len):
+        for m, sp, _ in zip(mask[:, i, :, :], start_pos, seq_len, strict=False):
             for pos, sequence_mask in enumerate(m):
                 assert np.all(sequence_mask[: sp + pos + 1] >= FILL_VAL)
                 assert np.all(sequence_mask[: sp + pos + 1] <= 0.0)

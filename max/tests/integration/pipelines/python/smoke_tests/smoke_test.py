@@ -28,7 +28,6 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from subprocess import Popen
-from typing import Optional
 
 import click
 import requests
@@ -218,7 +217,7 @@ def build_eval_summary(
     default=None,
     help="If provided, write the summary of the smoke test to this file",
 )
-def smoke_test(framework: str, model: str, output_file: Optional[Path]) -> None:
+def smoke_test(framework: str, model: str, output_file: Path | None) -> None:
     model = model.lower().strip()
     cmd = get_server_cmd(framework, model)
 

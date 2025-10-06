@@ -6,7 +6,6 @@
 """Test script comparing MAX Idefics3VisionAttention vs PyTorch implementation."""
 
 from types import SimpleNamespace
-from typing import Optional
 
 import pytest
 import torch
@@ -97,7 +96,7 @@ def generate_pytorch_outputs(
     attention_weights: dict[str, torch.Tensor],
     input_tensor: torch.Tensor,
     output_attentions: bool = False,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Generate outputs using HuggingFace PyTorch Idefics3VisionAttention."""
     config_obj = create_config_object(config)
     torch_attention = PyTorchIdefics3VisionAttention(config_obj).cuda()

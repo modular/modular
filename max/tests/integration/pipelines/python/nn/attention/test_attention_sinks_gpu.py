@@ -6,7 +6,7 @@
 """Test attention with sinks implementation against OpenAI reference."""
 
 import math
-from typing import Optional, cast
+from typing import cast
 
 import numpy as np
 import pytest
@@ -192,7 +192,7 @@ def test_flash_attention_ragged_with_sinks(
     num_heads: int,
     num_kv_heads: int,
     head_dim: int,
-    sliding_window: Optional[int],
+    sliding_window: int | None,
 ) -> None:
     """Test flash_attention_ragged with sink weights against reference implementation."""
 

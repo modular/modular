@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from multiprocessing import Process
 from pathlib import Path
-from typing import Optional
 
 from verify_layers.runner import run_layer_verification
 
@@ -42,8 +41,8 @@ class PipelineRunner:
         pipeline: str,
         encoding: str,
         device_str: str,
-        export_path: Optional[Path] = None,
-        layer_data_path: Optional[Path] = None,
+        export_path: Path | None = None,
+        layer_data_path: Path | None = None,
     ) -> None:
         self.pipeline = pipeline
         self.encoding = encoding

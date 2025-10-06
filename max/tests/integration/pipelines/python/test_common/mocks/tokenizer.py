@@ -9,7 +9,7 @@ import json
 import random
 import string
 from collections.abc import Sequence
-from typing import TypeVar, Union
+from typing import TypeVar
 
 import numpy as np
 from max.interfaces import (
@@ -30,8 +30,8 @@ class MockTextTokenizer(
     def __init__(
         self,
         model_path: str = "testing/testing",
-        max_length: Union[int, None] = None,
-        max_new_tokens: Union[int, None] = None,
+        max_length: int | None = None,
+        max_new_tokens: int | None = None,
         seed: int = 42,
         vocab_size: int = 1000,
         **kwargs,
@@ -65,7 +65,7 @@ class MockTextTokenizer(
         if request.prompt is None and request.messages is None:
             raise ValueError("either prompt or messages must be provided.")
 
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         if request.prompt is None and request.messages is not None:
             prompt = ".".join(
                 [str(message.get("content")) for message in request.messages]

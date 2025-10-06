@@ -346,7 +346,7 @@ def test_attention(
     )
     max_output_pt = [torch.from_dlpack(x).to(torch_dtype) for x in max_outputs]
 
-    for torch_out, max_out in zip(torch_outputs, max_output_pt):
+    for torch_out, max_out in zip(torch_outputs, max_output_pt, strict=False):
         torch.testing.assert_close(
             torch_out.squeeze(),
             max_out,

@@ -7,12 +7,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import TypeGuard
 
 from max.driver import Tensor
 from max.engine import MojoValue
 from max.graph import BufferValue, TensorValue, Value
 from nvitop import Device as NVITOPDevice
-from typing_extensions import TypeGuard
 
 
 def is_h100_h200() -> bool:
