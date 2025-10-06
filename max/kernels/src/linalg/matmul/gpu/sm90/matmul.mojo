@@ -86,6 +86,824 @@ from ....utils_gpu import (
 )
 from ..tile_scheduler import MatmulSchedule, TileScheduler
 from .loadop import async_load_AB
+from ....structuring import NVIDIASharedMemoryManager as SharedMemoryManager
+from ....structuring import SMemTileType, SMemTileIterType, RegTileType
+
+
+# Shared memory structure for Hopper SM90 kernel
+struct HopperMatmulSM90Kernel_SMem[
+    a_type: DType,
+    a_layout: Layout,
+    b_type: DType,
+    b_layout: Layout,
+    c_type: DType,
+    c_layout: Layout,
+    num_pipeline_stages: Int,
+]:
+    alias SMM = SharedMemoryManager[]
+
+    # Tile iterator types
+    alias ATileIterType = Self.SMM.TileIter[
+        a_type, a_layout, num_pipeline_stages
+    ]
+    alias BTileIterType = Self.SMM.TileIter[
+        b_type, b_layout, num_pipeline_stages
+    ]
+    alias CTileType = Self.SMM.Tile[c_type, c_layout]
+
+    # Pipeline barrier types
+    alias PipelineBarrierType = Self.SMM.Array[
+        SharedMemBarrier, num_pipeline_stages
+    ]
+
+    # Tile iterators
+    var a_tiles: Self.ATileIterType.T
+    var b_tiles: Self.BTileIterType.T
+    var c_smem: Self.CTileType.T
+
+    # Pipeline barriers (full and empty)
+    var full_mbar: Self.PipelineBarrierType.T
+    var empty_mbar: Self.PipelineBarrierType.T
+
+    fn __init__(out self):
+        var smem_mgr = Self.SMM()
+        # Initialize tile iterators
+        self.a_tiles = Self.ATileIterType.build(smem_mgr)
+        self.b_tiles = Self.BTileIterType.build(smem_mgr)
+        self.c_smem = Self.CTileType.build(smem_mgr)
+        self.full_mbar = Self.PipelineBarrierType.build(smem_mgr)
+        self.empty_mbar = Self.PipelineBarrierType.build(smem_mgr)
+
+    @staticmethod
+    @always_inline
+    fn pipeline_storage_size() -> Int:
+        """Calculate the memory size for all pipeline stages."""
+        var a_size = Self.ATileIterType.storage_size
+        var b_size = Self.BTileIterType.storage_size
+
+        return (
+            # A and B tile iterators with padding
+            a_size
+            + b_size
+            # Pipeline barriers (full + empty)
+            + 2 * Self.PipelineBarrierType.storage_size
+        )
+
+    @staticmethod
+    @always_inline
+    fn output_storage_size() -> Int:
+        """Calculate the memory size for output tile."""
+        return Self.CTileType.storage_size
+
+    @staticmethod
+    @always_inline
+    fn storage_size() -> Int:
+        """Calculate the total storage size."""
+        return Self.pipeline_storage_size() + Self.output_storage_size()
+
+
+struct HopperMatmulSM90Kernel[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
+    c_smem_layout: Layout,
+    block_tile_shape: IndexList[3],
+    wgmma_shape: IndexList[3],
+    cluster_shape: StaticTuple[Int32, 3],
+    num_pipeline_stages: Int,
+    num_threads: Int = 128,
+    transpose_b: Bool = True,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    partitioned_multicast: Bool = False,
+    use_tma_store: Bool = False,
+    promotion_frequency: Int = 1,
+    pdl_level: PDLLevel = PDLLevel(),
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
+    hilbert_swizzle: Bool = False,
+]:
+    """Hopper SM90 Matmul kernel with structured shared memory management."""
+
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+
+    alias num_consumer = (num_threads // 128) - 1
+    alias num_consumer_threads = Self.num_consumer * 128
+
+    alias num_m_mmas = Self.BM // wgmma_shape[0] // Self.num_consumer
+    alias num_n_mmas = Self.BN // wgmma_shape[1]
+
+    alias accum_type = get_accum_type[a_type]()
+    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
+
+    alias a_smem_layout = tile_layout_k_major[
+        a_type, Self.BM, Self.BK, a_swizzle
+    ]()
+    alias b_smem_layout = tile_layout_k_major[
+        b_type, Self.BN, Self.BK, b_swizzle
+    ]()
+
+    alias AccumRegTileType = RegTileType[
+        Self.accum_type,
+        Layout.row_major(Self.num_m_mmas * Self.num_n_mmas, Self.c_frag_size),
+    ]
+
+    alias SMem = HopperMatmulSM90Kernel_SMem[
+        a_type,
+        Self.a_smem_layout,
+        b_type,
+        Self.b_smem_layout,
+        c_type,
+        c_smem_layout,
+        num_pipeline_stages,
+    ]
+
+    @staticmethod
+    @always_inline
+    fn num_regs() -> Int:
+        if Self.num_consumer == 1:
+            return 256
+        if Self.num_consumer == 2:
+            return 240
+        return 160
+
+    @staticmethod
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
+        `nvvm.cluster_dim`=cluster_shape,
+    )
+    @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+    fn run[
+        a_tile_layout: Layout,
+        b_tile_layout: Layout,
+        c_tma_layout: Layout,
+        a_desc_layout: Layout,
+        b_desc_layout: Layout,
+        c_desc_layout: Layout,
+    ](
+        a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
+        b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+        c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
+        a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+        lut_ptr: DeviceBuffer[DType.uint32],
+    ):
+        constrained[transpose_b, "Only support transposed B in layout"]()
+
+        alias CLUSTER_N = UInt(cluster_shape[0])
+        alias CLUSTER_M = UInt(cluster_shape[1])
+        alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
+
+        alias K = b_layout.shape[1].value()
+        alias simd_size = simd_width_of[c_type]()
+
+        constrained[
+            not partitioned_multicast
+            or a_swizzle.bytes() // size_of[a_type]() == Self.BK,
+            (
+                "Currently partitioned multi-casting is only supported when BK"
+                " == (a_swizzle.bytes // size_of[a_type])"
+            ),
+        ]()
+        constrained[
+            not partitioned_multicast
+            or b_swizzle.bytes() // size_of[b_type]() == Self.BK,
+            (
+                "Currently partitioned multi-casting is only supported when BK"
+                " == (b_swizzle.bytes // size_of[b_type])"
+            ),
+        ]()
+
+        alias use_cluster = cluster_size[cluster_shape]() > 1
+        var block_idx_swizzle: IndexList[2, element_type = DType.uint32]
+
+        @parameter
+        if not use_cluster:
+
+            @parameter
+            if hilbert_swizzle:
+                # a 32-bit (UInt32) value that encodes a block's Hilbert-swizzled coordinates as
+                # upper 16 bits = y, lower 16 bits = x
+                var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
+                var packed = lut_ptr.unsafe_ptr()[linear]
+                var new_x = packed & 0xFFFF
+                var new_y = packed >> 16
+                block_idx_swizzle = Index[dtype = DType.uint32](new_x, new_y)
+            else:
+                block_idx_swizzle = block_swizzle(
+                    Index[dtype = DType.uint32](block_idx.x, block_idx.y),
+                    Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
+                )
+        else:
+            block_idx_swizzle = Index[dtype = DType.uint32](
+                block_idx.x, block_idx.y
+            )
+
+        wgmma_op = TensorCoreAsync[
+            Self.accum_type,
+            a_type,
+            b_type,
+            wgmma_shape,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            transpose_b=transpose_b,
+        ]()
+
+        # Initialize Shared Memory using SharedMemoryManager
+        var smem = Self.SMem()
+
+        full = smem.full_mbar
+        empty = smem.empty_mbar
+
+        var warp_group_idx, warp_group_thread_idx = divmod(
+            thread_idx.x, WARPGROUP_SIZE
+        )
+        alias num_k_iters = ceildiv(K, Self.BK)
+
+        var rank_m = block_id_in_cluster.y
+        var rank_n = block_id_in_cluster.x
+
+        @parameter
+        if (
+            pdl_level > PDLLevel.OFF
+            and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+        ):
+            wait_on_dependent_grids()
+
+        var lane_predicate = elect_one_sync()
+        if thread_idx.x == 0:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+
+            @parameter
+            for i in range(num_pipeline_stages):
+                full[i].init(1)
+                empty[i].init(Self.num_consumer * CLUSTER_SIZE)
+
+        # We need this to guarantee that the Pipeline init is visible
+        # To all producers and consumer blocks in the cluster
+        @parameter
+        if cluster_size[cluster_shape]() > 1:
+            fence_mbarrier_init()
+            cluster_sync_relaxed()
+        else:
+            barrier()
+
+        var warp_id = get_warp_id()
+        if warp_group_idx == 0:
+            alias num_regs = 24 if Self.num_consumer <= 2 else 32
+            warpgroup_reg_dealloc[num_regs]()
+
+            if warp_id == 0 and lane_predicate:
+                var write_pipeline_states = PipelineState[num_pipeline_stages]()
+
+                var m_coord = block_idx_swizzle[1] * Self.BM
+                var n_coord = block_idx_swizzle[0] * Self.BN
+
+                async_load_AB[
+                    block_tile_shape=block_tile_shape,
+                    cluster_shape=cluster_shape,
+                    partitioned_multicast=partitioned_multicast,
+                    num_k_iters=num_k_iters,
+                ](
+                    a_tma_op,
+                    b_tma_op,
+                    smem.a_tiles,
+                    smem.b_tiles,
+                    UInt(m_coord),
+                    UInt(n_coord),
+                    0,
+                    rank_n,
+                    rank_m,
+                    write_pipeline_states,
+                    empty,
+                    full,
+                )
+
+        else:
+            warpgroup_reg_alloc[Self.num_regs()]()
+
+            var local_warp_group_idx = warp_group_idx - 1
+
+            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
+            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+
+            @parameter
+            for i in range(num_pipeline_stages):
+
+                @parameter
+                if cluster_size[cluster_shape]() > 1:
+                    if warp_group_thread_idx < CLUSTER_SIZE:
+                        _ = empty[i].arrive_cluster(warp_group_thread_idx)
+                else:
+                    if warp_group_thread_idx == 0:
+                        _ = empty[i].arrive()
+
+            var read_pipeline_states = PipelineState[num_pipeline_stages]()
+
+            consumer_main_loop[
+                cluster_shape=cluster_shape,
+                promotion_frequency=promotion_frequency,
+                num_consumer = Self.num_consumer,
+                num_k_iters=num_k_iters,
+            ](
+                final_c_reg_tile,
+                c_reg_tile,
+                smem.a_tiles,
+                smem.b_tiles,
+                read_pipeline_states,
+                full,
+                empty,
+                wgmma_op,
+                UInt(local_warp_group_idx),
+                UInt(warp_group_thread_idx),
+            )
+
+            var output_reg_tile = (
+                final_c_reg_tile if a_type
+                is DType.float8_e4m3fn else c_reg_tile
+            )
+
+            warp_specialized_gemm_output[
+                c_tile_shape = Index(Self.BM, Self.BN),
+                c_swizzle=c_swizzle,
+                wgmma_shape=wgmma_shape,
+                num_consumer = Self.num_consumer,
+                use_tma_store=use_tma_store,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            ](
+                c_tma_op,
+                c,
+                smem.c_smem,
+                output_reg_tile,
+                UInt(warp_group_thread_idx),
+                UInt(local_warp_group_idx),
+                UInt(thread_idx.x - WARPGROUP_SIZE),
+                block_idx_swizzle[1],
+                block_idx_swizzle[0],
+            )
+
+        @parameter
+        if pdl_level >= PDLLevel.OVERLAP_AT_END:
+            launch_dependent_grids()
+
+        # TO ensure SMEM destruction doesn't happen
+        @parameter
+        if cluster_size[cluster_shape]() > 1:
+            cluster_sync()
+
+    @staticmethod
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
+        `nvvm.cluster_dim`=cluster_shape,
+    )
+    @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+    fn run_persistent[
+        a_tile_layout: Layout,
+        b_tile_layout: Layout,
+        c_tma_layout: Layout,
+        a_desc_layout: Layout,
+        b_desc_layout: Layout,
+        c_desc_layout: Layout,
+        grid_shape: IndexList[2],
+        schedule: MatmulSchedule,
+    ](
+        a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
+        b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+        c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
+        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+        problem_shape: IndexList[3],
+    ):
+        constrained[transpose_b, "Only support transposed B in layout"]()
+
+        alias CLUSTER_N = UInt(cluster_shape[0])
+        alias CLUSTER_M = UInt(cluster_shape[1])
+        alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
+
+        alias K = b_layout.shape[1].value()
+        alias N = b_layout.shape[0].value()
+        alias M = a_layout.shape[0].value()
+        alias simd_size = simd_width_of[c_type]()
+
+        var scheduler = TileScheduler[
+            Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
+        ](problem_shape)
+
+        constrained[
+            not partitioned_multicast
+            or a_swizzle.bytes() // size_of[a_type]() == Self.BK,
+            (
+                "Currently partitioned multi-casting is only supported when BK"
+                " == (a_swizzle.bytes // size_of[a_type])"
+            ),
+        ]()
+        constrained[
+            not partitioned_multicast
+            or b_swizzle.bytes() // size_of[b_type]() == Self.BK,
+            (
+                "Currently partitioned multi-casting is only supported when BK"
+                " == (b_swizzle.bytes // size_of[b_type])"
+            ),
+        ]()
+
+        alias use_cluster = cluster_size[cluster_shape]() > 1
+
+        wgmma_op = TensorCoreAsync[
+            Self.accum_type,
+            a_type,
+            b_type,
+            wgmma_shape,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            transpose_b=transpose_b,
+        ]()
+
+        var work_info = scheduler.get_current_work_info()
+
+        # Initialize Shared Memory using SharedMemoryManager
+        var smem = Self.SMem()
+
+        full = smem.full_mbar
+        empty = smem.empty_mbar
+
+        var warp_group_idx, warp_group_thread_idx = divmod(
+            thread_idx.x, WARPGROUP_SIZE
+        )
+        alias num_k_iters = ceildiv(K, Self.BK)
+
+        var rank_m = block_id_in_cluster.y
+        var rank_n = block_id_in_cluster.x
+
+        @parameter
+        if (
+            pdl_level > PDLLevel.OFF
+            and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+        ):
+            wait_on_dependent_grids()
+
+        var lane_predicate = elect_one_sync()
+        if thread_idx.x == 0:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+
+            @parameter
+            for i in range(num_pipeline_stages):
+                full[i].init(1)
+                empty[i].init(Self.num_consumer * CLUSTER_SIZE)
+
+        @parameter
+        if cluster_size[cluster_shape]() > 1:
+            fence_mbarrier_init()
+            cluster_sync_relaxed()
+        else:
+            barrier()
+
+        var warp_id = get_warp_id()
+        if warp_group_idx == 0:
+            alias num_regs = 24 if Self.num_consumer <= 2 else 32
+            warpgroup_reg_dealloc[num_regs]()
+            if warp_id == 0 and lane_predicate:
+                var write_pipeline_states = PipelineState[num_pipeline_stages]()
+
+                while work_info.is_valid():
+                    var m_coord = work_info.m
+                    var n_coord = work_info.n
+
+                    async_load_AB[
+                        block_tile_shape=block_tile_shape,
+                        cluster_shape=cluster_shape,
+                        partitioned_multicast=partitioned_multicast,
+                        num_k_iters=num_k_iters,
+                    ](
+                        a_tma_op,
+                        b_tma_op,
+                        smem.a_tiles,
+                        smem.b_tiles,
+                        UInt(m_coord),
+                        UInt(n_coord),
+                        0,
+                        rank_n,
+                        rank_m,
+                        write_pipeline_states,
+                        empty,
+                        full,
+                    )
+                    work_info = scheduler.fetch_next_work()
+
+        else:
+            warpgroup_reg_alloc[Self.num_regs()]()
+
+            var local_warp_group_idx = warp_group_idx - 1
+
+            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
+            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+
+            @parameter
+            if a_type is DType.float8_e4m3fn:
+                _ = final_c_reg_tile.fill(0.0)
+            else:
+                _ = c_reg_tile.fill(0.0)
+
+            @parameter
+            for i in range(num_pipeline_stages):
+
+                @parameter
+                if cluster_size[cluster_shape]() > 1:
+                    if warp_group_thread_idx < CLUSTER_SIZE:
+                        _ = empty[i].arrive_cluster(warp_group_thread_idx)
+                else:
+                    if warp_group_thread_idx == 0:
+                        _ = empty[i].arrive()
+
+            var read_pipeline_states = PipelineState[num_pipeline_stages]()
+
+            while work_info.is_valid():
+                consumer_main_loop[
+                    cluster_shape=cluster_shape,
+                    promotion_frequency=promotion_frequency,
+                    num_consumer = Self.num_consumer,
+                    num_k_iters=num_k_iters,
+                ](
+                    final_c_reg_tile,
+                    c_reg_tile,
+                    smem.a_tiles,
+                    smem.b_tiles,
+                    read_pipeline_states,
+                    full,
+                    empty,
+                    wgmma_op,
+                    UInt(local_warp_group_idx),
+                    UInt(warp_group_thread_idx),
+                )
+
+                var block_y = UInt(ceildiv(work_info.m, Self.BM))
+                var block_x = UInt(ceildiv(work_info.n, Self.BN))
+                var output_reg_tile = (
+                    final_c_reg_tile if a_type
+                    is DType.float8_e4m3fn else c_reg_tile
+                )
+
+                warp_specialized_gemm_output[
+                    c_tile_shape = Index(Self.BM, Self.BN),
+                    c_swizzle=c_swizzle,
+                    wgmma_shape=wgmma_shape,
+                    num_consumer = Self.num_consumer,
+                    use_tma_store=use_tma_store,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                ](
+                    c_tma_op,
+                    c,
+                    smem.c_smem,
+                    output_reg_tile,
+                    UInt(warp_group_thread_idx),
+                    UInt(local_warp_group_idx),
+                    UInt(thread_idx.x - WARPGROUP_SIZE),
+                    Int(block_y),
+                    Int(block_x),
+                )
+                work_info = scheduler.fetch_next_work()
+
+        @parameter
+        if pdl_level >= PDLLevel.OVERLAP_AT_END:
+            launch_dependent_grids()
+
+        # TO ensure SMEM destruction doesn't happen
+        @parameter
+        if cluster_size[cluster_shape]() > 1:
+            cluster_sync()
+
+    @staticmethod
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
+        `nvvm.cluster_dim`=cluster_shape,
+    )
+    @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+    fn run_unaligned[
+        c_desc_layout: Layout,
+        c_tma_layout: Layout,
+        pipeline_stages: Int = 7,
+    ](
+        c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
+        a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+        c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    ):
+        """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
+        """
+        constrained[transpose_b, "Only support transposed B in layout"]()
+
+        alias CLUSTER_N = UInt(cluster_shape[0])
+        alias CLUSTER_M = UInt(cluster_shape[1])
+        alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
+
+        alias K = b_layout.shape[1].value()
+        alias simd_size = simd_width_of[c_type]()
+
+        constrained[
+            not partitioned_multicast
+            or a_swizzle.bytes() // size_of[a_type]() == Self.BK,
+            (
+                "Currently partitioned multi-casting is only supported when BK"
+                " == (a_swizzle.bytes // size_of[a_type])"
+            ),
+        ]()
+        constrained[
+            not partitioned_multicast
+            or b_swizzle.bytes() // size_of[b_type]() == Self.BK,
+            (
+                "Currently partitioned multi-casting is only supported when BK"
+                " == (b_swizzle.bytes // size_of[b_type])"
+            ),
+        ]()
+
+        alias use_cluster = cluster_size[cluster_shape]() > 1
+        var block_idx_swizzle: IndexList[2, element_type = DType.uint32]
+
+        @parameter
+        if not use_cluster:
+            block_idx_swizzle = block_swizzle(
+                Index[dtype = DType.uint32](block_idx.x, block_idx.y),
+                Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
+            )
+        else:
+            block_idx_swizzle = Index[dtype = DType.uint32](
+                block_idx.x, block_idx.y
+            )
+
+        wgmma_op = TensorCoreAsync[
+            Self.accum_type,
+            a_type,
+            b_type,
+            wgmma_shape,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+            transpose_b=transpose_b,
+        ]()
+
+        # Initialize Shared Memory using SharedMemoryManager
+        var smem = HopperMatmulSM90Kernel_SMem[
+            a_type,
+            Self.a_smem_layout,
+            b_type,
+            Self.b_smem_layout,
+            c_type,
+            c_smem_layout,
+            pipeline_stages,
+        ]()
+
+        alias k_align = find_K_alignment_upto_16B(K * size_of[a_type]())
+        full = smem.full_mbar
+        empty = smem.empty_mbar
+
+        var warp_group_idx, warp_group_thread_idx = divmod(
+            thread_idx.x, WARPGROUP_SIZE
+        )
+        alias num_k_iters = ceildiv(K, Self.BK)
+
+        var rank_m = block_id_in_cluster.y
+        var rank_n = block_id_in_cluster.x
+
+        @parameter
+        if (
+            pdl_level > PDLLevel.OFF
+            and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+        ):
+            wait_on_dependent_grids()
+
+        var lane_predicate = elect_one_sync()
+
+        if thread_idx.x == 0:
+
+            @parameter
+            for i in range(pipeline_stages):
+                full[i].init(WARPGROUP_SIZE)
+                empty[i].init(Self.num_consumer * CLUSTER_SIZE)
+
+        # We need this to guarantee that the Pipeline init is visible
+        # To all producers and consumer blocks in the cluster
+        @parameter
+        if cluster_size[cluster_shape]() > 1:
+            fence_mbarrier_init()
+            cluster_sync_relaxed()
+        else:
+            barrier()
+
+        var warp_id = get_warp_id()
+        if warp_group_idx == 0:
+            warpgroup_reg_dealloc[32]()
+
+            var write_pipeline_states = PipelineState[pipeline_stages]()
+
+            var m_coord = block_idx_swizzle[1]
+            var n_coord = block_idx_swizzle[0]
+
+            async_load_AB[
+                swizzle_mode=a_swizzle,
+                cp_size = k_align // size_of[a_type](),
+                num_k_iters=num_k_iters,
+                block_tile_shape=block_tile_shape,
+            ](
+                a,
+                b,
+                UInt(block_idx_swizzle[1]),
+                UInt(block_idx_swizzle[0]),
+                smem.a_tiles,
+                smem.b_tiles,
+                write_pipeline_states,
+                empty,
+                full,
+            )
+
+        else:
+            constrained[
+                Self.num_consumer <= 2, "Only support 1 or 2 consumer"
+            ]()
+            warpgroup_reg_alloc[232]()
+
+            var local_warp_group_idx = warp_group_idx - 1
+
+            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
+            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+
+            @parameter
+            for i in range(pipeline_stages):
+
+                @parameter
+                if cluster_size[cluster_shape]() > 1:
+                    if warp_group_thread_idx < CLUSTER_SIZE:
+                        _ = empty[i].arrive_cluster(warp_group_thread_idx)
+                else:
+                    if warp_group_thread_idx == 0:
+                        _ = empty[i].arrive()
+
+            var read_pipeline_states = PipelineState[pipeline_stages]()
+
+            consumer_main_loop[
+                cluster_shape=cluster_shape,
+                promotion_frequency=promotion_frequency,
+                num_consumer = Self.num_consumer,
+                num_k_iters=num_k_iters,
+            ](
+                final_c_reg_tile,
+                c_reg_tile,
+                smem.a_tiles,
+                smem.b_tiles,
+                read_pipeline_states,
+                full,
+                empty,
+                wgmma_op,
+                UInt(local_warp_group_idx),
+                UInt(warp_group_thread_idx),
+            )
+
+            var output_reg_tile = (
+                final_c_reg_tile if a_type
+                is DType.float8_e4m3fn else c_reg_tile
+            )
+
+            warp_specialized_gemm_output[
+                c_tile_shape = Index(Self.BM, Self.BN),
+                c_swizzle=c_swizzle,
+                wgmma_shape=wgmma_shape,
+                num_consumer = Self.num_consumer,
+                use_tma_store=use_tma_store,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            ](
+                c_tma_op,
+                c,
+                smem.c_smem,
+                output_reg_tile,
+                UInt(warp_group_thread_idx),
+                UInt(local_warp_group_idx),
+                UInt(thread_idx.x - WARPGROUP_SIZE),
+                block_idx_swizzle[1],
+                block_idx_swizzle[0],
+            )
+
+        @parameter
+        if pdl_level >= PDLLevel.OVERLAP_AT_END:
+            launch_dependent_grids()
+
+        # TO ensure SMEM destruction doesn't happen
+        @parameter
+        if cluster_size[cluster_shape]() > 1:
+            cluster_sync()
 
 
 @always_inline
@@ -164,13 +982,15 @@ fn consumer_main_loop[
         accum_type,
         c_reg_layout,
         MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL, **_,
+        address_space = AddressSpace.LOCAL,
+        *_, **_,
     ],
     c_reg_tile: LayoutTensor[
         accum_type,
         c_reg_layout,
         MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL, **_,
+        address_space = AddressSpace.LOCAL,
+        *_, **_,
     ],
     a_smem_iter: LayoutTensorIter[
         a_type,
@@ -305,12 +1125,14 @@ fn warp_specialized_gemm_output[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
+        *_, **_,
     ],
     c_reg_tile: LayoutTensor[
         accum_type,
         c_reg_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
+        *_, **_,
     ],
     warp_group_thread_idx: UInt,
     local_warp_group_idx: UInt,
@@ -490,14 +1312,12 @@ fn warp_specialized_gemm_output[
                     local_thread_idx
                 )
 
-                alias num_stores_per_thread = __type_of(
-                    c_gmem_frag
-                ).layout.size()
+                alias num_stores_per_thread = c_gmem_frag.layout.size()
 
                 @parameter
                 for i in range(num_stores_per_thread):
-                    alias src_idx = __type_of(c_smem_frag).layout(i)
-                    alias dst_idx = __type_of(c_gmem_frag).layout(i)
+                    alias src_idx = c_smem_frag.layout(i)
+                    alias dst_idx = c_gmem_frag.layout(i)
                     alias dst_m_offset = dst_idx // N
                     alias dst_n_offset = dst_idx % N
                     var m = UInt32(coords[0] + dst_m_offset)
@@ -536,14 +1356,12 @@ fn warp_specialized_gemm_output[
                     local_thread_idx
                 )
 
-                alias num_stores_per_thread = __type_of(
-                    c_gmem_frag
-                ).layout.size()
+                alias num_stores_per_thread = c_gmem_frag.layout.size()
 
                 @parameter
                 for i in range(num_stores_per_thread):
-                    alias src_idx = __type_of(c_smem_frag).layout(i)
-                    alias dst_idx = __type_of(c_gmem_frag).layout(i)
+                    alias src_idx = c_smem_frag.layout(i)
+                    alias dst_idx = c_gmem_frag.layout(i)
 
                     alias dst_m_offset = dst_idx // N
                     alias dst_n_offset = dst_idx % N
@@ -568,11 +1386,9 @@ fn warp_specialized_gemm_output[
                         var smem_offset = c_smem_tile.ptr.offset(
                             WG_BM * TMA_BN * local_thread_idx
                         )
-                        var c_tma_tile = LayoutTensor[
+                        var c_tma_tile = SMemTileType[
                             c_type,
                             c_tma_layout,
-                            MutableAnyOrigin,
-                            address_space = AddressSpace.SHARED,
                             alignment=128,
                         ](smem_offset)
 
@@ -678,11 +1494,11 @@ fn warp_specialized_gemm_output[
                         gmem_frag_with_offsets[2] + warp_tile_offset
                     )
 
-                    alias num_vecs = __type_of(gmem_frag).layout.size()
+                    alias num_vecs = gmem_frag.layout.size()
 
                     @parameter
                     for i in range(num_vecs):
-                        alias dst_idx = __type_of(gmem_frag).layout(i)
+                        alias dst_idx = gmem_frag.layout(i)
                         alias dst_m_offset = dst_idx // N
                         alias dst_n_offset = dst_idx % N
                         var m = Int(coords[0] + dst_m_offset)
@@ -855,831 +1671,6 @@ fn find_K_alignment_upto_16B(row_bytes_arg: Int) -> Int:
     return alignment
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
-    `nvvm.cluster_dim`=cluster_shape,
-)
-@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn tma_wgmma_warp_specialized_gemm_kernel[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    c_layout: Layout,
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
-    c_tma_layout: Layout,
-    c_smem_layout: Layout,
-    cluster_shape: StaticTuple[Int32, 3],
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    transpose_b: Bool = True,
-    num_threads: Int = 128,
-    pipeline_stages: Int = 7,
-    partitioned_multicast: Bool = False,
-    use_tma_store: Bool = False,
-    promotion_frequency: Int = 1,
-    pdl_level: PDLLevel = PDLLevel(),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
-        elementwise_compute_lambda_type
-    ] = None,
-    hilbert_swizzle: Bool = False,
-](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    lut_ptr: DeviceBuffer[DType.uint32],
-):
-    constrained[transpose_b, "Only support transposed B in layout"]()
-
-    alias num_consumer = (num_threads // 128) - 1
-    alias num_consumer_threads = num_consumer * 128
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
-    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
-
-    alias K = b_layout.shape[1].value()
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
-
-    alias simd_size = simd_width_of[c_type]()
-
-    constrained[
-        not partitioned_multicast
-        or a_swizzle.bytes() // size_of[a_type]() == BK,
-        (
-            "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // size_of[a_type]"
-        ),
-    ]()
-    constrained[
-        not partitioned_multicast
-        or b_swizzle.bytes() // size_of[b_type]() == BK,
-        (
-            "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // size_of[b_type]"
-        ),
-    ]()
-
-    alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
-    alias num_n_mmas = BN // wgmma_shape[1]
-
-    alias accum_type = get_accum_type[a_type]()
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-
-    alias use_cluster = cluster_size[cluster_shape]() > 1
-    var block_idx_swizzle: __type_of(Index[dtype = DType.uint32](0, 0))
-
-    @parameter
-    if not use_cluster:
-
-        @parameter
-        if hilbert_swizzle:
-            # a 32-bit (UInt32) value that encodes a block's Hilbert-swizzled coordinates as
-            # upper 16 bits = y, lower 16 bits = x
-            var linear: UInt32 = UInt32(block_idx.y * grid_dim.x + block_idx.x)
-            var packed: UInt32 = lut_ptr.unsafe_ptr()[linear]
-            var new_x: UInt32 = packed & 0xFFFF
-            var new_y: UInt32 = packed >> 16
-            block_idx_swizzle = Index[dtype = DType.uint32](new_x, new_y)
-        else:
-            block_idx_swizzle = block_swizzle(
-                Index[dtype = DType.uint32](block_idx.x, block_idx.y),
-                Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
-            )
-    else:
-        block_idx_swizzle = Index[dtype = DType.uint32](
-            block_idx.x, block_idx.y
-        )
-
-    wgmma_op = TensorCoreAsync[
-        accum_type,
-        a_type,
-        b_type,
-        wgmma_shape,
-        a_swizzle=a_swizzle,
-        b_swizzle=b_swizzle,
-        transpose_b=transpose_b,
-    ]()
-
-    var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
-    ]()
-
-    alias a_smem_size = a_smem_layout.size() * pipeline_stages
-    alias b_smem_size = b_smem_layout.size() * pipeline_stages
-
-    alias a_smem_bytes = a_smem_size * size_of[a_type]()
-    alias b_smem_bytes = b_smem_size * size_of[b_type]()
-
-    alias c_smem_size = c_smem_layout.size()
-    alias c_smem_bytes = c_smem_size * size_of[c_type]()
-
-    var a_smem = smem.bitcast[Scalar[a_type]]()
-    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
-    var c_smem = (smem + a_smem_bytes + b_smem_bytes).bitcast[Scalar[c_type]]()
-    var smem_pool = (smem + a_smem_bytes + b_smem_bytes + c_smem_bytes).bitcast[
-        Int64
-    ]()
-
-    var a_smem_iter = LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](a_smem, a_smem_size)
-
-    var b_smem_iter = LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](b_smem, b_smem_size)
-
-    var c_smem_tile = LayoutTensor[
-        c_type,
-        c_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](c_smem)
-
-    var a_mbars_ptr = smem_pool.bitcast[Int64]()
-    var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
-
-    full = a_mbars_ptr.bitcast[SharedMemBarrier]()
-    empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
-
-    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
-    alias num_k_iters = ceildiv(K, BK)
-
-    var rank_m = block_id_in_cluster.y
-    var rank_n = block_id_in_cluster.x
-
-    @parameter
-    if (
-        pdl_level > PDLLevel.OFF
-        and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-    ):
-        wait_on_dependent_grids()
-
-    var lane_predicate = elect_one_sync()
-    if thread_idx.x == 0:
-        a_tma_op.prefetch_descriptor()
-        b_tma_op.prefetch_descriptor()
-
-        @parameter
-        for i in range(pipeline_stages):
-            full[i].init(1)
-            empty[i].init(num_consumer * CLUSTER_SIZE)
-
-    # We need this to guarantee that the Pipeline init is visible
-    # To all producers and consumer blocks in the cluster
-    @parameter
-    if cluster_size[cluster_shape]() > 1:
-        fence_mbarrier_init()
-        cluster_sync_relaxed()
-    else:
-        barrier()
-
-    var warp_id = get_warp_id()
-    if warp_group_idx == 0:
-        alias num_regs = 24 if num_consumer <= 2 else 32
-        warpgroup_reg_dealloc[num_regs]()
-
-        if warp_id == 0 and lane_predicate:
-            var write_pipeline_states = PipelineState[pipeline_stages]()
-
-            var m_coord = block_idx_swizzle[1] * BM
-            var n_coord = block_idx_swizzle[0] * BN
-
-            async_load_AB[
-                block_tile_shape=block_tile_shape,
-                cluster_shape=cluster_shape,
-                partitioned_multicast=partitioned_multicast,
-                num_k_iters=num_k_iters,
-            ](
-                a_tma_op,
-                b_tma_op,
-                a_smem_iter,
-                b_smem_iter,
-                UInt(m_coord),
-                UInt(n_coord),
-                0,
-                rank_n,
-                rank_m,
-                write_pipeline_states,
-                empty,
-                full,
-            )
-
-    else:
-
-        @parameter
-        if num_consumer == 1 or num_consumer == 2:
-            alias num_regs = 256 if num_consumer == 1 else 240
-            warpgroup_reg_alloc[num_regs]()
-        else:
-            warpgroup_reg_alloc[160]()
-
-        var local_warp_group_idx = warp_group_idx - 1
-
-        var c_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        var final_c_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        @parameter
-        for i in range(pipeline_stages):
-
-            @parameter
-            if cluster_size[cluster_shape]() > 1:
-                if warp_group_thread_idx < CLUSTER_SIZE:
-                    _ = empty[i].arrive_cluster(warp_group_thread_idx)
-            else:
-                if warp_group_thread_idx == 0:
-                    _ = empty[i].arrive()
-
-        var read_pipeline_states = PipelineState[pipeline_stages]()
-
-        consumer_main_loop[
-            cluster_shape=cluster_shape,
-            promotion_frequency=promotion_frequency,
-            num_consumer=num_consumer,
-            num_k_iters=num_k_iters,
-        ](
-            final_c_reg_tile,
-            c_reg_tile,
-            a_smem_iter,
-            b_smem_iter,
-            read_pipeline_states,
-            full,
-            empty,
-            wgmma_op,
-            UInt(local_warp_group_idx),
-            UInt(warp_group_thread_idx),
-        )
-
-        var output_reg_tile = (
-            final_c_reg_tile if a_type is DType.float8_e4m3fn else c_reg_tile
-        )
-
-        warp_specialized_gemm_output[
-            c_tile_shape = Index(BM, BN),
-            c_swizzle=c_swizzle,
-            wgmma_shape=wgmma_shape,
-            num_consumer=num_consumer,
-            use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](
-            c_tma_op,
-            c,
-            c_smem_tile,
-            output_reg_tile,
-            UInt(warp_group_thread_idx),
-            UInt(local_warp_group_idx),
-            UInt(thread_idx.x - WARPGROUP_SIZE),
-            block_idx_swizzle[1],
-            block_idx_swizzle[0],
-        )
-
-    @parameter
-    if pdl_level >= PDLLevel.OVERLAP_AT_END:
-        launch_dependent_grids()
-
-    # TO ensure SMEM destruction doesn't happen
-    @parameter
-    if cluster_size[cluster_shape]() > 1:
-        cluster_sync()
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
-    `nvvm.cluster_dim`=cluster_shape,
-)
-@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    c_layout: Layout,
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
-    c_tma_layout: Layout,
-    c_smem_layout: Layout,
-    cluster_shape: StaticTuple[Int32, 3],
-    grid_shape: IndexList[2],
-    schedule: MatmulSchedule,
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    transpose_b: Bool = True,
-    num_threads: Int = 128,
-    pipeline_stages: Int = 7,
-    partitioned_multicast: Bool = False,
-    use_tma_store: Bool = False,
-    promotion_frequency: Int = 1,
-    pdl_level: PDLLevel = PDLLevel(),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
-        elementwise_compute_lambda_type
-    ] = None,
-](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    problem_shape: IndexList[3],
-):
-    constrained[transpose_b, "Only support transposed B in layout"]()
-
-    alias num_consumer = (num_threads // 128) - 1
-    alias num_consumer_threads = num_consumer * 128
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
-    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
-
-    alias K = b_layout.shape[1].value()
-    alias N = b_layout.shape[0].value()
-    alias M = a_layout.shape[0].value()
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
-
-    alias simd_size = simd_width_of[c_type]()
-
-    var scheduler = TileScheduler[
-        Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
-    ](problem_shape)
-
-    constrained[
-        not partitioned_multicast
-        or a_swizzle.bytes() // size_of[a_type]() == BK,
-        (
-            "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // size_of[a_type]"
-        ),
-    ]()
-    constrained[
-        not partitioned_multicast
-        or b_swizzle.bytes() // size_of[b_type]() == BK,
-        (
-            "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // size_of[b_type]"
-        ),
-    ]()
-
-    alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
-    alias num_n_mmas = BN // wgmma_shape[1]
-
-    alias accum_type = get_accum_type[a_type]()
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-
-    alias use_cluster = cluster_size[cluster_shape]() > 1
-
-    wgmma_op = TensorCoreAsync[
-        accum_type,
-        a_type,
-        b_type,
-        wgmma_shape,
-        a_swizzle=a_swizzle,
-        b_swizzle=b_swizzle,
-        transpose_b=transpose_b,
-    ]()
-
-    var work_info = scheduler.get_current_work_info()
-
-    var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
-    ]()
-
-    alias a_smem_size = a_smem_layout.size() * pipeline_stages
-    alias b_smem_size = b_smem_layout.size() * pipeline_stages
-    alias c_smem_size = c_smem_layout.size()
-
-    alias a_smem_bytes = a_smem_size * size_of[a_type]()
-    alias b_smem_bytes = b_smem_size * size_of[b_type]()
-    alias c_smem_bytes = c_smem_size * size_of[c_type]()
-
-    var a_smem = smem.bitcast[Scalar[a_type]]()
-    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
-    var c_smem = (smem + a_smem_bytes + b_smem_bytes).bitcast[Scalar[c_type]]()
-    var smem_pool = (smem + a_smem_bytes + b_smem_bytes + c_smem_bytes).bitcast[
-        Int64
-    ]()
-
-    var a_smem_iter = LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](a_smem, a_smem_size)
-
-    var b_smem_iter = LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](b_smem, b_smem_size)
-
-    var c_smem_tile = LayoutTensor[
-        c_type,
-        c_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](c_smem)
-
-    var a_mbars_ptr = smem_pool.bitcast[Int64]()
-    var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
-
-    full = a_mbars_ptr.bitcast[SharedMemBarrier]()
-    empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
-
-    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
-    alias num_k_iters = ceildiv(K, BK)
-
-    var rank_m = block_id_in_cluster.y
-    var rank_n = block_id_in_cluster.x
-
-    @parameter
-    if (
-        pdl_level > PDLLevel.OFF
-        and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-    ):
-        wait_on_dependent_grids()
-
-    var lane_predicate = elect_one_sync()
-    if thread_idx.x == 0:
-        a_tma_op.prefetch_descriptor()
-        b_tma_op.prefetch_descriptor()
-
-        @parameter
-        for i in range(pipeline_stages):
-            full[i].init(1)
-            empty[i].init(num_consumer * CLUSTER_SIZE)
-
-    @parameter
-    if cluster_size[cluster_shape]() > 1:
-        fence_mbarrier_init()
-        cluster_sync_relaxed()
-    else:
-        barrier()
-
-    var warp_id = get_warp_id()
-    if warp_group_idx == 0:
-        alias num_regs = 24 if num_consumer <= 2 else 32
-        warpgroup_reg_dealloc[num_regs]()
-        if warp_id == 0 and lane_predicate:
-            var write_pipeline_states = PipelineState[pipeline_stages]()
-
-            while work_info.is_valid():
-                var m_coord = work_info.m
-                var n_coord = work_info.n
-
-                async_load_AB[
-                    block_tile_shape=block_tile_shape,
-                    cluster_shape=cluster_shape,
-                    partitioned_multicast=partitioned_multicast,
-                    num_k_iters=num_k_iters,
-                ](
-                    a_tma_op,
-                    b_tma_op,
-                    a_smem_iter,
-                    b_smem_iter,
-                    UInt(m_coord),
-                    UInt(n_coord),
-                    0,
-                    rank_n,
-                    rank_m,
-                    write_pipeline_states,
-                    empty,
-                    full,
-                )
-                work_info = scheduler.fetch_next_work()
-
-    else:
-
-        @parameter
-        if num_consumer == 1 or num_consumer == 2:
-            alias num_regs = 256 if num_consumer == 1 else 240
-            warpgroup_reg_alloc[num_regs]()
-        else:
-            warpgroup_reg_alloc[160]()
-
-        var local_warp_group_idx = warp_group_idx - 1
-
-        var c_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        var final_c_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        @parameter
-        if a_type is DType.float8_e4m3fn:
-            _ = final_c_reg_tile.fill(0.0)
-        else:
-            _ = c_reg_tile.fill(0.0)
-
-        @parameter
-        for i in range(pipeline_stages):
-
-            @parameter
-            if cluster_size[cluster_shape]() > 1:
-                if warp_group_thread_idx < CLUSTER_SIZE:
-                    _ = empty[i].arrive_cluster(warp_group_thread_idx)
-            else:
-                if warp_group_thread_idx == 0:
-                    _ = empty[i].arrive()
-
-        var read_pipeline_states = PipelineState[pipeline_stages]()
-
-        while work_info.is_valid():
-            consumer_main_loop[
-                cluster_shape=cluster_shape,
-                promotion_frequency=promotion_frequency,
-                num_consumer=num_consumer,
-                num_k_iters=num_k_iters,
-            ](
-                final_c_reg_tile,
-                c_reg_tile,
-                a_smem_iter,
-                b_smem_iter,
-                read_pipeline_states,
-                full,
-                empty,
-                wgmma_op,
-                UInt(local_warp_group_idx),
-                UInt(warp_group_thread_idx),
-            )
-
-            var block_y = UInt(ceildiv(work_info.m, BM))
-            var block_x = UInt(ceildiv(work_info.n, BN))
-            var output_reg_tile = (
-                final_c_reg_tile if a_type
-                is DType.float8_e4m3fn else c_reg_tile
-            )
-
-            warp_specialized_gemm_output[
-                c_tile_shape = Index(BM, BN),
-                c_swizzle=c_swizzle,
-                wgmma_shape=wgmma_shape,
-                num_consumer=num_consumer,
-                use_tma_store=use_tma_store,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            ](
-                c_tma_op,
-                c,
-                c_smem_tile,
-                output_reg_tile,
-                UInt(warp_group_thread_idx),
-                UInt(local_warp_group_idx),
-                UInt(thread_idx.x - WARPGROUP_SIZE),
-                Int(block_y),
-                Int(block_x),
-            )
-            work_info = scheduler.fetch_next_work()
-
-    @parameter
-    if pdl_level >= PDLLevel.OVERLAP_AT_END:
-        launch_dependent_grids()
-
-    # TO ensure SMEM destruction doesn't happen
-    @parameter
-    if cluster_size[cluster_shape]() > 1:
-        cluster_sync()
-
-
-@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn hopper_matmul_tma_wgmma_kernel[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    c_layout: Layout,
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    transpose_b: Bool = True,
-    promotion_frequency: Int = 1,
-](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-):
-    constrained[transpose_b, "Only support transposed B in layout"]()
-
-    alias K = b_layout.shape[1].value()
-
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-
-    constrained[
-        a_type != DType.float8_e4m3fn or BK == 128,
-        "BK must be 128 for fp8 data type for numerical accuracy",
-    ]()
-
-    alias num_m_mmas = BM // wgmma_shape[0]
-    alias num_n_mmas = BN // wgmma_shape[1]
-
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK]()
-
-    alias accum_type = get_accum_type[a_type]()
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-
-    alias num_k_iters = ceildiv(K, BK)
-
-    var a_smem_tile = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ].stack_allocation()
-
-    var b_smem_tile = LayoutTensor[
-        b_type,
-        b_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ].stack_allocation()
-
-    var c_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-
-    var final_c_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-
-    @parameter
-    if a_type is DType.float8_e4m3fn:
-        _ = final_c_reg_tile.fill(0.0)
-    else:
-        _ = c_reg_tile.fill(0.0)
-
-    wgmma_op = TensorCoreAsync[
-        accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
-    ]()
-
-    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
-
-    mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
-        alignment=8,
-    ]()
-
-    var phase = PipelineState[1]()
-
-    if thread_idx.x == 0:
-        mbar[0].init()
-
-    barrier()
-
-    var fp8_promotion_iter = 0
-
-    for i in range(num_k_iters):
-        if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes)
-            a_tma_op.async_copy(
-                a_smem_tile,
-                mbar[0],
-                (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
-            )
-
-            b_tma_op.async_copy(
-                b_smem_tile,
-                mbar[0],
-                (UInt(i) * UInt(BK), block_idx.x * UInt(BN)),
-            )
-        barrier()
-
-        mbar[0].wait(phase.phase())
-        phase.step()
-
-        warpgroup_fence(c_reg_tile)
-        wgmma_op.arrive()
-
-        alias scale_c = 0 if a_type is DType.float8_e4m3fn else 1
-        wgmma_op.wgmma[scale_c=scale_c](a_smem_tile, b_smem_tile, c_reg_tile)
-
-        wgmma_op.commit_group()
-        warpgroup_fence(c_reg_tile)
-        wgmma_op.wait_group()
-        barrier()
-
-        @parameter
-        if a_type is DType.float8_e4m3fn:
-            fp8_promotion_iter += 1
-            if fp8_promotion_iter == promotion_frequency:
-                promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
-                fp8_promotion_iter -= promotion_frequency
-
-    # Final promotion for fp8 data type if num_k_iters % promotion_frequency != 0
-    @parameter
-    if a_type is DType.float8_e4m3fn:
-        if fp8_promotion_iter != 0:
-            promote_to_cuda_cores(c_reg_tile, final_c_reg_tile)
-
-    c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
-    warp_id = get_warp_id()
-
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
-            alias mma_id = n_mma * num_m_mmas + m_mma
-
-            # (m_mma, n_mma) is coordinates for a warp group's tile.
-            # A warp group is 4x1 warps.
-            warp_tile = c_gmem_tile.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
-                Int(m_mma * 4 + warp_id), n_mma
-            )
-
-            # Tile at (mma_id, 0) is a long vector containing all fragments
-            # for this warp.
-            @parameter
-            if a_type is DType.float8_e4m3fn:
-                c_frag = final_c_reg_tile.tile[1, c_frag_size](mma_id, 0)
-            else:
-                c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
-
-            # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
-            # elementwise. This pattern repeats to fill the warp tile.
-            copy_local_to_dram[Layout.row_major(8, 4)](
-                warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
-            )
-
-
 fn _is_valid_cluster_shape[
     cluster_shape: IndexList[3]
 ](grid_shape: IndexList[2], num_tiles_n: Int) -> Bool:
@@ -1796,301 +1787,6 @@ fn _get_c_smem_layout[
             ),
         ]()
         return Layout.row_major(0, 0)
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
-    `nvvm.cluster_dim`=cluster_shape,
-)
-@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn cpasync_wgmma_kernel[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    c_desc_layout: Layout,
-    c_tma_layout: Layout,
-    c_smem_layout: Layout,
-    cluster_shape: StaticTuple[Int32, 3],
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    transpose_b: Bool = True,
-    num_threads: Int = 128,
-    pipeline_stages: Int = 7,
-    partitioned_multicast: Bool = False,
-    use_tma_store: Bool = False,
-    promotion_frequency: Int = 1,
-    pdl_level: PDLLevel = PDLLevel(),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
-        elementwise_compute_lambda_type
-    ] = None,
-](
-    c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-):
-    constrained[transpose_b, "Only support transposed B in layout"]()
-
-    alias num_consumer = (num_threads // 128) - 1
-    alias num_consumer_threads = num_consumer * 128
-    alias CLUSTER_N = UInt(cluster_shape[0])
-    alias CLUSTER_M = UInt(cluster_shape[1])
-    alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
-
-    alias K = b_layout.shape[1].value()
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
-
-    alias simd_size = simd_width_of[c_type]()
-
-    constrained[
-        not partitioned_multicast
-        or a_swizzle.bytes() // size_of[a_type]() == BK,
-        (
-            "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // size_of[a_type]"
-        ),
-    ]()
-    constrained[
-        not partitioned_multicast
-        or b_swizzle.bytes() // size_of[b_type]() == BK,
-        (
-            "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // size_of[b_type]"
-        ),
-    ]()
-
-    alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
-    alias num_n_mmas = BN // wgmma_shape[1]
-
-    alias accum_type = get_accum_type[a_type]()
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
-
-    alias use_cluster = cluster_size[cluster_shape]() > 1
-    var block_idx_swizzle: __type_of(Index[dtype = DType.uint32](0, 0))
-
-    @parameter
-    if not use_cluster:
-        block_idx_swizzle = block_swizzle(
-            Index[dtype = DType.uint32](block_idx.x, block_idx.y),
-            Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
-        )
-    else:
-        block_idx_swizzle = Index[dtype = DType.uint32](
-            block_idx.x, block_idx.y
-        )
-
-    wgmma_op = TensorCoreAsync[
-        accum_type,
-        a_type,
-        b_type,
-        wgmma_shape,
-        a_swizzle=a_swizzle,
-        b_swizzle=b_swizzle,
-        transpose_b=transpose_b,
-    ]()
-
-    var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
-    ]()
-
-    alias a_smem_size = a_smem_layout.size() * pipeline_stages
-    alias b_smem_size = b_smem_layout.size() * pipeline_stages
-
-    alias a_smem_bytes = a_smem_size * size_of[a_type]()
-    alias b_smem_bytes = b_smem_size * size_of[b_type]()
-
-    alias c_smem_size = c_smem_layout.size()
-    alias c_smem_bytes = c_smem_size * size_of[c_type]()
-
-    var a_smem = smem.bitcast[Scalar[a_type]]()
-    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
-    var c_smem = (smem + a_smem_bytes + b_smem_bytes).bitcast[Scalar[c_type]]()
-    var smem_pool = (smem + a_smem_bytes + b_smem_bytes + c_smem_bytes).bitcast[
-        Int64
-    ]()
-
-    var a_smem_iter = LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](a_smem, a_smem_size)
-
-    var b_smem_iter = LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](b_smem, b_smem_size)
-
-    var c_smem_tile = LayoutTensor[
-        c_type,
-        c_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ](c_smem)
-
-    var a_mbars_ptr = smem_pool.bitcast[Int64]()
-    var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
-
-    alias k_align = find_K_alignment_upto_16B(K * size_of[a_type]())
-    full = a_mbars_ptr.bitcast[SharedMemBarrier]()
-    empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
-
-    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
-    alias num_k_iters = ceildiv(K, BK)
-
-    var rank_m = block_id_in_cluster.y
-    var rank_n = block_id_in_cluster.x
-
-    @parameter
-    if (
-        pdl_level > PDLLevel.OFF
-        and pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
-    ):
-        wait_on_dependent_grids()
-
-    var lane_predicate = elect_one_sync()
-
-    if thread_idx.x == 0:
-
-        @parameter
-        for i in range(pipeline_stages):
-            full[i].init(WARPGROUP_SIZE)
-            empty[i].init(num_consumer * CLUSTER_SIZE)
-
-    # We need this to guarantee that the Pipeline init is visible
-    # To all producers and consumer blocks in the cluster
-    @parameter
-    if cluster_size[cluster_shape]() > 1:
-        fence_mbarrier_init()
-        cluster_sync_relaxed()
-    else:
-        barrier()
-
-    var warp_id = get_warp_id()
-    if warp_group_idx == 0:
-        warpgroup_reg_dealloc[32]()
-
-        var write_pipeline_states = PipelineState[pipeline_stages]()
-
-        var m_coord = block_idx_swizzle[1]
-        var n_coord = block_idx_swizzle[0]
-
-        async_load_AB[
-            swizzle_mode=a_swizzle,
-            cp_size = k_align // size_of[a_type](),
-            num_k_iters=num_k_iters,
-            block_tile_shape=block_tile_shape,
-        ](
-            a,
-            b,
-            UInt(block_idx_swizzle[1]),
-            UInt(block_idx_swizzle[0]),
-            a_smem_iter,
-            b_smem_iter,
-            write_pipeline_states,
-            empty,
-            full,
-        )
-
-    else:
-        constrained[num_consumer <= 2, "Only support 1 or 2 consumer"]()
-        warpgroup_reg_alloc[232]()
-
-        var local_warp_group_idx = warp_group_idx - 1
-
-        var c_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        var final_c_reg_tile = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-
-        @parameter
-        for i in range(pipeline_stages):
-
-            @parameter
-            if cluster_size[cluster_shape]() > 1:
-                if warp_group_thread_idx < CLUSTER_SIZE:
-                    _ = empty[i].arrive_cluster(warp_group_thread_idx)
-            else:
-                if warp_group_thread_idx == 0:
-                    _ = empty[i].arrive()
-
-        var read_pipeline_states = PipelineState[pipeline_stages]()
-
-        consumer_main_loop[
-            cluster_shape=cluster_shape,
-            promotion_frequency=promotion_frequency,
-            num_consumer=num_consumer,
-            num_k_iters=num_k_iters,
-        ](
-            final_c_reg_tile,
-            c_reg_tile,
-            a_smem_iter,
-            b_smem_iter,
-            read_pipeline_states,
-            full,
-            empty,
-            wgmma_op,
-            UInt(local_warp_group_idx),
-            UInt(warp_group_thread_idx),
-        )
-
-        var output_reg_tile = (
-            final_c_reg_tile if a_type is DType.float8_e4m3fn else c_reg_tile
-        )
-
-        warp_specialized_gemm_output[
-            c_tile_shape = Index(BM, BN),
-            c_swizzle=c_swizzle,
-            wgmma_shape=wgmma_shape,
-            num_consumer=num_consumer,
-            use_tma_store=use_tma_store,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        ](
-            c_tma_op,
-            c,
-            c_smem_tile,
-            output_reg_tile,
-            UInt(warp_group_thread_idx),
-            UInt(local_warp_group_idx),
-            UInt(thread_idx.x - WARPGROUP_SIZE),
-            block_idx_swizzle[1],
-            block_idx_swizzle[0],
-        )
-
-    @parameter
-    if pdl_level >= PDLLevel.OVERLAP_AT_END:
-        launch_dependent_grids()
-
-    # TO ensure SMEM destruction doesn't happen
-    @parameter
-    if cluster_size[cluster_shape]() > 1:
-        cluster_sync()
 
 
 fn warp_specialize_gemm_with_multicasting[
@@ -2253,16 +1949,49 @@ fn warp_specialize_gemm_with_multicasting[
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)
 
     alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
-    alias smem_size = Int(config.num_pipeline_stages) * (
-        BM * BK * size_of[a_type]()
-        + BN * BK * size_of[b_type]()
-        + (size_of[Int64]() * 2)
-    ) + c_smem_layout.size() * size_of[c_type]()
+
+    # Use the shared memory struct to calculate the size
+    alias SMem = HopperMatmulSM90Kernel_SMem[
+        a_type,
+        tile_layout_k_major[a_type, BM, BK, a_swizzle](),
+        b_type,
+        tile_layout_k_major[b_type, BN, BK, b_swizzle](),
+        c_type,
+        c_smem_layout,
+        Int(config.num_pipeline_stages),
+    ]
+    alias smem_size = SMem.storage_size()
 
     constrained[
         smem_size <= H100.shared_memory_per_multiprocessor - 1024,
         "requested SMEM size exceeds 227KB limit.",
     ]()
+
+    alias matmul_kernel[hilbert_swizzle: Bool = False] = HopperMatmulSM90Kernel[
+        a_type,
+        b_type,
+        c_type,
+        a.layout,
+        b.layout,
+        c.layout,
+        c_smem_layout,
+        config.block_tile_shape,
+        config.mma_shape,
+        cluster_shape,
+        Int(config.num_pipeline_stages),
+        Int(num_threads),
+        transpose_b=True,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        c_swizzle=c_swizzle,
+        partitioned_multicast = config.partitioned_multicast,
+        use_tma_store=use_tma_store,
+        promotion_frequency=1,
+        pdl_level = config.pdl_level(),
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        hilbert_swizzle=hilbert_swizzle,
+    ]
 
     # TMA requires stride (K) multiple of 16B. If not satisfied,
     # we need to use cp.async.ca for 4B and 8B access, and ld for
@@ -2288,34 +2017,15 @@ fn warp_specialize_gemm_with_multicasting[
 
         @parameter
         if schedule != MatmulSchedule.NONE:
-            alias kernel = tma_wgmma_warp_specialized_gemm_kernel_persistent[
-                a_type,
-                b_type,
-                c_type,
-                __type_of(a).layout,
-                __type_of(b).layout,
-                __type_of(a_tma_op).layout,
-                __type_of(b_tma_op).layout,
-                __type_of(c).layout,
-                config.block_tile_shape,
-                config.mma_shape,
-                __type_of(a_tma_op).desc_layout,
-                __type_of(b_tma_op).desc_layout,
-                __type_of(c_tma_op).desc_layout,
-                __type_of(c_tma_op).layout,
-                c_smem_layout,
-                c_swizzle=c_swizzle,
-                cluster_shape=cluster_shape,
+            alias kernel = matmul_kernel[].run_persistent[
+                a_tma_op.layout,
+                b_tma_op.layout,
+                c_tma_op.layout,
+                a_tma_op.desc_layout,
+                b_tma_op.desc_layout,
+                c_tma_op.desc_layout,
                 grid_shape=grid_shape_adjusted,
                 schedule=schedule,
-                transpose_b=True,
-                num_threads = Int(num_threads),
-                pipeline_stages = Int(config.num_pipeline_stages),
-                partitioned_multicast = config.partitioned_multicast,
-                use_tma_store=use_tma_store,
-                pdl_level = config.pdl_level(),
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             ]
 
             ctx.enqueue_function[kernel](
@@ -2333,33 +2043,13 @@ fn warp_specialize_gemm_with_multicasting[
                 attributes=pdl_launch_attributes(config.pdl_level()),
             )
         else:
-            alias kernel = tma_wgmma_warp_specialized_gemm_kernel[
-                a_type,
-                b_type,
-                c_type,
-                __type_of(a).layout,
-                __type_of(b).layout,
-                __type_of(a_tma_op).layout,
-                __type_of(b_tma_op).layout,
-                __type_of(c).layout,
-                config.block_tile_shape,
-                config.mma_shape,
-                __type_of(a_tma_op).desc_layout,
-                __type_of(b_tma_op).desc_layout,
-                __type_of(c_tma_op).desc_layout,
-                __type_of(c_tma_op).layout,
-                c_smem_layout,
-                c_swizzle=c_swizzle,
-                cluster_shape=cluster_shape,
-                transpose_b=True,
-                num_threads = Int(num_threads),
-                pipeline_stages = Int(config.num_pipeline_stages),
-                partitioned_multicast = config.partitioned_multicast,
-                use_tma_store=use_tma_store,
-                pdl_level = config.pdl_level(),
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                hilbert_swizzle=hilbert_swizzle,
+            alias kernel = matmul_kernel[hilbert_swizzle=hilbert_swizzle].run[
+                a_tma_op.layout,
+                b_tma_op.layout,
+                c_tma_op.layout,
+                a_tma_op.desc_layout,
+                b_tma_op.desc_layout,
+                c_tma_op.desc_layout,
             ]
 
             ctx.enqueue_function[kernel](
@@ -2381,28 +2071,10 @@ fn warp_specialize_gemm_with_multicasting[
 
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
     else:
-        alias kernel = cpasync_wgmma_kernel[
-            a_type,
-            b_type,
-            c_type,
-            __type_of(a).layout,
-            __type_of(b).layout,
-            __type_of(c).layout,
-            config.block_tile_shape,
-            config.mma_shape,
-            __type_of(c_tma_op).desc_layout,
-            __type_of(c_tma_op).layout,
-            c_smem_layout,
-            cluster_shape=cluster_shape,
-            c_swizzle=c_swizzle,
-            transpose_b=True,
-            num_threads = Int(num_threads),
-            pipeline_stages = Int(config.num_pipeline_stages),
-            partitioned_multicast = config.partitioned_multicast,
-            use_tma_store=use_tma_store,
-            pdl_level = config.pdl_level(),
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        alias kernel = matmul_kernel[].run_unaligned[
+            c_tma_op.desc_layout,
+            c_tma_op.layout,
+            pipeline_stages = config.num_pipeline_stages,
         ]
 
         ctx.enqueue_function[kernel](

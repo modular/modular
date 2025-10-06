@@ -2271,7 +2271,12 @@ struct DeviceFunction[
 
         @parameter
         for i in range(num_args):
-            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+            # TODO(MSTDL-1904): Validate the safety of this.
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .origin_cast[True]()
+            )
 
         @parameter
         fn _populate_arg_sizes[i: Int]():
@@ -2419,7 +2424,12 @@ struct DeviceFunction[
 
         @parameter
         for i in range(num_args):
-            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+            # TODO(MSTDL-1904): Validate the safety of this.
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .origin_cast[True]()
+            )
 
         if cluster_dim:
             attributes.append(
@@ -2984,7 +2994,12 @@ struct DeviceExternalFunction:
 
         @parameter
         for i in range(num_args):
-            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+            # TODO(MSTDL-1904): Validate the safety of this.
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .origin_cast[True]()
+            )
 
         if cluster_dim:
             attributes.append(
@@ -3151,7 +3166,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 "AsyncRT_DeviceContext_create",
                 _ConstCharPtr,
                 UnsafePointer[_DeviceContextPtr],
-                UnsafePointer[c_char],
+                UnsafePointer[c_char, mut=False],
                 Int32,
             ](
                 UnsafePointer(to=result),
