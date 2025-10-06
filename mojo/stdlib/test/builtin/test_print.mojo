@@ -14,7 +14,7 @@
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __call_location, _SourceLocation
-from test_utils import TestSuite
+from testing import TestSuite
 
 from utils import IndexList
 

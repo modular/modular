@@ -23,7 +23,7 @@ from sys.intrinsics import assume, likely, unlikely
 
 from memory import memset_zero
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 alias F32x4 = SIMD[DType.float32, 4]
 alias F32x8 = SIMD[DType.float32, 8]

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def raise_an_error():

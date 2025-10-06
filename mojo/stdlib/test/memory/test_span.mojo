@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_equal, assert_raises, assert_true
 
 

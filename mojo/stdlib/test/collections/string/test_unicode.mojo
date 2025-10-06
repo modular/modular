@@ -14,7 +14,7 @@
 from collections.string._unicode import _get_uppercase_mapping
 
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_uppercase_conversion():

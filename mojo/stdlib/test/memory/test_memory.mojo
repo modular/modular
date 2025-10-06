@@ -14,7 +14,7 @@
 from sys import simd_width_of, size_of
 
 from memory import AddressSpace, memcmp, memcpy, memset, memset_zero
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import (
     assert_almost_equal,
     assert_equal,

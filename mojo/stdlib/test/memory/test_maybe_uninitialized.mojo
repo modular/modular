@@ -17,9 +17,8 @@ from test_utils import (
     CopyCounter,
     DelRecorder,
     MoveCounter,
-    TestSuite,
 )
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 def test_maybe_uninitialized():

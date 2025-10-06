@@ -14,7 +14,7 @@
 from collections import OptionalReg
 
 from testing import *
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_basic():

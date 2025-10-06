@@ -14,7 +14,7 @@
 from sys import size_of
 
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_size_of_dtypes():

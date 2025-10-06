@@ -13,7 +13,7 @@
 
 from algorithm._sorting_network import _sort
 from testing import assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 alias sizes = [
     2,

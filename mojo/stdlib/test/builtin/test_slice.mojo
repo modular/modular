@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_none_end_folds():

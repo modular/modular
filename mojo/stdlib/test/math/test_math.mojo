@@ -45,7 +45,7 @@ from math import (
 from math.math import _call_libm
 from sys import CompilationTarget
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
 from utils.numerics import inf, isinf, isnan, nan, neg_inf

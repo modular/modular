@@ -15,7 +15,7 @@ from base64 import b16decode, b16encode, b64decode, b64encode
 
 
 from testing import assert_equal, assert_raises
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_b64encode():

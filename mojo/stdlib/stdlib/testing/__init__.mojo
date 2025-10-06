@@ -24,3 +24,5 @@ from .testing import (
     assert_raises,
     assert_true,
 )
+
+from .suite import TestSuite

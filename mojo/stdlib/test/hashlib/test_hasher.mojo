@@ -16,7 +16,7 @@ from hashlib.hasher import Hasher
 from pathlib import Path
 
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 struct DummyHasher(Hasher):

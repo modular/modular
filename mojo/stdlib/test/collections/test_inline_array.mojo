@@ -14,8 +14,8 @@
 from sys.info import size_of
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import CopyCounter, DelRecorder, MoveCounter, TestSuite
-from testing import assert_equal, assert_true
+from test_utils import CopyCounter, DelRecorder, MoveCounter
+from testing import assert_equal, assert_true, TestSuite
 
 
 def test_array_unsafe_get():

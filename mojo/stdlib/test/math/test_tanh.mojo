@@ -15,8 +15,8 @@ from math import tanh
 from random import randn, seed
 
 from buffer import NDBuffer
-from test_utils import compare, libm_call, TestSuite
-from testing import assert_almost_equal
+from test_utils import compare, libm_call
+from testing import assert_almost_equal, TestSuite
 
 
 fn tanh_libm[

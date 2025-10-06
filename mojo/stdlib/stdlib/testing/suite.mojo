@@ -30,7 +30,7 @@ fn _get_test_func_name[
 
 
 @fieldwise_init
-struct Color(ImplicitlyCopyable, Movable, Writable):
+struct _Color(ImplicitlyCopyable, Movable, Writable):
     """ANSI colors for terminal output."""
 
     var color: StaticString
@@ -49,23 +49,23 @@ struct Color(ImplicitlyCopyable, Movable, Writable):
 
 
 @fieldwise_init
-struct ColorText[W: Writable, origin: ImmutableOrigin](Writable):
-    """Colors the given writable with the given `Color`."""
+struct _ColorText[W: Writable, origin: ImmutableOrigin](Writable):
+    """Colors the given writable with the given `_Color`."""
 
     var writable: Pointer[W, origin]
-    var color: Color
+    var color: _Color
 
-    fn __init__(out self, ref [origin]w: W, color: Color):
+    fn __init__(out self, ref [origin]w: W, color: _Color):
         self.writable = Pointer(to=w)
         self.color = color
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.color)
         self.writable[].write_to(writer)
-        writer.write(Color.END)
+        writer.write(_Color.END)
 
 
-struct Indent[W: Writable, origin: ImmutableOrigin](Writable):
+struct _Indent[W: Writable, origin: ImmutableOrigin](Writable):
     """Indents the given writable by the given level."""
 
     alias IndentStr = "  "
@@ -84,7 +84,7 @@ struct Indent[W: Writable, origin: ImmutableOrigin](Writable):
 
 
 fn _format_nsec(nanoseconds: UInt) -> String:
-    """Formats the given number of nanoseconds.
+    """Formats the given number of nanoseconds as milliseconds.
 
     The returned string is in the format of "NNN.NNN"
     """
@@ -99,16 +99,16 @@ fn _format_nsec(nanoseconds: UInt) -> String:
     var result = String(ms_total, ".")
 
     if fractional_ms < 10:
-        result += "00"
+        result.write("00")
     elif fractional_ms < 100:
-        result += "0"
+        result.write("0")
 
-    result += String(fractional_ms)
+    result.write(fractional_ms)
     return result
 
 
 @fieldwise_init
-struct Test(Copyable & Movable):
+struct _Test(Copyable & Movable):
     """A single test to run."""
 
     var test_fn: fn () raises
@@ -116,22 +116,38 @@ struct Test(Copyable & Movable):
 
 
 @explicit_destroy("TestSuite must be ran via `TestSuite.run`")
-struct TestSuite:
+struct TestSuite(Movable):
     """A suite of tests to run.
 
     You can enqueue tests by calling the `test` method, and then running the
     entire suite by calling the `run` method.
+
+    Example:
+
+    ```mojo
+    from testing import assert_equal, TestSuite
+
+    def some_test():
+        assert_equal(1 + 1, 2)
+
+    def main():
+        var suite = TestSuite()
+
+        suite.test[some_test]()
+
+        suite^.run()
+    ```
     """
 
     alias _ErrorIndent = 3
 
-    var tests: List[Test]
+    var tests: List[_Test]
     var name: StaticString
 
     @always_inline
     fn __init__(out self):
         """Create a new test suite."""
-        self.tests = List[Test]()
+        self.tests = List[_Test]()
 
         var file_name = __call_location().file_name
         self.name = file_name.split(sep)[-1]
@@ -145,11 +161,11 @@ struct TestSuite:
         Parameters:
             f: The function to run.
         """
-        self.tests.append(Test(f, _get_test_func_name[f]()))
+        self.tests.append(_Test(f, _get_test_func_name[f]()))
 
     @staticmethod
     fn _format_error(e: Error) -> String:
-        var replacement = String("\n", Indent("", level=Self._ErrorIndent))
+        var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
         return e.__str__().replace("\n", replacement)
 
     def run(deinit self):
@@ -162,24 +178,24 @@ struct TestSuite:
         var failures = 0
         var runtime = 0
         print(
-            ColorText("Running", Color.GREEN),
-            ColorText(n_tests, Color.BOLD_WHITE),
+            _ColorText("Running", _Color.GREEN),
+            _ColorText(n_tests, _Color.BOLD_WHITE),
             "tests for",
-            ColorText(self.name, Color.CYAN),
+            _ColorText(self.name, _Color.CYAN),
         )
 
-        var passed = ColorText("PASS", Color.GREEN)
-        var failed = ColorText("FAIL", Color.RED)
+        var passed = _ColorText("PASS", _Color.GREEN)
+        var failed = _ColorText("FAIL", _Color.RED)
 
         for test in self.tests:
-            var name = ColorText(test.name, Color.CYAN)
+            var name = _ColorText(test.name, _Color.CYAN)
             var start = perf_counter_ns()
             try:
                 test.test_fn()
                 var duration = perf_counter_ns() - start
                 runtime += duration
                 print(
-                    Indent(passed, level=2),
+                    _Indent(passed, level=2),
                     "[",
                     _format_nsec(duration),
                     "]",
@@ -190,32 +206,32 @@ struct TestSuite:
                 var duration = perf_counter_ns() - start
                 runtime += duration
                 print(
-                    Indent(failed, level=2),
+                    _Indent(failed, level=2),
                     "[",
                     _format_nsec(duration),
                     "]",
                     name,
                 )
-                print(Indent(Self._format_error(e), level=Self._ErrorIndent))
+                print(_Indent(Self._format_error(e), level=Self._ErrorIndent))
 
         print("--------")
         print(
             " ",
-            ColorText("Summary", Color.MAGENTA),
+            _ColorText("Summary", _Color.MAGENTA),
             " [ ",
             _format_nsec(runtime),
             " ] ",
-            ColorText(n_tests, Color.BOLD_WHITE),
+            _ColorText(n_tests, _Color.BOLD_WHITE),
             " tests run: ",
-            ColorText(n_tests - failures, Color.BOLD_WHITE),
-            ColorText(" passed", Color.GREEN),
+            _ColorText(n_tests - failures, _Color.BOLD_WHITE),
+            _ColorText(" passed", _Color.GREEN),
             ", ",
-            ColorText(failures, Color.BOLD_WHITE),
-            ColorText(" failed", Color.RED),
+            _ColorText(failures, _Color.BOLD_WHITE),
+            _ColorText(" failed", _Color.RED),
             sep="",
         )
 
         if failures > 0:
             raise Error(
-                "Test suite '", ColorText(self.name, Color.CYAN), "' failed!"
+                "Test suite '", _ColorText(self.name, _Color.CYAN), "' failed!"
             )

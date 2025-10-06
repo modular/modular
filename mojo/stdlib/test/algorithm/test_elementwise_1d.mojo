@@ -17,7 +17,7 @@ from sys.info import simd_width_of
 from algorithm import elementwise
 from buffer import NDBuffer
 from testing import assert_almost_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 from utils.index import IndexList
 

@@ -15,7 +15,7 @@ from sys.info import bit_width_of
 
 from bit._mask import is_negative, splat
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_is_negative():

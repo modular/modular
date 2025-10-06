@@ -14,7 +14,7 @@
 from collections._index_normalization import normalize_index
 
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_out_of_bounds_message():

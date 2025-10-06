@@ -16,7 +16,7 @@ from io.write import Writable, Writer, _hex_digits_to_hex_chars, _write_hex
 from memory.memory import memset_zero
 from testing import assert_equal
 
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 @fieldwise_init

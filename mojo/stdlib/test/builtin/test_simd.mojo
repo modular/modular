@@ -17,7 +17,7 @@ from sys.info import CompilationTarget, is_64bit
 from bit import count_leading_zeros
 from builtin.simd import _modf
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 from utils import StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
