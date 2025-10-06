@@ -12,7 +12,6 @@ _WHEELS = [
 ]
 
 PYTHON_VERSIONS = [
-    "39",
     "310",
     "311",
     "312",

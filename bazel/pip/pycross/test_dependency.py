@@ -84,7 +84,7 @@ def test_universal_constraints() -> None:
 def test_python_version_constraints() -> None:
     blob = {
         "name": "example_package",
-        "marker": "python_version < '3.10'",
+        "marker": "python_version < '3.11'",
     }
     all_versions = {"example_package": "1.0.0"}
     dependency = Dependency(blob, all_versions)
@@ -92,9 +92,9 @@ def test_python_version_constraints() -> None:
     constraints, gpu_constraints = dependency.constraints()
     assert not gpu_constraints
     assert constraints == [
-        ":_env_python_3.9_aarch64-apple-darwin",
-        ":_env_python_3.9_aarch64-unknown-linux-gnu",
-        ":_env_python_3.9_x86_64-unknown-linux-gnu",
+        ":_env_python_3.10_aarch64-apple-darwin",
+        ":_env_python_3.10_aarch64-unknown-linux-gnu",
+        ":_env_python_3.10_x86_64-unknown-linux-gnu",
     ]
 
 
@@ -113,7 +113,7 @@ def test_pypy_constraints() -> None:
 def test_wild_constraint() -> None:
     blob = {
         "name": "example_package",
-        "marker": "(python_full_version < '3.10' and sys_platform == 'darwin') or (python_full_version < '3.10' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')",
+        "marker": "(python_full_version < '3.11' and sys_platform == 'darwin') or (python_full_version < '3.11' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')",
     }
     all_versions = {"example_package": "1.0.0"}
     dependency = Dependency(blob, all_versions)
@@ -121,9 +121,9 @@ def test_wild_constraint() -> None:
     constraints, gpu_constraints = dependency.constraints()
     assert not gpu_constraints
     assert constraints == [
-        ":_env_python_3.9_aarch64-apple-darwin",
-        ":_env_python_3.9_aarch64-unknown-linux-gnu",
-        ":_env_python_3.9_x86_64-unknown-linux-gnu",
+        ":_env_python_3.10_aarch64-apple-darwin",
+        ":_env_python_3.10_aarch64-unknown-linux-gnu",
+        ":_env_python_3.10_x86_64-unknown-linux-gnu",
     ]
 
 
@@ -142,7 +142,6 @@ def test_nvidia_only_constraints() -> None:
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu",
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu",
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu",
-        ":_env_python_3.9_x86_64-unknown-linux-gnu_nvidia_gpu",
     ]
 
 
@@ -161,7 +160,6 @@ def test_amd_only_constraints() -> None:
         ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu",
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu",
         ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu",
-        ":_env_python_3.9_x86_64-unknown-linux-gnu_amd_gpu",
     ]
 
 
@@ -184,6 +182,4 @@ def test_multi_gpu_constraints() -> None:
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu",
         ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu",
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu",
-        ":_env_python_3.9_x86_64-unknown-linux-gnu_amd_gpu",
-        ":_env_python_3.9_x86_64-unknown-linux-gnu_nvidia_gpu",
     ]

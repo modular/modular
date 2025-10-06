@@ -1,7 +1,7 @@
 [project]
 name = "bazel-pyproject"
 version = "0"
-requires-python = ">=3.9" # NOTE: Must be kept in sync with other global settings
+requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settings
 dependencies = [
   "editdistance",
   "absl-py",
