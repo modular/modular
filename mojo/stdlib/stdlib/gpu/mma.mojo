@@ -925,20 +925,18 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
     and access patterns for warp group matrix multiply operations. The descriptor contains
     the following bit fields:
 
-    - Start address (14 bits): Base address in shared memory.
-    - Leading byte offset (14 bits): Leading dimension stride in bytes.
-    - Stride byte offset (14 bits): Stride dimension offset in bytes.
-    - Base offset (3 bits): Additional offset.
-    - Swizzle mode (2 bits): Memory access pattern.
+    | Bit field | Size | Description |
+    |-----------|------|-------------|
+    | 0-13   |  14  | Base address in shared memory |
+    | 16-29   |  14  | LBO: leading dim byte offset |
+    | 32-45   |  14  | SBO: stride dim byte offset |
+    | 49-51   |   3  | Matrix base offset, 0 for canonical layouts |
+    | 62-63   |   2  | Swizzle mode: <br>&nbsp;&nbsp;0: no swizzle, <br>&nbsp;&nbsp;1: 128B swizzle, <br>&nbsp;&nbsp;2: 64B swizzle, <br>&nbsp;&nbsp;3: 32B swizzle |
 
-    The bit layout is:
-    +----------+----+------------+----+------------+----+-----+----------+-----+
-    |   0-13   |14-15|   16-29   |30-31|   32-45   |46-48|49-51|  52-61  |62-63|
-    +----------+----+------------+----+------------+----+-----+----------+-----+
-    |  14bits  |2bits|  14bits   |2bits|  14bits   |2bits|3bits| 10bits  |2bits|
-    +----------+----+------------+----+------------+----+-----+----------+-----+
-    | BaseAddr |  0  |LeadingDim |  0  |  Stride   |  0  |Offst|    0    |Swzle|
-    +----------+----+------------+----+------------+----+-----+----------+-----+
+    Note:
+
+    - Some bits are unused.
+    - Base address, LBO, and SBO ignore 4 least significant bits.
 
     Parameters:
         dtype: The data type of the shared memory operand. This affects memory alignment

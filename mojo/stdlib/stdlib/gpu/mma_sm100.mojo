@@ -739,21 +739,21 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
     and access patterns for warp group matrix multiply operations. The descriptor contains
     the following bit fields:
 
-    bits layout:
+    | Bit field | Size | Description |
+    |-----------|------|-------------|
+    | 0-13   |  14  | Base address in shared memory |
+    | 16-29   |  14  | LBO: leading dim byte offset |
+    | 32-45   |  14  | SBO: stride dim byte offset |
+    | 46-48   |   3  | Fixed constant value: 0b001 |
+    | 49-51   |   3  | Matrix base offset, 0 for canonical layouts |
+    | 52      |   1  | Leading dimension stride mode:<br>&nbsp;&nbsp;0: byte offset relative<br>&nbsp;&nbsp;1: byte address absolute<br>(only used for 48B K tile) |
+    | 53-60   |   8  | Fixed constant value: 0 |
+    | 61-63   |   3  | Swizzle mode:<br>&nbsp;&nbsp;0: No swizzling<br>&nbsp;&nbsp;1: 128-Byte with 32B atomic swizzling<br>&nbsp;&nbsp;2: 128-Byte swizzling<br>&nbsp;&nbsp;4: 64-Byte swizzling<br>&nbsp;&nbsp;6: 32-Byte swizzling |
 
-    Bit-field | size | Description
-       0-13   |  14  | Base address in shared memory
-      14-15   |   2  | Unused, 0
-      16-29   |  14  | LBO: leading dim byte offset
-      30-31   |   2  | Unused, 0
-      32-45   |  14  | SBO: stride dim byte offset
-      46-48   |   3  | Unused, 0
-      49-51   |   3  | Matrix Base offset, 0 for canonical layouts
-      52      |   1  | LBO mode, only matters for 48B K tile
-      53-60   |   8  | fixed, 0
-      61-63   |   3  | Swizzle mode
+    Note:
 
-    - Start address, LBO, SBO ignores 4 LSBs.
+    - Some bits are unused.
+    - Base address, LBO, and SBO ignore 4 least significant bits.
 
     See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-shared-memory-desc-layout
 
