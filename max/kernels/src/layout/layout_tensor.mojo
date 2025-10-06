@@ -1946,7 +1946,8 @@ struct LayoutTensor[
         - The elements are loaded according to the tensor's stride configuration.
         """
         constrained[self.rank == coords.size]()
-        constrained[Int(self.layout.stride[self.rank - 1]) == 1]()
+        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
+
         var idx = self.runtime_layout(
             RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
         )
@@ -1984,6 +1985,38 @@ struct LayoutTensor[
         """
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
             self.ptr.offset(self._offset(m, n))
+        )
+
+    @always_inline
+    fn prefetch(self, coords: IndexList):
+        """Prefetch tensor data at the specified coordinates into cache.
+
+        Issues a software prefetch hint to the processor to load the data at
+        coords into the cache hierarchy. This can improve performance
+        by reducing memory latency for subsequent accesses to the same location.
+
+        Args:
+            coords: The indices.
+
+        Performance:
+
+        - Prefetching is a performance hint and does not guarantee data will be
+            cached.
+        - Most effective when issued sufficiently ahead of the actual data
+            access.
+        - Uses high locality prefetch to the data cache, optimized for data that
+            will be accessed multiple times.
+        - Can reduce memory access latency by 50-90% when used correctly.
+
+        Notes:
+
+        - Excessive prefetching can pollute the cache and degrade performance.
+        - Most beneficial for predictable access patterns that would otherwise
+            cause cache misses.
+        - No operation is performed on the prefetched data.
+        """
+        prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
+            self.ptr.offset(self._offset(coords))
         )
 
     @always_inline("nodebug")
@@ -2099,7 +2132,7 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
         constrained[self.rank == coords.size]()
-        constrained[Int(self.layout.stride[self.rank - 1]) == 1]()
+        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
 
         var idx = self.runtime_layout(
             RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)

@@ -27,10 +27,10 @@ fn test_case[
     var output_ref = output
 
     gather_elements(
-        data.ndbuffer,
-        indices.ndbuffer,
+        data.to_managed_tensor_slice().to_layout_tensor(),
+        indices.to_managed_tensor_slice().to_layout_tensor(),
         axis,
-        output.ndbuffer,
+        output.to_managed_tensor_slice().to_layout_tensor(),
     )
 
     assert_equal(output, output_ref)

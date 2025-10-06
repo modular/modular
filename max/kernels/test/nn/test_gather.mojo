@@ -18,8 +18,7 @@
 
 from sys import simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.gather_scatter import gather
 
 from utils.index import IndexList
@@ -36,53 +35,69 @@ fn test_gather() raises:
         alias row_size = 4
 
         # Setup input.
-        var input = NDBuffer[
+        var input = LayoutTensor[
             DType.float32,
-            2,
+            Layout.row_major(num_rows, row_size),
             MutableAnyOrigin,
-            DimList(num_rows, row_size),
-        ].stack_allocation[alignment=64]()
+        ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[2](i, j)] = Float32(i)
+                input[i, j] = Float32(i)
 
         # Setup indices.
         alias num_indices = 16
-        var indices = NDBuffer[
+        var indices = LayoutTensor[
             indices_type,
-            1,
+            Layout(num_indices),
             MutableAnyOrigin,
-            DimList(num_indices),
-        ].stack_allocation[alignment=64]()
+        ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_indices):
-            indices[IndexList[1](i)] = i // 2
+            indices[i] = i // 2
         indices[0] = -1
         indices[1] = -num_rows
 
         # create output
-        var output = NDBuffer[
+        var output = LayoutTensor[
             DType.float32,
-            2,
+            Layout.row_major(num_indices, row_size),
             MutableAnyOrigin,
-            DimList(num_indices, row_size),
-        ].stack_allocation[alignment=64]()
+        ].stack_allocation[stack_alignment=64]()
 
         # Test gather
         alias simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
 
+        alias output_layout = Layout.row_major[output.rank]()
+        alias input_layout = Layout.row_major[input.rank]()
+        alias indices_layout = Layout.row_major[indices.rank]()
+
         gather[axis=0](
-            output.make_dims_unknown(),
-            input.make_dims_unknown(),
-            indices.make_dims_unknown(),
+            LayoutTensor[output.dtype, output_layout](
+                output.ptr,
+                RuntimeLayout[output_layout].row_major(
+                    output.runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[input.dtype, input_layout](
+                input.ptr,
+                RuntimeLayout[input_layout].row_major(
+                    input.runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[indices.dtype, indices_layout](
+                indices.ptr,
+                RuntimeLayout[indices_layout].row_major(
+                    indices.runtime_layout.shape.value
+                ),
+            ),
         )
 
-        print(output[IndexList[2](0, 0)])
-        print(output[IndexList[2](1, 0)])
-        print(output[IndexList[2](2, 0)])
-        print(output[IndexList[2](6, 0)])
-        print(output[IndexList[2](15, 0)])
+        print(output[0, 0])
+        print(output[1, 0])
+        print(output[2, 0])
+        print(output[6, 0])
+        print(output[15, 0])
 
     # CHECK: 15.0
     # CHECK: 0.0
@@ -107,50 +122,66 @@ fn test_gather_3d() raises:
         alias row_size = 4
 
         # Setup input.
-        var input = NDBuffer[
+        var input = LayoutTensor[
             DType.float32,
-            3,
+            Layout.row_major(num_rows, row_size, 1),
             MutableAnyOrigin,
-            DimList(num_rows, row_size, 1),
-        ].stack_allocation[alignment=64]()
+        ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[3](i, j, 0)] = Float32(i)
+                input[i, j, 0] = Float32(i)
 
         # Setup indices.
         alias num_indices = 16
-        var indices = NDBuffer[
+        var indices = LayoutTensor[
             indices_type,
-            2,
+            Layout.row_major(num_indices, 1),
             MutableAnyOrigin,
-            DimList(num_indices, 1),
-        ].stack_allocation[alignment=64]()
+        ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_indices):
-            indices[IndexList[2](i, 0)] = i // 2
+            indices[i, 0] = i // 2
 
         # create output
-        var output = NDBuffer[
+        var output = LayoutTensor[
             DType.float32,
-            4,
+            Layout.row_major(num_indices, 1, row_size, 1),
             MutableAnyOrigin,
-            DimList(num_indices, 1, row_size, 1),
-        ].stack_allocation[alignment=64]()
+        ].stack_allocation[stack_alignment=64]()
 
         # Test gather
         alias simd_width = simd_width_of[DType.float32]()
 
+        alias output_layout = Layout.row_major[output.rank]()
+        alias input_layout = Layout.row_major[input.rank]()
+        alias indices_layout = Layout.row_major[indices.rank]()
+
         gather[axis=0](
-            output.make_dims_unknown(),
-            input.make_dims_unknown(),
-            indices.make_dims_unknown(),
+            LayoutTensor[output.dtype, output_layout](
+                output.ptr,
+                RuntimeLayout[output_layout].row_major(
+                    output.runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[input.dtype, input_layout](
+                input.ptr,
+                RuntimeLayout[input_layout].row_major(
+                    input.runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[indices.dtype, indices_layout](
+                indices.ptr,
+                RuntimeLayout[indices_layout].row_major(
+                    indices.runtime_layout.shape.value
+                ),
+            ),
         )
 
-        print(output[IndexList[4](0, 0, 0, 0)])
-        print(output[IndexList[4](2, 0, 0, 0)])
-        print(output[IndexList[4](6, 0, 0, 0)])
-        print(output[IndexList[4](15, 0, 0, 0)])
+        print(output[0, 0, 0, 0])
+        print(output[2, 0, 0, 0])
+        print(output[6, 0, 0, 0])
+        print(output[15, 0, 0, 0])
 
     # CHECK: 0.0
     # CHECK-NEXT: 1.0
@@ -182,16 +213,13 @@ fn test_gather_empty_indices() raises:
         var input_stack = InlineArray[Float32, num_rows * row_size](
             uninitialized=True
         )
-        var input = NDBuffer[
-            DType.float32,
-            2,
-            _,
-            DimList(num_rows, row_size),
+        var input = LayoutTensor[
+            DType.float32, Layout.row_major(num_rows, row_size)
         ](input_stack)
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[2](i, j)] = Float32(i)
+                input[i, j] = Float32(i)
 
         # Setup indices.
         # There isn't a way to represent a stack size of 0 with InlineArray
@@ -199,28 +227,47 @@ fn test_gather_empty_indices() raises:
         var indices_stack = InlineArray[Scalar[indices_type], 1](
             uninitialized=True
         )
-        var indices = NDBuffer[indices_type, 1, _, DimList(num_indices)](
+        var indices = LayoutTensor[indices_type, Layout(num_indices)](
             indices_stack
         )
 
         for i in range(num_indices):
-            indices[IndexList[1](i)] = i // 2
+            indices[i] = i // 2
 
         # create output
         var output_stack = InlineArray[Float32, num_rows * row_size](
             uninitialized=True
         )
-        var output = NDBuffer[
-            DType.float32, 2, _, DimList(num_indices, row_size)
+        var output = LayoutTensor[
+            DType.float32, Layout.row_major(num_indices, row_size)
         ](output_stack)
 
         # Test gather
         alias simd_width = simd_width_of[DType.float32]()
 
+        alias output_layout = Layout.row_major[output.rank]()
+        alias input_layout = Layout.row_major[input.rank]()
+        alias indices_layout = Layout.row_major[indices.rank]()
+
         gather[axis=0](
-            output.make_dims_unknown(),
-            input.make_dims_unknown(),
-            indices.make_dims_unknown(),
+            LayoutTensor[output.dtype, output_layout](
+                output.ptr,
+                RuntimeLayout[output_layout].row_major(
+                    output.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            LayoutTensor[input.dtype, input_layout](
+                input.ptr,
+                RuntimeLayout[input_layout].row_major(
+                    input.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            LayoutTensor[indices.dtype, indices_layout](
+                indices.ptr,
+                RuntimeLayout[indices_layout].row_major(
+                    indices.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
         )
 
     _test_gather[DType.int32]()

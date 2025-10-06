@@ -62,13 +62,11 @@ fn test_case[
     # Note: This is for the specific set of examples
     #      (due to _to_ndbuffer[] parameters).
     # last example 3,2,2,3 ; original: 3,2,3,3
-    scatter_nd_generator[
-        dtype, DType.int64, 3, 2, 3, False, reduce_fn=reduce_fn
-    ](
-        data.ndbuffer,
-        indices.ndbuffer,
-        updates.ndbuffer,
-        output.ndbuffer,
+    scatter_nd_generator[dtype, DType.int64, False, reduce_fn=reduce_fn](
+        data.to_managed_tensor_slice().to_layout_tensor(),
+        indices.to_managed_tensor_slice().to_layout_tensor(),
+        updates.to_managed_tensor_slice().to_layout_tensor(),
+        output.to_managed_tensor_slice().to_layout_tensor(),
     )
 
     assert_equal(output, output_ref)
@@ -1069,12 +1067,12 @@ fn main() raises:
         # Create a proper test case function for 1D.
         var output = TestTensor[DType.float32, 1](DimList(5))
         scatter_nd_generator[
-            DType.float32, DType.int64, 1, 2, 1, False, reduce_fn=use_update
+            DType.float32, DType.int64, False, reduce_fn=use_update
         ](
-            data.ndbuffer,
-            indices.ndbuffer,
-            updates.ndbuffer,
-            output.ndbuffer,
+            data.to_managed_tensor_slice().to_layout_tensor(),
+            indices.to_managed_tensor_slice().to_layout_tensor(),
+            updates.to_managed_tensor_slice().to_layout_tensor(),
+            output.to_managed_tensor_slice().to_layout_tensor(),
         )
         assert_equal(output, output_ref)
 
@@ -1100,12 +1098,12 @@ fn main() raises:
 
         var output = TestTensor[DType.float32, 2](DimList(2, 2))
         scatter_nd_generator[
-            DType.float32, DType.int64, 2, 2, 2, False, reduce_fn=use_update
+            DType.float32, DType.int64, False, reduce_fn=use_update
         ](
-            data.ndbuffer,
-            indices.ndbuffer,
-            updates.ndbuffer,
-            output.ndbuffer,
+            data.to_managed_tensor_slice().to_layout_tensor(),
+            indices.to_managed_tensor_slice().to_layout_tensor(),
+            updates.to_managed_tensor_slice().to_layout_tensor(),
+            output.to_managed_tensor_slice().to_layout_tensor(),
         )
         assert_equal(output, output_ref)
 
@@ -1129,12 +1127,12 @@ fn main() raises:
 
         var output = TestTensor[DType.float32, 2](DimList(3, 3))
         scatter_nd_generator[
-            DType.float32, DType.int64, 2, 2, 1, False, reduce_fn=use_update
+            DType.float32, DType.int64, False, reduce_fn=use_update
         ](
-            data.ndbuffer,
-            indices.ndbuffer,
-            updates.ndbuffer,
-            output.ndbuffer,
+            data.to_managed_tensor_slice().to_layout_tensor(),
+            indices.to_managed_tensor_slice().to_layout_tensor(),
+            updates.to_managed_tensor_slice().to_layout_tensor(),
+            output.to_managed_tensor_slice().to_layout_tensor(),
         )
         assert_equal(output, output_ref)
 
@@ -1187,12 +1185,12 @@ fn main() raises:
 
         var output = TestTensor[DType.float32, 1](DimList(5))
         scatter_nd_generator[
-            DType.float32, DType.int64, 1, 2, 1, False, reduce_fn=use_update
+            DType.float32, DType.int64, False, reduce_fn=use_update
         ](
-            data.ndbuffer,
-            indices.ndbuffer,
-            updates.ndbuffer,
-            output.ndbuffer,
+            data.to_managed_tensor_slice().to_layout_tensor(),
+            indices.to_managed_tensor_slice().to_layout_tensor(),
+            updates.to_managed_tensor_slice().to_layout_tensor(),
+            output.to_managed_tensor_slice().to_layout_tensor(),
         )
         assert_equal(output, output_ref)
 
@@ -1220,12 +1218,12 @@ fn main() raises:
 
         var output = TestTensor[DType.float32, 2](DimList(3, 3))
         scatter_nd_generator[
-            DType.float32, DType.int64, 2, 2, 2, False, reduce_fn=use_update
+            DType.float32, DType.int64, False, reduce_fn=use_update
         ](
-            data.ndbuffer,
-            indices.ndbuffer,
-            updates.ndbuffer,
-            output.ndbuffer,
+            data.to_managed_tensor_slice().to_layout_tensor(),
+            indices.to_managed_tensor_slice().to_layout_tensor(),
+            updates.to_managed_tensor_slice().to_layout_tensor(),
+            output.to_managed_tensor_slice().to_layout_tensor(),
         )
         assert_equal(output, output_ref)
 
@@ -1253,12 +1251,12 @@ fn main() raises:
 
         var output = TestTensor[DType.float32, 2](DimList(3, 3))
         scatter_nd_generator[
-            DType.float32, DType.int64, 2, 2, 1, False, reduce_fn=use_update
+            DType.float32, DType.int64, False, reduce_fn=use_update
         ](
-            data.ndbuffer,
-            indices.ndbuffer,
-            updates.ndbuffer,
-            output.ndbuffer,
+            data.to_managed_tensor_slice().to_layout_tensor(),
+            indices.to_managed_tensor_slice().to_layout_tensor(),
+            updates.to_managed_tensor_slice().to_layout_tensor(),
+            output.to_managed_tensor_slice().to_layout_tensor(),
         )
         assert_equal(output, output_ref)
 
@@ -1287,12 +1285,12 @@ fn main() raises:
 
         var output = TestTensor[DType.float32, 1](DimList(5))
         scatter_nd_generator[
-            DType.float32, DType.int64, 1, 2, 1, False, reduce_fn=use_update
+            DType.float32, DType.int64, False, reduce_fn=use_update
         ](
-            data.ndbuffer,
-            indices.ndbuffer,
-            updates.ndbuffer,
-            output.ndbuffer,
+            data.to_managed_tensor_slice().to_layout_tensor(),
+            indices.to_managed_tensor_slice().to_layout_tensor(),
+            updates.to_managed_tensor_slice().to_layout_tensor(),
+            output.to_managed_tensor_slice().to_layout_tensor(),
         )
         assert_equal(output, output_ref)
 
@@ -1320,12 +1318,12 @@ fn main() raises:
 
         var output = TestTensor[DType.float32, 2](DimList(3, 3))
         scatter_nd_generator[
-            DType.float32, DType.int32, 2, 2, 1, False, reduce_fn=use_update
+            DType.float32, DType.int32, False, reduce_fn=use_update
         ](
-            data.ndbuffer,
-            indices.ndbuffer,
-            updates.ndbuffer,
-            output.ndbuffer,
+            data.to_managed_tensor_slice().to_layout_tensor(),
+            indices.to_managed_tensor_slice().to_layout_tensor(),
+            updates.to_managed_tensor_slice().to_layout_tensor(),
+            output.to_managed_tensor_slice().to_layout_tensor(),
         )
         assert_equal(output, output_ref)
 

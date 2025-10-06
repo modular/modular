@@ -19,12 +19,12 @@ from runtime.asyncrt import DeviceContextPtr
 
 fn test_scatter_set_constant(ctx: DeviceContext) raises:
     # TODO not sure why this doesn't work with InlineArray?
-    var data_ptr = UnsafePointer[Float32].alloc(3 * 3)
+    var data_stack = InlineArray[Float32, 9](uninitialized=True)
     var data = LayoutTensor[
         DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
-    ](data_ptr,).fill(0.0)
+    ](data_stack).fill(0.0)
     var data_ptr_gpu = ctx.enqueue_create_buffer[DType.float32](3 * 3)
-    ctx.enqueue_copy(data_ptr_gpu, data_ptr)
+    ctx.enqueue_copy(data_ptr_gpu, data_stack.unsafe_ptr())
 
     var data_gpu = LayoutTensor[
         DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
@@ -52,10 +52,10 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
     )
 
     var fill_value: Float32 = 5.0
-    var expected_output_ptr = UnsafePointer[Float32].alloc(3 * 3)
-    var expected_output = LayoutTensor[
-        DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
-    ](expected_output_ptr,).fill(0.0)
+    var expected_stack = InlineArray[Float32, 9](uninitialized=True)
+    var expected_output = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
+        expected_stack,
+    ).fill(0.0)
 
     expected_output[0, 1] = 5.0
     expected_output[1, 2] = 5.0
@@ -68,7 +68,7 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
         data_gpu, indices_gpu, fill_value, ctx_ptr
     )
 
-    ctx.enqueue_copy(data_ptr, data_ptr_gpu)
+    ctx.enqueue_copy(data_stack.unsafe_ptr(), data_ptr_gpu)
 
     for i in range(3):
         for j in range(3):
@@ -76,9 +76,6 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
                 raise "data[" + String(i) + ", " + String(j) + "] = " + String(
                     data[i, j]
                 ) + " != " + String(expected_output[i, j])
-
-    data_ptr.free()
-    expected_output_ptr.free()
 
 
 fn main() raises:

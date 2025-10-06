@@ -15,6 +15,7 @@ from random import random_ui64
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,
@@ -335,13 +336,24 @@ fn test_index_tensor_CLIPVIT() raises:
     # TODO: Or index_a[0], index_a[1] and index_b[0], index_b[1]???
 
     var output_shape = gather_nd_shape[
-        input_rank,
-        indices_rank,
         output_rank,
         input_type,
         DType.uint64,
         0,
-    ](input.make_dims_unknown(), indices.make_dims_unknown())
+    ](
+        LayoutTensor[input.type, Layout.row_major[input.rank]()](
+            input.data,
+            RuntimeLayout[Layout.row_major[input.rank]()].row_major(
+                input.dynamic_shape.canonicalize()
+            ),
+        ),
+        LayoutTensor[indices.type, Layout.row_major[indices.rank]()](
+            indices.data,
+            RuntimeLayout[Layout.row_major[indices.rank]()].row_major(
+                indices.dynamic_shape.canonicalize()
+            ),
+        ),
+    )
 
     var output_data_stack = InlineArray[Scalar[input_type], dim_0 * dim_2](
         uninitialized=True
@@ -351,18 +363,27 @@ fn test_index_tensor_CLIPVIT() raises:
     )
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
-    gather_nd[
-        input_type,
-        DType.uint64,
-        input_rank,
-        indices_rank,
-        output_rank,
-        batch_dims,
-        target="cpu",
-    ](
-        input.make_dims_unknown(),
-        indices.make_dims_unknown(),
-        output_data_buffer,
+    gather_nd[input_type, DType.uint64, batch_dims, target="cpu"](
+        LayoutTensor[input.type, Layout.row_major[input.rank]()](
+            input.data,
+            RuntimeLayout[Layout.row_major[input.rank]()].row_major(
+                input.dynamic_shape.canonicalize()
+            ),
+        ),
+        LayoutTensor[indices.type, Layout.row_major[indices.rank]()](
+            indices.data,
+            RuntimeLayout[Layout.row_major[indices.rank]()].row_major(
+                indices.dynamic_shape.canonicalize()
+            ),
+        ),
+        LayoutTensor[
+            output_data_buffer.type, Layout.row_major[output_data_buffer.rank]()
+        ](
+            output_data_buffer.data,
+            RuntimeLayout[
+                Layout.row_major[output_data_buffer.rank]()
+            ].row_major(output_data_buffer.dynamic_shape.canonicalize()),
+        ),
         DeviceContextPtr(),
     )
 
@@ -434,9 +455,21 @@ fn test_index_tensor_llama2_mistral() raises:
                     IndexList[input_rank](index_a[i, j].__int__(), k)
                 ]
 
-    var output_shape = gather_shape[
-        output_rank, input_rank, index_rank, input_type, index_type
-    ](input.make_dims_unknown(), index_a.make_dims_unknown(), 0)
+    var output_shape = gather_shape[output_rank, input_type, index_type](
+        LayoutTensor[input.type, Layout.row_major[input.rank]()](
+            input.data,
+            RuntimeLayout[Layout.row_major[input.rank]()].row_major(
+                input.dynamic_shape.canonicalize()
+            ),
+        ),
+        LayoutTensor[index_a.type, Layout.row_major[index_a.rank]()](
+            index_a.data,
+            RuntimeLayout[Layout.row_major[index_a.rank]()].row_major(
+                index_a.dynamic_shape.canonicalize()
+            ),
+        ),
+        0,
+    )
 
     var output_data_stack = InlineArray[
         Scalar[input_type], index_dim_0 * index_dim_1 * dim_1
@@ -446,9 +479,26 @@ fn test_index_tensor_llama2_mistral() raises:
     )
 
     gather[axis=0](
-        output_data_buffer,
-        input.make_dims_unknown(),
-        index_a.make_dims_unknown(),
+        LayoutTensor[
+            output_data_buffer.type, Layout.row_major[output_data_buffer.rank]()
+        ](
+            output_data_buffer.data,
+            RuntimeLayout[
+                Layout.row_major[output_data_buffer.rank]()
+            ].row_major(output_data_buffer.dynamic_shape.canonicalize()),
+        ),
+        LayoutTensor[input.type, Layout.row_major[input.rank]()](
+            input.data,
+            RuntimeLayout[Layout.row_major[input.rank]()].row_major(
+                input.dynamic_shape.canonicalize()
+            ),
+        ),
+        LayoutTensor[index_a.type, Layout.row_major[index_a.rank]()](
+            index_a.data,
+            RuntimeLayout[Layout.row_major[index_a.rank]()].row_major(
+                index_a.dynamic_shape.canonicalize()
+            ),
+        ),
     )
 
     for i in range(index_dim_0):

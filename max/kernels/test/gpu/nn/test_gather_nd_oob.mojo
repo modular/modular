@@ -14,6 +14,7 @@
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
+from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
 from utils import IndexList
@@ -27,6 +28,8 @@ def execute_gather_nd_test[
     indices_host: HostNDBuffer,
     ctx: DeviceContext,
 ):
+    var data_host_tensor = data_host.to_layout_tensor()
+    var indices_host_tensor = indices_host.to_layout_tensor()
     # create device-side buffers and copy data to them
     var data_device = DeviceNDBuffer[
         data_host.dtype, data_host.rank, data_host.shape
@@ -34,24 +37,36 @@ def execute_gather_nd_test[
         data_host.tensor.get_shape(),
         ctx=ctx,
     )
+    var data_device_tensor = data_device.to_layout_tensor()
+    alias data_layout = Layout.row_major[data_device_tensor.rank]()
     var indices_device = DeviceNDBuffer[
         indices_host.dtype, indices_host.rank, indices_host.shape
     ](
         indices_host.tensor.get_shape(),
         ctx=ctx,
     )
+    var indices_device_tensor = indices_device.to_layout_tensor()
+    alias indices_layout = Layout.row_major[indices_device_tensor.rank]()
     alias output_rank = 1
 
     var output_shape = gather_nd_shape[
-        data_host.rank,
-        indices_host.rank,
         output_rank,
         data_type,
         indices_host.dtype,
         batch_dims,
     ](
-        data_host.tensor.make_dims_unknown(),
-        indices_host.tensor.make_dims_unknown(),
+        LayoutTensor[data_host_tensor.dtype, data_layout](
+            data_host_tensor.ptr,
+            RuntimeLayout[data_layout].row_major(
+                data_host_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+        LayoutTensor[indices_host_tensor.dtype, indices_layout](
+            indices_host_tensor.ptr,
+            RuntimeLayout[indices_layout].row_major(
+                indices_host_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        ),
     )
 
     var actual_output_device = DeviceNDBuffer[
@@ -61,14 +76,31 @@ def execute_gather_nd_test[
         output_shape,
         ctx=ctx,
     )
-    ctx.enqueue_copy(data_device.buffer, data_host.tensor.data)
-    ctx.enqueue_copy(indices_device.buffer, indices_host.tensor.data)
+    var actual_output_tensor = actual_output_device.to_layout_tensor()
+    alias actual_output_layout = Layout.row_major[actual_output_tensor.rank]()
+    ctx.enqueue_copy(data_device.buffer, data_host_tensor.ptr)
+    ctx.enqueue_copy(indices_device.buffer, indices_host_tensor.ptr)
 
     # execute the kernel
     _gather_nd_impl[batch_dims, target="gpu"](
-        data_device.tensor.make_dims_unknown(),
-        indices_device.tensor.make_dims_unknown(),
-        actual_output_device.tensor.make_dims_unknown(),
+        LayoutTensor[data_device_tensor.dtype, data_layout](
+            data_device_tensor.ptr,
+            RuntimeLayout[data_layout].row_major(
+                data_device_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+        LayoutTensor[indices_device_tensor.dtype, indices_layout](
+            indices_device_tensor.ptr,
+            RuntimeLayout[indices_layout].row_major(
+                indices_device_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+        LayoutTensor[actual_output_tensor.dtype, actual_output_layout](
+            actual_output_tensor.ptr,
+            RuntimeLayout[actual_output_layout].row_major(
+                actual_output_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        ),
         ctx,
     )
     # Give the kernel an opportunity to raise the error before finishing the test.
@@ -87,21 +119,24 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     var data = HostNDBuffer[data_type, data_rank, DimList(2, 2)](
         IndexList[data_rank](2, 2)
     )
+    alias data_layout = Layout.row_major[data_rank]()
+    var data_tensor = data.to_layout_tensor()
 
-    data.tensor[IndexList[data_rank](0, 0)] = 0
-    data.tensor[IndexList[data_rank](0, 1)] = 1
-    data.tensor[IndexList[data_rank](1, 0)] = 2
-    data.tensor[IndexList[data_rank](1, 1)] = 3
+    data_tensor[0, 0] = 0
+    data_tensor[0, 1] = 1
+    data_tensor[1, 0] = 2
+    data_tensor[1, 1] = 3
 
     alias indices_rank = 2
     var indices = HostNDBuffer[DType.int64, indices_rank, DimList(2, 2)](
         IndexList[indices_rank](2, 2)
     )
+    var indices_tensor = indices.to_layout_tensor()
 
-    indices.tensor[IndexList[indices_rank](0, 0)] = 0
-    indices.tensor[IndexList[indices_rank](0, 1)] = 0
-    indices.tensor[IndexList[indices_rank](1, 0)] = 1
-    indices.tensor[IndexList[indices_rank](1, 1)] = 100  # wildly out of bounds
+    indices_tensor[0, 0] = 0
+    indices_tensor[0, 1] = 0
+    indices_tensor[1, 0] = 1
+    indices_tensor[1, 1] = 100  # wildly out of bounds
 
     execute_gather_nd_test[batch_dims](data, indices, ctx)
     ctx.synchronize()
