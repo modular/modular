@@ -16,7 +16,10 @@ transform from Mojo to all of those.
 
 ## MLIR
 
-The Mojo compiler is built on MLIR. To see it, put this snippet into a
+The Mojo compiler is built on top of MLIR framework where we define
+different MLIR dialects to capture IRs at different abstraction level for Mojo.
+
+To see it, put this snippet into a
 `main.mojo` file:
 
 ```mojo
@@ -43,8 +46,9 @@ lit.fn @”main()”() -> !kgen.none attributes {sourceName = “main”, specia
 }
 ```
 
-This is MLIR. One could think of it as a more extensible and customizable form
-of LLVM IR.
+This is in Mojo's MLIR `lit` dialect.
+One could think of it as a higher-level abstraction form of IR that reflects
+close to logical program flow which will be lowered by the compiler to LLVM IR.
 
 Useful background on MLIR:
 
@@ -54,7 +58,8 @@ Useful background on MLIR:
 
 ## Mojo Dialects
 
-Above, we saw some MLIR that **contained multiple “dialects” at once.**
+Above, we saw Mojo IR can **contain multiple “dialects”.** in one
+compilation unit (MLIR module) at the same time.
 
 Here it is again:
 
@@ -68,62 +73,112 @@ lit.fn @”main()”() -> !kgen.none attributes {sourceName = “main”, specia
 }
 ```
 
-Here we see instructions from two dialects (`lit` and `kgen`) working together.
+Here we see operations from two dialects (`lit` and `kgen`) working together.
 
 Some things from the `lit` dialect:
 
-- `lit.call` - A call operation.
-- `!lit.ref` - A reference type.
-- `!lit.trait` - A trait.
+- `lit.call` - A mojo function call. (This is an mlir operation).
+- `!lit.ref` - A mojo reference type (`!` indicates that this is an mlir type).
+- `!lit.trait` - A mojo trait (`!` indicates that this is an mlir type).
 
 Some things from the `kgen` dialect:
 
-- `!kgen.none` - The "none" type.
-- `!kgen.param.constant` - Makes a compile-time value.
+- `!kgen.none` - The kgen "none" type (`!` indicates that this is an mlir type).
+- `kgen.param.constant` - defines an mlir operation that represents
+a constant value.
 
-(We'll cover these, the rest of the `lit`/`kgen` things, and things from other
+(We'll cover these, the rest of the `lit`/`kgen` dialects, and other
 dialects further below.)
 
-Mojo has several dialects: `kgen`, `lit`, `kgen`, `pop`, and `hlcf`. KGEN IR
-also uses the upstream `index`, and `llvm` dialects. The `lit` dialect should
-more properly be named `mojo` perhaps but currently reflects how “lit” Mojo is
-🔥.
+Mojo has several dialects: [`kgen`](KGEN/include/KGEN/KGENDialect),
+[`lit`](KGEN/include/KGEN/LITDialect),
+[`pop`](KGEN/include/KGEN/POPDialect), and
+[`hlcf`](KGEN/include/KGEN/HLCFDialect).
 
-`lit` is a high-level dialect for building kernel libraries. It is lowered to
-`kgen` before elaboration. The `kgen` dialect is the canonical dialect for
-describing parametric IR. The dialect defines the parameter system and the
-types, attributes, and operations for interacting with parameters.
+Mojo compiler also uses upstream dialects:
+[`index`](https://github.com/llvm/llvm-project/tree/main/mlir/include/mlir/Dialect/Index),
+[`llvm`](https://github.com/llvm/llvm-project/tree/main/mlir/include/mlir/Dialect/LLVMIR),
+[`nvvm`](https://mlir.llvm.org/docs/Dialects/NVVMDialect),
+and [`rocdl`](https://mlir.llvm.org/docs/Dialects/ROCDLDialect/).
 
-`hlcf` and `index` are non-parameterized, target-independent dialects that exist
-in “KGEN IR” pre-elaboration and post-elaboration. `llvm` is a target-dependent
-dialect that can exist at all levels of KGEN IR. However, it locks the
-particular kernel to the LLVM target.
+[`lit`](KGEN/include/KGEN/LITDialect) is a high-level
+dialect to reflect what's most close to
+a logical mojo program. It is the IR the parser and
+type-checker (semantics check) are working on.
+It is quickly lowered to `kgen` once semantics checks pass.
+(The `lit` dialect should more properly be named `mojo` perhaps
+but currently reflects how “lit” Mojo is 🔥.
+Historical reason is because Mojo parser level IR used to be
+called lightning (LIT). Mojo doesn't have an AST).
 
-`pop` (which stands for “parametric operations”) are parameterized,
-target-independent dialects used to build parametric kernels.
+[`kgen`](KGEN/include/KGEN/KGENDialect) defines the
+canonical IR for mojo program after semantics check
+which can describe both parametric and
+concretized (parameters substituted with concrete values) IR.
+The dialect defines the mojo parameters as mlir attributes as well as
+types, and operations to represent the whole program.
+
+[`pop`](KGEN/include/KGEN/POPDialect), which stands
+for “parametric operations”, are parameterized,
+target-independent dialect used to represent more algorithm level operations,
+attributes and types,
+such as `pop.variadic.xxx`, `!pop.array`, `!pop.simd`, etc.
+
+[`hlcf`](KGEN/include/KGEN/HLCFDialect) is the dialect to describe higher-level
+control flow in the form of IR instead of something the compiler has to extract
+from the IR (e.g. CFG is an analysis in LLVM).
+`hlcf` is non-parametric and target independent, and it exists in both
+pre-elaboration and post-elaboration IR.
+
+[`index`](https://mlir.llvm.org/docs/Dialects/IndexOps/) contains operations
+for manipulating values of the builtin `index` type.
+
+[`llvm`](https://github.com/llvm/llvm-project/tree/main/mlir/include/mlir/Dialect/LLVMIR)
+dialect is the code-gen target of the MLIR level of the Mojo compiler,
+i.e. all mojo dialects (`kgen`, `pop`, `hlcf`, etc.) are lowered to `llvm` at
+the end of mojo compiler's MLIR pipeline so that we can then go to the
+LLVM pipeline. It serves as a translation layer for mojo compiler to cross
+from MLIR to LLVM land.
+
+[`nvvm`](https://mlir.llvm.org/docs/Dialects/NVVMDialect),
+and [`rocdl`](https://mlir.llvm.org/docs/Dialects/ROCDLDialect) are dialects
+modeling public GPU ISAs: `nvvm` for Nvidia GPUs and `rocdl` for AMD GPUs.
+Now we only use these two to get GPU specific address spaces at the MLIR level.
 
 In summary:
 
 - `lit` exist pre-elaboration. They are lowered to `kgen` and `pop` before
   elaboration.
-- `kgen` contains all the instructions that must be understood and monomorphized
-  by the elaborator.
+- `kgen` contains all the instructions that must be monomorphized (concretized)
+  by the elaborator. It is lowered to `llvm` for final code-gen
+  into runtime executables.
 - `pop` exists pre and post elaboration. Operations in the dialect become
-  non-parametric post-elaboration. They are lowered to `llvm` when executing
-  kernels.
-- `index` and `hlcf` exist pre and post elaboration. They are lowered to `llvm`
-  when executing kernels.
-- `llvm` can exist at all levels of KGEN IR to describe target-specific
-  operations, but then the kernel can only target LLVM.
+  non-parametric post-elaboration. It is lowered to `llvm` for final code-gen
+  into runtime executables.
+- `hlcf` exist pre and post elaboration. It is lowered to `llvm` for final code-gen
+  into runtime executables.
+- `index` exits pre and post elaboration. It is not parametric. It is used to
+  to represent operations for builtin `index` type.
+- `llvm` mostly exists at the bottom of Mojo MLIR compilation pipeline. It serves
+  as the bridge between MLIR and LLVM. Mojo library can create `llvm` ops using
+  `__mlir_op` syntax, but these operations will not be processed by Mojo
+  MLIR passes.
+- `nvvm` and `rocdl` are dialects to model public GPU ISAs. They are both only
+  used to specify GPU specific address space. They are not parametric.
 
 ## MLIR Guide
 
-- `%name` — A run-time value; an MLIR SSA value; the result of an MLIR
+- `%name` — A mojo run-time value; an MLIR SSA value; the result of an MLIR
   operation.
 - `@name` — A
   [SymbolRefAttr](https://mlir.llvm.org/docs/Dialects/Builtin/#symbolrefattr)
-- `!name` — An MLIR type.
-- `#expr` or `{expr}` — Compile-time data.
+- `!type` — An MLIR type.
+- `#expr` or `{expr}` — an MLIR attribute.
+Mojo parameters are represented as mlir attributes in the IR.
+MLIR attributes can also be used to represent other compile time values that are
+otherwise not operations or types, such as some metadata
+for the operations and types.
+
 - Anything else is an MLIR **operation.**
 
 It's important to know these, because `!kgen.none` and `#kgen.none` are very
@@ -131,9 +186,10 @@ different things.
 
 All of them are explained in the next sections.
 
-For now, forget about compile-time data (`#expr`), and pretend they only come
-into play with generics are involved. Let's start with a program that just uses
-run-time values, operations, and types.
+For now, forget about parameters (`#expr`), and pretend they only come
+into play with generics are involved.
+Let's start with a non-parametric program that just uses
+run-time values, operations, and concrete types.
 
 ### Operations, run-time values, and types
 
@@ -165,13 +221,22 @@ This is declaring a **run-time value** (or in other words an **MLIR SSA value**)
 named `%x`.
 
 It will contain the result of `lit.var.decl "x" var` which is an **MLIR
-operation**. Every MLIR operation is followed by **operands**, like the `"x"`
-and `var` here.
+operation**. Every MLIR operation has 0 or more than 0 **operands**,
+like `var` here (operands are inputs to the operations).
+The `"x"` here is a property (attribute) of the operation, specifically it
+indicates the
+[string name](https://github.com/modularml/modular/blob/9a86eb41be85aba5f1203247dfb4e8a83645ec65/KGEN/include/KGEN/LITDialect/LITOps.td#L883)
+of the `lit.var.decl`.
 
 After that and the `:`, we specify the operations resulting **MLIR type**,
-`!lit.ref<!Int, mut \*"x``">```.
+i.e. `!lit.ref<!Int, mut \*"x``">`.
 
-Note that the type directly describes the operation's result specifically.
+Note that the type directly describes the operation's result.
+In this case, `lit.var.decl` has only one result, hence there is only one type.
+MLIR operations can have multiple results, so operations with
+multiple results will have types defined for each result respectively,
+e.g [`kgen.cost_of`](https://github.com/modularml/modular/blob/4ccab6c575bcb24a6cdf4a3776fccdbe8e667aa0/KGEN/include/KGEN/KGENDialect/KGENOps.td#L859-L866).
+has 8 results, all are of index type.
 
 ` %x = ( lit.var.decl "x" var : !lit.ref<!Int, mut *"x``"> ) `
 
