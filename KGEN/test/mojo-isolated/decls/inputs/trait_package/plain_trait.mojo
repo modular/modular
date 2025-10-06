@@ -7,11 +7,6 @@
 alias int = __mlir_type.index
 
 
-struct PlainStruct:
-    var location: int
-
-    fn __init__(out self):
-        self.location = __mlir_attr.`0 : index`
-
-    fn set_location(mut self, new_location: int):
-        self.location = new_location
+trait Flying:
+    fn fly_to(mut self, new_location: int):
+        ...
