@@ -20,9 +20,9 @@ import os
 import signal
 import sys
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, Callable
+from typing import Any
 
 import uvloop
 from max.interfaces import (

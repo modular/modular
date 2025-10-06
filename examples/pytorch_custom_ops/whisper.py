@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from pathlib import Path
-from typing import Optional
 
 import torch
 import transformers
@@ -57,8 +56,8 @@ class ModularWhisperAttention(nn.Module):
         is_decoder: bool = False,
         bias: bool = True,
         is_causal: bool = False,
-        layer_idx: Optional[int] = None,
-        config: Optional[WhisperConfig] = None,
+        layer_idx: int | None = None,
+        config: WhisperConfig | None = None,
     ) -> None:
         super().__init__()
         self.embed_dim = embed_dim
@@ -85,15 +84,13 @@ class ModularWhisperAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        key_value_states: Optional[torch.Tensor] = None,
-        past_key_value: Optional[EncoderDecoderCache] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        layer_head_mask: Optional[torch.Tensor] = None,
+        key_value_states: torch.Tensor | None = None,
+        past_key_value: EncoderDecoderCache | None = None,
+        attention_mask: torch.Tensor | None = None,
+        layer_head_mask: torch.Tensor | None = None,
         output_attentions: bool = False,
-        cache_position: Optional[torch.LongTensor] = None,
-    ) -> tuple[
-        torch.Tensor, Optional[torch.Tensor], Optional[tuple[torch.Tensor]]
-    ]:
+        cache_position: torch.LongTensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
         """Input shape: Batch x Time x Channel"""
 
         bsz, tgt_len, _ = hidden_states.size()

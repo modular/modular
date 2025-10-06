@@ -13,7 +13,7 @@
 """Build an Olmo2 model that uses continuous or paged kv-caching"""
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType

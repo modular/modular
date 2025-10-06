@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
-from typing import Any, Callable, ClassVar, Union
+from typing import Any, ClassVar
 
 from fastapi import FastAPI, Request
 from pydantic import Field
@@ -70,7 +71,7 @@ class ProfileFormat(ProfileFormatMetadata, Enum):
 class ProfileSession:
     DEFAULT_INTERVAL_SECS: ClassVar[float] = 0.001
 
-    request_id: Union[str, None] = None  # Empty when not profiling.
+    request_id: str | None = None  # Empty when not profiling.
 
     interval: float = DEFAULT_INTERVAL_SECS
     profile_format: ProfileFormat = field(

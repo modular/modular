@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional, Union, cast
+from typing import Any, cast
 
 import huggingface_hub
 from huggingface_hub import errors as hf_hub_errors
@@ -92,7 +92,7 @@ def _create_repo_not_exists_error_message(repo_id: str, revision: str) -> str:
 
 def try_to_load_from_cache(
     repo_id: str, filename: str, revision: str
-) -> Union[str, Any, None]:
+) -> str | Any | None:
     """
     Wrapper around huggingface_hub.try_to_load_from_cache. We also validate
     that the repo exists.
@@ -187,7 +187,7 @@ def _hf_tqdm_using_threading_only_lock():  # noqa: ANN202
 def download_weight_files(
     huggingface_model_id: str,
     filenames: list[str],
-    revision: Optional[str] = None,
+    revision: str | None = None,
     force_download: bool = False,
     max_workers: int = 8,
 ) -> list[Path]:
@@ -321,7 +321,7 @@ class HuggingFaceRepo:
     trust_remote_code: bool = False
     """Whether to trust remote code."""
 
-    repo_type: Optional[RepoType] = None
+    repo_type: RepoType | None = None
     """The type of repo. This is inferred from the repo_id."""
 
     def __post_init__(self) -> None:
@@ -424,7 +424,7 @@ class HuggingFaceRepo:
 
         return weight_files
 
-    def size_of(self, filename: str) -> Union[int, None]:
+    def size_of(self, filename: str) -> int | None:
         if self.repo_type == RepoType.online:
             url = huggingface_hub.hf_hub_url(self.repo_id, filename)
             metadata = huggingface_hub.get_hf_file_metadata(url)
@@ -580,7 +580,7 @@ class HuggingFaceRepo:
     def files_for_encoding(
         self,
         encoding: SupportedEncoding,
-        weights_format: Optional[WeightsFormat] = None,
+        weights_format: WeightsFormat | None = None,
     ) -> dict[WeightsFormat, list[Path]]:
         if weights_format == WeightsFormat.pytorch:
             logger.warning(
@@ -610,7 +610,7 @@ class HuggingFaceRepo:
     def formats_available(self) -> list[WeightsFormat]:
         return list(self.weight_files.keys())
 
-    def encoding_for_file(self, file: Union[str, Path]) -> SupportedEncoding:
+    def encoding_for_file(self, file: str | Path) -> SupportedEncoding:
         if str(file).endswith(".safetensors"):
             # If this file is safetensors, return the first encoding, as Safetensor repos can only have one.
             return self.supported_encodings[0]

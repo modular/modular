@@ -18,7 +18,8 @@ from __future__ import annotations
 import contextlib
 import datetime
 import urllib.parse
-from typing import Callable, overload
+from collections.abc import Callable
+from typing import overload
 
 from asgiref import typing as asgi_types
 

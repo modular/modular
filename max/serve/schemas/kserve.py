@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field, RootModel
 
 
@@ -39,47 +37,47 @@ class TensorData(RootModel[list]):
 
 class RequestOutput(BaseModel):
     name: str
-    parameters: Optional[Parameters] = None
+    parameters: Parameters | None = None
 
 
 class ResponseOutput(BaseModel):
     name: str
     shape: list[int]
     datatype: str
-    parameters: Optional[Parameters] = None
+    parameters: Parameters | None = None
     data: TensorData
 
 
 class InferenceResponse(BaseModel):
     model_name: str
-    model_version: Optional[str] = None
-    id: Optional[str] = None
-    parameters: Optional[Parameters] = None
+    model_version: str | None = None
+    id: str | None = None
+    parameters: Parameters | None = None
     outputs: list[ResponseOutput]
 
 
 class InferenceErrorResponse(BaseModel):
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class MetadataModelResponse(BaseModel):
     name: str
-    versions: Optional[list[str]] = None
+    versions: list[str] | None = None
     platform: str
-    inputs: Optional[list[MetadataTensor]] = None
-    outputs: Optional[list[MetadataTensor]] = None
+    inputs: list[MetadataTensor] | None = None
+    outputs: list[MetadataTensor] | None = None
 
 
 class RequestInput(BaseModel):
     name: str
     shape: list[int]
     datatype: str
-    parameters: Optional[Parameters] = None
+    parameters: Parameters | None = None
     data: TensorData
 
 
 class InferenceRequest(BaseModel):
-    id: Optional[str] = None
-    parameters: Optional[Parameters] = None
+    id: str | None = None
+    parameters: Parameters | None = None
     inputs: list[RequestInput]
-    outputs: Optional[list[RequestOutput]] = None
+    outputs: list[RequestOutput] | None = None

@@ -119,7 +119,7 @@ class BasePrintHook(ABC):
         # Print outputs.
         if self.print_and_record(f"{debug_name}-output", outputs):
             pass
-        elif isinstance(outputs, (list, tuple)):
+        elif isinstance(outputs, list | tuple):
             for n, out in enumerate(outputs):
                 self.print_and_record(f"{debug_name}-output_{n}", out)
         elif dataclasses.is_dataclass(outputs):

@@ -20,7 +20,8 @@ import queue
 import tempfile
 import uuid
 import weakref
-from typing import Any, Callable, Generic, NewType, TypeVar
+from collections.abc import Callable
+from typing import Any, Generic, NewType, TypeVar
 
 import psutil
 import zmq

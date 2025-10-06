@@ -22,7 +22,6 @@ import sys
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import click
 import numpy as np
@@ -77,7 +76,7 @@ def specs_to_df(specs: list[str]) -> pd.DataFrame:
     return df
 
 
-def extract_pivots_df(df: pd.DataFrame, exclude: Optional[list[str]] = None):  # noqa: ANN201
+def extract_pivots_df(df: pd.DataFrame, exclude: list[str] | None = None):  # noqa: ANN201
     if exclude is None:
         exclude = []
     # df = specs_to_df(x_labels)
@@ -96,7 +95,7 @@ def extract_pivots_df(df: pd.DataFrame, exclude: Optional[list[str]] = None):  #
     return pivot_columns, non_pivot_columns
 
 
-def extract_pivots(x_labels: list[str], exclude: Optional[list[str]] = None):  # noqa: ANN201
+def extract_pivots(x_labels: list[str], exclude: list[str] | None = None):  # noqa: ANN201
     df = specs_to_df(x_labels)
     return extract_pivots_df(df=df, exclude=exclude)
 
@@ -255,7 +254,7 @@ def profile_results(
     metric: str = "met (ms)",
     pivots: list[str] = [],  # noqa: B006
     verbose=False,  # noqa: ANN001
-) -> Optional[TuningSpec]:
+) -> TuningSpec | None:
     try:
         pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
     except:
@@ -533,7 +532,7 @@ def codegen_yaml(specs: list[TuningSpec], output_path: Path) -> None:
 
 # TODO: add more checks for inconsistency between various input files.
 def check_specs(
-    specs: list[TuningSpec], key_cols: Optional[list[str]] = None
+    specs: list[TuningSpec], key_cols: list[str] | None = None
 ) -> bool:
     # TODO: check specs have the same tuning hash
     spec_list = [pd.DataFrame([s.params[0]]) for s in specs]

@@ -13,10 +13,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import cached_property, partial
-from typing import Callable, Optional
 
 from max._core import Value as _Value
 from max._core.dialects import mo
@@ -428,10 +427,10 @@ class Weight(TensorValue):
     _dtype: DType
     _shape: ShapeLike
     _device: DeviceRef
-    quantization_encoding: Optional[QuantizationEncoding]
-    align: Optional[int]
-    _sharding_strategy: Optional[_ShardingStrategyContainer]
-    shard_idx: Optional[int]
+    quantization_encoding: QuantizationEncoding | None
+    align: int | None
+    _sharding_strategy: _ShardingStrategyContainer | None
+    shard_idx: int | None
 
     def __new__(cls, *args, **kwargs):
         """Create a new Weight instance.
@@ -448,9 +447,9 @@ class Weight(TensorValue):
         dtype: DType,
         shape: ShapeLike,
         device: DeviceRef,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        align: Optional[int] = None,
-        sharding_strategy: Optional[ShardingStrategy] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        align: int | None = None,
+        sharding_strategy: ShardingStrategy | None = None,
         _placeholder: bool = False,
         _has_alias: bool = False,
     ) -> None:
@@ -536,7 +535,7 @@ class Weight(TensorValue):
             )
 
     @property
-    def sharding_strategy(self) -> Optional[ShardingStrategy]:
+    def sharding_strategy(self) -> ShardingStrategy | None:
         """Gets the weight sharding strategy."""
         return (
             self._sharding_strategy.shard_value

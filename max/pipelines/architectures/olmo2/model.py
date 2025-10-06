@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from max.driver import Tensor
 from max.engine import InferenceSession, Model
@@ -47,8 +47,8 @@ class Olmo2Model(LlamaModelBase):
     def _build_graph(
         self,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
-        session: Optional[InferenceSession] = None,
+        adapter: WeightsAdapter | None = None,
+        session: InferenceSession | None = None,
     ) -> Graph:
         """Override to use Olmo2Config and Olmo2 model instead of Llama3."""
 

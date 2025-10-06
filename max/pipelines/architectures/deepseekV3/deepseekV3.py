@@ -216,7 +216,7 @@ class DeepseekV3DecoderLayer(Module):
         )
 
         # Residual add (still per-device)
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=False)]
 
         # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
@@ -257,7 +257,9 @@ class DeepseekV3DecoderLayer(Module):
             running = running + ln
 
         mlp_local: list[TensorValue] = []
-        for i, (start_i, len_i) in enumerate(zip(starts_cpu, lengths_cpu)):
+        for i, (start_i, len_i) in enumerate(
+            zip(starts_cpu, lengths_cpu, strict=False)
+        ):
             end_i = start_i + len_i
             local_slice = ops.slice_tensor(
                 mlp_full[i],
@@ -266,7 +268,7 @@ class DeepseekV3DecoderLayer(Module):
             mlp_local.append(local_slice)
 
         # Final residual add stays in data-parallel layout
-        hs = [h + m for h, m in zip(hs, mlp_local)]
+        hs = [h + m for h, m in zip(hs, mlp_local, strict=False)]
 
         return hs
 

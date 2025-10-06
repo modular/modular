@@ -28,8 +28,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
-    Optional,
     Protocol,
+    TypeAlias,
     TypeVar,
     runtime_checkable,
 )
@@ -75,7 +75,6 @@ from max.nn.kv_cache import (
 from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, PreTrainedTokenizerFast
-from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -195,7 +194,7 @@ class PipelineModel(ABC, Generic[T]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter],
+        adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
     ) -> None:
         self.pipeline_config = pipeline_config

@@ -12,19 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for max.graph linear algebra operations."""
 
-import sys
-from typing import Optional
-
 import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.type import Shape, ShapeLike
-
-if sys.version_info[:2] >= (3, 10):
-    pass
-else:
-    pass
 
 
 def matmul_graph(
@@ -47,7 +39,7 @@ def matmul_graph(
 def assert_matmul_properties(
     graph: Graph,
     expected_output_shape: ShapeLike,
-    dtype: Optional[DType] = None,
+    dtype: DType | None = None,
 ) -> None:
     """Asserts that the graph contains a matmul, has the expected shape and
     dtype.

@@ -20,13 +20,13 @@ import functools
 import inspect
 import json
 import pathlib
+from collections.abc import Callable
 from dataclasses import MISSING, Field, fields
 from enum import Enum
 from pathlib import Path
 from typing import (
     Any,
-    Callable,
-    Optional,
+    TypeGuard,
     TypeVar,
     Union,
     get_args,
@@ -45,7 +45,7 @@ from max.pipelines.lib import (
     ProfilingConfig,
     SamplingConfig,
 )
-from typing_extensions import ParamSpec, TypeGuard
+from typing_extensions import ParamSpec
 
 from .device_options import DevicesOptionType
 
@@ -74,7 +74,7 @@ class JSONType(click.ParamType):
             self.fail(f"Invalid JSON: {e}", param, ctx)
 
 
-def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
+def get_interior_type(type_hint: type | str | Any) -> type[Any]:
     interior_args = set(get_args(type_hint)) - set([type(None)])
     if len(interior_args) > 1:
         raise ValueError(
@@ -85,7 +85,7 @@ def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
     return get_args(type_hint)[0]
 
 
-def is_optional(type_hint: Union[type, str, Any]) -> bool:
+def is_optional(type_hint: type | str | Any) -> bool:
     return get_origin(type_hint) is Union and type(None) in get_args(type_hint)
 
 
@@ -182,7 +182,7 @@ def create_click_option(
 
 
 def config_to_flag(
-    cls: type[MAXConfig], prefix: Optional[str] = None
+    cls: type[MAXConfig], prefix: str | None = None
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     options = []
     if hasattr(cls, "help"):

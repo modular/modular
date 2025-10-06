@@ -17,10 +17,10 @@ import asyncio
 import logging
 import os
 import signal
-from collections.abc import AsyncGenerator, Coroutine
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt

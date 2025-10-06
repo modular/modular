@@ -15,7 +15,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from max import nn
 from max.dtype import DType
@@ -27,8 +28,8 @@ class MLPBlock(nn.Module):
         self,
         in_features: int,
         out_features: int,
-        hidden_features: Optional[list[int]] = None,
-        activation: Optional[Callable[[TensorValue], TensorValue]] = None,
+        hidden_features: list[int] | None = None,
+        activation: Callable[[TensorValue], TensorValue] | None = None,
     ) -> None:
         super().__init__()
 

@@ -84,14 +84,14 @@ class MAXModelConfig(MAXModelConfigBase):
     See post_init for more details on how this is done.
     """
 
-    served_model_name: Optional[str] = None
+    served_model_name: Optional[str] = None  # noqa: UP007
     """Optional override for client-facing model name. Defaults to model_path."""
 
     weight_path: list[Path] = field(default_factory=list)
     """Optional path or url of the model weights to use."""
 
     # TODO(zheng): Move this under QuantizationConfig.
-    quantization_encoding: Optional[SupportedEncoding] = None
+    quantization_encoding: Optional[SupportedEncoding] = None  # noqa: UP007
     """Weight encoding type."""
 
     allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = False
@@ -119,7 +119,7 @@ class MAXModelConfig(MAXModelConfigBase):
     vision_config_overrides: dict[str, Any] = field(default_factory=dict)
     """Model-specific vision configuration overrides. For example, for InternVL: {"max_dynamic_patch": 24}"""
 
-    rope_type: Optional[RopeType] = None
+    rope_type: Optional[RopeType] = None  # noqa: UP007
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
     use_subgraphs: bool = True
@@ -129,21 +129,21 @@ class MAXModelConfig(MAXModelConfigBase):
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
 
-    _applied_dtype_cast_from: Optional[SupportedEncoding] = None
+    _applied_dtype_cast_from: Optional[SupportedEncoding] = None  # noqa: UP007
     """Property to track the dtype that safetensor weights were casted from. None means no casting was applied. This should only be set by internal code."""
 
-    _applied_dtype_cast_to: Optional[SupportedEncoding] = None
+    _applied_dtype_cast_to: Optional[SupportedEncoding] = None  # noqa: UP007
     """Property to track the dtype that safetensor weights were casted to. None means no casting was applied. This should only be set by internal code."""
 
-    _huggingface_config: Optional[AutoConfig] = None
+    _huggingface_config: Optional[AutoConfig] = None  # noqa: UP007
     """Hugging Face config. This should only be set by internal code."""
 
-    _weights_repo_id: Optional[str] = None
+    _weights_repo_id: Optional[str] = None  # noqa: UP007
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
     # TODO(zheng): Refactor QuantizationConfig to be a MAXConfig subclass that
     # also autopopulates default values.
-    _quant_config: Optional[QuantizationConfig] = None
+    _quant_config: Optional[QuantizationConfig] = None  # noqa: UP007
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
 
     _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
@@ -235,7 +235,7 @@ class MAXModelConfig(MAXModelConfigBase):
         return self.model_path
 
     @property
-    def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
+    def graph_quantization_encoding(self) -> QuantizationEncoding | None:
         """Converts the CLI encoding to a MAX Graph quantization encoding.
 
         Returns:
@@ -480,7 +480,7 @@ class MAXModelConfig(MAXModelConfigBase):
         self.quantization_encoding = to_encoding
 
     def _validate_and_resolve_with_given_quantization_encoding(
-        self, weights_format: Optional[WeightsFormat]
+        self, weights_format: WeightsFormat | None
     ) -> None:
         """
         Helper function to validate the quantization encoding when it is provided by the user.
@@ -553,7 +553,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
     def _validate_and_resolve_without_given_quantization_encoding(
         self,
-        weights_format: Optional[WeightsFormat],
+        weights_format: WeightsFormat | None,
         default_encoding: SupportedEncoding,
     ) -> None:
         """
@@ -832,7 +832,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 revision=repo.revision,
             )
             if cached_result and not isinstance(
-                cached_result, (str, os.PathLike)
+                cached_result, str | os.PathLike
             ):
                 # Handle cached non-existent result, which is a special sentinel value.
                 raise FileNotFoundError(

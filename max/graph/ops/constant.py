@@ -15,12 +15,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Union, cast
+from typing import Any, TypeAlias, cast
 
 import numpy as np
 from max.dtype import DType
 from max.mlir.dialects import mo
-from typing_extensions import TypeAlias
 
 from ..._core import graph as _graph
 from ..._core.dialects import mo as _mo
@@ -29,7 +28,7 @@ from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue
 
-Number: TypeAlias = Union[float, np.number[Any]]
+Number: TypeAlias = float | np.number[Any]
 NestedArray: TypeAlias = Sequence["Number | NestedArray"]
 
 

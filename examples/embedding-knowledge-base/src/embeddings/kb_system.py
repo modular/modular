@@ -13,7 +13,6 @@
 
 import logging
 from functools import lru_cache
-from typing import Optional
 
 import numpy as np
 import requests
@@ -81,7 +80,7 @@ class SmartKnowledgeBase:
         if len(self.documents) >= 3:
             self._cluster_documents()
 
-    def _cluster_documents(self, n_clusters: Optional[int] = None) -> None:
+    def _cluster_documents(self, n_clusters: int | None = None) -> None:
         """Cluster documents into topics."""
         if n_clusters is None:
             n_clusters = max(2, len(self.documents) // 5)

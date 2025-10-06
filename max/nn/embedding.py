@@ -16,7 +16,6 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional
 
 from max.dtype import DType
 from max.graph import (
@@ -101,8 +100,8 @@ class Embedding(Module):
         hidden_dim: int,
         dtype: DType,
         device: DeviceRef,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        name: Optional[str] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the embedding layer with the given arguments.
 
@@ -177,8 +176,8 @@ class VocabParallelEmbedding(Module):
         hidden_dim: int,
         dtype: DType,
         devices: list[DeviceRef],
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        name: Optional[str] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the vocab-parallel embedding layer.
 

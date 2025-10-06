@@ -1,7 +1,7 @@
 [project]
 name = "modular"
 version = "0"
-requires-python = ">= 3.9"
+requires-python = ">= 3.10"
 
 [tool.black]
 include = '\.mojo$'
@@ -72,8 +72,6 @@ ignore = [
   "SIM117", # Merge with statements
   "SIM300", # YODA conditions
   "SIM905", # Use a list literal instead of str.split
-  "UP007", # TODO: Enable when we drop 3.9
-
 ]
 extend-select = [
   "ANN", # Require function type annotations

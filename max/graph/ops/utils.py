@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Utility functions for graph operations."""
 
-from typing import Callable
+from collections.abc import Callable
 
 
 def _axis_out_of_range_error(

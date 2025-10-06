@@ -591,5 +591,5 @@ class BlockManager:
         assert num_committed == num_committed_blocks
 
         # Check that the req block hashes are consistent with req blocks
-        for hash_value, block in zip(req_hashes, req_blocks):
+        for hash_value, block in zip(req_hashes, req_blocks, strict=False):
             assert block.block_hash is None or block.block_hash == hash_value

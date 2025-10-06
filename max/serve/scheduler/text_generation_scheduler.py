@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Union
 
 from max.interfaces import (
     MAXPullQueue,
@@ -54,7 +53,7 @@ class TokenGenerationScheduler(Scheduler):
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TextGenerationPipelineType[TextContext],
         *,
-        request_queue: MAXPullQueue[Union[TextContext, TextAndVisionContext]],
+        request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
@@ -80,14 +79,13 @@ class TokenGenerationScheduler(Scheduler):
         # the use case where we want to drain the queue in the main thread.
         # This is useful for debugging and testing purposes.
         self._queue_drainer: (
-            BackgroundQueueDrainer[Union[TextContext, TextAndVisionContext]]
-            | None
+            BackgroundQueueDrainer[TextContext | TextAndVisionContext] | None
         ) = None
         if offload_queue_draining:
             # I am setting this to drain at max batch size ce * 2, to ensure we do not drain
             # forever, but have more than enough to form full batches.
             self._queue_drainer = BackgroundQueueDrainer[
-                Union[TextContext, TextAndVisionContext]
+                TextContext | TextAndVisionContext
             ](
                 self.request_queue,
                 max_items_per_drain=self.scheduler_config.max_batch_size_ce * 2,
@@ -209,7 +207,7 @@ class TokenGenerationScheduler(Scheduler):
 def load_text_generation_scheduler(
     pipeline: TextGenerationPipelineType[TextContext],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[Union[TextContext, TextAndVisionContext]],
+    request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],

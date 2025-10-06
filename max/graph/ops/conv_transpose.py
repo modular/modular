@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv2d."""
 
-from typing import Optional
-
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
@@ -30,7 +28,7 @@ def conv2d_transpose(
     dilation: tuple[int, int] = (1, 1),
     padding: tuple[int, int, int, int] = (0, 0, 0, 0),
     output_paddings: tuple[int, int] = (0, 0),
-    bias: Optional[TensorValueLike] = None,
+    bias: TensorValueLike | None = None,
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> TensorValue:

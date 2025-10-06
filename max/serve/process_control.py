@@ -20,9 +20,9 @@ import multiprocessing.process
 import multiprocessing.synchronize
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Optional, Protocol, Union
+from typing import Protocol
 
 logger = logging.getLogger("max.serve.process_control")
 
@@ -34,7 +34,7 @@ class EventCreator(Protocol):
 
     def Event(
         self,
-    ) -> Union[threading.Event, multiprocessing.synchronize.Event]: ...
+    ) -> threading.Event | multiprocessing.synchronize.Event: ...
 
 
 class ProcessControl:
@@ -100,9 +100,9 @@ class ProcessControl:
         self.completed_event = ctx.Event()
         self.canceled_event = ctx.Event()
 
-        self._last_beat: Union[
-            multiprocessing.sharedctypes.Synchronized[int], ctypes.c_int64
-        ]
+        self._last_beat: (
+            multiprocessing.sharedctypes.Synchronized[int] | ctypes.c_int64
+        )
         # Support both threading and multiprocessing contexts
         if hasattr(ctx, "Value"):
             self._last_beat = ctx.Value(ctypes.c_int64)
@@ -167,9 +167,9 @@ class ProcessMonitor:
     proc: multiprocessing.process.BaseProcess
 
     poll_s: float = 200e-3
-    max_time_s: Optional[float] = 10.0
+    max_time_s: float | None = 10.0
     unhealthy_poll_s: float = 200e-3
-    unhealthy_max_time_s: Optional[float] = None
+    unhealthy_max_time_s: float | None = None
     use_heartbeat: bool = False
 
     async def until_started(self) -> bool:
@@ -239,7 +239,7 @@ class ProcessMonitor:
         logger.info("Shut down")
 
     async def shutdown_if_unhealthy(
-        self, cb: Optional[Callable[[], None]] = None
+        self, cb: Callable[[], None] | None = None
     ) -> None:
         try:
             await self.until_unhealthy()
@@ -261,7 +261,7 @@ class ProcessMonitor:
             await self.shutdown()
 
     async def shutdown_if_dead(
-        self, cb: Optional[Callable[[], None]] = None
+        self, cb: Callable[[], None] | None = None
     ) -> None:
         try:
             await self.until_dead_no_timeout()
@@ -284,7 +284,7 @@ class ProcessMonitor:
 
 
 async def _until_true(
-    is_done: Callable[[], bool], poll_s: float, max_time_s: Optional[float]
+    is_done: Callable[[], bool], poll_s: float, max_time_s: float | None
 ) -> bool:
     """Poll a predicate until it is true or you exceed 'max_time_s'"""
     steps: Iterable

@@ -19,7 +19,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Generic, TypeVar, Union
+from typing import Any, Generic, TypeVar
 
 from max._core import Attribute, NamedAttribute
 from max._core import Type as _Type
@@ -32,7 +32,7 @@ from .dim import SymbolicDim
 from .shape import Shape, ShapeLike
 
 MlirType = TypeVar("MlirType", bound=_Type)
-OpaqueParameter = Union[bool, int, str, DType]
+OpaqueParameter = bool | int | str | DType
 
 
 class FilterLayout(enum.Enum):
@@ -145,9 +145,7 @@ class DeviceRef:
         """Static Method for creating a GPU device."""
         return DeviceRef(DeviceKind.GPU, id)
 
-    def __init__(
-        self, device_type: Union[DeviceKind, str], id: int = 0
-    ) -> None:
+    def __init__(self, device_type: DeviceKind | str, id: int = 0) -> None:
         if isinstance(device_type, DeviceKind):
             self.device_type = device_type
         else:
@@ -507,7 +505,7 @@ def _attribute_to_value(value: Attribute) -> OpaqueParameter:
 
     This function is the inverse of _value_to_attribute.
     """
-    if isinstance(value, (builtin.BoolAttr, builtin.StringAttr)):
+    if isinstance(value, builtin.BoolAttr | builtin.StringAttr):
         return value.value
 
     if isinstance(value, builtin.IntegerAttr):

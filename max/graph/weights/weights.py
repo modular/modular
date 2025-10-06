@@ -14,8 +14,8 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterator
-from typing import Any, Callable, Optional, Protocol, TypeVar, runtime_checkable
+from collections.abc import Callable, Iterator
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import numpy.typing as npt
 from max.driver import CPU, DLPackArray, Tensor
@@ -170,9 +170,9 @@ class Weights(Protocol):
 
     def allocate(
         self,
-        dtype: Optional[DType] = None,
-        shape: Optional[ShapeLike] = None,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
+        dtype: DType | None = None,
+        shape: ShapeLike | None = None,
+        quantization_encoding: QuantizationEncoding | None = None,
         device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Create a Weight object for this tensor.
@@ -235,7 +235,7 @@ class WeightData(DLPackArray):
     shape: Shape
     """Shape of the tensor as a Shape object."""
 
-    quantization_encoding: Optional[QuantizationEncoding] = None
+    quantization_encoding: QuantizationEncoding | None = None
     """Optional quantization scheme applied to the weight."""
 
     def __dlpack__(self) -> Any:

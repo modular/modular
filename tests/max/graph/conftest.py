@@ -19,10 +19,9 @@ import math
 import operator
 import os
 import random
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from functools import reduce
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 import pytest

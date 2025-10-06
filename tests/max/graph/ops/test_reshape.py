@@ -102,7 +102,7 @@ def test_reshapes__can_replace_any_dims_with_negative_one(
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].tensor.reshape(reshape_shape)
         assert out.dtype == input_type.dtype
-        for dim, expected in zip(out.shape, reshape_shape):
+        for dim, expected in zip(out.shape, reshape_shape, strict=False):
             if expected != -1:
                 assert dim == expected
         graph.output(out)

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Union
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
@@ -40,7 +39,7 @@ class ConvTranspose1d(Module):
             )
     """
 
-    device: Union[DeviceRef, None]
+    device: DeviceRef | None
     """The device where matrix operations are performed."""
 
     weight: Weight
@@ -64,7 +63,7 @@ class ConvTranspose1d(Module):
     PyTorch order is: (in_channels, out_channels, kernel_length)
     Max API order: (kernel_length, out_channels, in_channels). """
 
-    bias: Union[Weight, None] = None
+    bias: Weight | None = None
     """The optional bias vector stored on CPU with shape (out_channels,).
     Model init moves the bias to :obj:`device` if present."""
 
@@ -74,14 +73,14 @@ class ConvTranspose1d(Module):
         in_channels: int,
         out_channels: int,
         dtype: DType,
-        stride: Union[int, tuple[int, int]] = 1,
-        padding: Union[int, tuple[int, int, int, int]] = 0,
-        dilation: Union[int, tuple[int, int]] = 1,
-        output_padding: Union[int, tuple[int, int]] = 0,
-        device: Union[DeviceRef, None] = None,
+        stride: int | tuple[int, int] = 1,
+        padding: int | tuple[int, int, int, int] = 0,
+        dilation: int | tuple[int, int] = 1,
+        output_padding: int | tuple[int, int] = 0,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
-        name: Union[str, None] = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the ConvTranspose1d layer with weights and optional bias.
 
@@ -249,7 +248,7 @@ class WeightNormConvTranspose1d(Module):
             )
     """
 
-    device: Union[DeviceRef, None]
+    device: DeviceRef | None
     """The device where matrix operations are performed."""
 
     conv: ConvTranspose1d
@@ -267,14 +266,14 @@ class WeightNormConvTranspose1d(Module):
         in_channels: int,
         out_channels: int,
         dtype: DType,
-        stride: Union[int, tuple[int, int]] = 1,
-        padding: Union[int, tuple[int, int, int, int]] = 0,
-        dilation: Union[int, tuple[int, int]] = 1,
-        output_padding: Union[int, tuple[int, int]] = 0,
-        device: Union[DeviceRef, None] = None,
+        stride: int | tuple[int, int] = 1,
+        padding: int | tuple[int, int, int, int] = 0,
+        dilation: int | tuple[int, int] = 1,
+        output_padding: int | tuple[int, int] = 0,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
-        name: Union[str, None] = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the WeightNormConvTranspose1d layer.
 

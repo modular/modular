@@ -15,7 +15,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import click
 import numpy as np
@@ -467,7 +466,7 @@ def parse_and_plot(
 def cli(
     input_files,  # noqa: ANN001
     label_list: list[str],
-    output_prefix: Optional[str],
+    output_prefix: str | None,
     plot_col: str,
     key: str,
     compare: bool,

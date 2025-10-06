@@ -205,7 +205,7 @@ class MemoryEstimator:
 
         vram_usage_limit_scale = 0.95
 
-        if isinstance(free_memory, (int, float)):
+        if isinstance(free_memory, int | float):
             if int(total_size) > int(free_memory):
                 self._raise_oom_error(
                     pipeline_config,

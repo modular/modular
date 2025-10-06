@@ -17,7 +17,7 @@ import functools
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -372,7 +372,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         processor and extracts the necessary components for model execution.
         """
         # Determine prompt
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt

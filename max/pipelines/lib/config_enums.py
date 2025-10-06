@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 from max.driver import DeviceSpec
 from max.dtype import DType
@@ -121,7 +120,7 @@ class SupportedEncoding(str, Enum):
             return None
 
     @property
-    def quantization_encoding(self) -> Optional[QuantizationEncoding]:
+    def quantization_encoding(self) -> QuantizationEncoding | None:
         if self not in _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING:
             raise ValueError(
                 f"SupportedEncoding({self}) does not have corresponding QuantizationEncoding."

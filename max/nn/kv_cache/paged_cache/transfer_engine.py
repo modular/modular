@@ -21,7 +21,6 @@ import random
 import socket
 import time
 from collections import defaultdict
-from typing import Optional
 from uuid import uuid4
 
 import msgspec
@@ -186,7 +185,7 @@ class KVTransferEngine:
         tensors: Tensor | list[Tensor],
         *,
         total_num_pages: int,
-        listen_port: Optional[int] = None,
+        listen_port: int | None = None,
     ) -> None:
         if total_num_pages <= 0:
             raise ValueError(
@@ -400,7 +399,7 @@ class KVTransferEngine:
             )
 
         for i, (local_ta, remote_agent_meta) in enumerate(
-            zip(self.tensor_agents, remote.agents_meta)
+            zip(self.tensor_agents, remote.agents_meta, strict=False)
         ):
             if local_ta.bytes_per_page != remote_agent_meta.bytes_per_page:
                 raise ValueError(
@@ -683,7 +682,7 @@ class KVTransferEngine:
             remote = self.remote_connections[remote_name]
             # Invalidate for each agent pair
             for i, (ta, remote_agent_meta) in enumerate(
-                zip(self.tensor_agents, remote.agents_meta)
+                zip(self.tensor_agents, remote.agents_meta, strict=False)
             ):
                 status = ta.agent.invalidate_remote_metadata(
                     remote_agent_meta.agent_name

@@ -18,7 +18,7 @@ import time
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Optional, cast, final
+from typing import Any, cast, final
 
 import numpy as np
 import numpy.typing as npt
@@ -113,7 +113,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
     def __init__(
         self,
         params: KVCacheParams,
-        max_batch_size: Optional[int],
+        max_batch_size: int | None,
         text_max_seq_len: int,
         vision_max_seq_len: int,
         text_num_layers: int,
@@ -747,7 +747,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         # Set convenience attributes for the text and vision configs.

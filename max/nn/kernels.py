@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 from max.driver import accelerator_architecture_name
@@ -687,7 +687,7 @@ def flash_attention_gpu(
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
-    valid_length: Optional[TensorValue] = None,
+    valid_length: TensorValue | None = None,
 ) -> TensorValue:
     """Computes flash attention using GPU-optimized kernel.
 
@@ -1076,8 +1076,8 @@ def flare_mla_prefill_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     qk_rope_dim: int = 64,
-    prev_output: Optional[TensorValue] = None,
-    prev_softmax_info: Optional[TensorValue] = None,
+    prev_output: TensorValue | None = None,
+    prev_softmax_info: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Performs MLA prefill. In the MLA prefill, we need to decompress
     the KV tensors, as we store the latent representations in the KV cache.
@@ -1549,7 +1549,7 @@ def rms_norm_key_cache(
     total_seq_len: Dim,
     input_row_offsets: TensorValue,
     weight_offset: float | np.floating[Any],
-    rms_norm_cols: Optional[int] = None,
+    rms_norm_cols: int | None = None,
     multiply_before_cast: bool = True,
     per_head_norm: bool = True,
 ) -> None:
@@ -2631,7 +2631,7 @@ def topk_fused_sampling(
     top_k: TensorValueLike,
     *,
     temperature: TensorValueLike = 1.0,
-    max_k: Optional[TensorValueLike] = None,
+    max_k: TensorValueLike | None = None,
     top_p: TensorValueLike = 1.0,
     seed: TensorValueLike = 0,
 ) -> TensorValue:
@@ -2693,7 +2693,7 @@ def topk_fused_sampling(
             )
 
     # Handle top_p parameter - can be scalar or tensor
-    if isinstance(top_p, (float, int)):
+    if isinstance(top_p, float | int):
         if top_p <= 0 or top_p > 1:
             raise ValueError(f"expected top_p to be in (0, 1], got {top_p}")
         top_p_tensor = ops.broadcast_to(

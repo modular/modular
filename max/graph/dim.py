@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import functools
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Union
+from typing import Any
 
 import numpy as np
 from max._core.dialects import builtin, kgen
@@ -78,7 +78,7 @@ class Dim:
         if isinstance(value, Dim):
             # Directly return existing Dim instance.
             return value
-        elif isinstance(value, (int, np.integer)):
+        elif isinstance(value, int | np.integer):
             return super().__new__(StaticDim)
         elif isinstance(value, str):
             return super().__new__(SymbolicDim)
@@ -163,7 +163,7 @@ class Dim:
         return lhs + -self
 
     def __floordiv__(self, rhs: DimLike) -> Dim:
-        if isinstance(rhs, (int, StaticDim)) and int(rhs) == 0:
+        if isinstance(rhs, int | StaticDim) and int(rhs) == 0:
             raise ZeroDivisionError
         return AlgebraicDim.apply(kgen.POC.div, self, rhs)
 
@@ -443,7 +443,7 @@ class StaticDim(Dim):
             isinstance(other, StaticDim) and self.dim == other.dim
         )
 
-    def __lt__(self, other: Union[int, StaticDim]):
+    def __lt__(self, other: int | StaticDim):
         return self.dim < (other.dim if isinstance(other, StaticDim) else other)
 
     def __hash__(self):
@@ -480,4 +480,4 @@ class StaticDim(Dim):
         return ()
 
 
-DimLike = Union[int, str, Dim, np.integer[Any]]
+DimLike = int | str | Dim | np.integer[Any]

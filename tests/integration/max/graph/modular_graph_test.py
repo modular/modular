@@ -14,8 +14,8 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Callable
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import torch
@@ -203,7 +203,7 @@ def modular_graph_test(
 
         input_types = []
         for input in graph.inputs:
-            assert isinstance(input.type, (TensorType, BufferType))
+            assert isinstance(input.type, TensorType | BufferType)
 
             input_types.append(input.type)
 

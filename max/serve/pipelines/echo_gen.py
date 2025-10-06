@@ -13,7 +13,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Union, cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -54,7 +54,7 @@ class EchoPipelineTokenizer(
 
     async def encode(
         self,
-        prompt: Union[str, Sequence[int]],
+        prompt: str | Sequence[int],
         add_special_tokens: bool = False,
     ) -> npt.NDArray[np.integer[Any]]:
         """Encode the prompt into token IDs.
@@ -92,7 +92,7 @@ class EchoPipelineTokenizer(
         """Creates a new TextContext for echo generation."""
 
         # Extract prompt from request
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages is not None:

@@ -30,10 +30,10 @@ from max.serve.telemetry.metrics import METRICS
 logger = logging.getLogger("max.entrypoints")
 
 # Global shutdown event for coordinating graceful shutdown
-_shutdown_event: Optional[asyncio.Event] = None
+_shutdown_event: asyncio.Event | None = None
 
 
-def sigterm_handler(sig: int, frame: Optional[FrameType]) -> None:
+def sigterm_handler(sig: int, frame: FrameType | None) -> None:
     """Handle SIGTERM by setting the shutdown event."""
     logger.info("SIGTERM received, initiating graceful shutdown")
     if _shutdown_event is not None and not _shutdown_event.is_set():
@@ -53,7 +53,7 @@ def sigterm_handler(sig: int, frame: Optional[FrameType]) -> None:
         sys.exit(0)
 
 
-def sigint_handler(sig: int, frame: Optional[FrameType]) -> None:
+def sigint_handler(sig: int, frame: FrameType | None) -> None:
     """Handle SIGINT by setting the shutdown event."""
     logger.info("SIGINT received, initiating graceful shutdown")
     if _shutdown_event is not None and not _shutdown_event.is_set():

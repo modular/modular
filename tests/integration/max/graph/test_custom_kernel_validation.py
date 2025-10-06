@@ -22,7 +22,6 @@ which focus on API validation only.
 
 import os
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 import pytest
@@ -203,7 +202,7 @@ class TestCustomKernelValidation:
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
         # Test different parameter kernels
-        test_cases: list[tuple[str, dict[str, Union[int, str, DType]]]] = [
+        test_cases: list[tuple[str, dict[str, int | str | DType]]] = [
             ("op_with_int_parameter", {"IntParameter": 123}),
             (
                 "op_with_static_string_parameter",

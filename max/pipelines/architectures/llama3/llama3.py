@@ -15,8 +15,7 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
-from typing import Callable, Optional
+from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
@@ -49,7 +48,7 @@ class StackedMLP(Module):
     def __init__(
         self,
         dtype: DType,
-        quantization_encoding: Optional[QuantizationEncoding],
+        quantization_encoding: QuantizationEncoding | None,
         hidden_dim: int,
         feed_forward_length: int,
         devices: Sequence[DeviceRef],

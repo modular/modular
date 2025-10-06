@@ -182,9 +182,9 @@ def test_load_from_file() -> None:
         print(graph, file=mlir_text_file, flush=True)
         loaded_graph = Graph("loaded", path=Path(mlir_text_file.name))
 
-    assert isinstance(
-        loaded_graph._mlir_op, (mlir.Operation, mlir.OpView)
-    ) and (str(loaded_graph) == str(graph))
+    assert isinstance(loaded_graph._mlir_op, mlir.Operation | mlir.OpView) and (
+        str(loaded_graph) == str(graph)
+    )
 
 
 def test_parfor() -> None:

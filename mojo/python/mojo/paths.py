@@ -20,7 +20,6 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .run import subprocess_run_mojo
 
@@ -81,7 +80,7 @@ def is_mojo_source_package_path(path: Path) -> bool:
 
 def find_mojo_module_in_dir(
     dir_path: Path, module_name: str
-) -> Optional[MojoModulePath]:
+) -> MojoModulePath | None:
     """Searches a directory for Mojo package or single file module.
 
     Returns:
@@ -102,7 +101,7 @@ def find_mojo_module_in_dir(
     return None
 
 
-def _mojo_source_package_root_file(path: Path) -> Optional[Path]:
+def _mojo_source_package_root_file(path: Path) -> Path | None:
     """Returns the path to the `__init__.mojo` or `__init__.🔥` package root
     file if this is a Mojo source package directory, otherwise None.
 

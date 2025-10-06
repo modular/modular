@@ -18,7 +18,7 @@ import logging
 import os
 from collections import deque
 from collections.abc import Generator
-from typing import Any, Optional
+from typing import Any
 
 from max.graph import TensorValue
 from max.nn._identity import IdentitySet
@@ -36,7 +36,7 @@ class PrintHook(BasePrintHook):
     print ops can be added to the graph.
     """
 
-    def __init__(self, export_path: Optional[str] = None) -> None:
+    def __init__(self, export_path: str | None = None) -> None:
         super().__init__(export_path=export_path)
         add_layer_hook(self)
         if export_path is not None:
@@ -51,7 +51,7 @@ class PrintHook(BasePrintHook):
             self.add_layer(layer, name)
 
     @property
-    def export_path(self) -> Optional[str]:
+    def export_path(self) -> str | None:
         if self._export_path is None:
             return None
         return os.path.join(self._export_path, str(self._current_step))
@@ -86,7 +86,7 @@ def _walk_layers(model: Layer) -> Generator[tuple[Layer, str], None, None]:
             for k, v in obj.__dict__.items():
                 if v not in seen or isinstance(v, _SUPPORTED_TYPES):
                     queue.append((v, f"{name}.{k}"))
-        elif isinstance(obj, (list, tuple)):
+        elif isinstance(obj, list | tuple):
             for n, v in enumerate(obj):
                 if v not in seen or isinstance(v, _SUPPORTED_TYPES):
                     queue.append((v, f"{name}.{n}"))

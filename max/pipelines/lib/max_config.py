@@ -113,7 +113,7 @@ def _get_argparse_type_and_action(
         - action: The action string for add_argument() or None for typed args
     """
 
-    # Get the origin and args for generic types (e.g., Optional[int] -> Union, (int, NoneType))
+    # Get the origin and args for generic types (e.g., int | None -> Union, (int, NoneType))
     origin = get_origin(field_type)
     args = get_args(field_type)
 
@@ -198,7 +198,7 @@ def convert_max_config_value(
     if value is None:
         return None
 
-    # Get the origin and args for generic types (e.g., Optional[int] -> Union, (int, NoneType))
+    # Get the origin and args for generic types (e.g., int | None -> Union, (int, NoneType))
     origin = get_origin(field_type)
     args = get_args(field_type)
 
@@ -302,7 +302,7 @@ def convert_max_config_value(
                 )
         try:
             # Handle numeric values (0/1)
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 return bool(value)
             else:
                 # Try to convert to int first, then to bool

@@ -15,7 +15,6 @@ import os
 import subprocess
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 try:
     from rich.console import Console
@@ -64,7 +63,7 @@ class InputState(Enum):
 
 def prompt_validation(
     console: Console, retries: int, repos: list[tuple[str, str]]
-) -> Optional[tuple[str, str]]:
+) -> tuple[str, str] | None:
     state = InputState.PROMPT_INPUT
     selected_index = None
     n_repos = len(repos)
@@ -123,7 +122,7 @@ def prompt_validation(
 def select_repository(
     console: Console,
     repos: list[tuple[str, str]],
-) -> Optional[tuple[str, str]]:
+) -> tuple[str, str] | None:
     table = Table(title="Select the Example to Run", highlight=True)
     table.add_column("Index", style="cyan", justify="center")
     table.add_column(

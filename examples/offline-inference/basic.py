@@ -36,7 +36,9 @@ def main() -> None:
     print("Generating responses...")
     responses = llm.generate(prompts, max_new_tokens=50)
 
-    for i, (prompt, response) in enumerate(zip(prompts, responses)):
+    for i, (prompt, response) in enumerate(
+        zip(prompts, responses, strict=False)
+    ):
         print(f"========== Response {i} ==========")
         print(prompt + response)
         print()

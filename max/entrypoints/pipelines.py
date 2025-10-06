@@ -17,8 +17,8 @@ import functools
 import logging
 import os
 import sys
-from collections.abc import Sequence
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
 import click
 from click import shell_completion

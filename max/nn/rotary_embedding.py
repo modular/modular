@@ -15,7 +15,6 @@
 import math
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Optional
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, TensorValueLike, ops
@@ -37,7 +36,7 @@ class RotaryEmbedding(Module):
     head_dim: int
     """head_dim = dim // n_heads if not specified in the config."""
     device: DeviceRef
-    _freqs_cis: Optional[TensorValueLike] = None
+    _freqs_cis: TensorValueLike | None = None
     interleaved: bool = True
 
     def __init__(
@@ -47,8 +46,8 @@ class RotaryEmbedding(Module):
         theta: float,
         max_seq_len: int,
         device: DeviceRef,
-        head_dim: Optional[int] = None,
-        _freqs_cis: Optional[TensorValueLike] = None,
+        head_dim: int | None = None,
+        _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
     ) -> None:
         super().__init__()
@@ -110,15 +109,15 @@ class RotaryEmbedding(Module):
         self._freqs_cis = ops.reshape(freqs, new_f_shape)
         return self._freqs_cis
 
-    def compute_scale(self, user_scale: Optional[float] = None) -> float:
+    def compute_scale(self, user_scale: float | None = None) -> float:
         n = self.head_dim
         return user_scale if user_scale else math.sqrt(1.0 / n)
 
     def __call__(
         self,
         x: TensorValueLike,
-        start_pos: Optional[Dim] = None,
-        seq_len: Optional[Dim] = None,
+        start_pos: Dim | None = None,
+        seq_len: Dim | None = None,
     ) -> TensorValue:
         """Applies rotary positional embeddings (RoPE) to `x`.
 
@@ -194,8 +193,8 @@ class DynamicRotaryEmbedding(RotaryEmbedding):
         theta: float,
         max_seq_len: int,
         device: DeviceRef,
-        head_dim: Optional[int] = None,
-        _freqs_cis: Optional[TensorValueLike] = None,
+        head_dim: int | None = None,
+        _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
     ) -> None:
         super().__init__(
@@ -303,7 +302,7 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
     RotaryEmbedding for Llama3 that takes rope scaling into account.
     """
 
-    scaling_params: Optional[Llama3RopeScalingParams] = None
+    scaling_params: Llama3RopeScalingParams | None = None
     """Scaling parameters to enable llama to function with a longer context length."""
 
     def __init__(
@@ -313,10 +312,10 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
         theta: float,
         max_seq_len: int,
         device: DeviceRef,
-        head_dim: Optional[int] = None,
-        _freqs_cis: Optional[TensorValueLike] = None,
+        head_dim: int | None = None,
+        _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
-        scaling_params: Optional[Llama3RopeScalingParams] = None,
+        scaling_params: Llama3RopeScalingParams | None = None,
     ) -> None:
         super().__init__(
             dim,
@@ -393,7 +392,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
     of the model, not the hidden dimension.
     """
 
-    scaling_params: Optional[DeepseekYarnRopeScalingParams] = None
+    scaling_params: DeepseekYarnRopeScalingParams | None = None
 
     def __init__(
         self,
@@ -402,10 +401,10 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         theta: float,
         max_seq_len: int,
         device: DeviceRef,
-        head_dim: Optional[int] = None,
-        _freqs_cis: Optional[TensorValueLike] = None,
+        head_dim: int | None = None,
+        _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
-        scaling_params: Optional[DeepseekYarnRopeScalingParams] = None,
+        scaling_params: DeepseekYarnRopeScalingParams | None = None,
     ) -> None:
         super().__init__(
             dim,
@@ -456,7 +455,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             self._freqs_cis = ops.stack([cos, sin], axis=-1)
         return TensorValue(self._freqs_cis)
 
-    def compute_scale(self, user_scale: Optional[float] = None) -> float:
+    def compute_scale(self, user_scale: float | None = None) -> float:
         assert self.scaling_params
         scale = super().compute_scale(user_scale)
         mscale = self._yarn_get_mscale(
@@ -641,10 +640,10 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
         theta: float,
         max_seq_len: int,
         device: DeviceRef,
-        head_dim: Optional[int] = None,
-        _freqs_cis: Optional[TensorValueLike] = None,
+        head_dim: int | None = None,
+        _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
-        scaling_params: Optional[LongRoPEScalingParams] = None,
+        scaling_params: LongRoPEScalingParams | None = None,
     ) -> None:
         """Initialize LongRoPE rotary embeddings.
 
@@ -761,7 +760,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
 
         return TensorValue(self._freqs_cis)
 
-    def compute_scale(self, user_scale: Optional[float] = None) -> float:
+    def compute_scale(self, user_scale: float | None = None) -> float:
         """Compute attention scale with LongRoPE adjustment."""
         if user_scale is not None:
             return user_scale
@@ -796,7 +795,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
     with configurable parameters for beta_fast, beta_slow, and scaling factor.
     """
 
-    scaling_params: Optional[YarnScalingParams] = None
+    scaling_params: YarnScalingParams | None = None
 
     def __init__(
         self,
@@ -805,10 +804,10 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         theta: float,
         max_seq_len: int,
         device: DeviceRef,
-        head_dim: Optional[int] = None,
-        _freqs_cis: Optional[TensorValueLike] = None,
+        head_dim: int | None = None,
+        _freqs_cis: TensorValueLike | None = None,
         interleaved: bool = True,
-        scaling_params: Optional[YarnScalingParams] = None,
+        scaling_params: YarnScalingParams | None = None,
     ) -> None:
         """
         Initialize YarnRotaryEmbedding.

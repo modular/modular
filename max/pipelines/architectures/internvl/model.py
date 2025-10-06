@@ -183,7 +183,7 @@ def assert_image_embeddings_invariant(
 ) -> None:
     # Check for shape mismatch that causes scatter_nd OOB access.
     for i, (embed, indices) in enumerate(
-        zip(image_embeddings, image_token_indices)
+        zip(image_embeddings, image_token_indices, strict=False)
     ):
         embed_count = embed.shape[0]
         indices_count = indices.shape[0]

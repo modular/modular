@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
@@ -104,7 +104,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
         if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():

@@ -16,9 +16,8 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 from max.dtype import DType
 from max.graph import (
@@ -79,9 +78,9 @@ class AttentionWithRopeV1(AttentionImpl):
     # calculation, which we will borrow
 
     rope: RotaryEmbedding
-    bias: Optional[TensorValue] = None
-    perm_idx: Optional[TensorValue] = None
-    quantization_config: Optional[QuantizationConfig] = None
+    bias: TensorValue | None = None
+    perm_idx: TensorValue | None = None
+    quantization_config: QuantizationConfig | None = None
 
     def __call__(
         self,

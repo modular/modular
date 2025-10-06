@@ -18,8 +18,8 @@ import contextlib
 import copy
 import dataclasses
 import functools
-from collections.abc import Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from rich.pretty import pretty_repr
 from typing_extensions import Self, dataclass_transform

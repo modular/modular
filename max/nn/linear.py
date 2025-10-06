@@ -16,10 +16,9 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable
 
 import numpy as np
 from max.dtype import DType
@@ -279,7 +278,7 @@ class Linear(Module, Shardable):
 
         shards = []
         for shard_idx, (device, weight_shard) in enumerate(
-            zip(devices, sharded_weights)
+            zip(devices, sharded_weights, strict=False)
         ):
             # Create new Linear with same configuration.
             sharded = Linear(
@@ -1207,7 +1206,11 @@ class MLP(Module, Shardable):
 
         shards = []
         for device, gate_proj, down_proj, up_proj in zip(
-            devices, sharded_gate_projs, sharded_down_projs, sharded_up_projs
+            devices,
+            sharded_gate_projs,
+            sharded_down_projs,
+            sharded_up_projs,
+            strict=False,
         ):
             # Create new MLP instance with the sharded layers
             sharded = MLP(

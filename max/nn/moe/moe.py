@@ -14,8 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import Callable
+from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import (
@@ -293,7 +292,7 @@ class MoE(Module, Shardable):
         up_list = [expert.up_proj.weight for expert in self.experts]
 
         gate_up_list: list[TensorValue] = []
-        for tensors in zip(gate_list, up_list):
+        for tensors in zip(gate_list, up_list, strict=False):
             gate_up_list.extend(tensors)
 
         return ops.stack(gate_up_list, axis=0).reshape(

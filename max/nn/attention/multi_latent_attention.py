@@ -15,8 +15,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
-from typing import Callable
+from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import (

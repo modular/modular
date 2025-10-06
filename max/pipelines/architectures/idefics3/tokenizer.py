@@ -19,7 +19,7 @@ import functools
 import io
 import json
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -155,7 +155,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
     ) -> TextAndVisionContext:
         """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
 
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt

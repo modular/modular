@@ -20,7 +20,7 @@ import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -67,8 +67,8 @@ def _add_config_file_arg_to_parser(
 
 
 def _resolve_user_provided_config_file_cli_arg(
-    args: Optional[Sequence[str]] = None,
-) -> tuple[Optional[Path], list[str]]:
+    args: Sequence[str] | None = None,
+) -> tuple[Path | None, list[str]]:
     """Resolve the user-provided --config-file argument from command line arguments.
 
     This utility function extracts the config file path from command line arguments
@@ -112,13 +112,13 @@ class BaseBenchmarkConfig(MAXConfig):
     """The section name to use when loading this config from a MAXConfig file."""
 
     # Model and tokenizer configuration (common to all benchmarks)
-    model: Optional[str] = None
+    model: str | None = None
     """Name of the model. Required when running benchmark."""
 
-    tokenizer: Optional[str] = None
+    tokenizer: str | None = None
     """Name or path of the tokenizer, if not using the default tokenizer."""
 
-    model_max_length: Optional[int] = None
+    model_max_length: int | None = None
     """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
 
     trust_remote_code: bool = False
@@ -128,7 +128,7 @@ class BaseBenchmarkConfig(MAXConfig):
     dataset_name: str = "sharegpt"
     """Name of the dataset to benchmark on."""
 
-    dataset_path: Optional[str] = None
+    dataset_path: str | None = None
     """Path to the dataset."""
 
     dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
@@ -219,7 +219,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Backend to use for benchmarking. Choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat"""
 
-    base_url: Optional[str] = field(
+    base_url: str | None = field(
         default=None, metadata={"group": "Backend and API Configuration"}
     )
     """Server or API base url if not using http host and port."""
@@ -241,7 +241,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
 
     # Request configuration (serving-specific)
-    max_concurrency: Optional[int] = field(
+    max_concurrency: int | None = field(
         default=None,
         metadata={
             "group": "Request Configuration",
@@ -250,13 +250,13 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Maximum concurrent requests (optimized for serving benchmarks)."""
 
-    lora: Optional[str] = field(
+    lora: str | None = field(
         default=None, metadata={"group": "Request Configuration"}
     )
     """Optional LoRA name."""
 
     # Workload configuration (serving-specific)
-    max_benchmark_duration_s: Optional[int] = field(
+    max_benchmark_duration_s: int | None = field(
         default=None,
         metadata={
             "group": "Workload Configuration",
@@ -265,18 +265,18 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Maximum benchmark duration in seconds."""
 
-    num_chat_sessions: Optional[int] = field(
+    num_chat_sessions: int | None = field(
         default=None, metadata={"group": "Workload Configuration"}
     )
     """Number of multiturn chat sessions."""
 
-    delay_between_chat_turns: Optional[int] = field(
+    delay_between_chat_turns: int | None = field(
         default=None, metadata={"group": "Workload Configuration"}
     )
     """Delay between chat turns in ms."""
 
     # Output control (serving-specific extensions)
-    output_lengths: Optional[str] = field(
+    output_lengths: str | None = field(
         default=None,
         metadata={
             "group": "Output Control",
@@ -285,7 +285,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Path to YAML file with output lengths or int."""
 
-    max_output_len: Optional[int] = field(
+    max_output_len: int | None = field(
         default=None, metadata={"group": "Output Control"}
     )
     """Maximum output length per request."""
@@ -298,7 +298,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     top_p: float = field(default=1.0, metadata={"group": "Output Control"})
     """Top-p for sampling."""
 
-    top_k: Optional[int] = field(
+    top_k: int | None = field(
         default=None, metadata={"group": "Output Control"}
     )
     """Top-k for sampling."""
@@ -341,7 +341,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "group_description": "Parameters specific to different dataset types and workloads",
         },
     )
-    batch_job_image_dir: Optional[str] = field(
+    batch_job_image_dir: str | None = field(
         default=None, metadata={"group": "Dataset-Specific Parameters"}
     )
     obfuscated_conversations_average_output_len: int = field(
@@ -425,17 +425,17 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Specify to save benchmark results to a json file."""
 
-    record_output_lengths: Optional[str] = field(
+    record_output_lengths: str | None = field(
         default=None, metadata={"group": "Result Saving"}
     )
     """Path to save output lengths in YAML format."""
 
-    result_dir: Optional[str] = field(
+    result_dir: str | None = field(
         default=None, metadata={"group": "Result Saving"}
     )
     """Directory to save results."""
 
-    result_filename: Optional[str] = field(
+    result_filename: str | None = field(
         default=None, metadata={"group": "Result Saving"}
     )
     """Custom filename (auto-generated if null)."""
@@ -451,12 +451,12 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     lora_rank: int = field(default=16, metadata={"group": "LoRA Configuration"})
     """LoRA rank for generated adapters."""
 
-    lora_output_dir: Optional[str] = field(
+    lora_output_dir: str | None = field(
         default="/tmp/loras", metadata={"group": "LoRA Configuration"}
     )
     """Directory to save generated LoRA adapters."""
 
-    lora_server_path: Optional[str] = field(
+    lora_server_path: str | None = field(
         default="/tmp/loras", metadata={"group": "LoRA Configuration"}
     )
     """Path where a docker server can access LoRA adapters."""
@@ -561,7 +561,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 # Convenience functions for loading specific configuration types
 def load_base_benchmark_config(
     config_file: str = "configs/base_config.yaml",
-    overrides: Optional[dict[str, Any]] = None,
+    overrides: dict[str, Any] | None = None,
 ) -> BaseBenchmarkConfig:
     """Load base benchmark configuration with optional overrides.
 
@@ -581,7 +581,7 @@ def load_base_benchmark_config(
 
 def load_serving_benchmark_config(
     config_file: str = "configs/serving_config.yaml",
-    overrides: Optional[dict[str, Any]] = None,
+    overrides: dict[str, Any] | None = None,
 ) -> ServingBenchmarkConfig:
     """Load serving benchmark configuration with optional overrides.
 
@@ -677,7 +677,7 @@ def parse_benchmark_args(
     config_class: type[BaseBenchmarkConfig],
     default_config_path: Path,
     description: str,
-    args: Optional[Sequence[str]] = None,
+    args: Sequence[str] | None = None,
 ) -> argparse.Namespace:
     """Parse command line arguments for benchmark entrypoints with config file inheritance.
 

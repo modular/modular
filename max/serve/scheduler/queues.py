@@ -19,7 +19,7 @@ import logging
 import os
 import queue
 from collections.abc import AsyncGenerator, Generator
-from typing import Any, Generic, Union
+from typing import Any, Generic
 
 from max.interfaces import (
     BaseContext,
@@ -46,7 +46,7 @@ def _get_request_type_from_pipeline_task(
         PipelineTask.TEXT_GENERATION,
         PipelineTask.EMBEDDINGS_GENERATION,
     ]:
-        return Union[TextContext, TextAndVisionContext]
+        return TextContext | TextAndVisionContext
     elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
         return TTSContext
     else:

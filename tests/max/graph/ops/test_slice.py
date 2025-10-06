@@ -111,7 +111,8 @@ def expected_slice_shape(shape, index):  # noqa: ANN001, ANN201
         raise NotImplementedError
 
     expected = (
-        expected_dim(dim, idx) for dim, idx in zip(shape, effective_index)
+        expected_dim(dim, idx)
+        for dim, idx in zip(shape, effective_index, strict=False)
     )
     return [dim for dim in expected if dim is not None]
 
@@ -503,7 +504,11 @@ def test_slice_int_dims(
     assert result_type.rank == len(expected_shape)  # type: ignore
     assert all(
         dim == expected_dim
-        for dim, expected_dim in zip(result_type.shape, expected_shape)  # type: ignore
+        for dim, expected_dim in zip(
+            result_type.shape,  # type: ignore
+            expected_shape,
+            strict=False,
+        )
         if isinstance(expected_dim, int)
     )
 

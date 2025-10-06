@@ -28,7 +28,14 @@ from json.decoder import JSONDecodeError
 from pathlib import Path
 from random import randint
 from time import perf_counter_ns
-from typing import Any, Generic, Literal, Optional, TypeVar, Union, cast
+from typing import (
+    Any,
+    Generic,
+    Literal,
+    TypeGuard,
+    TypeVar,
+    cast,
+)
 from urllib.parse import unquote, urlparse
 
 import aiofiles
@@ -101,7 +108,6 @@ from max.serve.telemetry.stopwatch import StopWatch
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
-from typing_extensions import TypeGuard
 
 _T = TypeVar("_T")
 
@@ -135,7 +141,7 @@ def record_request_end(
 
 def get_finish_reason_from_status(
     status: GenerationStatus, allow_none: bool = True
-) -> Optional[Literal["stop", "length"]]:
+) -> Literal["stop", "length"] | None:
     if status == GenerationStatus.END_OF_SEQUENCE:
         return "stop"
     elif status == GenerationStatus.MAXIMUM_LENGTH:
@@ -364,7 +370,7 @@ class OpenAIChatResponseGenerator(
                 for token in completed_outputs
                 if token.stop_sequence is not None
             ]
-            finish_reason: Optional[str]
+            finish_reason: str | None
             if len(stop_sequence) > 0:
                 idx = response_message.find(stop_sequence[0])
                 response_message = response_message[:idx]
@@ -439,7 +445,7 @@ class OpenAIChatResponseGenerator(
         self,
         response_message: str,
         response_choices: list[Choice1],
-        finish_reason: Optional[str],
+        finish_reason: str | None,
     ) -> None:
         """Handle regular text response by appending to response_choices."""
         response_choices.append(
@@ -686,7 +692,7 @@ async def resolve_image_from_url(
     raise ValueError(f"Invalid image ref '{image_ref}'")
 
 
-def _convert_stop(stop: Union[str, list[str], None]) -> Optional[list[str]]:
+def _convert_stop(stop: str | list[str] | None) -> list[str] | None:
     if stop is None:
         return None
     if isinstance(stop, str):
@@ -695,8 +701,8 @@ def _convert_stop(stop: Union[str, list[str], None]) -> Optional[list[str]]:
 
 
 def _get_target_endpoint(
-    request: Request, body_target_endpoint: Optional[str]
-) -> Optional[str]:
+    request: Request, body_target_endpoint: str | None
+) -> str | None:
     """Extract target_endpoint from header or body.
 
     Header takes precedence over body parameter.
@@ -721,7 +727,7 @@ def _get_target_endpoint(
 @router.post("/chat/completions", response_model=None)
 async def openai_create_chat_completion(
     request: Request,
-) -> Union[CreateChatCompletionResponse, EventSourceResponse]:
+) -> CreateChatCompletionResponse | EventSourceResponse:
     request_id = request.state.request_id
     try:
         async with _request_parsing_semaphore:
@@ -838,8 +844,8 @@ async def openai_create_chat_completion(
 
 
 def _convert_chat_completion_tools_to_token_generator_tools(
-    chat_tools: Optional[list[ChatCompletionTool]],
-) -> Optional[list[TextGenerationRequestTool]]:
+    chat_tools: list[ChatCompletionTool] | None,
+) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
         return None
@@ -866,14 +872,11 @@ def _convert_chat_completion_tools_to_token_generator_tools(
 
 
 def _create_response_format(
-    response_format: Optional[
-        Union[
-            ResponseFormatText,
-            ResponseFormatJsonObject,
-            ResponseFormatJsonSchema,
-        ]
-    ],
-) -> Optional[TextGenerationResponseFormat]:
+    response_format: ResponseFormatText
+    | ResponseFormatJsonObject
+    | ResponseFormatJsonSchema
+    | None,
+) -> TextGenerationResponseFormat | None:
     """Convert OpenAI response format to TextGenerationResponseFormat."""
     if not response_format:
         return None
@@ -922,7 +925,7 @@ async def openai_create_embeddings(
         # We can support other types of inputs but it will require few more changes
         # to TextGenerationRequest and tokenizer encode. Hence, only supporting
         # string and list of strings for now.
-        if not isinstance(embeddings_request.input, (str, list)):
+        if not isinstance(embeddings_request.input, str | list):
             raise ValueError(
                 "Input of type string or list of strings are only supported."
             )
@@ -967,8 +970,8 @@ async def openai_create_embeddings(
 class CompletionResponseStreamChoice(BaseModel):
     index: int
     text: str
-    logprobs: Optional[Logprobs] = None
-    finish_reason: Optional[Literal["stop", "length", "content_filter"]] = None
+    logprobs: Logprobs | None = None
+    finish_reason: Literal["stop", "length", "content_filter"] | None = None
 
 
 class CompletionStreamResponse(BaseModel):
@@ -977,7 +980,7 @@ class CompletionStreamResponse(BaseModel):
     model: str
     choices: list[CompletionResponseStreamChoice]
     object: Literal["text_completion"]
-    usage: Optional[CompletionUsage] = Field(default=None)
+    usage: CompletionUsage | None = Field(default=None)
 
 
 def _process_log_probabilities(
@@ -1179,7 +1182,7 @@ def get_prompts_from_openai_request(
     | list[InputItem]
     | list[int]
     | list[list[int]],
-) -> Union[Sequence[StringPrompt], Sequence[IntPrompt]]:
+) -> Sequence[StringPrompt] | Sequence[IntPrompt]:
     """Extract the prompts from a CreateCompletionRequest
 
     Prompts can encoded as str or list-of-int. Within a given requests, there
@@ -1205,7 +1208,7 @@ def get_prompts_from_openai_request(
 @router.post("/completions", response_model=None)
 async def openai_create_completion(
     request: Request,
-) -> Union[CreateCompletionResponse, EventSourceResponse]:
+) -> CreateCompletionResponse | EventSourceResponse:
     """
     Legacy OpenAI /completion endpoint.
     https://platform.openai.com/docs/api-reference/completions
@@ -1252,7 +1255,7 @@ async def openai_create_completion(
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
         for i, prompt in enumerate(prompts):
-            prompt = cast(Union[str, Sequence[int]], prompt)
+            prompt = cast(str | Sequence[int], prompt)
             sampling_params = SamplingParams.from_input(
                 SamplingParamsInput(
                     top_k=completion_request.top_k,

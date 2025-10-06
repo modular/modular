@@ -17,7 +17,6 @@ import queue
 import time
 import uuid
 from collections import OrderedDict
-from typing import Union
 
 from max.interfaces import (
     MAXPullQueue,
@@ -111,7 +110,7 @@ class DecodeScheduler(Scheduler):
 
         # Initialize the background queue drainer
         self._queue_drainer = BackgroundQueueDrainer[
-            Union[TextContext, TextAndVisionContext]
+            TextContext | TextAndVisionContext
         ](
             self.request_queue,
             max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,

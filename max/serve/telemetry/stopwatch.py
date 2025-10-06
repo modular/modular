@@ -13,9 +13,8 @@
 
 import contextlib
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from types import TracebackType
-from typing import Callable, Optional
 
 
 class StopWatch:
@@ -39,13 +38,13 @@ class StopWatch:
     def time_ns() -> int:
         return time.perf_counter_ns()
 
-    def __init__(self, start_ns: Optional[int] = None) -> None:
+    def __init__(self, start_ns: int | None = None) -> None:
         self.start_ns: int = (
             start_ns if start_ns is not None else self.time_ns()
         )
         self.exit_ns: int = 0
 
-    def reset(self, start_ns: Optional[int] = None) -> None:
+    def reset(self, start_ns: int | None = None) -> None:
         if start_ns is None:
             start_ns = self.time_ns()
         self.start_ns = start_ns

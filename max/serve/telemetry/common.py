@@ -19,7 +19,6 @@ import os
 import platform
 import uuid
 from time import time
-from typing import Union
 
 import requests
 from max.serve.config import Settings
@@ -91,8 +90,8 @@ metrics_resource = Resource.create(
 )
 
 
-def get_log_level(settings: Settings) -> Union[int, str, None]:
-    otlp_level: Union[int, str, None] = (
+def get_log_level(settings: Settings) -> int | str | None:
+    otlp_level: int | str | None = (
         logging.getLevelName(settings.logs_otlp_level)
         if settings.logs_otlp_level
         else None

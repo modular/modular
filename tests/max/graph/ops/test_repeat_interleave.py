@@ -14,7 +14,6 @@
 
 import operator
 from functools import reduce
-from typing import Optional
 
 import pytest
 from conftest import GraphBuilder, axes, tensor_types
@@ -106,7 +105,7 @@ def test_repeat_interleave__nonpositive_repeats(
     graph_builder: GraphBuilder,
     type: TensorType,
     repeats: int,
-    axis: Optional[int],
+    axis: int | None,
 ) -> None:
     assume(repeats <= 0)
     with graph_builder(input_types=[type]) as graph:

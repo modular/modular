@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import Any, Callable
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 from max import mlir
 from max._core import Value as _Value

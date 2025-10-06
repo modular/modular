@@ -18,7 +18,7 @@ import pickle
 from dataclasses import dataclass
 from io import BytesIO
 from os import PathLike
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch  # type: ignore
@@ -120,7 +120,7 @@ class PytorchWeights:
     def __init__(
         self,
         filepath: PathLike[str],
-        tensor_infos: Optional[dict[str, Any]] = None,
+        tensor_infos: dict[str, Any] | None = None,
         prefix: str = "",
         allocated=None,  # noqa: ANN001
     ) -> None:
@@ -151,7 +151,7 @@ class PytorchWeights:
         return Shape(self._tensor_infos[self._prefix].shape)
 
     @property
-    def quantization_encoding(self) -> Optional[QuantizationEncoding]:
+    def quantization_encoding(self) -> QuantizationEncoding | None:
         """The current weight quantization encoding, if this weight exists."""
         return None
 
@@ -206,9 +206,9 @@ class PytorchWeights:
 
     def allocate(
         self,
-        dtype: Optional[DType] = None,
-        shape: Optional[ShapeLike] = None,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
+        dtype: DType | None = None,
+        shape: ShapeLike | None = None,
+        quantization_encoding: QuantizationEncoding | None = None,
         device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates and optionally validates a new Weight."""

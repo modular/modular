@@ -20,8 +20,8 @@ import functools
 import io
 import json
 import logging
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -90,10 +90,10 @@ class PreTrainedPipelineTokenizer(
     ],
 ):
     def __init__(
-        self, delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
+        self, delegate: PreTrainedTokenizer | PreTrainedTokenizerFast
     ) -> None:
         assert isinstance(
-            delegate, (PreTrainedTokenizer, PreTrainedTokenizerFast)
+            delegate, PreTrainedTokenizer | PreTrainedTokenizerFast
         )
         self.delegate = delegate
 
@@ -288,8 +288,8 @@ class TextTokenizer(
     def apply_chat_template(
         self,
         messages: list[TextGenerationRequestMessage],
-        tools: Optional[list[TextGenerationRequestTool]],
-        chat_template_options: Optional[dict[str, Any]] = None,
+        tools: list[TextGenerationRequestTool] | None,
+        chat_template_options: dict[str, Any] | None = None,
     ) -> str:
         chat_template_options = chat_template_options or {
             "add_generation_prompt": True
@@ -336,7 +336,7 @@ class TextTokenizer(
         return False
 
     async def encode(
-        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
     ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
 
@@ -385,11 +385,11 @@ class TextTokenizer(
 
     async def _generate_prompt_and_token_ids(
         self,
-        prompt: Optional[Union[Sequence[int], str]],
-        messages: Optional[list[TextGenerationRequestMessage]],
-        tools: Optional[list[TextGenerationRequestTool]] = None,
-        chat_template_options: Optional[dict[str, Any]] = None,
-    ) -> tuple[Union[str, list[int]], npt.NDArray[np.integer[Any]]]:
+        prompt: Sequence[int] | str | None,
+        messages: list[TextGenerationRequestMessage] | None,
+        tools: list[TextGenerationRequestTool] | None = None,
+        chat_template_options: dict[str, Any] | None = None,
+    ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
         if prompt and messages:
             raise ValueError("both prompt and messages cannot be provided.")
 
@@ -410,8 +410,8 @@ class TextTokenizer(
     async def _get_eos_variables(
         self,
         ignore_eos: bool,
-        stop_token_ids: Optional[list[int]],
-        stop: Optional[list[str]],
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
     ) -> tuple[set[int], list[list[int]]]:
         eos_token_ids = self._default_eos_token_ids
         eos_sequences = list()
@@ -609,7 +609,7 @@ class TextAndVisionTokenizer(
         return True
 
     async def encode(
-        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
     ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
 
@@ -646,7 +646,7 @@ class TextAndVisionTokenizer(
         self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
         """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any, Optional
+from typing import Any
 
 import llguidance
 import msgspec
@@ -269,9 +269,9 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     def set_token_indices(
         self,
-        start_idx: Optional[int] = None,
-        active_idx: Optional[int] = None,
-        end_idx: Optional[int] = None,
+        start_idx: int | None = None,
+        active_idx: int | None = None,
+        end_idx: int | None = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
         new_start_idx = start_idx if start_idx is not None else self._start_idx
@@ -373,7 +373,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def update(
         self,
         new_token: int,
-        log_probabilities: Optional[LogProbabilities] = None,
+        log_probabilities: LogProbabilities | None = None,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         # This is required for chunked prefill.
@@ -550,7 +550,7 @@ class TextAndVisionContext(
     def update(
         self,
         new_token: int,
-        log_probabilities: Optional[LogProbabilities] = None,
+        log_probabilities: LogProbabilities | None = None,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         super().update(new_token=new_token, log_probabilities=log_probabilities)

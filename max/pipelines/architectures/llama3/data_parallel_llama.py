@@ -63,7 +63,7 @@ class DataParallelLlama(Module):
         self, all_model_args: Sequence[Sequence[Any]]
     ) -> tuple[TensorValue, ...]:
         all_outputs: list[list[TensorValue]] = [[] for _ in range(3)]
-        for args, model in zip(all_model_args, self.models):
+        for args, model in zip(all_model_args, self.models, strict=False):
             outputs = model(*args)
             for i, output in enumerate(outputs):
                 all_outputs[i].append(output.to(self.devices[0]))

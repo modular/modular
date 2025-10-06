@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Elementwise ops."""
 
-from typing import Callable
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.mlir.dialects import rmo

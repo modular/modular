@@ -29,7 +29,7 @@ import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pyarrow.parquet
 from benchmark_shared.config import BaseBenchmarkConfig
@@ -205,7 +205,7 @@ class ThroughputBenchmarkConfig(BaseBenchmarkConfig):
     top_k: int | None = None
 
     # Output configuration (throughput-specific)
-    output_json: Optional[str] = field(
+    output_json: str | None = field(
         default=None,
         metadata={
             "group": "Output Configuration",
@@ -265,7 +265,7 @@ class RequestPayload:
     prompt: str
     prompt_len: int
     output_len: int
-    image: Optional[bytes]
+    image: bytes | None
 
 
 def load_parquet_dataset(
@@ -303,8 +303,8 @@ def sample_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
-    fixed_output_len: Optional[int],
-    max_length: Optional[int],
+    fixed_output_len: int | None,
+    max_length: int | None,
 ) -> list[RequestPayload]:
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
@@ -527,18 +527,18 @@ async def run_max_async(
 
 def load_model_config(
     model_id: str,
-    devices: Optional[str | list[int]],
-    weight_path: Optional[str],
-    quantization_encoding: Optional[str],
-    max_length: Optional[int],
-    max_batch_size: Optional[int],
-    kv_cache_page_size: Optional[int],
-    enable_prefix_caching: Optional[bool],
-    enable_kvcache_swapping_to_host: Optional[bool],
-    host_kvcache_swap_space_gb: Optional[float],
-    device_memory_utilization: Optional[float],
-    max_num_steps: Optional[int],
-    trust_remote_code: Optional[bool],
+    devices: str | list[int] | None,
+    weight_path: str | None,
+    quantization_encoding: str | None,
+    max_length: int | None,
+    max_batch_size: int | None,
+    kv_cache_page_size: int | None,
+    enable_prefix_caching: bool | None,
+    enable_kvcache_swapping_to_host: bool | None,
+    host_kvcache_swap_space_gb: float | None,
+    device_memory_utilization: float | None,
+    max_num_steps: int | None,
+    trust_remote_code: bool | None,
     pipeline_task: PipelineTask,
 ) -> tuple[PipelinesFactory, PipelineConfig, TextTokenizer]:
     config_kwargs: dict[str, Any] = {}

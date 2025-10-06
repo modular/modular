@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Optional, Union
 
 # This is only imported internally if gguf is available
 import gguf  # type: ignore
@@ -120,10 +119,10 @@ class GGUFWeights(Weights):
 
     def __init__(
         self,
-        source: Union[PathLike[str], gguf.GGUFReader],
-        tensors: Optional[dict[str, gguf.ReaderTensor]] = None,
+        source: PathLike[str] | gguf.GGUFReader,
+        tensors: dict[str, gguf.ReaderTensor] | None = None,
         prefix: str = "",
-        allocated: Optional[dict[str, DLPackArray]] = None,
+        allocated: dict[str, DLPackArray] | None = None,
     ) -> None:
         """Creates a GGUF weights reader.
 
@@ -251,9 +250,9 @@ class GGUFWeights(Weights):
 
     def allocate(
         self,
-        dtype: Optional[DType] = None,
-        shape: Optional[ShapeLike] = None,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
+        dtype: DType | None = None,
+        shape: ShapeLike | None = None,
+        quantization_encoding: QuantizationEncoding | None = None,
         device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates and optionally validates a new Weight."""

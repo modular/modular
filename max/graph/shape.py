@@ -14,13 +14,8 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Iterable
-
-if sys.version_info >= (3, 10):
-    from typing import TypeGuard
-else:
-    from typing_extensions import TypeGuard
+from typing import TypeGuard
 
 from max._core.dialects import builtin, mosh
 

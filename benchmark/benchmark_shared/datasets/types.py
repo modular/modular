@@ -19,11 +19,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
-from typing import Any
+from typing import Any, Literal
 
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-from typing_extensions import Literal, TypedDict
+from typing_extensions import TypedDict
 
 
 class DatasetMode(str, Enum):

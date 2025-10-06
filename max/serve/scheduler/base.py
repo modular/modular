@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 import asyncio
 from enum import Enum
-from typing import Union
 
 import msgspec
 from max.interfaces import RequestID
@@ -56,7 +55,7 @@ class PrefillRequest(
     """
 
     id: RequestID
-    context: Union[TextContext, TextAndVisionContext]
+    context: TextContext | TextAndVisionContext
     transfer_engine_name: str
     block_ids: list[int]
 

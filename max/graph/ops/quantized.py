@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Optimized quantized operations."""
 
-from typing import Callable, Literal, Optional, Union
+from collections.abc import Callable
+from typing import Literal
 
 from max.dtype import DType
 
@@ -145,7 +146,7 @@ def _repack_then_matmul(
 # support future alternative schemes while continuing to support the current
 # scheme.
 _QMATMUL_STRATEGIES: dict[
-    Union[QuantizationEncoding, str],
+    QuantizationEncoding | str,
     Callable[[TensorValue, tuple[TensorValue, ...]], TensorValue],
 ] = {
     "gptq_b4_g128_aTrue": _repack_then_matmul(
@@ -168,7 +169,7 @@ _QMATMUL_STRATEGIES: dict[
 
 def qmatmul(
     encoding: QuantizationEncoding,
-    config: Optional[QuantizationConfig],
+    config: QuantizationConfig | None,
     lhs: TensorValue,
     *rhs: TensorValue,
 ) -> TensorValue:
