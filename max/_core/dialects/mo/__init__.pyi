@@ -1225,10 +1225,6 @@ class DistributedAllreduceSumOp(max._core.Operation):
 
     Multiple instances of this op are created (one per device) to enable
     multi-threaded execution.
-
-    NOTE: the created instances comprise a synchronous group and currently must
-    be followed by a mo.fence op to ensure correctness when mixed with other
-    multi-device ops such as mo.transfer.
     """
 
     def __init__(
