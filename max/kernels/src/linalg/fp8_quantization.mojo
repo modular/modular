@@ -421,6 +421,7 @@ fn matmul_dynamic_scaled_fp8[
         @parameter
         if ctx.default_device_info is B200:
 
+            @parameter
             @always_inline
             @__copy_capture(a_scales, b_scales)
             fn scale_compute_lambda_fn[

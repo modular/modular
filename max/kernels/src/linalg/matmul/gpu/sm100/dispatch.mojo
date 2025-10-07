@@ -597,6 +597,42 @@ fn matmul_dispatch_sm100_fp8[
 
     var m = c.dim[0]()
 
+    @parameter
+    fn matmul_swapab[static_m: Int]() raises -> Int:
+        constrained[
+            static_m % 2 == 0,
+            "static_m must be even",
+        ]()
+        alias block_tile_shape = Index(128, static_m // 2, BK)
+        alias umma_shape = Index(
+            block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+        )
+        alias cluster_shape = Index(2, 1, 1)
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            block_tile_shape=block_tile_shape,
+            mma_shape=umma_shape,
+            cluster_shape=cluster_shape,
+        )
+        _matmul_dispatch_sm100[
+            transpose_b=transpose_b,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+            swapAB=True,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
+
+    if m <= 128:
+        if m <= 16:
+            return matmul_swapab[16]()
+        elif m <= 32:
+            return matmul_swapab[32]()
+        elif m <= 64:
+            return matmul_swapab[64]()
+        else:
+            return matmul_swapab[128]()
+
     # gemma-3-27b-it-prefill (TP1)
     @parameter
     if static_N == 5376 and static_K == 21504:
@@ -1619,6 +1655,27 @@ fn matmul_dispatch_sm100_fp8[
             ](c, a, b, ctx)
             return DISPATCH_HIT
 
+    # TODO (KERN-2084): Enable default matmul for large shapes to increase accuracy
+    # # fallback to default matmul for large shapes
+    # alias block_tile_shape = Index(128, 128, BK)
+    # alias umma_shape = Index(
+    #     block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+    # )
+    # alias cluster_shape = Index(2, 1, 1)
+    # alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+    #     block_tile_shape=block_tile_shape,
+    #     mma_shape=umma_shape,
+    #     cluster_shape=cluster_shape,
+    # )
+    # _matmul_dispatch_sm100[
+    #     transpose_b=transpose_b,
+    #     config=config,
+    #     elementwise_lambda_fn=elementwise_lambda_fn,
+    #     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+    #     pdl_level=pdl_level,
+    #     block_swizzle_size=0,
+    # ](c, a, b, ctx)
+    # return DISPATCH_HIT
     return DISPATCH_MISS
 
 

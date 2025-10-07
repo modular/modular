@@ -557,6 +557,7 @@ fn _compute_register_lambda_fn[
     inc: UInt,
     offset: UInt,
     compute_lambda_fn: elementwise_compute_lambda_type,
+    transpose_c: Bool,
 ](
     top_coord: StaticTuple[UInt32, 2],
     bottom_coord: StaticTuple[UInt32, 2],
@@ -577,19 +578,45 @@ fn _compute_register_lambda_fn[
     var simd_top = frag.slice[2, offset=offset]()
     var simd_bottom = frag.slice[2, offset = offset + 2]()
 
-    simd_top = compute_lambda_fn(
-        IndexList[2](
-            Int(top_frag_upper_coord[0]), Int(top_frag_upper_coord[1])
-        ),
-        simd_top,
-    )
+    # In normal case, simd_top and simd_bottom are elements on the M dimension
+    # when transpose_c is true, they are on the N dimension. We change the index order
+    # when we do the transpose and pass the SIMD sector one-by-one to the lambda function.
+    @parameter
+    for i in range(simd_top.size):
 
-    simd_bottom = compute_lambda_fn(
-        IndexList[2](
-            Int(bottom_frag_upper_coord[0]), Int(bottom_frag_upper_coord[1])
-        ),
-        simd_bottom,
-    )
+        @parameter
+        if not transpose_c:
+            simd_top[i] = compute_lambda_fn(
+                IndexList[2](
+                    Int(top_frag_upper_coord[0]),
+                    Int(top_frag_upper_coord[1] + i),
+                ),
+                simd_top[i],
+            )
+
+            simd_bottom[i] = compute_lambda_fn(
+                IndexList[2](
+                    Int(bottom_frag_upper_coord[0]),
+                    Int(bottom_frag_upper_coord[1] + i),
+                ),
+                simd_bottom[i],
+            )
+        else:
+            simd_top[i] = compute_lambda_fn(
+                IndexList[2](
+                    Int(top_frag_upper_coord[1] + i),
+                    Int(top_frag_upper_coord[0]),
+                ),
+                simd_top[i],
+            )
+
+            simd_bottom[i] = compute_lambda_fn(
+                IndexList[2](
+                    Int(bottom_frag_upper_coord[1] + i),
+                    Int(bottom_frag_upper_coord[0]),
+                ),
+                simd_bottom[i],
+            )
 
     # store the results back into the fragment
     frag[offset] = simd_top[0]
@@ -611,6 +638,7 @@ fn register_epilogue[
     accum_type: DType,
     frag_size: UInt,
     repeats: UInt,
+    transpose_c: Bool,
 ](
     mut upper_frag: SIMD[accum_type, frag_size],
     mut lower_frag: SIMD[accum_type, frag_size],
@@ -681,6 +709,7 @@ fn register_epilogue[
             compute_lambda_fn=compute_lambda_fn,
             inc=inc,
             offset=offset,
+            transpose_c=transpose_c,
         ]
 
         helper(
@@ -837,6 +866,7 @@ fn multi_stage_store_C[
                     accum_type,
                     UInt(upper_frag.size),
                     UInt(rep),
+                    transpose_c,
                 ](upper_frag, lower_frag, c_row, c_col, N)
 
         # Assume double-buffer for shared memory packing

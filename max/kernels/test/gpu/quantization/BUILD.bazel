@@ -7,20 +7,36 @@ _DEPS = [
     "@mojo//:stdlib",
 ]
 
-_H100_TESTS = [
+_FP8_TESTS = [
     "test_scaled_matmul.mojo",
     "test_scaled_fp8_quantization.mojo",
 ]
+
+_EXTRA_CONSTRAINTS = {
+    "test_scaled_matmul.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_scaled_fp8_quantization.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+}
 
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
         tags = ["gpu"],
-        target_compatible_with = ["//:h100_gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = _DEPS,
     )
-    for src in _H100_TESTS
+    for src in _FP8_TESTS
 ]
 
 [
@@ -35,7 +51,7 @@ _H100_TESTS = [
         ["**/*.mojo"],
         exclude = [
             "test_multistage_gemm_q.mojo",
-        ] + _H100_TESTS,
+        ] + _FP8_TESTS,
     )
 ]
 

@@ -65,6 +65,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     block_swizzle_size: Int = 0,
     benchmark: Bool = False,
+    swapAB: Bool = False,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -91,6 +92,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
                 mma_shape,
                 " block_tile_shape=",
                 block_tile_shape,
+                " swapAB=",
+                swapAB,
             )
         )
 
@@ -154,6 +157,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         config=matmul_config,
         cta_group=2,
         block_swizzle_size=block_swizzle_size,
+        swapAB=swapAB,
     ](
         c_device.to_layout_tensor(),
         a_device.to_layout_tensor(),
@@ -247,39 +251,48 @@ def main():
                         static[1024 + 16](),
                     )
 
-                    test_blackwell_matmul_tma_umma_warp_specialized[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        block_swizzle_size=4,
-                    ](
-                        ctx,
-                        dynamic(512),
-                        static[4096](),
-                        static[1024](),
-                    )
+                    @parameter
+                    for swapAB in [False, True]:
 
-                    test_blackwell_matmul_tma_umma_warp_specialized[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        block_tile_shape,
-                        umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
-                        a_swizzle=swizzle,
-                        b_swizzle=swizzle,
-                        block_swizzle_size=0,
-                    ](
-                        ctx,
-                        dynamic(500),
-                        static[2048](),
-                        static[4096](),
-                    )
+                        @parameter
+                        if swapAB and mma_m_scale != 2:
+                            continue
+
+                        test_blackwell_matmul_tma_umma_warp_specialized[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                            block_swizzle_size=4,
+                            swapAB=swapAB,
+                        ](
+                            ctx,
+                            dynamic(512),
+                            static[4096](),
+                            static[1024](),
+                        )
+
+                        test_blackwell_matmul_tma_umma_warp_specialized[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                            block_swizzle_size=0,
+                            swapAB=swapAB,
+                        ](
+                            ctx,
+                            dynamic(500),
+                            static[2048](),
+                            static[4096](),
+                        )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
