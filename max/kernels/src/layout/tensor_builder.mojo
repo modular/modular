@@ -136,6 +136,7 @@ fn _to_int_tuple[elements: VariadicList[Int]]() -> IntTuple:
 
 @fieldwise_init
 @register_passable("trivial")
+@deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
 struct LayoutTensorBuild[
     dtype: DType,
     *,
