@@ -178,7 +178,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         for ctx in context_batch:
             replica_index = self._request_to_replica_idx[ctx.request_id]
             splits[replica_index + 1] += 1
-        splits = np.cumsum(splits)
+        splits = np.cumsum(splits)  # type: ignore
 
         return Tensor.from_numpy(splits)
 

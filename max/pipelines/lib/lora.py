@@ -836,11 +836,11 @@ class LoRAManager:
         for lora, slot in self._active_loras.values():
             if lora_weight := lora.get(key):
                 if LoRAType.A.value in key:
-                    weight_np[slot, : lora.rank, :] = lora_weight.data
+                    weight_np[slot, : lora.rank, :] = lora_weight.data  # type: ignore
                 elif LoRAType.B.value in key:
-                    weight_np[slot, :, : lora.rank] = lora_weight.data
+                    weight_np[slot, :, : lora.rank] = lora_weight.data  # type: ignore
                 elif LoRAType.BIAS.value in key:
-                    weight_np[slot, :] = lora_weight.data
+                    weight_np[slot, :] = lora_weight.data  # type: ignore
 
         # cast from fp32 -> target dtype
         # if target dtype is bfloat16, this technically returns a float16 np.ndarray

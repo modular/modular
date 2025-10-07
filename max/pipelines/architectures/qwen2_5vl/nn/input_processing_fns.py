@@ -43,27 +43,27 @@ def rot_pos_emb_numpy(
     for t, h, w in grid_thw:
         # Generate height position IDs: arange(h).unsqueeze(1).expand(-1, w)
         hpos_ids = np.arange(h).reshape(h, 1)  # unsqueeze(1)
-        hpos_ids = np.tile(hpos_ids, (1, w))  # expand(-1, w)
-        hpos_ids = hpos_ids.reshape(
+        hpos_ids = np.tile(hpos_ids, (1, w))  # type: ignore  # expand(-1, w)
+        hpos_ids = hpos_ids.reshape(  # type: ignore
             h // spatial_merge_size,
             spatial_merge_size,
             w // spatial_merge_size,
             spatial_merge_size,
         )
-        hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3))  # permute(0, 2, 1, 3)
-        hpos_ids = hpos_ids.flatten()
+        hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3))  # type: ignore  # permute(0, 2, 1, 3)
+        hpos_ids = hpos_ids.flatten()  # type: ignore
 
         # Generate width position IDs: arange(w).unsqueeze(0).expand(h, -1)
         wpos_ids = np.arange(w).reshape(1, w)  # unsqueeze(0)
-        wpos_ids = np.tile(wpos_ids, (h, 1))  # expand(h, -1)
-        wpos_ids = wpos_ids.reshape(
+        wpos_ids = np.tile(wpos_ids, (h, 1))  # type: ignore  # expand(h, -1)
+        wpos_ids = wpos_ids.reshape(  # type: ignore
             h // spatial_merge_size,
             spatial_merge_size,
             w // spatial_merge_size,
             spatial_merge_size,
         )
-        wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3))  # permute(0, 2, 1, 3)
-        wpos_ids = wpos_ids.flatten()
+        wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3))  # type: ignore  # permute(0, 2, 1, 3)
+        wpos_ids = wpos_ids.flatten()  # type: ignore
 
         # Stack and repeat for temporal dimension
         pos_ids_hw = np.stack([hpos_ids, wpos_ids], axis=-1)

@@ -878,7 +878,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     # Recompute this value on the fly.
                     context_seq_length = ctx.next_tokens.shape[0]
                     temp_position_ids = np.arange(context_seq_length)
-                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)
+                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)  # type: ignore
                     temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
                     delta = (
                         ctx.current_length

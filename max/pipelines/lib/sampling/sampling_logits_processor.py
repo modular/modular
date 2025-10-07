@@ -309,7 +309,7 @@ def _build_token_frequency_csr(
             frequency_row_offsets[i] : frequency_row_offsets[i + 1], 1
         ] = counts
 
-    token_frequency_pairs = token_frequency_pairs[
+    token_frequency_pairs = token_frequency_pairs[  # type: ignore
         : frequency_row_offsets[-1], :
     ]
 
