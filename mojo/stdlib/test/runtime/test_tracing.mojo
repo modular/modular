@@ -28,15 +28,11 @@ def test_tracing[level: TraceLevel, enabled: Bool]():
         alias s2 = "ENABLED: detail event 2" if enabled else String(
             "DISABLED: detail event 2"
         )
-        # TODO(MOCO-2403): Remove the use of an intermediate temporary.
-        var result = -1
         try:
             with Trace[level](s1, s2):
-                result = lhs + rhs
+                return lhs + rhs
         except e:
             return abort[Int](String(e))
-
-        return result
 
     @parameter
     async fn test_tracing_add_two_of_them[enabled: Bool](a: Int, b: Int) -> Int:
