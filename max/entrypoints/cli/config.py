@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import MISSING, Field, fields
 from enum import Enum
 from pathlib import Path
+from types import UnionType
 from typing import (
     Any,
     TypeGuard,
@@ -86,7 +87,9 @@ def get_interior_type(type_hint: type | str | Any) -> type[Any]:
 
 
 def is_optional(type_hint: type | str | Any) -> bool:
-    return get_origin(type_hint) is Union and type(None) in get_args(type_hint)
+    return get_origin(type_hint) in (Union, UnionType) and type(
+        None
+    ) in get_args(type_hint)
 
 
 def is_flag(field_type: Any) -> bool:

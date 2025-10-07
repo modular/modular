@@ -23,7 +23,7 @@ import sys
 from dataclasses import MISSING, dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, get_type_hints
+from typing import Any, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
@@ -60,13 +60,13 @@ class PipelineConfig(MAXConfig):
     default.
     """
 
-    max_length: Optional[int] = None  # noqa: UP007
+    max_length: int | None = None
     """Maximum sequence length of the model."""
 
     pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
     """Whether the pipeline should serve both a prefill or decode role or both."""
 
-    max_batch_size: Optional[int] = None  # noqa: UP007
+    max_batch_size: int | None = None
     """Maximum batch size to execute with the model.
     When not specified (None), we determine this value dynamically. For users
     launching in a server scenario, the expectation is that this value should be
@@ -77,10 +77,10 @@ class PipelineConfig(MAXConfig):
     """Maximum cache size to reserve for a single context encoding batch.
     The actual limit is the lesser of this and `max_batch_size`."""
 
-    max_queue_size_tg: Optional[int] = None  # noqa: UP007
+    max_queue_size_tg: int | None = None
     """Maximum number of requests in decode queue. By default, this is max-batch-size."""
 
-    min_batch_size_tg: Optional[int] = None  # noqa: UP007
+    min_batch_size_tg: int | None = None
     """Specifies a soft floor on the decode batch size.
 
     If the TG batch size is larger than this value, the scheduler will continue to
@@ -129,7 +129,7 @@ class PipelineConfig(MAXConfig):
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
 
-    chat_template: Optional[Path] = None  # noqa: UP007
+    chat_template: Path | None = None
     """Optional custom chat template to override the one shipped with the
     HuggingFace model config. Can be either:
     - A Path pointing to a file containing the template
@@ -171,7 +171,7 @@ class PipelineConfig(MAXConfig):
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
-    _draft_model_config: Optional[MAXModelConfig] = None  # noqa: UP007
+    _draft_model_config: MAXModelConfig | None = None
     """The draft model config."""
 
     _sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
@@ -180,7 +180,7 @@ class PipelineConfig(MAXConfig):
     _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
     """The profiling config."""
 
-    _lora_config: Optional[LoRAConfig] = None  # noqa: UP007
+    _lora_config: LoRAConfig | None = None
     """The LoRA config."""
 
     _config_file_section_name: str = "pipeline_config"
@@ -1086,7 +1086,7 @@ class AudioGenerationConfig(PipelineConfig):
     audio_decoder_weights: str = ""
     """The path to the audio decoder weights file."""
 
-    chunk_size: Optional[list[int]] = None  # noqa: UP007
+    chunk_size: list[int] | None = None
     """The chunk sizes to use for streaming.
     If this is an int, then fixed-size chunks of the given size are used
     If this is a list, then variable chunk sizes are used."""

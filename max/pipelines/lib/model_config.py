@@ -19,7 +19,7 @@ import os
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from huggingface_hub import constants as hf_hub_constants
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
@@ -84,14 +84,14 @@ class MAXModelConfig(MAXModelConfigBase):
     See post_init for more details on how this is done.
     """
 
-    served_model_name: Optional[str] = None  # noqa: UP007
+    served_model_name: str | None = None
     """Optional override for client-facing model name. Defaults to model_path."""
 
     weight_path: list[Path] = field(default_factory=list)
     """Optional path or url of the model weights to use."""
 
     # TODO(zheng): Move this under QuantizationConfig.
-    quantization_encoding: Optional[SupportedEncoding] = None  # noqa: UP007
+    quantization_encoding: SupportedEncoding | None = None
     """Weight encoding type."""
 
     allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = False
@@ -119,7 +119,7 @@ class MAXModelConfig(MAXModelConfigBase):
     vision_config_overrides: dict[str, Any] = field(default_factory=dict)
     """Model-specific vision configuration overrides. For example, for InternVL: {"max_dynamic_patch": 24}"""
 
-    rope_type: Optional[RopeType] = None  # noqa: UP007
+    rope_type: RopeType | None = None
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
     use_subgraphs: bool = True
@@ -129,21 +129,21 @@ class MAXModelConfig(MAXModelConfigBase):
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
 
-    _applied_dtype_cast_from: Optional[SupportedEncoding] = None  # noqa: UP007
+    _applied_dtype_cast_from: SupportedEncoding | None = None
     """Property to track the dtype that safetensor weights were casted from. None means no casting was applied. This should only be set by internal code."""
 
-    _applied_dtype_cast_to: Optional[SupportedEncoding] = None  # noqa: UP007
+    _applied_dtype_cast_to: SupportedEncoding | None = None
     """Property to track the dtype that safetensor weights were casted to. None means no casting was applied. This should only be set by internal code."""
 
-    _huggingface_config: Optional[AutoConfig] = None  # noqa: UP007
+    _huggingface_config: AutoConfig | None = None
     """Hugging Face config. This should only be set by internal code."""
 
-    _weights_repo_id: Optional[str] = None  # noqa: UP007
+    _weights_repo_id: str | None = None
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
     # TODO(zheng): Refactor QuantizationConfig to be a MAXConfig subclass that
     # also autopopulates default values.
-    _quant_config: Optional[QuantizationConfig] = None  # noqa: UP007
+    _quant_config: QuantizationConfig | None = None
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
 
     _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
