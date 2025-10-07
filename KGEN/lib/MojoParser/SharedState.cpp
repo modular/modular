@@ -1308,6 +1308,21 @@ ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {
   return lookupNamedTypeDecl("Coroutine", coroutineModule, loc);
 }
 
+ASTDecl *SharedState::getBuiltinDevicePassableTrait(llvm::SMLoc loc) {
+  ASTDecl &devicePassableModule =
+      importModule("builtin.device_passable", /*currentPackage=*/nullptr, loc);
+  LookupResult result = lookupAndResolveDecl(
+      "DevicePassable", loc, devicePassableModule, /*searchParentScopes=*/true);
+  if (result.isErroneous())
+    return {};
+  if (result.isFailure()) {
+    emitError(loc, "could not find a 'DevicePassable' type");
+    return {};
+  }
+  ASTDecl &firstDecl = *result.getIfSuccess()[0];
+  return &firstDecl;
+}
+
 ASTDecl *SharedState::getBuiltinRaisingCoroutineType(llvm::SMLoc loc) {
   ASTDecl &coroutineModule =
       importModule("builtin.coroutine", /*currentPackage=*/nullptr, loc);
