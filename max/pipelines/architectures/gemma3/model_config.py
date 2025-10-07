@@ -307,7 +307,9 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             attn_logit_softcapping=huggingface_config.attn_logit_softcapping,
             rope_scaling=rope_scaling_params,
             rope_local_base_freq=huggingface_config.rope_local_base_freq,
-            sliding_window_pattern=huggingface_config.sliding_window_pattern,
+            sliding_window_pattern=getattr(
+                huggingface_config, "sliding_window_pattern", 6
+            ),
             dtype=dtype,
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
