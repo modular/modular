@@ -1150,10 +1150,10 @@ def test_insert():
     )
 
     assert_equal(
-        SIMD[DType.int, 4](0, 1, 2, 3).insert[offset=1](
+        SIMD[DType.int, 4](0, 1, 2, 3).insert[offset=2](
             SIMD[DType.int, 2](9, 6)
         ),
-        SIMD[DType.int, 4](0, 9, 6, 3),
+        SIMD[DType.int, 4](0, 1, 9, 6),
     )
 
     assert_equal(
@@ -1164,10 +1164,10 @@ def test_insert():
     )
 
     assert_equal(
-        SIMD[DType.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=3](
+        SIMD[DType.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=0](
             SIMD[DType.uint, 4](9, 6, 3, 7)
         ),
-        SIMD[DType.uint, 8](0, 1, 2, 9, 6, 3, 7, 8),
+        SIMD[DType.uint, 8](9, 6, 3, 7, 5, 6, 7, 8),
     )
 
 

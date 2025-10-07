@@ -2610,7 +2610,8 @@ struct SIMD[dtype: DType, size: Int](
         `offset + input_width` have been replaced with the elements in `value`.
 
         Parameters:
-            offset: The offset to insert at.
+            offset: The offset to insert at. This must be a multiple of value's
+                    size.
 
         Args:
             value: The value to be inserted.
@@ -2619,6 +2620,11 @@ struct SIMD[dtype: DType, size: Int](
             A new vector whose elements at `self[offset:offset+input_width]`
             contain the values of `value`.
         """
+        constrained[
+            offset % value.size == 0,
+            "offset must be a multiple of the subvector's size",
+        ]()
+
         alias input_width = value.size
         constrained[
             0 <= offset < input_width + offset <= size,
@@ -2631,20 +2637,6 @@ struct SIMD[dtype: DType, size: Int](
                 input_width == 1, "the input width must be 1 if the size is 1"
             ]()
             return value[0]
-
-        # You cannot insert into a SIMD value at positions that are not a
-        # multiple of the SIMD width via the `llvm.vector.insert` intrinsic,
-        # so resort to a for loop. Note that this can be made more intelligent
-        # by dividing the problem into the offset, offset+val, val+input_width
-        # where val is a value to align the offset to the simdwidth.
-        @parameter
-        if offset % simd_width_of[dtype]():
-            var res = self
-
-            @parameter
-            for i in range(input_width):
-                res[i + offset] = value[i]
-            return res
 
         return llvm_intrinsic[
             "llvm.vector.insert", Self, has_side_effect=False
