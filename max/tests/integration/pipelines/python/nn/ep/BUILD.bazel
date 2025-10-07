@@ -1,0 +1,34 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "ep_tests",
+    size = "enormous",
+    srcs = glob(["*.py"]),
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for NVSHMEM
+        "LD_LIBRARY_PATH": "../+http_archive+libnvshmem/lib",  # TODO(SDLC-2481)
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
+    gpu_constraints = [
+        "//:has_4_gpus",
+        "//:nvidia_gpu",
+    ],
+    mojo_deps = [
+        "@mojo//:shmem",
+    ],
+    tags = ["gpu"],
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/serve",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("pytest-asyncio"),
+    ],
+)
