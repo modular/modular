@@ -15,7 +15,7 @@ from enum import Enum
 
 import msgspec
 from max.interfaces import RequestID
-from max.nn.kv_cache import XferReqData
+from max.nn.kv_cache import TransferReqData
 from max.pipelines.core import TextAndVisionContext, TextContext
 
 
@@ -76,7 +76,7 @@ class PrefillResponse(
 
     id: RequestID
     generated_token_id: int
-    transfer_metadata: XferReqData
+    transfer_metadata: TransferReqData
 
 
 class CancelRequest(msgspec.Struct, tag=True, omit_defaults=True, kw_only=True):

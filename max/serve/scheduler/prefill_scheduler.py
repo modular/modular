@@ -22,7 +22,7 @@ from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
-    XferReqData,
+    TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
@@ -60,7 +60,8 @@ class PrefillScheduler(Scheduler):
         self.paged_cache = paged_cache
         # Initialize Scheduler state.
         self.active_transfers: dict[
-            RequestID, tuple[TextAndVisionContext | TextContext, XferReqData]
+            RequestID,
+            tuple[TextAndVisionContext | TextContext, TransferReqData],
         ] = {}
         self.request_id_to_reply_context: dict[
             RequestID, tuple[ClientIdentity, str, list[int]]
@@ -188,12 +189,12 @@ class PrefillScheduler(Scheduler):
 
             # Initiate the KV transfer
             logger.debug("initiating transfer from prefill worker.")
-            xfer_data = self.transfer_engine.initiate_send_xfer(
+            transfer_data = self.transfer_engine.initiate_send_transfer(
                 remote_metadata,
                 src_idxs,
                 dst_idxs,
             )
-            self.active_transfers[req_id] = (context, xfer_data)
+            self.active_transfers[req_id] = (context, transfer_data)
 
             assert not context.needs_ce, (
                 f"Invalid Context: Expected needs_ce to be False. Found: {context}"
@@ -205,7 +206,7 @@ class PrefillScheduler(Scheduler):
                 PrefillResponse(
                     id=req_id,
                     generated_token_id=context.last_generated_token,
-                    transfer_metadata=xfer_data,
+                    transfer_metadata=transfer_data,
                 ),
                 identity,
             )

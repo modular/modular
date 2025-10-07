@@ -24,7 +24,7 @@ from .paged_cache import (
     PagedCacheInputSymbols,
     PagedCacheValues,
     PagedKVCacheManager,
-    XferReqData,
+    TransferReqData,
     available_port,
 )
 from .registry import (
@@ -46,7 +46,7 @@ __all__ = [
     "PagedCacheValues",
     "PagedKVCacheManager",
     "RaggedKVCacheInputs",
-    "XferReqData",
+    "TransferReqData",
     "available_port",
     "build_max_lengths_tensor",
     "estimate_kv_cache_size",

@@ -32,7 +32,7 @@ from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
-    XferReqData,
+    TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
@@ -89,7 +89,7 @@ class DecodeScheduler(Scheduler):
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
         self.prefill_reqs: dict[RequestID, TextContext] = {}
-        self.inflight_transfers: dict[RequestID, XferReqData] = {}
+        self.inflight_transfers: dict[RequestID, TransferReqData] = {}
 
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
