@@ -13,8 +13,7 @@
 
 from collections import Deque
 
-from testing import assert_equal
-from testing import TestSuite
+from testing import assert_equal, TestSuite
 
 
 def test_reversed_list():

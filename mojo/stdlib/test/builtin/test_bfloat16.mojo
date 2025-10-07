@@ -14,8 +14,7 @@
 from random import randn_float64
 from sys import CompilationTarget
 
-from testing import assert_almost_equal, assert_equal
-from testing import TestSuite
+from testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_methods():

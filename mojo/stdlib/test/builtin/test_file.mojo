@@ -14,8 +14,7 @@
 from pathlib import Path, _dir_of_current_file
 from tempfile import gettempdir
 
-from testing import assert_equal, assert_true
-from testing import TestSuite
+from testing import assert_equal, assert_true, TestSuite
 
 alias DUMMY_FILE_SIZE: UInt = 954
 

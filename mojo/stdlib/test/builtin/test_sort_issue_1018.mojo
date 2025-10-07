@@ -13,8 +13,10 @@
 
 from random import rand
 
+from testing import TestSuite
 
-fn sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
+
+fn _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
     var p = UnsafePointer[Scalar[dtype]].alloc(size)
     rand[dtype](p, size)
     sort(Span[Scalar[dtype], MutableAnyOrigin](ptr=p, length=UInt(size)))
@@ -33,13 +35,14 @@ fn sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
     p.free()
 
 
-fn main():
-    try:
-        sort_test[DType.int8, "int8"](300, 3_000)
-        sort_test[DType.float32, "float32"](3_000, 3_000)
-        sort_test[DType.float64, "float64"](300_000, 3_000_000_000)
-        # CHECK: Success
-        print("Success")
-    except e:
-        # CHECK-NOT: Failed
-        print(e)
+def test_sort_issue_1018():
+    _sort_test[DType.int8, "int8"](300, 3_000)
+    _sort_test[DType.float32, "float32"](3_000, 3_000)
+    _sort_test[DType.float64, "float64"](300_000, 3_000_000_000)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_sort_issue_1018]()
+    suite^.run()

@@ -15,10 +15,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
+
 
 def main():
-    test_debug_assert_mode_none_true()
-    test_debug_assert_mode_none_false()
+    var suite = TestSuite()
+
+    suite.test[test_debug_assert_mode_none_true]()
+    suite.test[test_debug_assert_mode_none_false]()
+
+    suite^.run()
 
 
 # CHECK-LABEL: test_debug_assert_mode_none_true

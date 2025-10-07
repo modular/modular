@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.format_int import _format_int
-from testing import assert_equal
-from testing import TestSuite
+from testing import assert_equal, TestSuite
 
 
 fn test_format_int() raises:

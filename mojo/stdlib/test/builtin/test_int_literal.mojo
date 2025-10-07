@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_add():
@@ -125,15 +125,19 @@ def test_shift():
 
 
 def main():
-    test_add()
-    test_sub()
-    test_ceil()
-    test_floor()
-    test_trunc()
-    test_floordiv()
-    test_mod()
-    test_abs()
-    test_indexer()
-    test_bool()
-    test_comparison()
-    test_shift()
+    var suite = TestSuite()
+
+    suite.test[test_add]()
+    suite.test[test_sub]()
+    suite.test[test_ceil]()
+    suite.test[test_floor]()
+    suite.test[test_trunc]()
+    suite.test[test_floordiv]()
+    suite.test[test_mod]()
+    suite.test[test_abs]()
+    suite.test[test_indexer]()
+    suite.test[test_bool]()
+    suite.test[test_comparison]()
+    suite.test[test_shift]()
+
+    suite^.run()

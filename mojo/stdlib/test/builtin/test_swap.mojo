@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import MoveOnly
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 def test_swap_Int():
@@ -78,7 +78,11 @@ def test_swap_Tuple_Mixed():
 
 
 def main():
-    test_swap_Int()
-    test_swap_String()
-    test_swap_Tuple_Int()
-    test_swap_Tuple_Mixed()
+    var suite = TestSuite()
+
+    suite.test[test_swap_Int]()
+    suite.test[test_swap_String]()
+    suite.test[test_swap_Tuple_Int]()
+    suite.test[test_swap_Tuple_Mixed]()
+
+    suite^.run()

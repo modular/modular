@@ -12,8 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import PythonObject
-from testing import assert_equal, assert_false, assert_raises, assert_true
-from testing import TestSuite
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_properties():

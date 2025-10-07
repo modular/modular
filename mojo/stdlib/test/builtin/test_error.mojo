@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
-from testing import TestSuite
+from testing import assert_equal, TestSuite
 
 
 def raise_an_error():

@@ -15,7 +15,7 @@
 import sys
 from io.io import _fdopen
 
-from testing import testing
+from testing import testing, TestSuite
 
 
 fn test_read_until_delimiter_raises_eof() raises:
@@ -25,4 +25,8 @@ fn test_read_until_delimiter_raises_eof() raises:
 
 
 def main():
-    test_read_until_delimiter_raises_eof()
+    var suite = TestSuite()
+
+    suite.test[test_read_until_delimiter_raises_eof]()
+
+    suite^.run()

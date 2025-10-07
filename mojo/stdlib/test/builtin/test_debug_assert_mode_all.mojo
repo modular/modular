@@ -15,9 +15,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
+
 
 def main():
-    test_debug_assert_mode_all_true()
+    var suite = TestSuite()
+
+    suite.test[test_debug_assert_mode_all_true]()
+
+    suite^.run()
 
 
 # CHECK-LABEL: test_debug_assert_mode_all_true

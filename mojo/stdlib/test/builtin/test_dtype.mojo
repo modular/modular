@@ -13,8 +13,7 @@
 
 from sys import size_of
 
-from testing import assert_equal, assert_false, assert_true
-from testing import TestSuite
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 alias uint_dtypes = [
     DType.uint8,

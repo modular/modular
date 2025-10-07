@@ -14,7 +14,7 @@
 
 from random import random_ui64
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 from utils import IndexList
 
@@ -27,7 +27,7 @@ fn gen_perm() -> IndexList[64]:
     return result
 
 
-def main():
+def test_issue_1505():
     alias p = gen_perm()
 
     # generate random data to prevent that everything gets simplified
@@ -104,3 +104,11 @@ def main():
 
     for i in range(64):
         assert_equal(data1[p[i]], data2[i])
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_issue_1505]()
+
+    suite^.run()
