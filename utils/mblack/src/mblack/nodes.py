@@ -324,6 +324,9 @@ def whitespace(
             return NO
 
         if t == token.EQUAL:
+            if prev.type == syms.where_clause:
+                return SPACE
+
             if prev.type not in TYPED_NAMES:
                 return NO
 

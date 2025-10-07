@@ -9,8 +9,11 @@ import pytest
 import mblack
 from tests.util import assert_mojo_format
 
+# ====================== #
+# Fns with where clauses
+# ====================== #
 
-def test_simple_where_clause():
+def test_simple_fn_where_clause():
     source = f"fn where_simple[x: Bool]() where x: pass"
     expected = (
         f"fn where_simple[x: Bool]() where x:\n"
@@ -19,7 +22,7 @@ def test_simple_where_clause():
     assert_mojo_format(source, expected)
 
 
-def test_composite_where_clause_with_return():
+def test_composite_fn_where_clause_with_return():
     source = f"fn where_composite[x: Bool]() -> Int where x and y + z: pass"
     expected = (
         f"fn where_composite[x: Bool]() -> Int where x and y + z:\n"
@@ -28,7 +31,7 @@ def test_composite_where_clause_with_return():
     assert_mojo_format(source, expected)
 
 
-def test_long_where_clause():
+def test_long_fn_where_clause():
     source = (
         "fn where_long[x: Bool, y: Int, z: Int](\n"
         "    a: Int, b: Int, c: Int\n"
@@ -46,7 +49,7 @@ def test_long_where_clause():
     assert_mojo_format(source, expected)
 
 
-def test_very_long_where_clause_with_return():
+def test_very_long_fn_where_clause_with_return():
     source = (
         "fn where_very_long() -> (Int, Int, String) where (\n"
         "    x and y + z and a == b and c == d and (e == f or g) and xx == yy and zz == aa or (ds or dd)\n"
@@ -73,7 +76,7 @@ def test_very_long_where_clause_with_return():
     assert_mojo_format(source, expected)
 
 
-def test_multiple_where_clauses():
+def test_multiple_fn_where_clauses():
     source = (
         "fn where_multiple[x: Bool, y: Int]() "
         "where x and y + z and a == b "
@@ -91,6 +94,9 @@ def test_multiple_where_clauses():
     )
     assert_mojo_format(source, expected)
 
+# ============================== #
+# Param decls with where clauses
+# ============================== #
 
 def test_where_clause_in_params():
     source = (
@@ -148,6 +154,15 @@ def test_multiple_where_clauses_in_params():
         "    ) where zz == aa or (ds or dd),\n"
         "    y: Int where y > 0 where x is True,\n"
         "]():\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_composite_param_where_clause_with_default():
+    source = f"fn where_composite[x: Bool where x and y + z = True]() -> Int: pass"
+    expected = (
+        f"fn where_composite[x: Bool where x and y + z = True]() -> Int:\n"
         "    pass\n"
     )
     assert_mojo_format(source, expected)

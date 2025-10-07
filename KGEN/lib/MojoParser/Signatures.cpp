@@ -203,6 +203,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
       paramList.paramDeclAttrs.push_back(paramDecl);
       paramList.locations.push_back(origExpr ? origExpr->getLoc() : SMLoc());
       paramList.variadicKinds.push_back(VariadicKind::None);
+      paramList.allParamConstraints.emplace_back();
       return ParamDeclRefAttr::get(paramDecl);
     };
 
@@ -382,6 +383,14 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   if (!name)
     name = StringAttr::get(p.getContext());
 
+  // Parse optional where clauses.
+  while (p.consumeIfSoftIdentifier("where")) {
+    ParsedConstraint constraint;
+    if (constraint.parse(p))
+      return failure();
+    constraints.push_back(constraint);
+  }
+
   // Parse an optional default argument value: `"=" expression`.
   SMLoc equalLoc;
   if (p.consumeIf(Token::equal, &equalLoc)) {
@@ -402,6 +411,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
       initExpr = nullptr;
     }
   }
+
   return success();
 }
 
@@ -733,6 +743,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
   SmallVector<PassingKind> passingKinds;
   SmallVector<VariadicKind> variadicKinds;
   SmallVector<SMLoc> locations;
+  SmallVector<SmallVector<ConstraintAttr>> constraints;
 
   // Functor to insert the pending vectors into paramList, either at the front
   // or back.
@@ -748,6 +759,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
     insertFn(paramList.passingKinds, passingKinds);
     insertFn(paramList.variadicKinds, variadicKinds);
     insertFn(paramList.locations, locations);
+    insertFn(paramList.allParamConstraints, constraints);
   });
 
   // The parameter decl references that will be used to fully bind the type,
@@ -756,7 +768,8 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
   ParserParameterEvaluator evaluator(paramList.shared);
 
   // This functor adds a single parameter to the parameter list.
-  auto declareAndAddParam = [&](Type type, StringRef name) {
+  auto declareAndAddParam = [&](Type type, StringRef name,
+                                ArrayRef<ConstraintAttr> paramConstraints) {
     auto mangledName = paramList.declScope.mangleParamName(name);
     auto funcDecl =
         ParamDeclAttr::get(mangledName, evaluator.getReboundType(type));
@@ -769,6 +782,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
 
     // FIXME: Autoparam of variadics looks broken?
     variadicKinds.push_back(VariadicKind::None);
+    constraints.emplace_back(paramConstraints);
     evaluator.appendIndexBinding(paramValues.back());
   };
 
@@ -778,7 +792,8 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
     TypedAttr origins = sig.getCaptureOrigins();
     if (!isa<UnboundAttr>(origins))
       return type;
-    declareAndAddParam(origins.getType(), "__origins__");
+    declareAndAddParam(origins.getType(), "__origins__",
+                       /*paramConstraints=*/{});
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
@@ -786,9 +801,11 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
   if (auto paramType = dyn_cast<ParamType>(type)) {
     if (auto genType =
             dyn_cast<LITGeneratorType>(paramType.getParam().getType())) {
-      auto paramList = genType.getParamListAttrs();
+      PogListAttr paramList = genType.getParamListAttrs();
+      ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
       for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))
-        declareAndAddParam(type, paramList.getName(idx));
+        declareAndAddParam(type, pogs[idx].getName(),
+                           /*paramConstraints=*/pogs[idx].getConstraints());
       return BindParamsAttr::get(paramType.getParam(), paramValues,
                                  &shared.getEvaluationContext());
     }
@@ -798,8 +815,11 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
   auto getBoundStructMetaType = [&](StructMetaType metatype) {
     // The unbound parameters will be on the struct type's signature.
     TypeSignatureType sig = metatype.getSignature();
+    PogListAttr paramList = sig.getParamListAttrs();
+    ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
     for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
-      declareAndAddParam(type, sig.getParamListAttrs().getName(idx));
+      declareAndAddParam(type, pogs[idx].getName(),
+                         /*paramConstraints=*/pogs[idx].getConstraints());
     return metatype.bindUnbound(paramValues);
   };
 
@@ -912,6 +932,33 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
+
+    // Parse optional constraints after the parameter declaration has been added
+    // since constraints may reference the parameter.
+    SmallVector<ConstraintAttr> &paramConstraints =
+        result.allParamConstraints.emplace_back();
+    IREmitter constraintEmitter(declScope, EC_Requires);
+    for (const ParsedConstraint &constraint : arg.constraints) {
+      RValue propI1 =
+          constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
+      if (!propI1) {
+        constraintEmitter.emitError(constraint.loc,
+                                    "failed to emit constraint expression");
+        continue;
+      }
+
+      PValue propVal = propI1.getIfPValue();
+      if (!propVal) {
+        constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
+        continue;
+      }
+
+      // Store the constraint in the parameter list as is. These will be
+      // remapped to using index refs later when constructing the final
+      // GeneratorType.
+      paramConstraints.push_back(ConstraintAttr::get(
+          propVal, result.shared.translateLocation(constraint.loc)));
+    }
   }
 
   if (hasErrors)
@@ -920,10 +967,13 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 }
 
 PogListAttr TypeCheckedParamList::getParamListAttr() const {
+  assert(allParamConstraints.size() == names.size() &&
+         "constraints array has different size than parameter arrays");
+
   return PogListAttr::get(shared.getContext(),
                           PogListAttr::toPogs(names, passingKinds,
                                               variadicKinds,
-                                              /*constraints=*/{}),
+                                              allParamConstraints),
                           defaultPosParams, defaultKwOnlyParams,
                           ArgConvention::ByRefError, ArgConvention::ReadMem);
 }
@@ -1174,7 +1224,7 @@ ParseResult ParsedArgumentList::parseConstraintsIfPresent(ParserBase &p) {
     if (constraint.parse(p))
       return failure();
 
-    constraints.push_back(constraint);
+    fnConstraints.push_back(constraint);
   }
   return success();
 }
@@ -1988,7 +2038,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // Type check the constraints.
   IREmitter constraintEmitter(paramList.declScope, EC_Requires);
-  for (const ParsedConstraint &constraint : argList.constraints) {
+  for (const ParsedConstraint &constraint : argList.fnConstraints) {
     RValue propI1 =
         constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
     if (!propI1) {
@@ -1998,12 +2048,12 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     }
 
     PValue propVal = propI1.getIfPValue();
-    if (!propI1) {
+    if (!propVal) {
       constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
       continue;
     }
 
-    constraints.push_back(
+    fnConstraints.push_back(
         ConstraintAttr::get(propVal, shared.translateLocation(constraint.loc)));
   }
 }
@@ -2266,7 +2316,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
       getOriginsAccessibleByParams(paramList.getParamListAttr(),
                                    paramList.paramDeclAttrs, paramList.shared,
                                    captureOrigins),
-      isNestedOriginExclusivityCheckingDisabled, constraints);
+      isNestedOriginExclusivityCheckingDisabled, fnConstraints);
 
   /// Silence internal verifier errors when constructing types from the parser.
   /// We don't want to show these to the user.

@@ -1399,7 +1399,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (!signature)
     return failure();
 
-  decl.insertKnownAssumptions(tcSignature.constraints);
+  decl.insertKnownAssumptions(tcSignature.fnConstraints);
 
   /// configure FnOp
 

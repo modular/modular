@@ -146,6 +146,7 @@ class _python_symbols(Symbols):
     vfpdef: int
     vfplist: int
     vname: int
+    where_clause: int
     while_stmt: int
     with_stmt: int
     xor_expr: int

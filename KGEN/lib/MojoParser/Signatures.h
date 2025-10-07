@@ -68,6 +68,17 @@ enum class CaptureConvention : uint8_t {
   kConventionUnspecified = 5
 };
 
+struct ParsedConstraint {
+  SMLoc loc;
+  ExprNode *propExpr;
+
+  ParseResult parse(ParserBase &p);
+
+  /// Print the constraint for debugging.
+  void print(mlir::raw_indented_ostream &os) const;
+  LLVM_DUMP_METHOD void dump() const;
+};
+
 /// Parsing support for a function argument and parameter:
 ///
 /// argument_list      ::= argument ("," argument)*
@@ -113,6 +124,9 @@ struct ParsedArgument {
   // If this is a ref convention, this specifies the origin expression.
   ExprNode *refOriginExpr = nullptr;
 
+  /// Constraints specified with 'where' clauses on this parameter.
+  SmallVector<ParsedConstraint> constraints;
+
   /// This gets set to true when there is a /diagnosed/ error that should
   /// prevent subsequent references to this argument.
   mutable bool isErroneous = false;
@@ -126,17 +140,6 @@ struct ParsedArgument {
   PassingKind getKWArgHandlingAsPassingKind() const;
 
   /// Print the argument for debugging.
-  void print(mlir::raw_indented_ostream &os) const;
-  LLVM_DUMP_METHOD void dump() const;
-};
-
-struct ParsedConstraint {
-  SMLoc loc;
-  ExprNode *propExpr;
-
-  ParseResult parse(ParserBase &p);
-
-  /// Print the constraint for debugging.
   void print(mlir::raw_indented_ostream &os) const;
   LLVM_DUMP_METHOD void dump() const;
 };
@@ -191,6 +194,9 @@ public:
   SmallVector<TypedAttr> defaultPosParams;
   /// Default values for keyword-only params.
   SmallVector<TypedAttr> defaultKwOnlyParams;
+
+  /// Constraints specified with 'where' clauses at each parameter position.
+  SmallVector<SmallVector<ConstraintAttr>> allParamConstraints;
 };
 
 //===----------------------------------------------------------------------===//
@@ -205,8 +211,8 @@ public:
   /// The result specifier if present.
   ParsedArgument resultArg;
   FnEffects effects;
-  /// Constraints specified with 'where' clauses.
-  SmallVector<ParsedConstraint> constraints;
+  /// Trailing function level constraints specified with 'where' clauses.
+  SmallVector<ParsedConstraint> fnConstraints;
 
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
@@ -272,8 +278,8 @@ public:
   SmallVector<Type> fullArgTypes;
   SmallVector<ParamDeclAttr> implicitOriginDecls;
 
-  /// Constraints specified with 'where' clauses.
-  SmallVector<ConstraintAttr> constraints;
+  /// Trailing function level constraints specified with 'where' clauses.
+  SmallVector<ConstraintAttr> fnConstraints;
 
   /// This is the result type + variant for throwing functions.  This is what
   /// finally gets treated as the ABI for the function.
