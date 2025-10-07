@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 from utils._select import _select_register_value
 
@@ -22,4 +22,8 @@ def test_select_register_value():
 
 
 def main():
-    test_select_register_value()
+    var suite = TestSuite()
+
+    suite.test[test_select_register_value]()
+
+    suite^.run()

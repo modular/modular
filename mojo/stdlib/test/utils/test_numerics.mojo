@@ -13,7 +13,13 @@
 
 from sys.info import CompilationTarget, is_64bit
 
-from testing import assert_almost_equal, assert_equal, assert_false, assert_true
+from testing import (
+    TestSuite,
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_true,
+)
 
 from utils.numerics import (
     FPUtils,
@@ -314,14 +320,18 @@ def test_nextafter():
 
 
 def main():
-    test_FPUtils()
-    test_get_accum_type()
-    test_isfinite()
-    test_isinf()
-    test_isnan()
-    test_max_finite()
-    test_max_or_inf()
-    test_min_finite()
-    test_min_or_neg_inf()
-    test_neg_inf()
-    test_nextafter()
+    var suite = TestSuite()
+
+    suite.test[test_FPUtils]()
+    suite.test[test_get_accum_type]()
+    suite.test[test_isfinite]()
+    suite.test[test_isinf]()
+    suite.test[test_isnan]()
+    suite.test[test_max_finite]()
+    suite.test[test_max_or_inf]()
+    suite.test[test_min_finite]()
+    suite.test[test_min_or_neg_inf]()
+    suite.test[test_neg_inf]()
+    suite.test[test_nextafter]()
+
+    suite^.run()
