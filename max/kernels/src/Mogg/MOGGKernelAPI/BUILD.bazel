@@ -10,6 +10,7 @@ mogg_lib_deps = [
     "@mojo//:quantization",
     "@mojo//:tensor_internal",
     "@mojo//:compiler_internal",
+    "@mojo//:shmem",
     "@mojo//:stdlib",
 ]
 
