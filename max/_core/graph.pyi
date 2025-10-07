@@ -18,9 +18,6 @@ import max._core.driver
 import max._core.dtype
 import max._mlir.ir
 
-# isort: off
-# isort: on
-
 def load_modular_dialects(arg: max._mlir.ir.DialectRegistry, /) -> None: ...
 def array_attr(
     arg0: max._core.driver.Tensor, arg1: max._core.dialects.mo.TensorType, /
