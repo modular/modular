@@ -536,7 +536,8 @@ fn matmul_dispatch_sm100[
                 a_type=a_type,
                 b_type=b_type,
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
 
@@ -610,7 +611,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -630,7 +631,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -650,7 +651,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -670,7 +671,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -690,7 +691,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -710,7 +711,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -730,7 +731,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -750,7 +751,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -772,7 +773,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -792,7 +793,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -812,7 +813,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -832,7 +833,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -852,7 +853,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -872,7 +873,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -894,7 +895,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -914,7 +915,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -934,7 +935,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -954,7 +955,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -974,7 +975,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -994,7 +995,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1014,7 +1015,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1034,7 +1035,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1056,7 +1057,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1076,7 +1077,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1096,7 +1097,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1116,7 +1117,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1136,7 +1137,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1156,7 +1157,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1176,7 +1177,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1196,7 +1197,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1216,7 +1217,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1236,7 +1237,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1258,7 +1259,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1278,7 +1279,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1298,7 +1299,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1318,7 +1319,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1338,7 +1339,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1358,7 +1359,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1382,7 +1383,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1402,7 +1403,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1422,7 +1423,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1444,7 +1445,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1464,7 +1465,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1484,7 +1485,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1504,7 +1505,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1526,7 +1527,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1546,7 +1547,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1566,7 +1567,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1586,7 +1587,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1608,7 +1609,7 @@ fn matmul_dispatch_sm100_fp8[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1662,7 +1663,7 @@ fn matmul_dispatch_sm100_bf16[
             mma_shape=umma_shape,
             cluster_shape=cluster_shape,
         )
-        _matmul_dispatch_sm100_seperate_epilogue[
+        _matmul_dispatch_sm100[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1708,7 +1709,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1728,7 +1729,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1747,7 +1748,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1767,7 +1768,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1789,7 +1790,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1809,7 +1810,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1829,7 +1830,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1849,7 +1850,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1869,7 +1870,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1891,7 +1892,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1918,7 +1919,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1938,7 +1939,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1960,7 +1961,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1979,7 +1980,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -2000,7 +2001,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -2020,7 +2021,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -2040,7 +2041,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -2062,7 +2063,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -2085,7 +2086,7 @@ fn matmul_dispatch_sm100_bf16[
                 mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
-            _matmul_dispatch_sm100_seperate_epilogue[
+            _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
@@ -2184,7 +2185,7 @@ fn _vendor_blas_matmul_sm100[
         return
 
 
-fn _matmul_dispatch_sm100_seperate_epilogue[
+fn _matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType, //,
@@ -2289,7 +2290,7 @@ fn _matmul_dispatch_sm100_seperate_epilogue[
         var c_tmp = c
         c_tmp.data = tmp_device_buffer.unsafe_ptr()
 
-        _matmul_dispatch_sm100_seperate_epilogue[
+        _matmul_dispatch_sm100[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,

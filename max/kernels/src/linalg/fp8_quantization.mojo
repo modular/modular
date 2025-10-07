@@ -15,7 +15,7 @@ from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simd_width_of
-
+from sys import align_of, size_of
 import gpu.block
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
@@ -417,42 +417,86 @@ fn matmul_dynamic_scaled_fp8[
         input_scale_granularity == "colwise"
         and weight_scale_granularity == "rowwise"
     ) or (input_scale_granularity == weight_scale_granularity == "tensor"):
-        # create a dummy buffer to instruct the matmul kernel to output values
-        # in the correct dtype
-        var c_dummy = NDBuffer[
-            DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
-        ](
-            UnsafePointer[Float32](),
-            IndexList[2](M, N),
-        )
 
         @parameter
-        @__copy_capture(c, a, b, a_scales, b_scales)
-        @always_inline
-        fn scaled_output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]):
-            var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
-            var b_scale: SIMD[dtype, width]
+        if ctx.default_device_info is B200:
 
-            @parameter
-            if transpose_b:
-                b_scale = b_scales.load[width=width](idx[1], 0).cast[dtype]()
-            else:
-                b_scale = b_scales.load[width=width](0, idx[1]).cast[dtype]()
+            @always_inline
+            @__copy_capture(a_scales, b_scales)
+            fn scale_compute_lambda_fn[
+                _dtype: DType,
+                width: Int,
+                *,
+                alignment: Int = align_of[SIMD[_dtype, width]](),
+            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+                _dtype, width
+            ]:
+                var a_scale = a_scales.load[width=1](0, idx[0]).cast[
+                    DType.float32
+                ]()
+                var b_scale: SIMD[DType.float32, width]
 
-            var scaled_val = val * a_scale * b_scale
+                @parameter
+                if transpose_b:
+                    b_scale = b_scales.load[width=width](idx[1], 0).cast[
+                        DType.float32
+                    ]()
+                else:
+                    b_scale = b_scales.load[width=width](0, idx[1]).cast[
+                        DType.float32
+                    ]()
 
-            c.store[width=width, alignment=alignment](
-                idx, scaled_val.cast[c_type]()
+                var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
+                return scaled_val.cast[_dtype]()
+
+            matmul[
+                target=target,
+                transpose_b=transpose_b,
+                elementwise_compute_lambda_fn=scale_compute_lambda_fn,
+                _trace_description=_trace_string,
+            ](c, a, b, Optional[DeviceContext](ctx))
+
+        else:
+            # create a dummy buffer to instruct the matmul kernel to output values
+            # in the correct dtype
+            var c_dummy = NDBuffer[
+                DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
+            ](
+                UnsafePointer[Scalar[DType.float32]](),
+                IndexList[2](M, N),
             )
 
-        matmul[
-            target=target,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=scaled_output_fn,
-            _trace_description=_trace_string,
-        ](c_dummy, a, b, Optional[DeviceContext](ctx))
+            @parameter
+            @__copy_capture(c, a, b, a_scales, b_scales)
+            @always_inline
+            fn scaled_output_fn[
+                dtype: DType, width: Int, *, alignment: Int = 1
+            ](idx: IndexList[2], val: SIMD[dtype, width]):
+                var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
+                var b_scale: SIMD[dtype, width]
+
+                @parameter
+                if transpose_b:
+                    b_scale = b_scales.load[width=width](idx[1], 0).cast[
+                        dtype
+                    ]()
+                else:
+                    b_scale = b_scales.load[width=width](0, idx[1]).cast[
+                        dtype
+                    ]()
+
+                var scaled_val = val * a_scale * b_scale
+
+                c.store[width=width, alignment=alignment](
+                    idx, scaled_val.cast[c_type]()
+                )
+
+            matmul[
+                target=target,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=scaled_output_fn,
+                _trace_description=_trace_string,
+            ](c_dummy, a, b, Optional[DeviceContext](ctx))
 
     elif (
         input_scale_granularity == "block"
