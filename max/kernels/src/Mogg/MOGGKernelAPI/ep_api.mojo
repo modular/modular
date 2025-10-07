@@ -28,7 +28,13 @@ from tensor_internal.managed_tensor_slice import (
 )
 
 from shmem import shmem_init, shmem_malloc, shmem_module_init
-from shmem.ep_comm import EPMsgConfig, dispatch_kernel, dispatch_cb_kernel
+from shmem.ep_comm import (
+    EPMsgConfig,
+    dispatch_kernel,
+    dispatch_cb_kernel,
+    combine_kernel,
+    combine_cb_kernel,
+)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -445,3 +451,249 @@ struct Struct_ep_dispatch_cb:
             expert_usage_stats_host[1] = (
                 n_experts // n_ranks
             )  # number of active experts
+
+
+# ===-----------------------------------------------------------------------===#
+# Expert Parallelism Combine Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("ep.combine")
+struct Struct_ep_combine:
+    @always_inline
+    @staticmethod
+    fn execute[
+        combine_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int, //,
+        target: StaticString,
+    ](
+        atomic_counters_1: MutableInputTensor[dtype = DType.int32, rank=1],
+        input_tokens: InputTensor[dtype=combine_dtype, rank=2],
+        src_info: InputTensor[dtype = DType.int32, rank=2],
+        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism combine kernel.
+
+        This function launches the combine_kernel from ep_comm.mojo to initiate
+        sending expert outputs back to their original devices. The kernel uses
+        source routing information to determine destinations.
+
+        Parameters:
+            combine_dtype: Data type for tokens during combine phase.
+            hidden_size: Model hidden dimension size.
+            top_k: Number of experts each token was routed to.
+            n_experts: Total experts across all devices.
+            max_token_per_rank: Maximum tokens any device can send.
+            n_gpus_per_node: GPUs per physical node.
+            n_nodes: Number of physical nodes.
+            target: Target.
+
+        Arguments:
+            atomic_counters_1: Synchronization counters for buffer group 1.
+                Used to coordinate between different thread blocks.
+            input_tokens: Expert output tokens to send back to original devices.
+            src_info: Source routing information from dispatch phase.
+            send_ptrs: SHMEM send buffer pointers for each local GPU.
+            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
+            recv_count_ptrs: SHMEM receive count buffer pointers for each local
+                GPU.
+            context: Device context pointer.
+        """
+        # Ensure this kernel only runs on GPU targets
+        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+
+        var input_tokens_tensor = input_tokens.to_layout_tensor()
+        var src_info_tensor = src_info.to_layout_tensor()
+
+        # Ensure the shape for the input tensors are correct
+        constrained[
+            input_tokens_tensor.shape[1]() == hidden_size,
+            "EP combine: input tokens shape doesn't match hidden size.",
+        ]()
+
+        var gpu_ctx = context.get_device_context()
+        var gpu_id = Int(gpu_ctx.id())
+        alias hw_info = gpu_ctx.default_device_info
+        alias combine_msg_size = hidden_size * size_of[combine_dtype]()
+
+        alias n_ranks = n_gpus_per_node * n_nodes
+
+        alias combine = combine_kernel[
+            combine_dtype,
+            hw_info.max_thread_block_size,
+            input_tokens_tensor.layout,
+            src_info_tensor.layout,
+            hw_info.sm_count,
+            top_k,
+            n_experts,
+            n_ranks,
+            combine_msg_size,
+            max_token_per_rank,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "combine_dtype=", combine_dtype,
+                ";hidden_size=", hidden_size,
+                ";top_k=", top_k,
+                ";n_experts=", n_experts,
+                ";max_token_per_rank=", max_token_per_rank,
+                ";n_gpus_per_node=", n_gpus_per_node,
+                ";n_nodes=", n_nodes,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.combine",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            var func = gpu_ctx.compile_function[combine]()
+            shmem_module_init(func)
+
+            var send_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
+                Scalar[DType.int](send_ptrs[gpu_id])
+            )
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
+                Scalar[DType.int](recv_ptrs[gpu_id])
+            )
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[
+                DType.uint64
+            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+
+            gpu_ctx.enqueue_function(
+                func,
+                input_tokens_tensor,
+                src_info_tensor,
+                send_buf_p,
+                recv_buf_p,
+                recv_count_p,
+                atomic_counters_1._ptr,
+                Int32(gpu_id),
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+            )
+
+
+@compiler.register("ep.combine_cb")
+struct Struct_ep_combine_cb:
+    @always_inline
+    @staticmethod
+    fn execute[
+        combine_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int, //,
+        target: StaticString,
+    ](
+        output_tokens: OutputTensor[dtype=combine_dtype, rank=3],
+        atomic_counters_1: MutableInputTensor[dtype = DType.int32, rank=1],
+        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism combine completion kernel.
+
+        This function launches the combine_cb_kernel from ep_comm.mojo to complete
+        the expert output gathering phase. It waits for all SHMEM transfers to
+        finish, then organizes tokens back to their original format.
+
+        Parameters:
+            combine_dtype: Data type for tokens during combine phase.
+            hidden_size: Model hidden dimension size.
+            top_k: Number of experts each token was routed to.
+            n_experts: Total experts across all devices.
+            max_token_per_rank: Maximum tokens any device can receive.
+            n_gpus_per_node: GPUs per physical node.
+            n_nodes: Number of physical nodes.
+            target: Target.
+
+        Arguments:
+            output_tokens: Final output tensor with expert results.
+            atomic_counters_1: Synchronization counters from combine phase.
+            recv_ptrs: SHMEM receive buffer pointers for each local GPU.
+            recv_count_ptrs: SHMEM receive count buffer pointers for each local
+                GPU.
+            context: Device context pointer.
+        """
+        # Ensure this kernel only runs on GPU targets
+        constrained[is_gpu[target](), "EP is only supported on GPU."]()
+
+        var output_tokens_tensor = output_tokens.to_layout_tensor()
+
+        # Ensure the shape for the output tensor is correct
+        constrained[
+            output_tokens_tensor.shape[2]() == hidden_size,
+            "EP combine: output tokens shape doesn't match hidden size.",
+        ]()
+
+        var gpu_ctx = context.get_device_context()
+        var gpu_id = Int(gpu_ctx.id())
+        alias hw_info = gpu_ctx.default_device_info
+        alias combine_msg_size = hidden_size * size_of[combine_dtype]()
+
+        alias n_ranks = n_gpus_per_node * n_nodes
+
+        alias combine_cb = combine_cb_kernel[
+            combine_dtype,
+            hw_info.max_thread_block_size,
+            output_tokens_tensor.layout,
+            hw_info.sm_count,
+            1,
+            top_k,
+            n_experts,
+            n_ranks,
+            combine_msg_size,
+            max_token_per_rank,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "combine_dtype=", combine_dtype,
+                ";hidden_size=", hidden_size,
+                ";top_k=", top_k,
+                ";n_experts=", n_experts,
+                ";max_token_per_rank=", max_token_per_rank,
+                ";n_gpus_per_node=", n_gpus_per_node,
+                ";n_nodes=", n_nodes,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.combine_cb",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
+                Scalar[DType.int](recv_ptrs[gpu_id])
+            )
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[
+                DType.uint64
+            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+
+            gpu_ctx.enqueue_function[combine_cb](
+                output_tokens_tensor,
+                recv_buf_p,
+                recv_count_p,
+                atomic_counters_1._ptr,
+                Int32(gpu_id),
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+            )

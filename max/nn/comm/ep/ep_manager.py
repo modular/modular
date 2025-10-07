@@ -33,6 +33,7 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Dim,
     Graph,
     TensorType,
     TensorValue,
@@ -40,7 +41,13 @@ from max.graph import (
 )
 
 from .ep_config import NUM_GROUPS, EPConfig
-from .ep_kernels import call_ep_dispatch, call_ep_dispatch_cb, call_ep_init
+from .ep_kernels import (
+    call_ep_combine,
+    call_ep_combine_cb,
+    call_ep_dispatch,
+    call_ep_dispatch_cb,
+    call_ep_init,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -78,6 +85,11 @@ class EPBatchManager:
     """Source routing information for combine phase. Each key is a device ID,
     and the value is a TensorValue with shape [max_recv_tokens, 2]. Maps expert
     outputs back to their source positions."""
+
+    _dispatch_dim: dict[int, Dim | None] = {}
+    """Dictionary of device ID to dimension for the dispatch input tensor.
+    Used to determine the shape of the combined output tensor.
+    """
 
     def __init__(self, config: EPConfig):
         """Initialize the EP batch manager.
@@ -176,6 +188,8 @@ class EPBatchManager:
             device_id: Device ID for the current device.
         """
         DISPATCH_GROUP = 0
+        # Store the symbolic token numbers of each device for the combine phase
+        self._dispatch_dim[device_id] = input_tokens.shape[0]
         call_ep_dispatch(
             input_tokens,
             topk_ids,
@@ -225,6 +239,72 @@ class EPBatchManager:
         self._src_info[device_id] = results[4]
 
         return results[:4]
+
+    def ep_combine(self, input_tokens: TensorValue, device_id: int) -> None:
+        """Initiate Expert Parallelism combine phase.
+
+        This method launches the combine phase of Expert Parallelism, sending
+        expert outputs back to their original devices based on source routing
+        information stored during the dispatch phase.
+
+        Args:
+            input_tokens: Expert output tensors from the current device.
+                A TensorValue with shape (max_recv_tokens, hidden_size).
+            device_id: Device ID for the current device.
+        """
+        COMBINE_GROUP = 1
+        # always use group 0 atomic counters unless we enable
+        # two-batch-overlap.
+
+        src_info = self._src_info[device_id]
+        assert src_info is not None, (
+            "Source info is not set, you should call ep_dispatch_cb() first."
+        )
+
+        call_ep_combine(
+            input_tokens,
+            src_info,
+            self.atomic_counters[0][device_id],
+            self.send_buf_ptrs[COMBINE_GROUP],
+            self.recv_buf_ptrs[COMBINE_GROUP],
+            self.recv_count_ptrs[COMBINE_GROUP],
+            self.config,
+        )
+
+        # reset src_info to None to avoid reusing it for the next batch
+        self._src_info[device_id] = None
+
+    def ep_combine_cb(self, device_id: int) -> TensorValue:
+        """Complete Expert Parallelism combine phase.
+
+        This method waits for all expert output transfers to complete, then
+        organizes the received tokens back into their original format and
+        positions for the current device.
+
+        Args:
+            device_id: Device ID for the current device.
+
+        Returns:
+            Final output tensor with shape (num_local_tokens, top_k, hidden_size).
+        """
+        COMBINE_GROUP = 1
+
+        # Collect results from all devices
+        # always use group 0 atomic counters unless we enable
+        # two-batch-overlap.
+        dispatch_dim = self._dispatch_dim[device_id]
+        assert dispatch_dim is not None, (
+            "Dispatch dimension is not set, you should call ep_dispatch() first."
+        )
+        results = call_ep_combine_cb(
+            self.atomic_counters[0][device_id],
+            self.recv_buf_ptrs[COMBINE_GROUP],
+            self.recv_count_ptrs[COMBINE_GROUP],
+            self.config,
+            dispatch_dim,
+        )
+
+        return results
 
 
 class EPCommInitializer:
