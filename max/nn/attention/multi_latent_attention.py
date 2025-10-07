@@ -711,9 +711,6 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
         )
 
 
-DistributedLatentAttentionWithRope = TensorParallelLatentAttentionWithRope
-
-
 class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
     """Data-parallel implementation of Latent Attention with RoPE.
 
