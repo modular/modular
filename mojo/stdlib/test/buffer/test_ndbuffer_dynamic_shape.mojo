@@ -13,10 +13,11 @@
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from testing import TestSuite
 
 
 # CHECK-LABEL: test_ndbuffer_dynamic_shape
-fn test_ndbuffer_dynamic_shape():
+def test_ndbuffer_dynamic_shape():
     print("== test_ndbuffer_dynamic_shape")
 
     # Create a buffer of size 16
@@ -48,5 +49,9 @@ fn test_ndbuffer_dynamic_shape():
     print(matrix2.dim[1]())
 
 
-fn main():
-    test_ndbuffer_dynamic_shape()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_ndbuffer_dynamic_shape]()
+
+    suite^.run()

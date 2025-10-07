@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from testing import TestSuite
 
 alias simd_width = 8
 
@@ -97,7 +98,7 @@ fn naive_strsv[
 
 
 # CHECK-LABEL: test_strsv
-fn test_strsv():
+def test_strsv():
     print("== test_strsv")
 
     alias size: Int = 64
@@ -122,5 +123,9 @@ fn test_strsv():
     print(err)
 
 
-fn main():
-    test_strsv()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_strsv]()
+
+    suite^.run()

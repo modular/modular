@@ -13,12 +13,13 @@
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
+from testing import TestSuite
 
 from utils.index import IndexList
 
 
 # CHECK-LABEL: test_partial_load_store
-fn test_partial_load_store():
+def test_partial_load_store():
     print("== test_partial_load_store")
     # The total amount of data to allocate
     alias total_buffer_size: Int = 32
@@ -91,5 +92,9 @@ fn test_partial_load_store():
     print(nd_partial_store_data)
 
 
-fn main():
-    test_partial_load_store()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_partial_load_store]()
+
+    suite^.run()

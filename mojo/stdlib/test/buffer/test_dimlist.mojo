@@ -15,7 +15,7 @@ from math import ceildiv
 
 from buffer.dimlist import Dim, DimList
 from internal_utils._utils import ValOrDim, dynamic, static
-from testing import *
+from testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 # CHECK-LABEL: test_dim_list
@@ -54,7 +54,7 @@ def test_dim_list():
 
 
 # CHECK-LABEL: test_dim
-fn test_dim():
+def test_dim():
     print("== test_dim")
 
     var dim0 = Dim(8)
@@ -123,9 +123,13 @@ fn test_dim_ceildiv() raises:
 
 
 def main():
-    test_dim_list()
-    test_dim()
-    test_dim_to_string()
-    test_dimlist_repr()
-    test_dimlist_eq()
-    test_dim_ceildiv()
+    var suite = TestSuite()
+
+    suite.test[test_dim_list]()
+    suite.test[test_dim]()
+    suite.test[test_dim_to_string]()
+    suite.test[test_dimlist_repr]()
+    suite.test[test_dimlist_eq]()
+    suite.test[test_dim_ceildiv]()
+
+    suite^.run()
