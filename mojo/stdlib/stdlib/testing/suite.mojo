@@ -21,7 +21,7 @@ from compile.reflection import get_linkage_name
 
 
 fn _get_test_func_name[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyType, //,
     func: func_type,
 ]() -> String:
     """Get the name of a function."""
