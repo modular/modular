@@ -57,8 +57,16 @@ tryGetSymbolNameAndParams(TypedAttr param) {
 /// When shared is specified, this makes sure to only strip implicit
 /// constructors, but when it is null it will always strip all constructors.
 static void removeImplicitCtorCall(TypedAttr &value, SharedState *shared) {
+  // Look through SugarAttr to find the underlying apply if present. We only
+  // need to look through at most one SugarAttr, because the sugared side has
+  // any nested sugars removed already.
+  auto valueWithoutSugar = value;
+  if (auto sugar = dyn_cast<SugarAttr>(valueWithoutSugar))
+    if (shared || sugar.getKind() == SugarKind::AlwaysInlineBuiltin)
+      valueWithoutSugar = sugar.getSugared();
+
   // Implicit constructors are always calls.
-  auto op = dyn_cast<ParamOperatorAttr>(value);
+  auto op = dyn_cast<ParamOperatorAttr>(valueWithoutSugar);
   if (!op ||
       (op.getOpcode() != POC::Apply &&
        op.getOpcode() != POC::ApplyResultSlot) ||
@@ -140,9 +148,13 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
 /// user-readable format (e.g. eliding infer-only and defaulted parameters).
 ///
 /// This needs to handle the case when 'paramInfo' is null, e.g. when mangling.
+///
+/// The 'typesImplied' boolean indicates when we're in a struct - we can omit
+/// implicit conversions to tidy up the printout because struct's can't be
+/// overloaded on parameter sets like functions are.
 static void printParamList(raw_ostream &os, PogListAttr paramInfo,
-                           ArrayRef<TypedAttr> params,
-                           SharedState *diagShared) {
+                           ArrayRef<TypedAttr> params, SharedState *diagShared,
+                           bool typesImplied) {
   if (params.empty())
     return;
 
@@ -213,6 +225,8 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
                           [&](std::pair<StringAttr, TypedAttr> param) {
                             if (param.first)
                               os << param.first.strref() << '=';
+                            if (typesImplied && diagShared)
+                              removeImplicitCtorCall(param.second, diagShared);
                             ASTType::printParam(os, param.second, diagShared);
                           });
     os << ']';
@@ -577,7 +591,11 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       PogListAttr paramInfo;
       if (calleeFn)
         paramInfo = calleeFn.getFullSignature().getParamListAttrs();
-      printParamList(os, paramInfo, calleeParams, diagShared);
+      // typesImplied=false because we don't want to elide implicit conversions
+      // constructor calls, because the function could be overloaded.  We could
+      // check to see if the function is not overloaded and elide it.
+      printParamList(os, paramInfo, calleeParams, diagShared,
+                     /*typesImplied*/ false);
 
       // Finally, also print any operands.
       return printOperands(operandsToPrint);
@@ -1095,7 +1113,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
                       .getParamListAttrs();
     }
 
-    printParamList(os, paramInfo, params, diagShared);
+    printParamList(os, paramInfo, params, diagShared, /*typesImplied*/ true);
   };
 
   auto printConvention = [&os](ArgConvention conv) {
