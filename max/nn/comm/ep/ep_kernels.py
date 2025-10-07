@@ -67,3 +67,171 @@ def call_ep_init(
         ],
         parameters=parameters,
     )[0].tensor
+
+
+def call_ep_dispatch(
+    input_tokens: TensorValue,
+    topk_ids: TensorValue,
+    atomic_counter: BufferValue,
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+) -> None:
+    """Initiate Expert Parallelism token dispatch phase.
+
+    This function launches the EP dispatch kernel that distributes input tokens
+    to expert devices based on top-k routing decisions. The kernel uses
+    non-blocking SHMEM communication and returns immediately after initiating
+    transfers.
+
+    Args:
+        input_tokens: Input tokens to be dispatched to experts.
+            Shape: (num_tokens, hidden_size)
+        topk_ids: Expert IDs selected for each token by the router.
+            Shape: (num_tokens, top_k)
+            Values: Expert indices in range [0, n_experts)
+        atomic_counter: Buffer for synchronization between thread blocks.
+        send_buf_ptrs: Device pointers to SHMEM send buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (max_tokens_per_rank, msg_bytes)
+        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
+        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks)
+        config: EP configuration.
+
+    Note:
+        This is a non-blocking operation. Call call_ep_dispatch_cb() to wait for
+        completion and collect the dispatched tokens.
+    """
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "dispatch_dtype": config.dispatch_dtype,
+        "hidden_size": config.hidden_size,
+        "top_k": config.top_k,
+        "n_experts": config.n_experts,
+        "max_token_per_rank": config.max_tokens_per_rank,
+        "n_gpus_per_node": config.n_gpus_per_node,
+        "n_nodes": config.n_nodes,
+    }
+
+    ops.inplace_custom(
+        "ep.dispatch",
+        device=input_tokens.device,
+        values=[
+            atomic_counter,
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+        ],
+        out_types=[],
+        parameters=parameters,
+    )
+
+
+def call_ep_dispatch_cb(
+    atomic_counter: BufferValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+    """Complete Expert Parallelism token dispatch and prepare for expert
+    computation.
+
+    This function launches the EP dispatch callback kernel that waits for all
+    local token transfers to complete, then organizes the received tokens into
+    a format suitable for grouped matmul computation.
+
+    Args:
+        atomic_counter: Buffer for synchronization between thread blocks.
+        recv_buf_ptrs: Device pointers to SHMEM receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
+        recv_count_ptrs: Device pointers to SHMEM receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks)
+        config: EP configuration.
+
+    Returns:
+        A tuple containing:
+        - output_tokens: Aggregated tokens ready for grouped matmul computation.
+            Shape: (max_recv_tokens, hidden_size)
+        - expert_start_indices: Row offsets for grouped matmul operation.
+            Shape: (n_local_experts + 1,)
+        - expert_ids: Local expert IDs for the grouped operation.
+            Shape: (n_local_experts,)
+            Maps position in row_offsets to actual expert ID
+        - expert_usage_stats: Statistics for the grouped matmul kernel.
+            Shape: (2,) on CPU
+            [max_tokens_per_expert, n_active_experts]
+        - src_info: Source routing information for combine phase.
+            Shape: (max_recv_tokens, 2)
+            [original_token_index, topk_index] for each received token
+
+    Note:
+        This function blocks until all expected tokens have been received from
+        remote devices.
+    """
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "dispatch_dtype": config.dispatch_dtype,
+        "hidden_size": config.hidden_size,
+        "top_k": config.top_k,
+        "n_experts": config.n_experts,
+        "max_token_per_rank": config.max_tokens_per_rank,
+        "n_gpus_per_node": config.n_gpus_per_node,
+        "n_nodes": config.n_nodes,
+    }
+
+    max_recv_tokens = config.max_tokens_per_rank * config.n_experts
+    n_ranks = config.n_gpus_per_node * config.n_nodes
+    n_local_experts = config.n_experts // n_ranks
+
+    device_ref = atomic_counter.device
+
+    results = ops.inplace_custom(
+        "ep.dispatch_cb",
+        device=device_ref,
+        values=[atomic_counter, recv_buf_ptrs, recv_count_ptrs],
+        out_types=[
+            TensorType(
+                dtype=config.dispatch_dtype,
+                shape=[max_recv_tokens, config.hidden_size],
+                device=device_ref,
+            ),  # output_tokens
+            TensorType(
+                dtype=DType.uint32,
+                shape=[n_local_experts + 1],
+                device=device_ref,
+            ),  # expert_start_indices
+            TensorType(
+                dtype=DType.int32,
+                shape=[n_local_experts],
+                device=device_ref,
+            ),  # expert_ids
+            TensorType(
+                dtype=DType.uint32, shape=[2], device=DeviceRef.CPU()
+            ),  # expert_usage_stats
+            TensorType(
+                dtype=DType.int32,
+                shape=[max_recv_tokens, 2],
+                device=device_ref,
+            ),  # src_info
+        ],
+        parameters=parameters,
+    )
+
+    return (
+        results[0].tensor,
+        results[1].tensor,
+        results[2].tensor,
+        results[3].tensor,
+        results[4].tensor,
+    )

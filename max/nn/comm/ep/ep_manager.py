@@ -21,6 +21,7 @@ communication in distributed inference scenarios.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
@@ -30,16 +31,200 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
     BufferType,
+    BufferValue,
     DeviceRef,
     Graph,
     TensorType,
     TensorValue,
+    Value,
 )
 
 from .ep_config import NUM_GROUPS, EPConfig
-from .ep_kernels import call_ep_init
+from .ep_kernels import call_ep_dispatch, call_ep_dispatch_cb, call_ep_init
 
 logger = logging.getLogger("max.pipelines")
+
+
+class EPBatchManager:
+    """Batch manager for Expert Parallelism (EP).
+
+    This module manages two groups of SHMEM buffers in the graph. It switches
+    between the two groups to avoid racing.
+    """
+
+    config: EPConfig
+    """Configuration for the Expert Parallelism (EP)."""
+
+    _send_buf_ptrs: list[TensorValue] | None
+    """SHMEM send buffer device pointers. Shape: [NUM_GROUPS] of
+    TensorValue[n_gpus_per_node]. Each pointer references addresses to staging
+    buffers for outgoing tokens."""
+
+    _recv_buf_ptrs: list[TensorValue] | None
+    """SHMEM receive buffer device pointers. Shape: [NUM_GROUPS] of
+    TensorValue[n_gpus_per_node]. Each pointer references UInt64 addresses to
+    buffers for incoming tokens from remote devices."""
+
+    _recv_count_ptrs: list[TensorValue] | None
+    """SHMEM receive count buffer device pointers. Shape: [NUM_GROUPS] of
+    TensorValue[n_gpus_per_node]. Each pointer references UInt64 addresses to
+    buffers for signalling transfer completion."""
+
+    _atomic_counters: list[list[BufferValue]] | None
+    """Atomic synchronization counters. Shape: [NUM_GROUPS][n_gpus_per_node]
+    of BufferValue. Used for inter-thread-block coordination."""
+
+    _src_info: dict[int, TensorValue | None] = {}
+    """Source routing information for combine phase. Each key is a device ID,
+    and the value is a TensorValue with shape [max_recv_tokens, 2]. Maps expert
+    outputs back to their source positions."""
+
+    def __init__(self, config: EPConfig):
+        """Initialize the EP batch manager.
+
+        Args:
+            config: EP configuration.
+        """
+        self.config = config
+
+    @property
+    def send_buf_ptrs(self) -> list[TensorValue]:
+        if self._send_buf_ptrs is None:
+            raise RuntimeError(
+                "Call fetch_buffers() first to fetch buffer pointers."
+            )
+        return self._send_buf_ptrs
+
+    @property
+    def recv_buf_ptrs(self) -> list[TensorValue]:
+        if self._recv_buf_ptrs is None:
+            raise RuntimeError(
+                "Call fetch_buffers() first to fetch buffer pointers."
+            )
+        return self._recv_buf_ptrs
+
+    @property
+    def recv_count_ptrs(self) -> list[TensorValue]:
+        if self._recv_count_ptrs is None:
+            raise RuntimeError(
+                "Call fetch_buffers() first to fetch buffer pointers."
+            )
+        return self._recv_count_ptrs
+
+    @property
+    def atomic_counters(self) -> list[list[BufferValue]]:
+        if self._atomic_counters is None:
+            raise RuntimeError(
+                "Call fetch_buffers() first to fetch buffer pointers."
+            )
+        return self._atomic_counters
+
+    def fetch_buffers(self, _input_vals: Iterable[Value[Any]]) -> None:
+        """Extract and organize communication buffers from graph input values.
+
+        Args:
+            input_vals: List of input values containing all buffer references.
+        """
+        input_vals = list(_input_vals)
+        start_idx = 0
+        # First NUM_GROUPS * self.config.n_gpus_per_node elements are atomic counters
+        # These are used for synchronization between different thread blocks
+        self._atomic_counters = []
+        # Organize atomic counters by groups
+        for _ in range(NUM_GROUPS):
+            end_idx = start_idx + self.config.n_gpus_per_node
+            group_buffers = [
+                val.buffer for val in input_vals[start_idx:end_idx]
+            ]
+            self.atomic_counters.append(group_buffers)
+            start_idx = end_idx
+
+        # Next NUM_GROUPS are send buffer pointers
+        end_idx = start_idx + NUM_GROUPS
+        self._send_buf_ptrs = [
+            val.tensor for val in input_vals[start_idx:end_idx]
+        ]
+        start_idx = end_idx
+
+        # Next NUM_GROUPS are recv buffer pointers
+        end_idx = start_idx + NUM_GROUPS
+        self._recv_buf_ptrs = [
+            val.tensor for val in input_vals[start_idx:end_idx]
+        ]
+        start_idx = end_idx
+
+        # Next NUM_GROUPS are recv count pointers
+        end_idx = start_idx + NUM_GROUPS
+        self._recv_count_ptrs = [
+            val.tensor for val in input_vals[start_idx:end_idx]
+        ]
+        start_idx = end_idx
+
+    def ep_dispatch(
+        self, input_tokens: TensorValue, topk_ids: TensorValue, device_id: int
+    ) -> None:
+        """Initiate Expert Parallelism token dispatch phase.
+
+        This function launches the EP dispatch kernel that distributes input
+        tokens to expert devices based on top-k routing decisions.
+
+        Args:
+            input_tokens: Input tokens for the current device. A TensorValue with
+                shape (num_local_tokens, hidden_size).
+            topk_ids: Top-k expert IDs for the current device. A TensorValue with
+                shape (num_local_tokens, top_k).
+            device_id: Device ID for the current device.
+        """
+        DISPATCH_GROUP = 0
+        call_ep_dispatch(
+            input_tokens,
+            topk_ids,
+            self.atomic_counters[DISPATCH_GROUP][device_id],
+            self.send_buf_ptrs[DISPATCH_GROUP],
+            self.recv_buf_ptrs[DISPATCH_GROUP],
+            self.recv_count_ptrs[DISPATCH_GROUP],
+            self.config,
+        )
+
+    def ep_dispatch_cb(
+        self, device_id: int
+    ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+        """Complete Expert Parallelism token dispatch phase.
+
+        This function launches the EP dispatch callback kernel that waits for
+        all transfers to complete for the current GPU, then organizes the received tokens
+        into a format suitable for grouped matmul computation.
+
+        Args:
+            device_id: Device ID for the current device.
+
+        Returns:
+            A tuple containing:
+            - output_tokens: Aggregated tokens ready for grouped matmul computation.
+                Shape: (max_recv_tokens, hidden_size).
+            - expert_start_indices: Row offsets for grouped matmul computation.
+                Shape: (n_local_experts + 1,).
+            - expert_ids: Local expert IDs for the grouped computation.
+                Shape: (n_local_experts,).
+            - expert_usage_stats: Statistics for the grouped matmul computation.
+                Shape: (2,).
+        """
+        DISPATCH_GROUP = 0
+
+        # Collect results from all devices
+        results = call_ep_dispatch_cb(
+            self.atomic_counters[DISPATCH_GROUP][device_id],
+            self.recv_buf_ptrs[DISPATCH_GROUP],
+            self.recv_count_ptrs[DISPATCH_GROUP],
+            self.config,
+        )
+
+        # The first four elements are the input for the grouped matmul
+        # operation. The last element is the src_info, we need to store it for
+        # the combine phase.
+        self._src_info[device_id] = results[4]
+
+        return results[:4]
 
 
 class EPCommInitializer:

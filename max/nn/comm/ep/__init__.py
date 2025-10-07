@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from .ep_config import EPConfig
-from .ep_manager import EPCommInitializer
+from .ep_manager import EPBatchManager, EPCommInitializer
 
 __all__ = [
+    "EPBatchManager",
     "EPCommInitializer",
     "EPConfig",
 ]
