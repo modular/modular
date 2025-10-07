@@ -43,7 +43,7 @@ def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
 
     # Test that stacked_qkv=True with has_bias=True raises ValueError.
     with pytest.raises(
-        ValueError, match="Bias is not supported with stacked qkv"
+        ValueError, match="Bias is not supported with stacked_qkv"
     ):
         AttentionWithRope(
             rope=rope,
@@ -76,7 +76,7 @@ def test_attention_with_rope_clip_qkv_validation() -> None:
 
     # Test that stacked_qkv=True with clip_qkv raises ValueError.
     with pytest.raises(
-        ValueError, match="`clip_qkv` not yet supported when `stack_qkv=True`"
+        ValueError, match="`clip_qkv` not yet supported when `stacked_qkv=True`"
     ):
         AttentionWithRope(
             rope=rope,
