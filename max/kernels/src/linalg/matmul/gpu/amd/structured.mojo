@@ -30,7 +30,208 @@ from utils import IndexList, StaticTuple
 from layout.swizzle import Swizzle
 from sys._assembly import inlined_assembly
 from gpu.mma import mma
-from sys import size_of
+from sys import size_of, is_amd_gpu, _RegisterPackType
+
+from layout.layout_tensor import _get_worker_idx
+
+
+@always_inline
+fn wait_vmcount[inflight_transfers: Int]():
+    """Waits until vector memory count is less than or equal to inflight_transfers. VM_CNT gets decremented when data is returned
+    to VGPRS, or memory writes have completed.
+
+    Parameters:
+        inflight_transfers: The maximum number of transfers that should remain after the wait.
+    """
+
+    constrained[is_amd_gpu(), "s_waitcnt is amd specific"]()
+
+    alias asm = "s_waitcnt vmcnt(" + String(inflight_transfers) + ")\n\t"
+
+    inlined_assembly[
+        asm,
+        NoneType,
+        constraints="",
+        has_side_effect=True,
+    ]()
+
+
+@always_inline
+fn to_vgpr(register: UInt32) -> UInt32:
+    """Moves data from any register to a VGPR.
+
+    Args:
+        register: The register to move to a VGPR.
+    """
+
+    constrained[is_amd_gpu(), "VGPRs are amd specific"]()
+
+    return inlined_assembly[
+        "v_mov_b32 $0, $1\n\t",
+        UInt32,
+        constraints="=v,r",
+        has_side_effect=True,
+    ](register)
+
+
+@always_inline
+fn to_consecutive_sgprs(
+    vgpr_one: UInt32, vgpr_two: UInt32
+) -> SIMD[DType.uint32, 2]:
+    """Moves data from two VGPRS to two consecutive SGPRS, e.g. s[0:1], s[2:3].
+    This move is performed by the first thread in a warp, and the registers are shared
+    by all threads in the warp.
+
+    Args:
+        vgpr_one: The register to move to a SGPR n.
+        vgpr_two: The register to move to a SGPR n+1.
+    """
+
+    constrained[is_amd_gpu(), "SGPRs are amd specific"]()
+
+    # nop is very important
+    # 4.5. Manually Inserted Wait States (NOPs)
+    # https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-mi300-cdna3-instruction-set-architecture.pdf
+
+    var sgpr_pack = inlined_assembly[
+        "v_readfirstlane_b32 $0, $2\n\t"
+        + "v_readfirstlane_b32 $1, $3\n\t"
+        + "s_nop 4\n\t",
+        _RegisterPackType[
+            SIMD[DType.uint32, 1],
+            SIMD[DType.uint32, 1],
+        ],
+        constraints="=s,=s,v,v",
+        has_side_effect=True,
+    ](vgpr_one, vgpr_two)
+
+    return SIMD[DType.uint32, 2](sgpr_pack[0], sgpr_pack[1])
+
+
+@always_inline
+fn global_load_dword[
+    dtype: DType, width: Int
+](sgpr_address: SIMD[DType.uint32, 2], vgpr_offset: UInt32) -> SIMD[
+    dtype, width
+]:
+    """Loads 8 or 16 bytes from global memory to a SIMD vector. Each load is asynchronous and needs
+    to be waited on with wait_vmcount.
+
+    Parameters:
+        dtype: The data type of global memory.
+        width: The width of the SIMD vector to load.
+
+    Args:
+        sgpr_address: Two consecutive SGPRs that contain the address of the global memory ptr.
+        vgpr_offset: The offset of the address that this thread will load from.
+    """
+
+    alias bytes_per_load = width * size_of[dtype]()
+
+    constrained[is_amd_gpu(), "global_load_dword is amd specific"]()
+    constrained[bytes_per_load in (8, 16), "bytes_per_load must be 8 or 16"]()
+
+    # we load the data and supply different offsets per load
+    alias load_asm = "global_load_dwordx4 $0, $1, $2 offset:0\n\t" if bytes_per_load == 16 else "global_load_dwordx2 $0, $1, $2 offset:0\n\t"
+
+    return inlined_assembly[
+        load_asm,
+        SIMD[dtype, width],
+        constraints="=&v,v,s,~{memory}",
+        has_side_effect=True,
+    ](vgpr_offset, sgpr_address)
+
+
+@parameter
+fn _get_batch_size[total_loads: Int]() -> Int:
+    if total_loads % 4 == 0:
+        return 4
+    elif total_loads % 2 == 0:
+        return 2
+    else:
+        return 1
+
+
+fn batched_copy_dram_to_local[
+    src_thread_layout: Layout,
+    num_threads: Int = src_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1,
+](dst: LayoutTensor, src: LayoutTensor):
+    """Copies data from global memory (DRAM) to registers (LOCAL) in a batched manner.
+
+    This function utilizes global_load_dwordx4/global_load_dwordx2 to load data from global memory to local memory in a batched manner.
+
+    Parameters:
+        src_thread_layout: The layout used to distribute the threads for coalesced loads.
+        num_threads: Total number of threads participating in the copy
+            operation. Defaults to the size of thread_layout.
+        thread_scope: Defines whether operations are performed at `BLOCK` or
+            `WARP` level. `BLOCK` scope involves all threads in a thread block,
+            while `WARP` scope restricts operations to threads within the same
+            warp. Defaults to `ThreadScope.BLOCK`.
+        block_dim_count: The number of dimensions in the thread block.
+
+    Args:
+        dst: The destination tensor in register memory (LOCAL address space).
+        src: The source tensor in global memory (DRAM) to be copied.
+
+    Notes:
+
+    - This function is particularly used for warp specialization.
+    """
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+
+    alias num_busy_threads = src_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
+            return
+
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
+
+    alias M = src_fragments.shape[0]()
+    alias N = src_fragments.shape[1]()
+
+    alias total_loads = M * N
+    alias batch_size = _get_batch_size[total_loads]()
+
+    var src_frag_offset = UInt32(
+        src_fragments.distance(src.ptr) * size_of[src.dtype]()
+    )
+
+    alias batches = total_loads // batch_size
+
+    var ptr_addr = Int(src.ptr)
+    var address = bitcast[DType.uint32, 2](SIMD[DType.uint64, 1](ptr_addr))
+    var addr_low = address[0]  # Lower 32 bits
+    var addr_high = address[1]  # Upper 32 bits
+
+    var vgpr_low = to_vgpr(addr_low)
+    var vgpr_high = to_vgpr(addr_high)
+    var sgpr_address = to_consecutive_sgprs(vgpr_low, vgpr_high)
+
+    @parameter
+    for batch in range(batches):
+
+        @parameter
+        for ld_num in range(batch_size):
+            alias ld = batch * batch_size + ld_num
+            alias row = ld // N
+            alias col = ld % N
+
+            alias src_frag_idx_bytes = UInt32(
+                src_fragments.layout([row, col])
+            ) * size_of[src.dtype]()
+
+            var offset = src_frag_offset + src_frag_idx_bytes
+            dst[row, col] = global_load_dword[
+                dst.dtype, dst.element_layout.size()
+            ](sgpr_address, offset)
+
+        wait_vmcount[0]()
 
 
 # NOTE: this struct might be a little overkill. may be consider simplifying this
