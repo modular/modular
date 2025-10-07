@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from max.driver import DeviceSpec
 
@@ -34,8 +34,8 @@ class CLITestConfig:
     device_specs_field: list[DeviceSpec] = field(
         default_factory=lambda: [DeviceSpec.cpu()]
     )
-    optional_str_field: Optional[str] = None  # noqa: UP007
-    optional_enum_field: Optional[CLITestEnum] = None  # noqa: UP007
+    optional_str_field: str | None = None
+    optional_enum_field: CLITestEnum | None = None
 
 
 @dataclass
