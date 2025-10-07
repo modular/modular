@@ -135,13 +135,12 @@ max total time of 4 s:
 r = benchmark.run[sleeper](1, 2, 3, 4)
 ```
 
-Note that the min total time will take precedence over max iterations
+Note that benchmarking continues until 'min_runtime_secs' has 
+elapsed and either `max_runtime_secs` OR `max_iters` is achieved.
 """
 
 from time import time_function
-
-from testing import assert_equal
-
+from testing import assert_true
 from utils.numerics import max_finite, min_finite
 
 
@@ -163,9 +162,6 @@ struct Batch(ImplicitlyCopyable, Movable):
     """Total iterations in the batch."""
     var _is_significant: Bool
     """This batch contributes to the reporting of this benchmark."""
-
-    fn _mark_as_significant(mut self):
-        self._is_significant = True
 
     fn mean(self, unit: String = Unit.s) -> Float64:
         """
@@ -357,28 +353,25 @@ struct Report(Copyable, Defaultable, Movable):
 
 @register_passable("trivial")
 struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
-    var max_batch_size: Int
+    var num_warmup_iters: Int
     var max_iters: Int
     var min_runtime_secs: Float64
     var max_runtime_secs: Float64
-    var min_warmuptime_secs: Float64
-    var num_warmup_iters: Int
+    var max_batch_size: Int
 
     fn __init__(
         out self,
-        max_batch_size: Int = 0,
-        max_iters: Int = 1_000_000,
-        min_runtime_secs: Float64 = 1,
-        max_runtime_secs: Float64 = 60,
-        min_warmuptime_secs: Float64 = 0,
         num_warmup_iters: Int = 1,
+        max_iters: Int = 1_000_000,
+        min_runtime_secs: Float64 = 0.1,
+        max_runtime_secs: Float64 = 60,
+        max_batch_size: Int = 0,
     ):
-        self.max_batch_size = max_batch_size
+        self.num_warmup_iters = num_warmup_iters
         self.max_iters = max_iters
         self.min_runtime_secs = min_runtime_secs
         self.max_runtime_secs = max_runtime_secs
-        self.min_warmuptime_secs = min_warmuptime_secs
-        self.num_warmup_iters = num_warmup_iters
+        self.max_batch_size = max_batch_size
 
 
 # ===-----------------------------------------------------------------------===#
@@ -390,22 +383,24 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
 fn run[
     func: fn () raises -> None
 ](
+    num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
-    min_runtime_secs: Float64 = 2,
+    min_runtime_secs: Float64 = 0.1,
     max_runtime_secs: Float64 = 60,
     max_batch_size: Int = 0,
 ) raises -> Report:
     """Benchmarks the function passed in as a parameter.
 
-    Benchmarking continues until 'min_time_ns' has elapsed and either
-    `max_time_ns` OR `max_iters` is achieved.
+    Benchmarking continues until 'min_runtime_secs' has elapsed and either
+    `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
         func: The function to benchmark.
 
     Args:
+        num_warmup_iters: Number of warmup iterations.
         max_iters: Max number of iterations to run (default `1_000_000_000`).
-        min_runtime_secs: Lower bound on benchmarking time in secs (default `2`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `0.1`).
         max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
         max_batch_size: The maximum number of iterations to perform per time
             measurement.
@@ -427,10 +422,11 @@ fn run[
 
     return _run_impl(
         _RunOptions[benchmark_fn](
-            max_batch_size=max_batch_size,
+            num_warmup_iters=num_warmup_iters,
             max_iters=max_iters,
             min_runtime_secs=min_runtime_secs,
             max_runtime_secs=max_runtime_secs,
+            max_batch_size=max_batch_size,
         )
     )
 
@@ -439,22 +435,24 @@ fn run[
 fn run[
     func: fn () -> None
 ](
+    num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
-    min_runtime_secs: Float64 = 2,
+    min_runtime_secs: Float64 = 0.1,
     max_runtime_secs: Float64 = 60,
     max_batch_size: Int = 0,
 ) raises -> Report:
     """Benchmarks the function passed in as a parameter.
 
-    Benchmarking continues until 'min_time_ns' has elapsed and either
-    `max_time_ns` OR `max_iters` is achieved.
+    Benchmarking continues until 'min_runtime_secs' has elapsed and either
+    `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
         func: The function to benchmark.
 
     Args:
+        num_warmup_iters: Number of warmup iterations.
         max_iters: Max number of iterations to run (default `1_000_000_000`).
-        min_runtime_secs: Lower bound on benchmarking time in secs (default `2`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `0.1`).
         max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
         max_batch_size: The maximum number of iterations to perform per time
             measurement.
@@ -468,7 +466,11 @@ fn run[
         func()
 
     return run[raising_func](
-        max_iters, min_runtime_secs, max_runtime_secs, max_batch_size
+        num_warmup_iters,
+        max_iters,
+        min_runtime_secs,
+        max_runtime_secs,
+        max_batch_size,
     )
 
 
@@ -476,22 +478,24 @@ fn run[
 fn run[
     func: fn () raises capturing [_] -> None
 ](
+    num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
-    min_runtime_secs: Float64 = 2,
+    min_runtime_secs: Float64 = 0.1,
     max_runtime_secs: Float64 = 60,
     max_batch_size: Int = 0,
 ) raises -> Report:
     """Benchmarks the function passed in as a parameter.
 
-    Benchmarking continues until 'min_time_ns' has elapsed and either
-    `max_time_ns` OR `max_iters` is achieved.
+    Benchmarking continues until 'min_runtime_secs' has elapsed and either
+    `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
         func: The function to benchmark.
 
     Args:
+        num_warmup_iters: Number of warmup iterations.
         max_iters: Max number of iterations to run (default `1_000_000_000`).
-        min_runtime_secs: Lower bound on benchmarking time in secs (default `2`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `0.1`).
         max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
         max_batch_size: The maximum number of iterations to perform per time
             measurement.
@@ -513,10 +517,11 @@ fn run[
 
     return _run_impl(
         _RunOptions[benchmark_fn](
-            max_batch_size=max_batch_size,
+            num_warmup_iters=num_warmup_iters,
             max_iters=max_iters,
             min_runtime_secs=min_runtime_secs,
             max_runtime_secs=max_runtime_secs,
+            max_batch_size=max_batch_size,
         )
     )
 
@@ -525,22 +530,24 @@ fn run[
 fn run[
     func: fn () capturing [_] -> None
 ](
+    num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
-    min_runtime_secs: Float64 = 2,
+    min_runtime_secs: Float64 = 0.1,
     max_runtime_secs: Float64 = 60,
     max_batch_size: Int = 0,
 ) raises -> Report:
     """Benchmarks the function passed in as a parameter.
 
-    Benchmarking continues until 'min_time_ns' has elapsed and either
-    `max_time_ns` OR `max_iters` is achieved.
+    Benchmarking continues until 'min_runtime_secs' has elapsed and either
+    `max_runtime_secs` OR `max_iters` is achieved.
 
     Parameters:
         func: The function to benchmark.
 
     Args:
+        num_warmup_iters: Number of warmup iterations.
         max_iters: Max number of iterations to run (default `1_000_000_000`).
-        min_runtime_secs: Lower bound on benchmarking time in secs (default `2`).
+        min_runtime_secs: Lower bound on benchmarking time in secs (default `0.1`).
         max_runtime_secs: Upper bound on benchmarking time in secs (default `60`).
         max_batch_size: The maximum number of iterations to perform per time
             measurement.
@@ -554,7 +561,11 @@ fn run[
         func()
 
     return run[raising_func](
-        max_iters, min_runtime_secs, max_runtime_secs, max_batch_size
+        num_warmup_iters,
+        max_iters,
+        min_runtime_secs,
+        max_runtime_secs,
+        max_batch_size,
     )
 
 
@@ -564,31 +575,8 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
 
     var prev_dur: Int = 0
     var prev_iters: Int = 0
-    var min_warmup_time_ns = Int(opts.min_warmuptime_secs * 1_000_000_000)
-    assert_equal(
-        min_warmup_time_ns,
-        0,
-        (
-            "ERROR: min_warmup_time will be removed in near future. Consider"
-            " using num_warmup_iters"
-        ),
-    )
-    if min_warmup_time_ns > 0:
-        # Make sure to warm up the function and use one iteration to compute
-        # the previous duration.
-        var time_elapsed: Int = 0
-        while time_elapsed < min_warmup_time_ns:
-            prev_dur = opts.timing_fn(1)
-            # If the function is too fast, we need to make sure we don't have a
-            # duration of 0 which will cause an endless loop.
-            if prev_dur == 0:
-                prev_dur = 1_000
-            time_elapsed += prev_dur
-        prev_iters = 1
-        report.warmup_duration = prev_dur
-    else:
-        report.warmup_duration = 0
 
+    report.warmup_duration = 0
     var num_warmup_iters = Int(opts.num_warmup_iters)
     if num_warmup_iters:
         prev_dur += opts.timing_fn(num_warmup_iters)
@@ -599,6 +587,11 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
     var time_elapsed: Int = 0
     var min_time_ns = Int(opts.min_runtime_secs * 1_000_000_000)
     var max_time_ns = Int(opts.max_runtime_secs * 1_000_000_000)
+
+    if max_time_ns <= min_time_ns:
+        raise Error(
+            "max_runtime_secs should be strictly greater than min_runtime_secs"
+        )
 
     # Continue until min_time_ns has elapsed and either max_time_ns or max_iters
     # is achieved
@@ -641,10 +634,9 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
         time_elapsed += prev_dur
 
     for i in range(len(report.runs)):
-        if _is_significant_measurement(
+        report.runs[i]._is_significant = _is_significant_measurement(
             i, report.runs[i], len(report.runs), opts
-        ):
-            report.runs[i]._mark_as_significant()
+        )
     return report^
 
 
@@ -657,10 +649,8 @@ fn _is_significant_measurement(
     if opts.max_batch_size and batch.iterations >= opts.max_batch_size:
         return True
 
-    # All or part of this measurement occurred in the last 10% of batches.
-    # Note: Using >= may include one extra measurement but preserves existing
-    # timing behavior.  This will be addressed in the near future.
-    if Float64(idx + 1) >= 0.9 * num_batches:
+    # This measurement occurred in the last 10% of the run.
+    if Float64(idx + 1) > 0.9 * num_batches:
         return True
 
     # Otherwise the result is not statistically significant.

@@ -701,10 +701,6 @@ fn update_bench_config_args(mut b: Bench) raises:
     b.config.max_runtime_secs = arg_parse(
         "bench-max-runtime-secs", b.config.max_runtime_secs
     )
-    # TODO: min_warmuptime_secs will be removed from bencher.mojo and here.
-    b.config.min_warmuptime_secs = arg_parse(
-        "bench-min-warmuptime-secs", b.config.min_warmuptime_secs
-    )
     b.config.num_warmup_iters = arg_parse(
         "bench-num-warmup-iters", b.config.num_warmup_iters
     )
