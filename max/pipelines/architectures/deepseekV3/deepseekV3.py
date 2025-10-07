@@ -75,7 +75,6 @@ class DeepseekV3DecoderLayer(Module):
         super().__init__()
         num_devices = len(config.devices)
 
-        # Create self-attention layer
         self.self_attn = DataParallelLatentAttentionWithRope(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
@@ -89,6 +88,7 @@ class DeepseekV3DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
+            graph_mode=config.graph_mode,
         )
 
         # Create MLP or MoE layer

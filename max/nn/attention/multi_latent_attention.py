@@ -74,6 +74,7 @@ class LatentAttentionWithRope(Module, Shardable):
         qk_rope_head_dim: int = 64,
         v_head_dim: int = 128,
         buffer_size: int = 16384,
+        graph_mode: str | None = None,
     ) -> None:
         """Initializes the latent attention layer.
 
@@ -82,7 +83,8 @@ class LatentAttentionWithRope(Module, Shardable):
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            kv_params: KV Cache Params, including the number of kv heads, the
+                head dim, and data type.
             dtype: DType of the weights, currently only bfloat16 is supported.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used.
@@ -93,10 +95,19 @@ class LatentAttentionWithRope(Module, Shardable):
             qk_nope_head_dim: Head dimension for non-positional encoding part.
             qk_rope_head_dim: Head dimension for rope part.
             v_head_dim: Head dimension for value.
-            buffer_size: Buffer size for storing the temporal results during prefill,
-                in unit of tokens.
+            buffer_size: Buffer size for storing the temporal results during
+                prefill, in unit of tokens.
+            graph_mode: Pipeline role to use for the attention layer. Should be
+                "prefill", "decode", or "auto".
         """
         super().__init__()
+
+        _role = graph_mode or "auto"
+        if _role not in ("prefill", "decode", "auto"):
+            raise ValueError(
+                f"Invalid graph_mode '{_role}'. Use 'prefill', 'decode', or 'auto'."
+            )
+        self.graph_mode = _role
 
         if dtype != DType.bfloat16:
             raise ValueError(
@@ -365,6 +376,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     kv_params=self.kv_params,
                     dtype=self.dtype,
                     devices=[device],
+                    graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
                     scale=self._scale,
                     q_lora_rank=self.q_lora_rank,
@@ -575,22 +587,27 @@ class LatentAttentionWithRope(Module, Shardable):
         # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
         max_seq_len = kv_cache_get_max_seq_len(self.kv_params, kv_collection)
 
-        result = ops.cond(
-            max_seq_len > 1,
-            [
-                TensorType(
-                    dtype=xq_nope.dtype,
-                    shape=[
-                        xq_nope.shape[0],
-                        self.n_heads,
-                        self.v_head_dim,
-                    ],
-                    device=xq_nope.device,
-                )
-            ],
-            _mla_prefill,
-            _mla_decode,
-        )[0].tensor
+        if self.graph_mode == "prefill":
+            result = _mla_prefill()
+        elif self.graph_mode == "decode":
+            result = _mla_decode()
+        else:
+            result = ops.cond(
+                max_seq_len > 1,
+                [
+                    TensorType(
+                        dtype=xq_nope.dtype,
+                        shape=[
+                            xq_nope.shape[0],
+                            self.n_heads,
+                            self.v_head_dim,
+                        ],
+                        device=xq_nope.device,
+                    )
+                ],
+                _mla_prefill,
+                _mla_decode,
+            )[0].tensor
 
         result = ops.reshape(result, shape=[result.shape[0], -1])
 

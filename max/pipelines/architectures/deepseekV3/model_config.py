@@ -66,6 +66,8 @@ class DeepseekV3ConfigBase(MAXModelConfigBase):
     attention_bias: bool = False
     attention_dropout: float = 0.0
 
+    graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
+
     def __post_init__(self):
         if self.hidden_act != "silu":
             raise ValueError(

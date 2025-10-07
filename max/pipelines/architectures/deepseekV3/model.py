@@ -22,6 +22,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.nn import Signals
+from max.pipelines.lib.config_enums import PipelineRole
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Model
@@ -37,6 +38,13 @@ class DeepseekV3Model(DeepseekV2Model):
     def _create_model_config(self) -> DeepseekV3Config:
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
+
+        if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+            graph_mode = "prefill"
+        elif self.pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+            graph_mode = "decode"
+        else:
+            graph_mode = "auto"
 
         kv_params = DeepseekV3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
@@ -81,6 +89,7 @@ class DeepseekV3Model(DeepseekV2Model):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            graph_mode=graph_mode,
         )
 
     @override
