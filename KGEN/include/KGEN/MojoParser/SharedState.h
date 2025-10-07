@@ -460,6 +460,7 @@ public:
     return lookupBuiltinType("VariadicPack", context, loc);
   }
   ASTDecl *getBuiltinCoroutineType(llvm::SMLoc loc);
+  ASTDecl *getBuiltinDevicePassableTrait(llvm::SMLoc loc);
   ASTDecl *getBuiltinRaisingCoroutineType(llvm::SMLoc loc);
   ASTType getStandardCollectionType(llvm::SMLoc loc, StringRef name);
   ASTType getBuiltinCaptureListType(llvm::SMLoc loc);

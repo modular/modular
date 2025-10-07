@@ -39,6 +39,11 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+// File-local
+namespace {
+static constexpr char kToDeviceType[] = "_to_device_type";
+}
+
 static FnOp getFnOpNamed(TraitDeclOp traitDecl, StringRef name) {
   for (FnOp candidate : traitDecl.getFields().getOps<FnOp>()) {
     StringRef sourceName = *candidate.getSourceName();
@@ -781,6 +786,12 @@ ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
                         operands);
   IREmitter::emitNormalReturn(b);
   declOp.setCanonicalTrait(traitType);
+
+  // TODO: register passable is not enough. It must also be trivial.
+  if (isRegisterPassable)
+    addConformanceToDevicePassable(structDecl, wrappedField, implType,
+                                   originSetParam);
+
   return &structDecl;
 }
 
@@ -2188,4 +2199,156 @@ ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
     return success();
   }
   return failure();
+}
+
+void ClosureEmitter::addConformanceToDevicePassable(
+    ASTDecl &structDecl, StructFieldOp devicePassedField, ParamDeclAttr impl,
+    ParamDeclAttr originSet) {
+  Type paramType = ParamType::get(ParamDeclRefAttr::get(impl));
+  ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
+  ASTDecl *devicePassableTrait =
+      shared.getBuiltinDevicePassableTrait(structDecl.getLoc());
+  if (!devicePassableTrait)
+    return;
+  TraitDeclOp trait = cast<TraitDeclOp>(devicePassableTrait->getIfOperation());
+  SymbolRefAttr devicePassableSymbol = devicePassableTrait->getSymbolRef();
+  SmallVector<std::pair<StringRef, TypedAttr>> devicePassableWitnesses;
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp);
+
+  for (Operation &member : trait.getFields().getOps()) {
+    if (auto function = dyn_cast<FnOp>(member)) {
+      /// We already have AnyType members implemented, only implement those that
+      /// are defined by DevicePassable.
+      auto parent = function.getInheritedFrom();
+      if (parent && parent != devicePassableSymbol)
+        continue;
+      if (function.getSourceName() == kToDeviceType) {
+        auto [toDevice, params, result] =
+            pushBackTraitFunctionImpl(function, structDecl);
+        b.setInsertionPointToStart(&toDevice.getBodyRegion().front());
+        assert(toDevice.getBodyRegion().getNumArguments() == 2);
+        // get address
+        Value targetArgument = toDevice.getBodyRegion().front().getArgument(1);
+        StructType structType = cast<StructType>(targetArgument.getType());
+        assert(structType.getParamValues().size() > 1 &&
+               "expected pointer to be parameterized on element type");
+        auto pointerElementType =
+            dyn_cast<KGEN::TypeParamAttr>(structType.getParamValues().front());
+        assert(pointerElementType &&
+               "expected a the pointer type's first parameter to "
+               "indicate its element type");
+        Value addressRef =
+            b.create<StructExtractOp>(
+                 KGEN::PointerType::get(pointerElementType.getTypeValue()),
+                 targetArgument, StringAttr::get(ctx, "address"))
+                ->getResults()
+                .front();
+        Value address = b.create<POP::PointerBitcastOp>(
+            PointerType::get(paramType), addressRef);
+
+        // Build a byref destination from the target address pointer
+        auto immortal = b.getAttr<AnyOriginAttr>(/*isMut=*/true);
+        Value targetRef = b.create<RefFromPointerOp>(address, immortal,
+                                                     /*startUninit=*/true,
+                                                     /*endUninit=*/false);
+
+        // get closure value
+        Value selfArgument = toDevice.getBodyRegion().front().getArgument(0);
+        Value closureMemberRef =
+            b.create<RefStructGEROp>(selfArgument, devicePassedField)
+                ->getResults()
+                .front();
+
+        // Invoke Copyable.__copyinit__(existing: read_mem, self:
+        // byref_result)
+        ASTDecl &moduleDecl = *structDecl.getNearestDeclOfType<FileModuleOp>();
+        FnOp copyFn = copyParent.getDefiningOp(moduleDecl);
+        FnTypeGeneratorType copySignature =
+            specializeSignature(copyFn, paramType, *shared.declResolver);
+        StringAttr copyName =
+            StringAttr::get(ctx, copyParent.getDefiningOpName());
+        StringAttr parentName = copyParent.getFullSymbolName(moduleDecl);
+        TypedAttr copySymbol =
+            GetWitnessAttr::get(ctx, ParamDeclRefAttr::get(impl), parentName,
+                                copyName, copySignature);
+        SmallVector<Value> operands{closureMemberRef, targetRef};
+        SmallVector<TypedAttr> origins;
+        origins.push_back(
+            cast<RefType>(closureMemberRef.getType()).getOrigin());
+        origins.push_back(cast<RefType>(targetRef.getType()).getOrigin());
+        b.create<LIT::CallOp>(copySignature.getResultType(), copySymbol,
+                              origins, operands);
+        auto noneAttr = b.create<KGEN::ParamConstantOp>(
+            KGEN::NoneAttr::get(b.getContext()));
+        IREmitter::emitNormalReturn(b, noneAttr);
+
+        devicePassableWitnesses.push_back(
+            {*function.getSourceName(),
+             buildSymbol(toDevice, impl, originSet)});
+        continue;
+      }
+      /// If this is a static method that returns a string, return the trait's
+      /// source name.
+      if (function.getIsStatic() &&
+          function.getUserResultType() ==
+              shared.getBuiltinStringType(structDecl, structDecl.getLoc())) {
+        auto [implementation, parameters, result] =
+            pushBackTraitFunctionImpl(function, structDecl);
+        b.setInsertionPointToStart(&implementation.getBodyRegion().front());
+        // Initialize the byref String result with the literal "closure".
+        Block &block = implementation.getBodyRegion().front();
+        OpBuilder ob(&block, block.begin());
+        IREmitter emitter(structDecl, ob);
+        SyntheticNode loc(structDecl.getLoc());
+
+        // Build a StringLiteral["closure"] value.
+        auto closureStr = StringAttr::get("closure", StringType::get(ctx));
+        ASTType strLitType =
+            shared.getBuiltinStringLiteralType(structDecl, structDecl.getLoc());
+        auto strLitDecl =
+            cast<StructDeclOp>(strLitType.getDecl(shared)->getIfOperation());
+        Type boundStrLitType = strLitDecl.bindReference({closureStr});
+        ValueDest litDest(EC_CallArgValue);
+        CValue literalValue = emitter.emitConstructorCall(
+            ASTType(boundStrLitType), CallOperands(), &loc,
+            CallSyntax::kTypeCall, litDest);
+
+        // Call String.__init__(literal) into the byref result slot.
+        ASTType stringType =
+            shared.getBuiltinStringType(structDecl, structDecl.getLoc());
+        ValueDest resultDest(MLValue(block.getArguments().back()),
+                             EC_ReturnValue);
+        CallOperands ctorOperands;
+        ctorOperands.add(ASTExprAnd<CValue>{literalValue, &loc});
+        emitter.emitConstructorCall(stringType, std::move(ctorOperands), &loc,
+                                    CallSyntax::kTypeCall, resultDest);
+        auto noneAttr = b.create<KGEN::ParamConstantOp>(
+            KGEN::NoneAttr::get(b.getContext()));
+        IREmitter::emitNormalReturn(b, noneAttr);
+        devicePassableWitnesses.push_back(
+            {*function.getSourceName(),
+             buildSymbol(implementation, impl, originSet)});
+
+        continue;
+      }
+    }
+
+    if (auto alias = dyn_cast<AliasDeclOp>(member)) {
+      auto parent = alias.getInheritedFrom();
+      if (parent && parent != devicePassableSymbol)
+        continue;
+      devicePassableWitnesses.push_back(
+          {alias.getDeclName().getValue(),
+           TypeParamAttr::get(paramType, paramType)});
+      continue;
+    }
+    llvm_unreachable(("unexpected member type '" +
+                      member.getName().getStringRef().str() +
+                      "' encountered in DevicePassable trait")
+                         .c_str());
+  }
+  ClosureParent devicePassableParent(trait, {}, ClosureMethod::NONE);
+  addConformanceTable(structDecl, devicePassableParent, devicePassableWitnesses,
+                      fileModule);
 }
