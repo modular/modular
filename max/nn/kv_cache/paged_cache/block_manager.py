@@ -242,7 +242,6 @@ class BlockManager:
             assert ctx.start_idx > orig_start_idx
             orig_start_idx = ctx.start_idx
 
-    @traced
     def _get_full_blocks_from_device_prefix_cache(
         self,
         desired_hashes: list[int],

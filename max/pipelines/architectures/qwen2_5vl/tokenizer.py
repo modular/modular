@@ -22,6 +22,10 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
+from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    get_seqlens,
+    get_window_index,
+)
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
     process_vision_info,
@@ -32,7 +36,7 @@ from max.pipelines.lib.config import PipelineConfig
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
 
-from .nn.data_processing import get_rope_index
+from .nn.data_processing import get_rope_index, mrope_pos_ids_3d
 
 logger = logging.getLogger("max.pipelines")
 
@@ -295,6 +299,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             vision_config, "spatial_merge_size", 2
         )
 
+        # NEW: Add these for window index calculation
+        self.patch_size = patch_size
+        self.window_size = getattr(vision_config, "window_size", 448)
+
         # Create custom image processor instead of AutoImageProcessor
         self.img_processor = Qwen2_5VLImageProcessor(
             patch_size=patch_size,
@@ -527,32 +535,72 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                     )
 
             # Extract image_grid_thw if present (Qwen2.5VL specific)
+            # Note: image_grid_thw is only used locally for computing other values, not passed to model
             if "image_grid_thw" in processed_inputs:
                 image_grid_thw = processed_inputs["image_grid_thw"]
                 # Handle numpy array from custom image processor
-                if isinstance(image_grid_thw, np.ndarray):
-                    extra_model_args["image_grid_thw"] = image_grid_thw
-                else:
-                    extra_model_args["image_grid_thw"] = np.array(
-                        image_grid_thw
-                    )
+                if not isinstance(image_grid_thw, np.ndarray):
+                    image_grid_thw = np.array(image_grid_thw)
 
-            # Extract attention_mask
+                # Precompute vision_position_ids for this context
+                vision_position_ids = mrope_pos_ids_3d(
+                    grid_thw=image_grid_thw,
+                    spatial_merge_size=self.spatial_merge_size,
+                )
+                extra_model_args["vision_position_ids"] = vision_position_ids
+
+                # Precompute window index and cu_window_seqlens
+                window_index, cu_window_seqlens = get_window_index(
+                    grid_thw=image_grid_thw,
+                    window_size=self.window_size,
+                    spatial_merge_size=self.spatial_merge_size,
+                    patch_size=self.patch_size,
+                    spatial_merge_unit=self.spatial_merge_size**2,
+                )
+                extra_model_args["window_index"] = window_index
+                # Note: cu_window_seqlens is only used locally, not passed to model
+
+                # Precompute seqlens values
+                (
+                    cu_seqlens,
+                    cu_window_seqlens_unique,
+                    max_seqlen,
+                    window_max_seqlen,
+                ) = get_seqlens(
+                    grid_thw=image_grid_thw,
+                    cu_win_seqlens=cu_window_seqlens,
+                )
+                extra_model_args["cu_seqlens"] = cu_seqlens
+                extra_model_args["cu_window_seqlens_unique"] = (
+                    cu_window_seqlens_unique
+                )
+                extra_model_args["max_seqlen"] = np.array(
+                    max_seqlen, dtype=np.int32
+                )
+                extra_model_args["window_max_seqlen"] = np.array(
+                    window_max_seqlen, dtype=np.int32
+                )
+
+                # Precompute max_grid_size (max of height and width dimensions)
+                max_grid_size = int(np.max(image_grid_thw[:, 1:]))
+                extra_model_args["max_grid_size"] = np.array(
+                    max_grid_size, dtype=np.int32
+                )
+
+            # Extract attention_mask for use in get_rope_index
+            # Note: attention_mask is only used locally for get_rope_index, not passed to model
+            attention_mask = None
             if "attention_mask" in processed_inputs:
-                attention_mask = processed_inputs["attention_mask"]
+                attention_mask_raw = processed_inputs["attention_mask"]
                 # Handle various formats from tokenizer
-                if hasattr(attention_mask, "numpy"):
-                    extra_model_args["attention_mask"] = attention_mask.numpy()
-                elif isinstance(attention_mask, list):
-                    extra_model_args["attention_mask"] = np.array(
-                        attention_mask
-                    )
-                elif isinstance(attention_mask, np.ndarray):
-                    extra_model_args["attention_mask"] = attention_mask
+                if hasattr(attention_mask_raw, "numpy"):
+                    attention_mask = attention_mask_raw.numpy()
+                elif isinstance(attention_mask_raw, list):
+                    attention_mask = np.array(attention_mask_raw)
+                elif isinstance(attention_mask_raw, np.ndarray):
+                    attention_mask = attention_mask_raw
                 else:
-                    extra_model_args["attention_mask"] = np.array(
-                        attention_mask
-                    )
+                    attention_mask = np.array(attention_mask_raw)
 
         # Calculate Rope Delta and position ids
         temp_position_ids, rope_delta = get_rope_index(
@@ -567,11 +615,11 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             video_grid_thw=None,
             # This is never calculated prior to this.
             second_per_grid_ts=None,
-            attention_mask=extra_model_args.get("attention_mask"),
+            attention_mask=attention_mask,
         )
         temp_position_ids = temp_position_ids.squeeze(1)
         extra_model_args["rope_delta"] = rope_delta
-        extra_model_args["temp_position_ids"] = temp_position_ids
+        extra_model_args["decoder_position_ids"] = temp_position_ids
 
         # Handle JSON schema if provided
         json_schema = (

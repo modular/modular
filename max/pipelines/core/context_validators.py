@@ -114,3 +114,47 @@ def validate_image_shape_5d(
                     f"Invalid image shape: expected {expected_dims} dimensions, "
                     f"got {len(image_shape)} dimensions"
                 )
+
+
+def validate_image_grid_thw_args(
+    context: TextContext | TextAndVisionContext,
+) -> None:
+    """Validates that image_grid_thw is present when vision encoding is needed.
+
+    Args:
+        context: The context to validate.
+
+    Raises:
+        InputError: If image_grid_thw is missing from extra_model_args when
+            vision encoding is needed.
+    """
+    if (
+        isinstance(context, TextAndVisionContext)
+        and context.needs_vision_encoding
+    ):
+        if "image_grid_thw" not in context.extra_model_args:
+            raise InputError(
+                "image_grid_thw is required in extra_model_args for vision model input when vision encoding is needed"
+            )
+
+
+def validate_vision_position_ids(
+    context: TextContext | TextAndVisionContext,
+) -> None:
+    """Validates that vision_position_ids is present when vision encoding is needed.
+
+    Args:
+        context: The context to validate.
+
+    Raises:
+        InputError: If vision_position_ids is missing from extra_model_args when
+            vision encoding is needed.
+    """
+    if (
+        isinstance(context, TextAndVisionContext)
+        and context.needs_vision_encoding
+    ):
+        if "vision_position_ids" not in context.extra_model_args:
+            raise InputError(
+                "vision_position_ids is required in extra_model_args for vision model input when vision encoding is needed"
+            )
