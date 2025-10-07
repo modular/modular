@@ -12,6 +12,8 @@
 
 namespace M {
 
+constexpr size_t kAsmResourceBlobAlignment = 8;
+
 /// Returns true if an array with the given number of elements is sufficiently
 /// large that out-of-line storage should be used. This indicates to the caller
 /// that the data is big enough to treat specially, e.g. that it shouldn't be

@@ -33,7 +33,7 @@ DenseResourceElementsAttr M::createResourceAttr(MLIRContext *ctx,
       {(int64_t)data.size()}, IntegerType::get(ctx, 8, IntegerType::Unsigned));
   auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
       ArrayRef<char>(data.begin(), data.size()),
-      /*align=*/8);
+      /*align=*/kAsmResourceBlobAlignment);
   return insertAsmBlob(ctx, attrType, name, std::move(blob));
 }
 
@@ -48,7 +48,8 @@ M::createResourceAttr(MLIRContext *ctx, BufferRef data, const Twine &name) {
   // on to the reference (to avoid copying).
   StringRef buffer = data->getBuffer();
   auto blob = mlir::UnmanagedAsmResourceBlob::allocateWithAlign(
-      ArrayRef<char>(buffer.data(), buffer.size()), /*align=*/8,
+      ArrayRef<char>(buffer.data(), buffer.size()),
+      /*align=*/kAsmResourceBlobAlignment,
       [data = std::move(data)](void *, unsigned, unsigned) {});
   return insertAsmBlob(ctx, attrType, name, std::move(blob));
 }
