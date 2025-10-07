@@ -41,6 +41,7 @@ from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
 
 from utils import Index, IndexList
+from collections import OptionalReg
 
 
 fn _get_run_name[
@@ -49,19 +50,11 @@ fn _get_run_name[
     *,
     use_vendor_blas: Bool,
     has_epilogue: Bool = False,
-](
-    num_active_experts: Int,
-    max_num_tokens_by_expert: Int,
-    total_num_tokens: Int,
-    N: Int,
-    K: Int,
-) -> String:
+](num_active_experts: Int, total_num_tokens: Int, N: Int, K: Int) -> String:
     var vendor_str = "vendor_gmm" if use_vendor_blas else "gmm"
     var type_str = String("(", in_type, " -> ", out_type, ") : ")
     # num_active_experts
     var num_active_experts_str = String(num_active_experts)
-    # max_num_tokens_by_expert
-    var max_num_tokens_by_expert_str = String(max_num_tokens_by_expert)
     # total_num_tokens
     var total_num_tokens_str = String(total_num_tokens)
     # N
@@ -75,8 +68,6 @@ fn _get_run_name[
         vendor_str,
         type_str,
         num_active_experts_str,
-        " x ",
-        max_num_tokens_by_expert_str,
         " x ",
         total_num_tokens_str,
         " x ",
@@ -225,7 +216,11 @@ fn bench_grouped_matmul[
                 pass
 
             else:
-                naive_grouped_matmul(
+                grouped_matmul[
+                    elementwise_lambda_fn = OptionalReg[
+                        elementwise_epilogue_type
+                    ](epilogue_fn) if has_epilogue else None,
+                ](
                     c_dev.tensor,
                     a_dev.tensor,
                     b_dev.tensor,
@@ -235,22 +230,6 @@ fn bench_grouped_matmul[
                     num_active_experts,
                     ctx,
                 )
-
-                # TODO: Implement non-naive grouped matmul backend
-                # grouped_matmul[
-                #     elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
-                #         epilogue_fn
-                #     ) if has_epilogue else None,
-                # ](
-                #     c_dev.tensor,
-                #     a_dev.tensor,
-                #     b_dev.tensor,
-                #     a_offsets_dev.tensor,
-                #     expert_ids_dev.tensor,
-                #     max_num_tokens_by_expert,
-                #     num_active_experts,
-                #     ctx,
-                # )
 
         bench.iter_custom[kernel_launch](ctx)
 
@@ -263,7 +242,6 @@ fn bench_grouped_matmul[
                 has_epilogue=has_epilogue,
             ](
                 num_active_experts,
-                max_num_tokens_by_expert,
                 total_num_tokens,
                 N,
                 K,

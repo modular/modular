@@ -13,6 +13,7 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import align_of, simd_width_of, size_of
+from sys.info import has_amd_gpu_accelerator
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -30,6 +31,7 @@ from gpu.id import (
     grid_dim,
     lane_id,
     thread_idx,
+    warp_id as get_warp_id,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
@@ -64,6 +66,10 @@ from .matmul.gpu.sm90.matmul import (
 from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
+
+from .matmul.gpu.amd import gemm_kernel_amd
+from algorithm import vectorize
+
 
 # ===----------------------------------------------------------------------=== #
 # Naive grouped matmul
@@ -1090,6 +1096,236 @@ fn grouped_matmul_sm100[
     )
 
 
+fn grouped_matmul_amd_kernel_launcher[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    layout_c: Layout,
+    layout_a: Layout,
+    layout_b: Layout,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c_tensor: LayoutTensor[c_type, layout_c, MutableAnyOrigin],
+    a_tensor: LayoutTensor[a_type, layout_a, MutableAnyOrigin],
+    b_tensor: LayoutTensor[b_type, layout_b, MutableAnyOrigin],
+    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    num_active_experts: Int,
+):
+    var M = a_offsets[Int(block_idx.z + 1)] - a_offsets[Int(block_idx.z)]
+    alias N = c_tensor.shape[1]()
+    alias K = b_tensor.shape[1]()
+
+    alias num_experts = b_tensor.shape[0]()
+    var expert_id = expert_ids[Int(block_idx.z)]
+    var a_start_row = a_offsets[Int(block_idx.z)]
+
+    var a_ptr = a_tensor.ptr + a_start_row * K
+    var b_ptr = b_tensor.ptr + expert_id * N * K
+    var c_ptr = c_tensor.ptr + a_start_row * N
+
+    alias c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+    alias a_layout = Layout.row_major(UNKNOWN_VALUE, K)
+    alias b_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
+
+    var c = LayoutTensor[
+        c_type,
+        c_layout,
+        MutableAnyOrigin,
+        address_space = c_ptr.address_space,
+    ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
+
+    var a = LayoutTensor[
+        a_type,
+        a_layout,
+        MutableAnyOrigin,
+        address_space = a_ptr.address_space,
+    ](a_ptr, RuntimeLayout[a_layout](Index(M, K), Index(K, 1)))
+
+    var b = LayoutTensor[
+        b_type,
+        b_layout,
+        MutableAnyOrigin,
+        address_space = b_ptr.address_space,
+    ](b_ptr, RuntimeLayout[b_layout](Index(N, K), Index(K, 1)))
+
+    @always_inline
+    @parameter
+    fn elementwise_epilogue_fn_wrapper[
+        dtype: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype, width]):
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_epilogue = elementwise_lambda_fn.value()
+            var batch_idx = IndexList[2](Int(a_start_row + idx[0]), idx[1])
+            elementwise_epilogue(batch_idx, val)
+
+    # Only perform matmul if expert_id is not -1
+    # AMD matmul kernel performs the epilogue function
+    if expert_id != -1:
+        gemm_kernel_amd[
+            c_type,
+            c.layout,
+            a_type,
+            a.layout,
+            b_type,
+            b.layout,
+            transpose_b,
+            c.layout_int_type,
+            a.layout_int_type,
+            b.layout_int_type,
+            c.linear_idx_type,
+            a.linear_idx_type,
+            b.linear_idx_type,
+            config,
+            OptionalReg[elementwise_epilogue_type](
+                elementwise_epilogue_fn_wrapper
+            ) if elementwise_lambda_fn else None,
+        ](c, a, b)
+
+    # Perform the epilogue function separately if expert_id is -1
+    else:
+        _ = c.fill(0.0)
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias epilogue = elementwise_lambda_fn.value()
+
+            alias BM = config.block_tile_shape[0]
+            alias BN = config.block_tile_shape[1]
+            alias vec_width = simd_width_of[c_type]()
+            alias alignment = align_of[SIMD[c_type, vec_width]]()
+
+            var block_m = Int(block_idx.y)
+            var block_n = Int(block_idx.x)
+
+            # Early exit if this block is completely outside the matrix bounds
+            if UInt32(block_m * BM) >= UInt32(M):
+                return
+
+            alias threads_per_block = 256
+            alias elements_per_thread = ceildiv(BM * BN, threads_per_block)
+
+            var tid = Int(thread_idx.x)
+            var thread_start = tid * elements_per_thread
+            var thread_end = min(thread_start + elements_per_thread, BM * BN)
+
+            var elements_to_process = thread_end - thread_start
+
+            @always_inline
+            @parameter
+            fn process_elements[width: Int](idx: Int):
+                var elem_idx = thread_start + idx
+                var tile_row, tile_col = divmod(elem_idx, BN)
+                var local_row: UInt32 = block_m * BM + tile_row
+                var local_col: UInt32 = block_n * BN + tile_col
+
+                if local_row < M:
+                    var remaining_in_row = N - local_col
+                    var remaining_in_tile_row = BN - tile_col
+                    var actual_width = min(
+                        width,
+                        min(Int(remaining_in_row), Int(remaining_in_tile_row)),
+                    )
+
+                    if actual_width == width and local_col + width <= N:
+                        var zero_vec = SIMD[c_type, width](0.0)
+                        epilogue[
+                            dtype=c_type,
+                            width=width,
+                            alignment = align_of[SIMD[c_type, width]](),
+                        ]((Int(local_row), Int(local_col)), zero_vec)
+                    else:
+                        for i in range(actual_width):
+                            if local_col + i < N:
+                                var zero_scalar = SIMD[c_type, 1](0.0)
+                                epilogue[dtype=c_type, width=1, alignment=1](
+                                    (Int(local_row), Int(local_col + i)),
+                                    zero_scalar,
+                                )
+
+            vectorize[process_elements, vec_width](elements_to_process)
+
+
+fn grouped_matmul_amd[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    *,
+    transpose_b: Bool = True,
+    block_tile_shape: IndexList[3] = Index(128, 128, 64),
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    max_num_tokens_per_expert: Int,
+    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    alias num_experts = b.shape.get[0]()
+    alias N = b.shape.get[1]()
+    alias K = b.shape.get[2]()
+
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+    constrained[K % BK == 0]()
+
+    var a_tensor = from_ndbuffer_row_major(a)
+    var b_tensor = LayoutTensor[
+        b_type,
+        Layout.row_major(num_experts * N, K),
+        MutableAnyOrigin,
+        address_space = AddressSpace.GENERIC,
+    ](b.data)
+    var c_tensor = from_ndbuffer_row_major(c)
+
+    alias block_dim = 256
+    alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(BM, BN, BK),
+        warp_tile_shape=Index(BM // 2, BN // 2, BK),
+        num_pipeline_stages=1,
+        num_k_partitions=1,
+    )
+
+    alias kernel = grouped_matmul_amd_kernel_launcher[
+        c_type,
+        a_type,
+        b_type,
+        __type_of(c_tensor).layout,
+        __type_of(a_tensor).layout,
+        __type_of(b_tensor).layout,
+        transpose_b,
+        config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+
+    ctx.enqueue_function[kernel](
+        c_tensor,
+        a_tensor,
+        b_tensor,
+        a_offsets,
+        expert_ids,
+        num_active_experts,
+        grid_dim=(
+            ceildiv(N, BN),
+            ceildiv(max_num_tokens_per_expert, BM),
+            num_active_experts,
+        ),
+        block_dim=(block_dim),
+    )
+
+
 # ===----------------------------------------------------------------------=== #
 # Entry Point and Dispatch
 # ===----------------------------------------------------------------------=== #
@@ -1118,6 +1354,7 @@ fn grouped_matmul[
     ]() and c_shape.has_value[1]()
     alias is_sm90_kernel_applicable = ctx.default_device_info is H100 and is_expert_shape_static
     alias is_sm100_kernel_applicable = ctx.default_device_info is B200 and is_expert_shape_static
+    alias is_amd_kernel_applicable = has_amd_gpu_accelerator() and is_expert_shape_static
 
     @parameter
     if is_sm90_kernel_applicable:
@@ -1139,6 +1376,17 @@ fn grouped_matmul[
         )
     elif is_sm100_kernel_applicable:
         grouped_matmul_sm100[elementwise_lambda_fn=elementwise_lambda_fn](
+            c,
+            a,
+            a_offsets,
+            max_num_tokens_per_expert,
+            b,
+            expert_ids,
+            num_active_experts,
+            ctx,
+        )
+    elif is_amd_kernel_applicable:
+        grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
             c,
             a,
             a_offsets,
