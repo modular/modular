@@ -689,8 +689,8 @@ bool SharedState::typeHasMember(ASTDecl &typeDecl, StringRef name,
 /// Perform a name lookup in the specified scope and return the named
 /// declaration as a LookupResult.
 auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
-                                       ASTDecl &scope, bool searchParentScopes)
-    -> LookupResult {
+                                       ASTDecl &scope, bool searchParentScopes,
+                                       bool resolveTarget) -> LookupResult {
 
   // Ensure the context is fully resolved, so all its members are known.  It
   // would be bad to look something up in a scope without all members known.
@@ -788,11 +788,19 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
                              isa_and_nonnull<UnresolvedImportOp>(
                                  resultDecls.front()->getIfOperation());
   for (ASTDecl *decl : resultDecls) {
-    if (failed(
-            declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
-      // If the decl was erroneous somehow, then don't form a reference to it,
-      // the error has already been diagnosed.
-      return LookupResult::getErroneous();
+    // Always resolve UnresolvedImportOps since that's the point of this whole
+    // function. But only resolve the ultimate declaration it's pointing to if
+    // resolveTarget is true.
+    // TODO(MOCO-522): Arcana docs on imports!
+    bool shouldResolve = resolveTarget || isa_and_nonnull<UnresolvedImportOp>(
+                                              decl->getIfOperation());
+    if (shouldResolve) {
+      if (failed(
+              declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
+        // If the decl was erroneous somehow, then don't form a reference to it,
+        // the error has already been diagnosed.
+        return LookupResult::getErroneous();
+      }
     }
   }
   // Get again the entry pointer since it might have been invalidated by
@@ -801,7 +809,8 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   // If we are resolving an unresolved import, do another lookup now that import
   // has been resolved. The scope map should be updated with the proper decls.
   if (entry.isSuccess() && wasUnresolvedImport)
-    return lookupAndResolveDecl(name, loc, scope, searchParentScopes);
+    return lookupAndResolveDecl(name, loc, scope, searchParentScopes,
+                                resolveTarget);
 
   // We return a pointer into the TinyPtrVector entry in the scope.  This should
   // be stable because you can't perform a lookup into a decl that has unknown
@@ -811,10 +820,11 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
 
 /// Perform a name lookup for a member in the specified type.
 auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope,
-                                       bool searchParentScopes)
-    -> LookupResult {
+                                       bool searchParentScopes,
+                                       bool resolveTarget) -> LookupResult {
   if (auto *decl = scope.getDecl(*this))
-    return lookupAndResolveDecl(name, loc, *decl, searchParentScopes);
+    return lookupAndResolveDecl(name, loc, *decl, searchParentScopes,
+                                resolveTarget);
   return LookupResult::getFailure({});
 }
 
@@ -902,36 +912,26 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
   // we end up invalidating the decl map.
   SmallVector<ASTDecl *> resultDecls(entry.getIfSuccess());
 
-  bool hasUnresolvedImport = false;
+  bool resolvedImport = false;
   for (ASTDecl *decl : resultDecls) {
-    if (isa_and_nonnull<UnresolvedImportOp>(decl->getIfOperation())) {
+    if (auto importOp =
+            dyn_cast_or_null<UnresolvedImportOp>(decl->getIfOperation())) {
       DeclResolvedness resolvedness = decl->resolvedness;
       if (resolvedness < DeclResolvedness::signature) {
-        hasUnresolvedImport = true;
-        if (failed(declResolver->resolve(*decl, DeclResolvedness::signature,
-                                         loc))) {
-          // If the decl was erroneous somehow, then don't form a reference to
-          // it, the error has already been diagnosed.
+        resolvedImport = true;
+        if (failed(declResolver->resolveSignature(importOp, *decl,
+                                                  /*resolveTarget=*/resolve))) {
           return LookupAllResult::getErroneous();
         }
-      }
-    }
-
-    if (resolve) {
-      if (failed(
-              declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
-        // If the decl was erroneous somehow, then don't form a reference to it,
-        // the error has already been diagnosed.
-        return LookupAllResult::getErroneous();
       }
     }
   }
 
   // If we resolved an import, we need to do the lookup again because the
   // import resolution may have changed the scope contents.
-  if (hasUnresolvedImport) {
+  if (resolvedImport) {
     entry = collectFromAllScopes();
-    if (entry.isSuccess() && hasUnresolvedImport)
+    if (entry.isSuccess())
       return lookupAllDeclsWithName(name, loc, scope, resolve);
   }
 

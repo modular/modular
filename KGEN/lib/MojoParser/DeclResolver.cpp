@@ -513,17 +513,17 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest,
                           dest);
 }
 
-LogicalResult
-DeclResolver::importDeclFromModule(ASTDecl &dest, PackageOp currentPackage,
-                                   StringAttr moduleName, StringAttr sourceName,
-                                   StringAttr destName, SMLoc loc,
-                                   SMLoc sourceNameLoc, SMLoc destNameLoc) {
+LogicalResult DeclResolver::importDeclFromModule(
+    ASTDecl &dest, PackageOp currentPackage, StringAttr moduleName,
+    StringAttr sourceName, StringAttr destName, SMLoc loc, SMLoc sourceNameLoc,
+    SMLoc destNameLoc, bool resolveTarget) {
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
 
   // Check to see if the module has the construct we are importing.
   auto result = shared.lookupAndResolveDecl(sourceName, sourceNameLoc, module,
-                                            /*searchParentScopes=*/false);
+                                            /*searchParentScopes=*/false,
+                                            /*resolveTarget=*/resolveTarget);
   if (result.isErroneous())
     return failure();
   if (result.isFailure()) {

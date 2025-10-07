@@ -3930,7 +3930,7 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
 //===----------------------------------------------------------------------===//
 
 ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
-                                           ASTDecl &decl) {
+                                           ASTDecl &decl, bool resolveTarget) {
   PackageOp packageOp = op->getParentOfType<PackageOp>();
 
   // Grab the location of the import name if present.
@@ -3948,7 +3948,8 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
 
     return getDeclResolver().importDeclFromModule(
         *decl.getParentDecl(), packageOp, op.getModuleNameAttr(), declName,
-        op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc);
+        op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc,
+        resolveTarget);
   }
   return getDeclResolver().importModule(
       *decl.getParentDecl(), packageOp, op.getModuleNameAttr(),
