@@ -15,7 +15,7 @@ from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
-    XferReqData,
+    TransferReqData,
 )
 
 
@@ -23,7 +23,7 @@ def test_send_recv_basic() -> None:
     # Queues for communication between threads
     sender_md_queue: Queue[KVTransferEngineMetadata] = Queue()
     receiver_md_queue: Queue[KVTransferEngineMetadata] = Queue()
-    xfer_queue: Queue[XferReqData] = Queue()
+    transfer_queue: Queue[TransferReqData] = Queue()
 
     # Transfer parameters
     total_num_pages = 3
@@ -53,21 +53,23 @@ def test_send_recv_basic() -> None:
         engine.connect(remote_md)
 
         # Perform transfer
-        xfer_req = engine.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
-        xfer_queue.put(xfer_req)
+        transfer_req = engine.initiate_send_transfer(
+            remote_md, src_idxs, dst_idxs
+        )
+        transfer_queue.put(transfer_req)
 
         # Wait for transfer to complete, with a timeout
         start_time = time.time()
         is_done = False
         while not is_done and time.time() - start_time < max_wait_time_s:
-            is_done = engine.is_complete(xfer_req)
+            is_done = engine.is_complete(transfer_req)
             time.sleep(0.1)
 
         if not is_done:
             raise TimeoutError(
                 f"Transfer did not complete within {max_wait_time_s} seconds"
             )
-        engine.cleanup_transfer(xfer_req)
+        engine.cleanup_transfer(transfer_req)
 
         # Verify results
         expected_blocks = np.array(
@@ -102,18 +104,18 @@ def test_send_recv_basic() -> None:
         engine.connect(remote_md)
 
         # Wait for transfer to complete, with a timeout
-        xfer_req = xfer_queue.get()
+        transfer_req = transfer_queue.get()
         start_time = time.time()
         is_done = False
         while not is_done and time.time() - start_time < max_wait_time_s:
-            is_done = engine.is_complete(xfer_req)
+            is_done = engine.is_complete(transfer_req)
             time.sleep(0.1)
 
         if not is_done:
             raise TimeoutError(
                 f"Transfer did not complete within {max_wait_time_s} seconds"
             )
-        engine.cleanup_transfer(xfer_req)
+        engine.cleanup_transfer(transfer_req)
 
         # Verify results
         expected_blocks = np.array(

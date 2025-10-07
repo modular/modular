@@ -31,7 +31,7 @@ def test_notification_delivery_is_prompt() -> None:
     # Create transfer engines
     sender_md_queue: Queue[Any] = Queue()
     receiver_md_queue: Queue[Any] = Queue()
-    xfer_queue: Queue[Any] = Queue()
+    transfer_queue: Queue[Any] = Queue()
     done_queue: Queue[Any] = Queue()
 
     # Exit codes
@@ -57,8 +57,10 @@ def test_notification_delivery_is_prompt() -> None:
         # Initiate transfer
         src_idxs = [0, 1, 2]
         dst_idxs = [0, 1, 2]
-        xfer_req = engine.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
-        xfer_queue.put(xfer_req)
+        transfer_req = engine.initiate_send_transfer(
+            remote_md, src_idxs, dst_idxs
+        )
+        transfer_queue.put(transfer_req)
 
         # Notification should be delivered even though sender is asleep at the wheel.
         for i in range(TIMEOUT_SEND_S):
@@ -68,7 +70,7 @@ def test_notification_delivery_is_prompt() -> None:
                 assert done_queue.get() == "I am done!"
                 break
 
-        assert engine.is_complete(xfer_req), (
+        assert engine.is_complete(transfer_req), (
             "Transfer should be complete within 10 seconds"
         )
 
@@ -92,11 +94,11 @@ def test_notification_delivery_is_prompt() -> None:
         engine.connect(remote_md)
 
         # Measure notification latency
-        xfer_req = xfer_queue.get()
+        transfer_req = transfer_queue.get()
         start_time = time.time()
         is_done = False
         while not is_done and time.time() - start_time < TIMEOUT_RECV_S:
-            is_done = engine.is_complete(xfer_req)
+            is_done = engine.is_complete(transfer_req)
             print(f"Recv transfer status: {is_done}")
             time.sleep(0.25)
 

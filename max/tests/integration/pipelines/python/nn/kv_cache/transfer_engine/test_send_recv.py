@@ -18,7 +18,7 @@ from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
-    XferReqData,
+    TransferReqData,
 )
 
 
@@ -29,14 +29,14 @@ def transfer_routine_sender(
     src_idxs: list[int],
     dst_idxs: list[int],
 ) -> None:
-    xfer_req = engine.initiate_send_xfer(remote, src_idxs, dst_idxs)
-    queue.put(xfer_req)
-    engine.sync_and_release(xfer_req)
+    transfer_req = engine.initiate_send_transfer(remote, src_idxs, dst_idxs)
+    queue.put(transfer_req)
+    engine.sync_and_release(transfer_req)
 
 
 def transfer_routine_receiver(engine: KVTransferEngine, queue: Queue) -> None:
-    xfer_req = queue.get()
-    engine.sync_and_release(xfer_req)
+    transfer_req = queue.get()
+    engine.sync_and_release(transfer_req)
 
 
 @pytest.mark.parametrize("device", [CPU()])
@@ -66,7 +66,7 @@ def test_send_recv_basic(device: Device) -> None:
     engine_1.connect(engine_2.metadata)
     engine_2.connect(engine_1.metadata)
 
-    queue: Queue[XferReqData] = Queue()
+    queue: Queue[TransferReqData] = Queue()
     src_idxs = [2, 2]
     dst_idxs = [1, 0]
     thread_1 = Thread(

@@ -11,7 +11,7 @@ import time
 import numpy as np
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import KVTransferEngine, XferReqData
+from max.nn.kv_cache import KVTransferEngine, TransferReqData
 
 """
 This test launches 256 concurrent transfers at once.
@@ -21,7 +21,7 @@ This test launches 256 concurrent transfers at once.
 def transfer_routine_sender(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
-    xfer_queue: mp.Queue,
+    transfer_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
     GB: float,
@@ -43,15 +43,15 @@ def transfer_routine_sender(
 
     # Perform transfer
     t0 = time.time()
-    xfer_reqs: list[XferReqData] = []
+    transfer_reqs: list[TransferReqData] = []
 
     for idx in range(total_num_pages):
-        xfer_req = engine.initiate_send_xfer(remote_md, [idx], [idx])
-        xfer_queue.put(xfer_req)
-        xfer_reqs.append(xfer_req)
+        transfer_req = engine.initiate_send_transfer(remote_md, [idx], [idx])
+        transfer_queue.put(transfer_req)
+        transfer_reqs.append(transfer_req)
 
-    for xfer_req in xfer_reqs:
-        engine.sync_and_release(xfer_req)
+    for transfer_req in transfer_reqs:
+        engine.sync_and_release(transfer_req)
 
     t1 = time.time()
     bw = total_bytes / (t1 - t0) / GB
@@ -70,7 +70,7 @@ def transfer_routine_sender(
 def transfer_routine_receiver(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
-    xfer_queue: mp.Queue,
+    transfer_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
 ) -> None:
@@ -91,8 +91,8 @@ def transfer_routine_receiver(
 
     # Perform transfer
     for _ in range(total_num_pages):
-        xfer_req = xfer_queue.get()
-        engine.sync_and_release(xfer_req)
+        transfer_req = transfer_queue.get()
+        engine.sync_and_release(transfer_req)
 
     # TODO: Verify results
     # assert (blocks.to_numpy() == 42).all()
@@ -105,7 +105,7 @@ def test_send_recv_basic() -> None:
     ctx = mp.get_context("spawn")
     sender_md_queue: mp.Queue = ctx.Queue()
     receiver_md_queue: mp.Queue = ctx.Queue()
-    xfer_queue: mp.Queue = ctx.Queue()
+    transfer_queue: mp.Queue = ctx.Queue()
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
@@ -117,7 +117,7 @@ def test_send_recv_basic() -> None:
         args=(
             sender_md_queue,
             receiver_md_queue,
-            xfer_queue,
+            transfer_queue,
             total_num_pages,
             total_bytes,
             GB,
@@ -128,7 +128,7 @@ def test_send_recv_basic() -> None:
         args=(
             sender_md_queue,
             receiver_md_queue,
-            xfer_queue,
+            transfer_queue,
             total_num_pages,
             total_bytes,
         ),

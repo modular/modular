@@ -13,7 +13,7 @@ from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
-    XferReqData,
+    TransferReqData,
 )
 
 total_num_pages = 10
@@ -22,8 +22,8 @@ total_num_pages = 10
 def transfer_routine_sender(
     sender_md_queue: Queue[KVTransferEngineMetadata],
     receiver_md_queue: Queue[KVTransferEngineMetadata],
-    xfer_queue_0: Queue[XferReqData],
-    xfer_queue_1: Queue[XferReqData],
+    transfer_queue_0: Queue[TransferReqData],
+    transfer_queue_1: Queue[TransferReqData],
 ) -> None:
     device_0 = Accelerator(0)
     device_1 = Accelerator(1)
@@ -45,22 +45,22 @@ def transfer_routine_sender(
     remote_md = receiver_md_queue.get()
     engine_1.connect(remote_md)
 
-    xfer_0 = engine_1.initiate_send_xfer(
+    transfer_0 = engine_1.initiate_send_transfer(
         remote_md,
         src_idxs=[0],
         dst_idxs=[0],
     )
-    xfer_queue_0.put(xfer_0)
+    transfer_queue_0.put(transfer_0)
 
-    xfer_1 = engine_1.initiate_send_xfer(
+    transfer_1 = engine_1.initiate_send_transfer(
         remote_md,
         src_idxs=[3, 4],
         dst_idxs=[3, 4],
     )
-    xfer_queue_1.put(xfer_1)
+    transfer_queue_1.put(transfer_1)
 
-    engine_1.sync_and_release(xfer_0)
-    engine_1.sync_and_release(xfer_1)
+    engine_1.sync_and_release(transfer_0)
+    engine_1.sync_and_release(transfer_1)
 
     assert np.array_equal(
         tensors_1[0].to_numpy(), np.arange(100, dtype=np.float32)
@@ -75,8 +75,8 @@ def transfer_routine_sender(
 def transfer_routine_receiver(
     sender_md_queue: Queue[KVTransferEngineMetadata],
     receiver_md_queue: Queue[KVTransferEngineMetadata],
-    xfer_queue_0: Queue[XferReqData],
-    xfer_queue_1: Queue[XferReqData],
+    transfer_queue_0: Queue[TransferReqData],
+    transfer_queue_1: Queue[TransferReqData],
 ) -> None:
     device_2 = Accelerator(2)
     device_3 = Accelerator(3)
@@ -98,11 +98,11 @@ def transfer_routine_receiver(
     remote_md = sender_md_queue.get()
     engine_2.connect(remote_md)
 
-    xfer_0 = xfer_queue_0.get()
-    engine_2.sync_and_release(xfer_0)
+    transfer_0 = transfer_queue_0.get()
+    engine_2.sync_and_release(transfer_0)
 
-    xfer_1 = xfer_queue_1.get()
-    engine_2.sync_and_release(xfer_1)
+    transfer_1 = transfer_queue_1.get()
+    engine_2.sync_and_release(transfer_1)
 
     assert np.array_equal(
         tensors_2[0].to_numpy()[:10], np.arange(10, dtype=np.float32)
@@ -138,16 +138,16 @@ def test_multi_tensor_transfer_threaded() -> None:
     """Test transfer between multiple tensors using threading."""
     sender_md_queue: Queue[KVTransferEngineMetadata] = Queue()
     receiver_md_queue: Queue[KVTransferEngineMetadata] = Queue()
-    xfer_queue_0: Queue[XferReqData] = Queue()
-    xfer_queue_1: Queue[XferReqData] = Queue()
+    transfer_queue_0: Queue[TransferReqData] = Queue()
+    transfer_queue_1: Queue[TransferReqData] = Queue()
 
     sender_thread = Thread(
         target=transfer_routine_sender,
         args=(
             sender_md_queue,
             receiver_md_queue,
-            xfer_queue_0,
-            xfer_queue_1,
+            transfer_queue_0,
+            transfer_queue_1,
         ),
     )
     receiver_thread = Thread(
@@ -155,8 +155,8 @@ def test_multi_tensor_transfer_threaded() -> None:
         args=(
             sender_md_queue,
             receiver_md_queue,
-            xfer_queue_0,
-            xfer_queue_1,
+            transfer_queue_0,
+            transfer_queue_1,
         ),
     )
 

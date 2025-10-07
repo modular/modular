@@ -19,7 +19,7 @@ from max.nn.kv_cache import (
 def transfer_routine_sender(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
-    xfer_queue: mp.Queue,
+    transfer_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
     src_idxs: list[int],
@@ -48,9 +48,11 @@ def transfer_routine_sender(
 
     # Perform transfers
     start_time = time.time()
-    xfer_req = engine_1.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
-    xfer_queue.put(xfer_req)
-    engine_1.sync_and_release(xfer_req)
+    transfer_req = engine_1.initiate_send_transfer(
+        remote_md, src_idxs, dst_idxs
+    )
+    transfer_queue.put(transfer_req)
+    engine_1.sync_and_release(transfer_req)
     end_time = time.time()
 
     transfer_time = end_time - start_time
@@ -78,7 +80,7 @@ def transfer_routine_sender(
 def transfer_routine_receiver(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
-    xfer_queue: mp.Queue,
+    transfer_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
 ) -> None:
@@ -102,8 +104,8 @@ def transfer_routine_receiver(
     remote_md = sender_md_queue.get()
     engine_2.connect(remote_md)
 
-    xfer_req = xfer_queue.get()
-    engine_2.sync_and_release(xfer_req)
+    transfer_req = transfer_queue.get()
+    engine_2.sync_and_release(transfer_req)
 
     # Verify data received correctly - should now have sender values (42 and 84)
     expected_tensor_0 = np.full(total_bytes, 42, dtype=np.int8)
@@ -127,7 +129,7 @@ def test_multi_tensor_transfer_multiprocessing(
     ctx = mp.get_context("spawn")
     sender_md_queue: mp.Queue = ctx.Queue()
     receiver_md_queue: mp.Queue = ctx.Queue()
-    xfer_queue: mp.Queue = ctx.Queue()
+    transfer_queue: mp.Queue = ctx.Queue()
 
     GB = 1024 * 1024 * 1024
     total_bytes = int(12 * GB)
@@ -140,7 +142,7 @@ def test_multi_tensor_transfer_multiprocessing(
         args=(
             sender_md_queue,
             receiver_md_queue,
-            xfer_queue,
+            transfer_queue,
             total_num_pages,
             total_bytes,
             src_idxs,
@@ -153,7 +155,7 @@ def test_multi_tensor_transfer_multiprocessing(
         args=(
             sender_md_queue,
             receiver_md_queue,
-            xfer_queue,
+            transfer_queue,
             total_num_pages,
             total_bytes,
         ),

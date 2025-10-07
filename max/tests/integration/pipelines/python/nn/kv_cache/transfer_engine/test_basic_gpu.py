@@ -47,7 +47,7 @@ def test_constructor() -> None:
         )
 
 
-def test_initiate_send_xfer() -> None:
+def test_initiate_send_transfer() -> None:
     device = CPU()
     total_num_pages = 3
     elts_per_page = 3
@@ -75,37 +75,37 @@ def test_initiate_send_xfer() -> None:
     engine_2.connect(engine_1.metadata)
 
     # ok
-    _ = engine_1.initiate_send_xfer(
+    _ = engine_1.initiate_send_transfer(
         engine_2.metadata, src_idxs=[2, 1], dst_idxs=[1, 0]
     )
 
     # oob src_idx
     with pytest.raises(ValueError):
-        _ = engine_1.initiate_send_xfer(
+        _ = engine_1.initiate_send_transfer(
             engine_2.metadata, src_idxs=[100], dst_idxs=[1]
         )
 
     # oob dst_idx
     with pytest.raises(ValueError):
-        _ = engine_1.initiate_send_xfer(
+        _ = engine_1.initiate_send_transfer(
             engine_2.metadata, src_idxs=[2, 0], dst_idxs=[100, 0]
         )
 
     # oob dst_idx
     with pytest.raises(ValueError):
-        _ = engine_1.initiate_send_xfer(
+        _ = engine_1.initiate_send_transfer(
             engine_2.metadata, src_idxs=[2], dst_idxs=[-1]
         )
 
     # mismatch lengths
     with pytest.raises(ValueError):
-        _ = engine_1.initiate_send_xfer(
+        _ = engine_1.initiate_send_transfer(
             engine_2.metadata, src_idxs=[2], dst_idxs=[0, 1]
         )
 
     # write to same dst page
     with pytest.raises(ValueError):
-        _ = engine_1.initiate_send_xfer(
+        _ = engine_1.initiate_send_transfer(
             engine_2.metadata, src_idxs=[2, 1], dst_idxs=[0, 0]
         )
 

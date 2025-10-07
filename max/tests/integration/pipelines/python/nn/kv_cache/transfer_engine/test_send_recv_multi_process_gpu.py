@@ -20,7 +20,7 @@ from max.nn.kv_cache import KVTransferEngine
 def transfer_routine_sender(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
-    xfer_queue: mp.Queue,
+    transfer_queue: mp.Queue,
     total_num_pages: int,
     src_idxs: list[int],
     dst_idxs: list[int],
@@ -49,9 +49,9 @@ def transfer_routine_sender(
 
     # Perform transfer
     t0 = time.time()
-    xfer_req = engine.initiate_send_xfer(remote_md, src_idxs, dst_idxs)
-    xfer_queue.put(xfer_req)
-    engine.sync_and_release(xfer_req)
+    transfer_req = engine.initiate_send_transfer(remote_md, src_idxs, dst_idxs)
+    transfer_queue.put(transfer_req)
+    engine.sync_and_release(transfer_req)
     t1 = time.time()
     bw = total_bytes / (t1 - t0) / GB
     ms = (t1 - t0) * 1000
@@ -79,7 +79,7 @@ def transfer_routine_sender(
 def transfer_routine_receiver(
     sender_md_queue: mp.Queue,
     receiver_md_queue: mp.Queue,
-    xfer_queue: mp.Queue,
+    transfer_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
 ) -> None:
@@ -101,8 +101,8 @@ def transfer_routine_receiver(
     engine.connect(remote_md)
 
     # Perform transfer
-    xfer_req = xfer_queue.get()
-    engine.sync_and_release(xfer_req)
+    transfer_req = transfer_queue.get()
+    engine.sync_and_release(transfer_req)
 
     # Verify results
     assert (blocks.to_numpy() == 42).all()
@@ -117,7 +117,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     ctx = mp.get_context("spawn")
     sender_md_queue: mp.Queue = ctx.Queue()
     receiver_md_queue: mp.Queue = ctx.Queue()
-    xfer_queue: mp.Queue = ctx.Queue()
+    transfer_queue: mp.Queue = ctx.Queue()
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
@@ -131,7 +131,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
         args=(
             sender_md_queue,
             receiver_md_queue,
-            xfer_queue,
+            transfer_queue,
             total_num_pages,
             src_idxs,
             dst_idxs,
@@ -144,7 +144,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
         args=(
             sender_md_queue,
             receiver_md_queue,
-            xfer_queue,
+            transfer_queue,
             total_num_pages,
             total_bytes,
         ),
