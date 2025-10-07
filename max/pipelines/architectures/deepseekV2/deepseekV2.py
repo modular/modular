@@ -78,6 +78,7 @@ class DeepseekV2(Transformer):
                     qk_rope_head_dim=config.qk_rope_head_dim,
                     v_head_dim=config.v_head_dim,
                     devices=config.devices,
+                    graph_mode=config.graph_mode,
                 ),
                 mlp=self._get_mlp(config, i),
                 attention_norm=RMSNorm(

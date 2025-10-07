@@ -22,7 +22,7 @@ from typing import Any, cast
 import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
@@ -45,6 +45,7 @@ from max.pipelines.lib import (
     SupportedEncoding,
     upper_bounded_default,
 )
+from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
@@ -384,6 +385,14 @@ class DeepseekV2Model(PipelineModel[TextContext]):
 
         pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config
+
+        if pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+            graph_mode = "prefill"
+        elif pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+            graph_mode = "decode"
+        else:
+            graph_mode = "auto"
+
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -405,6 +414,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model_config.device_specs
         ]
+
         model_config = DeepseekV2Config(
             attention_bias=huggingface_config.attention_bias,
             attention_dropout=huggingface_config.attention_dropout,
@@ -447,6 +457,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             dtype=self.dtype,
             kv_params=kv_params,
             devices=device_refs,
+            graph_mode=graph_mode,
         )
 
         # Get Graph Inputs
