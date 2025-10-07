@@ -1623,6 +1623,9 @@ fn _elementwise_impl_gpu[
     var unpacked_tail_length = length % simd_width
     var packed_region_length = length - unpacked_tail_length
 
+    if length == 0:
+        return
+
     alias block_size_unrounded = registers_per_block // registers_per_thread
 
     # when testing other elementwise kernels, they appear to also use 128 as the block size on blackwell specifcally

@@ -252,6 +252,72 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
+fn test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
+    """Test elementwise operations with zero dimension in 3D tensor."""
+    alias dtype = DType.float32
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+
+    var input_device_ptr = ctx.enqueue_create_buffer[dtype](1)
+    var output_device_ptr = ctx.enqueue_create_buffer[dtype](1)
+
+    # Test with zero in first dimension
+    var input_device = NDBuffer[dtype, 3](
+        input_device_ptr.unsafe_ptr(), Index(0, 4, 4)
+    )
+    var output_device = NDBuffer[dtype, 3](
+        output_device_ptr.unsafe_ptr(), Index(0, 4, 4)
+    )
+
+    @always_inline
+    @__copy_capture(input_device, output_device)
+    @parameter
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
+        var idx = rebind[IndexList[3]](idx0)
+        output_device.store(
+            idx,
+            input_device.load[width=simd_width](idx),
+        )
+
+    elementwise[func, pack_size, target="gpu"](
+        IndexList[3](0, 4, 4),
+        ctx,
+    )
+    ctx.synchronize()
+
+    # Test with zero in second dimension
+    input_device = NDBuffer[dtype, 3](
+        input_device_ptr.unsafe_ptr(), Index(2, 0, 4)
+    )
+    output_device = NDBuffer[dtype, 3](
+        output_device_ptr.unsafe_ptr(), Index(2, 0, 4)
+    )
+
+    elementwise[func, pack_size, target="gpu"](
+        IndexList[3](2, 0, 4),
+        ctx,
+    )
+    ctx.synchronize()
+
+    # Test with zero in third dimension
+    input_device = NDBuffer[dtype, 3](
+        input_device_ptr.unsafe_ptr(), Index(2, 4, 0)
+    )
+    output_device = NDBuffer[dtype, 3](
+        output_device_ptr.unsafe_ptr(), Index(2, 4, 0)
+    )
+
+    elementwise[func, pack_size, target="gpu"](
+        IndexList[3](2, 4, 0),
+        ctx,
+    )
+    ctx.synchronize()
+
+    _ = input_device_ptr
+    _ = output_device_ptr
+
+
 def main():
     with DeviceContext() as ctx:
         run_elementwise[DType.float32](ctx)
@@ -263,3 +329,4 @@ def main():
         run_elementwise[DType.float16](ctx)
         run_elementwise_uneven_simd[DType.float16](ctx)
         run_elementwise_transpose_copy[DType.float16](ctx)
+        test_elementwise_zero_dimension_3d(ctx)

@@ -338,6 +338,9 @@ fn flare_mla_decoding_dispatch[
     else:
         batch_size = q.dim[0]()
 
+    if batch_size == 0:
+        return
+
     alias BM = 16 if num_heads == 16 or not has_enough_smem else 32  # for deepseek-v2 lite
     alias BN = 64
     alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
@@ -1432,6 +1435,9 @@ fn flare_mla_prefill_dispatch[
     ]()
 
     var batch_size: Int = valid_length.dim[0]() - 1
+
+    if batch_size == 0 or max_prompt_len == 0:
+        return
 
     alias q_half_float = dtype in (DType.float16, DType.bfloat16)
 
@@ -2556,6 +2562,20 @@ fn mla_prefill_single_batch[
 # ===-----------------------------------------------------------------------===#
 
 
+fn set_buffer_lengths_to_zero[
+    buffer_lengths_shape: DimList
+](
+    buffer_lengths: NDBuffer[
+        DType.int32, 1, MutableAnyOrigin, buffer_lengths_shape
+    ],
+):
+    alias MAX_CHUNKS = buffer_lengths_shape.get[0]()
+
+    @parameter
+    for chunk_idx in range(MAX_CHUNKS):
+        buffer_lengths[chunk_idx] = 0
+
+
 @always_inline
 fn mla_prefill_plan[
     cache_t: KVCacheT,
@@ -2582,28 +2602,34 @@ fn mla_prefill_plan[
     """
     var batch_size: Int = input_row_offsets.dim[0]() - 1
 
-    alias kernel = mla_prefill_plan_kernel[
-        buffer_row_offsets.shape,
-        buffer_row_offsets.strides,
-        cache_offsets.shape,
-        cache_offsets.strides,
-        buffer_lengths.shape,
-        buffer_lengths.strides,
-        input_row_offsets.shape,
-        input_row_offsets.strides,
-        cache_t,
-    ]
+    if batch_size == 0:
+        # Fill buffer lengths with 0
+        ctx.enqueue_function[set_buffer_lengths_to_zero[buffer_lengths.shape,]](
+            buffer_lengths, grid_dim=1, block_dim=1
+        )
+    else:
+        alias kernel = mla_prefill_plan_kernel[
+            buffer_row_offsets.shape,
+            buffer_row_offsets.strides,
+            cache_offsets.shape,
+            cache_offsets.strides,
+            buffer_lengths.shape,
+            buffer_lengths.strides,
+            input_row_offsets.shape,
+            input_row_offsets.strides,
+            cache_t,
+        ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
-        buffer_row_offsets,
-        cache_offsets,
-        buffer_lengths,
-        input_row_offsets,
-        k_cache,
-        buffer_token_size,
-        grid_dim=(Int(ceildiv(batch_size, 128)), 1, 1),
-        block_dim=(128, 1, 1),
-    )
+        ctx.enqueue_function_checked[kernel, kernel](
+            buffer_row_offsets,
+            cache_offsets,
+            buffer_lengths,
+            input_row_offsets,
+            k_cache,
+            buffer_token_size,
+            grid_dim=(Int(ceildiv(batch_size, 128)), 1, 1),
+            block_dim=(128, 1, 1),
+        )
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))

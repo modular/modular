@@ -337,6 +337,9 @@ fn test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
+    if o_size == 0:
+        return
+
     # since we pass the whole K tensor as the V tensor to our naive mha kernel,
     # the last 64 elements of each head in the reference result are invalid.
     var rtol = 1e-3
@@ -1166,3 +1169,9 @@ def main():
 
         # test mla cascade prefill
         test_mla_cascade_prefill[2](ctx)
+
+        # Test with zero batch size
+        test_mla_prefill[0](ctx)
+        test_mla_cascade_prefill[0](ctx)
+        test_decoding[0, 1, False, False](ctx, False)
+        test_decoding[0, 1, False, True](ctx, False)

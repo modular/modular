@@ -4426,6 +4426,9 @@ fn mha_gpu_naive[
 
     var num_keys = max_cache_size
 
+    if batch_size == 0 or num_keys == 0 or max_prompt_len == 0:
+        return
+
     alias p_type = get_accum_type[q_type]()
     var p_device = ctx.enqueue_create_buffer[p_type](
         batch_size * num_heads * max_prompt_len * num_keys

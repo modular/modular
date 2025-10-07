@@ -800,6 +800,9 @@ fn _batched_matmul_gpu[
     var n = c_tensor_reshaped.dim(2)
     var k = a_tensor_reshaped.dim(2)
 
+    if batch_size == 0 or m == 0 or n == 0 or k == 0:
+        return
+
     alias has_static_NK = b_tensor_reshaped.shape[
         1
     ]() != UNKNOWN_VALUE and b_tensor_reshaped.shape[
@@ -1232,6 +1235,9 @@ fn bmm_sm100_blockwise_scaled_fp8[
     var M = c.dim(1)
     var N = c.dim(2)
     var K = a.dim(2)
+
+    if batch_size == 0 or M == 0 or N == 0 or K == 0:
+        return
 
     var a_scales_dim0 = a_scales.dim(1)
     var a_scales_dim1 = a_scales.dim(2)
