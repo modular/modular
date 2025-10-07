@@ -122,6 +122,11 @@ fn naive_grouped_matmul[
     )
 
 
+# grouped matmul computes:
+# for i in range(num_active_experts)
+#     C[a_offsets[i]:a_offsets[i+1], :] = A[a_offsets[i]:a_offsets[i+1], :] @ B[expert_ids[i], :, :].T
+
+
 fn naive_grouped_matmul_kernel[
     c_type: DType,
     c_shape: DimList,

@@ -91,6 +91,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2405
+    "test_grouped_matmul_tile_scheduler.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 _FILECHECK_TESTS = [
@@ -98,6 +102,7 @@ _FILECHECK_TESTS = [
     "test_matmul_selection_heuristic.mojo",
     "test_matmul_tile_scheduler.mojo",
     "test_matmul_tile_scheduler_sm100.mojo",
+    "test_grouped_matmul_tile_scheduler.mojo",
 ]
 
 _ASM_CHECK_TESTS = [
