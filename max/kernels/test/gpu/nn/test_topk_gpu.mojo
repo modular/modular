@@ -88,9 +88,9 @@ fn test_case_batched[
         DimList(batch_size, out_idx_len), ctx=ctx
     )
 
-    var block_dim_stage1 = ceildiv(min(1024, N), WARP_SIZE) * WARP_SIZE
-    # TODO: Note: This overrides test_case.num_blocks_per_input
-    var num_blocks_per_input_: Int = ceildiv(N, block_dim_stage1)
+    var num_blocks_per_input_: Int = ceildiv(
+        N, block_size
+    ) if not num_blocks_per_input else num_blocks_per_input.value()
     var device_local_topk_vals = DeviceNDBuffer[dtype, rank](
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
@@ -857,8 +857,9 @@ fn main() raises:
         alias test_case_21 = TestCase[_sampling=False](
             N=llama3_vocab_size,
             K=75,
-            block_size=1024,
+            block_size=512,
             batch_size=2,
+            num_blocks_per_input=8,
         )
         print_test_case(test_case_21)
         test_case_batched[DType.float32, fill_random](ctx, test_case_21)

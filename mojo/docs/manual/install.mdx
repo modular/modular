@@ -5,6 +5,8 @@ description: You can install Mojo using pixi, uv, conda, pip, or other Python/Co
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import Requirements from '@site/src/components/Requirements';
+import { requirementsNoGPU } from '@site/docs/max/requirements';
 
 You can install Mojo as a Python or Conda package. This page shows you how to
 install using `pixi`, `uv`, `pip`, and `conda`, but you can use other tools.
@@ -16,6 +18,10 @@ tutorial](/mojo/manual/get-started), which includes installation steps.
 
 :::
 
+System requirements:
+
+<Requirements requirementsData={requirementsNoGPU}
+url="/mojo/manual/install#system-requirements" />
 
 ## Install
 
@@ -79,7 +85,7 @@ more help with it, see our [Pixi basics guide](/pixi).
       <TabItem value="stable" label="Stable">
 
         ```sh
-        pixi add "mojo=0.25.6"
+        pixi add "mojo==0.25.6"
         ```
 
       </TabItem>
@@ -132,11 +138,6 @@ more help with it, see our [Pixi basics guide](/pixi).
         </TabItem>
         <TabItem value="stable" label="Stable">
 
-        ```output
-        Stable builds aren't on pypi.org yet.
-        Either install nightly or switch to Pixi or Conda.
-        ```
-
         ```sh
         uv pip install mojo \
           --extra-index-url https://modular.gateway.scarf.sh/simple/
@@ -177,11 +178,6 @@ more help with it, see our [Pixi basics guide](/pixi).
 
         </TabItem>
         <TabItem value="stable" label="Stable">
-
-        ```output
-        Stable builds aren't on pypi.org yet.
-        Either install nightly or switch to Pixi or Conda.
-        ```
 
         ```sh
         pip install mojo \
@@ -246,7 +242,7 @@ more help with it, see our [Pixi basics guide](/pixi).
 
         ```sh
         conda install -c conda-forge \
-          -c https://conda.modular.com/max/ "mojo=0.25.6"
+          -c https://conda.modular.com/max/ "mojo==0.25.6"
         ```
 
         </TabItem>

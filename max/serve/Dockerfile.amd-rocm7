@@ -1,0 +1,29 @@
+ARG IMAGE_TAG=25afd0c
+
+FROM 590183669380.dkr.ecr.us-east-1.amazonaws.com/max-openai-api:sha-${IMAGE_TAG}-x86_64-amd-lean AS amd-base
+ENV TZ=Etc/UTC
+USER root
+
+# Install ROCm 7
+# https://rocm.docs.amd.com/projects/install-on-linux/en/docs-7.0.1/install/install-methods/package-manager/package-manager-ubuntu.html
+RUN <<'EOF'
+# Prevent tzdata and other packages from prompting during installation
+echo 'tzdata tzdata/Areas select Etc' | sudo debconf-set-selections
+echo 'tzdata tzdata/Zones/Etc select UTC' | sudo debconf-set-selections
+export DEBIAN_FRONTEND=noninteractive
+export TZ=Etc/UTC
+
+sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+wget https://repo.radeon.com/rocm/rocm.gpg.key -O - | \
+  gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/7.0.1 jammy main" \
+  | sudo tee /etc/apt/sources.list.d/rocm.list
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/graphics/7.0.1/ubuntu jammy main" \
+  | sudo tee /etc/apt/sources.list.d/rocm-graphics.list
+printf "Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n" \
+  | sudo tee /etc/apt/preferences.d/rocm-pin-600
+
+sudo apt-get update -y
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends rocm
+EOF

@@ -29,7 +29,7 @@ pixi add "mojo<1.0.0"
 If you want a specific version, this still works as expected:
 
 ```sh
-pixi add "mojo=0.25.6"
+pixi add "mojo==0.25.6"
 ```
 
 We'll soon "yank" all past packages that are greater than 1.0 so they won't be
