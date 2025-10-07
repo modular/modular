@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import Python, PythonObject
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 fn test_import(mut python: Python) raises:
@@ -58,13 +58,44 @@ fn test_getattr_ownership(mut python: Python) raises:
     assert_true(string == "4")
 
 
-def main():
-    # initializing Python instance calls init_python
+def test_with_python_list():
     var python = Python()
-
     test_list(python)
+
+
+def test_with_python_tuple():
+    var python = Python()
     test_tuple(python)
+
+
+def test_with_python_call_ownership():
+    var python = Python()
     test_call_ownership(python)
+
+
+def test_with_python_getitem_ownership():
+    var python = Python()
     test_getitem_ownership(python)
+
+
+def test_with_python_getattr_ownership():
+    var python = Python()
     test_getattr_ownership(python)
+
+
+def test_with_python_import():
+    var python = Python()
     test_import(python)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_with_python_list]()
+    suite.test[test_with_python_tuple]()
+    suite.test[test_with_python_call_ownership]()
+    suite.test[test_with_python_getitem_ownership]()
+    suite.test[test_with_python_getattr_ownership]()
+    suite.test[test_with_python_import]()
+
+    suite^.run()

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import Python, PythonObject
-from testing import assert_equal, assert_raises
+from testing import assert_equal, assert_raises, TestSuite
 
 
 fn test_python_exception_import() raises:
@@ -50,7 +50,11 @@ fn test_python_exception_call() raises:
 
 
 def main():
-    test_python_exception_import()
-    test_python_exception_getattr()
-    test_python_exception_getitem()
-    test_python_exception_call()
+    var suite = TestSuite()
+
+    suite.test[test_python_exception_import]()
+    suite.test[test_python_exception_getattr]()
+    suite.test[test_python_exception_getitem]()
+    suite.test[test_python_exception_call]()
+
+    suite^.run()

@@ -18,6 +18,7 @@ from testing import (
     assert_false,
     assert_raises,
     assert_true,
+    TestSuite,
 )
 
 
@@ -101,10 +102,14 @@ def test_numpy_float():
 
 
 def main():
-    test_string()
-    test_range()
-    test_int()
-    test_float()
-    test_bool()
-    test_numpy_int()
-    test_numpy_float()
+    var suite = TestSuite()
+
+    suite.test[test_string]()
+    suite.test[test_range]()
+    suite.test[test_int]()
+    suite.test[test_float]()
+    suite.test[test_bool]()
+    suite.test[test_numpy_int]()
+    suite.test[test_numpy_float]()
+
+    suite^.run()
