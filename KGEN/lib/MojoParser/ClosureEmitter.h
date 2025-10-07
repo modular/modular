@@ -90,7 +90,7 @@ public:
   /// check-lifetimes pass.
   ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
                                ASTDecl &traitDecl, SMLoc location,
-                               bool isRegisterPassable, bool isCopyable);
+                               TypeConvention typeConvention, bool isCopyable);
 
 private:
   MLIRContext *ctx;

@@ -1995,11 +1995,9 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
   return ptr->second;
 }
 
-ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(SMLoc loc,
-                                                       FnTypeGeneratorType sig,
-                                                       ASTDecl *moduleDecl,
-                                                       InlineLevel inlineLevel,
-                                                       bool isCopyable) {
+ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
+    SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl,
+    InlineLevel inlineLevel, bool isCopyable, TypeConvention typeConvention) {
   ASTDecl *traitDecl =
       getOrCreateClosureTrait(loc, *moduleDecl, sig, inlineLevel);
   TraitType traitType =
@@ -2016,7 +2014,7 @@ ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(SMLoc loc,
   if (!targetWrapper)
     targetWrapper = closureEmitter->createStructWrapper(
         *moduleDecl, ASTType(sig).getAsString(/*diags=*/this), *traitDecl, loc,
-        sig.isRegisterPassable(), isCopyable);
+        typeConvention, isCopyable);
 
   return targetWrapper;
 }
