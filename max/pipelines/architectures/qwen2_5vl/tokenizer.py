@@ -521,6 +521,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         )
 
         # Process vision inputs for Qwen2.5VL (image-only)
+        attention_mask = None
         pixel_values: tuple[npt.NDArray[Any], ...] = tuple()
         if image_inputs is not None:
             if "pixel_values" in processed_inputs:
@@ -589,7 +590,6 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
             # Extract attention_mask for use in get_rope_index
             # Note: attention_mask is only used locally for get_rope_index, not passed to model
-            attention_mask = None
             if "attention_mask" in processed_inputs:
                 attention_mask_raw = processed_inputs["attention_mask"]
                 # Handle various formats from tokenizer
