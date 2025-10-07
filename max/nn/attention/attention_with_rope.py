@@ -73,7 +73,6 @@ class AttentionWithRopeV1(AttentionImpl):
 
     # This class does not use the RotaryEmbedding to calculate rope, but it
     # already includes a freqs_cis calculation, which we will borrow.
-
     rope: RotaryEmbedding
     bias: TensorValue | None = None
     perm_idx: TensorValue | None = None
@@ -302,9 +301,6 @@ class AttentionWithRope(Module, Shardable):
         self._sharding_strategy = strategy
 
         num_devices = strategy.num_devices
-
-        # Match the existing tensor parallel wrapper partitioning.
-
         if self.stacked_qkv:
             # Partition the [Q|K|V] block by heads.
             self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
@@ -977,6 +973,8 @@ def distribute_value(
 class TensorParallelAttentionWithRope(
     AttentionWithRope, DistributedAttentionImpl
 ):
+    """Tensor-parallel wrapper that delegates sharding to the base module."""
+
     def __init__(
         self,
         *,
@@ -1033,71 +1031,12 @@ class TensorParallelAttentionWithRope(
                 "TensorParallelAttentionWithRope does not support CPU devices"
             )
 
-        # Shard weights into separate AttentionWithRope layers.
-
         num_devices = len(self.devices)
         self.allreduce = Allreduce(num_devices)
 
-        if self.stacked_qkv:
-            self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
-                num_devices, self.n_heads, self.kv_params.head_dim
-            )
-        else:
-            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-        self.o_proj.sharding_strategy = ShardingStrategy.head_aware_columnwise(
-            num_devices, self.n_heads, self.kv_params.head_dim
-        )
-
-        self.list_of_attentions = []
-
-        # Shard weights once for all devices.
-        if self.stacked_qkv:
-            qkv_proj_shards = self.qkv_proj.shard(self.devices)
-        else:
-            q_proj_shards = self.q_proj.shard(self.devices)
-            k_proj_shards = self.k_proj.shard(self.devices)
-            v_proj_shards = self.v_proj.shard(self.devices)
-        o_proj_shards = self.o_proj.shard(self.devices)
-
-        for n, device in enumerate(self.devices):
-            # Calculate the number of heads for this device.
-            head_start, head_end = _compute_shard_range(
-                num_attention_heads, n, len(self.devices)
-            )
-            device_num_heads = head_end - head_start
-
-            layer = AttentionWithRope(
-                rope=rope,
-                num_attention_heads=device_num_heads,
-                num_key_value_heads=num_key_value_heads,
-                hidden_size=hidden_size,
-                kv_params=kv_params,
-                devices=[device],
-                dtype=dtype,
-                linear_cls=linear_cls,
-                stacked_qkv=stacked_qkv,
-                scale=scale,
-                has_bias=has_bias,
-                float8_config=float8_config,
-                clip_qkv=clip_qkv,
-            )
-            if self.stacked_qkv:
-                layer.qkv_proj = qkv_proj_shards[n]
-            else:
-                layer.q_proj = q_proj_shards[n]
-                layer.k_proj = k_proj_shards[n]
-                layer.v_proj = v_proj_shards[n]
-
-            layer.o_proj = o_proj_shards[n]
-            self.list_of_attentions.append(layer)
+        # Delegate: configure base sharding + create per-device modules.
+        self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
+        self.list_of_attentions = self.shard(self.devices)
 
     def __call__(  # type: ignore[override]
         self,
@@ -1114,11 +1053,11 @@ class TensorParallelAttentionWithRope(
             raise ValueError(
                 f"Expected {len(self.devices)} input_row_offsets, got {len(input_row_offsets)}"
             )
-        if not all(isinstance(x, TensorValue) for x in input_row_offsets):
+        if not all(isinstance(t, TensorValue) for t in input_row_offsets):
             raise TypeError(
                 "All elements in input_row_offsets must be TensorValue instances"
             )
-        if not all(isinstance(x, TensorValue) for x in freqs_cis):
+        if not all(isinstance(t, TensorValue) for t in freqs_cis):
             raise TypeError(
                 "All elements in freqs_cis must be TensorValue instances"
             )
@@ -1311,7 +1250,6 @@ class AttentionWithRopeNoOpaque(Module):
             x_k, input_row_offsets, kv_collection.cache_lengths, freqs_cis
         )
 
-        # Store K and V in the cache.
         store_k_cache(kv_collection, xk_rope, input_row_offsets, layer_idx)
         store_v_cache(
             kv_collection,
