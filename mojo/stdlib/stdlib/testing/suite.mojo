@@ -14,6 +14,7 @@
 from math import ceil, floor
 from os import sep
 from time import perf_counter_ns
+from utils._ansi import Color, Text
 
 from builtin._location import __call_location
 from compile.reflection import get_linkage_name
@@ -27,42 +28,6 @@ fn _get_test_func_name[
 
     var name = get_linkage_name[func]()
     return name.split("::")[-1].split("(", maxsplit=1)[0]
-
-
-@fieldwise_init
-struct _Color(ImplicitlyCopyable, Movable, Writable):
-    """ANSI colors for terminal output."""
-
-    var color: StaticString
-
-    alias RED = Self("\033[91m")
-    alias GREEN = Self("\033[92m")
-    alias YELLOW = Self("\033[93m")
-    alias BLUE = Self("\033[94m")
-    alias MAGENTA = Self("\033[95m")
-    alias CYAN = Self("\033[96m")
-    alias BOLD_WHITE = Self("\033[1;97m")
-    alias END = Self("\033[0m")
-
-    fn write_to(self, mut writer: Some[Writer]):
-        writer.write(self.color)
-
-
-@fieldwise_init
-struct _ColorText[W: Writable, origin: ImmutableOrigin](Writable):
-    """Colors the given writable with the given `_Color`."""
-
-    var writable: Pointer[W, origin]
-    var color: _Color
-
-    fn __init__(out self, ref [origin]w: W, color: _Color):
-        self.writable = Pointer(to=w)
-        self.color = color
-
-    fn write_to(self, mut writer: Some[Writer]):
-        writer.write(self.color)
-        self.writable[].write_to(writer)
-        writer.write(_Color.END)
 
 
 struct _Indent[W: Writable, origin: ImmutableOrigin](Writable):
@@ -178,17 +143,17 @@ struct TestSuite(Movable):
         var failures = 0
         var runtime = 0
         print(
-            _ColorText("Running", _Color.GREEN),
-            _ColorText(n_tests, _Color.BOLD_WHITE),
+            Text[Color.GREEN]("Running"),
+            Text[Color.BOLD_WHITE](n_tests),
             "tests for",
-            _ColorText(self.name, _Color.CYAN),
+            Text[Color.CYAN](self.name),
         )
 
-        var passed = _ColorText("PASS", _Color.GREEN)
-        var failed = _ColorText("FAIL", _Color.RED)
+        var passed = Text[Color.GREEN]("PASS")
+        var failed = Text[Color.RED]("FAIL")
 
         for test in self.tests:
-            var name = _ColorText(test.name, _Color.CYAN)
+            var name = Text[Color.CYAN](test.name)
             var start = perf_counter_ns()
             try:
                 test.test_fn()
@@ -217,21 +182,21 @@ struct TestSuite(Movable):
         print("--------")
         print(
             " ",
-            _ColorText("Summary", _Color.MAGENTA),
+            Text[Color.MAGENTA]("Summary"),
             " [ ",
             _format_nsec(runtime),
             " ] ",
-            _ColorText(n_tests, _Color.BOLD_WHITE),
+            Text[Color.BOLD_WHITE](n_tests),
             " tests run: ",
-            _ColorText(n_tests - failures, _Color.BOLD_WHITE),
-            _ColorText(" passed", _Color.GREEN),
+            Text[Color.BOLD_WHITE](n_tests - failures),
+            Text[Color.GREEN](" passed"),
             ", ",
-            _ColorText(failures, _Color.BOLD_WHITE),
-            _ColorText(" failed", _Color.RED),
+            Text[Color.BOLD_WHITE](failures),
+            Text[Color.RED](" failed"),
             sep="",
         )
 
         if failures > 0:
             raise Error(
-                "Test suite '", _ColorText(self.name, _Color.CYAN), "' failed!"
+                "Test suite '", Text[Color.CYAN](self.name), "' failed!"
             )
