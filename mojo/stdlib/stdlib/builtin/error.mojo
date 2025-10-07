@@ -22,6 +22,7 @@ from sys import _libc, external_call, is_gpu
 from sys.ffi import c_char
 
 from memory import ArcPointer, memcpy, OwnedPointer
+from io.write import _WriteBufferStack, _TotalWritableBytes
 
 
 # ===-----------------------------------------------------------------------===#
@@ -33,7 +34,7 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
 
     var value: ArcPointer[OwnedPointer[UInt8]]
     """A reference counting pointer to a char array containing the stack trace.
-    
+
         Note: This owned pointer _can be null_. We'd use Optional[OwnedPointer] but
         we don't have good niche optimization and Optional[T] requires T: Copyable
     """
@@ -103,6 +104,19 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
 # ===-----------------------------------------------------------------------===#
 
 
+@fieldwise_init
+struct _ErrorWriter(Writer):
+    var data: List[Byte]
+
+    fn write_bytes(mut self, bytes: Span[Byte, _]):
+        self.data.extend(bytes)
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
+
+
 @register_passable
 struct Error(
     Boolable,
@@ -160,61 +174,36 @@ struct Error(
         self.loaded_length = value.byte_length()
         self.stack_trace = StackTrace(depth=0)
 
-    @implicit
-    fn __init__(out self, src: String):
-        """Construct an Error object with a given string.
-
-        Args:
-            src: The error message.
-        """
-        var length = src.byte_length()
-        var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest=dest, src=src.unsafe_ptr(), count=length)
-        dest[length] = 0
-        self.data = dest
-        self.loaded_length = -length
-        self.stack_trace = StackTrace(depth=0)
-
-    @implicit
-    fn __init__(out self, src: StringSlice):
-        """Construct an Error object with a given string ref.
-
-        Args:
-            src: The error message.
-        """
-        var length = src.byte_length()
-        var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest=dest, src=src.unsafe_ptr(), count=length)
-        dest[length] = 0
-        self.data = dest
-        self.loaded_length = -length
-        self.stack_trace = StackTrace(depth=0)
-
     @no_inline
-    fn __init__[
-        *Ts: Writable
-    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = "",):
-        """
-        Construct an Error by concatenating a sequence of Writable arguments.
+    fn __init__[*Ts: Writable](out self, *args: *Ts):
+        """Construct an Error by concatenating a sequence of Writable arguments.
 
         Args:
             args: A sequence of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
 
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
         """
-        var output = String()
-        var buffer = _WriteBufferStack(output)
 
         @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(buffer)
+        fn _write(mut writer: Some[Writer]):
+            @parameter
+            for i in range(args.__len__()):
+                args[i].write_to(writer)
 
+        # Count the total length of bytes to allocate only once
+        var arg_bytes = _TotalWritableBytes()
+        _write(arg_bytes)
+        arg_bytes.size += 1  # nul terminator
+        var writer = _ErrorWriter(List[Byte](capacity=arg_bytes.size))
+        var buffer = _WriteBufferStack(writer)
+        _write(buffer)
         buffer.flush()
-        self = Error(output)
+        writer.data.append(0)  # nul terminator
+        self.loaded_length = -(len(writer.data) - 1)
+        self.data = writer.data.steal_data()
+        self.stack_trace = StackTrace(depth=0)
 
     fn __del__(deinit self):
         """Releases memory if allocated."""

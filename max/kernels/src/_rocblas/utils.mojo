@@ -30,8 +30,8 @@ alias ROCM_ROCBLAS_LIBRARY_PATHS = List[Path](
 )
 
 
-fn _on_error_msg() -> String:
-    return String(
+fn _on_error_msg() -> Error:
+    return Error(
         (
             "Cannot find the rocBLAS libraries. Please make sure that "
             "the ROCM toolkit is installed and that the library path is "

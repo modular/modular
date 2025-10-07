@@ -75,7 +75,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
 
         # Handle different argument patterns
         if tuple_len + kwargs_len == 0:
-            raise String("MojoPair requires at least 1 argument")
+            raise Error("MojoPair requires at least 1 argument")
 
         var first_val: Int
         var second_val: Int
@@ -85,7 +85,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
             try:
                 first_val = Int(args[0])
             except e:
-                raise String("Failed to convert first argument to integer: ", e)
+                raise Error("Failed to convert first argument to integer: ", e)
         else:
             first_val = 0  # Default if not provided positionally
 
@@ -93,14 +93,12 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
             try:
                 second_val = Int(args[1])
             except e:
-                raise String(
-                    "Failed to convert second argument to integer: ", e
-                )
+                raise Error("Failed to convert second argument to integer: ", e)
         else:
             second_val = 0  # Default if not provided positionally
 
         if tuple_len > 2:
-            raise String(
+            raise Error(
                 "MojoPair accepts at most 2 positional arguments, got ",
                 tuple_len,
             )
@@ -116,26 +114,26 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
                 if "second" in kwargs:
                     second_val = Int(kwargs["second"])
             except e:
-                raise String("Failed to process keyword arguments: ", e)
+                raise Error("Failed to process keyword arguments: ", e)
 
         # Ensure we have valid values for both
         if tuple_len == 0 and kwargs_len > 0:
             # Pure keyword argument case - need both
             if "first" not in kwargs or "second" not in kwargs:
-                raise String(
+                raise Error(
                     "When using only keyword arguments, both 'first' and"
                     " 'second' must be provided"
                 )
         elif tuple_len == 1 and kwargs_len > 0:
             # Mixed case with one positional - need 'second' in kwargs
             if "second" not in kwargs:
-                raise String(
+                raise Error(
                     "When providing 1 positional argument, 'second' must be"
                     " provided as keyword argument"
                 )
         elif tuple_len == 1 and kwargs_len == 0:
             # Single positional argument case - need exactly 2
-            raise String(
+            raise Error(
                 "MojoPair requires exactly 2 arguments when using only"
                 " positional arguments"
             )
@@ -157,15 +155,8 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
-            return abort[UnsafePointer[Self]](
-                String(
-                    (
-                        "Python method receiver object did not have the"
-                        " expected type: "
-                    ),
-                    e,
-                )
-            )
+            alias m = "Python method receiver object did not have the"
+            return abort[UnsafePointer[Self]](String(m, " expected type: ", e))
 
     @staticmethod
     fn get_first(py_self: PythonObject) -> PythonObject:

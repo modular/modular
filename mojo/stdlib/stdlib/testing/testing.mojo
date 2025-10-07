@@ -43,8 +43,8 @@ from python import PythonObject
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> String:
-    return loc.prefix(String("AssertionError: ", msg))
+fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> Error:
+    return Error(loc.prefix(String("AssertionError: ", msg)))
 
 
 @always_inline
@@ -531,7 +531,7 @@ fn assert_is_not[
 
 fn _assert_cmp_error[
     cmp: String
-](lhs: String, rhs: String, *, msg: String, loc: _SourceLocation) -> String:
+](lhs: String, rhs: String, *, msg: String, loc: _SourceLocation) -> Error:
     var err = cmp + " failed:\n   left: " + lhs + "\n  right: " + rhs
     if msg:
         err += "\n  reason: " + msg

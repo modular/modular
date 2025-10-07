@@ -38,8 +38,8 @@ alias CUDA_CUBLASLT_LIBRARY_PATHS = List[Path](
 )
 
 
-fn _on_error_msg() -> String:
-    return String(
+fn _on_error_msg() -> Error:
+    return Error(
         (
             "Cannot find the cuBLASLT libraries. Please make sure that "
             "the CUDA toolkit is installed and that the library path is "

@@ -66,8 +66,8 @@ alias LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate
 # ===-----------------------------------------------------------------------===#
 
 
-fn _on_error_msg() -> String:
-    return String(
+fn _on_error_msg() -> Error:
+    return Error(
         (
             "Cannot find the Apple Accelerate libraries. Please make sure that "
             "the XCode package is installed and that the library path is "
