@@ -78,6 +78,7 @@ from ....utils import elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
 from .matmul import WarpRole, consumer_main_loop, stsm_helper
 from .tile_scheduler import TileScheduler, WorkInfo
+from .pipeline import ProducerConsumerPipeline
 
 
 @always_inline
@@ -160,13 +161,7 @@ fn load_AB[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    producer_phase: PipelineState[num_pipeline_stages],
+    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -197,9 +192,10 @@ fn load_AB[
     alias a_tma_rows = a_desc_layout.shape[0].value()
     alias b_tma_rows = b_desc_layout.shape[0].value()
 
-    var stage = producer_phase.index()
-    var phase = producer_phase.phase()
-    mma_mbar[stage].wait(phase)
+    var stage = load_mma_pipeline.producer_stage()
+
+    # Wait until MMA (consumer) has used the buffer.
+    load_mma_pipeline.wait_consumer()
 
     var a_gmem_slice_coord = (
         peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
@@ -220,28 +216,29 @@ fn load_AB[
     var b_smem_slice = __type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
     )
+    var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[stage].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(expected_bytes)
 
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
-            tma_mbar[stage],
+            tma_mbar[0],
             (UInt(UInt(iter_idx) * BK), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
-            tma_mbar[stage],
+            tma_mbar[0],
             (UInt(UInt(iter_idx) * BK), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
 
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
-            tma_mbar[stage],
+            tma_mbar[0],
             (UInt(work_tile_coord[0] * BM), UInt(iter_idx)),
         )
 
@@ -430,10 +427,7 @@ fn promote_accumulators[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
-    mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    consumer_phase: PipelineState[pipeline_stages],
+    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     work_tile_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
     stage_stride_cols: UInt,
@@ -482,6 +476,8 @@ fn promote_accumulators[
 
     var bm = work_tile_coord[0]
     var bn = work_tile_coord[1]
+
+    var tma_load_stage_index = load_mma_pipeline.consumer_stage()
 
     # scale_b index calculation when MMA_N != BK(128)
     var b_scale_idx0 = 0
@@ -559,7 +555,6 @@ fn promote_accumulators[
 
     accum_full_mbar[index].wait(phase)
 
-    var tma_load_stage_index = consumer_phase.index()
     var a_scales_smem = a_scales_smem_iter.next(tma_load_stage_index)[]
 
     var upper_sfa0_smem = a_scales_smem[
@@ -578,7 +573,7 @@ fn promote_accumulators[
 
     syncwarp()
     if lane_id() < UInt(CLUSTER_SIZE):
-        _ = mma_mbar[tma_load_stage_index].arrive()
+        _ = load_mma_pipeline.consumer_mbar(tma_load_stage_index)[0].arrive()
     syncwarp()
 
     @parameter
@@ -858,9 +853,12 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     )
     var smem_pool = (a_scales_smem_base + a_scales_smem_size).bitcast[Int64]()
 
-    var tma_mbar_ptr = smem_pool
-    var mma_mbar_ptr = tma_mbar_ptr + num_pipeline_stages
-    var accum_full_mbar_ptr = mma_mbar_ptr + num_pipeline_stages
+    # Load warp as producer and mma warp as consumer
+    var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
+        smem_pool.bitcast[SharedMemBarrier]()
+    )
+
+    var accum_full_mbar_ptr = smem_pool + 2 * num_pipeline_stages
     var accum_empty_mbar_ptr = accum_full_mbar_ptr + num_accum_pipeline_stages
 
     var clc_full_mbar_ptr = accum_empty_mbar_ptr + num_accum_pipeline_stages
@@ -882,8 +880,6 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
     accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
     accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
     clc_response = clc_response_ptr.bitcast[UInt128]()
@@ -908,13 +904,12 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
         @parameter
         for i in range(num_pipeline_stages):
-            tma_mbar[i].init()
-            # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
-            mma_mbar[i].init(
+            load_mma_pipeline.init_mbars(
+                Int32(1),
                 cluster_shape[0] // cta_group
                 + cluster_shape[1]
                 - 1
-                + CLUSTER_SIZE * (EPILOGUE_THREADS // 32)
+                + CLUSTER_SIZE * (EPILOGUE_THREADS // 32),
             )
 
         @parameter
@@ -933,9 +928,6 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     fence_mbarrier_init()
     cluster_sync()
-
-    var consumer_phase = PipelineState[num_pipeline_stages]()
-    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
     var clc_pipe_producer_state = PipelineState[num_clc_pipeline_stages](
         0, 1, 0
@@ -1037,9 +1029,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     a_smem,
                     b_smem,
                     a_scales_smem,
-                    mma_mbar,
-                    tma_mbar,
-                    producer_phase,
+                    load_mma_pipeline,
                     peer_cta_coord,
                     (UInt(work_info.m), UInt(work_info.n)),
                     a_multicast_mask,
@@ -1047,7 +1037,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     i,
                     elect_one_cta,
                 )
-                producer_phase.step()
+                load_mma_pipeline.producer_step()
 
             syncwarp()
             var next_work_info = scheduler.fetch_next_work(
@@ -1058,8 +1048,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
         @parameter
         for i in range(num_pipeline_stages):
-            mma_mbar[producer_phase.index()].wait(producer_phase.phase())
-            producer_phase.step()
+            load_mma_pipeline.wait_consumer()
+            load_mma_pipeline.producer_step()
 
     if WarpRole.is_scheduler() and is_first_cta_in_cluster:
         var required_clc_query = True
@@ -1129,14 +1119,12 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         tmem_offset,
                         a_smem,
                         b_smem,
-                        mma_mbar,
-                        tma_mbar,
-                        consumer_phase,
+                        load_mma_pipeline,
                         mma_op,
                         elect_one_warp,
                         0,
                     )
-                    consumer_phase.step()
+                    load_mma_pipeline.consumer_step()
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
                     if elect_one_sync():
@@ -1199,15 +1187,14 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     accum_full_mbar,
                     accum_empty_mbar,
                     tmem_addr,
-                    mma_mbar,
-                    consumer_phase,
+                    load_mma_pipeline,
                     work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
                     elect_one_warp=elect_one_warp,
                     stage_stride_cols=UInt(stage_stride_cols),
                     k_iter=k_iter,
                     problem_shape=problem_shape,
                 )
-                consumer_phase.step()
+                load_mma_pipeline.consumer_step()
                 accum_pipeline_consumer_state.step()
 
             # TODO (KERN-2081): investigate why this barrier is needed and if we can move/remove it

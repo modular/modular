@@ -81,6 +81,7 @@ from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
 from ..tile_scheduler import RasterOrder
 from .tile_scheduler import TileScheduler, WorkInfo
+from .pipeline import ProducerConsumerPipeline
 
 
 @fieldwise_init
@@ -163,13 +164,7 @@ fn load_AB[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    producer_phase: PipelineState[num_pipeline_stages],
+    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -194,9 +189,10 @@ fn load_AB[
     alias a_tma_rows = a_desc_layout.shape[0].value()
     alias b_tma_rows = b_desc_layout.shape[0].value()
 
-    var stage = producer_phase.index()
-    var phase = producer_phase.phase()
-    mma_mbar[stage].wait(phase)
+    var stage = load_mma_pipeline.producer_stage()
+
+    # Wait until MMA (consumer) has used the buffer.
+    load_mma_pipeline.wait_consumer()
 
     var a_gmem_slice_coord = (
         peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
@@ -216,21 +212,22 @@ fn load_AB[
     var b_smem_slice = __type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
     )
+    var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[stage].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(expected_bytes)
 
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
-            tma_mbar[stage],
+            tma_mbar[0],
             (UInt(iter_idx) * UInt(BK), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
-            tma_mbar[stage],
+            tma_mbar[0],
             (UInt(iter_idx) * UInt(BK), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
@@ -270,13 +267,7 @@ fn consumer_main_loop[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    consumer_phase: PipelineState[pipeline_stages],
+    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     mma_op: MmaOpSM100_SS[
         c_type,
         a_type,
@@ -293,10 +284,9 @@ fn consumer_main_loop[
     elect_one_warp: Bool,
     iter_idx: UInt32,
 ):
-    var stage = consumer_phase.index()
-    var phase = consumer_phase.phase()
+    var stage = load_mma_pipeline.consumer_stage()
 
-    tma_mbar[stage].wait(phase)
+    load_mma_pipeline.wait_producer()
 
     var a_smem_tile = a_smem_iter.next(stage)[]
     var b_smem_tile = b_smem_iter.next(stage)[]
@@ -309,7 +299,7 @@ fn consumer_main_loop[
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
 
-        mma_op.commit(mma_mbar + stage)
+        mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
 @always_inline
@@ -445,7 +435,7 @@ fn shared_memory_epilogue[
     for i in range(fragment_size):
         alias alignment = align_of[SIMD[c_type, simd_size]]()
 
-        # these offsets are swizzled so to reteive the corresponding gmem offset we need to remove the swizzle
+        # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
         # luckily removing the swizzle is as simple as swizzling a second time
         var swz_offset_upper = (
             shared_memory_row_upper_half * shared_n + shared_memory_col
@@ -462,7 +452,7 @@ fn shared_memory_epilogue[
         var shared_lower_row: Int64
         var shared_lower_col: Int64
 
-        # Now that we have the true index we, need to add the global tile index to find the correlating
+        # Now that we have the true index we, need to add the global tile index to find the corresponding
         # index, in gmem. However the data will be stored in tensor memory differently depending on
         # MMA_M size, we take that into account here.
 
@@ -741,13 +731,7 @@ fn multi_stage_store_C[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
-    accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
+    mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
@@ -800,11 +784,11 @@ fn multi_stage_store_C[
 
     # before i start the process of transferring over num_stages * stageN= MMA_N from tensor memory to global, i should wait
     # on the accum_full_mbar barrier
-    var index = accum_pipeline_consumer_state.index()
-    var phase = accum_pipeline_consumer_state.phase()
-    accum_full_mbar[index].wait(phase)
+    var mma_output_output_stage = mma_output_pipeline.consumer_stage()
+    mma_output_pipeline.wait_producer()
+
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
-    var tmem_offset = index * stage_stride_cols + tmem_addr
+    var tmem_offset = mma_output_output_stage * stage_stride_cols + tmem_addr
 
     @parameter
     for stage in range(num_stages):
@@ -832,7 +816,9 @@ fn multi_stage_store_C[
 
         @parameter
         if stage == num_stages - 1:
-            umma_arrive_leader_cta(accum_empty_mbar + index)
+            umma_arrive_leader_cta(
+                mma_output_pipeline.consumer_mbar(mma_output_output_stage)
+            )
 
         @parameter
         if elementwise_compute_lambda_fn:
@@ -1154,24 +1140,37 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         alignment=128,
     ](c_smem_base, c_smem_size)
 
-    var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
-
-    var tma_mbar_ptr = smem_pool
-    var mma_mbar_ptr = tma_mbar_ptr + num_pipeline_stages
-    var accum_full_mbar_ptr = mma_mbar_ptr + num_pipeline_stages
-    var accum_empty_mbar_ptr = accum_full_mbar_ptr + num_accum_pipeline_stages
-
-    var clc_full_mbar_ptr = accum_empty_mbar_ptr + num_accum_pipeline_stages
-    var clc_empty_mbar_ptr = clc_full_mbar_ptr + num_clc_pipeline_stages
-    var clc_throttle_full_mbar_ptr = (
-        clc_empty_mbar_ptr + num_clc_pipeline_stages
+    # Load warp as producer and mma warp as consumer
+    # Dependence on MMA input in SMEM.
+    # Conumer phase = 1 so that producer's wait on consumer passes trivially
+    # at the start when buffer is empty.
+    var load_mma_mbar_ptr = (c_smem_base + c_smem_size).bitcast[
+        SharedMemBarrier
+    ]()
+    var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
+        load_mma_mbar_ptr
     )
-    var clc_throttle_empty_mbar_ptr = (
-        clc_throttle_full_mbar_ptr + num_clc_pipeline_stages
+
+    # MMA warp as producer and Output warp as consumer.
+    # Dependence on MMA output in TMEM.
+    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
+    var mma_output_pipeline = ProducerConsumerPipeline[
+        num_accum_pipeline_stages
+    ](mma_output_mbar_ptr)
+
+    var clc_full_mbar_ptr = mma_output_mbar_ptr + 2 * num_accum_pipeline_stages
+    var clc_empty_mbar_ptr = clc_full_mbar_ptr + num_clc_pipeline_stages
+
+    # Load warp as producer and scheduler warp as consumer.
+    # No data dependence. Introduce dependence to prevent CLC goes too ahead.
+    # In the extreme case, all ctas keep querying next work simultaneously,
+    # there will be no guarantee they get balanced number of tiles.
+    var load_clc_pipeline = ProducerConsumerPipeline[num_clc_pipeline_stages](
+        clc_empty_mbar_ptr + num_clc_pipeline_stages
     )
 
     var clc_response_ptr = (
-        clc_throttle_empty_mbar_ptr + num_clc_pipeline_stages
+        clc_empty_mbar_ptr + 3 * num_clc_pipeline_stages
     ).bitcast[Int128]()
 
     var tmem_dealloc_mbar_ptr = (
@@ -1180,20 +1179,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
     clc_response = clc_response_ptr.bitcast[UInt128]()
     clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
     clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
     tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_throttle_full_mbar = clc_throttle_full_mbar_ptr.bitcast[
-        SharedMemBarrier
-    ]()
-    clc_throttle_empty_mbar = clc_throttle_empty_mbar_ptr.bitcast[
-        SharedMemBarrier
-    ]()
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -1209,18 +1198,17 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
-            tma_mbar[i].init()
-            # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
-            mma_mbar[i].init(
-                cluster_shape[0] // cta_group + cluster_shape[1] - 1
-            )
-
-        @parameter
-        for i in range(num_accum_pipeline_stages):
-            accum_full_mbar[i].init(accum_pipeline_producer_arv_count)
-            accum_empty_mbar[i].init(accum_pipeline_consumer_arv_count)
+        load_mma_pipeline.init_mbars(
+            Int32(1), cluster_shape[0] // cta_group + cluster_shape[1] - 1
+        )
+        mma_output_pipeline.init_mbars(
+            accum_pipeline_producer_arv_count,
+            accum_pipeline_consumer_arv_count,
+        )
+        load_clc_pipeline.init_mbars(
+            clc_throttle_producer_arv_count,
+            clc_throttle_consumer_arv_count,
+        )
 
         tmem_dealloc_mbar[].init(EPILOGUE_THREADS * cta_group)
 
@@ -1228,31 +1216,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     for i in range(num_clc_pipeline_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(clc_consumer_arv_count)
-        clc_throttle_full_mbar[i].init(clc_throttle_producer_arv_count)
-        clc_throttle_empty_mbar[i].init(clc_throttle_consumer_arv_count)
 
     fence_mbarrier_init()
     cluster_sync()
-
-    var consumer_phase = PipelineState[num_pipeline_stages]()
-    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
     var clc_pipe_producer_state = PipelineState[num_clc_pipeline_stages](
         0, 1, 0
     )
     var clc_pipe_consumer_state = PipelineState[num_clc_pipeline_stages]()
-
-    var clc_throttle_producer_state = PipelineState[num_clc_pipeline_stages](
-        0, 1, 0
-    )
-    var clc_throttle_consumer_state = PipelineState[num_clc_pipeline_stages]()
-
-    var accum_pipeline_producer_state = PipelineState[
-        num_accum_pipeline_stages
-    ](0, 1, 0)
-    var accum_pipeline_consumer_state = PipelineState[
-        num_accum_pipeline_stages
-    ]()
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -1318,14 +1289,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         var required_clc_query = True
 
         while work_info.is_valid():
-            # CLC throuttle prevents each CTA from going a few waves ahead.
+            # CLC throttle prevents each CTA from going a few waves ahead.
             if is_first_cta_in_cluster and required_clc_query:
-                var index = clc_throttle_producer_state.index()
-                var phase = clc_throttle_producer_state.phase()
-                clc_throttle_empty_mbar[index].wait(phase)
-                _ = clc_throttle_full_mbar[index].arrive()
-
-                clc_throttle_producer_state.step()
+                load_clc_pipeline.wait_consumer()
+                var load_clc_producer_state = load_clc_pipeline.producer_stage()
+                _ = load_clc_pipeline.producer_mbar(load_clc_producer_state)[
+                    0
+                ].arrive()
+                load_clc_pipeline.producer_step()
 
             # DO TMA LOAD
             for i in range(num_iters):
@@ -1338,9 +1309,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     b_tma_op,
                     a_smem,
                     b_smem,
-                    mma_mbar,
-                    tma_mbar,
-                    producer_phase,
+                    load_mma_pipeline,
                     peer_cta_coord,
                     (UInt(work_info.m), UInt(work_info.n)),
                     a_multicast_mask,
@@ -1348,7 +1317,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     i,
                     elect_one_cta,
                 )
-                producer_phase.step()
+                load_mma_pipeline.producer_step()
 
             syncwarp()
             var next_work_info = scheduler.fetch_next_work(
@@ -1357,22 +1326,23 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
+        # Prevent CTA to exit when a peer CTA is still working on mma.
         @parameter
         for i in range(num_pipeline_stages):
-            mma_mbar[producer_phase.index()].wait(producer_phase.phase())
-            producer_phase.step()
+            load_mma_pipeline.wait_consumer()
+            load_mma_pipeline.producer_step()
 
     if WarpRole.is_scheduler() and is_first_cta_in_cluster:
         var required_clc_query = True
 
         while work_info.is_valid():
             if required_clc_query:
-                var index = clc_throttle_consumer_state.index()
-                var phase = clc_throttle_consumer_state.phase()
-                clc_throttle_full_mbar[index].wait(phase)
-                _ = clc_throttle_empty_mbar[index].arrive()
-
-                clc_throttle_consumer_state.step()
+                load_clc_pipeline.wait_producer()
+                var load_clc_consumer_stage = load_clc_pipeline.consumer_stage()
+                _ = load_clc_pipeline.consumer_mbar(load_clc_consumer_stage)[
+                    0
+                ].arrive()
+                load_clc_pipeline.consumer_step()
 
                 # advance to next work
                 clc_pipe_producer_state = scheduler.advance_to_next_work(
@@ -1411,11 +1381,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             clc_pipe_consumer_state.step()
             # DO MMA
             if elect_one_cta:
-                var accum_index = accum_pipeline_producer_state.index()
-                var accum_phase = accum_pipeline_producer_state.phase()
-
-                accum_empty_mbar[accum_index].wait(accum_phase)
-                var tmem_offset = tmem_addr + (accum_index * stage_stride_cols)
+                var mma_output_mma_stage = mma_output_pipeline.producer_stage()
+                mma_output_pipeline.wait_consumer()
+                var tmem_offset = tmem_addr + (
+                    mma_output_mma_stage * stage_stride_cols
+                )
 
                 for i in range(num_iters):
                     consumer_main_loop[
@@ -1429,22 +1399,20 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         tmem_offset,
                         a_smem,
                         b_smem,
-                        mma_mbar,
-                        tma_mbar,
-                        consumer_phase,
+                        load_mma_pipeline,
                         mma_op,
                         elect_one_warp,
                         i,
                     )
-                    consumer_phase.step()
+                    load_mma_pipeline.consumer_step()
 
                 # mma arrive multicast will track completion of all mma prior to this barrier.
                 if elect_one_sync():
                     mma_arrive_multicast[cta_group](
-                        accum_full_mbar + accum_index,
+                        mma_output_pipeline.producer_mbar(mma_output_mma_stage),
                         mma_complete_mask,
                     )
-                accum_pipeline_producer_state.step()
+                mma_output_pipeline.producer_step()
             work_info = next_work_info
 
         tcgen05_release_allocation_lock[cta_group]()
@@ -1476,16 +1444,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             ](
                 c_smem_iter,
                 c_tma_op,
-                accum_pipeline_consumer_state,
-                accum_full_mbar,
-                accum_empty_mbar,
+                mma_output_pipeline,
                 tmem_addr,
                 work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
                 elect_one_warp=elect_one_warp,
                 M=mnk[0],
                 N=mnk[1],
             )
-            accum_pipeline_consumer_state.step()
+            mma_output_pipeline.consumer_step()
 
             next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state

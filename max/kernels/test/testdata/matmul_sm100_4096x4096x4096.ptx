@@ -71,19 +71,19 @@
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213104], %r40;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213096], %r39;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213112], %r40;
+	mov.b32 	%r41, 32;
+	mbarrier.init.shared.b64 	[extern_ptr_syml+213152], %r41;
+	mbarrier.init.shared.b64 	[extern_ptr_syml+213168], %r41;
+	mbarrier.init.shared.b64 	[extern_ptr_syml+213160], %r41;
+	mbarrier.init.shared.b64 	[extern_ptr_syml+213176], %r41;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213216], %r40;
 $L__BB0_2:
 	mov.b32 	%r1037, 1;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213120], %r1037;
-	mov.b32 	%r41, 416;
-	mbarrier.init.shared.b64 	[extern_ptr_syml+213136], %r41;
-	mov.b32 	%r42, 32;
-	mbarrier.init.shared.b64 	[extern_ptr_syml+213152], %r42;
-	mbarrier.init.shared.b64 	[extern_ptr_syml+213168], %r42;
+	mov.b32 	%r42, 416;
+	mbarrier.init.shared.b64 	[extern_ptr_syml+213136], %r42;
 	mbarrier.init.shared.b64 	[extern_ptr_syml+213128], %r1037;
-	mbarrier.init.shared.b64 	[extern_ptr_syml+213144], %r41;
-	mbarrier.init.shared.b64 	[extern_ptr_syml+213160], %r42;
-	mbarrier.init.shared.b64 	[extern_ptr_syml+213176], %r42;
+	mbarrier.init.shared.b64 	[extern_ptr_syml+213144], %r42;
 	// begin inline asm
 	fence.mbarrier_init.release.cluster;
 	// end inline asm
@@ -116,12 +116,12 @@ $L__BB0_2:
 	add.s32 	%r11, %r1034, %r48;
 	add.s32 	%r1036, %r1034, 213152;
 	add.s32 	%r1035, %r1034, 213168;
-	mov.b32 	%r1038, 0;
+	mov.b32 	%r1050, 0;
 	setp.eq.b32 	%p5, %r4, 0;
-	mov.b32 	%r1050, %r1038;
-	mov.b32 	%r1049, %r1038;
+	mov.b32 	%r1049, %r1050;
+	mov.b32 	%r1038, %r1050;
 	mov.b32 	%r1042, %r1037;
-	mov.b32 	%r1041, %r1038;
+	mov.b32 	%r1041, %r1050;
 	bra.uni 	$L__BB0_4;
 $L__BB0_13:
 	and.pred 	%p7, %p5, %p6;
@@ -242,12 +242,12 @@ $L__BB0_8:
 	elect.sync 	%r59|%p8, -1;
 	not.pred 	%p9, %p8;
 	@%p9 bra 	$L__BB0_12;
-	add.s32 	%r60, %r56, 212992;
-	and.b32 	%r62, %r60, -16777224;
 	shl.b32 	%r57, %r1041, 14;
 	add.s32 	%r58, %r1034, %r57;
 	add.s32 	%r64, %r58, 98304;
 	add.s32 	%r61, %r11, %r57;
+	add.s32 	%r60, %r56, 212992;
+	and.b32 	%r62, %r60, -16777224;
 	@%p49 bra 	$L__BB0_11;
 	// begin inline asm
 	mbarrier.arrive.expect_tx.shared.b64 _, [%r60], 65536;
@@ -369,10 +369,10 @@ $L__BB0_15:
 	@%p21 bra 	$L__BB0_22;
 	setp.lt.u32 	%p1, %r126, 2;
 	selp.b32 	%r127, 1, 0, %p1;
+	mov.b32 	%r1045, 0;
 	mov.b32 	%r1046, 1;
-	mov.b32 	%r1043, 0;
-	mov.b32 	%r1044, %r1043;
-	mov.b32 	%r1045, %r1043;
+	mov.b32 	%r1043, %r1045;
+	mov.b32 	%r1044, %r1045;
 	bra.uni 	$L__BB0_18;
 $L__BB0_20:
 	selp.b32 	%r1044, 0, %r131, %p22;
