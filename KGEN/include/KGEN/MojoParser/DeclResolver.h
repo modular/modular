@@ -141,11 +141,13 @@ public:
                              SMLoc loc, SMLoc importNameLoc);
   /// Import the provided decl from the given module decl, into the provided
   /// destination.
+  /// resolveTarget determines whether we resolve the ultimate decl as well.
   LogicalResult importDeclFromModule(ASTDecl &dest, PackageOp currentPackage,
                                      StringAttr moduleName,
                                      StringAttr sourceName, StringAttr destName,
                                      SMLoc loc, SMLoc sourceNameLoc,
-                                     SMLoc destNameLoc);
+                                     SMLoc destNameLoc,
+                                     bool resolveTarget = true);
   /// Import decls from the given module into the provided destination context
   /// using a wild-card import. If `isFullImport` is true, all decls are
   /// imported, otherwise only decls that don't start with an `_` are imported.
@@ -287,7 +289,10 @@ private:
   ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(PackageOp op, ASTDecl &decl);
 
-  ParseResult resolveSignature(LIT::UnresolvedImportOp op, ASTDecl &decl);
+  /// resolveTarget determines whether we also resolve the decl the
+  /// UnresolvedImportOp is referring to.
+  ParseResult resolveSignature(LIT::UnresolvedImportOp op, ASTDecl &decl,
+                               bool resolveTarget = true);
 
   LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(StructDeclOp op, Lexer &lexer, ASTDecl &decl);

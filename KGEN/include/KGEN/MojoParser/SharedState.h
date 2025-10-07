@@ -225,12 +225,18 @@ public:
   /// Perform a name lookup in the current scope and return the named
   /// declaration as a LookupResult.  If `searchParentScopes` is true, parent
   /// scopes are searched as well, as in unqualified name lookup.
+  /// This will resolve any unresolved imports along the way.
+  /// resolveTarget determines whether we resolve the ultimate declaration too.
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
-                                    ASTDecl &scope, bool searchParentScopes);
+                                    ASTDecl &scope, bool searchParentScopes,
+                                    bool resolveTarget = true);
 
   /// Perform a name lookup for a member in the specified type.
+  /// This will resolve any unresolved imports along the way.
+  /// resolveTarget determines whether we resolve the ultimate declaration too.
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
-                                    ASTType scope, bool searchParentScopes);
+                                    ASTType scope, bool searchParentScopes,
+                                    bool resolveTarget = true);
 
   /// Perform a name lookup that collects ALL matching declarations instead of
   /// stopping at the first non-import match. This is useful for finding both
