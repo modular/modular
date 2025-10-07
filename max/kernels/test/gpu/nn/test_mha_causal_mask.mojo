@@ -22,6 +22,7 @@ from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import A100, B200, H100
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -231,7 +232,18 @@ fn test[
         q_device,
         k_device,
         v_device,
-        MaterializedMask(mask4d),
+        MaterializedMask(
+            LayoutTensor[
+                mask4d.dtype,
+                Layout.row_major[mask4d.rank](mask4d.shape),
+                MutableAnyOrigin,
+            ](
+                mask4d.data,
+                RuntimeLayout[
+                    Layout.row_major[mask4d.rank](mask4d.shape)
+                ].row_major(mask4d.get_shape()),
+            ),
+        ),
         IdentityScoreMod(),
         scale,
         ctx,

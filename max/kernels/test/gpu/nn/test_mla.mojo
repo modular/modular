@@ -20,6 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import NDBufferMHAOperand
@@ -227,7 +228,18 @@ fn test[
                 output_device,
                 q_device,
                 k_device,
-                MaterializedMask(mask3d),
+                MaterializedMask(
+                    LayoutTensor[
+                        mask3d.dtype,
+                        Layout.row_major[mask3d.rank](mask3d.shape),
+                        MutableAnyOrigin,
+                    ](
+                        mask3d.data,
+                        RuntimeLayout[
+                            Layout.row_major[mask3d.rank](mask3d.shape)
+                        ].row_major(mask3d.get_shape().canonicalize()),
+                    ),
+                ),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -238,7 +250,18 @@ fn test[
                 output_device,
                 q_device,
                 k_device,
-                MaterializedMask(mask4d),
+                MaterializedMask(
+                    LayoutTensor[
+                        mask4d.dtype,
+                        Layout.row_major[mask4d.rank](mask4d.shape),
+                        MutableAnyOrigin,
+                    ](
+                        mask4d.data,
+                        RuntimeLayout[
+                            Layout.row_major[mask4d.rank](mask4d.shape)
+                        ].row_major(mask4d.get_shape().canonicalize()),
+                    ),
+                ),
                 IdentityScoreMod(),
                 scale,
                 ctx,

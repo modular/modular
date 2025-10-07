@@ -28,10 +28,10 @@ from sys import (
 from sys.info import _accelerator_arch
 
 from bit import prev_power_of_two
-from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace
+from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
@@ -674,11 +674,17 @@ fn dispatch_mask_and_score_mod[
 
 @always_inline
 fn dispatch_materialized_mask_and_score_mod[
-    score_mod_type: String, callback_fn: callback_fn_type, num_heads: Int = -1
+    dtype: DType,
+    layout: Layout, //,
+    score_mod_type: String,
+    callback_fn: callback_fn_type,
+    num_heads: Int = -1,
 ](
-    mask_nd: NDBuffer,
+    mask_nd: LayoutTensor[dtype, layout, MutableAnyOrigin],
     start_pos_nd: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ] = None,
 ) raises -> None:
     var mask = MaterializedMask(mask_nd, start_pos_nd)

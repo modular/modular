@@ -23,6 +23,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
@@ -114,6 +115,14 @@ def execute_flash_attention[
     ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths = NDBuffer[DType.uint32, 1](
         cache_lengths_dev.unsafe_ptr(), Index(batch_size)
+    )
+    var cache_lengths_lt = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        cache_lengths_dev.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            Index(batch_size)
+        ),
     )
 
     # initialize q tensor
@@ -297,7 +306,21 @@ def execute_flash_attention[
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        MaterializedMask(mask_device_mod.tensor, start_pos=cache_lengths),
+        MaterializedMask(
+            LayoutTensor[
+                mask_device_mod.dtype,
+                __type_of(mask_device_mod.to_layout_tensor()).layout,
+                MutableAnyOrigin,
+            ](
+                mask_device_mod.to_layout_tensor().ptr,
+                RuntimeLayout[
+                    __type_of(mask_device_mod.to_layout_tensor()).layout
+                ].row_major(
+                    mask_device_mod.to_layout_tensor().runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            start_pos=cache_lengths_lt,
+        ),
         IdentityScoreMod(),
         ManagedTensorSlice[
             io_spec=IOUnknown,

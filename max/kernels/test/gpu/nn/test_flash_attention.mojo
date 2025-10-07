@@ -21,6 +21,7 @@ from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import A100, B200, H100, GPUInfo, Vendor
+from layout import LayoutTensor, Layout, RuntimeLayout
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,
@@ -245,7 +246,18 @@ fn test[
                 q_device,
                 k_device,
                 v_device,
-                MaterializedMask(mask3d),
+                MaterializedMask(
+                    LayoutTensor[
+                        mask3d.dtype,
+                        Layout.row_major[mask3d.rank](mask3d.shape),
+                        MutableAnyOrigin,
+                    ](
+                        mask3d.data,
+                        RuntimeLayout[
+                            Layout.row_major[mask3d.rank](mask3d.shape)
+                        ].row_major(mask3d.get_shape()),
+                    ),
+                ),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -257,7 +269,18 @@ fn test[
                 q_device,
                 k_device,
                 v_device,
-                MaterializedMask(mask4d),
+                MaterializedMask(
+                    LayoutTensor[
+                        mask4d.dtype,
+                        Layout.row_major[mask4d.rank](mask4d.shape),
+                        MutableAnyOrigin,
+                    ](
+                        mask4d.data,
+                        RuntimeLayout[
+                            Layout.row_major[mask4d.rank](mask4d.shape)
+                        ].row_major(mask4d.get_shape()),
+                    ),
+                ),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -785,7 +808,18 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext) raises:
             q_device,
             k_device,
             v_device,
-            MaterializedMask(mask3d),
+            MaterializedMask(
+                LayoutTensor[
+                    mask3d.dtype,
+                    Layout.row_major[mask3d.rank](mask3d.shape),
+                    MutableAnyOrigin,
+                ](
+                    mask3d.data,
+                    RuntimeLayout[
+                        Layout.row_major[mask3d.rank](mask3d.shape)
+                    ].row_major(mask3d.get_shape()),
+                ),
+            ),
             IdentityScoreMod(),
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,

@@ -132,7 +132,7 @@ fn flash_attention[
     q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
-    mask: NDBuffer,
+    mask: NDBuffer[*_, address_space = AddressSpace.GENERIC, **_],
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: OptionalReg[Int] = None,
@@ -169,7 +169,18 @@ fn flash_attention[
             q,
             k,
             v,
-            MaterializedMask(mask),
+            MaterializedMask(
+                LayoutTensor[
+                    mask.type,
+                    Layout.row_major[mask.rank](mask.shape),
+                    MutableAnyOrigin,
+                ](
+                    mask.data,
+                    RuntimeLayout[
+                        Layout.row_major[mask.rank](mask.shape)
+                    ].row_major(mask.get_shape().canonicalize()),
+                )
+            ),
             IdentityScoreMod(),
             scale,
             context.get_device_context(),
@@ -4773,7 +4784,9 @@ fn mha_gpu_naive[
     q: NDBuffer[q_type, rank, *_],
     k: NDBuffer[k_type, rank, *_],
     v: NDBuffer[v_type, rank, *_],
-    mask: NDBuffer[mask_type, mask_rank, *_, **_],
+    mask: NDBuffer[
+        mask_type, mask_rank, *_, address_space = AddressSpace.GENERIC, **_
+    ],
     output: NDBuffer[mut=True, output_type, rank, *_],
     scale: Float32,
     batch_size: Int,
@@ -4796,7 +4809,18 @@ fn mha_gpu_naive[
         q,
         k_operand,
         v_operand,
-        MaterializedMask(mask),
+        MaterializedMask(
+            LayoutTensor[
+                mask_type,
+                Layout.row_major[mask_rank](mask.shape),
+                MutableAnyOrigin,
+            ](
+                mask.data,
+                RuntimeLayout[
+                    Layout.row_major[mask_rank](mask.shape)
+                ].row_major(mask.dynamic_shape.canonicalize()),
+            )
+        ),
         output,
         null_valid_length,
         scale,

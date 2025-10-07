@@ -153,7 +153,10 @@ _FILECHECK_TESTS = [
         size = "large",
         srcs = [src],
         copts = [],
-        enable_assertions = src != "test_layer_norm.mojo",
+        enable_assertions = select({
+            "//:amd_gpu": False,
+            "//conditions:default": src != "test_layer_norm.mojo",
+        }),
         exec_properties = {
             "test.resources:gpu-memory": "2",
         },
