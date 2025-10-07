@@ -1261,9 +1261,10 @@ class Sugarizer : public ParameterReplacer<Sugarizer> {
     if constexpr (std::is_base_of_v<Attribute, T>) {
       // If we see a SugarAttr completely discard the nested expressions and
       // just keep the sugared form.
-      if (auto sugar = dyn_cast<SugarAttr>(value))
-        return ParamOperatorAttr::getRebind(sugar.getSugared(),
-                                            sugar.getType());
+      if (auto sugar = dyn_cast<SugarAttr>(value)) {
+        auto newType = this->replaceImpl(sugar.getType(), depth);
+        return ParamOperatorAttr::getRebind(sugar.getSugared(), newType);
+      }
 
       // We can't change the type of a decl reference, because it will cause the
       // verifier to complain.  Instead, form a canonical form by using the
@@ -1271,8 +1272,6 @@ class Sugarizer : public ParameterReplacer<Sugarizer> {
       if (isa<ParamDeclRefAttr, ParamIndexRefAttr, SymbolConstantAttr>(value)) {
         auto ref = cast<TypedAttr>(value);
         auto newType = this->replaceImpl(ref.getType(), depth);
-        if (newType == ref.getType())
-          return ref;
         return ParamOperatorAttr::getRebind(ref, newType);
       }
 

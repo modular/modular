@@ -966,6 +966,13 @@ fn test_comptime_materialize():
   # expected-note @below {{the type contains an origin referring to a compile-time value}}
   var use_bad = bad
 
+struct BoolParam[value: Bool]:
+  pass
+
+fn elide_implicit_conversion_in_struct_params[value: __mlir_type.i1](a: BoolParam[value]):
+  # expected-error @below {{cannot implicitly convert 'BoolParam[value]' value to 'Int'}}
+  var x : Int = a
+
 
 # MOCO-2332 / https://github.com/modular/modular/issues/5139
 struct a_struct:
