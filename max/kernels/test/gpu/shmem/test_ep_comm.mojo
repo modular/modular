@@ -485,7 +485,7 @@ fn test_dispatch[
     shmem_free(recv_count)
 
 
-fn main() raises:
+def main():
     alias test_gpu_counts = (2, 4, 8)
 
     @parameter

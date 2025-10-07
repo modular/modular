@@ -22,7 +22,7 @@ fn print_static_shape[x: List[Int]]():
         print("dim", i, "=", xi)
 
 
-fn main() raises:
+def main():
     alias shape_mnk = parse_shape["10x20x30"]()
     print_static_shape[shape_mnk]()
     constrained[shape_mnk[0] == 10]()

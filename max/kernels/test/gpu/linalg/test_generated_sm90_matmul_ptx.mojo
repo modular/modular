@@ -427,5 +427,5 @@ fn test_local_memory_access() raises:
     ]()
 
 
-fn main() raises:
+def main():
     test_local_memory_access()

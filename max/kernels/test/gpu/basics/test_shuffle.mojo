@@ -402,7 +402,7 @@ fn test_lane_group_reduce_fp16_packed(ctx: DeviceContext) raises:
     _lane_group_reduce_launch_helper[DType.float16, 2, 4, 8](ctx)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_shuffle_idx_fp32(ctx)
         test_shuffle_idx_bf16(ctx)

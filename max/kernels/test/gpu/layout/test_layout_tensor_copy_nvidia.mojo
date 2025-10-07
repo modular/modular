@@ -633,7 +633,7 @@ def run_copy_dram_to_local_tests(ctx: DeviceContext):
     test_masked_copy_dram_to_local[Layout.row_major(8, 8), skew_rows=1](ctx)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         run_dynamic_async_copy_tests(ctx)
         run_swizzle_copy_tests(ctx)

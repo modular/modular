@@ -363,7 +363,7 @@ fn test_negative_lora_id[
     print("✓ Negative lora_id test passed - expert_id -1 produces zero outputs")
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # Single matmul
         test[

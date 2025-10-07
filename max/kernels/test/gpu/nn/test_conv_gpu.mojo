@@ -161,7 +161,7 @@ fn test_conv3d_gpu[
         output_ref_host.free()
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # test case 1: small dimensions, starting simple
         test_conv3d_gpu[

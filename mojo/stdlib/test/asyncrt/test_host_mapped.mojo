@@ -36,7 +36,7 @@ def test_host_mapped():
     print("Done")
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_host_mapped]()

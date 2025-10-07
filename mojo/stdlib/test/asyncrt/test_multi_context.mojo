@@ -101,7 +101,7 @@ fn _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             )
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_multi_function]()

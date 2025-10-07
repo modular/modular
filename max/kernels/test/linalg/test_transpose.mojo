@@ -806,7 +806,7 @@ fn test_transpose_16x16():
                 print("Transpose 16x16 failed")
 
 
-fn main() raises:
+def main():
     test_transpose_4x4_ndbuffer()
     test_transpose_8x8_ndbuffer()
     test_transpose_16x16_ndbuffer()

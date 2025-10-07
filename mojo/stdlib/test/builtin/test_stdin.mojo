@@ -25,5 +25,5 @@ fn test_stdin() raises:
     testing.assert_equal(stdin.readline(), " World")
 
 
-fn main() raises:
+def main():
     test_stdin()

@@ -310,7 +310,7 @@ fn string_to_list(string: String) raises -> List[Int]:
     return list^
 
 
-fn main() raises:
+def main():
     alias in_type = env_get_dtype["in_type", DType.bfloat16]()
     alias out_type = env_get_dtype["out_type", DType.bfloat16]()
 

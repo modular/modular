@@ -41,5 +41,5 @@ fn test_gpu_printf() raises:
         ctx.synchronize()
 
 
-fn main() raises:
+def main():
     test_gpu_printf()

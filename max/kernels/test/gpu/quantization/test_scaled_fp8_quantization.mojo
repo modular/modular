@@ -243,7 +243,7 @@ fn test_batched_dynamic_fp8_quant[
                     )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_static_scaled_fp8_quant[DType.float8_e4m3fn, DType.bfloat16](
             ctx, 0.5, dynamic(32), static[16]()

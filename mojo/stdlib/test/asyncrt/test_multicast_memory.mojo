@@ -48,7 +48,7 @@ def test_multicast():
     test_multicast_memory([ctx0, ctx1])
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_multicast]()

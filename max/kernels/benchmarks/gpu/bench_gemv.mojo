@@ -272,7 +272,7 @@ fn get_dtype[output_type: String]() -> DType:
     return DType.bfloat16
 
 
-fn main() raises:
+def main():
     var h = Bench()
 
     alias input_type = DType.bfloat16

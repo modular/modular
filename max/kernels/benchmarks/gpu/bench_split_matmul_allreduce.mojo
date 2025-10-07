@@ -243,7 +243,7 @@ fn bench_matmul_all_reduce[
     _ = C_reduced_list^
 
 
-fn main() raises:
+def main():
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 8192))

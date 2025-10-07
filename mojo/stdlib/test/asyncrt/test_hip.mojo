@@ -47,7 +47,7 @@ def test_hip_stream():
     _run_hip_stream(ctx)
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_hip_context]()

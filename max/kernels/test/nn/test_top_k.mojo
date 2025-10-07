@@ -195,7 +195,7 @@ fn test_case[
     print("")
 
 
-fn main() raises:
+def main():
     seed(1)
 
     @parameter

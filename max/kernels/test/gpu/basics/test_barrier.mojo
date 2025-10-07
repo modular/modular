@@ -84,6 +84,6 @@ fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
     shared_host.free()
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_barrier[DType.float32](ctx)

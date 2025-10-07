@@ -146,7 +146,7 @@ fn test_zip_bounds() raises:
     assert_false(Bool(zipD.bounds()[1]))
 
 
-fn main() raises:
+def main():
     test_zip2()
     test_zip3()
     test_zip4()

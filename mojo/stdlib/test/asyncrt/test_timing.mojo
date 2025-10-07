@@ -62,7 +62,7 @@ def test_timing():
     print("Done.")
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_timing]()

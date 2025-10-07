@@ -71,5 +71,5 @@ fn test_pack_b() raises:
     assert_equal(packed_b[0, 0, 0], 1.0)
 
 
-fn main() raises:
+def main():
     test_pack_b()

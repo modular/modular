@@ -60,7 +60,7 @@ fn multistage_gemm_simple[
     )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         multistage_gemm_simple[
             1024,

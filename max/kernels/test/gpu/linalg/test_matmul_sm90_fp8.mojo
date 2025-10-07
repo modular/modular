@@ -30,7 +30,7 @@ alias wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
 ) if a_dtype is DType.float8_e4m3fn else Index(64, wgmma_n, 16)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # NOTE: please note that cublaslt handle should be used for fp8-e4m3fn and cublas handle for bfloat16
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests

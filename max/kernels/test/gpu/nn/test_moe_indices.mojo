@@ -282,7 +282,7 @@ fn test_moe_create_indices(
     )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_moe_create_indices(
             197,

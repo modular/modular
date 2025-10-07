@@ -194,7 +194,7 @@ fn kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 
-fn main() raises:
+def main():
     test_micro_kernel[DType.float32, DType.float32, DType.float32](M, N, K)
     test_micro_kernel[DType.uint8, DType.int8, DType.int32](M, N, K)
     test_micro_kernel[

@@ -45,7 +45,7 @@ fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
     return "Unknown"
 
 
-fn main() raises:
+def main():
     var args = argv()
     var api: String = "cuda"
     var device_id: Int = 0

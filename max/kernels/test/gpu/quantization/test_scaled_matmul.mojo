@@ -166,7 +166,7 @@ fn test_matmul_dynamic_scaled_fp8[
             )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_matmul_dynamic_scaled_fp8[
             scales_dtype = DType.bfloat16, transpose_b=True

@@ -88,7 +88,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
             )
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_capture_2_5]()

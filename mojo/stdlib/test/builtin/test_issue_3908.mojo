@@ -24,5 +24,5 @@ fn test_read_until_delimiter_raises_eof() raises:
         _ = stdin.read_until_delimiter("\n")
 
 
-fn main() raises:
+def main():
     test_read_until_delimiter_raises_eof()

@@ -172,7 +172,7 @@ fn _copy_values_to_layout_tensor[
         tensor.ptr[i] = values[i]
 
 
-fn main() raises:
+def main():
     alias dtype = DType.float32
     # fmt: off
     test[

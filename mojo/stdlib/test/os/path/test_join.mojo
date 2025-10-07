@@ -17,7 +17,7 @@ from pathlib import Path
 from testing import assert_equal
 
 
-fn main() raises:
+def main():
     # TODO uncomment lines using Path when unpacking is supported
     assert_equal("path/to/file", join("path", "to", "file"))
     # assert_equal("path/to/file", join(Path("path"), Path("to"), Path("file")))

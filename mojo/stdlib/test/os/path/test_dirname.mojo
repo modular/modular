@@ -16,7 +16,7 @@ from os.path import dirname
 from testing import assert_equal
 
 
-fn main() raises:
+def main():
     # Root directories
     assert_equal("/", dirname("/"))
 

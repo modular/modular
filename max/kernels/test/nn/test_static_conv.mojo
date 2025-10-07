@@ -229,7 +229,7 @@ fn test[
     print("Succeed")
 
 
-fn main() raises:
+def main():
     test[
         1,  # N
         14,  # H

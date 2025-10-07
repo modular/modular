@@ -324,7 +324,7 @@ fn test[
     print("Succeed")
 
 
-fn main() raises:
+def main():
     # No packing or padding.
     test[2, DType.float32, False](
         1,  # N

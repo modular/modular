@@ -246,7 +246,7 @@ fn test_source_location_struct() raises:
     assert_equal(String(source_loc), "/path/to/some_file.mojo:50:60")
 
 
-fn main() raises:
+def main():
     test_source_location_struct()
     test_builtin_source_loc()
     test_parameter_context()

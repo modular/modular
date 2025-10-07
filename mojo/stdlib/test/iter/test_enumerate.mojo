@@ -69,7 +69,7 @@ def test_enumerate_bounds():
     assert_equal(iter(list).bounds()[1].value(), e.bounds()[1].value())
 
 
-fn main() raises:
+def main():
     test_enumerate()
     test_enumerate_with_start()
     test_enumerate_destructure()

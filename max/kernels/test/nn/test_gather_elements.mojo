@@ -36,7 +36,7 @@ fn test_case[
     assert_equal(output, output_ref)
 
 
-fn main() raises:
+def main():
     fn test_gather_ax1() raises:
         print("== test_gather_ax1")
 

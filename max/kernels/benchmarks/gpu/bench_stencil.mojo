@@ -687,7 +687,7 @@ fn bench_stencil_avg_pool_padded[
     h_output_ref_ptr.free()
 
 
-fn main() raises:
+def main():
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
     alias batch_size = env_get_int["batch_size", 128]()
     alias input_height = env_get_int["input_height", 1024]()

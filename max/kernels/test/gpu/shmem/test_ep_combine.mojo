@@ -450,7 +450,7 @@ fn test_combine[
     shmem_free(recv_count)
 
 
-fn main() raises:
+def main():
     alias test_gpu_counts = (8,)
 
     @parameter

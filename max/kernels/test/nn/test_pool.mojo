@@ -558,7 +558,7 @@ fn test_max_pool_pad_dilation_2d() raises:
     assert_almost_equal(output_tensor[0, 0, 2, 0], 15.0000, atol=1e-4)
 
 
-fn main() raises:
+def main():
     test_max_pool_2d()
     test_avg_pool_2d()
     test_avg_pool_2d_with_padding_true()

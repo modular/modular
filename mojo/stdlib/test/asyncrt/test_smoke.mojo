@@ -151,7 +151,7 @@ def test_smoke():
     print("Done.")
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_smoke]()

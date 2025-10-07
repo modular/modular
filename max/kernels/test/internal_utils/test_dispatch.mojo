@@ -172,7 +172,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
                 # return
 
 
-fn main() raises:
+def main():
     var m = arg_parse("m", 0)
     print(String(materialize[TuningTableAMD]()))
     dispatch_matmul_amd[static_n=1, static_k=1](m)

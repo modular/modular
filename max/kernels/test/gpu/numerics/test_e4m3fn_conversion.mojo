@@ -758,7 +758,7 @@ fn test_simd_f32_to_e4m3_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn main() raises:
+def main():
     test_e4m3fn_initialization()
     test_simd_e4m3_to_f32()
     test_simd_e4m3_to_f16()

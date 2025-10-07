@@ -242,7 +242,7 @@ fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
     )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         run_copy_dram_to_sram_buffer_load_tests(ctx)
         run_copy_dram_to_local_buffer_load_tests(ctx)

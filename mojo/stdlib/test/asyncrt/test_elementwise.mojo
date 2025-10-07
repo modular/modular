@@ -98,7 +98,7 @@ def test_elementwise_int8():
     run_elementwise[DType.int8](ctx)
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_elementwise_float32]()

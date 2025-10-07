@@ -734,6 +734,6 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     _ = mat_d^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_b2b_matmul(ctx)

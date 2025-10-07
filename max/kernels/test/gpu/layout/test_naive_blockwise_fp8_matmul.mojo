@@ -219,7 +219,7 @@ fn test_naive_blockwise_fp8_matmul[
     _ = b_scale_host^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
 
         @parameter

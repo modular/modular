@@ -55,7 +55,7 @@ def test_buffer():
     print("Done.")
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_buffer]()

@@ -199,7 +199,7 @@ def test_cuda_multi_context():
         _run_cuda_multi_context(ctx, create_test_device_context(device_id=1))
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_cuda_context]()

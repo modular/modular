@@ -395,7 +395,7 @@ fn test_element_masked_store():
     print(tensor_4x4)
 
 
-fn main() raises:
+def main():
     test_element_load()
     test_element_store()
     test_element_dynamic_layout()

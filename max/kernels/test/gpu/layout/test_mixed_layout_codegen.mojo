@@ -70,6 +70,6 @@ fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
     ptr[0] = Int32(layout(MixedTuple(Idx(thread_idx.x), Idx(thread_idx.y))))
 
 
-fn main() raises:
+def main():
     test_codegen_memory[kernel_mixed_dimensions]()
     test_codegen_memory[kernel_thread_idx]()

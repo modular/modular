@@ -275,7 +275,7 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
             )
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_function_compilation]()

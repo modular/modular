@@ -26,5 +26,5 @@ fn test_iter() raises:
     assert_true(_type_is_eq[__type_of(_it2), _ListIter[Int, __origin_of(l)]]())
 
 
-fn main() raises:
+def main():
     test_iter()

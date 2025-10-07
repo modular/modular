@@ -31,7 +31,7 @@ def set_home(path: String):
     _ = os.env.setenv("HOME", path)
 
 
-fn main() raises:
+def main():
     alias user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)

@@ -322,7 +322,7 @@ fn test_custom() raises:
     y.free()
 
 
-fn main() raises:
+def main():
     # Width of columns is dynamic based on the longest value as a string, so
     # only test the first column.
 

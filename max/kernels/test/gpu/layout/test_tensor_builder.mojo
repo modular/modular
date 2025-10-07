@@ -512,7 +512,7 @@ fn test_iterator():
     print(iter_circular[])
 
 
-fn main() raises:
+def main():
     test_row_major()
     test_col_major()
     test_shared_and_local()

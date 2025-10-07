@@ -69,7 +69,7 @@ def test_fill_block_idx(ctx: DeviceContext):
     output_host.free()
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_fill_thread_idx(ctx)
         test_fill_block_idx(ctx)

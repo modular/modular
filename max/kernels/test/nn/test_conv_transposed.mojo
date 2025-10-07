@@ -351,7 +351,7 @@ fn test_conv_transposed[
     print("Succeed")
 
 
-fn main() raises:
+def main():
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),

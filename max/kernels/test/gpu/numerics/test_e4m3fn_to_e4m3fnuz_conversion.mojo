@@ -78,5 +78,5 @@ fn test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
     # CHECK: Conversion verification: same bits, different FP8 interpretation
 
 
-fn main() raises:
+def main():
     test_convert_e4m3fn_to_e4m3fnuz_basic()

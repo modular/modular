@@ -72,7 +72,7 @@ fn test_case[
     assert_equal(output, output_ref)
 
 
-fn main() raises:
+def main():
     fn test_scatternd() raises:
         print("== test_scatternd")
         var data = TestTensor[DType.float32, 3](

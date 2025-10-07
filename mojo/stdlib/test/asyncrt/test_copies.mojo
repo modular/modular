@@ -206,7 +206,7 @@ def test_copies():
     print("Done.")
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_copies]()

@@ -739,7 +739,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     _ = d_input_buf^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_stencil_avg_pool(ctx)
         test_stencil_avg_pool_padded(ctx)

@@ -57,7 +57,7 @@ fn test_ulp_distance() raises:
     assert_true(ulp == 13)
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_ulp_distance]()

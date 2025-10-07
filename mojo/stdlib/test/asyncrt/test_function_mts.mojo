@@ -127,7 +127,7 @@ def test_color_to_grayscale():
     _ = gray_buffer
 
 
-fn main() raises:
+def main():
     var suite = TestSuite()
 
     suite.test[test_color_to_grayscale]()

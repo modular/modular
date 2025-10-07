@@ -735,7 +735,7 @@ fn test_pad_repeat_3d() raises:
     assert_equal(output[4, 3, 2], 4)
 
 
-fn main() raises:
+def main():
     test_pad_1d()
     test_pad_reflect_1d()
     test_pad_repeat_1d()

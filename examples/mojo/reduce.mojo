@@ -76,7 +76,7 @@ fn bench[
     pretty_print(name, size, ms)
 
 
-fn main() raises:
+def main():
     print(
         "Sum all values in a small array and large array\n"
         "Shows algorithm.sum from stdlib with much better performance\n"

@@ -49,7 +49,7 @@ fn bench_elementwise[n: Int](mut b: Bencher) raises:
     _ = vector
 
 
-fn main() raises:
+def main():
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_elementwise[32]](BenchId("bench_elementwise_32"))
     m.bench_function[bench_elementwise[128]](BenchId("bench_elementwise_128"))

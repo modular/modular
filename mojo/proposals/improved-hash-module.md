@@ -266,7 +266,7 @@ struct DJBX33A_Hasher[custom_secret: UInt64 = 0](Hasher):
     fn _finish[dt: DType = DType.uint64](owned self) -> Scalar[dt]:
         return (self.hash_data ^ self.secret).cast[dt]()
 
-fn main() raises:
+def main():
     var p = Person("Maxim", 43)
     print(p.name.value, p.age.value)
 

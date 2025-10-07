@@ -90,7 +90,7 @@ fn bench_add[
     _ = output_ptr
 
 
-fn main() raises:
+def main():
     var b = Bench()
     with DeviceContext() as ctx:
         bench_add[unroll_by=4](b, IndexList[4](2, 4, 1024, 1024), ctx)
