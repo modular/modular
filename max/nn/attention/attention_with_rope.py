@@ -292,36 +292,60 @@ class AttentionWithRope(Module, Shardable):
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
         """Set the Module sharding strategy and propagate to weights.
 
-        Only tensor-parallel sharding is supported here.
+        We support both tensor-parallel and data-parallel (replicate) sharding strategies.
         """
-        if not strategy.is_tensor_parallel:
-            raise ValueError(
-                "Only tensor parallel sharding strategy is supported for AttentionWithRope"
-            )
-        self._sharding_strategy = strategy
+        if strategy.is_tensor_parallel:
+            self._sharding_strategy = strategy
 
-        num_devices = strategy.num_devices
-        if self.stacked_qkv:
-            # Partition the [Q|K|V] block by heads.
-            self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
-                num_devices, self.n_heads, self.kv_params.head_dim
+            num_devices = strategy.num_devices
+            if self.stacked_qkv:
+                # Partition the [Q|K|V] block by heads.
+                self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
+                    num_devices, self.n_heads, self.kv_params.head_dim
+                )
+            else:
+                # Column-shard by output channels (heads) for each projection.
+                self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+                self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+                self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+
+            # Row-shard o_proj.weight (standard tensor parallel o-proj).
+            self.o_proj.sharding_strategy = (
+                ShardingStrategy.head_aware_columnwise(
+                    num_devices, self.n_heads, self.kv_params.head_dim
+                )
+            )
+        elif strategy.is_replicate:
+            self._sharding_strategy = strategy
+
+            num_devices = strategy.num_devices
+            if self.stacked_qkv:
+                self.qkv_proj.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+            else:
+                self.q_proj.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+                self.k_proj.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+                self.v_proj.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+            self.o_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
             )
         else:
-            # Column-shard by output channels (heads) for each projection.
-            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
+            raise ValueError(
+                "Only tensor-parallel (rowwise) or data-parallel (replicate) sharding strategies are supported for AttentionWithRope"
             )
-            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-
-        # Row-shard o_proj.weight (standard tensor parallel o-proj).
-        self.o_proj.sharding_strategy = ShardingStrategy.head_aware_columnwise(
-            num_devices, self.n_heads, self.kv_params.head_dim
-        )
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[AttentionWithRope]:
         """Create sharded views across `devices` (tensor-parallel).
@@ -334,59 +358,105 @@ class AttentionWithRope(Module, Shardable):
                 "AttentionWithRope cannot be sharded: no sharding_strategy set. "
                 "Set `self.sharding_strategy = ShardingStrategy.tensor_parallel(N)` first."
             )
-        if DeviceRef.CPU() in devices:
-            raise ValueError(
-                "Tensor-parallel AttentionWithRope does not support CPU devices"
-            )
 
-        # Shard weights once for all devices, mirroring the current tensor
-        # parallel wrapper.
-        if self.stacked_qkv:
-            qkv_proj_shards = self.qkv_proj.shard(devices)
-        else:
-            q_proj_shards = self.q_proj.shard(devices)
-            k_proj_shards = self.k_proj.shard(devices)
-            v_proj_shards = self.v_proj.shard(devices)
-        o_proj_shards = self.o_proj.shard(devices)
-
-        default_dtype = o_proj_shards[0].weight.dtype
-        linear_cls = self.o_proj.__class__
-
-        shards: list[AttentionWithRope] = []
-        num_devices = len(devices)
-        for n, device in enumerate(devices):
-            # Compute this shard's number of attention heads.
-            head_start, head_end = _compute_shard_range(
-                self.n_heads, n, num_devices
-            )
-            device_num_heads = head_end - head_start
-
-            layer = AttentionWithRope(
-                rope=self.rope,
-                num_attention_heads=device_num_heads,
-                num_key_value_heads=self.num_key_value_heads,
-                hidden_size=self.hidden_size,
-                kv_params=self.kv_params,
-                devices=[device],
-                dtype=default_dtype,
-                linear_cls=linear_cls,
-                stacked_qkv=self.stacked_qkv,
-                scale=self.scale,
-                has_bias=self.has_bias,
-                float8_config=self.float8_config,
-                clip_qkv=self.clip_qkv,
-            )
+        if self.sharding_strategy.is_tensor_parallel:
+            if DeviceRef.CPU() in devices:
+                raise ValueError(
+                    "Tensor-parallel AttentionWithRope does not support CPU devices"
+                )
 
             if self.stacked_qkv:
-                layer.qkv_proj = qkv_proj_shards[n]
+                qkv_proj_shards = self.qkv_proj.shard(devices)
             else:
-                layer.q_proj = q_proj_shards[n]
-                layer.k_proj = k_proj_shards[n]
-                layer.v_proj = v_proj_shards[n]
-            layer.o_proj = o_proj_shards[n]
+                q_proj_shards = self.q_proj.shard(devices)
+                k_proj_shards = self.k_proj.shard(devices)
+                v_proj_shards = self.v_proj.shard(devices)
+            o_proj_shards = self.o_proj.shard(devices)
 
-            shards.append(layer)
-        return shards
+            default_dtype = o_proj_shards[0].weight.dtype
+            linear_cls = self.o_proj.__class__
+
+            shards: list[AttentionWithRope] = []
+            num_devices = len(devices)
+            for n, device in enumerate(devices):
+                # Compute this shard's number of attention heads.
+                head_start, head_end = _compute_shard_range(
+                    self.n_heads, n, num_devices
+                )
+                device_num_heads = head_end - head_start
+
+                layer = AttentionWithRope(
+                    rope=self.rope,
+                    num_attention_heads=device_num_heads,
+                    num_key_value_heads=self.num_key_value_heads,
+                    hidden_size=self.hidden_size,
+                    kv_params=self.kv_params,
+                    devices=[device],
+                    dtype=default_dtype,
+                    linear_cls=linear_cls,
+                    stacked_qkv=self.stacked_qkv,
+                    scale=self.scale,
+                    has_bias=self.has_bias,
+                    float8_config=self.float8_config,
+                    clip_qkv=self.clip_qkv,
+                )
+
+                if self.stacked_qkv:
+                    layer.qkv_proj = qkv_proj_shards[n]
+                else:
+                    layer.q_proj = q_proj_shards[n]
+                    layer.k_proj = k_proj_shards[n]
+                    layer.v_proj = v_proj_shards[n]
+                layer.o_proj = o_proj_shards[n]
+
+                shards.append(layer)
+            return shards
+
+        elif self.sharding_strategy.is_replicate:
+            # Replicate full weights to each device (no head split).
+            if self.stacked_qkv:
+                qkv_proj_replicas = self.qkv_proj.shard(devices)
+            else:
+                q_proj_replicas = self.q_proj.shard(devices)
+                k_proj_replicas = self.k_proj.shard(devices)
+                v_proj_replicas = self.v_proj.shard(devices)
+            o_proj_replicas = self.o_proj.shard(devices)
+
+            default_dtype = o_proj_replicas[0].weight.dtype
+            linear_cls = self.o_proj.__class__
+
+            replicas: list[AttentionWithRope] = []
+            for i, device in enumerate(devices):
+                replica = AttentionWithRope(
+                    rope=self.rope,
+                    num_attention_heads=self.n_heads,  # DP keeps full heads
+                    num_key_value_heads=self.num_key_value_heads,
+                    hidden_size=self.hidden_size,
+                    kv_params=self.kv_params,
+                    devices=[device],
+                    dtype=default_dtype,
+                    linear_cls=linear_cls,
+                    stacked_qkv=self.stacked_qkv,
+                    scale=self.scale,
+                    has_bias=self.has_bias,
+                    float8_config=self.float8_config,
+                    clip_qkv=self.clip_qkv,
+                )
+                if self.stacked_qkv:
+                    replica.qkv_proj = qkv_proj_replicas[i]
+                else:
+                    replica.q_proj = q_proj_replicas[i]
+                    replica.k_proj = k_proj_replicas[i]
+                    replica.v_proj = v_proj_replicas[i]
+                replica.o_proj = o_proj_replicas[i]
+                replicas.append(replica)
+            return replicas
+
+        else:
+            # Should not happen due to setter validation.
+            raise ValueError(
+                "Unsupported sharding strategy for AttentionWithRope"
+            )
 
     @property
     def wqkv(self) -> TensorValue:
@@ -1076,6 +1146,150 @@ class TensorParallelAttentionWithRope(
         return self.allreduce(
             inputs=attn_outputs, signal_buffers=signal_buffers
         )
+
+
+class DataParallelAttentionWithRope(AttentionWithRope):
+    """Data-parallel implementation of Attention with RoPE.
+
+    This replicates the attention module across devices and runs each replica on
+    its local inputs (x, kv, freqs_cis, input_row_offsets). No collective ops
+    are required; KV-cache remains local to each device.
+
+    Notes:
+      - Assumes the caller has already distributed `xs`, `kv_collections`,
+        `freqs_cis`, and `input_row_offsets` so that index i corresponds to
+        device i, with `input_row_offsets[i]` rebased to start at 0.
+    """
+
+    def __init__(
+        self,
+        *,
+        rope: RotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        devices: Sequence[DeviceRef] | None = None,
+        dtype: DType = DType.float32,
+        linear_cls: Callable[..., Linear] = Linear,
+        stacked_qkv: bool = False,
+        scale: float | None = None,
+        has_bias: bool = False,
+        float8_config: Float8Config | None = None,
+        clip_qkv: float | None = None,
+    ) -> None:
+        super().__init__(
+            rope=rope,
+            sharding_strategy=None,
+            num_attention_heads=num_attention_heads,
+            num_key_value_heads=num_key_value_heads,
+            hidden_size=hidden_size,
+            kv_params=kv_params,
+            devices=devices,
+            dtype=dtype,
+            linear_cls=linear_cls,
+            stacked_qkv=stacked_qkv,
+            scale=scale,
+            has_bias=has_bias,
+            float8_config=float8_config,
+            clip_qkv=clip_qkv,
+        )
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        num_devices = len(self.devices)
+
+        # Replicate component weights/modules to each device.
+        if self.stacked_qkv:
+            self.qkv_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            qkv_proj_replicas = self.qkv_proj.shard(self.devices)
+        else:
+            self.q_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            self.k_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            self.v_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            q_proj_replicas = self.q_proj.shard(self.devices)
+            k_proj_replicas = self.k_proj.shard(self.devices)
+            v_proj_replicas = self.v_proj.shard(self.devices)
+
+        self.o_proj.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        o_proj_replicas = self.o_proj.shard(self.devices)
+
+        # Build one full copy per device (no head-splitting).
+        self.replicated_attentions: list[AttentionWithRope] = []
+        for i, device in enumerate(self.devices):
+            replica = AttentionWithRope(
+                rope=self.rope,
+                sharding_strategy=None,
+                num_attention_heads=self.n_heads,  # DP keeps full heads
+                num_key_value_heads=self.num_key_value_heads,
+                hidden_size=self.hidden_size,
+                kv_params=self.kv_params,
+                devices=[device],
+                dtype=dtype,
+                linear_cls=linear_cls,
+                stacked_qkv=self.stacked_qkv,
+                scale=self.scale,
+                has_bias=self.has_bias,
+                float8_config=self.float8_config,
+                clip_qkv=self.clip_qkv,
+            )
+            if self.stacked_qkv:
+                replica.qkv_proj = qkv_proj_replicas[i]
+            else:
+                replica.q_proj = q_proj_replicas[i]
+                replica.k_proj = k_proj_replicas[i]
+                replica.v_proj = v_proj_replicas[i]
+            replica.o_proj = o_proj_replicas[i]
+            self.replicated_attentions.append(replica)
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        n = len(self.devices)
+        if not (
+            len(xs)
+            == len(kv_collections)
+            == len(freqs_cis)
+            == len(input_row_offsets)
+            == n
+        ):
+            raise ValueError(
+                "xs, kv_collections, freqs_cis, and input_row_offsets must all have "
+                f"length equal to number of devices ({n})"
+            )
+
+        outs: list[TensorValue] = []
+        for i in range(n):
+            if xs[i].shape[0] == 0:
+                outs.append(xs[i])
+                continue
+
+            outs.append(
+                self.replicated_attentions[i](
+                    layer_idx,
+                    xs[i],
+                    kv_collections[i],
+                    freqs_cis=freqs_cis[i],
+                    input_row_offsets=input_row_offsets[i],
+                )
+            )
+        return outs
 
 
 @dataclass
