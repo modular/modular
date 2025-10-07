@@ -59,7 +59,7 @@ class TokenGenerationScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager | None = None,
-        offload_queue_draining: bool = True,
+        offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -229,4 +229,5 @@ def load_text_generation_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
+        offload_queue_draining=pipeline_config.experimental_background_queue,
     )

@@ -27,7 +27,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.interfaces.queue import BackgroundQueueDrainer
+from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -73,6 +73,7 @@ class DecodeScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         dispatcher: DecodeDispatcherClientV2,
+        offload_queue_draining: bool = False,
     ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
@@ -108,13 +109,20 @@ class DecodeScheduler(Scheduler):
         # TODO: delete the default destination address.
         self.remote_endpoints: set[str | None] = set()
 
-        # Initialize the background queue drainer
-        self._queue_drainer = BackgroundQueueDrainer[
-            TextContext | TextAndVisionContext
-        ](
-            self.request_queue,
-            max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
-        )
+        # We are parameterizing the offload of queue draining to allow for
+        # the use case where we want to drain the queue in the main thread.
+        # This is useful for debugging and testing purposes.
+        self._queue_drainer: (
+            BackgroundQueueDrainer[TextContext | TextAndVisionContext] | None
+        ) = None
+        if offload_queue_draining:
+            # Initialize the background queue drainer
+            self._queue_drainer = BackgroundQueueDrainer[
+                TextContext | TextAndVisionContext
+            ](
+                self.request_queue,
+                max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
+            )
 
     @traced
     def handle_transfer_engine_response(
@@ -183,8 +191,15 @@ class DecodeScheduler(Scheduler):
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        self._queue_drainer.start_draining()
-        items = self._queue_drainer.retrieve_items()
+        if self._queue_drainer is not None:
+            self._queue_drainer.start_draining()
+            items = self._queue_drainer.retrieve_items()
+        else:
+            items = drain_queue(
+                self.request_queue,
+                max_items=self.scheduler_config.max_batch_size_tg * 2,
+            )
+
         for context in items:
             self.pending_reqs[context.request_id] = context
 
@@ -415,4 +430,5 @@ def load_decode_scheduler(
             bind_addr=settings.dispatcher_config.transport_config.bind_address,
             default_dest_addr=settings.dispatcher_config.transport_config.default_destination_address,
         ),
+        offload_queue_draining=pipeline_config.experimental_background_queue,
     )
