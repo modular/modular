@@ -1055,6 +1055,32 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
   return true;
 }
 
+static TypeConvention getTypeConvention(ArrayRef<Capture> captures,
+                                        SharedState &shared, SMLoc loc) {
+  TypeConvention convention = TypeConvention::RegisterPassableTrivial;
+  for (const Capture &capture : captures) {
+    switch (convention) {
+    case TypeConvention::RegisterPassableTrivial: {
+      if (capture.getValue().getRValueType().isTrivial(loc, shared))
+        break;
+      if (capture.getValue().getRValueType().isRegisterPassable(loc, shared)) {
+        convention = TypeConvention::RegisterPassable;
+        break;
+      }
+      return TypeConvention::MemoryOnly;
+    }
+    case TypeConvention::RegisterPassable: {
+      if (capture.getValue().getRValueType().isRegisterPassable(loc, shared))
+        break;
+      return TypeConvention::MemoryOnly;
+    }
+    default:
+      break;
+    }
+  }
+  return convention;
+}
+
 static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
                                           ASTDecl &nestedFnDecl,
                                           SharedState &shared) {
@@ -1070,9 +1096,12 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   ASTDecl *closureTrait = shared.getOrCreateClosureTrait(
       loc, *moduleDecl, wrapperSig, nestedFn.getInlineLevel());
   bool isCopyable = allCopyable(captures, shared, loc);
-
+  TypeConvention convention = getTypeConvention(captures, shared, loc);
+  if (!wrapperSig.isRegisterPassable())
+    convention = TypeConvention::MemoryOnly;
   ASTDecl *closureWrapper = shared.getOrCreateUnifiedClosureWrapper(
-      loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel(), isCopyable);
+      loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel(), isCopyable,
+      convention);
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
   Value wrapperInstance = emitter.emitClosureOp(

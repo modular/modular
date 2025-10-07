@@ -601,13 +601,9 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
   return {op, parameters, result};
 }
 
-ASTDecl *
-ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
-                                    ASTDecl &traitDecl, SMLoc smLocation,
-                                    bool isRegisterPassable, bool isCopyable) {
-  TypeConvention typeConvention = isRegisterPassable
-                                      ? TypeConvention::RegisterPassable
-                                      : TypeConvention::MemoryOnly;
+ASTDecl *ClosureEmitter::createStructWrapper(
+    ASTDecl &moduleDecl, StringRef baseName, ASTDecl &traitDecl,
+    SMLoc smLocation, TypeConvention typeConvention, bool isCopyable) {
   StringRef implName = "impl";
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
@@ -787,8 +783,7 @@ ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
   IREmitter::emitNormalReturn(b);
   declOp.setCanonicalTrait(traitType);
 
-  // TODO: register passable is not enough. It must also be trivial.
-  if (isRegisterPassable)
+  if (typeConvention == TypeConvention::RegisterPassableTrivial)
     addConformanceToDevicePassable(structDecl, wrappedField, implType,
                                    originSetParam);
 
