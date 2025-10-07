@@ -55,7 +55,7 @@ def test_load_state_dict(session: InferenceSession) -> None:
     assert weight.flags.aligned
     module.load_state_dict({"layer.weight": weight})
     state_dict = module.state_dict()
-    np.testing.assert_array_equal(weight, state_dict["layer.weight"])  # type: ignore
+    np.testing.assert_array_equal(weight, state_dict["layer.weight"])
 
     graph = Graph("load_state_dict", module)
     model = session.load(graph, weights_registry=state_dict)
@@ -110,7 +110,7 @@ def test_load_state_dict_with_symbolic_dimensions() -> None:
 
     # Verify the weight was loaded correctly
     state_dict = module.state_dict()
-    np.testing.assert_array_equal(weight_array, state_dict["weight"])  # type: ignore
+    np.testing.assert_array_equal(weight_array, state_dict["weight"])
 
 
 def test_load_state_dict_symbolic_validation_errors() -> None:
