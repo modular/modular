@@ -54,7 +54,7 @@ benchmark_config:
   top_k: null  # Top-k for sampling
 
   # Traffic control (serving-specific)
-  request_rate: inf  # Requests per second (finite rate for realistic benchmarking)
+  request_rate: "inf"  # Requests per second (finite rate for realistic benchmarking)
   burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
   skip_first_n_requests: 0  # Skip first N requests for measurements
   chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions

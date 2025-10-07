@@ -1,0 +1,47 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Sweep Serving Benchmark Configuration
+# This configuration inherits from serving_config.yaml and adds sweep-specific parameters.
+# Used by sweep-benchmark-serving.py.
+
+# Configuration metadata
+name: "Sweep Serving Benchmark Configuration"
+description: "Configuration for sweeping online serving benchmarks (sweep-benchmark-serving.py)"
+version: "0.0.1"
+
+# Inherit from serving configuration
+depends_on: "serving_config.yaml"
+
+# Sweep-specific benchmark parameters
+benchmark_config:
+  # Workload configuration (sweep-specific)
+  workload_config: ""  # YAML file specifying the workload to benchmark (required)
+  num_prompts: null  # Override to null to allow sweep script's special default behavior
+  collect_gpu_stats: true  # Override to true to enable GPU stats collection for serving benchmarks
+
+  # Logging and debugging (sweep-specific)
+  log_dir: null  # Path to save logs (in event of command failure only)
+  dry_run: false  # Dry run the benchmark
+
+  # Result upload configuration (sweep-specific)
+  upload_results: false  # Upload results to BigQuery
+  benchmark_sha: null  # Commit hash of the docker image used for load generation
+  cluster_information_path: null  # Path to the cluster information file
+  benchmark_config_name: null  # Config name for tracking
+
+  # Metadata and result tracking (sweep-specific)
+  latency_percentiles: "50,90,95,99"  # Comma separated list of latency percentiles
+
+  # Sweep configuration (sweep-specific)
+  num_iters: 1  # Number of iterations to run per configuration

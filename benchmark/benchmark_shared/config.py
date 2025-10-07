@@ -241,14 +241,16 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
 
     # Request configuration (serving-specific)
-    max_concurrency: int | None = field(
+    max_concurrency: str | None = field(
         default=None,
         metadata={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
+            "sweepable_type": int,
         },
     )
-    """Maximum concurrent requests (optimized for serving benchmarks)."""
+    """Maximum concurrent requests (optimized for serving benchmarks).
+    Can be a single integer, "None", or comma-separated string for sweep configs."""
 
     lora: str | None = field(
         default=None, metadata={"group": "Request Configuration"}
@@ -304,14 +306,16 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Top-k for sampling."""
 
     # Traffic control (serving-specific)
-    request_rate: float = field(
-        default=float("inf"),
+    request_rate: str | None = field(
+        default="inf",
         metadata={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
+            "sweepable_type": float,
         },
     )
-    """Requests per second (finite rate for realistic benchmarking)."""
+    """Requests per second (finite rate for realistic benchmarking).
+    Can be a single float value or comma-separated string for sweep configs."""
 
     burstiness: float = field(
         default=1.0, metadata={"group": "Traffic Control"}
@@ -556,6 +560,114 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     def get_default_required_fields(cls) -> set[str]:
         """Get required fields for the benchmark config."""
         return super().get_default_required_fields().union({"dataset_name"})
+
+
+@dataclass
+class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
+    """Configuration class for sweep serving benchmarks (sweep-benchmark-serving.py).
+
+    Inherits from ServingBenchmarkConfig and adds sweep-specific parameters:
+    - Workload configuration
+    - Logging and debugging options
+    - Result upload configuration
+    - Sweep-specific concurrency and duration parameters
+    - Metadata and result tracking
+    """
+
+    # Workload configuration (sweep-specific)
+    workload_config: str = field(
+        default="",
+        metadata={
+            "group": "Workload Configuration",
+            "group_description": "Parameters controlling workload and dataset configuration",
+        },
+    )
+    """YAML file specifying the workload to benchmark."""
+
+    # Logging and debugging (sweep-specific)
+    log_dir: str | None = field(
+        default=None,
+        metadata={
+            "group": "Logging and Debugging",
+            "group_description": "Parameters controlling logging and debugging behavior",
+        },
+    )
+    """Path to save logs (in event of command failure only). Default: <backend>-latency-Y.m.d-H.M.S"""
+
+    dry_run: bool = field(
+        default=False,
+        metadata={"group": "Logging and Debugging"},
+    )
+    """Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed."""
+
+    # Result upload configuration (sweep-specific)
+    upload_results: bool = field(
+        default=False,
+        metadata={
+            "group": "Result Upload Configuration",
+            "group_description": "Parameters controlling result upload to BigQuery",
+        },
+    )
+    """Upload results to BigQuery."""
+
+    benchmark_sha: str | None = field(
+        default=None,
+        metadata={"group": "Result Upload Configuration"},
+    )
+    """Commit hash of the docker image used for load generation."""
+
+    cluster_information_path: str | None = field(
+        default=None,
+        metadata={"group": "Result Upload Configuration"},
+    )
+    """Path to the cluster information file. Usually a json file with metadata about the cluster setup if you're benchmarking more than a single node."""
+
+    benchmark_config_name: str | None = field(
+        default=None,
+        metadata={"group": "Result Upload Configuration"},
+    )
+    """(For serving benchmarks) config name for tracking."""
+
+    # Metadata and result tracking (sweep-specific)
+    metadata: list[str] = field(
+        default_factory=list,
+        metadata={
+            "group": "Metadata and Result Tracking",
+            "group_description": "Parameters for metadata and result tracking",
+        },
+    )
+    """Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes."""
+
+    latency_percentiles: str = field(
+        default="50,90,95,99",
+        metadata={"group": "Metadata and Result Tracking"},
+    )
+    """Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported (default: 50,90,95,99)."""
+
+    # Sweep-specific concurrency and duration parameters
+    num_iters: int = field(
+        default=1,
+        metadata={
+            "group": "Sweep Configuration",
+            "group_description": "Parameters controlling sweep behavior and iteration",
+        },
+    )
+    """Number of iterations to run per configuration."""
+
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
+        """Get required fields for the sweep benchmark config."""
+
+        # TODO: This is really lame. dataset_name is a required flag in benchmark_serving.py,
+        # so you'd think it would also be required here, but it's not. This is
+        # because we only parse dataset_name from the workload config file and not
+        # through the command line in sweep-benchmark-serving.py. Turns out we
+        # also can't quite easily pull that apart trivially when we roll this
+        # part. Will circle back in a follow up PR. the --dataset-name flag
+        # is set to optional here and is a no-op.
+        parent_required_fields = super().get_default_required_fields()
+        parent_required_fields.remove("dataset_name")
+        return parent_required_fields.union({"workload_config"})
 
 
 # Convenience functions for loading specific configuration types
