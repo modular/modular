@@ -28,6 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn import Module
+from max.nn.data_parallelism import split_batch
 from max.nn.kv_cache import PagedCacheValues, PagedKVCacheManager
 from max.pipelines.lib.lora import LoRAManager
 
@@ -143,7 +144,7 @@ class DataParallelLlama(Module):
             *all_kv_cache_inputs,
         ) = args
 
-        split_tokens, split_offsets = _data_parallel_split(
+        split_tokens, split_offsets = split_batch(
             self.config.devices,
             tokens.tensor,
             input_row_offsets.tensor,
@@ -181,84 +182,6 @@ def _assign_weight(module: Module, key: str, value: Any) -> None:
         else:
             module = getattr(module, attr)
     setattr(module, path[-1], value)
-
-
-def _data_parallel_split(
-    devices: list[DeviceRef],
-    tokens: TensorValue,
-    input_row_offsets: TensorValue,
-    data_parallel_splits: TensorValue,
-) -> tuple[list[TensorValue], list[TensorValue]]:
-    """Split tokens and input_row_offsets into data parallel splits.
-
-    Example:
-        devices = [device_1, device_2]
-        tokens = [seq_1, seq_2, seq_3, seq_4]
-        input_row_offsets = [0, offset_1, offset_2, offset_3, offset_4]
-        data_parallel_splits = [0, 2, 4]
-
-    Outputs:
-        split_tokens = [seq_1, seq_2], [seq_3, seq_4]
-        split_offsets = [0, offset_1, offset_2], [0, new_offset_3, new_offset_4]
-
-    After being split, the outputs will be placed on the devices specified in
-    `devices`.
-
-    The size of data_parallel_splits must be equal to the number of devices + 1.
-
-    Args:
-        tokens: Input tokens tensor of shape [total_seq_len].
-        input_row_offsets: Row offsets tensor indicating batch boundaries.
-        data_parallel_splits: Tensor containing batch splits for each device.
-
-    Returns:
-        Tuple of (split_tokens, split_offsets)
-        where split_tokens and split_offsets are lists of tensors, one per device
-    """
-    cpu = DeviceRef.CPU()
-    # Convert data_parallel_splits to a list of split sizes
-    num_devices = len(devices)
-
-    if num_devices == 1:
-        # No splitting needed for single device
-        return [tokens], [input_row_offsets]
-
-    split_tokens = []
-    split_offsets = []
-    for i, device in enumerate(devices):
-        # Offsets must be on CPU to be used as a slice index.
-        start_offset = input_row_offsets[data_parallel_splits[i]]
-        end_offset = input_row_offsets[data_parallel_splits[i + 1]]
-        token_slice = ops.slice_tensor(
-            tokens,
-            [
-                (
-                    slice(start_offset.to(cpu), end_offset.to(cpu)),
-                    f"tokens_split_{i}",
-                ),
-            ],
-        )
-        if i + 1 >= num_devices:
-            end_idx = None
-        else:
-            end_idx = data_parallel_splits[i + 1] + 1
-
-        offsets_slice = (
-            ops.slice_tensor(
-                input_row_offsets,
-                [
-                    (
-                        slice(data_parallel_splits[i], end_idx),
-                        f"offset_split_{i}",
-                    )
-                ],
-            )
-            - start_offset
-        )
-        split_tokens.append(token_slice.to(device))
-        split_offsets.append(offsets_slice.to(device))
-
-    return split_tokens, split_offsets
 
 
 def create_graph(

@@ -763,6 +763,7 @@ class PagedKVCacheManager:
         else:
             # Standard case: single tensor
             row_offsets = prev_model_inputs.input_row_offsets
+        row_offsets = row_offsets.to(self.devices[0])
 
         updated_cache_lengths = self.increment_cache_lengths_model.execute(
             row_offsets, *cache_lengths

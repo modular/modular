@@ -123,15 +123,6 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             return_logits,
         )
 
-        # Pre-allocate a buffer for input_row_offsets in multistep execution.
-        # We do this to avoid materializing and copying a buffer with each multistep step
-        max_batch_size = self.pipeline_config.max_batch_size
-        assert max_batch_size, "Expected max_batch_size to be set"
-
-        self._input_row_offsets_prealloc = Tensor.from_numpy(
-            np.arange(max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices[0])
-
         # Initialize state needed for communication collectives.
         # Contents of signal buffer should be filled with zeros.
         self.signal_buffers = (
@@ -377,6 +368,15 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         return kv_caches_per_dev
 
     def _build_graph(self) -> Graph:
+        # Pre-allocate a buffer for input_row_offsets in multistep execution.
+        # We do this to avoid materializing and copying a buffer with each multistep step
+        max_batch_size = self.pipeline_config.max_batch_size
+        assert max_batch_size, "Expected max_batch_size to be set"
+
+        self._input_row_offsets_prealloc = Tensor.from_numpy(
+            np.arange(max_batch_size + 1, dtype=np.uint32)
+        ).to(self.devices[0])
+
         # Read in weights.
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(

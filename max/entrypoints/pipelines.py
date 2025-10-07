@@ -366,6 +366,7 @@ def cli_pipeline(
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config.log_basic_config()
     generate_text_for_pipeline(
         pipeline_config,
         sampling_params=SamplingParams.from_input(params),

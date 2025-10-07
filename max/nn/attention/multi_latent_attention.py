@@ -318,6 +318,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     kv_params=self.kv_params,
                     dtype=self.dtype,
                     devices=[device],
+                    graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
                     scale=self._scale,
                     q_lora_rank=self.q_lora_rank,
@@ -609,7 +610,9 @@ class LatentAttentionWithRope(Module, Shardable):
                 _mla_decode,
             )[0].tensor
 
-        result = ops.reshape(result, shape=[result.shape[0], -1])
+        result = ops.reshape(
+            result, shape=[result.shape[0], self.n_heads * self.v_head_dim]
+        )
 
         return result
 
@@ -779,10 +782,6 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
 
         outs: list[TensorValue] = []
         for i in range(n):
-            if xs[i].shape[0] == 0:
-                outs.append(xs[i])
-                continue
-
             outs.append(
                 self.list_of_attentions[i](
                     layer_idx,
