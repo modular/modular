@@ -21,7 +21,7 @@ from io.write import _WriteBufferStack
 from sys import _libc, external_call, is_gpu
 from sys.ffi import c_char
 
-from memory import ArcPointer, memcpy
+from memory import ArcPointer, memcpy, OwnedPointer
 
 
 # ===-----------------------------------------------------------------------===#
@@ -31,13 +31,19 @@ from memory import ArcPointer, memcpy
 struct StackTrace(ImplicitlyCopyable, Stringable):
     """Holds a stack trace of a location when StackTrace is constructed."""
 
-    var value: ArcPointer[UnsafePointer[UInt8]]
-    """A reference counting pointer to a char array containing the stack trace."""
+    var value: ArcPointer[OwnedPointer[UInt8]]
+    """A reference counting pointer to a char array containing the stack trace.
+    
+        Note: This owned pointer _can be null_. We'd use Optional[OwnedPointer] but
+        we don't have good niche optimization and Optional[T] requires T: Copyable
+    """
 
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty stack trace."""
-        self.value = ArcPointer(UnsafePointer[UInt8]())
+        self.value = ArcPointer(
+            OwnedPointer[UInt8](unsafe_from_raw_pointer=UnsafePointer[UInt8]())
+        )
 
     @always_inline("nodebug")
     fn __init__(out self, *, depth: Int):
@@ -64,12 +70,17 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
         )
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
-            self.value = ArcPointer(UnsafePointer[UInt8]())
+            self.value = ArcPointer(
+                OwnedPointer(unsafe_from_raw_pointer=UnsafePointer[UInt8]())
+            )
             return
 
-        var ptr = UnsafePointer[UInt8]().alloc(num_bytes)
-        self.value = ArcPointer[UnsafePointer[UInt8]](ptr)
-        memcpy(dest=self.value[], src=buffer, count=num_bytes)
+        var ptr = UnsafePointer[UInt8]().alloc(num_bytes + 1)
+        ptr.store(num_bytes, 0)
+        self.value = ArcPointer[OwnedPointer[UInt8]](
+            OwnedPointer(unsafe_from_raw_pointer=ptr)
+        )
+        memcpy(dest=self.value[].unsafe_ptr(), src=buffer, count=num_bytes)
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         _libc.free(buffer.bitcast[NoneType]())
 
@@ -79,12 +90,12 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
         Returns:
             A String of the stack trace.
         """
-        if not self.value[]:
+        if not self.value[].unsafe_ptr():
             return (
                 "stack trace was not collected. Enable stack trace collection"
                 " with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`"
             )
-        return String(unsafe_from_utf8_ptr=self.value[])
+        return String(unsafe_from_utf8_ptr=self.value[].unsafe_ptr())
 
 
 # ===-----------------------------------------------------------------------===#
