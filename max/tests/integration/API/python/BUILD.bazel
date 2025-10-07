@@ -234,7 +234,6 @@ modular_py_test(
 modular_multi_py_version_test(
     name = "test_load_library",
     srcs = ["test_load_library.py"],
-    exclude = ["3.13"],  # numpy issues
     deps = [
         "//SDK/lib/API/python/max:_core",
     ],

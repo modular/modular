@@ -79,7 +79,7 @@ def test_mlp(input_type: TensorType) -> None:
     if input_type.rank == 1:
         x_np = np.ones(128).astype(np.float32)
     else:
-        x_np = np.ones((32, 128)).astype(np.float32)
+        x_np = np.ones((32, 128)).astype(np.float32)  # type: ignore
     w1_np = np.ones((16, 128)).astype(np.float32)
     w2_np = np.ones((128, 16)).astype(np.float32)
     w3_np = np.ones((16, 128)).astype(np.float32)

@@ -62,9 +62,9 @@ def test_collate_batch(arrays: list[list[int]], pad_value: int) -> None:
 
     for array, padded in zip(arrays, result, strict=True):
         # Use pad_len rather than len(array) since slicing from -0 doesn't do what you want.
-        pad_len = len(padded) - len(array)
-        np.testing.assert_array_equal(np.array(array), padded[pad_len:])
-        assert np.all(padded[:pad_len] == pad_value)
+        pad_len = len(padded) - len(array)  # type: ignore
+        np.testing.assert_array_equal(np.array(array), padded[pad_len:])  # type: ignore
+        assert np.all(padded[:pad_len] == pad_value)  # type: ignore
 
 
 @given(arrays=..., pad_value=...)
@@ -93,8 +93,8 @@ def test_collate_batch__pad_right(
     assert all(unpadded_last_token_indices == [len(a) - 1 for a in arrays])
 
     for array, padded in zip(arrays, result, strict=True):
-        np.testing.assert_array_equal(np.array(array), padded[: len(array)])
-        assert np.all(padded[len(array) :] == pad_value)
+        np.testing.assert_array_equal(np.array(array), padded[: len(array)])  # type: ignore
+        assert np.all(padded[len(array) :] == pad_value)  # type: ignore
 
 
 @given(pad_value=...)
