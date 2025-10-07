@@ -27,10 +27,9 @@ from gpu import (
     warp_id,
 )
 from gpu.host import DeviceBuffer
-from gpu.memory import async_copy_wait_all
+from gpu.memory import AddressSpace, async_copy_wait_all
 from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
@@ -38,17 +37,19 @@ from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
 from utils import StaticTuple
 from utils.index import Index
 
-# The number of threads per block to use for the optimized kernels.
-# Used only in llvm_metadata for MAX_THREADS_PER_BLOCK_METADATA.
-# Not the most performant for all kernels, used sparingly on nvidia accelerators.
+# The number of threads per block to use for the optimized kernels
+# Used only in llvm_metadata for MAX_THREADS_PER_BLOCK_METADATA
+# Not the most performant for all kernels, used sparingly on nvidia accelerators
+
 alias OPTIMIZED_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 1024
 
-# The block size to use for the optimized kernels.
+# The block size to use for the optimized kernels
 alias OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # Naive matrix multiplication (CPU)
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 fn naive_matrix_multiplication_cpu(
@@ -67,9 +68,10 @@ fn naive_matrix_multiplication_cpu(
                 output[row, col] = output[row, col] + a[row, k] * b[k, col]
 
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # Naive matrix multiplication (GPU)
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -132,9 +134,10 @@ fn naive_matrix_multiplication[
     c[row, col] = dst_reg
 
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # Matrix multiplication with global memory coalescing
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 @__llvm_metadata(
@@ -199,9 +202,10 @@ fn coalescing_matrix_multiplication[
     c[row, col] = dst_reg
 
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # Matrix multiplication with shared memory tiling
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 @__llvm_metadata(
@@ -257,8 +261,18 @@ fn tiled_matrix_multiplication[
     var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     # Allocate shared memory for tiles of input matrices A and B
-    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
-    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
+    var a_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Initialize the register to accumulate the result
     var dst_reg: c.element_type = 0
@@ -295,9 +309,10 @@ fn tiled_matrix_multiplication[
     dst[row, col] += dst_reg
 
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # Matrix multiplication with shared memory tiling and register tiling
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -355,11 +370,26 @@ fn tiled_register_matrix_multiplication[
     var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, 1](row, col)
 
     # Allocate shared memory for tiles of A and B.
-    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
-    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
+    var a_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Allocate a register tile to store the partial results.
-    var dst_reg = tb[dtype]().layout[TM]().local().alloc()
+    var dst_reg = LayoutTensor[
+        dtype,
+        Layout(TM),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     dst_reg.copy_from(dst)
 
     # Iterate over the tiles of A and B in the K dimension.
@@ -401,9 +431,10 @@ fn tiled_register_matrix_multiplication[
     dst.copy_from(dst_reg)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # Matrix multiplication with block tiling
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -463,13 +494,38 @@ fn block_tiled_matrix_multiplication[
         partition_row, partition_col
     )
 
-    var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
-    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
+    var a_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
-    var dst_reg = tb[dtype]().row_major[TM, TN]().local().alloc()
+    var dst_reg = LayoutTensor[
+        dtype,
+        Layout.row_major(TM, TN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     dst_reg.copy_from(dst)
-    var a_reg = tb[dtype]().layout[TM]().local().alloc()
-    var b_reg = tb[dtype]().layout[TN]().local().alloc()
+    var a_reg = LayoutTensor[
+        dtype,
+        Layout(TM),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    var b_reg = LayoutTensor[
+        dtype,
+        Layout(TN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
 
@@ -496,9 +552,10 @@ fn block_tiled_matrix_multiplication[
     dst.copy_from(dst_reg)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # Matrix multiplication with vectorized memory access
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -567,16 +624,41 @@ fn block_tiled_vectorized_matrix_multiplication[
 
     # Allocate shared memory for tiles of A and B.
     # Use column-major layout for A to get the transpose.
-    var a_smem = tb[dtype]().col_major[BM, BK]().shared().alloc()
-    var b_smem = tb[dtype]().row_major[BK, BN]().shared().alloc()
+    var a_smem = LayoutTensor[
+        dtype,
+        Layout.col_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    var b_smem = LayoutTensor[
+        dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Allocate register tiles to store the partial results and operands.
-    var dst_reg = tb[dtype]().row_major[TM, TN]().local().alloc()
+    var dst_reg = LayoutTensor[
+        dtype,
+        Layout.row_major(TM, TN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
     dst_reg_vec.copy_from(dst_vec)
 
-    var a_reg = tb[dtype]().layout[TM]().local().alloc()
-    var b_reg = tb[dtype]().layout[TN]().local().alloc()
+    var a_reg = LayoutTensor[
+        dtype,
+        Layout(TM),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    var b_reg = LayoutTensor[
+        dtype,
+        Layout(TN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
 
@@ -617,9 +699,10 @@ fn block_tiled_vectorized_matrix_multiplication[
     dst_vec.copy_from(dst_reg_vec)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # Matrix multiplication using Tensor Cores
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -697,15 +780,28 @@ fn tensor_core_matrix_multiplication[
     mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = tb[A.dtype]().row_major[BM, BK]().shared().alloc()
-    B_sram_tile = tb[B.dtype]().row_major[BK, BN]().shared().alloc()
+    A_sram_tile = LayoutTensor[
+        A.dtype,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_tile = LayoutTensor[
+        B.dtype,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Allocate register tile for accumulating partial results
     c_reg = (
-        tb[C.dtype]()
-        .row_major[WM // MMA_M, (WN * 4) // MMA_N]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            C.dtype,
+            Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
@@ -773,9 +869,10 @@ fn tensor_core_matrix_multiplication[
             mma_op.store_d(C_mma_tile, c_reg_m_n)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
+
 # The matrix multiplication graph operation
-# ===-----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------=== #
 
 
 @compiler.register("matrix_multiplication")
