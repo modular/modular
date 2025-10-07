@@ -66,7 +66,7 @@ convention: VAR | OWNED | OUT | READ | MUT | DEINIT | (REF ['[' test [',' test [
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*
-typedparamslist: ((([convention] ['**'|'*'] tfpdef ['=' test] (where_clause)*)|'/'|'*'|'//') [','])*
+typedparamslist: ((([convention] ['**'|'*'] tfpdef (where_clause)* ['=' test])|'/'|'*'|'//') [','])*
 
 tname: NAME [metaparams] [':' (type_test|star_expr)]
 
