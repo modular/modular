@@ -15,10 +15,10 @@ import os
 from os.path import exists
 from pathlib import Path
 
-from testing import assert_false, assert_raises, assert_true
+from testing import TestSuite, assert_false, assert_raises, assert_true
 
 
-fn create_and_delete(path: String) raises:
+def create_and_delete(path: String):
     # verify that the test dir does not exist before starting the test
     assert_false(
         exists(path),
@@ -34,7 +34,7 @@ fn create_and_delete(path: String) raises:
         os.rmdir(path)
 
 
-fn test_mkdir_and_rmdir(path: String) raises:
+def test_mkdir_and_rmdir(path: String):
     try:
         os.rmdir(path)
     except:
@@ -54,7 +54,7 @@ fn test_mkdir_and_rmdir(path: String) raises:
         os.rmdir(path)
 
 
-fn test_mkdir_and_rmdir(path: Path) raises:
+def test_mkdir_and_rmdir(path: Path):
     try:
         os.rmdir(path)
     except:
@@ -73,7 +73,7 @@ fn test_mkdir_and_rmdir(path: Path) raises:
         os.rmdir(path)
 
 
-fn test_makedirs_and_removedirs(path: Path) raises:
+def test_makedirs_and_removedirs(path: Path):
     try:
         os.removedirs(path)
     except:
@@ -91,7 +91,7 @@ fn test_makedirs_and_removedirs(path: Path) raises:
     os.removedirs(path)
 
 
-fn test_mkdir_mode() raises:
+def test_mkdir_mode():
     var my_dir_path = Path("my_dir")
 
     assert_false(
@@ -113,7 +113,7 @@ fn test_mkdir_mode() raises:
         os.rmdir(my_dir_path)
 
 
-fn test_rmdir_not_empty() raises:
+def test_rmdir_not_empty():
     var my_dir_path = Path("my_dir")
     var file_name = my_dir_path / "file.txt"
 
@@ -134,14 +134,24 @@ fn test_rmdir_not_empty() raises:
     assert_false(exists(my_dir_path), "Failed to remove dir")
 
 
-def main():
+def test_all_mkdir_and_rmdir():
     test_mkdir_and_rmdir("my_dir")
     test_mkdir_and_rmdir(Path("my_dir"))
     if os.env.getenv("HOME") or os.env.getenv("USERPROFILE"):
         test_mkdir_and_rmdir(Path("~/my_dir").expanduser())
 
+
+def test_all_makedirs_and_removedirs():
     test_makedirs_and_removedirs(os.path.join("dir1", "dir2", "dir3"))
     test_makedirs_and_removedirs(Path("dir1") / "dir2" / "dir3")
 
-    test_mkdir_mode()
-    test_rmdir_not_empty()
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_all_mkdir_and_rmdir]()
+    suite.test[test_all_makedirs_and_removedirs]()
+    suite.test[test_mkdir_mode]()
+    suite.test[test_rmdir_not_empty]()
+
+    suite^.run()

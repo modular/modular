@@ -14,7 +14,7 @@
 from os import listdir
 from pathlib import Path
 
-from testing import assert_true
+from testing import TestSuite, assert_true
 
 
 def test_listdir():
@@ -23,4 +23,8 @@ def test_listdir():
 
 
 def main():
-    test_listdir()
+    var suite = TestSuite()
+
+    suite.test[test_listdir]()
+
+    suite^.run()

@@ -13,7 +13,7 @@
 
 from os.path.path import _split_extension, split_extension
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
 def _split_extension_test(
@@ -56,7 +56,11 @@ def test_file_names():
 
 
 def main():
-    test_absolute_file_path()
-    test_relative_file_path()
-    test_relative_directories()
-    test_file_names()
+    var suite = TestSuite()
+
+    suite.test[test_absolute_file_path]()
+    suite.test[test_relative_file_path]()
+    suite.test[test_relative_directories]()
+    suite.test[test_file_names]()
+
+    suite^.run()

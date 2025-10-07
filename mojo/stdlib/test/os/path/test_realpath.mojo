@@ -16,10 +16,10 @@ from pathlib import Path, cwd
 from sys import CompilationTarget
 
 from python import Python
-from testing import assert_equal, assert_raises, assert_true
+from testing import TestSuite, assert_equal, assert_raises, assert_true
 
 
-def main():
+def test_realpath():
     print("test resolution of: .. . ./")
     var cwd_realpath = realpath("../.././.")
     var os_cwd = String(realpath(".././.././."))
@@ -58,3 +58,11 @@ def main():
     print("test root directory behavior")
     var root_path = realpath("/")
     assert_equal(root_path, "/")
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_realpath]()
+
+    suite^.run()

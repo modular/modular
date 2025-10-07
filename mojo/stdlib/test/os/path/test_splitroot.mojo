@@ -13,7 +13,7 @@
 
 from os.path import splitroot
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
 def _splitroot_test(
@@ -63,7 +63,11 @@ def test_empty_path():
 
 
 def main():
-    test_absolute_path()
-    test_relative_path()
-    test_root_directory()
-    test_empty_path()
+    var suite = TestSuite()
+
+    suite.test[test_absolute_path]()
+    suite.test[test_relative_path]()
+    suite.test[test_root_directory]()
+    suite.test[test_empty_path]()
+
+    suite^.run()

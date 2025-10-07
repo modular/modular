@@ -15,7 +15,7 @@ from os import PathLike, remove, unlink
 from os.path import exists
 from pathlib import Path
 
-from testing import assert_false, assert_raises, assert_true
+from testing import TestSuite, assert_false, assert_raises, assert_true
 
 
 fn create_file_and_test_delete_path[
@@ -33,7 +33,7 @@ fn create_file_and_test_delete_path[
     assert_false(exists(filepath), "test with '" + name + "' failed")
 
 
-fn test_remove() raises:
+def test_remove():
     var cwd_path = Path()
     var my_file_path = cwd_path / "my_file.test"
     var my_file_name = String(my_file_path)
@@ -61,4 +61,8 @@ fn test_remove() raises:
 
 
 def main():
-    test_remove()
+    var suite = TestSuite()
+
+    suite.test[test_remove]()
+
+    suite^.run()

@@ -18,13 +18,21 @@ from os.path import isdir, islink
 from pathlib import Path
 from sys import env_get_string
 
-from testing import assert_false, assert_true
+from testing import TestSuite, assert_false, assert_true
 
 alias TEMP_DIR = env_get_string["TEMP_DIR"]()
 
 
-def main():
+def test_islink():
     assert_true(isdir(Path(TEMP_DIR)))
     assert_true(isdir(TEMP_DIR))
     assert_true(islink(TEMP_DIR))
     assert_false(islink(String(Path(TEMP_DIR) / "nonexistent")))
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_islink]()
+
+    suite^.run()
