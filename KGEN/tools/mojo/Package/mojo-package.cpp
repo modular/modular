@@ -303,7 +303,6 @@ writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, StringRef bitcodeFile) {
   std::string resourceName =
       "llvm_bitcode_" + llvm::utohexstr(xxh3_64bits(data),
                                         /*LowerCase=*/true, /*Width=*/16);
-  ;
 
   // Create the resource attribute
   return createResourceAttr(ctx, ArrayRef<char>(data.data(), data.size()),
