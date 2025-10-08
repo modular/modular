@@ -14,10 +14,11 @@
 from time import sleep, time_function
 
 from benchmark import Report, clobber_memory, keep, run
+from testing import TestSuite
 
 
 # CHECK-LABEL: test_stopping_criteria
-fn test_stopping_criteria() raises:
+def test_stopping_criteria():
     print("== test_stopping_criteria")
     # Stop when min_runtime_secs has elapsed and either max_runtime_secs or max_iters
     # is reached
@@ -114,7 +115,7 @@ struct SomeTrivialStruct:
 
 # CHECK-LABEL: test_keep
 # There is nothing to test here other than the code executes and does not crash.
-fn test_keep() raises:
+def test_keep():
     print("== test_keep")
 
     keep(False)
@@ -138,7 +139,7 @@ fn sleeper():
 
 
 # CHECK-LABEL: test_non_capturing
-fn test_non_capturing() raises:
+def test_non_capturing():
     print("== test_non_capturing")
     var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     # CHECK: True
@@ -146,7 +147,7 @@ fn test_non_capturing() raises:
 
 
 # CHECK-LABEL: test_change_units
-fn test_change_units() raises:
+def test_change_units():
     print("== test_change_units")
     var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     # CHECK: True
@@ -156,7 +157,7 @@ fn test_change_units() raises:
 
 
 # CHECK-LABEL: test_report
-fn test_report() raises:
+def test_report():
     print("== test_report")
     var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
 
@@ -165,8 +166,12 @@ fn test_report() raises:
 
 
 def main():
-    test_stopping_criteria()
-    test_keep()
-    test_non_capturing()
-    test_change_units()
-    test_report()
+    var suite = TestSuite()
+
+    suite.test[test_stopping_criteria]()
+    suite.test[test_keep]()
+    suite.test[test_non_capturing]()
+    suite.test[test_change_units]()
+    suite.test[test_report]()
+
+    suite^.run()

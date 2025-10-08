@@ -23,6 +23,7 @@ from benchmark import (
     Format,
     ThroughputMeasure,
 )
+from testing import TestSuite
 
 
 @parameter
@@ -43,7 +44,7 @@ fn bench2(mut b: Bencher, mystr: String) raises:
     b.iter[to_bench]()
 
 
-def main():
+def test_mojobench():
     var m = Bench(BenchConfig(max_iters=10_000))
     m.bench_function[bench1](
         BenchId("bench1"),
@@ -90,3 +91,11 @@ def main():
     m.dump_report()
 
     # CHECK-TEST-COUNT-1: hello
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_mojobench]()
+
+    suite^.run()
