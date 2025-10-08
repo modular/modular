@@ -116,6 +116,7 @@ except ImportError:
         ThroughputMetrics,
     )
     from benchmark_shared.server_metrics import (
+        compute_metrics_delta,
         fetch_and_parse_metrics,
         print_server_metrics,
     )
@@ -1340,6 +1341,21 @@ async def benchmark(  # noqa: ANN201
             benchmark_should_end_time = (
                 benchmark_start_time + max_benchmark_duration_s * 1e9
             )
+
+        # Capture baseline server metrics before benchmark starts
+        baseline_server_metrics = None
+        if collect_server_stats:
+            try:
+                baseline_server_metrics = fetch_and_parse_metrics(
+                    backend=full_backend,
+                    base_url=base_url,
+                )
+                logger.info("Captured baseline server metrics")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to capture baseline server metrics: {e}"
+                )
+
         tasks: list[asyncio.Task] = []  # type: ignore[type-arg, unused-ignore]
         outputs: list[RequestFuncOutput] = []
         if not num_chat_sessions:
@@ -1522,15 +1538,30 @@ async def benchmark(  # noqa: ANN201
     server_metrics = None
     if collect_server_stats:
         try:
-            server_metrics = fetch_and_parse_metrics(
+            final_server_metrics = fetch_and_parse_metrics(
                 backend=full_backend,
                 base_url=base_url,
             )
-            logger.info(
-                f"Collected {len(server_metrics.counters)} counters, "
-                f"{len(server_metrics.gauges)} gauges, "
-                f"{len(server_metrics.histograms)} histograms from server"
-            )
+
+            # Compute delta if we have baseline metrics
+            if baseline_server_metrics is not None:
+                server_metrics = compute_metrics_delta(
+                    baseline=baseline_server_metrics,
+                    final=final_server_metrics,
+                )
+                logger.info(
+                    f"Computed server metrics delta: {len(server_metrics.counters)} counters, "
+                    f"{len(server_metrics.gauges)} gauges, "
+                    f"{len(server_metrics.histograms)} histograms"
+                )
+            else:
+                # If no baseline, use final metrics as-is
+                server_metrics = final_server_metrics
+                logger.info(
+                    f"Collected {len(server_metrics.counters)} counters, "
+                    f"{len(server_metrics.gauges)} gauges, "
+                    f"{len(server_metrics.histograms)} histograms from server"
+                )
         except Exception as e:
             logger.warning(f"Failed to parse server metrics: {e}")
 

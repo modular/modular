@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -248,6 +249,60 @@ def fetch_and_parse_metrics(
     raw_text = fetch_metrics(metrics_url)
     # TODO: Add backend-specific metric name normalization here if needed
     return parse_metrics(raw_text)
+
+
+def compute_metrics_delta(
+    baseline: ParsedMetrics, final: ParsedMetrics
+) -> ParsedMetrics:
+    """Compute the difference between two ParsedMetrics objects.
+
+    For counters and histograms (monotonically increasing), compute the delta.
+    For gauges, use the final value (as they represent current state).
+
+    Args:
+        baseline: Metrics captured at the start of the benchmark
+        final: Metrics captured at the end of the benchmark
+
+    Returns:
+        ParsedMetrics object containing the deltas
+    """
+    # Compute delta for counters (monotonically increasing)
+    delta_counters = {}
+    for name, final_value in final.counters.items():
+        baseline_value = baseline.counters.get(name, 0.0)
+        delta_counters[name] = final_value - baseline_value
+
+    # For gauges, use final value (they represent current state, not cumulative)
+    delta_gauges = dict(final.gauges)
+
+    # Compute delta for histograms (sum and count are monotonically increasing)
+    delta_histograms = {}
+    for name, final_hist in final.histograms.items():
+        baseline_hist = baseline.histograms.get(
+            name, HistogramData(buckets=[], sum=0.0, count=0.0)
+        )
+        delta_sum = final_hist.sum - baseline_hist.sum
+        delta_count = final_hist.count - baseline_hist.count
+
+        # Compute delta buckets
+        delta_buckets = []
+        baseline_buckets_dict = defaultdict(float, baseline_hist.buckets)
+        for upper_bound, final_count in final_hist.buckets:
+            baseline_count = baseline_buckets_dict[upper_bound]
+            delta_buckets.append((upper_bound, final_count - baseline_count))
+
+        delta_histograms[name] = HistogramData(
+            buckets=delta_buckets,
+            sum=delta_sum,
+            count=delta_count,
+        )
+
+    return ParsedMetrics(
+        counters=delta_counters,
+        gauges=delta_gauges,
+        histograms=delta_histograms,
+        raw_text="",  # Delta doesn't have raw text
+    )
 
 
 def print_server_metrics(metrics: ParsedMetrics) -> None:
