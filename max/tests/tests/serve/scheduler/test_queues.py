@@ -11,17 +11,14 @@ import numpy as np
 import pytest
 import zmq
 from max.interfaces import (
+    ImageMetadata,
     RequestID,
     SharedMemoryArray,
     msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core.context import (
-    ImageMetadata,
-    TextAndVisionContext,
-    TextContext,
-)
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.serve.queue.zmq_queue import (
     ZmqConfig,
     ZmqPullSocket,
