@@ -96,7 +96,7 @@ TypeSignatureType TypeSignatureType::remapToSignature(
 
   MLIRContext *ctx = paramDecls.getContext();
   paramListAttrs =
-      PogListAttr::get(ctx, paramListAttrs.getPogs(),
+      PogListAttr::get(ctx, remapper.replace(paramListAttrs.getPogs()),
                        remapper.replace(paramListAttrs.getDefaultPos()),
                        remapper.replace(paramListAttrs.getDefaultKwOnly()),
                        paramListAttrs.getOrigPackConvention(),

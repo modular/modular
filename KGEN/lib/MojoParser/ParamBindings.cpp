@@ -74,6 +74,71 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
   return traitAliasReplacer.replace(desiredSignature);
 }
 
+LogicalResult
+LIT::checkConstraints(ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
+                      const ParamBindings::DiagEmitter *diagEmitter,
+                      ParameterEvaluator *evaluator) {
+  if (constraints.empty())
+    return success();
+
+  SmallVector<ConstraintAttr> assumptions;
+  declScope.getKnownAssumptionsIncludingParents(assumptions);
+  SmallVector<TypedAttr> overallAssumptionOperands;
+  for (ConstraintAttr assumption : assumptions)
+    overallAssumptionOperands.push_back(assumption.getProposition());
+  // A null overallAssumption means no contextual assumptions.
+  TypedAttr overallAssumption;
+  if (overallAssumptionOperands.size() == 1) {
+    // Single assumption: no need to wrap in an AND.
+    overallAssumption = overallAssumptionOperands.front();
+  } else if (!overallAssumptionOperands.empty()) {
+    overallAssumption =
+        ParamOperatorAttr::get(POC::And, overallAssumptionOperands);
+  }
+  if (overallAssumption)
+    overallAssumption = getCanonicalAttr(overallAssumption);
+
+  SmallVector<ConstraintAttr> failedConstraints;
+  SmallVector<ConstraintAttr> unprovableConstraints;
+  for (ConstraintAttr constraint : constraints) {
+    TypedAttr prop = constraint.getProposition();
+    prop = getCanonicalAttr(prop);
+    if (evaluator)
+      prop = evaluator->getReboundAttribute(prop);
+
+    // If the constraint evaluated to a constant, check its value directly.
+    if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
+      if (intValue.getValue().isZero())
+        failedConstraints.push_back(constraint);
+      continue;
+    }
+
+    // If there are contextual assumptions, and the constraint is implied by
+    // them, skip it.
+    if (overallAssumption &&
+        ParamOperatorAttr::get(POC::And, {overallAssumption, prop}) ==
+            overallAssumption)
+      continue;
+
+    // Unprovable constraint.
+    unprovableConstraints.push_back(constraint);
+  }
+
+  if (!failedConstraints.empty()) {
+    if (diagEmitter)
+      diagEmitter->emitConstraintViolations(failedConstraints);
+    return failure();
+  }
+
+  if (!unprovableConstraints.empty()) {
+    if (diagEmitter)
+      diagEmitter->emitUnprovableConstraints(unprovableConstraints);
+    return failure();
+  }
+
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamBindings
 //===----------------------------------------------------------------------===//
@@ -320,13 +385,28 @@ ParamBindings::verifyBindingsImpl(
   ParserParameterEvaluator evaluator(shared);
 
   // This lambda installs the decl's value in the parameter evaluator and new
-  // binding array.
-  auto setParamValue = [&](TypedAttr value, Type requestedType) {
+  // binding array. Also verifies all constraints are satisfied.
+  ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
+  auto setParamValueAndVerify = [&](TypedAttr value,
+                                    Type requestedType) -> LogicalResult {
+    size_t idx = newBindings.size();
     // The canonical types must match, now make sure sugar aligns.
     if (value.getType() != requestedType)
       value = ParamOperatorAttr::getRebind(value, requestedType);
     evaluator.appendIndexBinding(value);
     newBindings.push_back(value);
+
+    // If this is a partial binding, we don't need to verify constraints. The
+    // caller is expected to verify the full binding list later.
+    if (partial && isa<UnboundAttr>(value))
+      return success();
+
+    ArrayRef<ConstraintAttr> constraints = pogs[idx].getConstraints();
+    if (constraints.empty())
+      return success();
+
+    // Verify all constraints are satisfied.
+    return checkConstraints(declScope, constraints, diagEmitter, &evaluator);
   };
 
   // Use an expr emitter to perform implicit conversions within a parameter
@@ -402,8 +482,7 @@ ParamBindings::verifyBindingsImpl(
     return {};
   };
 
-  for (auto [idx, sigType, pog] :
-       llvm::enumerate(expectedParamTypes, paramListAttr.getPogs())) {
+  for (auto [idx, sigType, pog] : llvm::enumerate(expectedParamTypes, pogs)) {
     // This is the refined type expected by the signature.
     Type requestedType = evaluator.getReboundType(sigType);
     // This is the expected type of a value satisfying this parameter.
@@ -426,7 +505,8 @@ ParamBindings::verifyBindingsImpl(
         if (!partial && isa<UnboundAttr>(bindingVal.get())) {
           if (PValue value =
                   fulfillValue(requestedType, PassingKind::Inferred)) {
-            setParamValue(value, requestedType);
+            if (failed(setParamValueAndVerify(value, requestedType)))
+              return {{}, fitness};
             ++posBindingIdx;
             continue;
           }
@@ -438,7 +518,8 @@ ParamBindings::verifyBindingsImpl(
 
         // Otherwise if it's prechecked, consume directly.
         if (posBindingIdx < numPreTypeChecked) {
-          setParamValue(bindingVal, requestedType);
+          if (failed(setParamValueAndVerify(bindingVal, requestedType)))
+            return {{}, fitness};
           ++posBindingIdx;
           continue;
         }
@@ -454,12 +535,15 @@ ParamBindings::verifyBindingsImpl(
       if (posBindingIdx >= numBindings || !operands[posBindingIdx].keyword ||
           operands[posBindingIdx].keyword != pog.getName()) {
         if (PValue value = inferParameter(requestedType)) {
-          setParamValue(value, requestedType);
+          if (failed(setParamValueAndVerify(value, requestedType)))
+            return {{}, fitness};
           continue;
         }
         // If this context allows partial binding, leave the value as unbound.
         if (partial) {
-          setParamValue(UnboundAttr::get(requestedType), requestedType);
+          if (failed(setParamValueAndVerify(UnboundAttr::get(requestedType),
+                                            requestedType)))
+            return {{}, fitness};
           continue;
         }
         // Otherwise, emit an inference failure.
@@ -478,7 +562,8 @@ ParamBindings::verifyBindingsImpl(
           diagEmitter->emitTypeMismatch(idx, binding, expectedType);
         return {{}, fitness};
       }
-      setParamValue(pValue, requestedType);
+      if (failed(setParamValueAndVerify(pValue, requestedType)))
+        return {{}, fitness};
       ++posBindingIdx;
       continue;
     }
@@ -505,28 +590,34 @@ ParamBindings::verifyBindingsImpl(
             diagEmitter->emitTypeMismatch(idx, *binding, expectedType);
           return {{}, fitness};
         }
-        setParamValue(pValue, requestedType);
+        if (failed(setParamValueAndVerify(pValue, requestedType)))
+          return {{}, fitness};
         continue;
       }
 
       // If we couldn't find a keyword binding for this parameter, then we must
       // be able to infer it or otherwise provide a default value.
       if (PValue value = fulfillValue(requestedType, passingKind)) {
-        setParamValue(value, requestedType);
+        if (failed(setParamValueAndVerify(value, requestedType)))
+          return {{}, fitness};
         continue;
       }
 
       // If this is a partial binding context, then we don't have a full binding
       // list. Allow parameters to be missing.
       if (partial) {
-        setParamValue(UnboundAttr::get(requestedType), requestedType);
+        if (failed(setParamValueAndVerify(UnboundAttr::get(requestedType),
+                                          requestedType)))
+          return {{}, fitness};
         continue;
       }
 
       if (passingKind == PassingKind::KwOnly) {
         // If this is a missing keyword-only, we collect them. We put pretend
         // this is implicitly unbound, so we can error out in the end.
-        setParamValue(UnboundAttr::get(requestedType), requestedType);
+        if (failed(setParamValueAndVerify(UnboundAttr::get(requestedType),
+                                          requestedType)))
+          return {{}, fitness};
         kwDiagNames.push_back(paramName);
         continue;
       }
@@ -544,7 +635,8 @@ ParamBindings::verifyBindingsImpl(
     assert(bindingVal && "Parameters are always PValues");
     if (!partial && isa<UnboundAttr>(bindingVal.get())) {
       if (PValue value = fulfillValue(requestedType, passingKind)) {
-        setParamValue(value, requestedType);
+        if (failed(setParamValueAndVerify(value, requestedType)))
+          return {{}, fitness};
         ++posBindingIdx;
         continue;
       }
@@ -557,7 +649,8 @@ ParamBindings::verifyBindingsImpl(
     // If this value was already bound and checked, use it.
     /// FIXME: Remove this, why is this needed?
     if (posBindingIdx < numPreTypeChecked) {
-      setParamValue(bindingVal, requestedType);
+      if (failed(setParamValueAndVerify(bindingVal, requestedType)))
+        return {{}, fitness};
       ++posBindingIdx;
       continue;
     }
@@ -599,7 +692,8 @@ ParamBindings::verifyBindingsImpl(
       PValue paramValue = handlePosBinding(idx, binding, expectedType);
       if (!paramValue)
         return {{}, fitness};
-      setParamValue(paramValue, expectedType);
+      if (failed(setParamValueAndVerify(paramValue, expectedType)))
+        return {{}, fitness};
       ++posBindingIdx;
       continue;
     }
@@ -615,7 +709,8 @@ ParamBindings::verifyBindingsImpl(
           idx, {PValue(unpacked.getValue()), binding.expr}, requestedType);
       if (!paramValue)
         return {{}, fitness};
-      setParamValue(paramValue, requestedType);
+      if (failed(setParamValueAndVerify(paramValue, requestedType)))
+        return {{}, fitness};
       ++posBindingIdx;
       continue;
     }
@@ -645,7 +740,9 @@ ParamBindings::verifyBindingsImpl(
     } while (posBindingIdx != numBindings);
 
     auto varType = VariadicType::get(evaluator.getReboundType(expectedType));
-    setParamValue(VariadicAttr::get(elements, varType), varType);
+    if (failed(setParamValueAndVerify(VariadicAttr::get(elements, varType),
+                                      varType)))
+      return {{}, fitness};
   }
 
   // Complain if we collected any missing keyword-only parameters.

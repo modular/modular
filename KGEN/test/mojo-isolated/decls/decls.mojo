@@ -1837,3 +1837,34 @@ struct StructWithParam[a: Int]:
 # CHECK-LABEL: lit.fn @"autoparam_mangler_crash
 fn autoparam_mangler_crash[*types: Int, constraints: StructWithParam]():
     pass
+
+
+##===----------------------------------------------------------------------===##
+# Dependent Constraints
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.struct.decl @ConstraintStruct
+# CHECK-SAME: <a: !Int {{.*}}ge(#lit.struct.extract<:!Int a, "_mlir_value">, 1)
+struct ConstraintStruct[a: Int where a > 0]:
+    alias b = a + 1
+
+# CHECK-LABEL: lit.fn @"use_constraint_struct
+# CHECK-SAME: <x: !Int {{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
+fn use_constraint_struct[x: Int where x > 0, cs: ConstraintStruct[x]]():
+    pass
+
+# CHECK-LABEL: lit.fn @"use_constraint_struct
+# CHECK-SAME: <["a`"]*"a`": !Int {{.*}}ge(#lit.struct.extract<:!Int *"a`", "_mlir_value">, 1)
+fn use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
+    pass
+
+# CHECK-LABEL: lit.fn @"use_constraint_struct_in_constraint
+# CHECK-SAME: <x: !Int {
+# CHECK-SAME: ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
+# CHECK-SAME: ge({{.*}}add(#lit.struct.extract<:!Int x, "_mlir_value">, 1)}>, "_mlir_value">, 2)
+fn use_constraint_struct_in_constraint[
+    x: Int
+        where x > 0
+        where ConstraintStruct[x].b > 1
+]():
+    pass

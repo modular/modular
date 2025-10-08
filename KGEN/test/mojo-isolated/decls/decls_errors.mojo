@@ -346,6 +346,14 @@ fn test_constraints():
   # expected-error @+1 {{unable to satisfy constraint}}
   unprovable_constraints[2, 0]()
 
+# expected-note @below {{constraint declared here}}
+struct ConstraintStruct[a: Int where a > 0]:
+    pass
+
+# expected-error @below {{unable to satisfy constraint}}
+fn use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Function Overloading
 ##===----------------------------------------------------------------------===##
