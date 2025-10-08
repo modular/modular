@@ -84,7 +84,7 @@ def run_elementwise[
                 )
 
 
-def main():
+def test_rsqrt():
     with DeviceContext() as ctx:
         run_elementwise[DType.float16, sqrt](ctx)
         run_elementwise[DType.float32, sqrt](ctx)
@@ -92,3 +92,11 @@ def main():
         run_elementwise[DType.float16, rsqrt](ctx)
         run_elementwise[DType.float32, rsqrt](ctx)
         run_elementwise[DType.float64, rsqrt](ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_rsqrt]()
+
+    suite^.run()

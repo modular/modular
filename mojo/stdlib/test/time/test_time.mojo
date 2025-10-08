@@ -13,7 +13,7 @@
 
 from time import monotonic, perf_counter, perf_counter_ns, sleep, time_function
 
-from testing import assert_true
+from testing import assert_true, TestSuite
 
 
 @always_inline
@@ -46,7 +46,7 @@ fn time_capturing_function(iters: Int) -> Int:
     return time_function[time_fn]()
 
 
-fn test_time() raises:
+def test_time():
     alias ns_per_sec = 1_000_000_000
 
     assert_true(perf_counter() > 0)
@@ -74,4 +74,8 @@ fn test_time() raises:
 
 
 def main():
-    test_time()
+    var suite = TestSuite()
+
+    suite.test[test_time]()
+
+    suite^.run()

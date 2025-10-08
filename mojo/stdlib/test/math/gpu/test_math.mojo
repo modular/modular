@@ -14,6 +14,7 @@
 from math import *
 
 from gpu.host import DeviceContext
+from testing import TestSuite
 
 
 fn run_func[
@@ -85,7 +86,7 @@ fn powf_fn(val: SIMD) -> __type_of(val):
     return val**3.2
 
 
-def main():
+def test_math():
     with DeviceContext() as ctx:
 
         @parameter
@@ -142,3 +143,11 @@ def main():
             powf_fn,
             recip,
         ](ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_math]()
+
+    suite^.run()

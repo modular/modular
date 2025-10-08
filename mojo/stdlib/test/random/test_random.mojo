@@ -20,7 +20,7 @@ from random import (
     shuffle,
 )
 
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 def test_random():
@@ -214,6 +214,11 @@ def test_shuffle():
 
 
 def main():
-    test_random()
-    test_seed()
-    test_shuffle()
+    var suite = TestSuite()
+
+    suite.test[test_random]()
+    suite.test[test_seed_normal]()
+    suite.test[test_seed]()
+    suite.test[test_shuffle]()
+
+    suite^.run()

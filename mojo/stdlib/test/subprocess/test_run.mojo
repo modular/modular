@@ -16,5 +16,13 @@ from subprocess import run
 from testing import *
 
 
-def main():
+def test_run():
     assert_not_equal(run("ls"), "")
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_run]()
+
+    suite^.run()

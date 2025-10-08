@@ -15,12 +15,12 @@ from os import Atomic
 from time import time_function
 
 from runtime.asyncrt import TaskGroup
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 from utils.lock import BlockingScopedLock, BlockingSpinLock
 
 
-fn test_basic_lock() raises:
+def test_basic_lock():
     var lock = BlockingSpinLock()
     var rawCounter = 0
     var counter = Atomic[DType.int64](0)
@@ -66,4 +66,8 @@ fn test_basic_lock() raises:
 
 
 def main():
-    test_basic_lock()
+    var suite = TestSuite()
+
+    suite.test[test_basic_lock]()
+
+    suite^.run()

@@ -14,7 +14,7 @@
 from math import cos, sin
 
 from gpu.host import DeviceContext
-from testing import assert_almost_equal
+from testing import assert_almost_equal, TestSuite
 
 
 fn run_func[
@@ -46,7 +46,7 @@ fn run_func[
         )
 
 
-def main():
+def test_trig():
     @parameter
     fn cos_fn(val: Float16) -> Float16:
         return cos(val)
@@ -68,3 +68,11 @@ def main():
         run_func[DType.float16, cos_fn]("cos", 10, -0.8388671875, ctx)
         run_func[DType.float32, sin_fn]("sin", 10, -0.54402029514312744, ctx)
         run_func[DType.float16, sin_fn]("sin", 10, -0.5439453125, ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_trig]()
+
+    suite^.run()

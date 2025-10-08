@@ -14,7 +14,7 @@
 import os
 import pwd
 
-from testing import assert_equal, assert_raises, assert_true
+from testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
 def test_pwuid():
@@ -47,5 +47,9 @@ def test_pwnam():
 
 
 def main():
-    test_pwuid()
-    test_pwnam()
+    var suite = TestSuite()
+
+    suite.test[test_pwuid]()
+    suite.test[test_pwnam]()
+
+    suite^.run()

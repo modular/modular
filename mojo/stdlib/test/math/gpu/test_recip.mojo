@@ -14,7 +14,7 @@
 from math import recip
 
 from gpu.host import DeviceContext
-from testing import assert_almost_equal
+from testing import assert_almost_equal, TestSuite
 
 
 fn run_func[
@@ -39,9 +39,17 @@ fn run_func[
         )
 
 
-def main():
+def test_recip():
     with DeviceContext() as ctx:
         run_func[DType.float64](8, 0.125, ctx)
         run_func[DType.float32](5, 0.2, ctx)
         run_func[DType.float16](-4, -0.25, ctx)
         run_func[DType.bfloat16](2, 0.5, ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_recip]()
+
+    suite^.run()

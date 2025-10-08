@@ -18,7 +18,7 @@ from algorithm.functional import elementwise
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal, TestSuite
 
 from utils import Index, IndexList
 
@@ -81,7 +81,7 @@ def test_exp2[dtype: DType](ctx: DeviceContext):
     run_elementwise[dtype, exp2](ctx, input)
 
 
-def main():
+def test_math_accuracy():
     with DeviceContext() as ctx:
         test_exp[DType.float32](ctx)
         test_exp[DType.float16](ctx)
@@ -89,3 +89,11 @@ def main():
         test_exp2[DType.float32](ctx)
         test_exp2[DType.float16](ctx)
         test_exp2[DType.bfloat16](ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_math_accuracy]()
+
+    suite^.run()

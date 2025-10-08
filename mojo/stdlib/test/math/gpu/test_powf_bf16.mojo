@@ -17,7 +17,7 @@ from algorithm.functional import elementwise
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext, get_gpu_target
-from testing import assert_almost_equal
+from testing import assert_almost_equal, TestSuite
 
 from utils import Index, IndexList
 
@@ -67,8 +67,16 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
             )
 
 
-def main():
+def test_powf_bf16():
     # NOTE: This is expected to fail. Keeping this around as a negative test
     # so we know when its fixed.
     with DeviceContext() as ctx:
         run_elementwise(0.375, ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_powf_bf16]()
+
+    suite^.run()

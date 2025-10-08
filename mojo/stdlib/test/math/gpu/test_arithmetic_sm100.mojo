@@ -16,7 +16,7 @@ from random import random_float64
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext, HostBuffer
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 fn simd_add_kernel[
@@ -182,7 +182,7 @@ def test_arithmetic[
         assert_equal(c_result[i], c_expected[i])
 
 
-def main():
+def test_arithmetic_sm100():
     with DeviceContext() as ctx:
         test_arithmetic[2, "add"](ctx)
         test_arithmetic[4, "add"](ctx)
@@ -193,3 +193,11 @@ def main():
         test_arithmetic[2, "fma"](ctx)
         test_arithmetic[4, "fma"](ctx)
         test_arithmetic[8, "fma"](ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_arithmetic_sm100]()
+
+    suite^.run()

@@ -18,7 +18,7 @@ from algorithm.functional import elementwise
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext, get_gpu_target
-from testing import assert_almost_equal
+from testing import assert_almost_equal, TestSuite
 
 from utils import Index, IndexList
 
@@ -69,7 +69,7 @@ def run_elementwise[
             )
 
 
-def main():
+def test_log():
     with DeviceContext() as ctx:
         run_elementwise[DType.float32, log](ctx)
         run_elementwise[DType.float32, log10](ctx)
@@ -80,3 +80,11 @@ def main():
         run_elementwise[DType.bfloat16, log](ctx)
         run_elementwise[DType.bfloat16, log10](ctx)
         run_elementwise[DType.bfloat16, log2](ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_log]()
+
+    suite^.run()

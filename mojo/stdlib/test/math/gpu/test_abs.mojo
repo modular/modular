@@ -13,7 +13,7 @@
 
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
-from testing import assert_true
+from testing import assert_true, TestSuite
 
 alias A100_TARGET = get_gpu_target["sm_80"]()
 alias MI300X_TARGET = get_gpu_target["mi300x"]()
@@ -88,4 +88,8 @@ def test_abs():
 
 
 def main():
-    test_abs()
+    var suite = TestSuite()
+
+    suite.test[test_abs]()
+
+    suite^.run()

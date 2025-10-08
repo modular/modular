@@ -16,7 +16,7 @@ from os.path import exists, split
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory, gettempdir, mkdtemp
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_mkdtemp():
@@ -80,7 +80,7 @@ struct TempEnvWithCleanup:
         return False
 
 
-fn _clean_up_gettempdir_test() raises:
+def _clean_up_gettempdir_test():
     var dir_without_writing_access = Path() / "dir_without_writing_access"
     if exists(dir_without_writing_access):
         os.rmdir(dir_without_writing_access)
@@ -230,8 +230,12 @@ def test_named_temporary_file_write():
 
 
 def main():
-    test_mkdtemp()
-    test_gettempdir()
-    test_temporary_directory()
-    test_named_temporary_file_write()
-    test_named_temporary_file_deletion()
+    var suite = TestSuite()
+
+    suite.test[test_mkdtemp]()
+    suite.test[test_gettempdir]()
+    suite.test[test_temporary_directory]()
+    suite.test[test_named_temporary_file_write]()
+    suite.test[test_named_temporary_file_deletion]()
+
+    suite^.run()

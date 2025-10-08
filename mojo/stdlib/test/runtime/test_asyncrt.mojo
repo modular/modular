@@ -13,9 +13,11 @@
 
 from runtime.asyncrt import create_task
 
+from testing import TestSuite
+
 
 # CHECK-LABEL: test_runtime_task
-fn test_runtime_task():
+def test_runtime_task():
     print("== test_runtime_task")
 
     @parameter
@@ -34,7 +36,7 @@ fn test_runtime_task():
 
 
 # CHECK-LABEL: test_runtime_taskgroup
-fn test_runtime_taskgroup():
+def test_runtime_taskgroup():
     print("== test_runtime_taskgroup")
 
     @parameter
@@ -54,5 +56,9 @@ fn test_runtime_taskgroup():
 
 
 def main():
-    test_runtime_task()
-    test_runtime_taskgroup()
+    var suite = TestSuite()
+
+    suite.test[test_runtime_task]()
+    suite.test[test_runtime_taskgroup]()
+
+    suite^.run()
