@@ -22,6 +22,7 @@ from max.nn import (
 from max.nn.kernels import (
     dynamic_scaled_matmul,
     fused_qkv_ragged_matmul_scaled_float8,
+    matmul_k_cache_ragged_scaled_float8,
 )
 from max.nn.kv_cache import (
     KVCacheParams,
@@ -438,3 +439,247 @@ def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
                 TensorType(DType.bfloat16, shape=(1, 1), device=device),
             ],
         )
+
+
+def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
+    """Tests matmul_k_cache_ragged_scaled_float8 with all tensors on same device."""
+    device = DeviceRef.CPU()
+    scale_granularity = (1, 128, 128)
+
+    # Create KV cache parameters
+    kv_params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=64,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+    )
+
+    with Graph(
+        "matmul_k_cache_ragged_scaled_float8",
+        input_types=[
+            # hidden_states
+            TensorType(DType.float8_e4m3fn, shape=(10, 512), device=device),
+            # input_row_offsets
+            TensorType(DType.uint32, shape=(3,), device=device),
+            # weight
+            TensorType(DType.float8_e4m3fn, shape=(8, 512), device=device),
+            # input_scale
+            TensorType(DType.float32, shape=(10, 4), device=device),
+            # weight_scale
+            TensorType(DType.float32, shape=(4, 1), device=device),
+            # KV cache collection inputs
+            # blocks: [num_pages, 2, n_kv_heads, page_size, head_dim]
+            BufferType(
+                DType.bfloat16, shape=(16, 2, 8, 128, 64), device=device
+            ),
+            # cache_lengths: [batch_size]
+            TensorType(DType.uint32, shape=(2,), device=device),
+            # lookup_table: [batch_size, max_pages]
+            TensorType(DType.uint32, shape=(2, 8), device=device),
+            # is_cache_empty: scalar
+            TensorType(DType.uint32, shape=(), device=device),
+            # layer_idx
+            TensorType(DType.uint32, shape=(), device=device),
+        ],
+    ) as graph:
+        (
+            hidden_states,
+            input_row_offsets,
+            weight,
+            input_scale,
+            weight_scale,
+            blocks,
+            cache_lengths,
+            lookup_table,
+            is_cache_empty,
+            layer_idx,
+        ) = graph.inputs
+        kv_collection = PagedCacheValues(
+            blocks.buffer,
+            cache_lengths.tensor,
+            lookup_table.tensor,
+            is_cache_empty.tensor,
+        )
+        matmul_k_cache_ragged_scaled_float8(
+            kv_params,
+            hidden_states.tensor,
+            input_row_offsets.tensor,
+            weight.tensor,
+            input_scale.tensor,
+            weight_scale.tensor,
+            kv_collection,
+            scale_granularity,
+            layer_idx.tensor,
+        )
+
+
+def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
+    """Tests matmul_k_cache_ragged_scaled_float8 with invalid inputs."""
+    device = DeviceRef.CPU()
+    scale_granularity = (1, 128, 128)
+
+    # Create KV cache parameters
+    kv_params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=64,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+    )
+
+    def get_valid_input_types() -> list[TensorType | BufferType]:
+        return [
+            # hidden_states
+            TensorType(DType.float8_e4m3fn, shape=(10, 512), device=device),
+            # input_row_offsets
+            TensorType(DType.uint32, shape=(3,), device=device),
+            # weight
+            TensorType(DType.float8_e4m3fn, shape=(8, 512), device=device),
+            # input_scale
+            TensorType(DType.float32, shape=(10, 4), device=device),
+            # weight_scale
+            TensorType(DType.float32, shape=(4, 1), device=device),
+            # KV cache collection inputs
+            # blocks: [num_pages, 2, n_kv_heads, page_size, head_dim]
+            BufferType(
+                DType.bfloat16, shape=(16, 2, 8, 128, 64), device=device
+            ),
+            # cache_lengths: [batch_size]
+            TensorType(DType.uint32, shape=(2,), device=device),
+            # lookup_table: [batch_size, max_pages]
+            TensorType(DType.uint32, shape=(2, 8), device=device),
+            # is_cache_empty: scalar
+            TensorType(DType.uint32, shape=(), device=device),
+            # layer_idx
+            TensorType(DType.uint32, shape=(), device=device),
+        ]
+
+    def try_create_graph(input_types: list[TensorType | BufferType]) -> None:
+        with Graph(
+            "matmul_k_cache_ragged_scaled_float8",
+            input_types=input_types,
+        ) as graph:
+            (
+                hidden_states,
+                input_row_offsets,
+                weight,
+                input_scale,
+                weight_scale,
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+                layer_idx,
+            ) = graph.inputs
+            kv_collection = PagedCacheValues(
+                blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                is_cache_empty.tensor,
+            )
+            matmul_k_cache_ragged_scaled_float8(
+                kv_params,
+                hidden_states.tensor,
+                input_row_offsets.tensor,
+                weight.tensor,
+                input_scale.tensor,
+                weight_scale.tensor,
+                kv_collection,
+                scale_granularity,
+                layer_idx.tensor,
+            )
+
+    # Test 1: hidden_states and weight dtype mismatch
+    invalid_types = get_valid_input_types()
+    invalid_types[0].dtype = DType.bfloat16  # hidden_states
+    with pytest.raises(
+        ValueError,
+        match="expected hidden_states and weight to have the same dtype",
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 2: weight and hidden_states dtype mismatch (reverse case)
+    invalid_types = get_valid_input_types()
+    invalid_types[2].dtype = DType.bfloat16  # weight
+    with pytest.raises(
+        ValueError,
+        match="expected hidden_states and weight to have the same dtype",
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 3: input_row_offsets with invalid dtype (should be uint32)
+    invalid_types = get_valid_input_types()
+    invalid_types[1].dtype = DType.int32  # input_row_offsets
+    with pytest.raises(
+        ValueError, match="expected input_row_offsets to have dtype uint32"
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 4: layer_idx with invalid dtype (should be uint32)
+    invalid_types = get_valid_input_types()
+    invalid_types[9].dtype = DType.int32  # layer_idx
+    with pytest.raises(
+        ValueError, match="expected layer_idx to have dtype uint32"
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 5: hidden_states with invalid rank (should be 2)
+    invalid_types = get_valid_input_types()
+    invalid_types[0] = TensorType(
+        # rank 3
+        DType.float8_e4m3fn,
+        shape=(10, 512, 1),
+        device=device,
+    )
+    with pytest.raises(
+        ValueError, match="expected hidden_states to have rank 2"
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 6: unsupported cache strategy (should be PAGED)
+    invalid_kv_params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=64,
+        cache_strategy=KVCacheStrategy.MODEL_DEFAULT,  # Invalid strategy
+        page_size=128,
+    )
+
+    with Graph(
+        "matmul_k_cache_ragged_scaled_float8",
+        input_types=get_valid_input_types(),
+    ) as graph:
+        (
+            hidden_states,
+            input_row_offsets,
+            weight,
+            input_scale,
+            weight_scale,
+            blocks,
+            cache_lengths,
+            lookup_table,
+            is_cache_empty,
+            layer_idx,
+        ) = graph.inputs
+        kv_collection = PagedCacheValues(
+            blocks.buffer,
+            cache_lengths.tensor,
+            lookup_table.tensor,
+            is_cache_empty.tensor,
+        )
+        with pytest.raises(
+            ValueError,
+            match="unsupported cache strategy for matmul_kv_cache_ragged",
+        ):
+            matmul_k_cache_ragged_scaled_float8(
+                invalid_kv_params,  # Use invalid params
+                hidden_states.tensor,
+                input_row_offsets.tensor,
+                weight.tensor,
+                input_scale.tensor,
+                weight_scale.tensor,
+                kv_collection,
+                scale_granularity,
+                layer_idx.tensor,
+            )
