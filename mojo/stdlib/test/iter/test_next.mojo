@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
+from testing import TestSuite, assert_equal, assert_true
 
 
 fn test_next() raises:
@@ -37,4 +37,8 @@ fn test_next() raises:
 
 
 def main():
-    test_next()
+    var suite = TestSuite()
+
+    suite.test[test_next]()
+
+    suite^.run()

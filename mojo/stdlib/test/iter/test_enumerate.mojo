@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
+from testing import TestSuite, assert_equal, assert_true
 
 
 fn test_enumerate() raises:
@@ -70,7 +70,11 @@ def test_enumerate_bounds():
 
 
 def main():
-    test_enumerate()
-    test_enumerate_with_start()
-    test_enumerate_destructure()
-    test_enumerate_bounds()
+    var suite = TestSuite()
+
+    suite.test[test_enumerate]()
+    suite.test[test_enumerate_with_start]()
+    suite.test[test_enumerate_destructure]()
+    suite.test[test_enumerate_bounds]()
+
+    suite^.run()
