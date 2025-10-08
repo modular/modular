@@ -87,10 +87,9 @@ def test_text_and_vision_tokenizer() -> None:
             )
 
             if not imgs_list:
-                assert context.pixel_values is None
+                assert len(context.images) == 0
             else:
-                assert context.pixel_values is not None
-                assert len(context.pixel_values) == len(imgs_list)
+                assert len(context.images) == len(imgs_list)
 
 
 @pytest.mark.skip("CI does not appear to be working well with gated repos")

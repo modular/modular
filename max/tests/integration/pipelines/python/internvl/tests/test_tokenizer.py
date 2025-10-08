@@ -137,8 +137,8 @@ async def test_internvl_tokenizer_image_token_indices(
     # IMAGE_CONTEXT_TOKEN_ID = 151667
     tokenizer.processor = MagicMock()
     tokenizer.processor.return_value = {
-        # 3 image tokens at positions 2, 3, 5
-        "input_ids": [1, 2, 151667, 151667, 3, 151667, 4],
+        # 2 image tokens at positions 2, 3
+        "input_ids": [1, 2, 151667, 151667, 3, 4],
         # Mock image data
         "pixel_values": [[np.zeros((448, 448, 3), dtype=np.float32)]],
         # Pre-computed indices
@@ -186,7 +186,8 @@ async def test_internvl_tokenizer_image_placement(
     mock_tokenizer = MagicMock()
     mock_tokenizer.eos_token_id = 2
     mock_tokenizer.model_max_length = 4096
-    mock_tokenizer.return_value = {"input_ids": [1, 2, 3]}
+    # Need one image in input_ids
+    mock_tokenizer.return_value = {"input_ids": [1, 2, 151667, 151667, 3, 4]}
 
     # Define a fixed, multi-turn prompt that the mocked template will return.
     # This simulates the output of the real chat template.

@@ -17,7 +17,12 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.pipelines.core import (
+    ImageMetadata,
+    TextAndVisionContext,
+    TextContext,
+    TTSContext,
+)
 
 
 def test_context__get_min_token_logit_mask() -> None:
@@ -457,8 +462,15 @@ def test_text_and_vision_context_serializable() -> None:
     # Test that we can encode a sample TextAndVisionContext with Pickle
     original_context = TextAndVisionContext(
         max_length=50,
-        tokens=np.array([0, 1, 2, 3, 4]),
-        pixel_values=(np.array([10, 11, 12, 13, 14]),),
+        tokens=np.array([0, 0, 2, 3, 4]),
+        images=[
+            ImageMetadata(
+                start_idx=0,
+                end_idx=2,
+                pixel_values=np.array([99]),
+            )
+        ],
+        vision_token_ids=[0],
     )
 
     pickle_encoded = pickle.dumps(original_context)
@@ -481,7 +493,8 @@ def test_text_and_vision_context_serializable_empty_pixel_values() -> None:
     original_context = TextAndVisionContext(
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
-        pixel_values=tuple(),
+        images=[],
+        vision_token_ids=[98],
     )
 
     pickle_encoded = pickle.dumps(original_context)
@@ -503,8 +516,15 @@ def test_text_and_vision_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, TextAndVisionContext) with Pickle
     original_context = TextAndVisionContext(
         max_length=50,
-        tokens=np.array([0, 1, 2, 3, 4]),
-        pixel_values=(np.array([10, 11, 12, 13, 14]),),
+        tokens=np.array([0, 0, 2, 3, 4]),
+        images=[
+            ImageMetadata(
+                start_idx=0,
+                end_idx=2,
+                pixel_values=np.array([99]),
+            )
+        ],
+        vision_token_ids=[0],
     )
     original_tuple = ("test_key", original_context)
 
@@ -589,26 +609,33 @@ def test_vision_context_reset() -> None:
     context = TextAndVisionContext(
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
-        pixel_values=(np.array([10, 11, 12, 13, 14]),),
+        images=[
+            ImageMetadata(
+                start_idx=0,
+                end_idx=1,
+                pixel_values=np.array([10, 11, 12, 13, 14]),
+            )
+        ],
+        vision_token_ids=[0],
     )
-    assert len(context.pixel_values) == 1
-    assert context.pixel_values[0].tolist() == [10, 11, 12, 13, 14]
+    assert len(context.images) == 1
+    assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
     assert context.start_idx == 0
     assert context.active_length == 5
     assert context.needs_vision_encoding is True
 
     # The pixel values should remain set after update, but needs_vision_encoding should be False.
     context.update(5)
-    assert len(context.pixel_values) == 1
-    assert context.pixel_values[0].tolist() == [10, 11, 12, 13, 14]
+    assert len(context.images) == 1
+    assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
     assert context.needs_vision_encoding is False
     assert context.start_idx == 5
     assert context.active_length == 1
 
     # The pixel values should be restored after reset.
     context.reset()
-    assert len(context.pixel_values) == 1
-    assert context.pixel_values[0].tolist() == [10, 11, 12, 13, 14]
+    assert len(context.images) == 1
+    assert context.images[0].pixel_values.tolist() == [10, 11, 12, 13, 14]
     assert context.start_idx == 0
     assert context.active_length == 6
     assert context.needs_vision_encoding is True
@@ -767,3 +794,194 @@ def test_context__chunked_prefill_needs_ce_edge_case() -> None:
     assert (
         context.status == GenerationStatus.ACTIVE
     )  # Still active, but generating completions
+
+
+def test_text_and_vision_context_post_init() -> None:
+    # ok (contains one <vision_token_id>)
+    _ = ImageMetadata(
+        start_idx=0,
+        end_idx=1,
+        pixel_values=np.array([99]),
+    )
+
+    # not ok since start_idx is negative
+    with pytest.raises(ValueError):
+        _ = ImageMetadata(
+            start_idx=-1,
+            end_idx=1,
+            pixel_values=np.array([99]),
+        )
+
+    # not ok since there are no room for any <vision_token_id>
+    with pytest.raises(ValueError):
+        _ = ImageMetadata(
+            start_idx=0,
+            end_idx=0,
+            pixel_values=np.array([99]),
+        )
+
+    # ok (no images)
+    _ = TextAndVisionContext(
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+        images=[],
+        vision_token_ids=[98],
+    )
+
+
+def test_text_and_vision_context_happy_case() -> None:
+    # fmt: off
+    #                                      |<-- img0 --->|                         |<--- img1 -->|
+    #                   0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  21  22  23
+    tokens = np.array([51, 52, 53, 54, 97, 98, 98, 98, 98, 99, 55, 56, 57, 58, 97, 98, 98, 98, 98, 99, 59, 60, 61, 62])
+    # fmt: on
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=tokens,
+        images=[
+            ImageMetadata(
+                start_idx=5,
+                end_idx=9,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=15,
+                end_idx=19,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
+
+    assert ctx.compute_image_aligned_idx(7) == 5
+    assert ctx.compute_image_aligned_idx(8) == 5
+    assert ctx.compute_image_aligned_idx(9) == 9
+    assert ctx.compute_image_aligned_idx(10) == 10
+
+    assert ctx.compute_image_aligned_idx(13) == 13
+    assert ctx.compute_image_aligned_idx(14) == 14
+    assert ctx.compute_image_aligned_idx(15) == 15
+    assert ctx.compute_image_aligned_idx(17) == 15
+    assert ctx.compute_image_aligned_idx(18) == 15
+    assert ctx.compute_image_aligned_idx(19) == 19
+    assert ctx.compute_image_aligned_idx(20) == 20
+
+    assert ctx._image_idx == 0
+    assert ctx.needs_vision_encoding is True
+    assert len(ctx.next_images) == 2
+
+    ctx.set_token_indices(start_idx=9)
+    assert ctx._image_idx == 1
+    assert ctx.needs_vision_encoding is True
+    assert len(ctx.next_images) == 1
+
+    ctx.set_token_indices(start_idx=14)
+    assert ctx._image_idx == 1
+    assert ctx.needs_vision_encoding is True
+    assert len(ctx.next_images) == 1
+
+    ctx.set_token_indices(start_idx=19)
+    assert ctx._image_idx == 2
+    assert ctx.needs_vision_encoding is False
+    assert len(ctx.next_images) == 0
+
+
+def test_text_and_vision_context_sad_case() -> None:
+    # fmt: off
+    #                                      |<-- img0 --->|                         |<--- img1 -->|
+    #                   0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  21  22  23
+    tokens = np.array([51, 52, 53, 54, 97, 98, 98, 98, 98, 99, 55, 56, 57, 58, 97, 98, 98, 98, 98, 99, 59, 60, 61, 62])
+    # fmt: on
+
+    with pytest.raises(ValueError, match="Images must be non-overlapping"):
+        _ = TextAndVisionContext(
+            max_length=50,
+            tokens=tokens,
+            images=[
+                ImageMetadata(
+                    start_idx=5,
+                    end_idx=9,
+                    pixel_values=np.array([99]),
+                ),
+                # This overlaps with img0
+                ImageMetadata(
+                    start_idx=9,
+                    end_idx=19,
+                    pixel_values=np.array([99]),
+                ),
+            ],
+            vision_token_ids=[98],
+        )
+
+    with pytest.raises(ValueError, match="Images must be sorted"):
+        _ = TextAndVisionContext(
+            max_length=50,
+            tokens=tokens,
+            images=[
+                ImageMetadata(
+                    start_idx=15,
+                    end_idx=19,
+                    pixel_values=np.array([99]),
+                ),
+                ImageMetadata(
+                    start_idx=5,
+                    end_idx=9,
+                    pixel_values=np.array([99]),
+                ),
+            ],
+            vision_token_ids=[98],
+        )
+
+    with pytest.raises(
+        ValueError, match="Images must be before the end of the token array"
+    ):
+        _ = TextAndVisionContext(
+            max_length=50,
+            tokens=tokens,
+            images=[
+                ImageMetadata(
+                    start_idx=20,
+                    end_idx=25,
+                    pixel_values=np.array([99]),
+                ),
+            ],
+            vision_token_ids=[98],
+        )
+
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=tokens,
+        images=[
+            ImageMetadata(
+                start_idx=5,
+                end_idx=9,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=15,
+                end_idx=19,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
+    with pytest.raises(
+        ValueError,
+        match="It is invalid for the start_idx \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
+    ):
+        ctx.set_token_indices(start_idx=7)
+
+    with pytest.raises(
+        ValueError,
+        match="Images must be filled with <vision_token_id>",
+    ):
+        _ = TextAndVisionContext(
+            max_length=50,
+            tokens=tokens,
+            images=[
+                ImageMetadata(
+                    start_idx=5, end_idx=9, pixel_values=np.array([99])
+                ),
+            ],
+            vision_token_ids=[123],
+        )
