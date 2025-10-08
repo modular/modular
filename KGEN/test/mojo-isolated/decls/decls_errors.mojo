@@ -354,6 +354,14 @@ struct ConstraintStruct[a: Int where a > 0]:
 fn use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
     pass
 
+# expected-error @below {{default value violated constraint}}
+fn violated_default_constraint[x: Int where x > 3 = 1]():
+    pass
+
+# There should NOT be any errors / warnings here.
+fn unprovable_default_constraint[x: Int = 3, y: Int where x + y > 3 = 1]():
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Function Overloading
 ##===----------------------------------------------------------------------===##

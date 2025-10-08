@@ -238,6 +238,13 @@ LogicalResult checkConstraints(ASTDecl &declScope,
                                const ParamBindings::DiagEmitter *diagEmitter,
                                ParameterEvaluator *evaluator = nullptr);
 
+LogicalResult checkConstraints(
+    ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
+    llvm::function_ref<void(ArrayRef<ConstraintAttr>)> emitConstraintViolations,
+    llvm::function_ref<void(ArrayRef<ConstraintAttr>)>
+        emitUnprovableConstraints,
+    ParameterEvaluator *evaluator = nullptr);
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_PARAMBINDINGS_H
