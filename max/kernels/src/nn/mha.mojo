@@ -495,6 +495,45 @@ fn flash_attention_dispatch[
                     decoding=False, depth=depth
                 ](q)
 
+                var sink_weights_lt: OptionalReg[
+                    LayoutTensor[
+                        q.type,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ] = None
+                if sink_weights:
+                    sink_weights_lt = LayoutTensor[
+                        q.type,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ](
+                        sink_weights.value().data,
+                        RuntimeLayout[
+                            Layout.row_major(UNKNOWN_VALUE)
+                        ].row_major(IndexList[1](sink_weights.value().size())),
+                    )
+                var kv_input_row_offsets_lt: OptionalReg[
+                    LayoutTensor[
+                        DType.uint32,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ] = None
+                if kv_input_row_offsets:
+                    kv_input_row_offsets_lt = LayoutTensor[
+                        DType.uint32,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ](
+                        kv_input_row_offsets.value().data,
+                        RuntimeLayout[
+                            Layout.row_major(UNKNOWN_VALUE)
+                        ].row_major(
+                            IndexList[1](kv_input_row_offsets.value().size())
+                        ),
+                    )
+
                 @parameter
                 if is_sm90:
                     mha_sm90_dispatch[
@@ -518,11 +557,11 @@ fn flash_attention_dispatch[
                         DynamicInt(max_prompt_len),
                         max_cache_valid_length,
                         scale,
-                        kv_input_row_offsets,
+                        kv_input_row_offsets_lt,
                         batch_size,
                         NoPartition[get_accum_type[q.dtype]()](),
                         ctx,
-                        sink_weights,
+                        sink_weights_lt,
                     )
                 else:
                     constrained[is_sm100]()
@@ -720,6 +759,50 @@ fn flash_attention_dispatch[
 
                         @parameter
                         if is_sm90:
+                            var sink_weights_lt: OptionalReg[
+                                LayoutTensor[
+                                    q.type,
+                                    Layout.row_major(UNKNOWN_VALUE),
+                                    MutableAnyOrigin,
+                                ]
+                            ] = None
+                            if sink_weights:
+                                sink_weights_lt = LayoutTensor[
+                                    q.type,
+                                    Layout.row_major(UNKNOWN_VALUE),
+                                    MutableAnyOrigin,
+                                ](
+                                    sink_weights.value().data,
+                                    RuntimeLayout[
+                                        Layout.row_major(UNKNOWN_VALUE)
+                                    ].row_major(
+                                        IndexList[1](
+                                            sink_weights.value().size()
+                                        )
+                                    ),
+                                )
+                            var kv_input_row_offsets_lt: OptionalReg[
+                                LayoutTensor[
+                                    DType.uint32,
+                                    Layout.row_major(UNKNOWN_VALUE),
+                                    MutableAnyOrigin,
+                                ]
+                            ] = None
+                            if kv_input_row_offsets:
+                                kv_input_row_offsets_lt = LayoutTensor[
+                                    DType.uint32,
+                                    Layout.row_major(UNKNOWN_VALUE),
+                                    MutableAnyOrigin,
+                                ](
+                                    kv_input_row_offsets.value().data,
+                                    RuntimeLayout[
+                                        Layout.row_major(UNKNOWN_VALUE)
+                                    ].row_major(
+                                        IndexList[1](
+                                            kv_input_row_offsets.value().size()
+                                        )
+                                    ),
+                                )
                             mha_sm90_dispatch[
                                 config=config,
                                 group=group,
@@ -741,11 +824,11 @@ fn flash_attention_dispatch[
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
-                                kv_input_row_offsets,
+                                kv_input_row_offsets_lt,
                                 batch_size,
                                 NoPartition[accum_type](),
                                 ctx,
-                                sink_weights,
+                                sink_weights_lt,
                             )
                         else:
                             mha_sm100_dispatch[
@@ -873,6 +956,50 @@ fn flash_attention_dispatch[
 
                         @parameter
                         if is_sm90:
+                            var sink_weights_lt: OptionalReg[
+                                LayoutTensor[
+                                    q.type,
+                                    Layout.row_major(UNKNOWN_VALUE),
+                                    MutableAnyOrigin,
+                                ]
+                            ] = None
+                            if sink_weights:
+                                sink_weights_lt = LayoutTensor[
+                                    q.type,
+                                    Layout.row_major(UNKNOWN_VALUE),
+                                    MutableAnyOrigin,
+                                ](
+                                    sink_weights.value().data,
+                                    RuntimeLayout[
+                                        Layout.row_major(UNKNOWN_VALUE)
+                                    ].row_major(
+                                        IndexList[1](
+                                            sink_weights.value().size()
+                                        )
+                                    ),
+                                )
+                            var kv_input_row_offsets_lt: OptionalReg[
+                                LayoutTensor[
+                                    DType.uint32,
+                                    Layout.row_major(UNKNOWN_VALUE),
+                                    MutableAnyOrigin,
+                                ]
+                            ] = None
+                            if kv_input_row_offsets:
+                                kv_input_row_offsets_lt = LayoutTensor[
+                                    DType.uint32,
+                                    Layout.row_major(UNKNOWN_VALUE),
+                                    MutableAnyOrigin,
+                                ](
+                                    kv_input_row_offsets.value().data,
+                                    RuntimeLayout[
+                                        Layout.row_major(UNKNOWN_VALUE)
+                                    ].row_major(
+                                        IndexList[1](
+                                            kv_input_row_offsets.value().size()
+                                        )
+                                    ),
+                                )
                             mha_sm90_dispatch[
                                 config=config,
                                 group=group,
@@ -894,14 +1021,14 @@ fn flash_attention_dispatch[
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
-                                kv_input_row_offsets,
+                                kv_input_row_offsets_lt,
                                 batch_size,
                                 SplitKPartition(
                                     exp_sum_qk_max_data.unsafe_ptr(),
                                     num_partitions_value,
                                 ),
                                 ctx,
-                                sink_weights,
+                                sink_weights_lt,
                             )
                         else:
                             mha_sm100_dispatch[
