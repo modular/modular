@@ -11,18 +11,14 @@ import numpy as np
 import pytest
 from max.interfaces import (
     GenerationStatus,
+    ImageMetadata,
     RequestID,
     SamplingParams,
     msgpack_eq,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core import (
-    ImageMetadata,
-    TextAndVisionContext,
-    TextContext,
-    TTSContext,
-)
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 
 
 def test_context__get_min_token_logit_mask() -> None:
@@ -866,22 +862,22 @@ def test_text_and_vision_context_happy_case() -> None:
     assert ctx.compute_image_aligned_idx(19) == 19
     assert ctx.compute_image_aligned_idx(20) == 20
 
-    assert ctx._image_idx == 0
+    assert ctx.image_idx == 0
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 2
 
     ctx.set_token_indices(start_idx=9)
-    assert ctx._image_idx == 1
+    assert ctx.image_idx == 1
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 1
 
     ctx.set_token_indices(start_idx=14)
-    assert ctx._image_idx == 1
+    assert ctx.image_idx == 1
     assert ctx.needs_vision_encoding is True
     assert len(ctx.next_images) == 1
 
     ctx.set_token_indices(start_idx=19)
-    assert ctx._image_idx == 2
+    assert ctx.image_idx == 2
     assert ctx.needs_vision_encoding is False
     assert len(ctx.next_images) == 0
 
