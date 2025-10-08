@@ -184,7 +184,7 @@ struct TestSuite(Movable):
             " ",
             Text[Color.MAGENTA]("Summary"),
             " [ ",
-            _format_nsec(runtime),
+            _format_nsec(UInt(runtime)),
             " ] ",
             Text[Color.BOLD_WHITE](n_tests),
             " tests run: ",

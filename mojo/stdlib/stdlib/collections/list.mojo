@@ -1023,7 +1023,7 @@ struct List[T: Copyable & Movable](
         while length > 1:
             var half = length >> 1
             length -= half
-            cursor += UInt(Int(b[cursor + half - 1] < needle) * half)
+            cursor += UInt(Int(b[cursor + UInt(half) - 1] < needle) * half)
 
         return Optional(cursor) if b[cursor] == needle else None
 

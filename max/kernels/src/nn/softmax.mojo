@@ -697,7 +697,7 @@ fn softmax_kernel[
 
         @parameter
         if sink:
-            sink_val = sink_weights[row_idx % sink_weights.dim[0]()].cast[
+            sink_val = sink_weights[row_idx % UInt(sink_weights.dim[0]())].cast[
                 accum_type
             ]()
 
@@ -1112,7 +1112,9 @@ fn _online_softmax_iter_for_mma_output[
 
     var tid = thread_idx.x
     var lane = lane_id()
-    var warp_x = warp.broadcast(tid // WARP_SIZE) % UInt(num_rowwise_warps)
+    var warp_x = warp.broadcast(tid // UInt(WARP_SIZE)) % UInt(
+        num_rowwise_warps
+    )
 
     # Assume p_reg_tile has been properly vectorized. The element layout
     # represents number elements per thread in a row or column
@@ -1368,7 +1370,7 @@ fn _online_softmax_iter_for_mma_output[
                     )
 
                     warp_scratch[
-                        warp_x + num_rowwise_warps, Int(score_row_idx)
+                        warp_x + UInt(num_rowwise_warps), Int(score_row_idx)
                     ] = score_frag_rowsum[col_tile, row][0]
 
         # Guard writing warp_scratch
@@ -1544,7 +1546,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     var tid = thread_idx.x
     var lane = lane_id()
-    var warp_y, warp_x = divmod(tid // WARP_SIZE, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(tid // UInt(WARP_SIZE), UInt(num_warps_n))
 
     alias fragment_layout = Layout.row_major(
         1, 2
@@ -1584,7 +1586,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
     var o_smem_ptr = (
         o_smem_ptr_base
-        + warp_y * (num_warps_n - 1) * row_warp_tile_size if num_warps_m
+        + warp_y
+        * UInt(num_warps_n - 1)
+        * UInt(row_warp_tile_size) if num_warps_m
         > 1 else o_smem_ptr_base
     )
 
@@ -1592,7 +1596,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
 
     alias o_smem_layout = Layout.row_major(
-        WM * WN // (2 * frag_size), frag_size
+        WM * WN // UInt(2 * frag_size), frag_size
     )
 
     alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
@@ -1795,7 +1799,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             # -----------------------------------
             # `N\X` refer to `warp_n`, `warp_x`
             alias row = warp_n
-            var col = warp_x - (1 if warp_x > warp_n else 0)
+            var col = warp_x - UInt(1 if warp_x > UInt(warp_n) else 0)
             var o_smem_ptr_write = (
                 o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
             )
@@ -1828,7 +1832,8 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         var row = warp_x
         alias col = warp_n
         var o_smem_ptr_reduce = (
-            o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
+            o_smem_ptr
+            + (row * UInt(num_warps_n - 1) + UInt(col)) * warp_tile_size
         )
         var o_smem_reduce = (
             LayoutTensor[

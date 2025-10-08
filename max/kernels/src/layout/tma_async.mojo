@@ -699,7 +699,10 @@ struct TMATensorTile[
                     dst.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
+                    Index(
+                        coords[0] + UInt(j * copy_dim1),
+                        coords[1] + UInt(i * copy_dim0),
+                    ),
                 )
 
     @always_inline
@@ -769,9 +772,9 @@ struct TMATensorTile[
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
-                            coords[0] + j * copy_dim2,
-                            coords[1] + i * copy_dim1,
-                            coords[2] + m * copy_dim0,
+                            coords[0] + UInt(j * copy_dim2),
+                            coords[1] + UInt(i * copy_dim1),
+                            coords[2] + UInt(m * copy_dim0),
                         ),
                     )
 
@@ -838,7 +841,10 @@ struct TMATensorTile[
                     dst.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
-                    Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
+                    Index(
+                        coords[0] + UInt(j * copy_dim1),
+                        coords[1] + UInt(i * copy_dim0),
+                    ),
                     multicast_mask,
                 )
 
@@ -888,7 +894,10 @@ struct TMATensorTile[
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
-                    Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
+                    Index(
+                        coords[0] + UInt(j * copy_dim1),
+                        coords[1] + UInt(i * copy_dim0),
+                    ),
                 )
 
     @always_inline

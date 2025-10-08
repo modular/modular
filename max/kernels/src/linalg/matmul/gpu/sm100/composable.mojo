@@ -303,7 +303,7 @@ struct R2GOutputOp[
 
         alias num_warps = num_threads // WARP_SIZE
         # Extract last 2 bits so that warp_id is 0-3.
-        var warp_id = (thread_idx.x // WARP_SIZE) & 3
+        var warp_id = (thread_idx.x // UInt(WARP_SIZE)) & 3
 
         var ctile = self.c.tile[BM, BN](block_idx.y, block_idx.x)
 
@@ -461,7 +461,7 @@ struct Pipeline[
         var tma_phase: UInt32 = 0
         var mma_phase: UInt32 = 0
 
-        var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+        var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
         var elect_one_thread = thread_idx.x == 0
         var elect_one_cta = block_rank_in_cluster() % 2 == 0
         alias max_tmem_cols = 512
@@ -491,14 +491,19 @@ struct Pipeline[
         ]()
 
         var num_iters = args.num_iters
-        var m: UInt32 = block_idx.y * BM
-        var n: UInt32 = block_idx.x * BN
+        var m: UInt32 = block_idx.y * UInt(BM)
+        var n: UInt32 = block_idx.x * UInt(BN)
 
         for i in range(num_iters):
             if elect_one_thread:
                 tma_mbar[0].expect_bytes(expected_bytes)
                 loadop(
-                    a_smem_tile, b_smem_tile, m, n, UInt32(i * BK), tma_mbar[0]
+                    a_smem_tile,
+                    b_smem_tile,
+                    m,
+                    n,
+                    UInt32(i * UInt(BK)),
+                    tma_mbar[0],
                 )
 
             tma_mbar[0].wait(tma_phase)

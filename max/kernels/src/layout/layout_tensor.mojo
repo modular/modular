@@ -3427,7 +3427,9 @@ struct LayoutTensor[
         for i in range(Self.rank):
             alias thread_stride_i = Int(thread_stride[i])
             alias thread_shape_i = Int(thread_shape[i])
-            var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
+            var tile_idx = (thread_id // UInt(thread_stride_i)) % UInt(
+                thread_shape_i
+            )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
             var bound_i = Int((tile_shape_i - 1) * thread_shape_i + tile_idx)
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
@@ -3657,7 +3659,7 @@ struct LayoutTensor[
                     mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
-                offset += thread_coord_i * fragments_stride_i
+                offset += thread_coord_i * UInt(fragments_stride_i)
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -3842,7 +3844,7 @@ struct LayoutTensor[
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * fragments_stride_i
+                offset += thread_coord_i * UInt(fragments_stride_i)
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -6074,7 +6076,7 @@ fn cp_async_mn_major[
         desc_shape1 // simd_size,
     )
 
-    warp_id = thread_idx.x // gpu_memory.WARP_SIZE
+    warp_id = thread_idx.x // UInt(gpu_memory.WARP_SIZE)
 
     @parameter
     for tile_id_per_warp in range(num_tiles_per_warp):
@@ -6085,7 +6087,7 @@ fn cp_async_mn_major[
         )
         dst_tile = LayoutTensor[
             dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
-        ](dst.ptr + tile_id * desc_size)
+        ](dst.ptr + tile_id * UInt(desc_size))
 
         copy_dram_to_sram_async[
             thread_layout_per_warp,
@@ -7084,7 +7086,7 @@ fn _copy_dram_to_local[
     else:
         var base_ptr = buffer.get_base_ptr()
         offset_helper(
-            UInt(UInt((Int(src.ptr) - base_ptr)) // size_of[src.dtype]())
+            UInt(UInt((Int(src.ptr) - base_ptr)) // UInt(size_of[src.dtype]()))
         )
 
 

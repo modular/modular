@@ -3079,9 +3079,9 @@ fn conv2d_gpu_naive_nhwc_rscf[
         var value = Scalar[accum_type](0)
         for r in range(R):
             for s in range(S):
-                var h_in = h * stride_h - pad_h + r * dil_h
-                var w_in = w * stride_w - pad_w + s * dil_w
-                if 0 <= h_in < H and 0 <= w_in < W:
+                var h_in = h * UInt(stride_h) - UInt(pad_h) + UInt(r * dil_h)
+                var w_in = w * UInt(stride_w) - UInt(pad_w) + UInt(s * dil_w)
+                if 0 <= h_in < UInt(H) and 0 <= w_in < UInt(W):
                     for ci in range(C_in):
                         value += (
                             input.load(IndexList[4](n, h_in, w_in, ci)).cast[
@@ -3521,8 +3521,8 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     var x_thread_id = block_idx.x * block_dim.x + thread_idx.x
 
     # map back to separate height and width
-    var h_out_idx = x_thread_id // W_out  # integer division to get height
-    var w_out_idx = x_thread_id % W_out  # modulo to get width
+    var h_out_idx = x_thread_id // UInt(W_out)  # integer division to get height
+    var w_out_idx = x_thread_id % UInt(W_out)  # modulo to get width
 
     # calculate depth from y-dimension
     var d_out_idx = block_idx.y * block_dim.y + thread_idx.y
@@ -3531,8 +3531,8 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     if (
         n >= UInt(N)
         or d_out_idx >= UInt(D_out)
-        or h_out_idx >= H_out
-        or w_out_idx >= W_out
+        or h_out_idx >= UInt(H_out)
+        or w_out_idx >= UInt(W_out)
     ):
         return
 
@@ -3544,9 +3544,21 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
         for q in range(Q):
             for r in range(R):
                 for s in range(S):
-                    var d_in = Int(d_out_idx * stride_d + q * dil_d - pad_d)
-                    var h_in = Int(h_out_idx * stride_h + r * dil_h - pad_h)
-                    var w_in = Int(w_out_idx * stride_w + s * dil_w - pad_w)
+                    var d_in = Int(
+                        d_out_idx * UInt(stride_d)
+                        + UInt(q * dil_d)
+                        - UInt(pad_d)
+                    )
+                    var h_in = Int(
+                        h_out_idx * UInt(stride_h)
+                        + UInt(r * dil_h)
+                        - UInt(pad_h)
+                    )
+                    var w_in = Int(
+                        w_out_idx * UInt(stride_w)
+                        + UInt(s * dil_w)
+                        - UInt(pad_w)
+                    )
 
                     # check all input bounds bro
                     if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:

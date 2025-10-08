@@ -173,8 +173,8 @@ fn naive_grouped_matmul_kernel[
     if expert != -1:
         for k in range(K):
             accum += (
-                a_by_expert[m * K + k].cast[accum_type]()
-                * b_by_expert[n * K + k].cast[accum_type]()
+                a_by_expert[m * UInt(K) + UInt(k)].cast[accum_type]()
+                * b_by_expert[n * UInt(K) + UInt(k)].cast[accum_type]()
             )
 
     @parameter
@@ -185,7 +185,7 @@ fn naive_grouped_matmul_kernel[
         )
     else:
         c_by_expert = c.data + a_start_row * N
-        c_by_expert[m * N + n] = accum.cast[c_type]()
+        c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -488,8 +488,8 @@ fn grouped_matmul_kernel[
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
-    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
+    var warp_group_idx = thread_idx.x // UInt(WARPGROUP_SIZE)
+    var warp_group_thread_idx = thread_idx.x % UInt(WARPGROUP_SIZE)
     alias num_k_iters = K // BK
 
     var rank_m = block_id_in_cluster.y
@@ -520,17 +520,13 @@ fn grouped_matmul_kernel[
         if warp_group_thread_idx == 0 and lane_predicate and not skip_matmul:
             var write_pipeline_states = PipelineState[pipeline_stages]()
 
-            var m_coord = (
-                block_idx.y * BM if CLUSTER_N
-                > 1 else UInt(Int(a_start_row))
-                + UInt(block_idx_swizzle[1]) * BM
-            )
+            var m_coord = block_idx.y * UInt(BM) if CLUSTER_N > 1 else UInt(
+                Int(a_start_row)
+            ) + UInt(block_idx_swizzle[1]) * UInt(BM)
 
-            var n_coord = (
-                block_idx.x * BN if CLUSTER_M
-                > 1 else UInt(Int(b_start_row))
-                + UInt(block_idx_swizzle[0]) * BN
-            )
+            var n_coord = block_idx.x * UInt(BN) if CLUSTER_M > 1 else UInt(
+                Int(b_start_row)
+            ) + UInt(block_idx_swizzle[0]) * UInt(BN)
 
             async_load_AB[
                 block_tile_shape=block_tile_shape,
@@ -657,7 +653,7 @@ fn grouped_matmul_kernel[
             c_reg_tile,
             UInt(warp_group_thread_idx),
             UInt(local_warp_group_idx),
-            UInt(thread_idx.x - WARPGROUP_SIZE),
+            thread_idx.x - UInt(WARPGROUP_SIZE),
             block_idx_swizzle[1],
             block_idx_swizzle[0],
         )
@@ -721,8 +717,8 @@ fn grouped_matmul_kernel_sm100[
     expert = expert_ids[Int(block_idx.z)]
     b_start_row = expert * N
 
-    m_start = block_idx.y * BM
-    n_start = block_idx.x * BN
+    m_start = block_idx.y * UInt(BM)
+    n_start = block_idx.x * UInt(BN)
     a_m_start = UInt(a_start_row) + m_start
     b_n_start = UInt(b_start_row) + n_start
     if m_start >= UInt(M) or n_start >= UInt(N):
@@ -822,7 +818,7 @@ fn grouped_matmul_kernel_sm100[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = thread_idx.x == 0
     alias max_tmem_cols = 512
 
@@ -871,7 +867,7 @@ fn grouped_matmul_kernel_sm100[
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
                 # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
                 # so the async_copy takes care of that. TMA engine will copy the data from global tensor into smem tile A
-                k_start = UInt(i) * BK + k
+                k_start = UInt(i) * UInt(BK) + UInt(k)
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
@@ -919,7 +915,7 @@ fn grouped_matmul_kernel_sm100[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
+    warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     alias c_gmem_type = LayoutTensor[

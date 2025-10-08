@@ -77,15 +77,15 @@ fn moe_create_indices_kernel[
     var num_tokens: Int = Int(topk_ids.runtime_layout.shape[0])
     var num_tokens_padded: Int = Int(indices_padded.runtime_layout.shape[0])
     var num_tokens_per_thread = ceildiv(num_tokens_padded, num_threads)
-    var thd_tok_idx = thread_idx.x * num_tokens_per_thread
+    var thd_tok_idx = thread_idx.x * UInt(num_tokens_per_thread)
 
     # first copy topk_ids to topk_ids_padded and fill indices_padded
     for tok_id in range(num_tokens_per_thread):
-        var i = thd_tok_idx + tok_id
-        if i < num_tokens:
+        var i = thd_tok_idx + UInt(tok_id)
+        if i < UInt(num_tokens):
             indices_padded[i] = i
             topk_ids_padded[i] = rebind[Scalar[input_type]](topk_ids[i])
-        elif i < num_tokens_padded:
+        elif i < UInt(num_tokens_padded):
             indices_padded[i] = Scalar[indices_type].MAX_FINITE
             topk_ids_padded[i] = Scalar[input_type].MAX_FINITE
         else:
@@ -156,7 +156,7 @@ fn moe_create_indices_kernel[
         var step = stage // 2
         while step > 0:
             for tok_id in range(num_tokens_per_thread):
-                var i = thd_tok_idx + tok_id
+                var i = thd_tok_idx + UInt(tok_id)
                 bitonic_sort_step(
                     indices_padded,
                     topk_ids_padded,
@@ -173,15 +173,15 @@ fn moe_create_indices_kernel[
     var num_experts = Int(expert_start_indices.runtime_layout.shape[0])
     var num_experts_per_thread = ceildiv(num_experts, num_threads)
     for i in range(num_experts_per_thread):
-        var expert_id = thread_idx.x * num_experts_per_thread + i
-        if expert_id < num_experts:
+        var expert_id = thread_idx.x * UInt(num_experts_per_thread) + UInt(i)
+        if expert_id < UInt(num_experts):
             expert_start_indices[expert_id] = Scalar[indices_type].MAX_FINITE
     barrier()
 
     # check if this is the start of a new expert
     for tok_id in range(num_tokens_per_thread):
-        var i = thd_tok_idx + tok_id
-        if i < num_tokens:
+        var i = thd_tok_idx + UInt(tok_id)
+        if i < UInt(num_tokens):
             # copy results back to token_expert_order
             token_expert_order[i] = indices_padded[i]
 
@@ -329,7 +329,7 @@ fn moe_create_indices_bucket_sort_kernel[
     # Track how many tokens match this expert
     var total_writes: UInt64 = 0
 
-    var start_idx = thread_idx.x * width
+    var start_idx = thread_idx.x * UInt(width)
 
     # Vectorized scan of expert IDs from global memory
     # Each thread loads 'width' expert IDs and checks which match this block's expert
@@ -370,10 +370,11 @@ fn moe_create_indices_bucket_sort_kernel[
                 smem[0, offset] = idx + i
 
     # Handle remainder elements that couldn't be vectorized
-    start_idx = (topk_ids_length // width) * width + thread_idx.x
+    start_idx = UInt((topk_ids_length // width) * width + thread_idx.x)
 
     var expert_id = (
-        topk_ids[0, start_idx] if start_idx < topk_ids_length else expert + 1
+        topk_ids[0, start_idx] if start_idx
+        < UInt(topk_ids_length) else expert + 1
     )
     var state = expert_id == expert
 
@@ -426,7 +427,7 @@ fn moe_create_indices_bucket_sort_kernel[
             Int(total_writes), reads_per_iteration
         )
 
-        start_idx = thread_idx.x * width
+        start_idx = thread_idx.x * UInt(width)
 
         for smem_idx in range(
             start_idx, total_writes_rounded, reads_per_iteration

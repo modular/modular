@@ -264,7 +264,8 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
         padded_depth_default = UInt(
-            ceildiv(depth, UInt(swizzle_granularity)) * swizzle_granularity
+            ceildiv(depth, UInt(swizzle_granularity))
+            * UInt(swizzle_granularity)
         )
         self.padded_depth = padded_depth.or_else(padded_depth_default)
         self.num_pipeline_stages = num_pipeline_stages
@@ -305,7 +306,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
                 #        - 20*persistent) // (depth*pipeline_stages)
                 smem_upper_bound = (
                     smem_total // 2
-                    - self.num_queries_per_block * depth * (1 + persistent)
+                    - self.num_queries_per_block * depth * UInt(1 + persistent)
                     - 8 * num_pipeline_stages
                     - 20 * persistent
                 ) // (depth * num_pipeline_stages)

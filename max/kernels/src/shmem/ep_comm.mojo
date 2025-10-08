@@ -203,7 +203,7 @@ fn dispatch_kernel[
     # that need to be sent to each expert. It also monitors the completion of
     # the communication for each expert.
     if block_idx.x < UInt(n_aux_sms):
-        var expert_idx: Int32 = block_idx.x * n_warps + warp_id()
+        var expert_idx: Int32 = block_idx.x * UInt(n_warps) + warp_id()
         var expert_count: Int32 = 0
 
         if expert_idx < n_experts:
@@ -250,7 +250,9 @@ fn dispatch_kernel[
     # first be copied to the send buffer (so the NIC can see it), and then be sent
     # to the remote device.
     else:
-        for token_idx in range(block_idx.x - n_aux_sms, num_tokens, n_comm_sms):
+        for token_idx in range(
+            block_idx.x - UInt(n_aux_sms), num_tokens, n_comm_sms
+        ):
             # First, all threads in the block copy the input token to the send buffer.
             alias _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
             var curr_send_buf_ptr = send_buf_p.offset(
@@ -279,7 +281,8 @@ fn dispatch_kernel[
                     width = size_of[UInt16](),
                     alignment = align_of[DType.uint16](),
                 ](
-                    msg_config.topk_info_offset() + tid * size_of[UInt16](),
+                    msg_config.topk_info_offset()
+                    + tid * UInt(size_of[UInt16]()),
                     bitcast[DType.uint8, size_of[UInt16]()](UInt16(top_k_idx)),
                 )
 
@@ -304,14 +307,14 @@ fn dispatch_kernel[
             # is selected by the warp ID using round-robin. We can then control the RC
             # for each expert by using the correct warp.
             alias n_rc_groups = n_warps // n_local_experts
-            var rc_group_id = warp_id() // n_local_experts
+            var rc_group_id = warp_id() // UInt(n_local_experts)
             var rc_map_offset: Int32 = (
-                block_idx.x * n_warps + warp_id()
-            ) % n_local_experts
+                block_idx.x * UInt(n_warps) + warp_id()
+            ) % UInt(n_local_experts)
 
             # If the RC group ID is greater than the number of RC groups, we skip the
             # communication.
-            if rc_group_id >= n_rc_groups:
+            if rc_group_id >= UInt(n_rc_groups):
                 continue
 
             for i in range(rc_group_id, top_k, n_rc_groups):
@@ -492,12 +495,12 @@ fn dispatch_cb_kernel[
         # to get the offset where each rank ends in the output tensor.
         @parameter
         for round_i in range(scan_round):
-            var target_rank = lane_id() + round_i * WARP_SIZE
+            var target_rank = lane_id() + UInt(round_i * WARP_SIZE)
             var expert_rank_offset = recv_count_layout(
                 RtTuple_2(Int(local_expert_id), Int(target_rank))
             )
 
-            if target_rank < n_ranks:
+            if target_rank < UInt(n_ranks):
                 var target_count_ptr = recv_count_p.offset(expert_rank_offset)
                 var token_count = load_acquire[scope = Scope.GPU](
                     target_count_ptr
@@ -537,12 +540,12 @@ fn dispatch_cb_kernel[
 
         @parameter
         for round_i in range(scan_round):
-            var target_rank = lane_id() + round_i * WARP_SIZE
+            var target_rank = lane_id() + UInt(round_i * WARP_SIZE)
             var expert_rank_offset = recv_count_layout(
                 RtTuple_2(Int(local_expert_id), Int(target_rank))
             )
 
-            if target_rank < n_ranks:
+            if target_rank < UInt(n_ranks):
                 atomic_counter.store(
                     expert_rank_offset * 2,
                     Int32(
@@ -570,15 +573,17 @@ fn dispatch_cb_kernel[
         alias wg_size = n_warps // n_wg_per_sm
         alias wg_threads = wg_size * WARP_SIZE
 
-        var wg_idx = warp_id() // wg_size
-        var global_wg_idx = (block_idx.x - n_aux_sms) * n_wg_per_sm + wg_idx
-        var warp_id_in_wg = warp_id() % wg_size
+        var wg_idx = warp_id() // UInt(wg_size)
+        var global_wg_idx = (block_idx.x - UInt(n_aux_sms)) * UInt(
+            n_wg_per_sm
+        ) + wg_idx
+        var warp_id_in_wg = warp_id() % UInt(wg_size)
 
-        if wg_idx >= n_wg_per_sm or global_wg_idx >= n_experts:
+        if wg_idx >= UInt(n_wg_per_sm) or global_wg_idx >= UInt(n_experts):
             return
 
-        var local_expert_id = global_wg_idx % n_local_experts
-        var target_rank = global_wg_idx // n_local_experts
+        var local_expert_id = global_wg_idx % UInt(n_local_experts)
+        var target_rank = global_wg_idx // UInt(n_local_experts)
         var expert_rank_offset = recv_count_layout(
             RtTuple_2(Int(local_expert_id), Int(target_rank))
         )
@@ -628,7 +633,7 @@ fn dispatch_cb_kernel[
                 var src_topk_idx = bitcast[DType.uint16, 1](
                     recv_buf_ptr.load[width = size_of[UInt16]()](
                         msg_config.topk_info_offset()
-                        + lane_id() * size_of[UInt16](),
+                        + lane_id() * UInt(size_of[UInt16]()),
                     )
                 )
                 var global_expert_idx = (

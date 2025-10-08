@@ -629,7 +629,7 @@ fn _allreduce_2stage_kernel[
     var global_tid = global_idx.x
 
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = grid_dim.x * BLOCK_SIZE
+    var stride = grid_dim.x * UInt(BLOCK_SIZE)
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
 
     # --- Data Partitioning ---
@@ -781,7 +781,7 @@ fn _allreduce_1stage_kernel[
     alias alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * BLOCK_SIZE
+    var stride = grid_dim.x * UInt(BLOCK_SIZE)
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
     var num_simd_vectors = num_elements // simd_width
 

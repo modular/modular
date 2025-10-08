@@ -121,8 +121,8 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     expert = expert_ids[expert_idx]
     b_start_row = expert * N
 
-    m_start = block_idx.y * BM
-    n_start = block_idx.x * BN
+    m_start = block_idx.y * UInt(BM)
+    n_start = block_idx.x * UInt(BN)
     a_m_start = UInt(a_start_row) + m_start
     b_n_start = UInt(b_start_row) + n_start
     if m_start >= UInt(M) or n_start >= UInt(N):
@@ -246,7 +246,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     var mma_phase: UInt32 = 0
 
     var warp_id = get_warp_id()
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
@@ -289,7 +289,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-            var k_start = UInt(k_iter) * BK
+            var k_start = UInt(k_iter) * UInt(BK)
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
@@ -344,12 +344,12 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
             @parameter
             if BN != BK:
-                var global_n = block_idx.x * BN
+                var global_n = block_idx.x * UInt(BN)
 
-                var begin_n = min(BN, BK - global_n % BK)
+                var begin_n = min(BN, BK - global_n % UInt(BK))
                 alias end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
 
-                var idx0 = global_n // BK
+                var idx0 = global_n // UInt(BK)
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
@@ -371,7 +371,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             # TODO: this is an ugly way to calculate the m offset, need to rethink how we can make this more efficient
             @parameter
             for j in range(temp_cfrags_size // 2):
-                var local_m = m_offset + (j % 2) * 8
+                var local_m = m_offset + UInt((j % 2) * 8)
                 var a_scale = a_scales_smem_tile[0, local_m]
 
                 var scale = a_scale * b_scale
@@ -387,8 +387,8 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    alias num_warps = num_threads // WARP_SIZE
-    warp_id = UInt(thread_idx.x // WARP_SIZE)
+    alias num_warps = num_threads // UInt(WARP_SIZE)
+    warp_id = UInt(thread_idx.x // UInt(WARP_SIZE))
 
     alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     alias c_gmem_type = LayoutTensor[

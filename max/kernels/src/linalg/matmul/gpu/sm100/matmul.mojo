@@ -194,23 +194,23 @@ fn load_AB[
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
 
-    var a_gmem_slice_coord = (
-        peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
-    )
+    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+        a_tma_rows
+    ) + work_tile_coord[0] * UInt(BM)
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * b_tma_rows
-        + peer_cta_coord[0] * BN
-        + work_tile_coord[1] * MMA_N
+        peer_cta_coord[1] * UInt(b_tma_rows)
+        + peer_cta_coord[0] * UInt(BN)
+        + work_tile_coord[1] * UInt(MMA_N)
     )
 
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
     var a_smem_slice = __type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
     var b_smem_slice = __type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
@@ -338,7 +338,7 @@ fn stsm_helper[
     alias RLayout32Bits[layout: Layout] = RuntimeLayout[
         layout, element_type = DType.uint32, linear_idx_type = DType.uint32
     ]
-    var stsm_lane_offset: UInt32 = (lane & 15) * stride0 + (
+    var stsm_lane_offset: UInt32 = (lane & 15) * UInt(stride0) + (
         lane >> 4
     ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
 
@@ -547,7 +547,7 @@ fn shared_memory_epilogue[
         shared_memory_row_upper_half += UInt(distribute_rows)
         shared_memory_row_lower_half += UInt(distribute_rows)
 
-    named_barrier[num_output_warps * WARP_SIZE]()
+    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
 @always_inline
@@ -808,8 +808,8 @@ fn multi_stage_store_C[
     var warp_id = get_warp_id()
 
     # lets keep track of the of the starting row and column in GMEM
-    var c_row = work_tile_coord[0] * BM
-    var c_col = work_tile_coord[1] * MMA_N
+    var c_row = work_tile_coord[0] * UInt(BM)
+    var c_col = work_tile_coord[1] * UInt(MMA_N)
 
     # before i start the process of transferring over num_stages * stageN= MMA_N from tensor memory to global, i should wait
     # on the accum_full_mbar barrier
@@ -894,7 +894,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -940,7 +940,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -976,9 +976,13 @@ fn multi_stage_store_C[
             0
         ].value() if MMA_M == 256 else BM
         var elect_one_warp = warp_id == 0 if MMA_M == 256 else warp_id % 2 == 0
-        var coord_n_mma_m256 = work_tile_coord[1] * MMA_N + stage * stageN
+        var coord_n_mma_m256 = work_tile_coord[1] * UInt(MMA_N) + UInt(
+            stage * stageN
+        )
         var coord_n_mma_m128 = (
-            work_tile_coord[1] * MMA_N + stage * stageN + BN * (warp_id // 2)
+            work_tile_coord[1] * UInt(MMA_N)
+            + UInt(stage * stageN)
+            + UInt(BN * (warp_id // 2))
         )
 
         var coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
@@ -998,7 +1002,7 @@ fn multi_stage_store_C[
                     c_tma_op.async_store(
                         c_smem_warp_tile,
                         (
-                            UInt(work_tile_coord[0] * BM + i * 16),
+                            UInt(work_tile_coord[0] * UInt(BM) + UInt(i * 16)),
                             UInt(coord_n),
                         ),
                     )
@@ -1011,7 +1015,7 @@ fn multi_stage_store_C[
                     c_smem_split,
                     (
                         UInt(coord_n),
-                        UInt(work_tile_coord[0] * BM),
+                        UInt(work_tile_coord[0] * UInt(BM)),
                     ),
                 )
             c_tma_op.commit_group()
@@ -1027,7 +1031,7 @@ fn multi_stage_store_C[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -1216,7 +1220,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     alias accum_type = get_accum_type[a_type]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
@@ -1287,8 +1291,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % cta_group),
-        UInt(rank_m // cta_group),
+        UInt(rank_m % UInt(cta_group)),
+        UInt(rank_m // UInt(cta_group)),
         rank_n,
     )  # v,m,n
 
@@ -1307,7 +1311,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     a_multicast_mask <<= rank_m
     b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * CLUSTER_M
+    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1914,7 +1918,7 @@ fn matmul_sm100_fallback_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
@@ -2000,8 +2004,8 @@ fn matmul_sm100_fallback_kernel[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
+    alias num_warps = num_threads // UInt(WARP_SIZE)
+    warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x

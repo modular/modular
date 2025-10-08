@@ -327,7 +327,7 @@ struct HopperMatmulSM90Kernel[
         empty = smem.empty_mbar
 
         var warp_group_idx, warp_group_thread_idx = divmod(
-            thread_idx.x, WARPGROUP_SIZE
+            thread_idx.x, UInt(WARPGROUP_SIZE)
         )
         alias num_k_iters = ceildiv(K, Self.BK)
 
@@ -450,7 +450,7 @@ struct HopperMatmulSM90Kernel[
                 output_reg_tile,
                 UInt(warp_group_thread_idx),
                 UInt(local_warp_group_idx),
-                UInt(thread_idx.x - WARPGROUP_SIZE),
+                UInt(thread_idx.x - UInt(WARPGROUP_SIZE)),
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )
@@ -541,7 +541,7 @@ struct HopperMatmulSM90Kernel[
         empty = smem.empty_mbar
 
         var warp_group_idx, warp_group_thread_idx = divmod(
-            thread_idx.x, WARPGROUP_SIZE
+            thread_idx.x, UInt(WARPGROUP_SIZE)
         )
         alias num_k_iters = ceildiv(K, Self.BK)
 
@@ -672,7 +672,7 @@ struct HopperMatmulSM90Kernel[
                     output_reg_tile,
                     UInt(warp_group_thread_idx),
                     UInt(local_warp_group_idx),
-                    UInt(thread_idx.x - WARPGROUP_SIZE),
+                    UInt(thread_idx.x - UInt(WARPGROUP_SIZE)),
                     Int(block_y),
                     Int(block_x),
                 )
@@ -771,7 +771,7 @@ struct HopperMatmulSM90Kernel[
         empty = smem.empty_mbar
 
         var warp_group_idx, warp_group_thread_idx = divmod(
-            thread_idx.x, WARPGROUP_SIZE
+            thread_idx.x, UInt(WARPGROUP_SIZE)
         )
         alias num_k_iters = ceildiv(K, Self.BK)
 
@@ -891,7 +891,7 @@ struct HopperMatmulSM90Kernel[
                 output_reg_tile,
                 UInt(warp_group_thread_idx),
                 UInt(local_warp_group_idx),
-                UInt(thread_idx.x - WARPGROUP_SIZE),
+                UInt(thread_idx.x - UInt(WARPGROUP_SIZE)),
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )
@@ -1157,7 +1157,7 @@ fn warp_specialized_gemm_output[
     ](Int(local_warp_group_idx), 0)
     var c_gmem_split = c_gmem_split_crd_idx[0]
     alias c_coord_type = __type_of(c_gmem_corner_coords)
-    var warp_id = warp_group_thread_idx // WARP_SIZE
+    var warp_id = warp_group_thread_idx // UInt(WARP_SIZE)
 
     alias N = c_layout.shape[1].value()
     alias is_N_multiple_of_16B = N * size_of[c_type]() % 16 == 0
@@ -1398,7 +1398,7 @@ fn warp_specialized_gemm_output[
                                 UInt(
                                     block_x * BN
                                     + sub_wg_bn_id * WG_BN
-                                    + local_thread_idx * TMA_BN
+                                    + local_thread_idx * UInt(TMA_BN)
                                 ),
                                 UInt(block_y * BM),
                             ),

@@ -149,9 +149,9 @@ fn _argsort_gpu_impl[
         if i >= UInt(n):
             return
 
-        var partner = i ^ step
+        var partner = i ^ UInt(step)
 
-        if partner > i and partner < n:
+        if partner > i and partner < UInt(n):
             var cmp_val: Bool
 
             @parameter
@@ -161,7 +161,7 @@ fn _argsort_gpu_impl[
                 cmp_val = Bool(input[i] < input[partner])
 
             # Determine if we are in ascending or descending part of bitonic merge.
-            var bitonic_merge_direction = (i & stage) == 0
+            var bitonic_merge_direction = (i & UInt(stage)) == 0
 
             if cmp_val == bitonic_merge_direction:
                 swap(input[i], input[partner])

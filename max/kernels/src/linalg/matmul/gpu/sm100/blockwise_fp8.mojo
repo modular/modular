@@ -253,7 +253,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     var mma_phase: UInt32 = 0
 
     var warp_id = get_warp_id()
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
 
@@ -358,12 +358,12 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             @parameter
             if BN != BK:
-                var global_n = block_idx.x * BN
+                var global_n = block_idx.x * UInt(BN)
 
-                var begin_n = min(BN, BK - global_n % BK)
+                var begin_n = min(BN, BK - global_n % UInt(BK))
                 alias end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
 
-                var idx0 = global_n // BK
+                var idx0 = global_n // UInt(BK)
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
@@ -385,7 +385,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             # TODO: this is an ugly way to calculate the m offset, need to rethink how we can make this more efficient
             @parameter
             for j in range(temp_cfrags_size // 2):
-                var local_m = m_offset + (j % 2) * 8
+                var local_m = m_offset + UInt((j % 2) * 8)
                 var a_scale = a_scales_smem_tile_2D_view[0, local_m]
 
                 var scale = rebind[Scalar[accum_type]](a_scale) * rebind[
@@ -403,8 +403,8 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    alias num_warps = num_threads // WARP_SIZE
-    warp_id = UInt(thread_idx.x // WARP_SIZE)
+    alias num_warps = num_threads // UInt(WARP_SIZE)
+    warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x

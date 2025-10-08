@@ -137,9 +137,9 @@ fn gemv_kernel[
     k: Int,
 ):
     var tid = global_idx.x
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
 
-    if warp_id >= m:
+    if warp_id >= UInt(m):
         return
 
     var accum = Scalar[s_type](0)
@@ -149,7 +149,7 @@ fn gemv_kernel[
         var idx = i * WARP_SIZE + lane_id()
         if idx < k:
             accum += (
-                a.load(warp_id * k + idx).cast[s_type]()
+                a.load(warp_id * UInt(k) + UInt(idx)).cast[s_type]()
                 * b.load(idx).cast[s_type]()
             )
 
@@ -193,7 +193,7 @@ fn gemv_kernel_vector[
     k: Int,
 ):
     var tid = global_idx.x
-    var warp_id = Int(warp.broadcast(tid // WARP_SIZE))
+    var warp_id = Int(warp.broadcast(tid // UInt(WARP_SIZE)))
     alias step = WARP_SIZE * simd_width
 
     var idx = lane_id() * simd_width
@@ -301,7 +301,7 @@ fn gemv_split_k[
         .stack_allocation()
         .fill(0)
     )
-    var output_idx = tile_id_m * n + tile_id_n
+    var output_idx = tile_id_m * UInt(n) + tile_id_n
     var iteration = 0
     alias WeightVecType = SIMD[b_type, simd_width]
     # Each thread sums local data in K.
@@ -354,8 +354,8 @@ fn gemv_split_k[
         iteration += 1
 
     # Warps are arranged along K.
-    alias k_warp_num = num_threads // WARP_SIZE
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    alias k_warp_num = num_threads // UInt(WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var shmem = LayoutTensor[
         s_type,
         Layout.row_major(1, tile_m * tile_n * k_warp_num),
@@ -390,14 +390,14 @@ fn gemv_split_k[
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
-                Index(0, output_idx + mid * n + nid), val.cast[c_type]()
+                Index(0, output_idx + mid * UInt(n) + nid), val.cast[c_type]()
             )
         else:
-            var idx = output_idx + mid * n + nid
+            var idx = output_idx + mid * UInt(n) + nid
 
             @parameter
             if check_bounds:
-                if idx >= n:
+                if idx >= UInt(n):
                     continue
             output[0, idx] = val.cast[c_type]()
 
@@ -419,12 +419,12 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    var warps_per_block = block_dim.x // WARP_SIZE
+    var warps_per_block = block_dim.x // UInt(WARP_SIZE)
     var warp_id = get_warp_id()
     var accum = Scalar[s_type]()
-    var col = block_idx.x * WARP_SIZE + lane_id()
+    var col = block_idx.x * UInt(WARP_SIZE) + lane_id()
     var tid = global_idx.x
-    var global_warp_id = tid // WARP_SIZE
+    var global_warp_id = tid // UInt(WARP_SIZE)
 
     var x_shared = stack_allocation[
         tile_size,
@@ -436,10 +436,10 @@ fn gevm_kernel[
     for i in range(ceildiv(UInt(k), UInt(warps_per_block))):
         var row = i * warps_per_block + warp_id
         var lhs = a.load(row)
-        var rhs = b.load(row * n + col)
+        var rhs = b.load(row * UInt(n) + col)
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    x_shared[lane_id() * WARP_SIZE + warp_id] = accum
+    x_shared[lane_id() * UInt(WARP_SIZE) + warp_id] = accum
     barrier()
 
     var total = x_shared.load(thread_idx.x).cast[s_type]()

@@ -217,8 +217,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
-    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
+    var warp_group_idx = thread_idx.x // UInt(WARPGROUP_SIZE)
+    var warp_group_thread_idx = thread_idx.x % UInt(WARPGROUP_SIZE)
 
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
@@ -405,7 +405,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
                     output_reg_tile,
                     UInt(warp_group_thread_idx),
                     UInt(local_warp_group_idx),
-                    UInt(thread_idx.x - WARPGROUP_SIZE),
+                    thread_idx.x - UInt(WARPGROUP_SIZE),
                     Int(block_y),
                     Int(block_x),
                 )

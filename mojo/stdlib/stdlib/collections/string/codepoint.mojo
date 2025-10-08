@@ -561,7 +561,7 @@ struct Codepoint(
                     ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
             else:
                 var shift = 6 * (num_bytes - 1)
-                var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
+                var mask = UInt8(0xFF) >> (num_bytes + UInt(Int(num_bytes > 1)))
                 var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
                 ptr[0] = ((c >> shift) & mask) | (
                     num_bytes_marker & splat(num_bytes != 1)

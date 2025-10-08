@@ -784,11 +784,16 @@ fn _block_reduce_topk[
 
     # Load warp results into final warp for block-level reduction
     var block_accum = TopK_2[T, largest]()
-    var thread_in_final_warp = thread_idx.x < UInt(block_dim.x // WARP_SIZE)
+    var thread_in_final_warp = thread_idx.x < UInt(
+        block_dim.x // UInt(WARP_SIZE)
+    )
     if thread_in_final_warp:
-        var p_idx = p_sram[lane_id() * p_width]  # loaded value is a scalar
+        var p_idx = p_sram[
+            lane_id() * UInt(p_width)
+        ]  # loaded value is a scalar
         block_accum = TopK_2[T, largest](
-            p=Int(p_idx), u=u_sram[lane_id() * u_width]  # Convert back to int
+            p=Int(p_idx),
+            u=u_sram[lane_id() * UInt(u_width)],  # Convert back to int
         )
     else:
         # Initialize unused threads with dummy values
@@ -846,14 +851,14 @@ fn _topk_stage1[
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id = bid // num_blocks_per_input
-    block_lane = bid % num_blocks_per_input
+    batch_id = bid // UInt(num_blocks_per_input)
+    block_lane = bid % UInt(num_blocks_per_input)
 
     var block_offset = block_lane * block_size
-    var stride = block_size * num_blocks_per_input
+    var stride = block_size * UInt(num_blocks_per_input)
 
-    _in_buffer = in_buffer + batch_id * num_elements
-    _in_buffer_tmp = in_buffer_tmp + batch_id * num_elements
+    _in_buffer = in_buffer + batch_id * UInt(num_elements)
+    _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
 
     # Copy input values to temp buffer
     for i in range(tid + block_offset, num_elements, stride):
@@ -891,10 +896,10 @@ fn _topk_stage1[
             if tid == 0:
                 # Store the local top-K values and indices in global memory
                 var vector_idx = total.p
-                local_topk_vals[bid * max_k + k] = total.u
-                local_topk_idxs[bid * max_k + k] = Scalar[DType.int](
-                    vector_idx
-                ).cast[out_idx_type]()
+                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
+                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
+                    DType.int
+                ](vector_idx).cast[out_idx_type]()
 
                 if total.p >= 0:
                     # Remove the found maximum from consideration in the next iteration
@@ -905,10 +910,10 @@ fn _topk_stage1[
         # Fill remaining positions with sentinel values for unused elements
         if tid == 0:
             for remaining_k in range(k_batch, max_k):
-                local_topk_vals[bid * max_k + remaining_k] = _topk_dead_val[
-                    T, largest
-                ]()
-                local_topk_idxs[bid * max_k + remaining_k] = Scalar[
+                local_topk_vals[
+                    bid * UInt(max_k) + UInt(remaining_k)
+                ] = _topk_dead_val[T, largest]()
+                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
                     out_idx_type
                 ](-1)
 
@@ -978,12 +983,12 @@ fn _topk_stage2[
     var batch_id = block_idx.x
     # assert (block_idx.x == 0)
     # assert (grid_dim.x == 1)
-    var batch_i_topk_vals = global_topk_vals + batch_id * max_k
-    var batch_i_topk_idxs = global_topk_idxs + batch_id * (
+    var batch_i_topk_vals = global_topk_vals + batch_id * UInt(max_k)
+    var batch_i_topk_idxs = global_topk_idxs + batch_id * UInt(
         1 if sampling else max_k
     )
-    var _local_topk_vals = local_topk_vals + batch_id * num_elem_reduced
-    var _local_topk_idxs = local_topk_idxs + batch_id * num_elem_reduced
+    var _local_topk_vals = local_topk_vals + batch_id * UInt(num_elem_reduced)
+    var _local_topk_idxs = local_topk_idxs + batch_id * UInt(num_elem_reduced)
 
     # Allocate shared memory for values and indices
     var num_e_rounded = ceildiv(num_elem_reduced, WARP_SIZE) * WARP_SIZE

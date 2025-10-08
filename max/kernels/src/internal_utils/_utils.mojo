@@ -786,8 +786,8 @@ fn init_vector_gpu[
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),
             UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + 2 * stride).cast[dtype](),
-            UInt64(tid + 3 * stride).cast[dtype](),
+            UInt64(tid + UInt(2 * stride)).cast[dtype](),
+            UInt64(tid + UInt(3 * stride)).cast[dtype](),
         )
     apply(values)
 

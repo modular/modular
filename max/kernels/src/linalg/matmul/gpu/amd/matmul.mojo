@@ -411,7 +411,7 @@ fn gemm_kernel_amd[
 
         alias num_repeats_col = BK // k_tile_size
         alias outer_block_size = num_repeats_col * inner_block_size
-        alias num_repeats_row = config.num_threads() // outer_block_size
+        alias num_repeats_row = config.num_threads() // UInt(outer_block_size)
 
         alias tiler_layout = Layout.row_major(
             num_repeats_row,
@@ -519,7 +519,9 @@ fn gemm_kernel_amd[
     @parameter
     fn schedule_loop_body():
         alias threads_per_row = BK // simd_width
-        alias rows_per_thread_block = config.num_threads() // threads_per_row
+        alias rows_per_thread_block = config.num_threads() // UInt(
+            threads_per_row
+        )
         alias a_loads_per_thread = BM // rows_per_thread_block
         alias b_loads_per_thread = BN // rows_per_thread_block
 
@@ -662,7 +664,7 @@ fn gemm_kernel_amd[
     @parameter
     if num_warps_k > 1:
         warp_split_k_reduction[
-            BM, BN, config.num_threads() // num_warps_k, num_warps_k
+            BM, BN, config.num_threads() // UInt(num_warps_k), num_warps_k
         ](warp_k, mma_op.out_reg_tile, reduction_smem.ptr)
 
         if warp_k != 0:
@@ -700,8 +702,8 @@ fn gemm_kernel_amd[
         ]().distribute[output_thread_layout](lane_id())
 
         # Warp tile coordinates
-        var warp_tile_m = block_idx.y * BM + warp_m * WM
-        var warp_tile_n = block_idx.x * BN + warp_n * WN
+        var warp_tile_m = block_idx.y * UInt(BM) + UInt(warp_m * WM)
+        var warp_tile_n = block_idx.x * UInt(BN) + UInt(warp_n * WN)
 
         # Write output fragments
         write_output_fragments[

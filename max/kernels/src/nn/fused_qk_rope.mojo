@@ -378,7 +378,7 @@ fn fused_qk_rope_ragged[
 
                 head_idx -= num_q_heads
                 # in case k_head_size != q_head_size
-                head_dim_idx += k_head_size - q_head_size
+                head_dim_idx += k_head_size - UInt(q_head_size)
                 rope_k_cache[interleaved=interleaved](
                     k_cache,
                     batch_idx,

@@ -712,7 +712,7 @@ fn eval_composed[
             alias s = shape_a[i].value()
             alias st = stride_a[i].value()
             a_idx, coord_i = divmod(a_idx, UInt(s))
-            b_idx += Int(coord_i * st)
+            b_idx += Int(coord_i * UInt(st))
     # swizzle
     else:
         b_idx = composed_layout.layout_a(b_idx)

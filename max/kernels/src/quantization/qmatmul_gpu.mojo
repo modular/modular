@@ -131,7 +131,7 @@ fn multistage_mma_q[
     ) + 1
     alias repack_tile = Index(64, 16)
 
-    var tid: UInt32 = thread_idx.x % num_threads
+    var tid: UInt32 = thread_idx.x % UInt(num_threads)
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
@@ -531,7 +531,7 @@ fn multistage_qgemm_kernel[
     var warp_k_part_id = (
         tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
     )
-    var warp_id = (tid % num_threads_per_warp_k_part) // WARP_SIZE
+    var warp_id = (tid % num_threads_per_warp_k_part) // UInt(WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
@@ -552,7 +552,7 @@ fn multistage_qgemm_kernel[
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]()
-    alias a_smem_size = num_pipeline_stages * BM * BK
+    alias a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
 
     var a_smem_iter = LayoutTensorIter[
         a_type,
@@ -569,7 +569,9 @@ fn multistage_qgemm_kernel[
     var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
         Scalar[b_type]
     ]()
-    alias b_smem_size = num_pipeline_stages * BK * BN // pack_factor
+    alias b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN) // UInt(
+        pack_factor
+    )
     alias BD_0 = BN // repack_tile[0]
     alias BD_1 = (BK * repack_tile[0]) // pack_factor
     alias b_smem_layout = Layout.row_major(BD_0, BD_1)
@@ -583,12 +585,14 @@ fn multistage_qgemm_kernel[
 
     # multiple stages may share the same scales
     alias num_scales_stages = ceildiv(
-        (num_pipeline_stages - 1) * BK, group_size
+        (num_pipeline_stages - 1) * UInt(BK), UInt(group_size)
     ) + 1
     var scales_smem = (b_smem + num_warp_k_partitions * b_smem_size).bitcast[
         Scalar[scales_type]
     ]()
-    alias scales_smem_size = num_scales_stages * BN * ceildiv(BK, group_size)
+    alias scales_smem_size = num_scales_stages * UInt(BN) * UInt(
+        ceildiv(BK, group_size)
+    )
     alias scales_smem_layout = Layout.row_major(ceildiv(BK, group_size), BN)
 
     var scales_smem_iter = LayoutTensorIter[
@@ -752,7 +756,7 @@ fn multistage_qgemm_kernel[
             Layout.row_major(WM, WN),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN))
+        ](a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * UInt(WM) * UInt(WN)))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
@@ -965,8 +969,8 @@ fn repack_Q4_0_for_sm8x[
     var tid: UInt = thread_idx.x
     var warp_id = UInt(tid // WARP_SIZE)
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % num_warps_x)
-    var warp_y: UInt = UInt(warp_id // num_warps_x)
+    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
+    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -1154,11 +1158,11 @@ fn repack_GPTQ_for_sm8x[
     alias BK = 1024
 
     var tid: UInt = thread_idx.x
-    var warp_id = UInt(tid // WARP_SIZE)
+    var warp_id = UInt(tid // UInt(WARP_SIZE))
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % num_warps_x)
-    var warp_y: UInt = UInt(warp_id // num_warps_x)
-    var lane_id: Int = Int(tid % WARP_SIZE)
+    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
+    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
+    var lane_id: Int = Int(tid % UInt(WARP_SIZE))
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
     alias N = Int(in_layout.shape[1])
@@ -1386,14 +1390,14 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[config.a_type]()
     var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[DType.uint32]() // pack_factor
     var c_usage = block_mnk[0] * block_mnk[1] * size_of[DType.float32]()
-    var num_scales_stages = ceildiv((num_pipeline_stages - 1) * block_mnk[2], group_size) + 1
+    var num_scales_stages = ceildiv((num_pipeline_stages - 1) * UInt(block_mnk[2]), UInt(group_size)) + 1
     var scales_usage = block_mnk[1] * ceildiv(block_mnk[2], group_size
     ) * num_scales_stages * size_of[config.a_type]()
     var slice_k_reduction: UInt = UInt(block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * size_of[DType.float32]())
     # fmt: on
 
     var smem_usage: UInt = UInt(
-        num_warp_k_partitions * (a_usage + b_usage + scales_usage)
+        num_warp_k_partitions * UInt(a_usage + b_usage + scales_usage)
     )
     return Int(max(c_usage, Int(smem_usage), Int(slice_k_reduction)))
 
@@ -1449,7 +1453,7 @@ fn multistage_gemm_q[
                     num_k_partitions=UInt(config.num_k_partitions),
                     num_warp_k_partitions=UInt(
                         config.num_warp_k_partitions
-                        // (2**partition_reduction)
+                        // UInt(2**partition_reduction)
                     ),  # Reduce warp partitions by powers of 2
                 )
 

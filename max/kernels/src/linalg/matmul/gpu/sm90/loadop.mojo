@@ -133,16 +133,22 @@ fn async_load_AB[
 
                 @parameter
                 if partitioned_multicast:
-                    var a_gmem_slice_coord = m_coord + Int(rank_n) * a_tma_rows
+                    var a_gmem_slice_coord = m_coord + UInt(
+                        Int(rank_n) * a_tma_rows
+                    )
                     var a_smem_slice = __type_of(a_smem_tile)(
-                        a_smem_tile.ptr + rank_n * a_tma_load_size
+                        a_smem_tile.ptr + rank_n * UInt(a_tma_load_size)
                     )
 
                     a_tma_op.async_multicast_load(
                         a_smem_slice,
                         full_mbar[write_idx],
                         (
-                            UInt(k_coord + k_iter * pipeline_stages + j)
+                            UInt(
+                                k_coord
+                                + UInt(k_iter * pipeline_stages)
+                                + UInt(j)
+                            )
                             * UInt(BK),
                             UInt(a_gmem_slice_coord),
                         ),
@@ -155,7 +161,11 @@ fn async_load_AB[
                             a_smem_tile,
                             full_mbar[write_idx],
                             (
-                                UInt(k_coord + k_iter * pipeline_stages + j)
+                                UInt(
+                                    k_coord
+                                    + UInt(k_iter * pipeline_stages)
+                                    + UInt(j)
+                                )
                                 * UInt(BK),
                                 m_coord,
                             ),
@@ -167,7 +177,8 @@ fn async_load_AB[
                     a_smem_tile,
                     full_mbar[write_idx],
                     (
-                        UInt(k_coord + k_iter * pipeline_stages + j) * UInt(BK),
+                        UInt(k_coord + UInt(k_iter * pipeline_stages) + UInt(j))
+                        * UInt(BK),
                         m_coord,
                     ),
                 )
@@ -177,16 +188,22 @@ fn async_load_AB[
 
                 @parameter
                 if partitioned_multicast:
-                    var b_gmem_slice_coord = n_coord + Int(rank_m) * b_tma_rows
+                    var b_gmem_slice_coord = n_coord + UInt(
+                        Int(rank_m) * b_tma_rows
+                    )
                     var b_smem_slice = __type_of(b_smem_tile)(
-                        b_smem_tile.ptr + rank_m * b_tma_load_size
+                        b_smem_tile.ptr + rank_m * UInt(b_tma_load_size)
                     )
 
                     b_tma_op.async_multicast_load(
                         b_smem_slice,
                         full_mbar[write_idx],
                         (
-                            UInt(k_coord + k_iter * pipeline_stages + j)
+                            UInt(
+                                k_coord
+                                + UInt(k_iter * pipeline_stages)
+                                + UInt(j)
+                            )
                             * UInt(BK),
                             UInt(b_gmem_slice_coord),
                         ),
@@ -199,7 +216,11 @@ fn async_load_AB[
                             b_smem_tile,
                             full_mbar[write_idx],
                             (
-                                UInt(k_coord + k_iter * pipeline_stages + j)
+                                UInt(
+                                    k_coord
+                                    + UInt(k_iter * pipeline_stages)
+                                    + UInt(j)
+                                )
                                 * UInt(BK),
                                 n_coord,
                             ),
@@ -211,7 +232,8 @@ fn async_load_AB[
                     b_smem_tile,
                     full_mbar[write_idx],
                     (
-                        UInt(k_coord + k_iter * pipeline_stages + j) * UInt(BK),
+                        UInt(k_coord + UInt(k_iter * pipeline_stages) + UInt(j))
+                        * UInt(BK),
                         n_coord,
                     ),
                 )

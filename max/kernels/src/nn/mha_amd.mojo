@@ -321,7 +321,7 @@ struct KBuffer[
         k_mma: Int,
     ](self):
         alias num_warps_n = BN // WN
-        var warp_col = get_warp_id() % num_warps_n
+        var warp_col = get_warp_id() % UInt(num_warps_n)
         var smem_tile = self.smem_iter.next_unsafe(0)[]
 
         var wtile_coord0 = Int(warp_col)
@@ -646,15 +646,15 @@ struct VBuffer[
                 # TODO: document and parameterize this magic
                 var smem_fragment = (
                     smem_iter_tensor.tile[Self.pad[depth](), 8](
-                        0, col_idx + k_mma_idx * 2
+                        0, col_idx + UInt(k_mma_idx * 2)
                     )
                     .vectorize[1, Self.simd_width]()
                     .tile[Self.pad[Self.MMA_M](), 1](depth_idx, 0)
                     .tile[Self.pad[Self.simd_width](), 1](
-                        lane // Self.simd_width, 0
+                        lane // UInt(Self.simd_width), 0
                     )
                     .slice[: Self.simd_width, :]()
-                    .tile[1, 1](lane % Self.simd_width, 0)
+                    .tile[1, 1](lane % UInt(Self.simd_width), 0)
                 )
                 self.mma_tile.split[Self.num_k_tiles]()[k_mma_idx].vectorize[
                     1, Self.simd_width
@@ -740,7 +740,7 @@ struct QRegisterBuffer[
     @always_inline
     fn load_from_dram(mut self):
         alias num_warps_n = BN // WN
-        var warp_row = get_warp_id() // num_warps_n
+        var warp_row = get_warp_id() // UInt(num_warps_n)
         var bounds = max(
             min(Int32(WM), Int32(self.gmem_tensor.dim[0]() - WM * warp_row))
             * self.gmem_tensor.stride[0](),
@@ -910,7 +910,7 @@ fn _apply_mask[
                     alias fragment_col = fragment_layout(j)
                     var group_idx = lane_row
                     var q_head_idx = (
-                        block_idx.y * group + group_idx
+                        block_idx.y * UInt(group) + UInt(group_idx)
                     ) if token_gen else block_idx.y
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
                         IndexList[4, element_type = DType.uint32](
@@ -1285,7 +1285,7 @@ fn mha_single_batch_amd[
     var warp_row = warp_id // num_warps_n
     var warp_col = warp_id % num_warps_n
 
-    var kv_head_idx = block_idx.y // group
+    var kv_head_idx = block_idx.y // UInt(group)
 
     var q_tile_idx = block_idx.x
 
@@ -1362,7 +1362,7 @@ fn mha_single_batch_amd[
     ](kv_tile_start_row: UInt32, end: UInt32, not_last_iter: Bool):
         var mask_status = mask.status(
             Index[dtype = DType.uint32](
-                Int(q_tile_idx * BM + start_pos),
+                Int(q_tile_idx * BM + UInt(start_pos)),
                 Int(kv_tile_start_row),
             ),
             Index[dtype = DType.uint32](Int(BM), Int(BN)),
@@ -1555,9 +1555,9 @@ fn mha_single_batch_amd[
             for k_mma_idx in range(v_buffer.num_k_tiles):
                 tensor_core_mma.mma[swap_a_b=swap_a_b](
                     p_mma_tile_interleaved.tile[1, simd_width](0, k_mma_idx),
-                    v_buffer.mma_tile.tile[depth // mma_shape[0], simd_width](
-                        k_mma_idx, 0
-                    ),
+                    v_buffer.mma_tile.tile[
+                        depth // UInt(mma_shape[0]), simd_width
+                    ](k_mma_idx, 0),
                     out_reg_tile,
                 )
 
@@ -1621,7 +1621,7 @@ fn mma[
     alias BN = config.block_n()
     alias depth = config.depth
     var warp_id = get_warp_id()
-    alias num_warps = config.num_threads() // WARP_SIZE
+    alias num_warps = config.num_threads() // UInt(WARP_SIZE)
     alias num_threads = config.num_threads()
     alias num_warps_n = BN // WN
 
@@ -1629,9 +1629,9 @@ fn mma[
     var warp_col = warp_id % num_warps_n
 
     alias thread_layout_b = Layout.row_major(
-        min(num_threads, BN * BK // simd_width)
-        * simd_width
-        // b_smem_iter.layout.stride[0].value(),
+        min(num_threads, BN * BK // UInt(simd_width))
+        * UInt(simd_width)
+        // UInt(b_smem_iter.layout.stride[0].value()),
         b_smem_iter.layout.stride[0].value() // simd_width,
     ) if token_gen else Layout.row_major(num_threads // 4, 4)
 
@@ -1786,7 +1786,7 @@ fn mha_decoding_single_batch_amd[
     alias BN = config.block_n()
     alias depth = config.depth
     alias num_heads = config.num_heads
-    alias kv_num_heads = num_heads // group
+    alias kv_num_heads = num_heads // UInt(group)
     alias BK = config.block_k()
     constrained[BN == depth, "BN must be equal to depth"]()
     alias simd_width = simd_width_of[q_type]()
@@ -1837,7 +1837,7 @@ fn mha_decoding_single_batch_amd[
     var lane = lane_id()
     var coords = idx2crd[warp_layout](lane)
     var group_idx = coords[0] * rowwise_stride
-    var q_head_idx = block_idx.y * group + group_idx
+    var q_head_idx = block_idx.y * UInt(group) + UInt(group_idx)
 
     var gmem_manager = GlobalMemoryManager[
         q_type, BM, BN, BK, depth, num_heads, group, token_gen
@@ -1892,7 +1892,7 @@ fn mha_decoding_single_batch_amd[
     constrained[BK == 32, "BK must be 32"]()
 
     # the following assumes BK == 32, i.e. simd_width = 2*frag_size
-    alias q_reg_size = (depth // BK) * num_m_mmas * simd_width
+    alias q_reg_size = (depth // BK) * num_m_mmas * UInt(simd_width)
 
     var q_reg_data = stack_allocation[
         q_reg_size,

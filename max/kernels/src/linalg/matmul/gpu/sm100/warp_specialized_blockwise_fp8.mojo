@@ -197,13 +197,13 @@ fn load_AB[
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
 
-    var a_gmem_slice_coord = (
-        peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
-    )
+    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+        a_tma_rows
+    ) + work_tile_coord[0] * UInt(BM)
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * b_tma_rows
-        + peer_cta_coord[0] * BN
-        + work_tile_coord[1] * MMA_N
+        peer_cta_coord[1] * UInt(b_tma_rows)
+        + peer_cta_coord[0] * UInt(BN)
+        + work_tile_coord[1] * UInt(MMA_N)
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -211,10 +211,10 @@ fn load_AB[
     var a_scales_smem_tile = a_scales_smem.next(stage)[]
 
     var a_smem_slice = __type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
     var b_smem_slice = __type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
@@ -334,7 +334,7 @@ fn multi_stage_reg_epilogue[
         )
 
         # Guard the write to shared memory is done.
-        named_barrier[num_output_warps * WARP_SIZE]()
+        named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
         var lane = lane_id()
 
@@ -343,9 +343,13 @@ fn multi_stage_reg_epilogue[
         ].value() if MMA_M == 256 else BM
 
         var elect_one_warp = warp_id == 0 if MMA_M == 256 else warp_id % 2 == 0
-        var coord_n_mma_m256 = work_tile_coord[1] * MMA_N + stage * stageN
+        var coord_n_mma_m256 = work_tile_coord[1] * UInt(MMA_N) + UInt(
+            stage * stageN
+        )
         var coord_n_mma_m128 = (
-            work_tile_coord[1] * MMA_N + stage * stageN + BN * (warp_id // 2)
+            work_tile_coord[1] * UInt(MMA_N)
+            + UInt(stage * stageN)
+            + UInt(BN * (warp_id // 2))
         )
 
         var coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
@@ -359,7 +363,7 @@ fn multi_stage_reg_epilogue[
                 c_smem_split,
                 (
                     UInt(coord_n),
-                    UInt(work_tile_coord[0] * BM),
+                    UInt(work_tile_coord[0] * UInt(BM)),
                 ),
             )
             c_tma_op.commit_group()
@@ -376,7 +380,7 @@ fn multi_stage_reg_epilogue[
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
 @always_inline
@@ -496,13 +500,13 @@ fn promote_accumulators[
             ),
         ]()
 
-        var global_bn_start = bn * MMA_N
-        var begin_n = min(MMA_N, BK - global_bn_start % BK)
+        var global_bn_start = bn * UInt(MMA_N)
+        var begin_n = min(MMA_N, BK - global_bn_start % UInt(BK))
         var end_n = min(MMA_N, N - global_bn_start)
 
         # find the first b_scale index just by dividing by block size (128)
         # we use `b_scale_next_n` to find the second b_scale index later
-        b_scale_idx0 = global_bn_start // BK
+        b_scale_idx0 = global_bn_start // UInt(BK)
         # If MMA_N > BK (128) then we should use two scales_b in each block. `next_n` determines the border between the two scales_b.
         # Example: N = 960, MMA_N = 192, num_of_b_scales: ceildiv(960, BK) = 8
         # <------------------------------------ MMA_N (192) ------------------------------------>
@@ -547,9 +551,9 @@ fn promote_accumulators[
 
     # load a scales
     var warp_id = get_warp_id()
-    var coord_m_warp_level_offset = (
-        warp_id * WARP_SIZE if MMA_M == 256 else (warp_id % 2) * WARP_SIZE
-    )
+    var coord_m_warp_level_offset = warp_id * UInt(
+        WARP_SIZE
+    ) if MMA_M == 256 else (warp_id % 2) * UInt(WARP_SIZE)
     var upper_local_m_offset = lane_id() // 4
     var lower_local_m_offset = lane_id() // 4 + 16
 
@@ -893,7 +897,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         SharedMemBarrier
     ]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
@@ -976,8 +980,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % cta_group),
-        UInt(rank_m // cta_group),
+        UInt(rank_m % UInt(cta_group)),
+        UInt(rank_m // UInt(cta_group)),
         rank_n,
     )  # v,m,n
 
@@ -996,7 +1000,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     a_multicast_mask <<= rank_m
     b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * CLUSTER_M
+    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)

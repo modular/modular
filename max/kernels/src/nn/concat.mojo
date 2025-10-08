@@ -695,7 +695,7 @@ fn _concat_inner_most_single_dim[
         LayoutTensor[dtype, inputs_layout, MutableAnyOrigin], num_inputs
     ],
 ):
-    var idx = block_idx.x * block_size + thread_idx.x
+    var idx = block_idx.x * UInt(block_size) + thread_idx.x
     var index = _get_start_indices_of_nth_subvolume_uint[1](
         UInt(idx), output.runtime_layout.shape.value
     )
@@ -944,8 +944,8 @@ fn _fused_concat_inner_most_single_dim[
 ):
     alias num_inputs = input_shapes.size
 
-    var idx = block_idx.x * block_size + thread_idx.x
-    if idx >= product(input_shapes[0], rank):
+    var idx = block_idx.x * UInt(block_size) + thread_idx.x
+    if idx >= UInt(product(input_shapes[0], rank)):
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](

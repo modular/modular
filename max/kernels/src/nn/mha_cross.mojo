@@ -67,7 +67,7 @@ fn _bmm0_bs[
     var q_offset: Int
     var num_keys: Int
     var padded_num_keys = kv_max_seq_len + max_cache_size
-    var p_offset = batch_head * q_max_seq_len * padded_num_keys
+    var p_offset = batch_head * UInt(q_max_seq_len) * UInt(padded_num_keys)
 
     q_seq_start = Int(q_input_row_offsets[batch])
     q_seq_end = Int(q_input_row_offsets[batch + 1])
@@ -88,7 +88,7 @@ fn _bmm0_bs[
 
     var q = q_ptr + q_offset
 
-    var kv_head = Int(head // group)
+    var kv_head = Int(head // UInt(group))
 
     var p = p_ptr + Int(p_offset)
 
@@ -103,7 +103,7 @@ fn _bmm0_bs[
         fn accum_fn[width: Int](offset: Int):
             alias alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
-                y * num_heads * depth + offset
+                y * UInt(num_heads) * UInt(depth) + UInt(offset)
             ).cast[k_type]()
             var k_val = k_ptr.load[width=width, alignment=alignment](offset)
             var qk_val = (q_val * k_val).cast[p_type]()
@@ -119,14 +119,14 @@ fn _bmm0_bs[
 
     var score_row = y
     var score_col = x
-    p[y * padded_num_keys + x] = mask_functor.mask(
+    p[y * UInt(padded_num_keys) + x] = mask_functor.mask(
         Index(Int(batch), Int(head), Int(score_row), Int(score_col)),
         accum * scale.cast[p_type](),
     )
-    p[y * padded_num_keys + x] = _kernel_mask(
+    p[y * UInt(padded_num_keys) + x] = _kernel_mask(
         Index(score_row, score_col),
         Index(cur_query_len, num_keys),
-        p[y * padded_num_keys + x],
+        p[y * UInt(padded_num_keys) + x],
     )
 
 
@@ -163,7 +163,7 @@ fn _bmm1_bs[
     var cur_kv_len: Int
     var output_offset: Int
     var padded_num_keys = kv_max_seq_len + max_cache_size
-    var p_offset = batch_head * q_max_seq_len * padded_num_keys
+    var p_offset = batch_head * UInt(q_max_seq_len) * UInt(padded_num_keys)
 
     q_seq_start = Int(q_input_row_offsets[batch])
     q_seq_end = Int(q_input_row_offsets[batch + 1])
@@ -183,18 +183,18 @@ fn _bmm1_bs[
 
     var p = p_ptr + p_offset
 
-    var kv_head = Int(head // group)
+    var kv_head = Int(head // UInt(group))
     var output = output_ptr + Int(output_offset)
 
     var accum = Float32(0.0)
 
     for i in range(cur_kv_len + v_cache.cache_length(batch)):
         var v_ptr = v_cache.block_paged_ptr[tile_size=1](batch, i, kv_head, x)
-        accum += (p[y * padded_num_keys + i].cast[v_type]() * v_ptr[0]).cast[
-            DType.float32
-        ]()
+        accum += (
+            p[y * UInt(padded_num_keys) + UInt(i)].cast[v_type]() * v_ptr[0]
+        ).cast[DType.float32]()
 
-    output[y * num_heads * depth + x] = accum.cast[output_type]()
+    output[y * UInt(num_heads) * UInt(depth) + x] = accum.cast[output_type]()
 
 
 # ===-----------------------------------------------------------------------===#
