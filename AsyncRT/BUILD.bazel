@@ -257,6 +257,16 @@ modular_shared_library(
     ],
 )
 
+# For linking the nvshmem hostlibs when compiling Mojo binaries from bazel
+modular_cc_library(
+    name = "nvshmem_hostlibs",
+    visibility = ["//visibility:public"],
+    deps = select({
+        "//:linux_x86_64": ["@nvshmem_prebuilt//:hostlibs"],
+        "//conditions:default": [],
+    }),
+)
+
 modular_shared_library(
     # NOTE: currently the target name is coupled to NIXL's plugin discovery
     # logic, which looks for `libplugin_*.so`.
