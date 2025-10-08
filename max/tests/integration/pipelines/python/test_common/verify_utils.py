@@ -510,16 +510,18 @@ class DistanceValidatorBase(ValidatorBase, ABC):
     ) -> ValidationResultCollection:
         distance = self._compute_distance(target, reference)
         isoff = distance > self._threshold
-
         if not isoff.any():
             return ValidationResultCollection(
                 ValidationResult(self.short_name(), True)
             )
-
         # NOTE: reference and target shapes differ from distance's shape
         # _compute_distance will reduces the last axis into single statistic
         reference = reference[isoff]
         target = target[isoff]
+        if isoff.size <= 1:
+            distance = distance.reshape(-1)
+            isoff = isoff.reshape(-1)
+
         element_indices = np.transpose(np.where(isoff))
         max_distance = distance.max()
         num_diffs = isoff.size

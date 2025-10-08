@@ -30,6 +30,7 @@ from max.interfaces import (
     ProcessorInputs,
     RequestID,
     SamplingParams,
+    TextGenerationRequest,
 )
 from transformers import PreTrainedTokenizerBase
 from typing_extensions import NotRequired
@@ -67,6 +68,7 @@ T = TypeVar("T")
 def _create_batches(
     requests: Sequence[T], batch_sizes: int | list[int] = 1
 ) -> list[Sequence[T]]:
+    """Group requests into batches."""
     if isinstance(batch_sizes, list):
         if sum(batch_sizes) != len(requests):
             raise ValueError(
@@ -81,6 +83,38 @@ def _create_batches(
         batches.append(requests[start : start + size])
         start += size
     return batches
+
+
+def _create_requests(
+    ids: Sequence[RequestID],
+    requests: Sequence[MockTextGenerationRequest],
+    num_steps: int,
+    reference_by_id: dict[RequestID, ModelOutput] | None = None,
+    logits_processors: list[LogitsProcessor] | None = None,
+) -> list[TextGenerationRequest]:
+    """Create text generation requests.
+
+    Will correctly set `max_new_tokens` if reference outputs are provided.
+    """
+    text_generation_requests = []
+    for id, request in zip(ids, requests, strict=True):
+        if reference_by_id:
+            assert reference_by_id[id].values is not None
+            max_new_tokens = len(reference_by_id[id]["values"])
+        else:
+            max_new_tokens = num_steps
+        text_generation_requests.append(
+            request.to_text_generation_request(
+                id,
+                SamplingParams(
+                    ignore_eos=True,
+                    top_k=1,
+                    max_new_tokens=max_new_tokens,
+                    logits_processors=logits_processors,
+                ),
+            )
+        )
+    return text_generation_requests
 
 
 def run_model(
@@ -114,20 +148,21 @@ def run_model(
         logits_processors = [stored_logits, replace_logits]
     else:
         logits_processors = [stored_logits]
+        reference_by_id = None
 
-    sampling_params = SamplingParams(
-        top_k=1, max_new_tokens=num_steps, logits_processors=logits_processors
-    )
     batched_requests = _create_batches(requests, batch_size)
     batched_ids = _create_batches(ids, batch_size)
 
     for ids_in_batch, requests_in_batch in zip(
         batched_ids, batched_requests, strict=True
     ):
-        batch = [
-            request.to_text_generation_request(id, sampling_params)
-            for id, request in zip(ids_in_batch, requests_in_batch, strict=True)
-        ]
+        batch = _create_requests(
+            ids_in_batch,
+            requests_in_batch,
+            num_steps,
+            reference_by_id,
+            logits_processors,
+        )
         outputs = pipeline.generate(batch)
         if print_outputs:
             for j in range(len(batch)):
@@ -155,14 +190,11 @@ class StoreLogits:
         self, ids: Sequence[RequestID], tokenizer: PipelineTokenizer
     ) -> None:
         self.values: dict[RequestID, list[TokenInfo]] = {id: [] for id in ids}
-        self.reached_eos = {id: False for id in ids}
         self.tokenizer = tokenizer
 
     def __call__(self, inputs: ProcessorInputs) -> None:
         logits = inputs.logits
         context = inputs.context
-        if self.reached_eos[context.request_id]:
-            return
         next_token_logits = logits[-1, :].to_numpy().copy()
         next_token = next_token_logits.argmax(axis=-1)
         self.values[context.request_id].append(
@@ -174,8 +206,6 @@ class StoreLogits:
                 "logits": next_token_logits,
             }
         )
-        if next_token == self.tokenizer.eos:
-            self.reached_eos[context.request_id] = True
 
 
 class ReplaceLogitsWithReference:
