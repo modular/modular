@@ -1610,10 +1610,12 @@ fn _elementwise_impl_gpu[
     alias num_waves = 32
     alias registers_per_block = hw_info.max_registers_per_block
     alias sm_count: UInt = UInt(hw_info.sm_count)
-    alias threads_per_sm: UInt = UInt(hw_info.threads_per_sm)
+    alias threads_per_multiprocessor: UInt = UInt(
+        hw_info.threads_per_multiprocessor
+    )
 
     constrained[
-        sm_count > 0 and threads_per_sm > 0,
+        sm_count > 0 and threads_per_multiprocessor > 0,
         "the sm_count and thread_count must be known",
     ]()
 
@@ -1636,7 +1638,7 @@ fn _elementwise_impl_gpu[
     var num_blocks = clamp(
         ceildiv(num_packed_elems, UInt(block_size)),
         1,
-        sm_count * threads_per_sm // UInt(block_size) * num_waves,
+        sm_count * threads_per_multiprocessor // UInt(block_size) * num_waves,
     )
 
     @__copy_capture(
