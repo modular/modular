@@ -50,7 +50,7 @@ def test_assert_messages():
 
 
 @fieldwise_init
-struct DummyStruct(EqualityComparable, Stringable):
+struct DummyStruct(EqualityComparable, Writable):
     var value: Int
 
     fn __eq__(self, other: Self) -> Bool:
@@ -60,8 +60,8 @@ struct DummyStruct(EqualityComparable, Stringable):
         return self.value != other.value
 
     @no_inline
-    fn __str__(self) -> String:
-        return "Dummy"  # Can't be used for equality
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("Dummy")  # Can't be used for equality
 
 
 def test_assert_equal_is_generic():

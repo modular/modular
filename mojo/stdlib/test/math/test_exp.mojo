@@ -66,7 +66,7 @@ def test_exp_libm[dtype: DType]():
 
 
 @fieldwise_init
-struct Float32Expable(EqualityComparable, Stringable, _Expable):
+struct Float32Expable(EqualityComparable, Writable, _Expable):
     """This is a test struct that implements the Expable trait for Float32."""
 
     var x: Float32
@@ -80,12 +80,12 @@ struct Float32Expable(EqualityComparable, Stringable, _Expable):
     fn __ne__(self, other: Self) -> Bool:
         return self.x != other.x
 
-    fn __str__(self) -> String:
-        return String("Float32Expable(", self.x, ")")
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("Float32Expable(", self.x, ")")
 
 
 @fieldwise_init
-struct FakeExpable(EqualityComparable, Stringable, _Expable):
+struct FakeExpable(EqualityComparable, Writable, _Expable):
     """This is a test struct that has a dummy definition of exp function."""
 
     var x: Int
@@ -99,8 +99,8 @@ struct FakeExpable(EqualityComparable, Stringable, _Expable):
     fn __ne__(self, other: Self) -> Bool:
         return self.x != other.x
 
-    fn __str__(self) -> String:
-        return String("FakeExpable(", self.x, ")")
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("FakeExpable(", self.x, ")")
 
 
 def test_exapble_trait():
