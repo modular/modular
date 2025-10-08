@@ -166,9 +166,7 @@ fn _topp_minp_sampling[
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
-        NDBuffer[dtype, input_logits.rank](
-            sorted_probs_ptr, DimList(batch_size, vocab_size)
-        ),
+        sorted_probs,
         axis=input_logits.rank - 1,
     )
 

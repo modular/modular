@@ -4459,9 +4459,11 @@ fn mha_gpu_naive[
         batch_size * num_heads * max_prompt_len * num_keys
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-    var p_buffer = NDBuffer[p_type, 3](
+    var p_buffer = LayoutTensor[p_type, Layout.row_major[3]()](
         p_device.unsafe_ptr(),
-        Index(batch_size * num_heads, max_prompt_len, num_keys),
+        RuntimeLayout[Layout.row_major[3]()].row_major(
+            Index(batch_size * num_heads, max_prompt_len, num_keys)
+        ),
     )
     var q_device = DeviceBuffer[q.dtype](ctx, q.data, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
@@ -4506,16 +4508,34 @@ fn mha_gpu_naive[
     fn input_fn_device[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
-        return p_buffer.load[width=_simd_width](rebind[IndexList[3]](coords))
+        return p_buffer.load[width=_simd_width](coords)
 
-    _softmax_gpu[
-        p_type, 1, 3, DimList.create_unknown[3](), input_fn_device, sink=sink
-    ](
+    var sink_weights_lt: OptionalReg[
+        LayoutTensor[
+            q.type,
+            Layout.row_major(UNKNOWN_VALUE),
+            MutableAnyOrigin,
+        ]
+    ] = None
+
+    if sink_weights:
+        sink_weights_lt = LayoutTensor[
+            q.type,
+            Layout.row_major(UNKNOWN_VALUE),
+            MutableAnyOrigin,
+        ](
+            sink_weights.value().data,
+            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                sink_weights.value().get_shape()
+            ),
+        )
+
+    _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink](
         Index(batch_size * num_heads, max_prompt_len, num_keys),
         p_buffer,
         2,
         ctx,
-        sink_weights=sink_weights,
+        sink_weights=sink_weights_lt,
     )
     alias kernel_1 = _bmm1_bs[
         output_type,
@@ -5026,6 +5046,12 @@ fn _naive_attention[
     var score = NDBuffer[dtype, 4](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
+    var score_lt = LayoutTensor[dtype, Layout.row_major[4]()](
+        score_ptr,
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
+    )
 
     batched_matmul[transpose_b=transpose_k](score, q, k)
 
@@ -5045,8 +5071,8 @@ fn _naive_attention[
     elementwise[scale_and_mask, simd_size](score.get_shape())
 
     softmax[dtype, simd_size, 4](
-        score,
-        score,
+        score_lt,
+        score_lt,
         axis=3,
     )
 

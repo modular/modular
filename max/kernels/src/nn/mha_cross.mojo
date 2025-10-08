@@ -20,6 +20,7 @@ from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
@@ -279,9 +280,11 @@ fn mha_cross_gpu_naive[
     )
 
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-    var p_buffer = NDBuffer[p_type, 3](
+    var p_buffer = LayoutTensor[p_type, Layout.row_major[3]()](
         p_device.unsafe_ptr(),
-        Index(batch_size * num_heads, q_max_seq_len, num_keys),
+        RuntimeLayout[Layout.row_major[3]()].row_major(
+            Index(batch_size * num_heads, q_max_seq_len, num_keys)
+        ),
     )
     var q_device = DeviceBuffer[q_type](ctx, q.data, q.size(), owning=False)
 
@@ -316,7 +319,7 @@ fn mha_cross_gpu_naive[
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         return p_buffer.load[width=_simd_width](rebind[IndexList[3]](coords))
 
-    _softmax_gpu[p_type, 1, 3, DimList.create_unknown[3](), input_fn_device](
+    _softmax_gpu[p_type, 1, 3, input_fn_device](
         Index(batch_size * num_heads, q_max_seq_len, num_keys), p_buffer, 2, ctx
     )
     var output_device = DeviceBuffer[output.dtype](

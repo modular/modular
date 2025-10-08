@@ -4216,9 +4216,6 @@ struct Softmax:
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        # shape should be the same between the two inputs
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
@@ -4233,12 +4230,11 @@ struct Softmax:
             output.dtype,
             simd_width_of[output.dtype](),
             output.rank,
-            output_ndbuffer.shape,
             input_fn,
             target,
         ](
             output.shape(),
-            output_ndbuffer,
+            output.to_layout_tensor(),
             output.rank - 1,
             context=ctx,
         )
@@ -4271,10 +4267,14 @@ struct LogSoftmax:
             output.dtype,
             simd_width_of[output.dtype](),
             output.rank,
-            output_ndbuffer.shape,
             input_fn,
             target,
-        ](output.shape(), output_ndbuffer, output.rank - 1, context=ctx)
+        ](
+            output.shape(),
+            output.to_layout_tensor(),
+            output.rank - 1,
+            context=ctx,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
