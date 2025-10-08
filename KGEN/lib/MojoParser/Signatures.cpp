@@ -691,7 +691,9 @@ static InflightDiag emitOptionalAfterRequired(IREmitter &emitter,
 /// arguments/parameters get a placeholder default iff there are already
 /// defaults in the given array of default (i.e. only if a variadic comes after
 /// an optional argument/parameter).
-static LogicalResult
+/// The default value is returned if available, otherwise a null PValue is
+/// returned. Returns failure if there is an invalid missing default argument.
+static FailureOr<PValue>
 emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
                       SmallVectorImpl<TypedAttr> &defaultPos,
                       SmallVectorImpl<TypedAttr> &defaultKwOnly,
@@ -717,9 +719,32 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
 
   if (PValue value = emitDefaultIfPossible()) {
     defaults.push_back(value);
-    return success();
+    return value;
   }
-  return failure();
+
+  // Diagnose an invalid missing default argument: if we have any positional
+  // defaults, then we require all the rest to have defaults until the
+  // keyword-only section.
+  //
+  // If we've had any in the keyword-only section, we continue to require
+  // them.  FIXME: Why? There is no ambiguity with some keyword-only
+  // arguments having defaults.
+  if ((!defaultPos.empty() &&
+       arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
+      !defaultKwOnly.empty()) {
+    if (arg.kgenConvention != ArgConvention::ByRefResult &&
+        arg.kgenConvention != ArgConvention::ByRefError) {
+      InflightDiag diag = emitOptionalAfterRequired(
+          emitter, arg,
+          exprContext == EC_DefaultParam ? "parameter" : "argument");
+      if (arg.typeExpr)
+        diag << arg.typeExpr->getRange();
+      return failure();
+    }
+  }
+
+  // No default value for this argument.
+  return PValue();
 }
 
 /// Given a type that potentially has all of its parameters unbound, implicitly
@@ -890,27 +915,12 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         variadicKind = VariadicKind::None;
     }
 
-    if (failed(emitDefaultIfPossible(arg, type, result.defaultPosParams,
-                                     result.defaultKwOnlyParams, emitter,
-                                     EC_DefaultParam))) {
-      // Diagnose an invalid missing default argument: if we have any positional
-      // defaults, then we require all the rest to have defaults until the
-      // keyword-only section.
-      //
-      // If we've had any in the keyword-only section, we continue to require
-      // them.  FIXME: Why? There is no ambiguity with some keyword-only
-      // arguments having defaults.
-      if ((!result.defaultPosParams.empty() &&
-           arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
-          !result.defaultKwOnlyParams.empty()) {
-        if (arg.kgenConvention != ArgConvention::ByRefResult &&
-            arg.kgenConvention != ArgConvention::ByRefError) {
-          emitOptionalAfterRequired(emitter, arg, "parameter")
-              << arg.typeExpr->getRange();
-          hasErrors = true;
-        }
-      }
-    }
+    // Emit default parameter values if present. An error would have been
+    // emitted if failed.
+    FailureOr<PValue> defaultValOrError = emitDefaultIfPossible(
+        arg, type, result.defaultPosParams, result.defaultKwOnlyParams, emitter,
+        EC_DefaultParam);
+    hasErrors |= failed(defaultValOrError);
 
     // TODO: Parameter decls should support conventions at some point.
     if (arg.convention != ParsedArgument::kConventionUnspec) {
@@ -966,6 +976,26 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       // Must insert the constraint into the temporary scope immediately so that
       // the following constraint expressions may utilize it.
       declScope.insertKnownAssumptions({paramConstraint});
+    }
+
+    // Test that any default given doesn't immediately violate the constraints
+    // on this parameter. Otherwise that default value can never be used.
+    if (succeeded(defaultValOrError) && *defaultValOrError &&
+        !paramConstraints.empty()) {
+      PValue defaultVal = *defaultValOrError;
+      ParserParameterEvaluator evaluator(result.shared);
+      evaluator.setDeclBinding(newDecl, defaultVal);
+      // Only report direct violations. Unprovable constraints are allowed
+      // since they may depend on other parameters.
+      if (failed(LIT::checkConstraints(
+              declScope, paramConstraints,
+              [&](ArrayRef<ConstraintAttr> constraints) {
+                constraintEmitter.emitError(
+                    arg.loc, "default value violated constraint");
+              },
+              /*emitUnprovableConstraints=*/nullptr, &evaluator))) {
+        hasErrors = true;
+      }
     }
   }
 
@@ -1506,26 +1536,11 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
                          : ParsedArgument::kConventionRead;
   }
 
-  // Emit default argument values if present.
-  if (failed(emitDefaultIfPossible(arg, type, tcSignature.defaultPosArgs,
-                                   tcSignature.defaultKwOnlyArgs, typeEmitter,
-                                   EC_DefaultArgument))) {
-    // Diagnose an invalid missing default argument: if we have any positional
-    // defaults, then we require all the rest to have defaults until the
-    // keyword-only section.
-    //
-    // If we've had any in the keyword-only section, we continue to require
-    // them.  FIXME: Why? There is no ambiguity with some keyword-only
-    // arguments having defaults.
-    if ((!tcSignature.defaultPosArgs.empty() &&
-         arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
-        !tcSignature.defaultKwOnlyArgs.empty()) {
-      InflightDiag diag =
-          emitOptionalAfterRequired(typeEmitter, arg, "argument");
-      if (arg.typeExpr)
-        diag << arg.typeExpr->getRange();
-    }
-  }
+  // Emit default argument values if present. An error would have been emitted
+  // if failed.
+  (void)emitDefaultIfPossible(arg, type, tcSignature.defaultPosArgs,
+                              tcSignature.defaultKwOnlyArgs, typeEmitter,
+                              EC_DefaultArgument);
 
   // Now that we have the declared type and default value sorted, apply the
   // argument convention to compute the full type for the argument.
