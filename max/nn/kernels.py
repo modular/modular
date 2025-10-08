@@ -556,6 +556,95 @@ def matmul_k_cache_ragged(
     )
 
 
+def matmul_k_cache_ragged_scaled_float8(
+    kv_params: KVCacheParams,
+    hidden_states: TensorValue,
+    input_row_offsets: TensorValue,
+    weight: TensorValue,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    kv_collection: PagedCacheValues,
+    scales_granularity_mnk: tuple[int, int, int],
+    layer_idx: TensorValue,
+) -> None:
+    """Computes key projections with ragged input with FP8 block scaling.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        hidden_states: TensorValue representing the input tensor with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape [batch_size + 1].
+        weight: TensorValue representing the weight tensor with shape
+            [N=num_heads, K=hidden_dim].
+        input_scale: TensorValue representing the input scale tensor with shape
+            [ceildiv(K / BLOCK_SIZE_K), ceildiv(M / BLOCK_SIZE_M)].
+        weight_scale: TensorValue representing the weight scale tensor with
+            shape [ceildiv(N / BLOCK_SIZE_N), ceildiv(K / BLOCK_SIZE_K)].
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        scales_granularity_mnk: tuple[int, int, int] representing the
+            scaling (BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K).
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel,
+            or when the cache strategy is not supported.
+    """
+    if hidden_states.dtype != weight.dtype:
+        raise ValueError(
+            "expected hidden_states and weight to have the same dtype, but got"
+            f" {hidden_states.dtype} and {weight.dtype}, respectively."
+        )
+
+    hidden_states_rank_expected = 2
+    if hidden_states.rank != hidden_states_rank_expected:
+        raise ValueError(
+            "expected hidden_states to have rank "
+            f"{hidden_states_rank_expected}, was {hidden_states.rank}"
+        )
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
+        )
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    op_name = f"mo.k_matmul.ragged.{cache_strategy_str}.scale"
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "m_scale_granularity": scales_granularity_mnk[0],
+        "n_scale_granularity": scales_granularity_mnk[1],
+        "k_scale_granularity": scales_granularity_mnk[2],
+    }
+
+    ops.inplace_custom(
+        name=op_name,
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            input_row_offsets,
+            weight,
+            input_scale,
+            weight_scale,
+            *kv_collection,
+            layer_idx,
+        ],
+        parameters=parameters,
+    )
+
+
 def fused_qk_ragged_rope(
     kv_params: KVCacheParams,
     input: TensorValue,

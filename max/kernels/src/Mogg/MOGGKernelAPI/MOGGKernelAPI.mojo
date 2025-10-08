@@ -169,6 +169,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
+    k_matmul_ragged_paged_scale,
     kv_cache_store_ragged,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
@@ -7668,6 +7669,53 @@ struct Struct_k_matmul_ragged_paged:
             managed_tensor_slice_to_ndbuffer(hidden_state),
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
             managed_tensor_slice_to_ndbuffer(weight),
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("mo.k_matmul.ragged.paged.scale")
+struct Struct_k_matmul_ragged_paged_scale:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        scale_dtype: DType, //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        target: StaticString,
+    ](
+        hidden_state: InputTensor[dtype=dtype, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        weight: InputTensor[dtype=dtype, rank=2],
+        input_scale: InputTensor[dtype=scale_dtype, rank=2],
+        weight_scale: InputTensor[dtype=scale_dtype, rank=2],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        k_matmul_ragged_paged_scale[
+            target=target,
+            scales_granularity_mnk = IndexList[3](
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+        ](
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
+            managed_tensor_slice_to_ndbuffer(input_scale),
+            managed_tensor_slice_to_ndbuffer(weight_scale),
             kv_collection,
             layer_idx,
             ctx,
