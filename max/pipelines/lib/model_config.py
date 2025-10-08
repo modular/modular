@@ -27,6 +27,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.nn.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
+from transformers.generation import GenerationConfig
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
 from .hf_utils import (
@@ -354,6 +355,23 @@ class MAXModelConfig(MAXModelConfigBase):
                 )
             )
         return self._huggingface_config
+
+    @cached_property
+    def generation_config(self) -> GenerationConfig:
+        """Retrieve the HuggingFace GenerationConfig for this model.
+
+        This property lazily loads the GenerationConfig from the model repository
+        and caches it to avoid repeated remote fetches.
+
+        Returns:
+            The GenerationConfig for the model, containing generation parameters
+            like max_length, temperature, top_p, etc.
+        """
+        return GenerationConfig.from_pretrained(
+            self.huggingface_model_repo.repo_id,
+            trust_remote_code=self.huggingface_model_repo.trust_remote_code,
+            revision=self.huggingface_model_repo.revision,
+        )
 
     def validate_multi_gpu_supported(self, multi_gpu_supported: bool) -> None:
         """Validates that the model architecture supports multi-GPU inference.
