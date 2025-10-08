@@ -18,11 +18,12 @@ around the target location to compute the interpolated value.
 """
 from math import clamp, floor
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host.info import is_gpu
 from gpu.id import block_dim, block_idx, thread_idx
+from layout import Layout, LayoutTensor
+from memory import AddressSpace
 from runtime.asyncrt import DeviceContextPtr
+from utils import Index
 
 
 @always_inline
@@ -103,28 +104,31 @@ fn cubic_kernel(x: SIMD) -> __type_of(x):
     return abs_x.le(1).select(case_1, abs_x.lt(2).select(case_2, case_3))
 
 
-fn cpu_bicubic_kernel[
-    dtype: DType,
-    rank: Int, //,
-](
-    output_host: NDBuffer[mut=True, dtype, rank, *_],
-    input_host: NDBuffer[dtype, rank, *_],
+fn cpu_bicubic_kernel(
+    output_host: LayoutTensor[mut=True, **_],
+    input_host: LayoutTensor[**_],
 ) -> None:
-    """Perform bicubic interpolation on an NDBuffer of form NCHW.
+    """Perform bicubic interpolation on a LayoutTensor of form NCHW.
 
     Args:
         output_host: Output tensor with desired dimensions.
         input_host: Input tensor of shape [B, C, H, W].
     """
-    constrained[rank == 4, "bicubic resize only supports rank 4 tensors"]()
+    constrained[
+        output_host.rank == 4 and input_host.rank == 4,
+        "bicubic resize only supports rank 4 tensors",
+    ]()
+    constrained[output_host.dtype == input_host.dtype]()
 
     # get dimensions
-    var batch_size = input_host.dim[0]()
-    var channels = input_host.dim[1]()
-    var in_height = input_host.dim[2]()
-    var in_width = input_host.dim[3]()
-    var out_height = output_host.dim[2]()
-    var out_width = output_host.dim[3]()
+    var input_shape = input_host.runtime_layout.shape.value.canonicalize()
+    var output_shape = output_host.runtime_layout.shape.value.canonicalize()
+    var batch_size = input_shape[0]
+    var channels = input_shape[1]
+    var in_height = input_shape[2]
+    var in_width = input_shape[3]
+    var out_height = output_shape[2]
+    var out_width = output_shape[3]
 
     var scale_h = Float32(in_height) / Float32(out_height)
     var scale_w = Float32(in_width) / Float32(out_width)
@@ -173,23 +177,36 @@ fn cpu_bicubic_kernel[
 
                             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
                             var pixel_value = Float32(
-                                input_host[b, c, y_pos, x_pos]
+                                input_host.load[width=1](
+                                    Index(b, c, y_pos, x_pos)
+                                )
                             )
                             sum_value += pixel_value * weight
                             sum_weights += weight
 
                     # store the result in the output tensor
-                    output_host[b, c, y_out, x_out] = sum_value.cast[dtype]()
+                    output_host.store[width=1](
+                        Index(b, c, y_out, x_out),
+                        sum_value.cast[output_host.dtype](),
+                    )
 
 
 fn gpu_bicubic_kernel[
     dtype: DType,
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
+    input_layout: Layout,
+    output_layout: Layout,
+    address_space: AddressSpace = AddressSpace.GENERIC,
 ](
-    output: NDBuffer[mut=True, dtype, rank, MutableAnyOrigin, output_shape],
-    input: NDBuffer[dtype, rank, MutableAnyOrigin, input_shape],
+    output: LayoutTensor[
+        mut=True,
+        dtype,
+        output_layout,
+        MutableAnyOrigin,
+        address_space=address_space,
+    ],
+    input: LayoutTensor[
+        dtype, input_layout, MutableAnyOrigin, address_space=address_space
+    ],
 ) -> None:
     """Perform bicubic interpolation using GPU.
 
@@ -201,10 +218,12 @@ fn gpu_bicubic_kernel[
     var c = block_idx.y
     var tid = thread_idx.x
 
-    var in_height = input.dim[2]()
-    var in_width = input.dim[3]()
-    var out_height = output.dim[2]()
-    var out_width = output.dim[3]()
+    var input_shape = input.runtime_layout.shape.value.canonicalize()
+    var output_shape = output.runtime_layout.shape.value.canonicalize()
+    var in_height = input_shape[2]
+    var in_width = input_shape[3]
+    var out_height = output_shape[2]
+    var out_width = output_shape[3]
 
     var scale_h = Float32(in_height) / Float32(out_height)
     var scale_w = Float32(in_width) / Float32(out_width)
@@ -250,24 +269,23 @@ fn gpu_bicubic_kernel[
                 var weight = weights_y[i] * weights_x[j]
 
                 # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
-                var pixel_value = input[b, c, y_pos, x_pos].cast[
-                    DType.float32
-                ]()
+                var pixel_value = input.load[width=1](
+                    Index(b, c, y_pos, x_pos)
+                ).cast[DType.float32]()
                 sum_value += pixel_value * weight
                 sum_weights += weight
 
-        output[b, c, y_out, x_out] = sum_value.cast[dtype]()
+        output.store[width=1](
+            Index(b, c, y_out, x_out), sum_value.cast[dtype]()
+        )
 
 
 fn resize_bicubic[
-    dtype: DType,
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList, //,
+    dtype: DType, //,
     target: StaticString,
 ](
-    output: NDBuffer[mut=True, dtype, rank, MutableAnyOrigin, output_shape],
-    input: NDBuffer[dtype, rank, MutableAnyOrigin, input_shape],
+    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, **_],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.
@@ -277,17 +295,21 @@ fn resize_bicubic[
         input: Input tensor of shape [B, C, H, W] on host or device.
         ctx: Device context to enqueue GPU kernels on.
     """
-    constrained[rank == 4, "bicubic resize only supports rank 4 tensors"]()
+    constrained[
+        output.rank == 4 and input.rank == 4,
+        "bicubic resize only supports rank 4 tensors",
+    ]()
 
     @parameter
     if is_gpu[target]():
-        var N = input.dim[0]()
-        var C = input.dim[1]()
+        var input_shape = input.runtime_layout.shape.value.canonicalize()
+        var N = input_shape[0]
+        var C = input_shape[1]
 
         # Use a fixed block size to avoid exceeding CUDA thread limits.
         var block_size = 256
         alias kernel = gpu_bicubic_kernel[
-            dtype, rank, output_shape, input_shape
+            output.dtype, input.layout, output.layout, output.address_space
         ]
         ctx.get_device_context().enqueue_function_checked[kernel, kernel](
             output,

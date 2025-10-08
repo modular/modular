@@ -3955,11 +3955,9 @@ struct ResizeBicubic:
         size: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        # Get input and output dimensions from tensors
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_buffer = managed_tensor_slice_to_ndbuffer(input)
-
-        resize_bicubic[target](output_buffer, input_buffer, ctx)
+        resize_bicubic[dtype=dtype, target=target](
+            output.to_layout_tensor(), input.to_layout_tensor(), ctx
+        )
 
     @staticmethod
     fn shape[
