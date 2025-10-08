@@ -15,7 +15,6 @@
 from math import ceildiv
 from sys import align_of
 
-from buffer import DimList, NDBuffer
 from builtin.dtype import _uint_type_of_width
 from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer
@@ -687,13 +686,13 @@ fn _topp_minp_sampling_gpu[
     Args:
         ctx: DeviceContext
             The context for GPU execution.
-        p_thresholds: NDBuffer[type, 1]
+        p_thresholds: LayoutTensor[type]
             Batch of p values (thresholds) for Top-P/Min-P sampling.
             For Top-P: cumulative probability threshold (e.g., 0.9 means sample from top 90%).
             For Min-P: min-p coefficients that determine the minimum probability threshold.
-        input_logits: NDBuffer[type, rank]
+        input_logits: LayoutTensor[type]
             Input logits tensor of shape [batch_size, vocab_size].
-        out_token_ids: NDBuffer[out_idx_type, rank]
+        out_token_ids: LayoutTensor[out_idx_type]
             Output buffer for sampled token indices of shape [batch_size, 1].
         temperature: Scalar[type]
             Temperature for softmax scaling of logits (default=1.0).
