@@ -23,7 +23,7 @@ from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
-from nn.mha_operand import NDBufferMHAOperand
+from nn.mha_operand import LayoutTensorMHAOperand
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from tensor_internal import IOUnknown, ManagedTensorSlice
@@ -298,7 +298,18 @@ fn test[
 
         @parameter
         if use_causal_mask:
-            var k_operand = NDBufferMHAOperand(k_device)
+            var k_operand = LayoutTensorMHAOperand(
+                LayoutTensor[
+                    k_device.type,
+                    Layout.row_major[k_device.rank](k_device.shape),
+                    MutableAnyOrigin,
+                ](
+                    k_device.data,
+                    RuntimeLayout[
+                        Layout.row_major[k_device.rank](k_device.shape)
+                    ].row_major(k_device.get_shape().canonicalize()),
+                ),
+            )
             var null_valid_length = NDBuffer[DType.uint32, 1](
                 UnsafePointer[UInt32](), Index(0)
             )
@@ -669,8 +680,30 @@ fn test_prefill[
         UnsafePointer[UInt32](), Index(0)
     )
 
-    var k_ref_operand = NDBufferMHAOperand(k_ref_device)
-    var v_ref_operand = NDBufferMHAOperand(v_ref_device)
+    var k_ref_operand = LayoutTensorMHAOperand(
+        LayoutTensor[
+            k_ref_device.type,
+            Layout.row_major[k_ref_device.rank](k_ref_device.shape),
+            MutableAnyOrigin,
+        ](
+            k_ref_device.data,
+            RuntimeLayout[
+                Layout.row_major[k_ref_device.rank](k_ref_device.shape)
+            ].row_major(k_ref_device.get_shape().canonicalize()),
+        ),
+    )
+    var v_ref_operand = LayoutTensorMHAOperand(
+        LayoutTensor[
+            v_ref_device.type,
+            Layout.row_major[v_ref_device.rank](v_ref_device.shape),
+            MutableAnyOrigin,
+        ](
+            v_ref_device.data,
+            RuntimeLayout[
+                Layout.row_major[v_ref_device.rank](v_ref_device.shape)
+            ].row_major(v_ref_device.get_shape().canonicalize()),
+        ),
+    )
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](

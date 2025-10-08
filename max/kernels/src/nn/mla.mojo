@@ -68,7 +68,7 @@ from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    NDBufferMHAOperand,
+    LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.mha_score_mod import ScoreModTrait
@@ -228,7 +228,17 @@ fn flare_mla_decoding[
     # Runtime dimensions.
     var num_keys = k.dim[1]()
 
-    var k_operand = NDBufferMHAOperand(k)
+    var k_operand = LayoutTensorMHAOperand(
+        LayoutTensor[
+            k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
+        ](
+            k.data,
+            RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
+                k.get_shape().canonicalize()
+            ),
+        )
+    )
+
     var valid_length = NDBuffer[DType.uint32, 1](
         UnsafePointer[UInt32](), Index(0)
     )
@@ -1221,8 +1231,40 @@ fn flare_mla_prefill[
         else:
             max_prompt_len = Int(k_rope.max_prompt_length())
 
-        var k_operand = RaggedMHAOperand(k, cache_row_offsets)
-        var v_operand = RaggedMHAOperand(v, cache_row_offsets)
+        var cache_row_offsets_lt = LayoutTensor[
+            cache_row_offsets.type,
+            Layout.row_major[cache_row_offsets.rank](cache_row_offsets.shape),
+            MutableAnyOrigin,
+        ](
+            cache_row_offsets.data,
+            RuntimeLayout[
+                Layout.row_major[cache_row_offsets.rank](
+                    cache_row_offsets.shape
+                )
+            ].row_major(cache_row_offsets.get_shape().canonicalize()),
+        )
+        var k_operand = RaggedMHAOperand(
+            LayoutTensor[
+                k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
+            ](
+                k.data,
+                RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
+                    k.get_shape().canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var v_operand = RaggedMHAOperand(
+            LayoutTensor[
+                v.type, Layout.row_major[v.rank](v.shape), MutableAnyOrigin
+            ](
+                v.data,
+                RuntimeLayout[Layout.row_major[v.rank](v.shape)].row_major(
+                    v.get_shape().canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
         alias kv_num_heads = cache_t.kv_params.num_heads
@@ -1327,10 +1369,52 @@ fn flare_mla_prefill[
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
-
-        var k_operand = RaggedMHAOperand(k, cache_row_offsets)
-        var v_operand = RaggedMHAOperand(v, cache_row_offsets)
-        var k_rope_operand = NDBufferMHAOperand(k_rope)
+        var cache_row_offsets_lt = LayoutTensor[
+            cache_row_offsets.type,
+            Layout.row_major[cache_row_offsets.rank](cache_row_offsets.shape),
+            MutableAnyOrigin,
+        ](
+            cache_row_offsets.data,
+            RuntimeLayout[
+                Layout.row_major[cache_row_offsets.rank](
+                    cache_row_offsets.shape
+                )
+            ].row_major(cache_row_offsets.get_shape().canonicalize()),
+        )
+        var k_operand = RaggedMHAOperand(
+            LayoutTensor[
+                k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
+            ](
+                k.data,
+                RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
+                    k.get_shape().canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var v_operand = RaggedMHAOperand(
+            LayoutTensor[
+                v.type, Layout.row_major[v.rank](v.shape), MutableAnyOrigin
+            ](
+                v.data,
+                RuntimeLayout[Layout.row_major[v.rank](v.shape)].row_major(
+                    v.get_shape().canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var k_rope_operand = LayoutTensorMHAOperand(
+            LayoutTensor[
+                k_rope.type,
+                Layout.row_major[k_rope.rank](k_rope.shape),
+                MutableAnyOrigin,
+            ](
+                k_rope.data,
+                RuntimeLayout[
+                    Layout.row_major[k_rope.rank](k_rope.shape)
+                ].row_major(k_rope.get_shape().canonicalize()),
+            ),
+        )
 
         alias output_type = output.dtype
         alias kv_num_heads = k_rope.shape.get[2]()

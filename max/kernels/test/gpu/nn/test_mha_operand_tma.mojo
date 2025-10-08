@@ -35,7 +35,7 @@ from memory.pointer import _GPUAddressSpace
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    NDBufferMHAOperand,
+    LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
 from testing import assert_equal
@@ -496,12 +496,16 @@ def test_ndbuffer[
     src_device = src_host.copy_to_device(ctx)
 
     # Create MHAOperands
-    src_operand = NDBufferMHAOperand(src_device.tensor)
+    src_operand = LayoutTensorMHAOperand(
+        src_device.to_layout_tensor().origin_cast[True, MutableAnyOrigin]()
+    )
     for is_k_major in range(2):
         dst_host = HostNDBuffer[dtype, 4](dyn_shape)
 
         dst_device = dst_host.copy_to_device(ctx)
-        dst_operand = NDBufferMHAOperand(dst_device.tensor)
+        dst_operand = LayoutTensorMHAOperand(
+            dst_device.to_layout_tensor().origin_cast[True, MutableAnyOrigin]()
+        )
 
         if is_k_major == 0:  # unswitch
             mha_operand_copy[tile_m, kv_params, is_k_major=False](
@@ -525,8 +529,12 @@ def test_ndbuffer[
         ctx.synchronize()
 
         # Create host-side MHAOperands for verification
-        src_host_operand = NDBufferMHAOperand(src_host.tensor)
-        dst_host_operand = NDBufferMHAOperand(dst_host.tensor)
+        src_host_operand = LayoutTensorMHAOperand(
+            src_host.to_layout_tensor().origin_cast[True, MutableAnyOrigin]()
+        )
+        dst_host_operand = LayoutTensorMHAOperand(
+            dst_host.to_layout_tensor().origin_cast[True, MutableAnyOrigin]()
+        )
 
         # Verify using block_paged_ptr
         test_mha_host_operand[tile_m, kv_params](
@@ -577,7 +585,10 @@ def test_ragged[
 
     # Create MHAOperands
     src_operand = RaggedMHAOperand(
-        src_device.tensor, cache_row_offsets_device.tensor
+        src_device.to_layout_tensor().origin_cast[True, MutableAnyOrigin](),
+        cache_row_offsets_device.to_layout_tensor().origin_cast[
+            True, MutableAnyOrigin
+        ](),
     )
 
     # Find max sequence length for grid calculation
@@ -587,7 +598,10 @@ def test_ragged[
 
     # Create host-side MHAOperands for verification
     src_host_operand = RaggedMHAOperand(
-        src_host.tensor, cache_row_offsets_host.tensor
+        src_host.to_layout_tensor().origin_cast[True, MutableAnyOrigin](),
+        cache_row_offsets_host.to_layout_tensor().origin_cast[
+            True, MutableAnyOrigin
+        ](),
     )
 
     for is_k_major in range(2):
@@ -595,7 +609,10 @@ def test_ragged[
         dst_device = dst_host.copy_to_device(ctx)
 
         dst_operand = RaggedMHAOperand(
-            dst_device.tensor, cache_row_offsets_device.tensor
+            dst_device.to_layout_tensor().origin_cast[True, MutableAnyOrigin](),
+            cache_row_offsets_device.to_layout_tensor().origin_cast[
+                True, MutableAnyOrigin
+            ](),
         )
 
         if is_k_major == 0:
@@ -620,7 +637,10 @@ def test_ragged[
         ctx.synchronize()
 
         dst_host_operand = RaggedMHAOperand(
-            dst_host.tensor, cache_row_offsets_host.tensor
+            dst_host.to_layout_tensor().origin_cast[True, MutableAnyOrigin](),
+            cache_row_offsets_host.to_layout_tensor().origin_cast[
+                True, MutableAnyOrigin
+            ](),
         )
 
         # Verify using block_paged_ptr

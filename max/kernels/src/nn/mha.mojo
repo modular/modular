@@ -81,7 +81,7 @@ from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    NDBufferMHAOperand,
+    LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
@@ -1226,8 +1226,26 @@ fn flash_attention[
 
     var is_token_generation = seq_len == 1 and num_keys > seq_len
 
-    var k_operand = NDBufferMHAOperand(k)
-    var v_operand = NDBufferMHAOperand(v)
+    var k_operand = LayoutTensorMHAOperand(
+        LayoutTensor[
+            k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
+        ](
+            k.data,
+            RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
+                k.get_shape().canonicalize()
+            ),
+        )
+    )
+    var v_operand = LayoutTensorMHAOperand(
+        LayoutTensor[
+            v.type, Layout.row_major[v.rank](v.shape), MutableAnyOrigin
+        ](
+            v.data,
+            RuntimeLayout[Layout.row_major[v.rank](v.shape)].row_major(
+                v.get_shape().canonicalize()
+            ),
+        )
+    )
 
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
@@ -1316,12 +1334,32 @@ fn flash_attention_ragged[
 
     var is_token_generation = False
 
-    var cache_row_offsets: NDBuffer[
-        DType.uint32, 1, MutableAnyOrigin, *_
-    ] = managed_tensor_slice_to_ndbuffer(input_row_offsets)
+    var cache_row_offsets = input_row_offsets.to_layout_tensor().origin_cast[
+        True, MutableAnyOrigin
+    ]()
 
-    var k_operand = RaggedMHAOperand(k, cache_row_offsets)
-    var v_operand = RaggedMHAOperand(v, cache_row_offsets)
+    var k_operand = RaggedMHAOperand(
+        LayoutTensor[
+            k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
+        ](
+            k.data,
+            RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
+                k.get_shape().canonicalize()
+            ),
+        ),
+        cache_row_offsets,
+    )
+    var v_operand = RaggedMHAOperand(
+        LayoutTensor[
+            v.type, Layout.row_major[v.rank](v.shape), MutableAnyOrigin
+        ](
+            v.data,
+            RuntimeLayout[Layout.row_major[v.rank](v.shape)].row_major(
+                v.get_shape().canonicalize()
+            ),
+        ),
+        cache_row_offsets,
+    )
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
         use_score_mod=use_score_mod,
@@ -5033,8 +5071,26 @@ fn mha_gpu_naive[
     ctx: DeviceContext,
     sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]] = None,
 ) raises:
-    var k_operand = NDBufferMHAOperand(k)
-    var v_operand = NDBufferMHAOperand(v)
+    var k_operand = LayoutTensorMHAOperand(
+        LayoutTensor[
+            k.type, Layout.row_major[k.rank](k.shape), MutableAnyOrigin
+        ](
+            k.data,
+            RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
+                k.get_shape().canonicalize()
+            ),
+        )
+    )
+    var v_operand = LayoutTensorMHAOperand(
+        LayoutTensor[
+            v.type, Layout.row_major[v.rank](v.shape), MutableAnyOrigin
+        ](
+            v.data,
+            RuntimeLayout[Layout.row_major[v.rank](v.shape)].row_major(
+                v.get_shape().canonicalize()
+            ),
+        )
+    )
     var null_valid_length = ManagedTensorSlice[
         IOUnknown,
         static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
