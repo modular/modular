@@ -413,6 +413,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Enable CPU stats collection for serving benchmarks."""
 
+    collect_server_stats: bool = field(
+        default=False, metadata={"group": "Control Flags"}
+    )
+    """Enable server stats collection for serving benchmarks."""
+
     # Result saving (serving-specific extensions)
     server_args: str = field(
         default="",
