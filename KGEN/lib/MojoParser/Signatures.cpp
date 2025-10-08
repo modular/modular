@@ -25,6 +25,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -843,6 +844,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   IREmitter emitter(declScope, EC_Type);
   bool hasErrors = false;
 
+  IndexRefRemapper remapper({});
   for (const ParsedArgument &arg : parsedParams.params) {
     // Check for things supported in arguments that are not supported in
     // parameters.
@@ -932,6 +934,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
+    remapper.appendParamDecl(newDecl);
 
     // Parse optional constraints after the parameter declaration has been added
     // since constraints may reference the parameter.
@@ -956,8 +959,13 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       // Store the constraint in the parameter list as is. These will be
       // remapped to using index refs later when constructing the final
       // GeneratorType.
-      paramConstraints.push_back(ConstraintAttr::get(
-          propVal, result.shared.translateLocation(constraint.loc)));
+      auto paramConstraint = ConstraintAttr::get(
+          propVal, result.shared.translateLocation(constraint.loc));
+      paramConstraints.push_back(paramConstraint);
+
+      // Must insert the constraint into the temporary scope immediately so that
+      // the following constraint expressions may utilize it.
+      declScope.insertKnownAssumptions({paramConstraint});
     }
   }
 
@@ -2309,13 +2317,13 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   }
   assert(i <= 1 && "There can be at most one variadic argument");
 
+  PogListAttr paramListAttr = paramList.getParamListAttr();
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argPogs, defaultPosArgs, defaultKwOnlyArgs,
                        argPackOrigConvention, argVariadicOrigConvention),
       implicitOriginDecls.size(),
-      getOriginsAccessibleByParams(paramList.getParamListAttr(),
-                                   paramList.paramDeclAttrs, paramList.shared,
-                                   captureOrigins),
+      getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
+                                   paramList.shared, captureOrigins),
       isNestedOriginExclusivityCheckingDisabled, fnConstraints);
 
   /// Silence internal verifier errors when constructing types from the parser.
@@ -2329,5 +2337,5 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   FunctionType functionType = getFunctionType();
   return FuncTypeGeneratorType::remapToFuncTypeGenerator(
       paramList.paramDeclAttrs, functionType, argConventions, argList.effects,
-      metadata, paramList.getParamListAttr(), silenceErrors);
+      metadata, paramListAttr, silenceErrors);
 }

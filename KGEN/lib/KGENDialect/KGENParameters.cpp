@@ -55,6 +55,10 @@ IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
     mapping.try_emplace(param.getName(), idx);
 }
 
+void IndexRefRemapper::appendParamDecl(ParamDeclAttr paramDecl) {
+  mapping.try_emplace(paramDecl.getName(), mapping.size());
+}
+
 //===----------------------------------------------------------------------===//
 // IndexDepthAdjuster
 //===----------------------------------------------------------------------===//

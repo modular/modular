@@ -229,6 +229,15 @@ FnTypeGeneratorType substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl *traitDecl, FnOp candidateFunc,
     FnTypeGeneratorType desiredSignature, PValue selfPValue);
 
+/// Check that the given constraints are satisfied under the given scope. An
+/// optional diag emitter can be provided to emit failures. An optional
+/// ParameterEvaluator can be provided to substitute parameters into the
+/// constraints.
+LogicalResult checkConstraints(ASTDecl &declScope,
+                               ArrayRef<ConstraintAttr> constraints,
+                               const ParamBindings::DiagEmitter *diagEmitter,
+                               ParameterEvaluator *evaluator = nullptr);
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_PARAMBINDINGS_H

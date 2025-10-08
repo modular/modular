@@ -33,6 +33,9 @@ public:
   /// Populate the remapper with named input and result parameters.
   IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams, size_t offset = 0);
 
+  /// Append a parameter declaration to the remapper.
+  void appendParamDecl(ParamDeclAttr paramDecl);
+
 private:
   // CRTP methods.
   Attribute tryReplace(Attribute attr, size_t depth);
