@@ -98,6 +98,9 @@ pkg_files(
     srcs = glob(["**/*.py"]) + ["//open-source/max/benchmark/benchmark_shared:python_files"],
     prefix = "benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
+    # Symlink shenanigans.
+    # This is used in open-source, but not used in SDK, so the linter gets confused.
+    tags = ["maybe-unused"],
     visibility = ["//visibility:public"],
 )
 

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 modular_py_library(
     name = "nn",
@@ -20,14 +20,4 @@ modular_py_library(
         "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/support",
     ],
-)
-
-pkg_files(
-    name = "python_files",
-    srcs = glob([
-        "**/*.py",
-    ]),
-    prefix = "nn",
-    strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )
