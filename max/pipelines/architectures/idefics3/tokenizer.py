@@ -24,8 +24,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.core import ImageMetadata, TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
+from max.support.image import find_contiguous_ranges
 from PIL import Image
 from PIL.Image import Image as ImageType
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer
@@ -84,6 +85,11 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             if pipeline_config
             else {}
         )
+
+        if vision_token_id := getattr(config, "image_token_id", None):
+            self.vision_token_ids = [vision_token_id]
+        else:
+            raise ValueError("image_token_id not found in model_config config")
 
         self.processor = AutoProcessor.from_pretrained(
             model_path, revision=revision
@@ -260,10 +266,12 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
                 "encoded_prompt is greater than the max_length of the tokenizer"
             )
 
+        start_and_end_idxs = find_contiguous_ranges(
+            encoded_prompt, self.vision_token_ids
+        )
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
-            pixel_values=pixel_values,
             extra_model_args=extra_model_args,
             tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
@@ -271,6 +279,17 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            images=[
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixels,
+                )
+                for (start_idx, end_idx), pixels in zip(
+                    start_and_end_idxs, pixel_values, strict=True
+                )
+            ],
+            vision_token_ids=self.vision_token_ids,
         )
         return context
 

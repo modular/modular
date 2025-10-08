@@ -512,57 +512,206 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         )
 
 
+class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
+    """Metadata about an image in the prompt. Each image corresponds to a range
+    in the text token array [start_idx, end_idx).
+    """
+
+    start_idx: int
+    """Index of the first <vision_token_id> special token for the image"""
+
+    end_idx: int
+    """One after the index of the last <vision_token_id> special token for the image"""
+
+    pixel_values: npt.NDArray[np.floating[Any]]
+    """Pixel values for the image"""
+
+    def __post_init__(self) -> None:
+        if self.start_idx < 0:
+            raise ValueError("Images must have a valid start index")
+        if self.end_idx <= self.start_idx:
+            raise ValueError(
+                "Images must have a valid start and end index containing at least one <vision_token_id>"
+            )
+
+    def __repr__(self):
+        return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"
+
+
 class TextAndVisionContext(
     TextContext, tag=True, kw_only=True, omit_defaults=True
 ):
-    """A base class for model context, specifically for Vision model variants."""
+    """A base class for model context, specifically for Vision model variants.
 
-    pixel_values: tuple[npt.NDArray[np.floating[Any]], ...] = msgspec.field(
-        default_factory=tuple
-    )
+    For example:
+      - <vision_start_token_id> = 97
+      - <vision_token_id> = 98
+      - <vision_end_token_id> = 99
+
+    Token array:
+      -       idx: [  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 ]
+      - token_ids: [ 51 52 53 54 97 98 98 98 98 99 55 56 57 58 97 98 98 98 98 99 59 60 61 62 ]
+                                    ^-- img0 --^                  ^-- img1 --^
+                                                       ^ start_idx=11 (image_idx=1)
+
+    Then we would have:
+      - ImageMetadata(start_idx=5, end_idx=9, ...)  # img0
+      - ImageMetadata(start_idx=15, end_idx=19, ...)  # img1
+
+    These image ranges should be non-overlapping.
+
+    The image_idx is determined based on the value of start_idx. It is the idx of
+    the first image that is not yet encoded. For example in the above diagram
+    when start_idx=11, this implies that image_idx=1.
+
+    Currently we restrict start_idx and active_idx from being in the middle of an image!
+    This is verified in `_validate_state` methods that are called before and after
+    mutating methods like `bump_token_indices`.
+
+    Note that for Llama Vision, the number of token ids for the image is 1 due to
+    that models specific implementation.
+    """
+
+    vision_token_ids: list[int]
+    """The value of the <vision_token_id> special token. The reason this is a list
+    is primarily due to Pixtral which also has a image_break_token_id."""
+
+    images: list[ImageMetadata] = msgspec.field(default_factory=list)
+    """Metadata about each image in the prompt. """
+
     extra_model_args: dict[str, npt.NDArray[Any]] = msgspec.field(
         default_factory=dict
     )
-
-    # Flag to track whether vision encoding is still needed.
-    _needs_vision_encoding: bool = msgspec.field(default=True)
+    """Extra model arguments for the vision model. These are model specific arguments."""
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        if len(self.pixel_values) > 1:
-            raise ValueError("only one image supported in TextAndVisionContext")
-        self._needs_vision_encoding = bool(self.pixel_values)
+
+        if len(self.images) > 0:
+            for prev_img, next_img in zip(
+                self.images[:-1], self.images[1:], strict=True
+            ):
+                if next_img.start_idx < prev_img.start_idx:
+                    raise ValueError("Images must be sorted")
+                if next_img.start_idx <= prev_img.end_idx:
+                    raise ValueError("Images must be non-overlapping")
+
+        for img in self.images:
+            if self.end_idx < img.end_idx:
+                raise ValueError(
+                    "Images must be before the end of the token array"
+                )
+
+            # Instead of checking all tokens in the image (which can be expensive),
+            # we only check the first and last tokens.
+            if (
+                self.tokens[img.start_idx] not in self.vision_token_ids
+                or self.tokens[img.end_idx - 1] not in self.vision_token_ids
+            ):
+                raise ValueError(
+                    f"Images must be filled with <vision_token_id> ({self.vision_token_ids})"
+                )
+
+        self._validate_state()
+
+    @property
+    def _image_idx(self) -> int:
+        """Index of the next unencoded image in the prompt."""
+        for i, img in enumerate(self.images):
+            if self.start_idx < img.end_idx:
+                return i
+        return len(self.images)
+
+    @property
+    def next_images(self) -> list[ImageMetadata]:
+        """Returns the images that are not yet encoded."""
+        image_idx = self._image_idx
+        if len(self.images) == 0 or self._image_idx == len(self.images):
+            return []
+        return self.images[image_idx:]
 
     @property
     def needs_vision_encoding(self) -> bool:
-        """Gets whether vision encoding is needed for this context."""
-        return self._needs_vision_encoding and bool(self.pixel_values)
+        """Returns whether vision encoding is needed for this context."""
+        return self._image_idx < len(self.images)
 
-    @needs_vision_encoding.setter
-    def needs_vision_encoding(self, value: bool) -> None:
-        """Sets whether vision encoding is needed.
+    def compute_image_aligned_idx(self, idx: int) -> int:
+        """Possibly aligns a index value downward if it lies in the middle of an image."""
+        for img in self.images:
+            if img.start_idx <= idx < img.end_idx:
+                return img.start_idx
+        return idx
 
-        Args:
-            value: True if vision encoding is needed, False if already complete.
+    def _find_bisected_image(self, idx: int) -> ImageMetadata | None:
+        """Returns an image if the given index lies in the middle of an image.
+
+        This means that there are image tokens in both [0:idx) and [idx:end).
+
+        As such, this does NOT include the start or end indices.
         """
-        self._needs_vision_encoding = value
+        for img in self.images:
+            if img.start_idx < idx < img.end_idx:
+                return img
+        return None
+
+    def _validate_state(self) -> None:
+        """Validates the state of the context."""
+        if img := self._find_bisected_image(self.active_idx):
+            raise ValueError(
+                f"It is invalid for the active_idx ({self.active_idx}) to bisect an image ({img})."
+            )
+        if img := self._find_bisected_image(self.start_idx):
+            raise ValueError(
+                f"It is invalid for the start_idx ({self.start_idx}) to bisect an image ({img})."
+            )
+        if self.active_idx != self.end_idx:
+            raise ValueError(
+                f"It is invalid for the active_idx ({self.active_idx}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
+            )
+
+    def bump_token_indices(
+        self,
+        start_idx: int = 0,
+        active_idx: int = 0,
+        end_idx: int = 0,
+    ) -> None:
+        self._validate_state()
+        super().bump_token_indices(
+            start_idx=start_idx, active_idx=active_idx, end_idx=end_idx
+        )
+        self._validate_state()
+
+    def set_token_indices(
+        self,
+        start_idx: int | None = None,
+        active_idx: int | None = None,
+        end_idx: int | None = None,
+    ) -> None:
+        self._validate_state()
+        super().set_token_indices(
+            start_idx=start_idx, active_idx=active_idx, end_idx=end_idx
+        )
+        self._validate_state()
 
     def update(
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
-        """Updates the next_tokens and extends existing tokens to include all generated tokens."""
+        self._validate_state()
         super().update(new_token=new_token, log_probabilities=log_probabilities)
+        self._validate_state()
 
-        # Vision encoding is no longer needed after token generation starts.
-        self.needs_vision_encoding = False
-
-    def reset(self) -> None:
-        """Resets the context's state by combining all tokens into a new prompt."""
-        super().reset()
-        # Re-enable vision encoding on reset (e.g., after preemption).
-        self.needs_vision_encoding = bool(self.pixel_values)
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"request_id={self.request_id}, "
+            f"start_idx={self.start_idx}, "
+            f"active_idx={self.active_idx}, "
+            f"end_idx={self.end_idx}, "
+            f"images={self.images}"
+            ")"
+        )
 
 
 SPEECH_TOKEN_audio_chunk_size = 128

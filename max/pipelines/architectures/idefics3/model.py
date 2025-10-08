@@ -617,7 +617,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         images = []
         for context in context_batch:
             if context.needs_vision_encoding:
-                image = context.pixel_values[0]
+                # We only support one image per request for Idefics3.
+                next_images = context.next_images
+                if len(next_images) != 1:
+                    raise ValueError(
+                        "Idefics3 only supports one image per request"
+                    )
+                image = next_images[0].pixel_values
 
                 for patch_group in image:
                     images.append(patch_group)
@@ -770,11 +776,6 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
-
-        # Mark that vision encoding is complete for all contexts in the batch.
-        # This prevents re-encoding on subsequent calls.
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
 
         return Idefics3Inputs(
             input_ids=input_ids,

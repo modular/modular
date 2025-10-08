@@ -718,24 +718,14 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
     A note on multi-step and vision inputs:
 
-    - `has_images` in `prepare_initial_token_inputs` is determined by whether or
-      not `pixel_values` is set on each TextAndVisionContext in the batch.
-      So on the context encoding call, the caller sets pixel_values, making
-      `has_images` True.
-    - `prepare_initial_token_inputs` unsets `ctx.pixel_values` (sets it to an
-      empty list).
-      So the next prepare_initial_token_inputs will have has_images == False
-      (the next multi-step train will skip the vision encoder).
-    - That covers the num_steps = 1 case.
-    - For multistep, the prepare_next_token_inputs function will unset
-      LlamaVisionInputs.pixel_values (and aspect ratio ids/mask).
-      So for multistep, step > 1, subsequent steps won't run the vision encoder.
-    - Note the 2 different mechanisms: `has_images` is determined by
-      `TextAndVisionContext.pixel_values` in `prepare_initial_token_inputs`,
-      but it is determined by `LlamaVisionInputs.pixel_values` in
-      `PipelineModel.execute` (which is called multiple times in a multi-step
-      train, so `prepare_next_token_inputs` needs to unset
-      `LlamaVisionInputs.pixel_values`).
+    - During CE, start_idx=0 so ctx.next_images returns all images we still need
+    to encode. For Llama Vision, we do not support chunked prefill at the moment
+    and we assert that there is exactly one image per request (not 0 or > 1).
+    - This ensures that during `prepare_initial_token_inputs`, we set
+    `LlamaVisionInputs.pixel_values` to the pixel values of the single
+    image `ctx.next_images[0].pixel_values`
+    - During `prepare_next_token_inputs`, we unset `LlamaVisionInputs.pixel_values`
+    so we don't re-encode the same image on subsequent steps.
     """
 
     def __init__(
@@ -955,7 +945,12 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         aspect_ratio_mask_list: list[npt.NDArray[np.integer[Any]]] = []
         for context in context_batch:
             # Get first image in first batch and permute the order to (HWC).
-            image = np.transpose(context.pixel_values[0], (0, 1, 3, 4, 2))
+            next_images = context.next_images
+            if len(next_images) != 1:
+                raise ValueError(
+                    "Llama Vision only supports one image per request"
+                )
+            image = np.transpose(next_images[0].pixel_values, (0, 1, 3, 4, 2))
 
             # Add batch_size, num_concurrent_media, and max_num_tiles dimensions
             # [1, num_concurrent_media, max_num_tiles, H, W, C]
@@ -1018,7 +1013,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             )
 
         def initial_prompt_missing_image(ctx: TextAndVisionContext) -> bool:
-            return ctx.is_initial_prompt and not ctx.pixel_values
+            return ctx.is_initial_prompt and not ctx.images
 
         if any(initial_prompt_missing_image(ctx) for ctx in context_batch):
             raise RuntimeError(
@@ -1066,11 +1061,6 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 dtype=np.uint32,
             )
         )
-
-        # Mark that vision encoding is complete for all contexts in the batch
-        # This prevents re-encoding on subsequent calls before update() is called
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
 
         return LlamaVisionInputs(
             input_id_values=input_id_values,

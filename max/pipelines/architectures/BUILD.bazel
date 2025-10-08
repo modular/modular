@@ -21,5 +21,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/nn/hooks",
         "//SDK/lib/API/python/max/profiler",
         "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/support",
     ],
 )

@@ -55,7 +55,7 @@ from transformers.models.auto.configuration_auto import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
-from .tokenizer import IMAGE_CONTEXT_TOKEN_ID, InternVLImageConfig
+from .tokenizer import IMAGE_CONTEXT_TOKEN_ID, IMAGE_NDIMS, InternVLImageConfig
 from .weight_adapters import (
     convert_internvl_language_model_state_dict,
     convert_internvl_vision_model_state_dict,
@@ -745,11 +745,18 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         images = []
         for context in context_batch:
             if context.needs_vision_encoding:
-                # context.pixel_values is a list of numpy arrays containing pre-extracted patches
-                # TODO(MODELS-638): Support multiple images per request
-                image = context.pixel_values[
-                    0
-                ]  # Shape: [num_patches, height_patches, width_patches, channels, patch_size, patch_size]
+                # TODO(MODELS-638): Support multiple images per request for InternVL
+                next_images = context.next_images
+                if len(next_images) != 1:
+                    raise ValueError(
+                        "InternVL only supports one image per request"
+                    )
+                image = next_images[0].pixel_values
+
+                if len(image.shape) != IMAGE_NDIMS:
+                    raise ValueError(
+                        "InternVL vision model expects image shape to be [num_patches, height_patches, width_patches, channels, patch_size, patch_size]"
+                    )
 
                 # Each image patch group needs to be processed separately by the vision model
                 # So we add each patch group as a separate "batch" item
@@ -919,11 +926,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
-
-        # Mark that vision encoding is complete for all contexts in the batch.
-        # This prevents re-encoding on subsequent calls.
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
 
         return InternVLInputs(
             input_ids=input_ids,

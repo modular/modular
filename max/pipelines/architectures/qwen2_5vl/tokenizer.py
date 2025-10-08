@@ -30,9 +30,10 @@ from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
     process_vision_info,
 )
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.core import ImageMetadata, TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
+from max.support.image import find_contiguous_ranges
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer
 
@@ -194,7 +195,7 @@ class Qwen2_5VLImageProcessor:
         images: list[Image.Image] | Image.Image,
         return_tensors: str = "np",
         **kwargs,
-    ) -> dict[str, npt.NDArray[Any]]:
+    ) -> tuple[dict[str, npt.NDArray[Any]], list[npt.NDArray[np.float32]]]:
         """Process images for Qwen2.5VL.
 
         Args:
@@ -206,6 +207,7 @@ class Qwen2_5VLImageProcessor:
             Dictionary containing processed image data with keys:
             - pixel_values: Normalized pixel values as numpy array of shape (num_patches, patch_features)
             - image_grid_thw: Grid dimensions as numpy array of shape (num_images, 3) where each row is (temporal, height, width)
+            List of pixel values for each image
         """
         # Handle single image vs list of images
         if isinstance(images, Image.Image):
@@ -232,16 +234,16 @@ class Qwen2_5VLImageProcessor:
         )
 
         return {
-            "pixel_values": pixel_values,
+            "concatenated_pixel_values": pixel_values,
             "image_grid_thw": image_grid_thw_array,
-        }
+        }, pixel_values_list
 
     def preprocess(
         self,
         images: list[Image.Image] | Image.Image,
         return_tensors: str = "np",
         **kwargs,
-    ) -> dict[str, npt.NDArray[Any]]:
+    ) -> tuple[dict[str, npt.NDArray[Any]], list[npt.NDArray[np.float32]]]:
         """Alias for __call__ to match transformers interface."""
         return self.__call__(images, return_tensors=return_tensors, **kwargs)
 
@@ -348,7 +350,6 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 None,
             ):
                 self.vision_start_token_id = vision_start_token_id
-
             if vision_config := getattr(
                 huggingface_config, "vision_config", None
             ):
@@ -436,10 +437,12 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             text = self.delegate.decode(prompt, skip_special_tokens=True)
 
         # Step 2: Process images with custom image processor (if any)
-        processed_images = {}
+        processed_images: dict[str, npt.NDArray[Any]] = {}
+        pixel_values_list: list[npt.NDArray[np.float32]] = []
+
         image_grid_thw = None
         if image_inputs:
-            processed_images = self.img_processor(
+            processed_images, pixel_values_list = self.img_processor(
                 images=image_inputs, return_tensors="pt"
             )
 
@@ -477,10 +480,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Add image processing results
         if processed_images:
-            if "pixel_values" in processed_images:
-                processed_inputs["pixel_values"] = processed_images[
-                    "pixel_values"
-                ]
+            if "concatenated_pixel_values" in processed_images:
+                processed_inputs["concatenated_pixel_values"] = (
+                    processed_images["concatenated_pixel_values"]
+                )
             if "image_grid_thw" in processed_images:
                 processed_inputs["image_grid_thw"] = processed_images[
                     "image_grid_thw"
@@ -522,17 +525,16 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Process vision inputs for Qwen2.5VL (image-only)
         attention_mask = None
-        pixel_values: tuple[npt.NDArray[Any], ...] = tuple()
-        if image_inputs is not None:
-            if "pixel_values" in processed_inputs:
-                pixel_values_raw = processed_inputs["pixel_values"]
+        concatenated_pixel_values: npt.NDArray[Any] | None = None
 
-                # Handle numpy array from custom image processor
-                if isinstance(pixel_values_raw, np.ndarray):
-                    pixel_values = (pixel_values_raw,)
-                else:
+        if image_inputs is not None:
+            if "concatenated_pixel_values" in processed_inputs:
+                concatenated_pixel_values = processed_inputs[
+                    "concatenated_pixel_values"
+                ]
+                if not isinstance(concatenated_pixel_values, np.ndarray):
                     raise ValueError(
-                        f"pixel_values is not a PyTorch tensor or numpy array but {type(pixel_values_raw)}"
+                        f"Expected concatenated_pixel_values to be a numpy array but got {type(concatenated_pixel_values)}"
                     )
 
             # Extract image_grid_thw if present (Qwen2.5VL specific)
@@ -620,6 +622,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         temp_position_ids = temp_position_ids.squeeze(1)
         extra_model_args["rope_delta"] = rope_delta
         extra_model_args["decoder_position_ids"] = temp_position_ids
+        extra_model_args["concatenated_pixel_values"] = (
+            concatenated_pixel_values
+        )
 
         # Handle JSON schema if provided
         json_schema = (
@@ -639,11 +644,13 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 "encoded_prompt is greater than the max_length of the tokenizer"
             )
 
+        start_and_end_idxs = find_contiguous_ranges(
+            encoded_prompt, [self.image_token_id]
+        )
         # Create and return context
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_token_ids=eos_token_ids,
-            pixel_values=pixel_values,
             extra_model_args=extra_model_args,
             tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
@@ -651,5 +658,18 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            images=[
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixels,
+                )
+                for (start_idx, end_idx), pixels in zip(
+                    start_and_end_idxs,
+                    pixel_values_list,
+                    strict=True,
+                )
+            ],
+            vision_token_ids=[self.image_token_id],
         )
         return context

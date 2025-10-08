@@ -194,11 +194,13 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
 
         # TODO: change this to work with all contexts in the batch.
-        if context_batch[
-            0
-        ].pixel_values:  # check if the request has pixel_values
+        # check if the request has pixel_values
+        if context_batch[0].needs_vision_encoding:
             # Get first image in first batch. Pixtral processor returns CHW images.
-            image = np.ascontiguousarray(context_batch[0].pixel_values[0])
+            next_images = context_batch[0].next_images
+            if len(next_images) != 1:
+                raise ValueError("Pixtral only supports one image per request")
+            image = np.ascontiguousarray(next_images[0].pixel_values)
             pixel_values = Tensor.from_numpy(image).to(self.devices[0])
             # TODO(KERN-782): This should be -inf but softmax saturates with NaNs.
             fill_val = -10000.0

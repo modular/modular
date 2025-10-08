@@ -41,6 +41,9 @@ _T = TypeVar("_T", bound=np.generic)
 # This is used to identify where to insert image embeddings in the text.
 IMAGE_CONTEXT_TOKEN_ID = 151667
 
+# Number of dimensions for the pixel values tensor for InternVL.
+IMAGE_NDIMS = 6
+
 # ImageNet normalization constants.
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -568,6 +571,9 @@ class InternVLTokenizer(TextAndVisionTokenizer):
         config = AutoConfig.from_pretrained(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
+
+        # Set the vision_token_id for use in super's new_context method
+        self.vision_token_ids = [IMAGE_CONTEXT_TOKEN_ID]
 
         # Get vision config overrides from pipeline config.
         vision_overrides = (

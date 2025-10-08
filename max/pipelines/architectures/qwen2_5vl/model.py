@@ -32,11 +32,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import (
-    Module,
-    ReturnLogits,
-    Signals,
-)
+from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
@@ -926,7 +922,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pixel_values_tensor = Tensor.from_numpy(
                 self._parallel_ops.concatenate(
                     [
-                        ctx.pixel_values[0]
+                        ctx.extra_model_args["concatenated_pixel_values"]
                         for ctx in context_batch
                         if ctx.needs_vision_encoding
                     ]
@@ -1046,12 +1042,6 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 np.array([window_max_seqlen_value], dtype=np.uint32)
             )
             max_window_seqlen = [window_max_seqlen_tensor for _ in self.devices]
-
-        # TODO: I don't think this is needed, as we do this during context.update.
-        # Mark that vision encoding is complete for all contexts in the batch.
-        # This prevents re-encoding on subsequent calls.
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
 
         return Qwen2_5VLInputs(
             input_ids=input_ids,
