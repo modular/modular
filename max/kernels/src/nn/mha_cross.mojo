@@ -15,8 +15,6 @@ from math import ceildiv
 from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
@@ -31,6 +29,8 @@ from utils.numerics import get_accum_type
 
 @always_inline
 fn _bmm0_bs[
+    q_layout: Layout,
+    kv_layout: Layout, //,
     cache_t: KVCacheT,
     mask_t: MHAMask,
     q_type: DType,
@@ -39,8 +39,10 @@ fn _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_cache: cache_t,
-    q_input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    kv_input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutableAnyOrigin],
+    kv_input_row_offsets: LayoutTensor[
+        DType.uint32, kv_layout, MutableAnyOrigin
+    ],
     scale: Float32,
     batch_size: Int,
     q_max_seq_len: Int,
@@ -133,6 +135,8 @@ fn _bmm0_bs[
 
 @always_inline
 fn _bmm1_bs[
+    q_layout: Layout,
+    kv_layout: Layout, //,
     cache_t: KVCacheT,
     p_type: DType,
     output_type: DType,
@@ -140,8 +144,10 @@ fn _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type]],
     p_ptr: UnsafePointer[Scalar[p_type]],
     v_cache: cache_t,
-    q_input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
-    kv_input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutableAnyOrigin],
+    kv_input_row_offsets: LayoutTensor[
+        DType.uint32, kv_layout, MutableAnyOrigin
+    ],
     q_max_seq_len: Int,
     kv_max_seq_len: Int,
     max_cache_size: Int,
@@ -207,17 +213,16 @@ fn _bmm1_bs[
 fn mha_cross_gpu_naive[
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    dtype: DType,
-    q_shape: DimList, //,
+    dtype: DType, //,
     rank: Int,
 ](
-    output: NDBuffer[_, rank, MutableAnyOrigin, *_],
-    q: NDBuffer[dtype, rank, MutableAnyOrigin, q_shape, *_],
-    q_input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_],
+    output: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    q_input_row_offsets: LayoutTensor[DType.uint32, **_],
     q_max_seq_len: Int,
     k: cache_t,
     v: cache_t,
-    kv_input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_],
+    kv_input_row_offsets: LayoutTensor[DType.uint32, **_],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
@@ -248,7 +253,7 @@ fn mha_cross_gpu_naive[
     """
     constrained[rank == 3, "only support rank 3 inputs for ragged inputs."]()
     constrained[
-        q.dtype == cache_t.dtype == cache_t.dtype == output.type,
+        q.dtype == cache_t.dtype == cache_t.dtype == output.dtype,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
@@ -257,7 +262,9 @@ fn mha_cross_gpu_naive[
     ]()
 
     alias config = MHAConfig(
-        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype,
+        UInt(Int(q.layout.shape[rank - 2])),
+        UInt(Int(q.layout.shape[rank - 1])),
     )
 
     alias num_heads = Int(config.num_heads)
@@ -286,9 +293,16 @@ fn mha_cross_gpu_naive[
             Index(batch_size * num_heads, q_max_seq_len, num_keys)
         ),
     )
-    var q_device = DeviceBuffer[q_type](ctx, q.data, q.size(), owning=False)
+    var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.size(), owning=False)
 
-    alias kernel_0 = _bmm0_bs[__type_of(k), mask_t, q_type, p_type]
+    alias kernel_0 = _bmm0_bs[
+        q_layout = q.layout,
+        kv_layout = kv_input_row_offsets.layout,
+        __type_of(k),
+        mask_t,
+        q_type,
+        p_type,
+    ]
     ctx.enqueue_function_checked[kernel_0, kernel_0](
         p_device,
         q_device,
@@ -323,10 +337,16 @@ fn mha_cross_gpu_naive[
         Index(batch_size * num_heads, q_max_seq_len, num_keys), p_buffer, 2, ctx
     )
     var output_device = DeviceBuffer[output.dtype](
-        ctx, output.data, output.size(), owning=False
+        ctx, output.ptr, output.size(), owning=False
     )
 
-    alias kernel_1 = _bmm1_bs[__type_of(v), p_type, output.dtype]
+    alias kernel_1 = _bmm1_bs[
+        q_layout = q.layout,
+        kv_layout = kv_input_row_offsets.layout,
+        __type_of(v),
+        p_type,
+        output.dtype,
+    ]
     ctx.enqueue_function_checked[kernel_1, kernel_1](
         output_device,
         p_device,
