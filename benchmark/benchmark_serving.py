@@ -764,17 +764,23 @@ def calculate_metrics(
         max_concurrency=max_concurrency or len(outputs),
         request_throughput=completed / dur_s,
         # Use specialized metric classes that handle percentile calculations automatically
-        input_throughput=ThroughputMetrics(input_throughputs, unit="tok/s"),
-        output_throughput=ThroughputMetrics(output_throughputs, unit="tok/s"),
+        input_throughput=ThroughputMetrics(
+            input_throughputs or [float("nan")], unit="tok/s"
+        ),
+        output_throughput=ThroughputMetrics(
+            output_throughputs or [float("nan")], unit="tok/s"
+        ),
         ttft_ms=StandardPercentileMetrics(
-            ttfts, scale_factor=1000.0, unit="ms"
+            ttfts or [float("nan")], scale_factor=1000.0, unit="ms"
         ),
         tpot_ms=StandardPercentileMetrics(
-            tpots, scale_factor=1000.0, unit="ms"
+            tpots or [float("nan")], scale_factor=1000.0, unit="ms"
         ),
-        itl_ms=StandardPercentileMetrics(itls, scale_factor=1000.0, unit="ms"),
+        itl_ms=StandardPercentileMetrics(
+            itls or [float("nan")], scale_factor=1000.0, unit="ms"
+        ),
         latency_ms=StandardPercentileMetrics(
-            latencies, scale_factor=1000.0, unit="ms"
+            latencies or [float("nan")], scale_factor=1000.0, unit="ms"
         ),
         max_input=max_input,
         max_output=max_output,
