@@ -33,20 +33,6 @@ DEFAULT_PARENT_HASH = hash("None")
 
 
 @traced
-def hash_block_tokens(
-    block_token_ids: npt.NDArray[np.integer[Any]],
-    parent_hash: int | None = None,
-) -> int:
-    """Compute the hash value of a block."""
-    block_size = len(block_token_ids)
-    if parent_hash is None:
-        parent_hash = DEFAULT_PARENT_HASH
-    hash_vals = block_hasher(block_token_ids, block_size, parent_hash)
-    assert len(hash_vals) == 1
-    return hash_vals[0]
-
-
-@traced
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
