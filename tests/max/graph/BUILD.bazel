@@ -49,9 +49,7 @@ modular_multi_py_version_test(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/graph",
         "//SDK/lib/API/python/max/nn",
-        requirement("gguf"),
         requirement("hypothesis"),
         requirement("numpy"),
-        requirement("torch"),
     ],
 )
