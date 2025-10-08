@@ -17,7 +17,11 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core.context import TextAndVisionContext, TextContext
+from max.pipelines.core.context import (
+    ImageMetadata,
+    TextAndVisionContext,
+    TextContext,
+)
 from max.serve.queue.zmq_queue import (
     ZmqConfig,
     ZmqPullSocket,
@@ -64,8 +68,9 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     context = TextAndVisionContext(
         request_id=RequestID("test-request"),
         max_length=50,
-        tokens=np.array([0, 1, 2, 3, 4]),
-        pixel_values=(img,),  # Only one image supported
+        tokens=np.array([0, 1, 22, 22, 4]),
+        images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
+        vision_token_ids=[22],
     )
 
     # Test the encoder directly
@@ -87,11 +92,11 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
 
     assert req_id == "test_req_id"
     # In fallback case, images should be numpy arrays after round-trip
-    assert isinstance(decoded_context.pixel_values[0], np.ndarray)
-    assert np.allclose(decoded_context.pixel_values[0], img)
+    assert isinstance(decoded_context.images[0].pixel_values, np.ndarray)
+    assert np.allclose(decoded_context.images[0].pixel_values, img)
 
     # Verify original context wasn't modified
-    assert isinstance(context.pixel_values[0], np.ndarray)
+    assert isinstance(context.images[0].pixel_values, np.ndarray)
 
     # Test 2: Success case - when shared memory allocation succeeds
     mock_shm = SharedMemoryArray(
@@ -106,15 +111,16 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
     context2 = TextAndVisionContext(
         request_id=RequestID("test-request-2"),
         max_length=50,
-        tokens=np.array([0, 1, 2, 3, 4]),
-        pixel_values=(img,),
+        tokens=np.array([0, 1, 22, 22, 4]),
+        images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
+        vision_token_ids=[22],
     )
 
     # Encode with shared memory
     encoded_data2 = encoder(("test_req_id_2", context2))
 
     # Verify original context wasn't modified
-    assert isinstance(context2.pixel_values[0], np.ndarray)
+    assert isinstance(context2.images[0].pixel_values, np.ndarray)
 
     # The encoded data should contain shared memory references
     # We can verify this by checking the encoded bytes contain the __shm__ marker
@@ -258,8 +264,9 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     context = TextAndVisionContext(
         request_id=RequestID("test-vision-request"),
         max_length=50,
-        tokens=np.array([0, 1, 2, 3, 4]),
-        pixel_values=(img,),
+        tokens=np.array([0, 1, 22, 22, 4]),
+        images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
+        vision_token_ids=[22],
     )
 
     test_data = ("vision_test", context)
@@ -275,7 +282,9 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     assert result[0] == test_data[0]
     assert result[1].request_id == test_data[1].request_id
     assert np.array_equal(result[1].tokens, test_data[1].tokens)
-    assert np.allclose(result[1].pixel_values[0], test_data[1].pixel_values[0])
+    assert np.allclose(
+        result[1].images[0].pixel_values, test_data[1].images[0].pixel_values
+    )
 
 
 def test_shared_memory_default_threshold_usage() -> None:
@@ -294,8 +303,9 @@ def test_shared_memory_default_threshold_usage() -> None:
     context = TextAndVisionContext(
         request_id=RequestID("array-test"),
         max_length=50,
-        tokens=np.array([0, 1, 2, 3, 4]),
-        pixel_values=(img,),
+        tokens=np.array([0, 1, 22, 22, 4]),
+        images=[ImageMetadata(start_idx=2, end_idx=4, pixel_values=img)],
+        vision_token_ids=[22],
     )
 
     # Test array through queue
@@ -312,7 +322,9 @@ def test_shared_memory_default_threshold_usage() -> None:
     assert result[0] == test_data[0]
     assert result[1].request_id == test_data[1].request_id
     assert np.array_equal(result[1].tokens, test_data[1].tokens)
-    assert np.allclose(result[1].pixel_values[0], test_data[1].pixel_values[0])
+    assert np.allclose(
+        result[1].images[0].pixel_values, test_data[1].images[0].pixel_values
+    )
 
     # Verify that the array was transmitted using shared memory
     # by checking that the encoded data contains the shared memory marker
