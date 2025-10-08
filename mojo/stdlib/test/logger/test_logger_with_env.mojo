@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from logger import Logger
+from testing import TestSuite
 
 
-def main():
+def test_log_with_env():
     var log = Logger()
 
     # CHECK: DEBUG::: hello world
@@ -22,3 +23,11 @@ def main():
 
     # CHECK: INFO::: hello
     log.info("hello")
+
+
+fn main() raises:
+    var suite = TestSuite()
+
+    suite.test[test_log_with_env]()
+
+    suite^.run()

@@ -13,6 +13,7 @@
 
 from builtin._location import _SourceLocation
 from logger import Level, Logger
+from testing import TestSuite
 
 
 # CHECK-LABEL: Test logging at trace level
@@ -41,7 +42,7 @@ def test_log_info():
 
 
 # CHECK-LABEL: Test no logging by default
-fn test_log_noset():
+def test_log_noset():
     print("=== Test no logging by default")
     var log = Logger()
 
@@ -53,7 +54,7 @@ fn test_log_noset():
 
 
 # CHECK-LABEL: Test logging with prefix
-fn test_log_with_prefix():
+def test_log_with_prefix():
     print("=== Test logging with prefix")
 
     var log = Logger[Level.TRACE](prefix="[XYZ] ")
@@ -63,17 +64,17 @@ fn test_log_with_prefix():
 
 
 # CHECK-LABEL: Test logging with location
-fn test_log_with_location():
+def test_log_with_location():
     print("=== Test logging with location")
 
     alias log = Logger[Level.TRACE](prefix="", source_location=True)
 
-    # CHECK: test_logger.mojo:72:14] hello
+    # CHECK: test_logger.mojo:73:14] hello
     log.trace("hello")
 
 
 # CHECK-LABEL: Test logging with custom location
-fn test_log_with_custom_location():
+def test_log_with_custom_location():
     print("=== Test logging with custom location")
 
     alias log = Logger[Level.TRACE](prefix="", source_location=True)
@@ -83,7 +84,7 @@ fn test_log_with_custom_location():
 
 
 # CHECK-LABEL: Test logging with sep/end
-fn test_log_with_sep_end():
+def test_log_with_sep_end():
     print("=== Test logging with sep/end")
 
     var log = Logger[Level.TRACE]()
@@ -93,10 +94,14 @@ fn test_log_with_sep_end():
 
 
 def main():
-    test_log_trace()
-    test_log_info()
-    test_log_noset()
-    test_log_with_prefix()
-    test_log_with_location()
-    test_log_with_custom_location()
-    test_log_with_sep_end()
+    var suite = TestSuite()
+
+    suite.test[test_log_trace]()
+    suite.test[test_log_info]()
+    suite.test[test_log_noset]()
+    suite.test[test_log_with_prefix]()
+    suite.test[test_log_with_location]()
+    suite.test[test_log_with_custom_location]()
+    suite.test[test_log_with_sep_end]()
+
+    suite^.run()
