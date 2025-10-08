@@ -10,9 +10,11 @@ from collections.abc import Callable
 from .context import (
     BaseContext,
     BaseContextType,
+    ImageMetadata,
     InputContext,
     SamplingParams,
     SamplingParamsInput,
+    VLMInputContext,
 )
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
@@ -95,6 +97,7 @@ __all__ = [
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
     "GenerationStatus",
+    "ImageMetadata",
     "InputContext",
     "LoRAOperation",
     "LoRARequest",
@@ -133,6 +136,7 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
+    "VLMInputContext",
     "drain_queue",
     "get_blocking",
     "msgpack_eq",
