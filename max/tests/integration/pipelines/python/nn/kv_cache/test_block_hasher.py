@@ -8,10 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.nn.kv_cache.paged_cache.block_utils import (
-    hash_block_tokens,
-    hash_request_tokens,
-)
+from max.nn.kv_cache.paged_cache.block_utils import hash_request_tokens
 
 
 @pytest.mark.asyncio
@@ -28,10 +25,11 @@ async def test_basic(block_size: int, prompt_len: int) -> None:
         block_token_ids = prompt[i * block_size : (i + 1) * block_size]
         expected_hash = block_hash
         parent_hash_value = hash_vals[i - 1]
-        actual_hash = hash_block_tokens(
+        actual_hash = hash_request_tokens(
             block_token_ids,
+            block_size,
             parent_hash_value,
-        )
+        )[0]
         assert expected_hash == actual_hash
 
     # Check that the hash values are non-zero.
