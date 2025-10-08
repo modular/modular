@@ -27,7 +27,6 @@ from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
-from .splitk import warp_specialize_gemm_with_multicasting_splitk
 
 alias MAX_M = Int.MAX
 
@@ -2307,7 +2306,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     pdl_level=pdl_level,
                     mma_shape=Index(64, WGMMA_N, 16),
                 )
-                warp_specialize_gemm_with_multicasting_splitk[
+                warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -2379,11 +2378,13 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ctx,
             )
         else:
-            warp_specialize_gemm_with_multicasting_splitk[
+            warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
+                schedule = entry.schedule,
+                grid_shape = entry.grid_shape,
                 splits = entry.splits.value(),
                 raster_order = entry.raster_order.value(),
             ](

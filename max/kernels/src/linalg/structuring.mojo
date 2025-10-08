@@ -106,12 +106,14 @@ alias SMemTileIterType[
     _dtype: DType,
     layout: Layout,
     alignment: Int = align_of[SIMD[_dtype, simd_width_of[_dtype]()]](),
+    circular: Bool = False,
 ] = LayoutTensorIter[
     _dtype,
     layout,
     MutableAnyOrigin,
     address_space = AddressSpace.SHARED,
     alignment=alignment,
+    circular=circular,
 ]
 
 alias SMemWarpTileType[
