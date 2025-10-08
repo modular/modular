@@ -17,6 +17,7 @@ from algorithm import (
     tile_middle_unswitch_boundaries,
     unswitch,
 )
+from testing import TestSuite
 
 from utils.index import Index, IndexList
 
@@ -47,7 +48,7 @@ fn print_tile2d_static[
 
 
 # CHECK-LABEL: test_static_tile
-fn test_static_tile():
+def test_static_tile():
     print("test_static_tile")
     # CHECK: (0, 4)
     # CHECK: (4, 6)
@@ -61,7 +62,7 @@ fn test_static_tile():
 
 
 # CHECK-LABEL: test_static_tile2d
-fn test_static_tile2d():
+def test_static_tile2d():
     print("test_static_tile2d")
     # CHECK: (2, 2, 0, 0)
     # CHECK: (2, 2, 2, 0)
@@ -108,7 +109,7 @@ fn test_static_tile2d():
 
 
 # CHECK-LABEL: test_dynamic_tile
-fn test_dynamic_tile():
+def test_dynamic_tile():
     print("test_dynamic_tile")
     # CHECK: (1, 4)
     # CHECK: (4, 5)
@@ -125,7 +126,7 @@ fn test_dynamic_tile():
 
 
 # CHECK-LABEL: test_unswitched_tile
-fn test_unswitched_tile():
+def test_unswitched_tile():
     print("test_unswitched_tile")
 
     # A tiled function that takes a start and a dynamic boundary.
@@ -155,7 +156,7 @@ fn test_unswitched_tile():
 
 
 # CHECK-LABEL: test_unswitched_2d_tile
-fn test_unswitched_2d_tile():
+def test_unswitched_2d_tile():
     print("test_unswitched_2d_tile")
 
     # A tiled function that takes a start and a dynamic boundary.
@@ -196,7 +197,7 @@ fn test_unswitched_2d_tile():
 
 
 # CHECK-LABEL: test_tile_and_unswitch
-fn test_tile_and_unswitch():
+def test_tile_and_unswitch():
     print("test_tile_and_unswitch")
 
     @parameter
@@ -236,7 +237,7 @@ fn test_tile_and_unswitch():
     )
 
 
-fn test_tile_middle_unswitch_boundaries():
+def test_tile_middle_unswitch_boundaries():
     print("test_tile_middle_unswitch_boundaries")
 
     @parameter
@@ -276,7 +277,7 @@ fn test_tile_middle_unswitch_boundaries():
     ](0, 2, 10, 14)
 
 
-fn test_tile_middle_unswitch_boundaries_static():
+def test_tile_middle_unswitch_boundaries_static():
     print("test_tile_middle_unswitch_boundaries_static")
 
     @parameter
@@ -298,12 +299,16 @@ fn test_tile_middle_unswitch_boundaries_static():
     tile_middle_unswitch_boundaries[print_wrapper, 3, 11]()
 
 
-fn main():
-    test_static_tile()
-    test_static_tile2d()
-    test_dynamic_tile()
-    test_unswitched_tile()
-    test_unswitched_2d_tile()
-    test_tile_and_unswitch()
-    test_tile_middle_unswitch_boundaries()
-    test_tile_middle_unswitch_boundaries_static()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_static_tile]()
+    suite.test[test_static_tile2d]()
+    suite.test[test_dynamic_tile]()
+    suite.test[test_unswitched_tile]()
+    suite.test[test_unswitched_2d_tile]()
+    suite.test[test_tile_and_unswitch]()
+    suite.test[test_tile_middle_unswitch_boundaries]()
+    suite.test[test_tile_middle_unswitch_boundaries_static]()
+
+    suite^.run()

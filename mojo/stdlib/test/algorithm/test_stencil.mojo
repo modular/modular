@@ -15,6 +15,7 @@
 from algorithm.functional import stencil
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from testing import TestSuite
 
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
@@ -41,7 +42,7 @@ fn fill_buffer[
 
 # TODO: Refactor tests
 # CHECK-LABEL: test_stencil_avg_pool
-fn test_stencil_avg_pool():
+def test_stencil_avg_pool():
     print("== test_stencil_avg_pool")
     alias rank = 4
     alias stencil_rank = 2
@@ -151,7 +152,7 @@ fn test_stencil_avg_pool():
 
 
 # CHECK-LABEL: test_stencil_avg_pool_padded
-fn test_stencil_avg_pool_padded():
+def test_stencil_avg_pool_padded():
     print("== test_stencil_avg_pool_padded")
     alias rank = 4
     alias stencil_rank = 2
@@ -267,7 +268,7 @@ fn test_stencil_avg_pool_padded():
 
 
 # CHECK-LABEL: test_stencil_avg_pool_stride_2
-fn test_stencil_avg_pool_stride_2():
+def test_stencil_avg_pool_stride_2():
     print("== test_stencil_avg_pool_stride_2")
     alias rank = 4
     alias stencil_rank = 2
@@ -380,7 +381,7 @@ fn test_stencil_avg_pool_stride_2():
 
 
 # CHECK-LABEL: test_stencil_max_pool_dilation_2
-fn test_stencil_max_pool_dilation_2():
+def test_stencil_max_pool_dilation_2():
     print("== test_stencil_max_pool_dilation_2")
     alias rank = 4
     alias stencil_rank = 2
@@ -495,8 +496,12 @@ fn test_stencil_max_pool_dilation_2():
         print("")
 
 
-fn main():
-    test_stencil_avg_pool()
-    test_stencil_avg_pool_padded()
-    test_stencil_avg_pool_stride_2()
-    test_stencil_max_pool_dilation_2()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_stencil_avg_pool]()
+    suite.test[test_stencil_avg_pool_padded]()
+    suite.test[test_stencil_avg_pool_stride_2]()
+    suite.test[test_stencil_max_pool_dilation_2]()
+
+    suite^.run()

@@ -26,12 +26,13 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
+from testing import TestSuite
 
 from utils.index import Index, IndexList, StaticTuple
 
 
 # CHECK-LABEL: test_reductions
-fn test_reductions() raises:
+def test_reductions():
     print("== test_reductions")
 
     alias simd_width = 4
@@ -55,7 +56,7 @@ fn test_reductions() raises:
 
 
 # CHECK-LABEL: test_fused_reductions_inner
-fn test_fused_reductions_inner() raises:
+def test_fused_reductions_inner():
     print("== test_fused_redtest_fused_reductions_inneructions")
 
     alias size = 100
@@ -136,7 +137,7 @@ fn test_fused_reductions_inner() raises:
 
 
 # CHECK-LABEL: test_fused_reductions_outer
-fn test_fused_reductions_outer() raises:
+def test_fused_reductions_outer():
     print("== test_fused_reductions_outer")
 
     alias size = 100
@@ -217,7 +218,7 @@ fn test_fused_reductions_outer() raises:
 
 # We use a smaller vector so that we do not overflow
 # CHECK-LABEL: test_product
-fn test_product() raises:
+def test_product():
     print("== test_product")
 
     alias simd_width = 4
@@ -235,7 +236,7 @@ fn test_product() raises:
 
 
 # CHECK-LABEL: test_mean_variance
-fn test_mean_variance() raises:
+def test_mean_variance():
     print("== test_mean_variance")
 
     alias simd_width = 4
@@ -284,7 +285,7 @@ fn _test_3d_reductions[
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 0
-fn test_3d_reductions_axis_0() raises:
+def test_3d_reductions_axis_0():
     # CHECK: 8.0
     # CHECK-NEXT: 10.0
     # CHECK-NEXT: 12.0
@@ -301,7 +302,7 @@ fn test_3d_reductions_axis_0() raises:
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 1
-fn test_3d_reductions_axis_1() raises:
+def test_3d_reductions_axis_1():
     # CHECK: 4.0
     # CHECK-NEXT: 6.0
     # CHECK-NEXT: 8.0
@@ -318,7 +319,7 @@ fn test_3d_reductions_axis_1() raises:
 
 
 # CHECK-LABEL: test_3d_reductions reduce_axis= 2
-fn test_3d_reductions_axis_2() raises:
+def test_3d_reductions_axis_2():
     # CHECK: 6.0
     # CHECK-NEXT: 22.0
     # CHECK-NEXT: 38.0
@@ -331,7 +332,7 @@ fn test_3d_reductions_axis_2() raises:
 
 
 # CHECK-LABEL: test_boolean
-fn test_boolean():
+def test_boolean():
     print("== test_boolean")
 
     alias simd_width = 2
@@ -389,7 +390,7 @@ fn test_boolean():
 
 
 # CHECK-LABEL: test_cumsum
-fn test_cumsum():
+def test_cumsum():
     print("== test_cumsum")
 
     var vector_stack = InlineArray[Float32, 150](uninitialized=True)
@@ -453,13 +454,17 @@ fn test_cumsum():
 
 
 def main():
-    test_reductions()
-    test_fused_reductions_inner()
-    test_fused_reductions_outer()
-    test_product()
-    test_mean_variance()
-    test_3d_reductions_axis_0()
-    test_3d_reductions_axis_1()
-    test_3d_reductions_axis_2()
-    test_boolean()
-    test_cumsum()
+    var suite = TestSuite()
+
+    suite.test[test_reductions]()
+    suite.test[test_fused_reductions_inner]()
+    suite.test[test_fused_reductions_outer]()
+    suite.test[test_product]()
+    suite.test[test_mean_variance]()
+    suite.test[test_3d_reductions_axis_0]()
+    suite.test[test_3d_reductions_axis_1]()
+    suite.test[test_3d_reductions_axis_2]()
+    suite.test[test_boolean]()
+    suite.test[test_cumsum]()
+
+    suite^.run()

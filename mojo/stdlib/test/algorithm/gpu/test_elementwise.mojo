@@ -16,7 +16,7 @@ from sys import simd_width_of
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext, get_gpu_target
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 from utils import IndexList
 from utils.index import Index
@@ -318,7 +318,7 @@ fn test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     _ = output_device_ptr
 
 
-def main():
+def test_elementwise_gpu():
     with DeviceContext() as ctx:
         run_elementwise[DType.float32](ctx)
         run_elementwise_uneven_simd[DType.float32](ctx)
@@ -330,3 +330,11 @@ def main():
         run_elementwise_uneven_simd[DType.float16](ctx)
         run_elementwise_transpose_copy[DType.float16](ctx)
         test_elementwise_zero_dimension_3d(ctx)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_elementwise_gpu]()
+
+    suite^.run()

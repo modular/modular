@@ -16,10 +16,11 @@ from sys.info import num_physical_cores
 
 from algorithm import map, parallelize, sync_parallelize
 from buffer import NDBuffer
+from testing import TestSuite
 
 
 # CHECK-LABEL: test_sync_parallelize
-fn test_sync_parallelize():
+def test_sync_parallelize():
     print("== test_sync_parallelize")
 
     var num_work_items = 4
@@ -57,7 +58,7 @@ fn test_sync_parallelize():
 
 
 # CHECK-LABEL: test_parallelize
-fn test_parallelize():
+def test_parallelize():
     print("== test_parallelize")
 
     var num_work_items = num_physical_cores()
@@ -94,29 +95,33 @@ fn printme(i: Int):
 
 
 # CHECK-LABEL: test_parallelize_no_workers
-fn test_parallelize_no_workers():
+def test_parallelize_no_workers():
     print("== test_parallelize_no_workers")
     # CHECK: Number of workers must be positive
     parallelize[printme](10, 0)
 
 
 # CHECK-LABEL: test_parallelize_negative_workers
-fn test_parallelize_negative_workers():
+def test_parallelize_negative_workers():
     print("== test_parallelize_negative_workers")
     # CHECK: Number of workers must be positive
     parallelize[printme](10, -1)
 
 
 # CHECK-LABEL: test_parallelize_negative_work
-fn test_parallelize_negative_work():
+def test_parallelize_negative_work():
     print("== test_parallelize_negative_work")
     # This should do nothing
     parallelize[printme](-1, 4)
 
 
-fn main():
-    test_sync_parallelize()
-    test_parallelize()
-    test_parallelize_no_workers()
-    test_parallelize_negative_workers()
-    test_parallelize_negative_work()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_sync_parallelize]()
+    suite.test[test_parallelize]()
+    suite.test[test_parallelize_no_workers]()
+    suite.test[test_parallelize_negative_workers]()
+    suite.test[test_parallelize_negative_work]()
+
+    suite^.run()
