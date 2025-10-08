@@ -1397,6 +1397,24 @@ fn mha[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
+        var sink_weights_lt: OptionalReg[
+            LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                MutableAnyOrigin,
+            ]
+        ] = None
+        if sink_weights:
+            sink_weights_lt = LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                MutableAnyOrigin,
+            ](
+                sink_weights.value().data,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](sink_weights.value().size())
+                ),
+            )
         mha_single_batch_amd[group=group, config=config, sink=sink](
             output_ptr.offset(q_batch_offset),
             q_ptr.offset(q_batch_offset),
@@ -1408,7 +1426,7 @@ fn mha[
             batch_idx,
             Int(start_pos),
             mask,
-            sink_weights,
+            sink_weights_lt,
         )
     else:
         return CompilationTarget.unsupported_target_error[operation="mha"]()
@@ -2997,6 +3015,24 @@ fn mha_decoding[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
+        var sink_weights_lt: OptionalReg[
+            LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                MutableAnyOrigin,
+            ]
+        ] = None
+        if sink_weights:
+            sink_weights_lt = LayoutTensor[
+                q_ptr.type.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                MutableAnyOrigin,
+            ](
+                sink_weights.value().data,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](sink_weights.value().size())
+                ),
+            )
         mha_decoding_single_batch_amd[group=group, config=config, sink=sink,](
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
@@ -3011,7 +3047,7 @@ fn mha_decoding[
             batch_idx,
             Int(0),
             mask,
-            sink_weights,
+            sink_weights_lt,
         )
 
     else:
