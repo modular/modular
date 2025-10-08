@@ -21,6 +21,7 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Graph,
     ShardingStrategy,
     TensorType,
     TensorValue,
@@ -716,8 +717,9 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
             raise TypeError(
                 "All elements in input_row_offsets must be TensorValue instances"
             )
-        return self.allreduce(
-            inputs=[
+
+        with Graph._async_region() as task:
+            inputs = [
                 self.list_of_attentions[i](
                     layer_idx,
                     xs[i],
@@ -725,8 +727,11 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
                 )
-                for i in range(len(self.devices))
-            ],
+                for i in task.each(range(len(self.devices)))
+            ]
+
+        return self.allreduce(
+            inputs=inputs,
             signal_buffers=signal_buffers,
         )
 
