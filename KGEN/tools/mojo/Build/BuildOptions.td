@@ -33,7 +33,7 @@ defm emitted_file_type: CommandOptionWithValues<
             "* `exe` (default): emit an executable binary file.\n"
             "* `shared-lib`: emit a shared (dynamic) library.\n"
             "* `object`: (EXPERIMENTAL) emit a single object file.\n"
-            "* `llvm`: emit LLVM IR.\n"
+            "* `llvm`: emit unoptimized LLVM IR.\n"
             "* `asm`: emit target assembly.\n"
             "* `py-ext`: emit a Python extension module.">,
   Values<"exe,shared-lib,object,llvm,asm,py-ext">
