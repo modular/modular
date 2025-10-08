@@ -76,7 +76,7 @@ struct WeirdList[T: AnyType]:
         pass
 
 
-fn take_generic_weird_list(list: WeirdList[_]):
+def take_generic_weird_list(list: WeirdList[_]):
     pass
 
 
@@ -1055,23 +1055,25 @@ def main():
     suite.test[test_list_append]()
     suite.test[test_list_extend]()
     suite.test[test_list_extend_non_trivial]()
-    suite.test[test_list_extend_trivial_copy_nontrivial_move,]()
-    suite.test[test_list_explicit_copy]()
-    suite.test[test_no_extra_copies_with_sugared_set_by_field,]()
-    suite.test[test_list_copy_constructor]()
+    suite.test[test_list_extend_trivial_copy_nontrivial_move]()
     suite.test[test_2d_dynamic_list]()
+    suite.test[test_list_explicit_copy]()
+    suite.test[test_no_extra_copies_with_sugared_set_by_field]()
+    suite.test[test_list_copy_constructor]()
     suite.test[test_list_iter]()
     suite.test[test_list_iter_mutable]()
     suite.test[test_list_iter_bounds]()
     suite.test[test_list_span]()
     suite.test[test_list_realloc_trivial_types]()
-    suite.test[test_list_realloc_trivial_copy_nontrivial_move,]()
+    suite.test[test_list_realloc_trivial_copy_nontrivial_move]()
     suite.test[test_list_boolable]()
     suite.test[test_converting_list_to_string]()
     suite.test[test_list_count]()
     suite.test[test_list_add]()
     suite.test[test_list_mult]()
     suite.test[test_list_contains]()
+    suite.test[test_list_eq_ne]()
+    suite.test[test_list_init_span]()
     suite.test[test_indexing]()
     suite.test[test_list_dtor]()
     suite.test[test_destructor_trivial_elements]()

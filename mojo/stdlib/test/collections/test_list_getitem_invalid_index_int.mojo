@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
+
 
 # CHECK-LABEL: test_fail_list_index
-fn test_fail_list_index():
+def test_fail_list_index():
     print("== test_fail_list_index")
     # CHECK: List index out of bounds: index (4) valid range: -3 <= index < 3
     nums = [1, 2, 3]
@@ -23,5 +25,9 @@ fn test_fail_list_index():
     print("is never reached")
 
 
-fn main():
-    test_fail_list_index()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_fail_list_index]()
+
+    suite^.run()

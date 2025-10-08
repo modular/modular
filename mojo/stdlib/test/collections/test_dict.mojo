@@ -506,48 +506,6 @@ def test_mojo_issue_1729():
         assert_equal(i, d[key])
 
 
-fn test[name: String, test_fn: fn () raises]() raises:
-    print("Test", name, "...", end="")
-    try:
-        _ = test_fn()
-    except e:
-        print("FAIL")
-        raise e
-    print("PASS")
-
-
-def test_dict():
-    test_dict_construction()
-    test["test_basic", test_basic]()
-    test["test_multiple_resizes", test_multiple_resizes]()
-    test["test_big_dict", test_big_dict]()
-    test["test_compact", test_compact]()
-    test["test_compact_with_elements", test_compact_with_elements]()
-    test["test_pop_default", test_pop_default]()
-    test["test_key_error", test_key_error]()
-    test["test_iter", test_iter]()
-    test["test_iter_keys", test_iter_keys]()
-    test["test_iter_values", test_iter_values]()
-    test["test_iter_values_mut", test_iter_values_mut]()
-    test["test_iter_items", test_iter_items]()
-    test["test_dict_contains", test_dict_contains]()
-    test["test_dict_copy", test_dict_copy]()
-    test["test_dict_copy_add_new_item", test_dict_copy_add_new_item]()
-    test["test_dict_copy_delete_original", test_dict_copy_delete_original]()
-    test[
-        "test_dict_copy_calls_copy_constructor",
-        test_dict_copy_calls_copy_constructor,
-    ]()
-    test["test_dict_update_nominal", test_dict_update_nominal]()
-    test["test_dict_update_empty_origin", test_dict_update_empty_origin]()
-    test["test_dict_update_empty_new", test_dict_update_empty_new]()
-    test["test_mojo_issue_1729", test_mojo_issue_1729]()
-    test["test dict or", test_dict_or]()
-    test["test dict popitem", test_dict_popitem]()
-    test["test_iter_take_items", test_iter_take_items]()
-    test["test_iter_take_items_empty", test_iter_take_items_empty]()
-
-
 def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
     assert_equal(len(kwargs), 2)
 
@@ -761,15 +719,41 @@ def test_popitem_no_copies():
 def main():
     var suite = TestSuite()
 
-    suite.test[test_dict]()
+    suite.test[test_dict_construction]()
     suite.test[test_dict_literals]()
     suite.test[test_dict_fromkeys]()
     suite.test[test_dict_fromkeys_optional]()
+    suite.test[test_basic]()
+    suite.test[test_basic_no_copies]()
+    suite.test[test_multiple_resizes]()
+    suite.test[test_bool_conversion]()
+    suite.test[test_big_dict]()
     suite.test[test_dict_string_representation_string_int]()
     suite.test[test_dict_string_representation_int_int]()
+    suite.test[test_compact]()
+    suite.test[test_compact_with_elements]()
+    suite.test[test_pop_default]()
+    suite.test[test_key_error]()
+    suite.test[test_iter]()
+    suite.test[test_iter_keys]()
+    suite.test[test_iter_values]()
+    suite.test[test_iter_values_mut]()
+    suite.test[test_iter_items]()
+    suite.test[test_iter_take_items]()
+    suite.test[test_iter_take_items_empty]()
+    suite.test[test_dict_contains]()
+    suite.test[test_dict_copy]()
+    suite.test[test_dict_copy_delete_original]()
+    suite.test[test_dict_copy_add_new_item]()
+    suite.test[test_dict_copy_calls_copy_constructor]()
+    suite.test[test_dict_update_nominal]()
+    suite.test[test_dict_update_empty_origin]()
+    suite.test[test_dict_or]()
+    suite.test[test_dict_update_empty_new]()
+    suite.test[test_mojo_issue_1729]()
     suite.test[test_owned_kwargs_dict]()
-    suite.test[test_bool_conversion]()
     suite.test[test_find_get]()
+    suite.test[test_dict_popitem]()
     suite.test[test_pop_string_values]()
     suite.test[test_clear]()
     suite.test[test_init_initial_capacity]()
