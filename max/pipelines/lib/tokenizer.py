@@ -26,12 +26,13 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    ImageMetadata,
     PipelineTokenizer,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-from max.pipelines.core import ImageMetadata, TextAndVisionContext, TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges
 from PIL import Image
 from transformers import (

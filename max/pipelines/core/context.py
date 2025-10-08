@@ -25,11 +25,13 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     GenerationStatus,
+    ImageMetadata,
     InputContext,
     LogProbabilities,
     RequestID,
     SamplingParams,
     TextGenerationOutput,
+    VLMInputContext,
 )
 
 CHUNK_SIZE = 128
@@ -512,30 +514,13 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         )
 
 
-class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
-    """Metadata about an image in the prompt. Each image corresponds to a range
-    in the text token array [start_idx, end_idx).
-    """
-
-    start_idx: int
-    """Index of the first <vision_token_id> special token for the image"""
-
-    end_idx: int
-    """One after the index of the last <vision_token_id> special token for the image"""
-
-    pixel_values: npt.NDArray[np.floating[Any]]
-    """Pixel values for the image"""
-
-    def __post_init__(self) -> None:
-        if self.start_idx < 0:
-            raise ValueError("Images must have a valid start index")
-        if self.end_idx <= self.start_idx:
-            raise ValueError(
-                "Images must have a valid start and end index containing at least one <vision_token_id>"
-            )
-
-    def __repr__(self):
-        return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"
+def _check_text_and_vision_context_implements_vlm_input_context(
+    context: TextAndVisionContext,
+) -> VLMInputContext:
+    # Not used at run-time; here only for the type checker to check that
+    # TextAndVisionContext properly implements VLMInputContext.  If you get an "incompatible
+    # type" error here, you introduced an incompatibility!
+    return context
 
 
 class TextAndVisionContext(
@@ -615,7 +600,7 @@ class TextAndVisionContext(
         self._validate_state()
 
     @property
-    def _image_idx(self) -> int:
+    def image_idx(self) -> int:
         """Index of the next unencoded image in the prompt."""
         for i, img in enumerate(self.images):
             if self.start_idx < img.end_idx:
@@ -625,15 +610,15 @@ class TextAndVisionContext(
     @property
     def next_images(self) -> list[ImageMetadata]:
         """Returns the images that are not yet encoded."""
-        image_idx = self._image_idx
-        if len(self.images) == 0 or self._image_idx == len(self.images):
+        image_idx = self.image_idx
+        if len(self.images) == 0 or self.image_idx == len(self.images):
             return []
         return self.images[image_idx:]
 
     @property
     def needs_vision_encoding(self) -> bool:
         """Returns whether vision encoding is needed for this context."""
-        return self._image_idx < len(self.images)
+        return self.image_idx < len(self.images)
 
     def compute_image_aligned_idx(self, idx: int) -> int:
         """Possibly aligns a index value downward if it lies in the middle of an image."""

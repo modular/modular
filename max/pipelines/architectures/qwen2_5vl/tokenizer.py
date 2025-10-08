@@ -21,7 +21,11 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
+from max.interfaces import (
+    ImageMetadata,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_seqlens,
     get_window_index,
@@ -30,7 +34,7 @@ from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
     process_vision_info,
 )
-from max.pipelines.core import ImageMetadata, TextAndVisionContext
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges

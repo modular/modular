@@ -23,8 +23,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
-from max.pipelines.core import ImageMetadata, TextAndVisionContext
+from max.interfaces import (
+    ImageMetadata,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+)
+from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
 from max.support.image import find_contiguous_ranges
 from PIL import Image
