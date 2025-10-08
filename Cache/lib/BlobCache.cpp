@@ -552,20 +552,31 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
   bool readOnly = !checkOrCreateWriteableDirectory(base);
 
   // If we have write access, do a little cache pruning on the host system in
-  // order to keep disk usage down: iterate the base path and remove directories
-  // that don't match the current version.
+  // order to keep disk usage down: iterate the base path and remove
+  // directories that match the current suffix (after '-').
+  // Keeping dirs that match the suffix and not prefix allows us to
+  // keep cached parallel debug and release versions.
   if (!readOnly) {
+    // Extract version suffix (everything after the first '-')
+    std::string_view suffix;
+    size_t idx = version.find('-');
+    if (idx != std::string_view::npos)
+      suffix = version.substr(idx + 1, std::string_view::npos);
+
     for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
       // The directory entry must exist, be a directory, the parent must be
-      // `base` and the directory 'filename' must not match
-      // MODULAR_VERSION_STRING in order for it to be deleted.
+      // `base` and the directory 'filename' suffix must match the current
+      // version suffix in order for it to be deleted.
 
       [[maybe_unused]] std::error_code ec0, ec1;
       if (std::filesystem::is_directory(dirEntry.path(), ec) &&
           (std::filesystem::canonical(dirEntry.path().parent_path(), ec0) ==
-           std::filesystem::canonical(base, ec1)) &&
-          (dirEntry.path().filename() != version)) {
-        std::filesystem::remove_all(dirEntry, ec);
+           std::filesystem::canonical(base, ec1))) {
+        // Extract suffix from directory name
+        std::string dirName = dirEntry.path().filename().string();
+        // Remove if prefix matches
+        if (dirName != version && dirName.ends_with(suffix))
+          std::filesystem::remove_all(dirEntry, ec);
       }
     }
   }
