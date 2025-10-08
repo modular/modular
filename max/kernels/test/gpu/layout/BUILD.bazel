@@ -58,10 +58,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "test_tensor_builder.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "test_index_tensor.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -85,7 +81,6 @@ _FILECHECK_TESTS = [
     "test_layout_tensor_copy.mojo",
     "test_layout_tensor_copy_amd.mojo",
     "test_layout_tensor_copy_nvidia.mojo",
-    "test_tensor_builder.mojo",
     "test_tensor_core_amd.mojo",
     "test_tensor_core_mi300x.mojo",
     "test_tensor_core_mi355x.mojo",
