@@ -235,25 +235,11 @@ RUFF_VERSION = "0.11.13"
     ]
 ]
 
-NVSHMEM_VERSION = "3.4.5"
-
 http_archive(
-    name = "libnvshmem",
-    build_file_content = """
-filegroup(
-    name = "device",
-    srcs = ["lib/libnvshmem_device.bc"],
-    visibility = ["//visibility:public"],
-)
-filegroup(
-    name = "host",
-    srcs = glob(["lib/*.so*"]),
-    visibility = ["//visibility:public"],
-)
-""",
-    # custom NVSHMEM at commit: https://github.com/modularml/NVSHMEM/commit/6ce0e34
-    sha256 = "786253323825e8b13a511069071f4b4ace4190129551e2f03c488081a660997f",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/{}/786253323825e8b13a511069071f4b4ace4190129551e2f03c488081a660997f/nvshmem.tar.gz".format(NVSHMEM_VERSION),
+    name = "nvshmem_prebuilt",
+    build_file = "//bazel/third-party:nvshmem_prebuilt.BUILD",
+    sha256 = "8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")

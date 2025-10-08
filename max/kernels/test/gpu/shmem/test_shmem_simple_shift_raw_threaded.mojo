@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
+# RUN: %mojo-build %s -o %t
+# RUN: %t
 
-# RUN: %mojo %s
 from gpu.host import DeviceContext, DeviceBuffer
 from algorithm import parallelize
 from shmem import *

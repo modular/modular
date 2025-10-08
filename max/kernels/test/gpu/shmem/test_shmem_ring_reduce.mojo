@@ -10,9 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-
-# RUN: %mojo %s
+# RUN: %mojo-build %s -o %t
+# RUN: %t
 
 from algorithm import parallelize
 from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
