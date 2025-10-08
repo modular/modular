@@ -775,7 +775,15 @@ def rms_norm_kv_cache_ragged_continuous_batching[
 
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -808,7 +816,15 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -947,7 +963,15 @@ def rms_norm_kv_cache_ragged_paged[
 
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -980,7 +1004,15 @@ def rms_norm_kv_cache_ragged_paged[
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 

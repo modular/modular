@@ -8795,13 +8795,13 @@ struct MergeRaggedTensors:
         b_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        merge_ragged_tensors[target=target](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(output_row_offsets),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(a_row_offsets),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(b_row_offsets),
+        merge_ragged_tensors[rank=rank, target=target](
+            output.to_layout_tensor(),
+            output_row_offsets.to_layout_tensor(),
+            a.to_layout_tensor(),
+            a_row_offsets.to_layout_tensor(),
+            b.to_layout_tensor(),
+            b_row_offsets.to_layout_tensor(),
             ctx,
         )
 

@@ -2860,7 +2860,20 @@ fn _k_cache_to_buffer[
         var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
-            buffer_row_offsets, global_token_idx
+            LayoutTensor[
+                buffer_row_offsets.dtype,
+                Layout.row_major[buffer_row_offsets.rank](
+                    buffer_row_offsets.shape
+                ),
+            ](
+                buffer_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[buffer_row_offsets.rank](
+                        buffer_row_offsets.shape
+                    ),
+                ].row_major(buffer_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
 
         var token_idx = Int(

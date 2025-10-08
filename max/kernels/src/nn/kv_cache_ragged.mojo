@@ -586,7 +586,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
 
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
@@ -730,7 +738,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
 
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
@@ -902,7 +918,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
 
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
@@ -1231,7 +1255,15 @@ fn _matmul_kv_cache_ragged_impl[
         global_token_idx = idx[0]
 
         batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -1430,7 +1462,15 @@ fn _matmul_k_cache_ragged_impl[
         global_token_idx = idx[0]
 
         batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -1583,7 +1623,15 @@ fn _matmul_k_cache_ragged_scale_impl[
         var global_token_idx = idx[0]
 
         var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -1841,7 +1889,15 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
         global_token_idx = idx[0]
 
         batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -2985,7 +3041,15 @@ fn generic_kv_cache_radd_dispatch[
         # we could be slicing the batch, so we need to add the offset to get the actual index in the flattened batch
         var corrected_token_idx = idx[0] + input_row_offsets[0]
         var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, Int(corrected_token_idx)
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            Int(corrected_token_idx),
         )
 
         # we also need to add the batch offset to get the actual index in the flattened batch

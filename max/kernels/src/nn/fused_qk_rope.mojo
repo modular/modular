@@ -21,6 +21,7 @@ from complex import ComplexSIMD
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout import IntTuple
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -315,7 +316,15 @@ fn fused_qk_rope_ragged[
             var global_token_idx = idx[0]
 
             var batch_idx: Int = get_batch_from_row_offsets(
-                input_row_offsets, global_token_idx
+                LayoutTensor[
+                    DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[1](input_row_offsets.shape)
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
+                global_token_idx,
             )
             var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
             var head_idx = idx[1]
