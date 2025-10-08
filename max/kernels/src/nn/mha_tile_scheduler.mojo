@@ -15,7 +15,6 @@ from collections import OptionalReg
 from os.atomic import Atomic
 
 import gpu.warp as warp
-from buffer import NDBuffer
 from builtin.device_passable import DevicePassable
 from gpu.host.info import H100
 from gpu.id import block_idx, thread_idx
