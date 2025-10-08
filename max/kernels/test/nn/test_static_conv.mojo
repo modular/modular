@@ -17,6 +17,7 @@ from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from layout import IntTuple
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,
@@ -131,10 +132,10 @@ fn test[
     )
 
     alias conv_attr_static = ConvInfoStatic[2](
-        DimList(pad_h[0], pad_w[0], pad_h[1], pad_w[1]),
-        DimList(stride[0], stride[1]),
-        DimList(dilation[0], dilation[1]),
-        Dim(num_groups),
+        IntTuple(pad_h[0], pad_w[0], pad_h[1], pad_w[1]),
+        IntTuple(stride[0], stride[1]),
+        IntTuple(dilation[0], dilation[1]),
+        num_groups,
     )
 
     alias micro_kernel_shape = get_micro_kernel_shape[

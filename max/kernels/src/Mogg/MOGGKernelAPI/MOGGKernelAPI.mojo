@@ -4689,14 +4689,18 @@ struct Conv:
             pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
             pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
 
+        alias input_shape = input._static_shape.at[
+            input.rank - 1
+        ]()  # input C, NHWC
+        alias filter_shape = filter._static_shape.at[
+            filter.rank - 2
+        ]()  # filter C, RSCF or FRSCf
         alias conv_attr = ConvInfoStatic[input.rank - 2](
-            static_padding,
-            static_strides,
-            static_dilations,
-            input._static_shape.at[input.rank - 1](),  # input C, NHWC
-            filter._static_shape.at[
-                filter.rank - 2
-            ](),  # filter C, RSCF or FRSCf
+            IntTuple(static_padding),
+            IntTuple(static_strides),
+            IntTuple(static_dilations),
+            input_shape.get() if input_shape else UNKNOWN_VALUE,
+            filter_shape.get() if filter_shape else UNKNOWN_VALUE,
         )
 
         alias filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"

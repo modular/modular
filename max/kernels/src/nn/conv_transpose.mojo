@@ -34,7 +34,6 @@ from algorithm import (
     tile_middle_unswitch_boundaries,
     vectorize,
 )
-from buffer import Dim
 from gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
@@ -497,9 +496,9 @@ struct ConvTransposedPacked[
         )
 
         @parameter
-        if conv_attr.num_groups:
+        if conv_attr.num_groups != UNKNOWN_VALUE:
             constrained[
-                conv_attr.num_groups == Dim(1),
+                conv_attr.num_groups == 1,
                 "Don't support grouped transposed conv for now.",
             ]()
 

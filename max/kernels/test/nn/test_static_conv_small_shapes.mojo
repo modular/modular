@@ -18,6 +18,7 @@ from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from layout import IntTuple
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -47,10 +48,10 @@ alias WO = (W + pad_top + pad_bottom - dilation_w * (S - 1) - 1) // stride_w + 1
 alias num_groups = 1
 
 alias conv_attr = ConvInfoStatic[2](
-    DimList(pad_bottom, pad_left, pad_top, pad_right),
-    DimList(stride_h, stride_w),
-    DimList(dilation_h, dilation_w),
-    Dim(num_groups),
+    IntTuple(pad_bottom, pad_left, pad_top, pad_right),
+    IntTuple(stride_h, stride_w),
+    IntTuple(dilation_h, dilation_w),
+    num_groups,
 )
 
 alias value_type = DType.float32
