@@ -405,6 +405,9 @@ extractMutInputFromTensorStruct(LIT::StructType structType) {
 ///
 /// Functions parameterized on an IOSpec in Mojo will take a `mut` and an
 /// `input` parameter at the KGEN level, but not an IOSpec parameter.
+/// TODO(GEX-2623): This is only true for KGEN, and cause some issue while
+/// migrating to LIT, where the parameters are still there. Once We moved
+/// completely to LIT, we should remove this and always keep the parameters.
 static bool willBePresentInKgen(KGENModule &kgenModule, LIT::StructType type) {
   if (auto decl = kgenModule.lookup<LIT::StructDeclOp>(type.getSymbol()))
     return !decl.getFieldDecls().empty();
