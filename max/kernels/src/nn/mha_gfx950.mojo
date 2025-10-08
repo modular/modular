@@ -17,7 +17,6 @@ from math.constants import log2e
 from sys import align_of, simd_width_of, size_of, llvm_intrinsic
 from sys.intrinsics import readfirstlane
 from sys.info import _cdna_4_or_newer
-from buffer import NDBuffer
 from algorithm.functional import unswitch
 from gpu import (
     WARP_SIZE,
