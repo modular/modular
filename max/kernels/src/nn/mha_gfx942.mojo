@@ -1213,7 +1213,7 @@ struct GlobalMemoryManager[
 
 
 @always_inline
-fn mha_single_batch_amd[
+fn mha_single_batch_gfx942[
     output_type: DType,
     q_type: DType,
     k_t: MHAOperand,
@@ -1757,7 +1757,7 @@ fn mma[
 
 
 @always_inline
-fn mha_decoding_single_batch_amd[
+fn mha_decoding_single_batch_gfx942[
     output_type: DType,
     q_type: DType,
     k_t: MHAOperand,

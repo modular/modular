@@ -23,8 +23,9 @@ from sys import (
     is_nvidia_gpu,
     simd_width_of,
     size_of,
+    env_get_bool,
 )
-
+from sys.info import _cdna_4_or_newer
 import gpu.warp as warp
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -71,7 +72,11 @@ from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
 from memory import stack_allocation
-from nn.mha_amd import mha_decoding_single_batch_amd, mha_single_batch_amd
+from nn.mha_gfx942 import (
+    mha_decoding_single_batch_gfx942,
+    mha_single_batch_gfx942,
+)
+from nn.mha_gfx950 import mha_single_batch_gfx950
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
@@ -1222,8 +1227,9 @@ fn flash_attention_ragged[
 
 
 # for depth = 128 we want waves_per_eu = 2 and for depth = 256 we want waves_per_eu = 1
+# for depth = 64 we want waves_per_eu = 2
 # this heuristic may not be valid for other depths
-@__llvm_metadata(`rocdl.waves_per_eu`=Int(256 // config.depth))
+@__llvm_metadata(`rocdl.waves_per_eu`=min(Int(256 // config.depth), 2))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
 )
@@ -1397,6 +1403,7 @@ fn mha[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
+
         var sink_weights_lt: OptionalReg[
             LayoutTensor[
                 q_ptr.type.dtype,
@@ -1415,19 +1422,39 @@ fn mha[
                     IndexList[1](sink_weights.value().size())
                 ),
             )
-        mha_single_batch_amd[group=group, config=config, sink=sink](
-            output_ptr.offset(q_batch_offset),
-            q_ptr.offset(q_batch_offset),
-            k,
-            v,
-            seq_len,
-            num_keys,
-            scale,
-            batch_idx,
-            Int(start_pos),
-            mask,
-            sink_weights_lt,
-        )
+
+        @parameter
+        if (
+            _cdna_4_or_newer()
+            and env_get_bool["USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False]()
+        ):
+            mha_single_batch_gfx950[group=group, config=config, sink=sink](
+                output_ptr.offset(q_batch_offset),
+                q_ptr.offset(q_batch_offset),
+                k,
+                v,
+                seq_len,
+                num_keys,
+                scale,
+                batch_idx,
+                Int(start_pos),
+                mask,
+                sink_weights_lt,
+            )
+        else:
+            mha_single_batch_gfx942[group=group, config=config, sink=sink](
+                output_ptr.offset(q_batch_offset),
+                q_ptr.offset(q_batch_offset),
+                k,
+                v,
+                seq_len,
+                num_keys,
+                scale,
+                batch_idx,
+                Int(start_pos),
+                mask,
+                sink_weights_lt,
+            )
     else:
         return CompilationTarget.unsupported_target_error[operation="mha"]()
 
@@ -3033,7 +3060,11 @@ fn mha_decoding[
                     IndexList[1](sink_weights.value().size())
                 ),
             )
-        mha_decoding_single_batch_amd[group=group, config=config, sink=sink,](
+        mha_decoding_single_batch_gfx942[
+            group=group,
+            config=config,
+            sink=sink,
+        ](
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
@@ -3049,7 +3080,6 @@ fn mha_decoding[
             mask,
             sink_weights_lt,
         )
-
     else:
         return CompilationTarget.unsupported_target_error[
             operation="mha_decoding"

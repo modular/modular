@@ -18,6 +18,7 @@ from sys import (
     CompilationTarget,
     align_of,
     env_get_int,
+    env_get_bool,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -321,8 +322,13 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
+            alias use_experimental_cdna4_kernel = env_get_bool[
+                "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
+            ]()
             # BN
-            self.num_keys_per_block = num_keys_per_block.or_else(depth)
+            self.num_keys_per_block = num_keys_per_block.or_else(
+                64 if use_experimental_cdna4_kernel else depth
+            )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 UInt(
@@ -337,7 +343,9 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
             self.BK = BK.or_else(
                 UInt(16 * bk_arch_factor * bk_type_factor)
             ) if has_nvidia_gpu_accelerator() else 32
-            self.WN = WN.or_else(32 if dtype is DType.float32 else depth)
+            self.WN = WN.or_else(
+                32 if dtype is DType.float32 else self.num_keys_per_block
+            )
         self.WM = WM.or_else(
             UInt(
                 32 if dtype
