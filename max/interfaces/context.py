@@ -9,6 +9,7 @@ import logging
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
+from functools import cached_property
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import msgspec
@@ -47,6 +48,85 @@ class SamplingParamsInput:
     detokenize: bool | None = None
     seed: int | None = None
     logits_processors: Sequence[LogitsProcessor] | None = None
+
+
+@dataclass(frozen=True)
+class SamplingParamsGenerationConfigDefaults:
+    """Default sampling parameter values extracted from a model's GenerationConfig.
+
+    This class encapsulates sampling parameter defaults that come from a HuggingFace
+    model's GenerationConfig. These defaults have middle priority when creating
+    SamplingParams instances:
+
+    Priority order (highest to lowest):
+    1. User-provided values (SamplingParamsInput)
+    2. Model's GenerationConfig values (this class)
+    3. SamplingParams class defaults
+
+    All fields default to None, indicating that the model's GenerationConfig does not
+    explicitly set that parameter. When None, SamplingParams will fall back to its
+    own class defaults.
+
+    Example:
+        >>> # Extract from model config
+        >>> gen_config = model_config.generation_config
+        >>> defaults = SamplingParamsGenerationConfigDefaults(
+        ...     temperature=0.7,
+        ...     top_k=50,
+        ...     max_new_tokens=512
+        ... )
+        >>> # Use with SamplingParams
+        >>> params = SamplingParams.from_input_and_generation_config(
+        ...     SamplingParamsInput(),
+        ...     sampling_params_defaults=defaults
+        ... )
+    """
+
+    temperature: float | None = None
+    """Temperature value from the model's GenerationConfig, if explicitly set."""
+
+    top_p: float | None = None
+    """Top-p (nucleus sampling) value from the model's GenerationConfig, if explicitly set."""
+
+    top_k: int | None = None
+    """Top-k sampling value from the model's GenerationConfig, if explicitly set."""
+
+    repetition_penalty: float | None = None
+    """Repetition penalty value from the model's GenerationConfig, if explicitly set."""
+
+    max_new_tokens: int | None = None
+    """Maximum number of new tokens from the model's GenerationConfig, if explicitly set."""
+
+    min_new_tokens: int | None = None
+    """Minimum number of new tokens from the model's GenerationConfig, if explicitly set."""
+
+    do_sample: bool | None = None
+    """If False, use greedy sampling."""
+
+    @cached_property
+    def values_to_update(self) -> dict[str, float | int]:
+        """Extract non-None field values as a dictionary.
+
+        Returns:
+            A dictionary mapping field names to their values, excluding any fields
+            that are None. This dictionary can be used to update SamplingParams
+            default values.
+
+        Example:
+            >>> defaults = SamplingParamsGenerationConfigDefaults(
+            ...     temperature=0.7,
+            ...     top_k=50
+            ... )
+            >>> defaults.values_to_update
+            {'temperature': 0.7, 'top_k': 50}
+        """
+        values = {}
+        for _field in fields(self):
+            field_value = getattr(self, _field.name)
+            if field_value is not None:
+                values[_field.name] = field_value
+
+        return values
 
 
 @dataclass(frozen=False)
@@ -113,28 +193,55 @@ class SamplingParams:
     See :obj:`~max.interfaces.logit_processors_type.LogitsProcessor` for examples."""
 
     @classmethod
-    def from_input(cls, input_params: SamplingParamsInput) -> SamplingParams:
-        """Create a SamplingParams instance from a dataclass input, using defaults for None values.
+    def from_input_and_generation_config(
+        cls,
+        input_params: SamplingParamsInput,
+        sampling_params_defaults: SamplingParamsGenerationConfigDefaults,
+    ) -> SamplingParams:
+        """Create SamplingParams with defaults from HuggingFace's GenerationConfig.
 
-        This method allows you to pass a dataclass with some parameters set to None,
-        and those None values will be replaced with the default values defined in the class.
-        The dataclass ensures static type checking for parameter names and types.
+        This method creates a SamplingParams instance by combining three sources of values,
+        in priority order (highest to lowest):
+        1. User-provided values in input_params (non-None)
+        2. Model's GenerationConfig values (only if explicitly set in the model's config)
+        3. SamplingParams class defaults
 
         Args:
-            input_params: Dataclass containing parameter names and values. Values of None
-                will be replaced with the default values from the class definition.
+            input_params: Dataclass containing user-specified parameter values.
+                Values of None will be replaced with model defaults or class defaults.
+            sampling_params_defaults: SamplingParamsGenerationConfigDefaults containing
+                default sampling parameters extracted from the model's GenerationConfig.
 
         Returns:
-            A new SamplingParams instance with the provided values and defaults for None.
+            A new SamplingParams instance with model-aware defaults.
+
+        Example:
+            >>> sampling_defaults = model_config.sampling_params_defaults
+            >>> params = SamplingParams.from_input_and_generation_config(
+            ...     SamplingParamsInput(temperature=0.7),  # User override
+            ...     sampling_params_defaults=sampling_defaults
+            ... )
         """
-        # Create a new dict with None values replaced by defaults
-        resolved_params = {}
+        # Start with model's generation config values (only if explicitly set)
+        defaults: dict[str, Any] = sampling_params_defaults.values_to_update
+
+        # Handle special mappings from GenerationConfig
+        if "do_sample" in defaults and defaults["do_sample"] is not None:
+            # If do_sample is False, set greedy defaults (unless user overrides)
+            if not defaults["do_sample"]:
+                defaults["temperature"] = 0
+                defaults["top_k"] = 0
+
+            # This isnt included in SamplingParams, therefore we should remove it.
+            del defaults["do_sample"]
+
+        # Overlay user-provided values (highest priority)
         for _field in fields(input_params):
             value = getattr(input_params, _field.name)
             if value is not None:
-                resolved_params[_field.name] = value
+                defaults[_field.name] = value
 
-        return cls(**resolved_params)
+        return cls(**defaults)
 
     def log_sampling_info(self) -> None:
         """Log comprehensive sampling parameters information.

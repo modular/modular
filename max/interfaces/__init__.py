@@ -13,6 +13,7 @@ from .context import (
     ImageMetadata,
     InputContext,
     SamplingParams,
+    SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
     VLMInputContext,
 )
@@ -123,6 +124,7 @@ __all__ = [
     "RequestID",
     "RequestType",
     "SamplingParams",
+    "SamplingParamsGenerationConfigDefaults",
     "SamplingParamsInput",
     "Scheduler",
     "SchedulerResult",
