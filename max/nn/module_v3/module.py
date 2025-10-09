@@ -143,8 +143,8 @@ class Module:
             is the :obj:`Tensor`.
         """
         yield from self.local_parameters
-        for prefix, descendent in self.descendents:
-            for name, parameter in descendent.local_parameters:
+        for prefix, descendant in self.descendants:
+            for name, parameter in descendant.local_parameters:
                 yield f"{prefix}.{name}", parameter
 
     @property
@@ -160,7 +160,7 @@ class Module:
                 yield name, value
 
     @property
-    def descendents(self) -> Iterable[tuple[str, Module]]:
+    def descendants(self) -> Iterable[tuple[str, Module]]:
         """Iterates over the Module's descendant modules.
 
         Returns:
@@ -169,8 +169,8 @@ class Module:
         """
         for prefix, child in self.children:
             yield prefix, child
-            for name, descendent in child.descendents:
-                yield f"{prefix}.{name}", descendent
+            for name, descendant in child.descendants:
+                yield f"{prefix}.{name}", descendant
 
     def apply_to_local_parameters(
         self, f: Callable[[str, Tensor], Tensor]
