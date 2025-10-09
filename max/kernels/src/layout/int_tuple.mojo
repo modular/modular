@@ -1398,9 +1398,12 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Returns:
             The integer value stored in this `IntTuple`.
 
-        Notes:
-            If the `IntTuple` is not a single value, the behavior is undefined.
+        Aborts:
+            If the `IntTuple` is not a single value.
         """
+        if self.is_tuple():
+            abort("IntTuple is not a single value. Cannot convert to Int.")
+
         return self.value()
 
     @always_inline("nodebug")
