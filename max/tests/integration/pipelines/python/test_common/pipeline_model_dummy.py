@@ -13,7 +13,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputContext, PipelineTask
+from max.interfaces import PipelineTask, TextGenerationContext
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
@@ -80,7 +80,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[InputContext],
+        context_batch: Sequence[TextGenerationContext],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> DummyModelInputs:

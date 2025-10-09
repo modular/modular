@@ -9,17 +9,13 @@ import json
 import random
 import string
 from collections.abc import Sequence
-from typing import TypeVar
 
 import numpy as np
 from max.interfaces import (
-    InputContext,
     PipelineTokenizer,
     TextGenerationRequest,
 )
 from max.pipelines.core import TextContext
-
-T = TypeVar("T", bound=InputContext)
 
 
 class MockTextTokenizer(

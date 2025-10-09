@@ -10,7 +10,7 @@ import pytest
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.interfaces import InputContext
+from max.interfaces import TextGenerationContext
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -151,7 +151,7 @@ async def test_swapping_to_host_multi_gpu(
     # Since the last 10 reqs are duplicates, we need approximately 1000 tokens worth of blocks.
     # This exceeds the 500 token limit so we will need to swap to host.
     prompt_len = 100
-    reqs: list[InputContext] = []
+    reqs: list[TextGenerationContext] = []
     for i in range(10):  # noqa: B007
         reqs.append(create_text_context(gen_prompt(prompt_len)))
     for i in range(10):
@@ -159,7 +159,7 @@ async def test_swapping_to_host_multi_gpu(
 
     # Each batch has 4 requests
     batch_size = 4
-    batches: list[list[InputContext]] = [
+    batches: list[list[TextGenerationContext]] = [
         reqs[i : i + batch_size] for i in range(0, len(reqs), batch_size)
     ]
 
