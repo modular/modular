@@ -55,7 +55,11 @@ from transformers.models.auto.configuration_auto import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
-from .tokenizer import IMAGE_CONTEXT_TOKEN_ID, IMAGE_NDIMS, InternVLImageConfig
+from .tokenizer import (
+    IMAGE_NDIMS,
+    InternVLImageConfig,
+    _get_image_context_token_id,
+)
 from .weight_adapters import (
     convert_internvl_language_model_state_dict,
     convert_internvl_vision_model_state_dict,
@@ -682,9 +686,11 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         with Graph(
             "internvl_language", input_types=self._language_graph_input_types()
         ) as graph:
-            # Build language model architecture.
+            image_context_token_id = _get_image_context_token_id(
+                self.huggingface_config
+            )
             language_model = InternVLLanguageModel(
-                config, IMAGE_CONTEXT_TOKEN_ID
+                config, image_context_token_id
             )
             language_model.load_state_dict(
                 state_dict=state_dict,
