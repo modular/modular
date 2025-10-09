@@ -78,7 +78,6 @@ def create_mock_pipeline_with_lora(lora_manager: Mock) -> Mock:
         responses: dict[RequestID, TextGenerationOutput] = {}
 
         for request_id, request in inputs.batch.items():
-            # Update the InputContext
             request.update(0)
 
             # Return a valid response
