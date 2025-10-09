@@ -19,6 +19,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (
@@ -125,10 +126,8 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         input_row_offsets.tensor[i] = i * seq_len
     input_row_offsets.tensor[batch_size] = batch_size * seq_len
 
-    q = NDBuffer[
-        dtype,
-        rank=3,
-        shape = DimList(batch_size * seq_len, num_heads, head_dim),
+    q = LayoutTensor[
+        dtype, Layout.row_major(batch_size * seq_len, num_heads, head_dim)
     ](q_buffer.unsafe_ptr())
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
@@ -138,11 +137,8 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         "invalid freqs_cis_table init",
     )
     # Create a view into freqs_cis tensor that only includes the roped dimensions
-    freqs_cis_table = NDBuffer[
-        dtype,
-        rank=2,
-        shape = DimList(max_seq_len, rope_dim),
-        strides = DimList(head_dim, 1),
+    freqs_cis_table = LayoutTensor[
+        dtype, Layout(IntTuple(max_seq_len, rope_dim), IntTuple(head_dim, 1))
     ](
         freqs_cis_table_buffer.unsafe_ptr() + (head_dim - rope_dim)
     )  # Offset to last rope_dim elements
@@ -153,7 +149,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         len(expected_q_out_buffer) == len(q_buffer),
         "invalid expected q out init",
     )
-    expected_q_out = NDBuffer[dtype, rank=3, shape = q.shape](
+    expected_q_out = LayoutTensor[dtype, Layout.row_major(q.layout.shape)](
         expected_q_out_buffer.unsafe_ptr()
     )
     expected_k_out_buffer = k_out_golden[dtype]()
@@ -164,12 +160,17 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
 
     # Create output buffer.
     q_out_buffer = List[Scalar[dtype]](length=UInt(len(q_buffer)), fill=0)
-    q_out = NDBuffer[dtype, rank=3](q_out_buffer.unsafe_ptr(), q.dynamic_shape)
+    q_out = LayoutTensor[dtype, Layout.row_major[3]()](
+        q_out_buffer.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[3]()].row_major(
+            q.runtime_layout.shape.value.canonicalize()
+        ),
+    )
     fused_qk_rope_ragged[
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](
         q_proj=q,
-        input_row_offsets=input_row_offsets.tensor,
+        input_row_offsets=input_row_offsets.to_layout_tensor(),
         kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
         position_ids=None,
@@ -190,16 +191,16 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
                 assert_almost_equal(
-                    q_out.data + base_offset,
-                    q.data + base_offset,
+                    q_out.ptr + base_offset,
+                    q.ptr + base_offset,
                     head_dim - rope_dim,
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
                 roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out.data + roped_offset,
-                    expected_q_out.data + roped_offset,
+                    q_out.ptr + roped_offset,
+                    expected_q_out.ptr + roped_offset,
                     rope_dim,
                 )
 

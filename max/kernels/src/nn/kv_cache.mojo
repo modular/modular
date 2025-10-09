@@ -363,11 +363,33 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
         fused_qk_rope[
             kv_collection.CacheType, interleaved=interleaved, target=target
         ](
-            q_proj,
+            LayoutTensor[
+                q_proj.type, Layout.row_major[q_proj.rank](q_proj.shape)
+            ](
+                q_proj.data,
+                RuntimeLayout[
+                    Layout.row_major[q_proj.rank](q_proj.shape)
+                ].row_major(q_proj.get_shape().canonicalize()),
+            ),
             kv_collection,
-            freqs_cis,
+            LayoutTensor[
+                freqs_cis.type,
+                Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+            ](
+                freqs_cis.data,
+                RuntimeLayout[
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                ].row_major(freqs_cis.get_shape().canonicalize()),
+            ),
             layer_idx,
-            output,
+            LayoutTensor[
+                output.type, Layout.row_major[output.rank](output.shape)
+            ](
+                output.data,
+                RuntimeLayout[
+                    Layout.row_major[output.rank](output.shape)
+                ].row_major(output.get_shape().canonicalize()),
+            ),
             dev_ctx,
         )
 

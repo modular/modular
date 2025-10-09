@@ -173,13 +173,13 @@ def execute_kv_cache_ragged_rope[
                 interleaved=False,
                 target="gpu",
             ](
-                q_device.tensor,
-                input_row_offsets_device.tensor,
+                q_device.to_layout_tensor(),
+                input_row_offsets_device.to_layout_tensor(),
                 kv_collection_device,
-                freqs_cis_table_device.tensor,
+                freqs_cis_table_device.to_layout_tensor(),
                 None,
                 0,
-                output_device.tensor,
+                output_device.to_layout_tensor().origin_cast[True](),
                 ctx,
             )
 

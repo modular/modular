@@ -19,6 +19,7 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import Layout, LayoutTensor, RuntimeLayout
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import freqs_cis_table_input
@@ -257,24 +258,16 @@ def execute_fused_qk_rope_ragged(
 
     # "true CE" execution
     print("true")
-    var freqs_cis = rebind[
-        NDBuffer[
-            dtype,
-            2,
-            MutableAnyOrigin,
-            shape = freqs_cis_table_dev.shape,
-        ]
-    ](freqs_cis_table_dev.tensor)
     fused_qk_rope_ragged[
         mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
     ](
-        true_ce_q_ragged_device.tensor,
-        true_ce_row_offsets_device.tensor,
+        true_ce_q_ragged_device.to_layout_tensor(),
+        true_ce_row_offsets_device.to_layout_tensor(),
         true_ce_k_cache_collection,
-        freqs_cis,
+        freqs_cis_table_dev.to_layout_tensor(),
         None,
         layer_idx,
-        output=true_ce_output_device.tensor,
+        output=true_ce_output_device.to_layout_tensor(),
         context=ctx,
     )
 
@@ -283,13 +276,13 @@ def execute_fused_qk_rope_ragged(
     fused_qk_rope_ragged[
         mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
     ](
-        mixed_ce_q_ragged_device.tensor,
-        mixed_ce_row_offsets_device.tensor,
+        mixed_ce_q_ragged_device.to_layout_tensor(),
+        mixed_ce_row_offsets_device.to_layout_tensor(),
         mixed_ce_k_cache_collection,
-        freqs_cis,
+        freqs_cis_table_dev.to_layout_tensor(),
         None,
         layer_idx,
-        output=mixed_ce_output_device.tensor,
+        output=mixed_ce_output_device.to_layout_tensor(),
         context=ctx,
     )
     ctx.enqueue_copy(
@@ -572,25 +565,16 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
         max_cache_length,
     )
 
-    # execute the kernel
-    var freqs_cis = rebind[
-        NDBuffer[
-            dtype,
-            2,
-            __type_of(freqs_cis_device.tensor).origin,
-            shape = DimList(max_seq_len, rope_dim),
-        ]
-    ](freqs_cis_device.tensor)
     fused_qk_rope_ragged[
         k_cache_collection.CacheType, interleaved=True, target="gpu"
     ](
-        q_ragged_device.tensor,
-        row_offsets_device.tensor,
+        q_ragged_device.to_layout_tensor(),
+        row_offsets_device.to_layout_tensor(),
         k_cache_collection,
-        freqs_cis,
+        freqs_cis_device.to_layout_tensor(),
         None,
         layer_idx,
-        output=output_device.tensor,
+        output=output_device.to_layout_tensor(),
         context=ctx,
     )
 
@@ -598,13 +582,13 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     fused_qk_rope_ragged[
         k_cache_collection_64.CacheType, interleaved=True, target="gpu"
     ](
-        q_ragged_device_64.tensor,
-        row_offsets_device.tensor,
+        q_ragged_device_64.to_layout_tensor(),
+        row_offsets_device.to_layout_tensor(),
         k_cache_collection_64,
-        freqs_cis,
+        freqs_cis_device.to_layout_tensor(),
         None,
         layer_idx,
-        output=output_device_ref.tensor,
+        output=output_device_ref.to_layout_tensor(),
         context=ctx,
     )
 

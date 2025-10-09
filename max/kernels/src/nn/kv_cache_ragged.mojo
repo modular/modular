@@ -2049,28 +2049,101 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
                 target=target,
                 mrope_section=mrope_section,
             ](
-                q_proj,
-                input_row_offsets,
+                LayoutTensor[
+                    q_proj.dtype, Layout.row_major[q_proj.rank](q_proj.shape)
+                ](
+                    q_proj.data,
+                    RuntimeLayout[
+                        Layout.row_major[q_proj.rank](q_proj.shape)
+                    ].row_major(q_proj.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    input_row_offsets.dtype,
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    ),
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[input_row_offsets.rank](
+                            input_row_offsets.shape
+                        )
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
                 kv_collection,
-                freqs_cis,
-                OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
-                    position_ids
+                LayoutTensor[
+                    freqs_cis.type,
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+                ](
+                    freqs_cis.data,
+                    RuntimeLayout[
+                        Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                    ].row_major(freqs_cis.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    position_ids.dtype, Layout.row_major[2](), MutableAnyOrigin
+                ](
+                    position_ids.data,
+                    RuntimeLayout[Layout.row_major[2]()].row_major(
+                        position_ids.get_shape().canonicalize()
+                    ),
                 ),
                 layer_idx,
-                output,
+                LayoutTensor[
+                    output.dtype, Layout.row_major[output.rank](output.shape)
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout.row_major[output.rank](output.shape)
+                    ].row_major(output.get_shape().canonicalize()),
+                ),
                 dev_ctx,
             )
         else:
             fused_qk_rope_ragged[
                 kv_collection.CacheType, interleaved=interleaved, target=target
             ](
-                q_proj,
-                input_row_offsets,
+                LayoutTensor[
+                    q_proj.dtype, Layout.row_major[q_proj.rank](q_proj.shape)
+                ](
+                    q_proj.data,
+                    RuntimeLayout[
+                        Layout.row_major[q_proj.rank](q_proj.shape)
+                    ].row_major(q_proj.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    input_row_offsets.dtype,
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    ),
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[input_row_offsets.rank](
+                            input_row_offsets.shape
+                        )
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
                 kv_collection,
-                freqs_cis,
+                LayoutTensor[
+                    freqs_cis.type,
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+                ](
+                    freqs_cis.data,
+                    RuntimeLayout[
+                        Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                    ].row_major(freqs_cis.get_shape().canonicalize()),
+                ),
                 None,
                 layer_idx,
-                output,
+                LayoutTensor[
+                    output.dtype, Layout.row_major[output.rank](output.shape)
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout.row_major[output.rank](output.shape)
+                    ].row_major(output.get_shape().canonicalize()),
+                ),
                 dev_ctx,
             )
 
@@ -2141,28 +2214,101 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
                 target=target,
                 mrope_section=mrope_section,
             ](
-                q_proj,
-                input_row_offsets,
+                LayoutTensor[
+                    q_proj.dtype, Layout.row_major[q_proj.rank](q_proj.shape)
+                ](
+                    q_proj.data,
+                    RuntimeLayout[
+                        Layout.row_major[q_proj.rank](q_proj.shape)
+                    ].row_major(q_proj.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    input_row_offsets.dtype,
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    ),
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[input_row_offsets.rank](
+                            input_row_offsets.shape
+                        )
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
                 kv_collection,
-                freqs_cis,
-                OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
-                    position_ids
+                LayoutTensor[
+                    freqs_cis.type,
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+                ](
+                    freqs_cis.data,
+                    RuntimeLayout[
+                        Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                    ].row_major(freqs_cis.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    position_ids.dtype, Layout.row_major[2](), MutableAnyOrigin
+                ](
+                    position_ids.data,
+                    RuntimeLayout[Layout.row_major[2]()].row_major(
+                        position_ids.get_shape().canonicalize()
+                    ),
                 ),
                 layer_idx,
-                output,
+                LayoutTensor[
+                    output.dtype, Layout.row_major[output.rank](output.shape)
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout.row_major[output.rank](output.shape)
+                    ].row_major(output.get_shape().canonicalize()),
+                ),
                 dev_ctx,
             )
         else:
             fused_qk_rope_ragged[
                 kv_collection.CacheType, interleaved=interleaved, target=target
             ](
-                q_proj,
-                input_row_offsets,
+                LayoutTensor[
+                    q_proj.dtype, Layout.row_major[q_proj.rank](q_proj.shape)
+                ](
+                    q_proj.data,
+                    RuntimeLayout[
+                        Layout.row_major[q_proj.rank](q_proj.shape)
+                    ].row_major(q_proj.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    input_row_offsets.dtype,
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    ),
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[input_row_offsets.rank](
+                            input_row_offsets.shape
+                        )
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
                 kv_collection,
-                freqs_cis,
+                LayoutTensor[
+                    freqs_cis.type,
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+                ](
+                    freqs_cis.data,
+                    RuntimeLayout[
+                        Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                    ].row_major(freqs_cis.get_shape().canonicalize()),
+                ),
                 None,
                 layer_idx,
-                output,
+                LayoutTensor[
+                    output.dtype, Layout.row_major[output.rank](output.shape)
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout.row_major[output.rank](output.shape)
+                    ].row_major(output.get_shape().canonicalize()),
+                ),
                 dev_ctx,
             )
 
