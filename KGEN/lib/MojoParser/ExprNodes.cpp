@@ -1904,17 +1904,49 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         memberDecl.getParentDecl()->getSymbolRef());
     auto traitName = StringAttr::get(emitter.getContext(),
                                      getFlattenedSymbolName(traitSymRef));
+
     // If the base is a trait composition type, upcast the composition into the
     // trait that defined the alias so that types match.
-    if (typeDecl != memberDecl.getParentDecl()) {
+    ASTDecl *traitDecl = memberDecl.getParentDecl();
+    if (typeDecl != traitDecl) {
       basePValue = emitter.emitMetaTypeToTraitConversion(
           {basePValue, base},
-          cast<TraitDeclOp>(memberDecl.getParentDecl()->getIfOperation())
-              .bindReference());
+          cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference());
     }
-    auto witnessEntryResult = shared.getEvaluationContext().getGetWitnessAttr(
-        basePValue, traitName, witnessEntryName, aliasDeclOpParam.getType());
 
+    // In the case that aliasDeclOpParam is a dependent associated type aliase,
+    // we need to first rebind `_Self` to `T`.
+    //
+    // In the following example:
+    //
+    // trait Trait:
+    //   alias T1 : AnyType
+    //   alias T2 : T1
+    //
+    // When emitting
+    // fn foo[
+    //   T : Trait
+    //   t : T.T2
+    // ](...)
+    //   To emit `T.T2`, we need to fold
+    //
+    //   # get_witness_attr<T, "Trait", "T2"> :
+    //       #get_witness_attr<"_Self", "Trait", "T1">: AnyType
+    //
+    //   # to
+    //
+    //   # get_witness_attr<T, "Trait", "T2"> :
+    //       #get_witness_attr<T, "Trait", "T1">: AnyType
+
+    // TraitDeclOp always have one input parameter `_Self`
+    ParamDeclAttr traitSelf =
+        cast<TraitDeclOp>(traitDecl->getIfOperation()).getParamsAttr().back();
+    ParserParameterEvaluator selfReplacer(shared);
+    selfReplacer.setDeclBinding(traitSelf.getName(), basePValue);
+    Type aliasType = selfReplacer.getReboundType(aliasDeclOpParam.getType());
+
+    auto witnessEntryResult = shared.getEvaluationContext().getGetWitnessAttr(
+        basePValue, traitName, witnessEntryName, aliasType);
     return emitter.emitResult(witnessEntryResult, this, dest);
   }
 
