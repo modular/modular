@@ -1,5 +1,6 @@
-load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 modular_nanobind_extension(
     name = "_core.bindings",
@@ -96,22 +97,21 @@ modular_py_library(
 # 1. It is easier to see when they change
 # 2. For other tooling that uses them, such as docs or (perhaps in the future) copybara.
 
-# Can run `./utils/sync-stubfiles.py` to sync the committed ones to the generated ones.
-[
-    diff_test(
-        name = file + ".diff_test",
-        failure_message = """
-        {} is out of sync with its generated counterpart.
+write_source_files(
+    name = "sync-stubfiles",
+    additional_update_targets = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:sync-stubfiles"],
+    diff_test_failure_message = """
+        A stubfile is out of sync with its generated counterpart.
         If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
         When you modify a .cpp file in the _core/src directory, you can run
         `./utils/sync-stubfiles.py` and commit the results.
-        """.format(file),
-        file1 = ":stubfiles/{}".format(file),
-        file2 = file,
-        tags = ["stubfiles"],
-    )
-    for file in stubfiles
-]
+        """,
+    files = {file: ":stubfiles/" + file for file in stubfiles},
+    tags = [
+        TOP_LEVEL_TAG,
+        "stubfiles",
+    ],
+)
 
 modular_py_library(
     name = "max",

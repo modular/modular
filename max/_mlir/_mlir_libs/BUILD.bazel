@@ -1,5 +1,6 @@
-load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("//bazel:api.bzl", "copy_files", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -82,20 +83,19 @@ modular_genrule(
     ],
 )
 
-[
-    diff_test(
-        name = file + ".diff_test",
-        failure_message = """
-        {} is out of sync with its generated counterpart.
+write_source_files(
+    name = "sync-stubfiles",
+    diff_test_failure_message = """
+        A stubfile is out of sync with its generated counterpart.
         This is likely to occur when bumping LLVM, you can run
         `./utils/sync-stubfiles.py` and commit the results.
-        """.format(file),
-        file1 = ":stubfiles/{}".format(file),
-        file2 = file,
-        tags = ["stubfiles"],
-    )
-    for file in stubfiles
-]
+        """,
+    files = {file: ":stubfiles/" + file for file in stubfiles},
+    tags = [
+        TOP_LEVEL_TAG,
+        "stubfiles",
+    ],
+)
 
 modular_py_library(
     name = "_mlir",
