@@ -16,7 +16,7 @@ from os import sep
 from time import perf_counter_ns
 from utils._ansi import Color, Text
 
-from builtin._location import __call_location
+from builtin._location import __call_location, _SourceLocation
 from compile.reflection import get_linkage_name
 from sys.intrinsics import _type_is_eq
 
@@ -123,26 +123,21 @@ struct TestSuite(Movable):
     alias _ErrorIndent = 3
 
     var tests: List[_Test]
-    var name: StaticString
+    var location: _SourceLocation
 
     @always_inline
-    fn __init__(out self):
-        """Create a new test suite."""
-        self.tests = List[_Test]()
+    fn __init__(out self, *, location: Optional[_SourceLocation] = None):
+        """Create a new test suite.
 
-        var file_name = __call_location().file_name
-        self.name = file_name.split(sep)[-1]
-
-    @staticmethod
-    def discover_tests[test_funcs: Tuple, /]() -> Self:
-        """Discover tests from the given list of functions, and register them.
-
-        Parameters:
-            test_funcs: The pack of functions to discover tests from. In most
-                cases, callers should pass `__functions_in_module()`.
+        Arguments:
+            location: The location of the test suite (defaults to
+                `__call_location`).
         """
+        self.tests = List[_Test]()
+        self.location = location.or_else(__call_location())
 
-        var suite = Self()
+    def _register_tests[test_funcs: Tuple, /](mut self):
+        """Internal function to prevent all registrations from being inlined."""
 
         @parameter
         for idx in range(len(test_funcs)):
@@ -153,13 +148,31 @@ struct TestSuite(Movable):
 
                 @parameter
                 if _get_test_func_name[test_func]().startswith("test_"):
-                    suite.test[rebind[_Test.fn_type](test_func)]()
+                    self.test[rebind[_Test.fn_type](test_func)]()
 
             # TODO: raise or notify the user if `test_*` function has
             # nonconforming signature. This will need some other reflection,
             # since `_get_test_func_name` currently cannot work on parametric
             # functions.
 
+    @always_inline
+    @staticmethod
+    def discover_tests[
+        test_funcs: Tuple, /
+    ](*, location: Optional[_SourceLocation] = None) -> Self:
+        """Discover tests from the given list of functions, and register them.
+
+        Parameters:
+            test_funcs: The pack of functions to discover tests from. In most
+                cases, callers should pass `__functions_in_module()`.
+
+        Arguments:
+            location: The location of the test suite (defaults to
+                `__call_location`).
+        """
+
+        var suite = Self(location=location.or_else(__call_location()))
+        suite._register_tests[test_funcs]()
         return suite^
 
     fn __del__(deinit self):
@@ -191,7 +204,7 @@ struct TestSuite(Movable):
             Text[Color.GREEN]("Running"),
             Text[Color.BOLD_WHITE](n_tests),
             "tests for",
-            Text[Color.CYAN](self.name),
+            Text[Color.CYAN](self.location.file_name),
         )
 
         var passed = Text[Color.GREEN]("PASS")
@@ -243,5 +256,7 @@ struct TestSuite(Movable):
 
         if failures > 0:
             raise Error(
-                "Test suite '", Text[Color.CYAN](self.name), "' failed!"
+                "Test suite '",
+                Text[Color.CYAN](self.location.file_name),
+                "' failed!",
             )
