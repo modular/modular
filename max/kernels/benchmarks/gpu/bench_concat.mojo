@@ -137,7 +137,7 @@ fn bench_concat[
         offset += input.runtime_layout.shape.value[axis]
 
 
-fn main() raises:
+def main():
     alias num_inputs = env_get_int["num_inputs", 2]()
     alias axis = env_get_int["axis", 0]()
     alias W0 = env_get_int["W0", 1]()

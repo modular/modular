@@ -18,6 +18,7 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext, get_gpu_target
+from testing import TestSuite
 
 from utils import IndexList
 from utils.index import Index
@@ -77,16 +78,32 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             )
 
 
-fn main() raises:
+def test_elementwise_float32():
     var ctx = create_test_device_context()
-    print("-------")
-    # TODO(iposva): Reenable printing of name.
-    # print("Running test_elementwise(" + ctx.name() + "):")
-    print("Running test_elementwise(DeviceContext):")
-
     run_elementwise[DType.float32](ctx)
+
+
+def test_elementwise_bfloat16():
+    var ctx = create_test_device_context()
     run_elementwise[DType.bfloat16](ctx)
+
+
+def test_elementwise_float16():
+    var ctx = create_test_device_context()
     run_elementwise[DType.float16](ctx)
+
+
+def test_elementwise_int8():
+    var ctx = create_test_device_context()
     run_elementwise[DType.int8](ctx)
 
-    print("Done.")
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_elementwise_float32]()
+    suite.test[test_elementwise_bfloat16]()
+    suite.test[test_elementwise_float16]()
+    suite.test[test_elementwise_int8]()
+
+    suite^.run()

@@ -19,7 +19,13 @@ from python._cpython import (
     PyMethodDef,
     PyObjectPtr,
 )
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_very_high_level_api(cpy: CPython):
@@ -316,64 +322,169 @@ def test_common_object_structure_api(cpy: CPython):
     )
 
 
-def main():
+def test_with_cpython_very_high_level_api():
     var python = Python()
     ref cpython = python.cpython()
-
-    # The Very High Level Layer
     test_very_high_level_api(cpython)
 
-    # Reference Counting
+
+def test_with_cpython_reference_counting_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_reference_counting_api(cpython)
 
-    # Exception Handling
+
+def test_with_cpython_exception_handling_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_exception_handling_api(cpython)
 
-    # Initialization, Finalization, and Threads
+
+def test_with_cpython_threading_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_threading_api(cpython)
 
-    # Importing Modules
+
+def test_with_cpython_importing_module_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_importing_module_api(cpython)
 
-    # Abstract Objects Layer
-    # Object Protocol
+
+def test_with_cpython_object_protocol_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_object_protocol_api(cpython)
-    # Call Protocol
+
+
+def test_with_cpython_call_protocol_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_call_protocol_api(cpython)
-    # Number Protocol
+
+
+def test_with_cpython_number_protocol_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_number_protocol_api(cpython)
-    # Iterator Protocol
+
+
+def test_with_cpython_iterator_protocol_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_iterator_protocol_api(cpython)
 
-    # Concrete Objects Layer
-    # Type Objects
+
+def test_with_cpython_type_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_type_object_api(cpython)
-    # Integer Objects
+
+
+def test_with_cpython_integer_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_integer_object_api(cpython)
-    # Boolean Objects
+
+
+def test_with_cpython_boolean_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_boolean_object_api(cpython)
-    # Floating-Point Objects
+
+
+def test_with_cpython_floating_point_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_floating_point_object_api(cpython)
-    # Unicode Objects and Codecs
+
+
+def test_with_cpython_unicode_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_unicode_object_api(cpython)
-    # Tuple Objects
+
+
+def test_with_cpython_tuple_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_tuple_object_api(cpython)
-    # List Objects
+
+
+def test_with_cpython_list_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_list_object_api(cpython)
-    # Dictionary Objects
+
+
+def test_with_cpython_dictionary_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_dictionary_object_api(cpython)
-    # Set Objects
+
+
+def test_with_cpython_set_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_set_object_api(cpython)
-    # Module Objects
+
+
+def test_with_cpython_module_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_module_object_api(cpython)
-    # Slice Objects
+
+
+def test_with_cpython_slice_object_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_slice_object_api(cpython)
-    # Capsules
+
+
+def test_with_cpython_capsule_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_capsule_api(cpython)
 
-    # Memory Management
+
+def test_with_cpython_memory_management_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_memory_management_api(cpython)
 
-    # Object Implementation Support
-    # Common Object Structures
+
+def test_with_cpython_common_object_structure_api():
+    var python = Python()
+    ref cpython = python.cpython()
     test_common_object_structure_api(cpython)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_with_cpython_very_high_level_api]()
+    suite.test[test_with_cpython_reference_counting_api]()
+    suite.test[test_with_cpython_exception_handling_api]()
+    suite.test[test_with_cpython_threading_api]()
+    suite.test[test_with_cpython_importing_module_api]()
+    suite.test[test_with_cpython_object_protocol_api]()
+    suite.test[test_with_cpython_call_protocol_api]()
+    suite.test[test_with_cpython_number_protocol_api]()
+    suite.test[test_with_cpython_iterator_protocol_api]()
+    suite.test[test_with_cpython_type_object_api]()
+    suite.test[test_with_cpython_integer_object_api]()
+    suite.test[test_with_cpython_boolean_object_api]()
+    suite.test[test_with_cpython_floating_point_object_api]()
+    suite.test[test_with_cpython_unicode_object_api]()
+    suite.test[test_with_cpython_tuple_object_api]()
+    suite.test[test_with_cpython_list_object_api]()
+    suite.test[test_with_cpython_dictionary_object_api]()
+    suite.test[test_with_cpython_set_object_api]()
+    suite.test[test_with_cpython_module_object_api]()
+    suite.test[test_with_cpython_slice_object_api]()
+    suite.test[test_with_cpython_capsule_api]()
+    suite.test[test_with_cpython_memory_management_api]()
+    suite.test[test_with_cpython_common_object_structure_api]()
+
+    suite^.run()

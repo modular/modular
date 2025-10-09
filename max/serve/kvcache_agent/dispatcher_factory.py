@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class TransportType(Enum):
@@ -28,7 +27,7 @@ class DynamicZmqTransportConfig:
     """Configuration for DynamicZmqTransport."""
 
     bind_address: str = "tcp://127.0.0.1:5555"
-    default_destination_address: Optional[str] = None
+    default_destination_address: str | None = None
 
 
 @dataclass

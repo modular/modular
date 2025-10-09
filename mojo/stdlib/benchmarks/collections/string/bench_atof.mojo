@@ -46,7 +46,7 @@ fn bench_parsing_all_floats_in_file[
 # ===-----------------------------------------------------------------------===#
 
 
-fn main() raises:
+def main():
     var bench = Bench()
     alias files = ["canada", "mesh"]
 

@@ -51,7 +51,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         num_layers: int,
         devices: Sequence[Device],
         session: InferenceSession,
-        cache_memory: int,
+        available_cache_memory: int,
         page_size: int = 128,
         enable_runtime_checks: bool = False,
     ) -> None:
@@ -69,7 +69,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
                 parallelism is enabled, the devices will be split into
                 ``params.data_parallel_degree`` groups.
             session: Inference session
-            cache_memory: Total cache memory across all devices
+            available_cache_memory: Total cache memory across all devices
             page_size: Page size in tokens
             enable_runtime_checks: Whether to enable runtime checks
         """
@@ -94,7 +94,9 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         max_batch_size_per_replica = (
             max_batch_size // params.data_parallel_degree
         )
-        cache_memory_per_replica = cache_memory // params.data_parallel_degree
+        cache_memory_per_replica = (
+            available_cache_memory // params.data_parallel_degree
+        )
 
         # The effective total number of pages is .
         num_replicas = params.data_parallel_degree
@@ -114,7 +116,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
                     num_layers=num_layers,
                     devices=devices,
                     session=session,
-                    cache_memory=cache_memory_per_replica,
+                    available_cache_memory=cache_memory_per_replica,
                     page_size=page_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
@@ -146,6 +148,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         return self._request_to_replica_idx[context.request_id]
 
     def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
+        """Return idx of the replica that should be used for the given request."""
         if context.request_id in self._request_to_replica_idx:
             return self._request_to_replica_idx[context.request_id]
 
@@ -167,7 +170,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
                 are adjacent in the batch, and the replica must be in order).
 
         returns:
-            A Tensor with shape (len(self.devices) + 1) that contains the
+            An int64 Tensor with shape (len(self.devices) + 1) that contains the
             number of requests on each device:
                 [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
         """
@@ -175,7 +178,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         for ctx in context_batch:
             replica_index = self._request_to_replica_idx[ctx.request_id]
             splits[replica_index + 1] += 1
-        splits = np.cumsum(splits)
+        splits = np.cumsum(splits)  # type: ignore
 
         return Tensor.from_numpy(splits)
 
@@ -236,16 +239,14 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         self._request_count_per_replica[replica_idx] -= 1
         self._replica_managers[replica_idx].release(request_id)
 
-    def external_claim(self, request_id: RequestID) -> None:
-        raise ValueError(
-            "Please call external_claim_for_replica instead of external_claim "
-            "when using MultiPagedKVCacheManager."
-        )
-
-    def external_claim_for_replica(
-        self, replica_idx: int, request_id: RequestID
+    def external_claim(
+        self, request_id: RequestID, replica_idx: int = -1
     ) -> None:
         """Reserve a sequence ID for the given request ID."""
+        if replica_idx == -1:
+            raise ValueError(
+                "replica_idx must be specified for MultiPagedKVCacheManager"
+            )
         if request_id in self._request_to_replica_idx:
             raise ValueError(
                 f"Request ID {request_id} is already claimed for replica {self._request_to_replica_idx[request_id]}"
@@ -375,6 +376,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         else:
             # Standard case: single tensor
             row_offsets = prev_model_inputs.input_row_offsets
+        row_offsets = row_offsets.to(self.devices[0])
 
         updated_cache_lengths = self.increment_cache_lengths_model.execute(
             row_offsets, prev_model_inputs.data_parallel_splits, *cache_lengths

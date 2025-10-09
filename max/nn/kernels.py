@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 from max.driver import accelerator_architecture_name
@@ -687,7 +687,7 @@ def flash_attention_gpu(
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
-    valid_length: Optional[TensorValue] = None,
+    valid_length: TensorValue | None = None,
 ) -> TensorValue:
     """Computes flash attention using GPU-optimized kernel.
 
@@ -1076,8 +1076,8 @@ def flare_mla_prefill_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     qk_rope_dim: int = 64,
-    prev_output: Optional[TensorValue] = None,
-    prev_softmax_info: Optional[TensorValue] = None,
+    prev_output: TensorValue | None = None,
+    prev_softmax_info: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Performs MLA prefill. In the MLA prefill, we need to decompress
     the KV tensors, as we store the latent representations in the KV cache.
@@ -1549,7 +1549,7 @@ def rms_norm_key_cache(
     total_seq_len: Dim,
     input_row_offsets: TensorValue,
     weight_offset: float | np.floating[Any],
-    rms_norm_cols: Optional[int] = None,
+    rms_norm_cols: int | None = None,
     multiply_before_cast: bool = True,
     per_head_norm: bool = True,
 ) -> None:
@@ -1749,6 +1749,214 @@ def grouped_matmul_ragged(
     return output
 
 
+def grouped_dynamic_scaled_fp8_matmul(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Grouped blockwise scaled matmul used in MoE layer.
+    Perform a grouped blockwise scaled matmul of two tensors with scaling factors.
+    `hidden_states` and `expert_start_indices` are used together to implement
+    the ragged tensor.
+
+    Args:
+        hidden_states: The first tensor to multiply. (2D tensor)
+        weight: The second tensor to multiply, must be transposed. (3D tensor)
+        a_scales: The scaling factors for the first tensor. (2D tensor)
+        b_scales: The scaling factors for the second tensor. (3D tensor)
+        expert_start_indices: indicates where each group starts and ends in `hidden_states`.
+        expert_ids: The id of the expert for each group in `hidden_states`.
+        expert_usage_stats_host: The maximum number of tokens assigned to any expert, and the number of active experts.
+        input_scale_spec: The scaling granularity for the input tensor.
+        weight_scale_spec: The scaling granularity for the weight tensor.
+
+    Returns:
+        The result of the matmul operation.
+    """
+
+    if out_type != DType.bfloat16:
+        raise ValueError(
+            "Only bfloat16 is supported for batched blockwise scaled matmul"
+        )
+
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+
+    if (
+        weight.shape[2] != hidden_states.shape[1]
+        or weight.shape[0] != expert_ids.shape[0]
+    ):
+        raise ValueError(
+            f"expected weight is of shape [num_experts, *, {hidden_states.shape[1]}] but got {weight.shape}"
+        )
+
+    if (hidden_states.dtype != weight.dtype) or (
+        hidden_states.dtype != DType.float8_e4m3fn
+    ):
+        raise TypeError(
+            f"hidden_states and weight dtypes must be float8_e4m3fn, but got {hidden_states.dtype}, {weight.dtype}"
+        )
+
+    if (a_scales.dtype != b_scales.dtype) or (a_scales.dtype != DType.float32):
+        raise TypeError(
+            f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if a_scales.rank != 2 or b_scales.rank != 3:
+        raise ValueError(
+            f"expected a_scales of rank 2 and b_scales of rank 3 but got {a_scales.rank} and {b_scales.rank}"
+        )
+
+    if input_scale_spec.is_block and weight_scale_spec.is_block:
+        # a_scale is of shape [ceildiv(K // BLOCK_SIZE), SeqLen-padded]
+        # b_scale is of shape [num_of_experts, ceildiv(N // BLOCK_SIZE), ceildiv(K // BLOCK_SIZE)]
+        if a_scales.rank != 2:
+            raise ValueError(
+                f"expected a_scales of rank 2 but got {a_scales.rank}"
+            )
+        if b_scales.rank != 3:
+            raise ValueError(
+                f"expected b_scales of rank 3 but got {b_scales.rank}"
+            )
+    else:
+        raise ValueError("unsupported FP8 scaling granularity")
+
+    # if (a_scales.shape[1] * a_scales.dtype.size_in_bytes) % 16 != 0:
+    #     raise ValueError(
+    #         "TMA expects total_num_tokens to be divisible by 16 bytes"
+    #     )
+
+    output = ops.custom(
+        "mo.grouped.matmul.dynamic.scaled.fp8",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host[0],
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+        parameters={
+            "input_scale_granularity": str(input_scale_spec.granularity),
+            "weight_scale_granularity": str(weight_scale_spec.granularity),
+        },
+    )[0].tensor
+
+    return output
+
+
+def batched_dynamic_scaled_fp8_matmul(
+    a: TensorValue,
+    b: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """
+    Perform a batched blockwise scaled matmul of two tensors with scaling factors.
+
+    Args:
+        a: The first tensor to multiply (3D tensor).
+        b: The second tensor to multiply, must be transposed (3D tensor).
+        a_scales: The scaling factors for the first tensor (3D tensor).
+        b_scales: The scaling factors for the second tensor (3D tensor).
+
+    Returns:
+        The result of the matmul operation.
+    """
+
+    if a.rank != 3 or b.rank != 3 or a_scales.rank != 3 or b_scales.rank != 3:
+        raise ValueError("All arguments must be rank 3 tensors")
+
+    if a.shape[0] != b.shape[0]:
+        raise ValueError(
+            "The batch dimension of b must match the batch dimension of a"
+        )
+
+    if a.shape[2] != b.shape[2]:
+        raise ValueError("A and B K dimension does not match")
+
+    if a.dtype != b.dtype or a.dtype != DType.float8_e4m3fn:
+        raise TypeError(
+            f"a and b dtypes must be float8_e4m3fn, but got {a.dtype}, {b.dtype}"
+        )
+
+    if out_type != DType.bfloat16:
+        raise ValueError(
+            "Only bfloat16 is supported for batched blockwise scaled matmul"
+        )
+
+    if a_scales.dtype != b_scales.dtype or a_scales.dtype != DType.float32:
+        raise TypeError(
+            f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    # if (a_scales.shape[1] * a_scales.dtype.size_in_bytes) % 16 != 0:
+    #     raise ValueError(
+    #         "TMA expects total_num_tokens to be divisible by 16 bytes"
+    #     )
+
+    if input_scale_spec.is_block and weight_scale_spec.is_block:
+        # a_scale is of shape [batch_size, ceildiv(K // BLOCK_SIZE), M-padded]
+        # b_scale is of shape [batch_size, ceildiv(N // BLOCK_SIZE), ceildiv(K // BLOCK_SIZE)]
+        if a_scales.shape[0] != b_scales.shape[0]:
+            raise ValueError(
+                "both a_scales and b_scales must have the same shape on the batch dimension"
+            )
+
+    else:
+        raise ValueError("unsupported FP8 scaling granularity")
+
+    if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
+        raise TypeError(
+            f"a and b dtypes {a.dtype}, {b.dtype} must match, "
+            f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    result = ops.custom(
+        "mo.batched.matmul.dynamic.scaled.fp8",
+        device=a.device,
+        values=[a, b, a_scales, b_scales],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[a.shape[0], a.shape[1], b.shape[1]],
+                device=a.device,
+            )
+        ],
+        parameters={
+            "input_scale_granularity": str(input_scale_spec.granularity),
+            "weight_scale_granularity": str(weight_scale_spec.granularity),
+        },
+    )[0].tensor
+
+    return result
+
+
 def quantize_static_scaled_float8(
     x: TensorValue,
     scale: TensorValue,
@@ -1856,6 +2064,89 @@ def quantize_dynamic_scaled_float8(
     return result[0].tensor, result[1].tensor
 
 
+def batched_quantize_dynamic_scaled_float8(
+    input: TensorValue,
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
+    scale_ub: float = 1200.0,
+    group_size_or_per_token: int = -1,
+    out_type: DType = DType.float8_e4m3fn,
+    scales_type: DType = DType.bfloat16,
+) -> tuple[TensorValue, TensorValue]:
+    """
+    Dynamically quantize the input tensor to fp8.
+
+    Args:
+        input: The input tensor to quantize. Shape: [batch_size, seq_len, hidden_size]
+        scale_ub: The upper bound of the scale factor.
+        group_size_or_per_token: The group size for quantization. When set to -1,
+            the quantization is column-wise.
+        out_type: The type of the output tensor.
+        scales_type: The type of the scales tensor.
+
+    Returns:
+        The quantized tensor and the scales.
+    """
+
+    if input.rank != 3:
+        raise ValueError("input must be rank 3 tensor")
+
+    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
+
+    if scales_type not in (DType.float32, DType.bfloat16, DType.float16):
+        raise ValueError("scales_type must be float32, bfloat16, or float16")
+
+    group_size = (
+        group_size_or_per_token
+        if group_size_or_per_token != -1
+        else input.shape[2]
+    )
+
+    a_scales_dim1 = input.shape[1]
+    if input_scale_spec.is_block or weight_scale_spec.is_block:
+        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
+            raise ValueError(
+                "both input and weight must be blockwise scaled for blockwise scaling"
+            )
+
+        # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
+        padding_size = 16 // scales_type.size_in_bytes
+        a_scales_dim1 = (
+            (input.shape[1] + padding_size - 1) // padding_size
+        ) * padding_size
+
+    result = ops.custom(
+        "mo.batched.quantize.dynamic.scaled.fp8",
+        device=input.device,
+        values=[
+            input,
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1], input.shape[2]],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[
+                    input.shape[0],
+                    input.shape[2] // group_size,
+                    a_scales_dim1,
+                ],
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "group_size_or_per_token": group_size_or_per_token,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
 def dynamic_scaled_matmul(
     a: TensorValue,
     b: TensorValue,
@@ -1910,6 +2201,11 @@ def dynamic_scaled_matmul(
         if not (input_scale_spec.is_block and weight_scale_spec.is_block):
             raise ValueError(
                 "both input and weight must be blockwise scaled for blockwise scaling"
+            )
+
+        if a_scales.dtype != b_scales.dtype or a_scales.dtype != DType.float32:
+            raise TypeError(
+                f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
             )
 
         # a_scale is of shape [ceildiv(K // BLOCK_SIZE), M-padded]
@@ -2335,7 +2631,7 @@ def topk_fused_sampling(
     top_k: TensorValueLike,
     *,
     temperature: TensorValueLike = 1.0,
-    max_k: Optional[TensorValueLike] = None,
+    max_k: TensorValueLike | None = None,
     top_p: TensorValueLike = 1.0,
     seed: TensorValueLike = 0,
 ) -> TensorValue:
@@ -2397,7 +2693,7 @@ def topk_fused_sampling(
             )
 
     # Handle top_p parameter - can be scalar or tensor
-    if isinstance(top_p, (float, int)):
+    if isinstance(top_p, float | int):
         if top_p <= 0 or top_p > 1:
             raise ValueError(f"expected top_p to be in (0, 1], got {top_p}")
         top_p_tensor = ops.broadcast_to(
@@ -2444,7 +2740,7 @@ def topk_fused_sampling(
     )[0].tensor
 
 
-def sgmv_kernel(
+def sgmv_kernel(  # noqa: ANN201
     input: TensorValue,
     lora: TensorValue,
     lora_ids: TensorValue,

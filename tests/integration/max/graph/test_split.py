@@ -55,6 +55,6 @@ def test_split(
 
     expected_results = np.split(input, np_split_indices, axis)
     assert len(result) == len(expected_results)
-    for actual, expected in zip(result, expected_results):
+    for actual, expected in zip(result, expected_results, strict=True):
         assert isinstance(actual, Tensor)
         np.testing.assert_equal(actual.to_numpy(), expected)

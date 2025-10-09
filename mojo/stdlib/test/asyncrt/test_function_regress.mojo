@@ -17,6 +17,7 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
+from testing import TestSuite
 
 alias T = DType.float64
 alias S = Scalar[T]
@@ -134,10 +135,12 @@ fn _vec_func[
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
-fn test_function_compilation(ctx: DeviceContext) raises:
-    print("-------")
-    print("Running test_function_unchecked(" + ctx.name() + "):")
+def test_function_compilation():
+    var ctx = create_test_device_context()
+    _run_test_function_compilation(ctx)
 
+
+fn _run_test_function_compilation(ctx: DeviceContext) raises:
     # Compile all combinations with and without declaring the trait in
     # the signature.
 
@@ -159,10 +162,12 @@ fn test_function_compilation(ctx: DeviceContext) raises:
     _ = compiled_vec_func_3
 
 
-fn test_function_unchecked(ctx: DeviceContext) raises:
-    print("-------")
-    print("Running test_function_unchecked(" + ctx.name() + "):")
+def test_function_unchecked():
+    var ctx = create_test_device_context()
+    _run_test_function_unchecked(ctx)
 
+
+fn _run_test_function_unchecked(ctx: DeviceContext) raises:
     alias length = 1024
     alias block_dim = 32
 
@@ -212,13 +217,13 @@ fn test_function_unchecked(ctx: DeviceContext) raises:
                 out_host[i],
             )
 
-    print("Done.")
+
+def test_function_checked():
+    var ctx = create_test_device_context()
+    _run_test_function_checked(ctx)
 
 
-fn test_function_checked(ctx: DeviceContext) raises:
-    print("-------")
-    print("Running test_function_checked(" + ctx.name() + "):")
-
+fn _run_test_function_checked(ctx: DeviceContext) raises:
     alias length = 1024
     alias block_dim = 32
 
@@ -269,11 +274,12 @@ fn test_function_checked(ctx: DeviceContext) raises:
                 out_host[i],
             )
 
-    print("Done.")
 
+def main():
+    var suite = TestSuite()
 
-fn main() raises:
-    var ctx = create_test_device_context()
-    test_function_compilation(ctx)
-    test_function_unchecked(ctx)
-    test_function_checked(ctx)
+    suite.test[test_function_compilation]()
+    suite.test[test_function_unchecked]()
+    suite.test[test_function_checked]()
+
+    suite^.run()

@@ -15,8 +15,8 @@ from math.math import _Expable, exp
 from random import randn_float64, seed
 from sys import CompilationTarget
 
-from test_utils import libm_call, TestSuite
-from testing import assert_almost_equal, assert_equal
+from test_utils import libm_call
+from testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_exp_bfloat16():

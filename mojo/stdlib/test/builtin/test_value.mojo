@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 # ===-----------------------------------------------------------------------===#
 # Triviality Struct
@@ -134,9 +134,11 @@ def test_type_inherit_non_triviality[T: Movable & Copyable]():
 
 
 def main():
-    test_type_trivial[Int]()
-    test_type_not_trivial[String]()
-    test_type_inherit_triviality[Float64]()
-    test_type_inherit_non_triviality[String]()
-    # test_type_inherit_triviality[InlineArray[InlineArray[Int, 4], 4]]()
-    # test_type_inherit_non_triviality[InlineArray[InlineArray[String, 4], 4]]()
+    var suite = TestSuite()
+
+    suite.test[test_type_trivial[Int]]()
+    suite.test[test_type_not_trivial[String]]()
+    suite.test[test_type_inherit_triviality[Float64]]()
+    suite.test[test_type_inherit_non_triviality[String]]()
+    # suite.test[test_type_inherit_triviality[InlineArray[InlineArray[Int, 4], 4]]]()
+    # suite.test[test_type_inherit_non_triviality[InlineArray[InlineArray[String, 4], 4]]]()

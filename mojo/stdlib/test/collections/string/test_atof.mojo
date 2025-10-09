@@ -14,7 +14,7 @@
 from math import inf, isinf, isnan
 
 from testing import assert_equal, assert_raises, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_basic_parsing():

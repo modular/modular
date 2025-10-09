@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python.python import Python, PythonObject
-from testing import assert_equal, assert_raises, assert_true
+from testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
 fn test_execute_python_string(mut python: Python) -> String:
@@ -98,7 +98,7 @@ def test_str_conversion():
     assert_true(py_str == PythonObject("123"))
 
 
-def main():
+def test_imports():
     var python = Python()
     assert_equal(test_local_import(python), "orange")
 
@@ -109,6 +109,9 @@ def main():
     # Test with two calls to ensure that the state is persistent.
     assert_equal(test_dynamic_import(python, times=2), "Again?")
 
+
+def test_call():
+    var python = Python()
     assert_equal(
         test_call(python),
         (
@@ -117,6 +120,9 @@ def main():
         ),
     )
 
+
+def test_object_properties():
+    var python = Python()
     var obj: PythonObject = [1, 2.4, True, "False"]
     assert_equal(String(obj), "[1, 2.4, True, 'False']")
 
@@ -128,6 +134,15 @@ def main():
 
     assert_equal(test_execute_python_string(python), "ab")
 
-    test_int_conversion()
-    test_float_conversion()
-    test_str_conversion()
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_imports]()
+    suite.test[test_call]()
+    suite.test[test_object_properties]()
+    suite.test[test_int_conversion]()
+    suite.test[test_float_conversion]()
+    suite.test[test_str_conversion]()
+
+    suite^.run()

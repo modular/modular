@@ -18,7 +18,7 @@ import time
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Optional, cast, final
+from typing import Any, cast, final
 
 import numpy as np
 import numpy.typing as npt
@@ -113,7 +113,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
     def __init__(
         self,
         params: KVCacheParams,
-        max_batch_size: Optional[int],
+        max_batch_size: int | None,
         text_max_seq_len: int,
         vision_max_seq_len: int,
         text_num_layers: int,
@@ -177,7 +177,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             num_layers=vision_num_layers,
             devices=devices,
             session=session,
-            cache_memory=cache_memory,
+            available_cache_memory=cache_memory,
             page_size=page_size,
         )
 
@@ -389,10 +389,17 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         # Step the text KV manager as usual for autoregressive text generation.
         self.text_kv_manager.step(batch)
 
-    def external_claim(self, request_id: RequestID) -> None:
+    def get_or_recommend_replica(self, _: InputContext) -> int:
+        """Return idx of the replica that should be used for the given request."""
+        # As there is only one replica, we always return 0
+        return 0
+
+    def external_claim(
+        self, request_id: RequestID, replica_idx: int = 0
+    ) -> None:
         """Reserves sequence IDs for the given request ID in both modalities' KV caches."""
-        self.text_kv_manager.external_claim(request_id)
-        self.vision_kv_manager.external_claim(request_id)
+        self.text_kv_manager.external_claim(request_id, replica_idx)
+        self.vision_kv_manager.external_claim(request_id, replica_idx)
 
     def release(self, request_id: RequestID) -> None:
         """Marks the sequence complete for both modalities' KV caches."""
@@ -711,24 +718,14 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
     A note on multi-step and vision inputs:
 
-    - `has_images` in `prepare_initial_token_inputs` is determined by whether or
-      not `pixel_values` is set on each TextAndVisionContext in the batch.
-      So on the context encoding call, the caller sets pixel_values, making
-      `has_images` True.
-    - `prepare_initial_token_inputs` unsets `ctx.pixel_values` (sets it to an
-      empty list).
-      So the next prepare_initial_token_inputs will have has_images == False
-      (the next multi-step train will skip the vision encoder).
-    - That covers the num_steps = 1 case.
-    - For multistep, the prepare_next_token_inputs function will unset
-      LlamaVisionInputs.pixel_values (and aspect ratio ids/mask).
-      So for multistep, step > 1, subsequent steps won't run the vision encoder.
-    - Note the 2 different mechanisms: `has_images` is determined by
-      `TextAndVisionContext.pixel_values` in `prepare_initial_token_inputs`,
-      but it is determined by `LlamaVisionInputs.pixel_values` in
-      `PipelineModel.execute` (which is called multiple times in a multi-step
-      train, so `prepare_next_token_inputs` needs to unset
-      `LlamaVisionInputs.pixel_values`).
+    - During CE, start_idx=0 so ctx.next_images returns all images we still need
+    to encode. For Llama Vision, we do not support chunked prefill at the moment
+    and we assert that there is exactly one image per request (not 0 or > 1).
+    - This ensures that during `prepare_initial_token_inputs`, we set
+    `LlamaVisionInputs.pixel_values` to the pixel values of the single
+    image `ctx.next_images[0].pixel_values`
+    - During `prepare_next_token_inputs`, we unset `LlamaVisionInputs.pixel_values`
+    so we don't re-encode the same image on subsequent steps.
     """
 
     def __init__(
@@ -740,7 +737,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
@@ -948,7 +945,12 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         aspect_ratio_mask_list: list[npt.NDArray[np.integer[Any]]] = []
         for context in context_batch:
             # Get first image in first batch and permute the order to (HWC).
-            image = np.transpose(context.pixel_values[0], (0, 1, 3, 4, 2))
+            next_images = context.next_images
+            if len(next_images) != 1:
+                raise ValueError(
+                    "Llama Vision only supports one image per request"
+                )
+            image = np.transpose(next_images[0].pixel_values, (0, 1, 3, 4, 2))
 
             # Add batch_size, num_concurrent_media, and max_num_tiles dimensions
             # [1, num_concurrent_media, max_num_tiles, H, W, C]
@@ -1011,7 +1013,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             )
 
         def initial_prompt_missing_image(ctx: TextAndVisionContext) -> bool:
-            return ctx.is_initial_prompt and not ctx.pixel_values
+            return ctx.is_initial_prompt and not ctx.images
 
         if any(initial_prompt_missing_image(ctx) for ctx in context_batch):
             raise RuntimeError(
@@ -1059,11 +1061,6 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 dtype=np.uint32,
             )
         )
-
-        # Mark that vision encoding is complete for all contexts in the batch
-        # This prevents re-encoding on subsequent calls before update() is called
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
 
         return LlamaVisionInputs(
             input_id_values=input_id_values,
@@ -1296,7 +1293,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         we have vision and language models (graph) loaded.
         """
 
-        def build_vision_model():
+        def build_vision_model():  # noqa: ANN202
             logger.info("Building and compiling vision model...")
             before = time.perf_counter()
             vision_model_graph = self._llama3_vision_vision_graph()
@@ -1310,7 +1307,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             )
             return vision_model
 
-        def build_language_model():
+        def build_language_model():  # noqa: ANN202
             logger.info("Building and compiling language model...")
             before = time.perf_counter()
             language_model_graph = self._llama3_vision_language_graph()

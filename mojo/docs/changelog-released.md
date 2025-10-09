@@ -7215,7 +7215,7 @@ experience without dedicated sugar.
       fn __eq__(self, other: Self) -> Bool:
           return self.s == other.s
 
-  fn main() raises:
+  def main():
       var d = Dict[StringKey, Int]()
       d["cats"] = 1
       d["dogs"] = 2

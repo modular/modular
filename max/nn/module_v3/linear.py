@@ -35,6 +35,7 @@ class Linear(Module):
     .. code-block:: python
 
         from max.nn.module_v3 import Linear
+        from max.experimental.tensor import Tensor
 
         model = Linear(5, 10)
 

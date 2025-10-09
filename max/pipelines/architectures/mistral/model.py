@@ -17,7 +17,7 @@ import logging
 import math
 import time
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -105,7 +105,7 @@ class MistralModel(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(
@@ -317,7 +317,7 @@ class MistralModel(PipelineModel[TextContext]):
     def _get_state_dict(
         self,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
     ) -> dict[str, WeightData]:
         pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config
@@ -401,7 +401,7 @@ class MistralModel(PipelineModel[TextContext]):
 
     @traced
     def _build_graph(
-        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+        self, weights: Weights, adapter: WeightsAdapter | None = None
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)

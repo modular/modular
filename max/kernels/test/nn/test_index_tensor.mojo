@@ -13,8 +13,7 @@
 
 from random import random_ui64
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,
@@ -25,13 +24,13 @@ from nn.index_tensor import (
     index_tensor_shape,
 )
 from runtime.asyncrt import DeviceContextPtr
+from testing import assert_equal
 
 from utils import IndexList, StaticTuple
 
 
 # TODO: It is like example 5 ONNX.
 # CHECK-LABEL: test_index_tensor_DLRM
-# CHECK: Results match
 fn test_index_tensor_DLRM() raises:
     print("== test_index_tensor_DLRM")
 
@@ -48,32 +47,33 @@ fn test_index_tensor_DLRM() raises:
     alias output_rank = 2
 
     # dim_0 x dim_1 x dim_2 input tensor.
-    alias input_shape = DimList(dim_0, dim_1, dim_2)
-    var input_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.product())
-    ](uninitialized=True)
-    var input = NDBuffer[input_type, input_rank, _, input_shape](input_stack)
+    alias input_shape = IndexList[3](dim_0, dim_1, dim_2)
+    alias input_layout = Layout.row_major(input_shape)
+    var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
+        uninitialized=True
+    )
+    var input = LayoutTensor[input_type, input_layout](input_stack)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_2):
-        input.data[i] = i
+        input.ptr[i] = i
 
     # We have two 1D tensors with index_len elements each.
 
     # index_len-element input tensor.
     var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_a = NDBuffer[DType.uint64, 1, _, DimList(index_len)](a_stack)
+    var index_a = LayoutTensor[DType.uint64, Layout(index_len)](a_stack)
     # Initialize with random values within [0-dim_1) since it points do dim_1 of
     # input.
     for i in range(index_len):
-        index_a.data[i] = random_ui64(0, dim_1 - 1)
+        index_a.ptr[i] = random_ui64(0, dim_1 - 1)
 
     # index_len-element input tensor.
     var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_b = NDBuffer[DType.uint64, 1, _, DimList(index_len)](b_stack)
+    var index_b = LayoutTensor[DType.uint64, Layout(index_len)](b_stack)
     # Initialize with random values within [0-dim_2) since it points do dim_2 of
     # input.
     for i in range(index_len):
-        index_b.data[i] = random_ui64(0, dim_2 - 1)
+        index_b.ptr[i] = random_ui64(0, dim_2 - 1)
 
     # The two 1D tensors are used as coordinates to dimensions 1 and 2 in the
     # dim_0 x dim_1 x dim_1 input tensor. Dimension 0 is preserved.
@@ -81,67 +81,76 @@ fn test_index_tensor_DLRM() raises:
     # where x = [0, input.dim(0)), n = [0, index_a.dim(0))
 
     # Reference output of shape dim_0 x index_len.
-    alias ref_shape = DimList(dim_0, index_len)
-    var ref_stack = InlineArray[Scalar[input_type], Int(ref_shape.product())](
+    alias ref_shape = IndexList[2](dim_0, index_len)
+    alias ref_layout = Layout.row_major(ref_shape)
+    var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
         uninitialized=True
     )
-    var ref_output = NDBuffer[input_type, output_rank, _, ref_shape](ref_stack)
+    var ref_output = LayoutTensor[input_type, ref_layout](ref_stack)
     for i in range(input.dim(0)):
         for j in range(index_a.dim(0)):
-            ref_output[IndexList[output_rank](i, j)] = input[
-                IndexList[input_rank](
-                    i, index_a[j].__int__(), index_b[j].__int__()
-                )
-            ]
+            ref_output[i, j] = input[i, Int(index_a[j]), Int(index_b[j])]
 
     # Convert index_a, index_b (each of 1D size index_len) to a
     # 2D index_len x 2 indices NDBuffer.
     # TODO: This needs to be part of the OP itself.
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
-    var indices = NDBuffer[
-        DType.uint64, indices_rank, _, DimList(index_len, 2)
-    ](indices_stack)
+    var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
+        indices_stack
+    )
     for i in range(index_len):
-        indices[IndexList[indices_rank](i, 0)] = index_a[i]
-        indices[IndexList[indices_rank](i, 1)] = index_b[i]
+        indices[i, 0] = index_a[i]
+        indices[i, 1] = index_b[i]
 
+    alias input_dyn_layout = Layout.row_major[input.rank]()
+    alias indices_dyn_layout = Layout.row_major[indices.rank]()
     var output_shape = index_tensor_shape[
-        input_rank,
-        indices_rank,
         output_rank,
         input_type,
         DType.uint64,
         batch_dims,
-    ](input.make_dims_unknown(), indices.make_dims_unknown())
+    ](
+        LayoutTensor[input.dtype, input_dyn_layout](
+            input.ptr,
+            RuntimeLayout[input_dyn_layout].row_major(input_shape),
+        ),
+        LayoutTensor[indices.dtype, indices_dyn_layout](
+            indices.ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(
+                IndexList[2](index_len, 2)
+            ),
+        ),
+    )
 
     var output_data_stack = InlineArray[Scalar[input_type], dim_0 * index_len](
         uninitialized=True
     )
-    var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_stack, output_shape
+    alias output_layout = Layout.row_major[output_rank]()
+    var output_data_buffer = LayoutTensor[input_type, output_layout](
+        output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
 
     _index_tensor_1d[batch_dims](
-        input.make_dims_unknown(),
-        indices.make_dims_unknown(),
+        LayoutTensor[input.dtype, input_dyn_layout](
+            input.ptr,
+            RuntimeLayout[input_dyn_layout].row_major(input_shape),
+        ),
+        LayoutTensor[indices.dtype, indices_dyn_layout](
+            indices.ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(
+                IndexList[2](index_len, 2)
+            ),
+        ),
         output_data_buffer,
     )
 
     for i in range(input.dim(0)):
         for j in range(index_a.dim(0)):
-            if (
-                output_data_buffer[IndexList[output_rank](i, j)]
-                != ref_output[IndexList[output_rank](i, j)]
-            ):
-                print("Results mismatch")
-                return
-
-    print("Results match")
+            assert_equal(output_data_buffer[i, j], ref_output[i, j])
 
 
 # Example with batch_dim = 2 (i.e., result[:, :, indexA, indexB])
 # CHECK-LABEL: test_index_tensor_DLRM_batch
-# CHECK: Results match
 fn test_index_tensor_DLRM_batch() raises:
     print("== test_index_tensor_DLRM_batch")
 
@@ -160,35 +169,31 @@ fn test_index_tensor_DLRM_batch() raises:
     alias output_rank = 3
 
     # dim_0 x dim_1 x dim_3 x dim_4 input tensor.
-    alias input_shape = DimList(dim_0, dim_1, dim_3, dim_4)
-    var input_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.product())
-    ](uninitialized=True)
-    var input = NDBuffer[
-        input_type,
-        input_rank,
-        _,
-        DimList(dim_0, dim_1, dim_3, dim_4),
-    ](input_stack)
+    alias input_shape = IndexList[4](dim_0, dim_1, dim_3, dim_4)
+    alias input_layout = Layout.row_major(input_shape)
+    var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
+        uninitialized=True
+    )
+    var input = LayoutTensor[input_type, input_layout](input_stack)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_3 * dim_4):
-        input.data[i] = i
+        input.ptr[i] = i
 
     # We have two 1D tensors with index_len elements each.
 
     # index_len-element input tensor.
     var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_a = NDBuffer[DType.uint64, 1, _, DimList(index_len)](a_stack)
+    var index_a = LayoutTensor[DType.uint64, Layout(index_len)](a_stack)
     # Initialize with random values within [0-dim_3)
     for i in range(index_len):
-        index_a.data[i] = random_ui64(0, dim_3 - 1)
+        index_a.ptr[i] = random_ui64(0, dim_3 - 1)
 
     # index_len-element input tensor.
     var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_b = NDBuffer[DType.uint64, 1, _, DimList(index_len)](b_stack)
+    var index_b = LayoutTensor[DType.uint64, Layout(index_len)](b_stack)
     # Initialize with random values within [0-dim_4)
     for i in range(index_len):
-        index_b.data[i] = random_ui64(0, dim_4 - 1)
+        index_b.ptr[i] = random_ui64(0, dim_4 - 1)
 
     # The two 1D tensors are used as coordinates to dimensions 1 and 2 in the
     # dim_0 x dim_1 x dim_1 input tensor. Dimension 0 is preserved.
@@ -197,68 +202,79 @@ fn test_index_tensor_DLRM_batch() raises:
     # n = [0, index_a.dim(0))
 
     # Reference output of shape dim_0 x index_len
-    alias ref_shape = DimList(dim_0, dim_1, index_len)
-    var ref_stack = InlineArray[Scalar[input_type], Int(ref_shape.product())](
+    alias ref_shape = IndexList[3](dim_0, dim_1, index_len)
+    alias ref_layout = Layout.row_major(ref_shape)
+    var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
         uninitialized=True
     )
-    var ref_output = NDBuffer[input_type, output_rank, _, ref_shape](ref_stack)
+    var ref_output = LayoutTensor[input_type, ref_layout](ref_stack)
     for i in range(input.dim(0)):
         for j in range(input.dim(1)):
             for k in range(index_a.dim(0)):
-                ref_output[IndexList[output_rank](i, j, k)] = input[
-                    IndexList[input_rank](
-                        i, j, index_a[k].__int__(), index_b[k].__int__()
-                    )
+                ref_output[i, j, k] = input[
+                    i, j, Int(index_a[k]), Int(index_b[k])
                 ]
 
     # Convert index_a, index_b (each of 1D size index_len) to a 2D index_len x 2
     # indices NDBuffer.
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
-    var indices = NDBuffer[
-        DType.uint64, indices_rank, _, DimList(index_len, 2)
-    ](indices_stack)
+    var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
+        indices_stack
+    )
     for i in range(index_len):
-        indices[IndexList[indices_rank](i, 0)] = index_a[i]
-        indices[IndexList[indices_rank](i, 1)] = index_b[i]
+        indices[i, 0] = index_a[i]
+        indices[i, 1] = index_b[i]
 
+    alias input_dyn_layout = Layout.row_major[input.rank]()
+    alias indices_dyn_layout = Layout.row_major[indices.rank]()
     var output_shape = index_tensor_shape[
-        input_rank,
-        indices_rank,
         output_rank,
         input_type,
         DType.uint64,
         batch_dims,
-    ](input.make_dims_unknown(), indices.make_dims_unknown())
+    ](
+        LayoutTensor[input.dtype, input_dyn_layout](
+            input.ptr,
+            RuntimeLayout[input_dyn_layout].row_major(input_shape),
+        ),
+        LayoutTensor[indices.dtype, indices_dyn_layout](
+            indices.ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(
+                IndexList[2](index_len, 2)
+            ),
+        ),
+    )
 
     var output_data_stack = InlineArray[
         Scalar[input_type], dim_0 * dim_1 * index_len
     ](uninitialized=True)
-    var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_stack, output_shape
+    alias output_layout = Layout.row_major[output_rank]()
+    var output_data_buffer = LayoutTensor[input_type, output_layout](
+        output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
 
     _index_tensor_impl[batch_dims](
-        input.make_dims_unknown(),
-        indices.make_dims_unknown(),
+        LayoutTensor[input.dtype, input_dyn_layout](
+            input.ptr,
+            RuntimeLayout[input_dyn_layout].row_major(input_shape),
+        ),
+        LayoutTensor[indices.dtype, indices_dyn_layout](
+            indices.ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(
+                IndexList[2](index_len, 2)
+            ),
+        ),
         output_data_buffer,
     )
 
     for i in range(input.dim(0)):
         for j in range(input.dim(1)):
             for k in range(index_a.dim(0)):
-                if (
-                    output_data_buffer[IndexList[output_rank](i, j, k)]
-                    != ref_output[IndexList[output_rank](i, j, k)]
-                ):
-                    print("Results mismatch")
-                    return
-
-    print("Results match")
+                assert_equal(output_data_buffer[i, j, k], ref_output[i, j, k])
 
 
 # TODO: It is like example 3 ONNX gather_nd.
 # CHECK-LABEL: test_index_tensor_CLIPVIT
-# CHECK: Results match
 fn test_index_tensor_CLIPVIT() raises:
     print("== test_index_tensor_CLIPVIT")
 
@@ -275,47 +291,45 @@ fn test_index_tensor_CLIPVIT() raises:
     alias output_rank = 2
 
     # dim_0 x dim_1 x dim_2 input tensor.
-    alias input_shape = DimList(dim_0, dim_1, dim_2)
-    var input_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.product())
-    ](uninitialized=True)
-    var input = NDBuffer[input_type, input_rank, _, input_shape](input_stack)
+    alias input_shape = IndexList[3](dim_0, dim_1, dim_2)
+    alias input_layout = Layout.row_major(input_shape)
+    var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
+        uninitialized=True
+    )
+    var input = LayoutTensor[input_type, input_layout](input_stack)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_2):
-        input.data[i] = i
+        input.ptr[i] = i
 
     # We have two 2D tensors with 1 element each.
 
     # 1-element input tensor.
     var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_a = NDBuffer[DType.uint64, 1, _, DimList(index_len)](a_stack)
+    var index_a = LayoutTensor[DType.uint64, Layout(index_len)](a_stack)
     # Initialize with [0,1]
-    index_a.data[0] = 0
-    index_a.data[1] = 1
+    index_a.ptr[0] = 0
+    index_a.ptr[1] = 1
 
     # 1-element input tensor.
     var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_b = NDBuffer[DType.uint64, 1, _, DimList(index_len)](b_stack)
+    var index_b = LayoutTensor[DType.uint64, Layout(index_len)](b_stack)
     # Initialize with [1,0]
-    index_b.data[0] = 1
-    index_b.data[1] = 0
+    index_b.ptr[0] = 1
+    index_b.ptr[1] = 0
 
     # Reference output of shape dim_0 x dim_2
 
-    alias ref_shape = DimList(dim_0, dim_2)
-    var ref_stack = InlineArray[Scalar[input_type], Int(ref_shape.product())](
+    alias ref_shape = IndexList[2](dim_0, dim_2)
+    alias ref_layout = Layout.row_major(ref_shape)
+    var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
         uninitialized=True
     )
-    var ref_output = NDBuffer[input_type, output_rank, _, ref_shape](ref_stack)
+    var ref_output = LayoutTensor[input_type, ref_layout](ref_stack)
 
     for j in range(dim_2):
-        ref_output[IndexList[output_rank](0, j)] = input[
-            IndexList[input_rank](index_a[0].__int__(), index_a[1].__int__(), j)
-        ]
+        ref_output[0, j] = input[Int(index_a[0]), Int(index_a[1]), j]
     for j in range(dim_2):
-        ref_output[IndexList[output_rank](1, j)] = input[
-            IndexList[input_rank](index_b[0].__int__(), index_b[1].__int__(), j)
-        ]
+        ref_output[1, j] = input[Int(index_b[0]), Int(index_b[1]), j]
 
     # TODO:
     # See how I need to convert separate indices to combined indices ndbuffer
@@ -325,61 +339,65 @@ fn test_index_tensor_CLIPVIT() raises:
 
     # Convert index_a, index_b (each of 1D size 2) to a 2D indices_len x 2 indices NDBuffer
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
-    var indices = NDBuffer[
-        DType.uint64, indices_rank, _, DimList(index_len, 2)
-    ](indices_stack)
-    indices[IndexList[indices_rank](0, 0)] = index_a[0]
-    indices[IndexList[indices_rank](0, 1)] = index_b[0]
-    indices[IndexList[indices_rank](1, 0)] = index_a[1]
-    indices[IndexList[indices_rank](1, 1)] = index_b[1]
+    var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
+        indices_stack
+    )
+    indices[0, 0] = index_a[0]
+    indices[0, 1] = index_b[0]
+    indices[1, 0] = index_a[1]
+    indices[1, 1] = index_b[1]
     # TODO: Or index_a[0], index_a[1] and index_b[0], index_b[1]???
 
+    alias input_dyn_layout = Layout.row_major[input.rank]()
+    alias indices_dyn_layout = Layout.row_major[indices.rank]()
     var output_shape = gather_nd_shape[
-        input_rank,
-        indices_rank,
         output_rank,
         input_type,
         DType.uint64,
         0,
-    ](input.make_dims_unknown(), indices.make_dims_unknown())
+    ](
+        LayoutTensor[input.dtype, input_dyn_layout](
+            input.ptr,
+            RuntimeLayout[input_dyn_layout].row_major(input_shape),
+        ),
+        LayoutTensor[indices.dtype, indices_dyn_layout](
+            indices.ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(
+                IndexList[2](index_len, 2)
+            ),
+        ),
+    )
 
     var output_data_stack = InlineArray[Scalar[input_type], dim_0 * dim_2](
         uninitialized=True
     )
-    var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_stack, output_shape
+    alias output_layout = Layout.row_major[output_rank]()
+    var output_data_buffer = LayoutTensor[input_type, output_layout](
+        output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
-    gather_nd[
-        input_type,
-        DType.uint64,
-        input_rank,
-        indices_rank,
-        output_rank,
-        batch_dims,
-        target="cpu",
-    ](
-        input.make_dims_unknown(),
-        indices.make_dims_unknown(),
+    gather_nd[input_type, DType.uint64, batch_dims, target="cpu"](
+        LayoutTensor[input.dtype, input_dyn_layout](
+            input.ptr,
+            RuntimeLayout[input_dyn_layout].row_major(input_shape),
+        ),
+        LayoutTensor[indices.dtype, indices_dyn_layout](
+            indices.ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(
+                IndexList[2](index_len, 2)
+            ),
+        ),
         output_data_buffer,
         DeviceContextPtr(),
     )
 
     for i in range(dim_0):
         for j in range(dim_2):
-            if (
-                output_data_buffer[IndexList[output_rank](i, j)]
-                != ref_output[IndexList[output_rank](i, j)]
-            ):
-                print("Results mismatch")
-                return
-
-    print("Results match")
+            assert_equal(output_data_buffer[i, j], ref_output[i, j])
 
 
 # CHECK-LABEL: test_index_tensor_llama2_mistral
-# CHECK: Results match
 fn test_index_tensor_llama2_mistral() raises:
     print("== test_index_tensor_llama2_mistral")
 
@@ -397,86 +415,84 @@ fn test_index_tensor_llama2_mistral() raises:
     alias output_rank = 3
 
     # dim_0 x dim_1 input tensor.
-    alias input_shape = DimList(dim_0, dim_1)
-    var input_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.product())
-    ](uninitialized=True)
-    var input = NDBuffer[input_type, input_rank, _, input_shape](input_stack)
+    alias input_shape = IndexList[2](dim_0, dim_1)
+    alias input_layout = Layout.row_major(input_shape)
+    var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
+        uninitialized=True
+    )
+    var input = LayoutTensor[input_type, input_layout](input_stack)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1):
-        input.data[i] = i
+        input.ptr[i] = i
 
     # We have one 2D tensor with index_len elements each.
 
     # index_len-element input tensor.
-    alias index_shape = DimList(index_dim_0, index_dim_1)
-    var a_stack = InlineArray[UInt64, Int(index_shape.product())](
-        uninitialized=True
-    )
-    var index_a = NDBuffer[index_type, index_rank, _, index_shape](a_stack)
+    alias index_shape = IndexList[2](index_dim_0, index_dim_1)
+    alias index_layout = Layout.row_major(index_shape)
+    var a_stack = InlineArray[UInt64, index_layout.size()](uninitialized=True)
+    var index_a = LayoutTensor[index_type, index_layout](a_stack)
     # Initialize with one.
     for i in range(index_dim_0):
         for j in range(index_dim_1):
-            index_a[IndexList[index_rank](i, j)] = 1
+            index_a[i, j] = 1
 
     # This is effectively a gather operation.
 
     # Reference output of shape index_dim_0 x index_dim_1 x dim_1.
-    alias ref_shape = DimList(index_dim_0, index_dim_1, dim_1)
-    var ref_stack = InlineArray[Scalar[input_type], Int(ref_shape.product())](
+    alias ref_shape = IndexList[3](index_dim_0, index_dim_1, dim_1)
+    alias ref_layout = Layout.row_major(ref_shape)
+    var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
         uninitialized=True
     )
-    var ref_output = NDBuffer[input_type, output_rank, _, ref_shape](ref_stack)
+    var ref_output = LayoutTensor[input_type, ref_layout](ref_stack)
     for i in range(index_dim_0):
         for j in range(index_dim_1):
             for k in range(dim_1):
-                ref_output[IndexList[output_rank](i, j, k)] = input[
-                    IndexList[input_rank](index_a[i, j].__int__(), k)
-                ]
+                ref_output[i, j, k] = input[Int(index_a[i, j]), k]
 
-    var output_shape = gather_shape[
-        output_rank, input_rank, index_rank, input_type, index_type
-    ](input.make_dims_unknown(), index_a.make_dims_unknown(), 0)
+    alias input_dyn_layout = Layout.row_major[input.rank]()
+    alias indices_dyn_layout = Layout.row_major[index_a.rank]()
+    var output_shape = gather_shape[output_rank, input_type, index_type](
+        LayoutTensor[input.dtype, input_dyn_layout](
+            input.ptr,
+            RuntimeLayout[input_dyn_layout].row_major(input_shape),
+        ),
+        LayoutTensor[index_a.dtype, indices_dyn_layout](
+            index_a.ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(index_shape),
+        ),
+        0,
+    )
 
     var output_data_stack = InlineArray[
         Scalar[input_type], index_dim_0 * index_dim_1 * dim_1
     ](uninitialized=True)
-    var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_stack, output_shape
+    alias output_layout = Layout.row_major[output_rank]()
+    var output_data_buffer = LayoutTensor[input_type, output_layout](
+        output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
 
     gather[axis=0](
         output_data_buffer,
-        input.make_dims_unknown(),
-        index_a.make_dims_unknown(),
+        LayoutTensor[input.dtype, input_dyn_layout](
+            input.ptr,
+            RuntimeLayout[input_dyn_layout].row_major(input_shape),
+        ),
+        LayoutTensor[index_a.dtype, indices_dyn_layout](
+            index_a.ptr,
+            RuntimeLayout[indices_dyn_layout].row_major(index_shape),
+        ),
     )
 
     for i in range(index_dim_0):
         for j in range(index_dim_1):
             for k in range(dim_1):
-                if (
-                    output_data_buffer[IndexList[output_rank](i, j, k)]
-                    != ref_output[IndexList[output_rank](i, j, k)]
-                ):
-                    print("Results mismatch")
-
-    print("Results match")
+                assert_equal(output_data_buffer[i, j, k], ref_output[i, j, k])
 
 
 # CHECK-LABEL: test_advanced_indexing_getitem
 # Matches equivalent numpy: input[:, :, index_a, index_b]
-# CHECK{LITERAL}: NDBuffer([[[[1, 8, 15],
-# CHECK{LITERAL}: [22, 24, 1]],
-# CHECK{LITERAL}: [[31, 38, 45],
-# CHECK{LITERAL}: [52, 54, 31]],
-# CHECK{LITERAL}: [[61, 68, 75],
-# CHECK{LITERAL}: [82, 84, 61]],
-# CHECK{LITERAL}: [[91, 98, 105],
-# CHECK{LITERAL}: [112, 114, 91]],
-# CHECK{LITERAL}: [[121, 128, 135],
-# CHECK{LITERAL}: [142, 144, 121]],
-# CHECK{LITERAL}: [[151, 158, 165],
-# CHECK{LITERAL}: [172, 174, 151]]]], dtype=int32, shape=2x3x2x3)
 fn test_advanced_indexing_getitem() raises:
     print("== test_advanced_indexing_getitem")
 
@@ -487,11 +503,12 @@ fn test_advanced_indexing_getitem() raises:
     var input_stack = InlineArray[
         Scalar[input_type], Int(input_shape.flattened_length())
     ](uninitialized=True)
-    var input_buffer = NDBuffer[input_type, input_rank](
-        input_stack, input_shape
+    alias input_layout = Layout.row_major[input_rank]()
+    var input_buffer = LayoutTensor[input_type, input_layout](
+        input_stack, RuntimeLayout[input_layout].row_major(input_shape)
     )
     for i in range(input_shape.flattened_length()):
-        input_buffer.data[i] = i
+        input_buffer.ptr[i] = i
 
     # Create tensors for indexing in a somewhat predictable pattern
     alias index_rank = 2
@@ -500,16 +517,21 @@ fn test_advanced_indexing_getitem() raises:
     var a_stack = InlineArray[
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
-    var index_a = NDBuffer[index_type, index_rank](a_stack, index_shape)
     var b_stack = InlineArray[
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
-    var index_b = NDBuffer[index_type, index_rank](b_stack, index_shape)
+    alias index_layout = Layout.row_major[index_rank]()
+    var index_a = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+        a_stack, RuntimeLayout[index_layout].row_major(index_shape)
+    )
+    var index_b = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+        b_stack, RuntimeLayout[index_layout].row_major(index_shape)
+    )
     for i in range(index_shape.flattened_length()):
-        index_a.data[i] = i % 5
-        index_b.data[i] = (i + 1) % 5
+        index_a.ptr[i] = i % 5
+        index_b.ptr[i] = (i + 1) % 5
     var indices = StaticTuple[
-        NDBuffer[index_type, index_rank, MutableAnyOrigin], 2
+        LayoutTensor[index_type, index_layout, MutableAnyOrigin], 2
     ](index_a, index_b)
 
     # Create output tensor
@@ -523,8 +545,9 @@ fn test_advanced_indexing_getitem() raises:
     var output_data_stack = InlineArray[
         Scalar[input_type], output_shape.flattened_length()
     ](uninitialized=True)
-    var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_stack, output_shape
+    alias output_layout = Layout.row_major[output_rank]()
+    var output_data_buffer = LayoutTensor[input_type, output_layout](
+        output_data_stack, RuntimeLayout[output_layout].row_major(output_shape)
     )
 
     @parameter
@@ -552,36 +575,69 @@ fn test_advanced_indexing_getitem() raises:
         indices_fn=indices_fn,
     ](
         output_data_buffer,
-        input_buffer.get_strides(),
+        rebind[IndexList[input_rank]](
+            input_buffer.runtime_layout.stride.value.canonicalize()
+        ),
         DeviceContextPtr(),
     )
 
-    # Print to filecheck
-    print(output_data_buffer)
+    var output_stack = InlineArray[
+        Scalar[input_type], Int(output_shape.flattened_length())
+    ](uninitialized=True)
+    var reference_output = LayoutTensor[input_type, output_layout](
+        output_stack, RuntimeLayout[output_layout].row_major(output_shape)
+    )
 
-    # Keep data alive
-    _ = (indices[0], indices[1])
-    _ = input_buffer
+    reference_output[0, 0, 0, 0] = 1
+    reference_output[0, 0, 0, 1] = 8
+    reference_output[0, 0, 0, 2] = 15
+    reference_output[0, 0, 1, 0] = 22
+    reference_output[0, 0, 1, 1] = 24
+    reference_output[0, 0, 1, 2] = 1
+
+    reference_output[0, 1, 0, 0] = 31
+    reference_output[0, 1, 0, 1] = 38
+    reference_output[0, 1, 0, 2] = 45
+    reference_output[0, 1, 1, 0] = 52
+    reference_output[0, 1, 1, 1] = 54
+    reference_output[0, 1, 1, 2] = 31
+
+    reference_output[0, 2, 0, 0] = 61
+    reference_output[0, 2, 0, 1] = 68
+    reference_output[0, 2, 0, 2] = 75
+    reference_output[0, 2, 1, 0] = 82
+    reference_output[0, 2, 1, 1] = 84
+    reference_output[0, 2, 1, 2] = 61
+
+    reference_output[0, 3, 0, 0] = 91
+    reference_output[0, 3, 0, 1] = 98
+    reference_output[0, 3, 0, 2] = 105
+    reference_output[0, 3, 1, 0] = 112
+    reference_output[0, 3, 1, 1] = 114
+    reference_output[0, 3, 1, 2] = 91
+
+    reference_output[0, 4, 0, 0] = 121
+    reference_output[0, 4, 0, 1] = 128
+    reference_output[0, 4, 0, 2] = 135
+    reference_output[0, 4, 1, 0] = 142
+    reference_output[0, 4, 1, 1] = 144
+    reference_output[0, 4, 1, 2] = 121
+
+    reference_output[0, 5, 0, 0] = 151
+    reference_output[0, 5, 0, 1] = 158
+    reference_output[0, 5, 0, 2] = 165
+    reference_output[0, 5, 1, 0] = 172
+    reference_output[0, 5, 1, 1] = 174
+    reference_output[0, 5, 1, 2] = 151
+
+    for i in range(output_shape.flattened_length()):
+        assert_equal(output_data_buffer.ptr[i], reference_output.ptr[i])
+    _ = b_stack^
+    _ = a_stack^
 
 
 # CHECK-LABEL: test_advanced_indexing_setitem_inplace
 # Matches equivalent numpy: input[:, :, index_a, index_b] = updates
-# CHECK{LITERAL}: NDBuffer([[[[0, 1, 0, 0],
-# CHECK{LITERAL}: [0, 0, 2, 0],
-# CHECK{LITERAL}: [0, 0, 0, 3],
-# CHECK{LITERAL}: [4, 0, 0, 0]],
-# CHECK{LITERAL}: [[0, 5, 0, 0],
-# CHECK{LITERAL}: [0, 0, 6, 0],
-# CHECK{LITERAL}: [0, 0, 0, 7],
-# CHECK{LITERAL}: [8, 0, 0, 0]],
-# CHECK{LITERAL}: [[0, 9, 0, 0],
-# CHECK{LITERAL}: [0, 0, 10, 0],
-# CHECK{LITERAL}: [0, 0, 0, 11],
-# CHECK{LITERAL}: [12, 0, 0, 0]],
-# CHECK{LITERAL}: [[0, 13, 0, 0],
-# CHECK{LITERAL}: [0, 0, 14, 0],
-# CHECK{LITERAL}: [0, 0, 0, 15],
-# CHECK{LITERAL}: [16, 0, 0, 0]]]], dtype=int32, shape=2x2x4x4)
 fn test_advanced_indexing_setitem_inplace() raises:
     print("== test_advanced_indexing_setitem_inplace")
 
@@ -592,13 +648,10 @@ fn test_advanced_indexing_setitem_inplace() raises:
     var input_stack = InlineArray[
         Scalar[input_type], Int(input_shape.flattened_length())
     ](uninitialized=True)
-    var input_buffer = NDBuffer[input_type, input_rank](
-        input_stack, input_shape
-    )
-
-    # Initialize with all zeros to make it obvious where we write to
-    for i in range(input_shape.flattened_length()):
-        input_buffer.data[i] = 0
+    alias input_layout = Layout.row_major[input_rank]()
+    var input_buffer = LayoutTensor[input_type, input_layout](
+        input_stack, RuntimeLayout[input_layout].row_major(input_shape)
+    ).fill(0)
 
     # Create indexing tensors, ensure no pair of indices point to the same
     # location in `input` to avoid nondeterministic behavior.
@@ -610,16 +663,21 @@ fn test_advanced_indexing_setitem_inplace() raises:
     var a_stack = InlineArray[
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
-    var index_a = NDBuffer[index_type, index_rank](a_stack, index_shape)
     var b_stack = InlineArray[
         Scalar[index_type], Int(index_shape.flattened_length())
     ](uninitialized=True)
-    var index_b = NDBuffer[index_type, index_rank](b_stack, index_shape)
+    alias index_layout = Layout.row_major[index_rank]()
+    var index_a = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+        a_stack, RuntimeLayout[index_layout].row_major(index_shape)
+    )
+    var index_b = LayoutTensor[index_type, index_layout, MutableAnyOrigin](
+        b_stack, RuntimeLayout[index_layout].row_major(index_shape)
+    )
     for i in range(index_shape.flattened_length()):
-        index_a.data[i] = i % 4
-        index_b.data[i] = (i + 1) % 4
+        index_a.ptr[i] = i % 4
+        index_b.ptr[i] = (i + 1) % 4
     var indices = StaticTuple[
-        NDBuffer[index_type, index_rank, MutableAnyOrigin], 2
+        LayoutTensor[index_type, index_layout, MutableAnyOrigin], 2
     ](index_a, index_b)
 
     # Create the updates list and set it sequential data to make it easy to read
@@ -628,11 +686,12 @@ fn test_advanced_indexing_setitem_inplace() raises:
     var updates_stack = InlineArray[
         Scalar[input_type], Int(updates_shape.flattened_length())
     ](uninitialized=True)
-    var updates = NDBuffer[input_type, updates_rank](
-        updates_stack, updates_shape
+    alias updates_layout = Layout.row_major[updates_rank]()
+    var updates = LayoutTensor[input_type, updates_layout](
+        updates_stack, RuntimeLayout[updates_layout].row_major(updates_shape)
     )
     for i in range(updates_shape.flattened_length()):
-        updates.data[i] = 1 + i
+        updates.ptr[i] = 1 + i
 
     @parameter
     @always_inline
@@ -650,7 +709,6 @@ fn test_advanced_indexing_setitem_inplace() raises:
 
     alias start_axis = 2
     advanced_indexing_setitem_inplace[
-        input_rank=input_rank,
         index_rank=index_rank,
         start_axis=start_axis,
         num_index_tensors=num_index_tensors,
@@ -661,16 +719,50 @@ fn test_advanced_indexing_setitem_inplace() raises:
         indices_fn=indices_fn,
     ](
         input_buffer,
-        indices[0].dynamic_shape,
-        updates.get_strides(),
+        rebind[IndexList[index_rank]](
+            indices[0].runtime_layout.shape.value.canonicalize()
+        ),
+        rebind[IndexList[updates_rank]](
+            updates.runtime_layout.stride.value.canonicalize()
+        ),
         DeviceContextPtr(),
     )
 
-    print(input_buffer)
+    var output_stack = InlineArray[
+        Scalar[input_type], Int(input_shape.flattened_length())
+    ](uninitialized=True)
 
-    # Keep data alive
-    _ = (indices[0], indices[1])
-    _ = updates
+    var reference_output = LayoutTensor[input_type, input_layout](
+        output_stack, RuntimeLayout[input_layout].row_major(input_shape)
+    ).fill(0)
+
+    reference_output[0, 0, 0, 1] = 1
+    reference_output[0, 0, 1, 2] = 2
+    reference_output[0, 0, 2, 3] = 3
+    reference_output[0, 0, 3, 0] = 4
+
+    reference_output[0, 1, 0, 1] = 5
+    reference_output[0, 1, 1, 2] = 6
+    reference_output[0, 1, 2, 3] = 7
+    reference_output[0, 1, 3, 0] = 8
+
+    reference_output[1, 0, 0, 1] = 9
+    reference_output[1, 0, 1, 2] = 10
+    reference_output[1, 0, 2, 3] = 11
+    reference_output[1, 0, 3, 0] = 12
+
+    reference_output[1, 1, 0, 1] = 13
+    reference_output[1, 1, 1, 2] = 14
+    reference_output[1, 1, 2, 3] = 15
+    reference_output[1, 1, 3, 0] = 16
+
+    for i in range(input_shape.flattened_length()):
+        assert_equal(input_buffer.ptr[i], reference_output.ptr[i])
+
+    _ = a_stack^
+    _ = b_stack^
+    _ = updates_stack^
+    _ = input_stack^
 
 
 def main():

@@ -16,9 +16,11 @@ from time import sleep, time_function
 from benchmark import Report, clobber_memory, keep, run
 
 
-# CHECK-LABEL: test_benchmark
-fn test_benchmark():
-    print("== test_benchmark")
+# CHECK-LABEL: test_stopping_criteria
+fn test_stopping_criteria() raises:
+    print("== test_stopping_criteria")
+    # Stop when min_runtime_secs has elapsed and either max_runtime_secs or max_iters
+    # is reached
 
     @always_inline
     @parameter
@@ -27,40 +29,68 @@ fn test_benchmark():
         clobber_memory()
         return
 
-    # check that benchmark_function returns after max_time_ns is hit.
     var lb = 0.02  # 20ms
     var ub = 0.1  # 100ms
-    var max_iters = 1000_000_000
 
-    @__copy_capture(max_iters, lb, ub)
+    # stop after ub (max_runtime_secs)
+    var max_iters_1 = 1000_000_000
+
+    @__copy_capture(lb, ub)
     @parameter
-    fn timer():
-        var b3 = run[time_me](
-            0, max_iters, min_runtime_secs=lb, max_runtime_secs=ub
+    fn timer() raises:
+        var report = run[time_me](
+            max_iters=max_iters_1, min_runtime_secs=lb, max_runtime_secs=ub
         )
         # CHECK: True
-        print(b3.mean() > 0)
+        print(report.mean() > 0)
+        # CHECK: True
+        print(report.iters() != max_iters_1)
 
-    var t3 = time_function[timer]()
+    var t1 = time_function[timer]()
     # CHECK: True
-    print(t3 / 1e9 >= lb)
+    print(t1 / 1e9 >= ub)
 
+    # stop after lb (min_runtime_secs)
     var ub_big = 1  # 1s
+    var max_iters_2 = 1
 
     @__copy_capture(ub_big, lb)
     @parameter
-    fn timer2():
-        var b4 = run[time_me](
-            0, 1, min_runtime_secs=lb, max_runtime_secs=ub_big
+    fn timer2() raises:
+        var report = run[time_me](
+            max_iters=max_iters_2, min_runtime_secs=lb, max_runtime_secs=ub_big
         )
         # CHECK: True
-        print(b4.mean() > 0)
+        print(report.mean() > 0)
+        # CHECK: True
+        print(report.iters() >= max_iters_2)
 
-    var t4 = time_function[timer2]()
+    var t2 = time_function[timer2]()
+
     # CHECK: True
-    print(t4 / 1e9 >= lb and t4 / 1e9 <= ub_big)
+    print(t2 / 1e9 >= lb and t2 / 1e9 <= ub_big)
+
+    # stop on or before max_iters
+    var max_iters_3 = 3
+
+    @__copy_capture(ub_big)
+    @parameter
+    fn timer3() raises:
+        var report = run[time_me](
+            max_iters=max_iters_3, min_runtime_secs=0, max_runtime_secs=ub_big
+        )
+        # CHECK: True
+        print(report.mean() > 0)
+        # CHECK: True
+        print(report.iters() <= max_iters_3)
+
+    var t3 = time_function[timer3]()
+
+    # CHECK: True
+    print(t3 / 1e9 <= ub_big)
 
 
+@register_passable("trivial")
 struct SomeStruct:
     var x: Int
     var y: Int
@@ -84,7 +114,7 @@ struct SomeTrivialStruct:
 
 # CHECK-LABEL: test_keep
 # There is nothing to test here other than the code executes and does not crash.
-fn test_keep():
+fn test_keep() raises:
     print("== test_keep")
 
     keep(False)
@@ -108,7 +138,7 @@ fn sleeper():
 
 
 # CHECK-LABEL: test_non_capturing
-fn test_non_capturing():
+fn test_non_capturing() raises:
     print("== test_non_capturing")
     var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     # CHECK: True
@@ -116,7 +146,7 @@ fn test_non_capturing():
 
 
 # CHECK-LABEL: test_change_units
-fn test_change_units():
+fn test_change_units() raises:
     print("== test_change_units")
     var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     # CHECK: True
@@ -126,7 +156,7 @@ fn test_change_units():
 
 
 # CHECK-LABEL: test_report
-fn test_report():
+fn test_report() raises:
     print("== test_report")
     var report = run[sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
 
@@ -135,7 +165,7 @@ fn test_report():
 
 
 def main():
-    test_benchmark()
+    test_stopping_criteria()
     test_keep()
     test_non_capturing()
     test_change_units()

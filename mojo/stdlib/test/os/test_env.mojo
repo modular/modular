@@ -13,7 +13,7 @@
 
 from os import getenv, setenv, unsetenv
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
 def test_getenv():
@@ -45,6 +45,10 @@ def test_unsetenv():
 
 
 def main():
-    test_getenv()
-    test_setenv()
-    test_unsetenv()
+    var suite = TestSuite()
+
+    suite.test[test_getenv]()
+    suite.test[test_setenv]()
+    suite.test[test_unsetenv]()
+
+    suite^.run()

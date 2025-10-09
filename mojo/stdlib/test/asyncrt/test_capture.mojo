@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
+from testing import TestSuite
 
 
 fn vec_func[
@@ -28,6 +29,16 @@ fn vec_func[
     if tid >= UInt(len):
         return
     output[tid] = op(in0[tid], in1[tid])
+
+
+def test_capture_2_5():
+    var ctx = create_test_device_context()
+    run_captured_func(ctx, 2.5)
+
+
+def test_capture_neg_1_5():
+    var ctx = create_test_device_context()
+    run_captured_func(ctx, -1.5)
 
 
 @no_inline
@@ -77,12 +88,10 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
             )
 
 
-fn main() raises:
-    var ctx = create_test_device_context()
-    print("-------")
-    print("Running test_capture(" + ctx.name() + "):")
+def main():
+    var suite = TestSuite()
 
-    run_captured_func(ctx, 2.5)
-    run_captured_func(ctx, -1.5)
+    suite.test[test_capture_2_5]()
+    suite.test[test_capture_neg_1_5]()
 
-    print("Done.")
+    suite^.run()

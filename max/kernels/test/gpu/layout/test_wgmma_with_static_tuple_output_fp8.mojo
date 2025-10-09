@@ -267,7 +267,7 @@ fn wgmma_e4m3_e4m3_f32[
     _ = c_tensor
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
 
         @parameter

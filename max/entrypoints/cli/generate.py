@@ -69,7 +69,7 @@ async def stream_text_to_console(
     metrics: TextGenerationMetrics | None = None,
     print_tokens: bool = True,
 ) -> None:
-    assert isinstance(tokenizer, (TextTokenizer, TextAndVisionTokenizer))
+    assert isinstance(tokenizer, TextTokenizer | TextAndVisionTokenizer)
     logits_processors: list[LogitsProcessor] = []
     if metrics:
         logits_processors.append(TrackMetrics(metrics))

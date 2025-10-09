@@ -240,7 +240,7 @@ fn multistage_mma[
     # In the slice-K method, we pass `num_threads_per_warp_k_part` as `num_threads`
     # in the parameters. This ensures that `tid` represents the relative thread position
     # within each warp_k_part_id groups.
-    var tid: UInt32 = thread_idx.x % num_threads
+    var tid: UInt32 = thread_idx.x % UInt(num_threads)
     var warp_id = warp.broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
@@ -365,7 +365,7 @@ fn multistage_mma[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
     constrained[
-        num_k_mmas % (2 * k_group_size) == 0,
+        num_k_mmas % UInt(2 * k_group_size) == 0,
         "num_k_mmas must be an integer multiple of 2*k_group_size",
     ]()
 
@@ -772,7 +772,7 @@ fn multistage_gemm_kernel[
         tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
     )
     var warp_id = warp.broadcast(
-        (tid % num_threads_per_warp_k_part) // WARP_SIZE
+        (tid % num_threads_per_warp_k_part) // UInt(WARP_SIZE)
     )
 
     # Only apply block swizzling for half precision types.
@@ -798,7 +798,7 @@ fn multistage_gemm_kernel[
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]()
-    alias a_smem_size = num_pipeline_stages * BM * BK
+    alias a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
     var a_smem_iter = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
@@ -814,7 +814,7 @@ fn multistage_gemm_kernel[
     var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
         Scalar[b_type]
     ]()
-    alias b_smem_size = num_pipeline_stages * BK * BN
+    alias b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN)
     alias BD_0 = BN if transpose_b else BK
     alias BD_1 = BK if transpose_b else BN
     alias b_smem_layout = Layout.row_major(BD_0, BD_1)
@@ -827,7 +827,9 @@ fn multistage_gemm_kernel[
 
     # create input layout tensors A and Bv
     # global memory iterator
-    var bk_start: Int = Int((K // BK // num_warp_k_partitions) * warp_k_part_id)
+    var bk_start: Int = Int(
+        (K // UInt(BK) // num_warp_k_partitions) * warp_k_part_id
+    )
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](
         block_idx_swizzle[1], bk_start
     )
@@ -976,7 +978,7 @@ fn multistage_gemm_kernel[
             Layout.row_major(WM, WN),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
+        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * UInt(WM) * UInt(WN))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
@@ -1135,7 +1137,7 @@ fn multistage_gemm_split_k_kernel[
     ]
 
     var work_space_part = work_space_tensor_type(
-        work_space.data + block_idx.z * M * N,
+        work_space.data + block_idx.z * UInt(M) * UInt(N),
         RuntimeLayout[
             c_layout,
             element_type = work_space_tensor_type.layout_int_type,

@@ -18,7 +18,7 @@ import pickle
 from dataclasses import dataclass
 from io import BytesIO
 from os import PathLike
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch  # type: ignore
@@ -44,7 +44,7 @@ class WeightUnpickler(pickle.Unpickler):
         super().__init__(pkl_file)
         self.zip_file = zip_file
 
-    def build_tensor(
+    def build_tensor(  # noqa: ANN201
         self,
         zip_info,  # noqa: ANN001
         unused_storage_offset,  # noqa: ANN001
@@ -55,12 +55,12 @@ class WeightUnpickler(pickle.Unpickler):
         zip_info.shape = size
         return zip_info
 
-    def find_class(self, module, name):  # noqa: ANN001
+    def find_class(self, module, name):  # noqa: ANN001, ANN201
         if module == "torch._utils" and name == "_rebuild_tensor_v2":
             return self.build_tensor
         return super().find_class(module, name)
 
-    def persistent_load(self, pid):  # noqa: ANN001
+    def persistent_load(self, pid):  # noqa: ANN001, ANN201
         data = pid[1:]
         storage_type, key, unused_location, unused_num_elements = data
 
@@ -120,7 +120,7 @@ class PytorchWeights:
     def __init__(
         self,
         filepath: PathLike[str],
-        tensor_infos: Optional[dict[str, Any]] = None,
+        tensor_infos: dict[str, Any] | None = None,
         prefix: str = "",
         allocated=None,  # noqa: ANN001
     ) -> None:
@@ -151,11 +151,11 @@ class PytorchWeights:
         return Shape(self._tensor_infos[self._prefix].shape)
 
     @property
-    def quantization_encoding(self) -> Optional[QuantizationEncoding]:
+    def quantization_encoding(self) -> QuantizationEncoding | None:
         """The current weight quantization encoding, if this weight exists."""
         return None
 
-    def items(self):
+    def items(self):  # noqa: ANN201
         """Iterate through all allocable weights that start with the prefix."""
         for name in self._tensor_infos:
             if name.startswith(self._prefix):
@@ -206,9 +206,9 @@ class PytorchWeights:
 
     def allocate(
         self,
-        dtype: Optional[DType] = None,
-        shape: Optional[ShapeLike] = None,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
+        dtype: DType | None = None,
+        shape: ShapeLike | None = None,
+        quantization_encoding: QuantizationEncoding | None = None,
         device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates and optionally validates a new Weight."""

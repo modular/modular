@@ -18,13 +18,13 @@ from tempfile import NamedTemporaryFile
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.dimlist import DimList
 from memory import memcmp, memset_zero
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 from utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_ndbuffer
-fn test_ndbuffer():
+def test_ndbuffer():
     print("== test_ndbuffer")
     # Create a matrix of the form
     # [[0, 1, 2, 3],
@@ -121,7 +121,7 @@ fn test_ndbuffer():
 
 
 # CHECK-LABEL: test_fill
-fn test_fill():
+def test_fill():
     print("== test_fill")
 
     var buf_stack = InlineArray[Scalar[DType.int], 3 * 3](uninitialized=True)
@@ -158,7 +158,7 @@ fn test_fill():
 
 
 # CHECK-LABEL: test_ndbuffer_prefetch
-fn test_ndbuffer_prefetch():
+def test_ndbuffer_prefetch():
     print("== test_ndbuffer_prefetch")
     # Create a matrix of the form
     # [[0, 1, 2],
@@ -205,7 +205,7 @@ fn test_ndbuffer_prefetch():
 
 
 # CHECK-LABEL: test_aligned_load_store
-fn test_aligned_load_store():
+def test_aligned_load_store():
     print("== test_aligned_load_store")
     var matrix = NDBuffer[
         DType.int,
@@ -230,7 +230,7 @@ fn test_aligned_load_store():
     print(matrix.load[width=4, alignment=32](3, 0))
 
 
-fn test_get_nd_index():
+def test_get_nd_index():
     print("== test_get_nd_index\n")
     var matrix0_stack = InlineArray[Scalar[DType.int], 2 * 3](
         uninitialized=True
@@ -450,11 +450,15 @@ def test_ndbuffer_tile():
 
 
 def main():
-    test_ndbuffer()
-    test_fill()
-    test_ndbuffer_prefetch()
-    test_aligned_load_store()
-    test_get_nd_index()
-    test_print()
-    test_ndbuffer_tofile()
-    test_ndbuffer_tile()
+    var suite = TestSuite()
+
+    suite.test[test_ndbuffer]()
+    suite.test[test_fill]()
+    suite.test[test_ndbuffer_prefetch]()
+    suite.test[test_aligned_load_store]()
+    suite.test[test_get_nd_index]()
+    suite.test[test_print]()
+    suite.test[test_ndbuffer_tofile]()
+    suite.test[test_ndbuffer_tile]()
+
+    suite^.run()

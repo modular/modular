@@ -22,7 +22,7 @@ bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
 bazel_dep(name = "rules_pycross", version = "0.8.0")
-bazel_dep(name = "rules_python", version = "1.5.1")
+bazel_dep(name = "rules_python", version = "1.6.3")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
@@ -169,7 +169,6 @@ single_version_override(
 DEFAULT_PYTHON_VERSION = "3.12"
 
 PYTHON_VERSIONS = [
-    "3_9",
     "3_10",
     "3_11",
     "3_12",
@@ -185,7 +184,7 @@ python.defaults(python_version = DEFAULT_PYTHON_VERSION)
 ]
 
 # Only the lowest version is used explicitly, everything else is indirect
-use_repo(python, "python_3_9")
+use_repo(python, "python_" + PYTHON_VERSIONS[0])
 
 environments = use_extension("@rules_pycross//pycross/extensions:environments.bzl", "environments")
 environments.create_for_python_toolchains(
@@ -236,20 +235,25 @@ RUFF_VERSION = "0.11.13"
     ]
 ]
 
-NVSHMEM_VERSION = "3.3.9_cuda12"
+NVSHMEM_VERSION = "3.4.5"
 
 http_archive(
-    name = "libnvshmem_device_bc",
+    name = "libnvshmem",
     build_file_content = """
 filegroup(
-    name = "libnvshmem_device_bc",
+    name = "device",
     srcs = ["lib/libnvshmem_device.bc"],
     visibility = ["//visibility:public"],
 )
+filegroup(
+    name = "host",
+    srcs = glob(["lib/*.so*"]),
+    visibility = ["//visibility:public"],
+)
 """,
-    sha256 = "72a788ef5723a30d8882b193f0a513f454ecaee3ab5a225a5c43db79d433ef66",
-    strip_prefix = "libnvshmem-linux-x86_64-{}-archive".format(NVSHMEM_VERSION),
-    urls = ["https://developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/libnvshmem-linux-x86_64-{}-archive.tar.xz".format(NVSHMEM_VERSION)],
+    # custom NVSHMEM at commit: https://github.com/modularml/NVSHMEM/commit/6ce0e34
+    sha256 = "786253323825e8b13a511069071f4b4ace4190129551e2f03c488081a660997f",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/{}/786253323825e8b13a511069071f4b4ace4190129551e2f03c488081a660997f/nvshmem.tar.gz".format(NVSHMEM_VERSION),
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
@@ -272,6 +276,7 @@ mojo.gpu_toolchains(
         "RTX 4090": "rtx4090",
         "NVIDIA GeForce RTX 3090": "rtx3090",
         "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
+        "NVIDIA GeForce GTX 970": "gtx970",
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
@@ -298,6 +303,7 @@ mojo.gpu_toolchains(
         "mi325": "amdgpu:gfx942",
         "mi355": "amdgpu:gfx950",
         "rtx3090": "nvidia:86",
+        "gtx970": "nvidia:52",
         "gtx1080ti": "nvidia:61",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",

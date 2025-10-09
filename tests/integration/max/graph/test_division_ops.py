@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 import pytest
@@ -34,8 +34,8 @@ def build_models(lhs_dtype: DType, rhs_dtype: DType) -> Graph:
 
 def run_models(
     model: Any,
-    lhs_val: Union[int, float],
-    rhs_val: Union[int, float],
+    lhs_val: int | float,
+    rhs_val: int | float,
     lhs_dtype: DType,
     rhs_dtype: DType,
     cpu: Device,
@@ -76,7 +76,7 @@ def run_models(
 def test_div_and_floordiv_match_python(
     lhs_dtype: DType,
     rhs_dtype: DType,
-    cases: list[tuple[Union[int, float], Union[int, float]]],
+    cases: list[tuple[int | float, int | float]],
 ) -> None:
     cpu = CPU()
     session = InferenceSession(devices=[cpu])

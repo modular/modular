@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 import asyncio
 from enum import Enum
-from typing import Union
 
 import msgspec
 from max.interfaces import RequestID
-from max.nn.kv_cache import XferReqData
+from max.nn.kv_cache import TransferReqData
 from max.pipelines.core import TextAndVisionContext, TextContext
 
 
@@ -27,7 +26,7 @@ class SchedulerProgress(Enum):
     NO_PROGRESS = "no_progress"
 
 
-async def sleep_with_backoff(count_no_progress: int):
+async def sleep_with_backoff(count_no_progress: int) -> None:
     """A basic strategy to avoid busy waiting.
 
     This function sleeps with a linear backoff.
@@ -56,7 +55,7 @@ class PrefillRequest(
     """
 
     id: RequestID
-    context: Union[TextContext, TextAndVisionContext]
+    context: TextContext | TextAndVisionContext
     transfer_engine_name: str
     block_ids: list[int]
 
@@ -77,7 +76,7 @@ class PrefillResponse(
 
     id: RequestID
     generated_token_id: int
-    transfer_metadata: XferReqData
+    transfer_metadata: TransferReqData
 
 
 class CancelRequest(msgspec.Struct, tag=True, omit_defaults=True, kw_only=True):

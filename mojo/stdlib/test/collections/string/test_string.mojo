@@ -27,7 +27,7 @@ from testing import (
     assert_raises,
     assert_true,
 )
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 @fieldwise_init

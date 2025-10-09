@@ -18,7 +18,7 @@ from layout.int_tuple import IntTuple
 from testing import assert_equal, assert_true
 
 
-fn main() raises:
+def main():
     test_distribute()
     test_tile()
 

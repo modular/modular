@@ -13,6 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceContext
+from testing import TestSuite
 
 
 @parameter
@@ -48,7 +49,7 @@ fn _timed_func(context: DeviceContext) raises:
     _timed_iter_func(context, 2)
 
 
-fn main() raises:
+def test_timing():
     var ctx = create_test_device_context()
     print("Running test_timing(" + ctx.name() + "):")
 
@@ -59,3 +60,11 @@ fn main() raises:
     elapsed_time = ctx.execution_time_iter[_timed_iter_func](100)
     print("Elapsed time for _timed_iter_func: ", elapsed_time / 1e9, "s")
     print("Done.")
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_timing]()
+
+    suite^.run()

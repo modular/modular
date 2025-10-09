@@ -298,7 +298,7 @@ fn flare_mla_decoding_dispatch[
 ) raises:
     alias num_heads = config.num_heads
     alias depth = config.depth
-    alias group = config.num_heads // kv_num_heads
+    alias group = config.num_heads // UInt(kv_num_heads)
     constrained[num_heads == UInt(q.shape.get[rank - 2]())]()
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
@@ -338,6 +338,9 @@ fn flare_mla_decoding_dispatch[
     else:
         batch_size = q.dim[0]()
 
+    if batch_size == 0:
+        return
+
     alias BM = 16 if num_heads == 16 or not has_enough_smem else 32  # for deepseek-v2 lite
     alias BN = 64
     alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
@@ -360,7 +363,7 @@ fn flare_mla_decoding_dispatch[
         BM * BN * size_of[k_t.dtype]()
         + 2 * num_warps * BM * size_of[accum_type]()
     )
-    alias num_blocks_y = num_heads // BM
+    alias num_blocks_y = num_heads // UInt(BM)
 
     alias kernel = mla_decoding[
         q.dtype,
@@ -472,10 +475,10 @@ fn mla_decoding[
     var partition_idx = block_idx.x
     var output_batch_offset = (
         depth_v * num_heads * batch_idx
-        + depth_v * num_heads * batch_size * partition_idx
+        + depth_v * num_heads * UInt(batch_size) * partition_idx
     )
     var qk_max_offset = (
-        num_heads * batch_idx + num_heads * batch_size * partition_idx
+        num_heads * batch_idx + num_heads * UInt(batch_size) * partition_idx
     )
     var exp_sum_offset = qk_max_offset
 
@@ -591,7 +594,7 @@ fn mla_decoding_single_batch[
     alias num_warps_n = BN // WN
 
     constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -601,7 +604,7 @@ fn mla_decoding_single_batch[
     ]()
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -673,8 +676,8 @@ fn mla_decoding_single_batch[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    alias num_m_mmas = WM // UInt(MMA_M)
+    alias num_n_mmas = WN // UInt(MMA_N)
 
     alias accum_type = get_accum_type[q_type]()
     alias frag_size = get_fragment_size[mma_shape]()
@@ -688,7 +691,7 @@ fn mla_decoding_single_batch[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    alias num_output_rows = num_m_mmas * (WN_O // MMA_N)  # num_n_mmas
+    alias num_output_rows = num_m_mmas * UInt(WN_O // MMA_N)  # num_n_mmas
     alias num_output_rows_full = num_output_rows
     var output_reg_tile = (
         LayoutTensor[
@@ -744,12 +747,13 @@ fn mla_decoding_single_batch[
     # Mask global memory iterator, seq_len = 1
     alias seq_len = 1
     var stride = max_cache_valid_length
-    var mask_warp_col = warp_x * WN + start
+    var mask_warp_col = warp_x * WN + UInt(start)
 
-    alias q_num_vecs = BM * BK // simd_size
+    alias q_num_vecs = BM * BK // UInt(simd_size)
 
     alias async_copy_q_layout = Layout.row_major(
-        min(num_threads, q_num_vecs) * simd_size // BK, BK // simd_size
+        min(num_threads, q_num_vecs) * UInt(simd_size) // BK,
+        BK // UInt(simd_size),
     )
 
     @parameter
@@ -811,11 +815,11 @@ fn mla_decoding_single_batch[
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
         # load K[:, nope_dim:(nope_dim+rope_dim)], this would be used later
-        alias k_rope_num_ves = BN * rope_dim // simd_size
+        alias k_rope_num_ves = BN * rope_dim // UInt(simd_size)
         alias async_copy_k_rope_layout = Layout.row_major(
             min(num_threads, k_rope_num_ves)
-            * simd_size
-            // k_rope_smem_iter.layout.shape[1].value(),
+            * UInt(simd_size)
+            // UInt(k_rope_smem_iter.layout.shape[1].value()),
             k_rope_smem_iter.layout.shape[1].value() // simd_size,
         )
 
@@ -897,14 +901,14 @@ fn mla_decoding_single_batch[
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
-                    var q_head_idx = q_head_group * BM + m_mma * MMA_M
-                    var mask_frag_col = mask_warp_col + n_mma * MMA_N
+                    var q_head_idx = q_head_group * BM + m_mma * UInt(MMA_M)
+                    var mask_frag_col = mask_warp_col + n_mma * UInt(MMA_N)
 
                     # Offset to current thread's fragment
-                    mask_frag_col += lane * p_frag_simdwidth % MMA_N
+                    mask_frag_col += lane * UInt(p_frag_simdwidth) % UInt(MMA_N)
 
                     # Offset to current thread's head idx
-                    q_head_idx += lane // (MMA_N // p_frag_simdwidth)
+                    q_head_idx += lane // UInt(MMA_N // p_frag_simdwidth)
 
                     @parameter
                     for i in range(2):
@@ -912,7 +916,7 @@ fn mla_decoding_single_batch[
                         # Mask col is score col since we don't partition in col.
                         var score_col = mask_frag_col
 
-                        var score_head_idx = q_head_idx + i * MMA_M // 2
+                        var score_head_idx = q_head_idx + UInt(i * MMA_M // 2)
 
                         var score_row_with_start_pos = num_keys - 1
                         var score_row = (
@@ -1422,7 +1426,7 @@ fn flare_mla_prefill_dispatch[
 ) raises:
     alias num_heads = config.num_heads
     alias depth = config.depth
-    alias group = config.num_heads // kv_num_heads
+    alias group = config.num_heads // UInt(kv_num_heads)
 
     constrained[q_depth == q.shape.get[rank - 1]()]()
     constrained[num_heads == UInt(q.shape.get[rank - 2]())]()
@@ -1433,17 +1437,20 @@ fn flare_mla_prefill_dispatch[
 
     var batch_size: Int = valid_length.dim[0]() - 1
 
+    if batch_size == 0 or max_prompt_len == 0:
+        return
+
     alias q_half_float = dtype in (DType.float16, DType.bfloat16)
 
     alias BM = config.block_m()
     alias BN = config.block_n()
     alias BK = config.block_k()
 
-    alias q_smem = BM * q_depth
-    alias k_smem = BN * q_depth
+    alias q_smem = BM * UInt(q_depth)
+    alias k_smem = BN * UInt(q_depth)
     alias v_smem = BN * depth
 
-    alias smem_use = (q_smem + k_smem + v_smem) * config.dtype.size_of()
+    alias smem_use = (q_smem + k_smem + v_smem) * UInt(config.dtype.size_of())
 
     var softmax_info_ptr = (
         softmax_info.value().data if softmax_info else UnsafePointer[
@@ -1704,10 +1711,10 @@ fn mla_prefill_single_batch[
 
     alias rope_depth = q_depth - depth
 
-    alias cache_num_heads = num_heads // group
+    alias cache_num_heads = num_heads // UInt(group)
 
     constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -1721,7 +1728,7 @@ fn mla_prefill_single_batch[
 
     # The entire query block (BM x q_depth) is tiled in shared memory.
     alias alignment = align_of[SIMD[q_type, simd_size]]()
-    alias q_smem_size = BM * q_depth
+    alias q_smem_size = BM * UInt(q_depth)
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
@@ -1748,7 +1755,7 @@ fn mla_prefill_single_batch[
     )
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
-    alias k_smem_size = BN * q_depth
+    alias k_smem_size = BN * UInt(q_depth)
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
     var k_smem_iter = LayoutTensorIter[
         k_type,
@@ -1771,7 +1778,8 @@ fn mla_prefill_single_batch[
 
     # Query global memory iterator
     alias q_gmem_layout = Layout(
-        IntTuple(Int(BM), Int(q_depth)), IntTuple(Int(num_heads * q_depth), 1)
+        IntTuple(Int(BM), Int(q_depth)),
+        IntTuple(Int(num_heads * UInt(q_depth)), 1),
     )
     var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = q_depth * (head_idx + num_heads * q_tile_idx * BM)
@@ -1791,7 +1799,7 @@ fn mla_prefill_single_batch[
                 Int(q_tile_num_rows), q_depth
             ),
             RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
-                num_heads * q_depth, 1
+                num_heads * UInt(q_depth), 1
             ),
         ),
     )
@@ -1806,9 +1814,9 @@ fn mla_prefill_single_batch[
     alias WM = config.WM
     alias WN = config.WN
     alias WN_O = depth
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
-    alias num_n_mmas_output = WN_O // MMA_N
+    alias num_m_mmas = WM // UInt(MMA_M)
+    alias num_n_mmas = WN // UInt(MMA_N)
+    alias num_n_mmas_output = WN_O // UInt(MMA_N)
 
     alias accum_type = get_accum_type[q_type]()
     alias frag_size = get_fragment_size[mma_shape]()
@@ -1873,10 +1881,11 @@ fn mla_prefill_single_batch[
 
     alias num_pipeline_stages = config.num_pipeline_stages
 
-    alias q_num_vecs = BM * BK // simd_size
+    alias q_num_vecs = BM * BK // UInt(simd_size)
 
     alias async_copy_q_layout = Layout.row_major(
-        min(num_threads, q_num_vecs) * simd_size // BK, BK // simd_size
+        min(num_threads, q_num_vecs) * UInt(simd_size) // BK,
+        BK // UInt(simd_size),
     )
 
     @parameter
@@ -1973,7 +1982,7 @@ fn mla_prefill_single_batch[
         # here we set up variables for k_rope tensor
         alias k_rope_gmem_layout = Layout(
             IntTuple(Int(BN), Int(cache_depth)),
-            IntTuple(Int(cache_num_heads * cache_depth), 1),
+            IntTuple(Int(cache_num_heads * UInt(cache_depth)), 1),
         )
 
         var k_rope_runtime_layout = RuntimeLayout[
@@ -1983,7 +1992,7 @@ fn mla_prefill_single_batch[
                 kv_tile_num_rows, cache_depth
             ),
             RuntimeTuple[k_rope_gmem_layout.stride, element_type = DType.int32](
-                cache_num_heads * cache_depth, 1
+                cache_num_heads * UInt(cache_depth), 1
             ),
         )
 
@@ -2019,11 +2028,11 @@ fn mla_prefill_single_batch[
                 {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
             }
 
-        alias kv_num_vecs = BN * BK // simd_size
+        alias kv_num_vecs = BN * BK // UInt(simd_size)
         alias async_copy_k_layout = Layout.row_major(
             min(num_threads, kv_num_vecs)
-            * simd_size
-            // k_smem_iter.layout.stride[0].value(),
+            * UInt(simd_size)
+            // UInt(k_smem_iter.layout.stride[0].value()),
             k_smem_iter.layout.stride[0].value() // simd_size,
         )
 
@@ -2107,8 +2116,8 @@ fn mla_prefill_single_batch[
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
-                    var mask_frag_row = mask_warp_row + m_mma * MMA_M
-                    var mask_frag_col = mask_warp_col + n_mma * MMA_N
+                    var mask_frag_row = mask_warp_row + m_mma * UInt(MMA_M)
+                    var mask_frag_col = mask_warp_col + n_mma * UInt(MMA_N)
 
                     # Offset to current thread's fragment
                     mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
@@ -2218,8 +2227,8 @@ fn mla_prefill_single_batch[
 
         alias async_copy_v_layout = Layout.row_major(
             min(num_threads, kv_num_vecs)
-            * simd_size
-            // v_smem_iter.layout.stride[0].value(),
+            * UInt(simd_size)
+            // UInt(v_smem_iter.layout.stride[0].value()),
             v_smem_iter.layout.stride[0].value() // simd_size,
         )
 
@@ -2537,7 +2546,8 @@ fn mla_prefill_single_batch[
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
             thread_layout = Layout.row_major(
-                num_threads * simd_size // depth, depth // simd_size
+                num_threads * UInt(simd_size) // depth,
+                depth // UInt(simd_size),
             ),
             swizzle=swizzle,
         ](
@@ -2554,6 +2564,20 @@ fn mla_prefill_single_batch[
 # ===-----------------------------------------------------------------------===#
 # Helper function that creates cache_row_offsets for the MLA prefill kernel
 # ===-----------------------------------------------------------------------===#
+
+
+fn set_buffer_lengths_to_zero[
+    buffer_lengths_shape: DimList
+](
+    buffer_lengths: NDBuffer[
+        DType.int32, 1, MutableAnyOrigin, buffer_lengths_shape
+    ],
+):
+    alias MAX_CHUNKS = buffer_lengths_shape.get[0]()
+
+    @parameter
+    for chunk_idx in range(MAX_CHUNKS):
+        buffer_lengths[chunk_idx] = 0
 
 
 @always_inline
@@ -2582,28 +2606,34 @@ fn mla_prefill_plan[
     """
     var batch_size: Int = input_row_offsets.dim[0]() - 1
 
-    alias kernel = mla_prefill_plan_kernel[
-        buffer_row_offsets.shape,
-        buffer_row_offsets.strides,
-        cache_offsets.shape,
-        cache_offsets.strides,
-        buffer_lengths.shape,
-        buffer_lengths.strides,
-        input_row_offsets.shape,
-        input_row_offsets.strides,
-        cache_t,
-    ]
+    if batch_size == 0:
+        # Fill buffer lengths with 0
+        ctx.enqueue_function[set_buffer_lengths_to_zero[buffer_lengths.shape,]](
+            buffer_lengths, grid_dim=1, block_dim=1
+        )
+    else:
+        alias kernel = mla_prefill_plan_kernel[
+            buffer_row_offsets.shape,
+            buffer_row_offsets.strides,
+            cache_offsets.shape,
+            cache_offsets.strides,
+            buffer_lengths.shape,
+            buffer_lengths.strides,
+            input_row_offsets.shape,
+            input_row_offsets.strides,
+            cache_t,
+        ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
-        buffer_row_offsets,
-        cache_offsets,
-        buffer_lengths,
-        input_row_offsets,
-        k_cache,
-        buffer_token_size,
-        grid_dim=(Int(ceildiv(batch_size, 128)), 1, 1),
-        block_dim=(128, 1, 1),
-    )
+        ctx.enqueue_function_checked[kernel, kernel](
+            buffer_row_offsets,
+            cache_offsets,
+            buffer_lengths,
+            input_row_offsets,
+            k_cache,
+            buffer_token_size,
+            grid_dim=(Int(ceildiv(batch_size, 128)), 1, 1),
+            block_dim=(128, 1, 1),
+        )
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))

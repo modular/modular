@@ -701,10 +701,6 @@ fn update_bench_config_args(mut b: Bench) raises:
     b.config.max_runtime_secs = arg_parse(
         "bench-max-runtime-secs", b.config.max_runtime_secs
     )
-    # TODO: min_warmuptime_secs will be removed from bencher.mojo and here.
-    b.config.min_warmuptime_secs = arg_parse(
-        "bench-min-warmuptime-secs", b.config.min_warmuptime_secs
-    )
     b.config.num_warmup_iters = arg_parse(
         "bench-num-warmup-iters", b.config.num_warmup_iters
     )
@@ -790,8 +786,8 @@ fn init_vector_gpu[
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),
             UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + 2 * stride).cast[dtype](),
-            UInt64(tid + 3 * stride).cast[dtype](),
+            UInt64(tid + UInt(2 * stride)).cast[dtype](),
+            UInt64(tid + UInt(3 * stride)).cast[dtype](),
         )
     apply(values)
 

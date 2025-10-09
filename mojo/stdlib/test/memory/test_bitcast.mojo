@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import bitcast, pack_bits
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_equal
 
 

@@ -13,6 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceBuffer, DeviceContext
+from testing import TestSuite
 
 
 fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
@@ -180,7 +181,7 @@ fn _run_cpu_ctx_memcpy_async(
         expect_eq(host_buf[i], 2 * i)
 
 
-fn main() raises:
+def test_copies():
     var ctx = create_test_device_context()
 
     print("-------")
@@ -203,3 +204,11 @@ fn main() raises:
     _run_cpu_ctx_memcpy_async(ctx, cpu_ctx, one_mb)
 
     print("Done.")
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_copies]()
+
+    suite^.run()

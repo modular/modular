@@ -14,10 +14,10 @@
 from os.path import join
 from pathlib import Path
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
-fn main() raises:
+def test_join():
     # TODO uncomment lines using Path when unpacking is supported
     assert_equal("path/to/file", join("path", "to", "file"))
     # assert_equal("path/to/file", join(Path("path"), Path("to"), Path("file")))
@@ -48,3 +48,11 @@ fn main() raises:
     #         Path("/path/to/file"),
     #     ),
     # )
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_join]()
+
+    suite^.run()

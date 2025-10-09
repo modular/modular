@@ -20,11 +20,11 @@ import inspect
 import itertools
 import traceback
 from collections import OrderedDict
-from collections.abc import Generator, Iterable, Sequence
+from collections.abc import Callable, Generator, Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, TypeGuard, TypeVar, cast
 
 from max import mlir
 from max._core import Attribute as _Attribute
@@ -45,7 +45,6 @@ from mojo.paths import (
     is_mojo_binary_package_path,
     is_mojo_source_package_path,
 )
-from typing_extensions import TypeGuard
 
 from .type import (
     BufferType,
@@ -215,7 +214,7 @@ class _GraphWeight:
     value: TensorValue
 
 
-def _location(ignore_frames: int = 1):
+def _location(ignore_frames: int = 1):  # noqa: ANN202
     """Creates an MLIR Location with the current Python call stack."""
     if not mlir.Context.current:
         raise RuntimeError("Can't create location: No MLIR context active")
@@ -236,7 +235,7 @@ def _to_mlir(o: Any) -> Any:
     # Convert args from instances of Python graph-api Value() to mlir.Value
     if hasattr(o, "to_mlir"):
         return o.to_mlir()
-    elif isinstance(o, (list, tuple)):
+    elif isinstance(o, list | tuple):
         return type(o)(_to_mlir(ov) for ov in o)
     elif isinstance(o, dict):
         return {k: _to_mlir(v) for k, v in o.items()}
@@ -265,7 +264,7 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
             value.type.parameters
             for result in op.results
             if isinstance(
-                value := Value.from_mlir(result), (TensorValue, BufferValue)
+                value := Value.from_mlir(result), TensorValue | BufferValue
             )
         )
     )
@@ -358,12 +357,12 @@ class Graph:
         forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
-        path: Optional[Path] = None,
+        path: Path | None = None,
         *args,
         custom_extensions: list[Path] = [],  # noqa: B006
-        context: Optional[mlir.Context] = None,
-        kernel_library: Optional[KernelLibrary] = None,
-        module: Optional[mlir.Module] = None,
+        context: mlir.Context | None = None,
+        kernel_library: KernelLibrary | None = None,
+        module: mlir.Module | None = None,
         **kwargs,
     ) -> None:
         """
@@ -383,7 +382,7 @@ class Graph:
         self._params = dict.fromkeys(
             dim.name
             for t in input_types
-            if isinstance(t, (TensorType, BufferType))
+            if isinstance(t, TensorType | BufferType)
             for dim in t.shape
             if isinstance(dim, SymbolicDim)
         )
@@ -492,7 +491,7 @@ class Graph:
         forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
         | None = None,
         input_types: Iterable[Type[Any]] = (),
-        path: Optional[Path] = None,
+        path: Path | None = None,
         custom_extensions: list[Path] = [],  # noqa: B006
     ) -> Graph:
         """Creates and adds a subgraph to the current graph.
@@ -568,7 +567,7 @@ class Graph:
 
     @staticmethod
     @contextlib.contextmanager
-    def _async_region():
+    def _async_region():  # noqa: ANN205
         """Create a region of the graph with tasks guaranteed to execute
         independently.
 
@@ -635,7 +634,7 @@ class Graph:
             CURRENT_GRAPH.reset(token)
 
     @contextlib.contextmanager
-    def _local_weights_and_chain(self):
+    def _local_weights_and_chain(self):  # noqa: ANN202
         """Creates a local scope for weights and chain state modifications.
 
         Provides a context manager that creates an isolated scope where the
@@ -660,7 +659,7 @@ class Graph:
             self.device_chains = device_chains
 
     @contextlib.contextmanager
-    def _block(self, block: mlir.Block):
+    def _block(self, block: mlir.Block):  # noqa: ANN202
         with self._local_weights_and_chain():
             current_block, self._current_block = self._current_block, block
             try:
@@ -669,7 +668,7 @@ class Graph:
                 self._current_block = current_block
 
     @contextlib.contextmanager
-    def _pause_verification(self):
+    def _pause_verification(self):  # noqa: ANN202
         """Temporarily disable verification."""
         old_value = self._should_verify_ops
         try:
@@ -684,7 +683,7 @@ class Graph:
                 op.verify()
 
     @contextlib.contextmanager
-    def _capturing_mlir_diagnostics(self):
+    def _capturing_mlir_diagnostics(self):  # noqa: ANN202
         diagnostics = []
 
         def handler(d: mlir.Diagnostic) -> bool:
@@ -746,7 +745,7 @@ class Graph:
         self,
         op,  # noqa: ANN001
         *args,
-        _ip: Optional[mlir.InsertionPoint] = None,
+        _ip: mlir.InsertionPoint | None = None,
         **kwargs,
     ) -> tuple[list[Value[Any]], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
@@ -755,7 +754,7 @@ class Graph:
                 return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore
             elif isinstance(arg, Type):
                 return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
-            elif isinstance(arg, (list, tuple)):
+            elif isinstance(arg, list | tuple):
                 return [unwrap(elem) for elem in arg]
             elif isinstance(arg, _Attribute):
                 return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
@@ -816,7 +815,7 @@ class Graph:
                 ) from None
 
         _set_output_param_decls(Operation._from_cmlir(staged_op), self._params)
-        if isinstance(results, (mlir.Operation, mlir.OpView)):
+        if isinstance(results, mlir.Operation | mlir.OpView):
             return [], staged_op
 
         # Convert op results from  mlir.Value to instances of Value graph-api

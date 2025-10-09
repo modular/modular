@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true
+from testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 fn test_zip2() raises:
@@ -146,10 +146,14 @@ fn test_zip_bounds() raises:
     assert_false(Bool(zipD.bounds()[1]))
 
 
-fn main() raises:
-    test_zip2()
-    test_zip3()
-    test_zip4()
-    test_zip_destructure()
-    test_zip_unequal_lengths()
-    test_zip_bounds()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_zip2]()
+    suite.test[test_zip3]()
+    suite.test[test_zip4]()
+    suite.test[test_zip_destructure]()
+    suite.test[test_zip_unequal_lengths]()
+    suite.test[test_zip_bounds]()
+
+    suite^.run()

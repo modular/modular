@@ -28,10 +28,10 @@ from sys import (
 from sys.info import _accelerator_arch
 
 from bit import prev_power_of_two
-from buffer import NDBuffer
 from gpu import WARP_SIZE, lane_id
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace
+from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
@@ -264,7 +264,8 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
         padded_depth_default = UInt(
-            ceildiv(depth, UInt(swizzle_granularity)) * swizzle_granularity
+            ceildiv(depth, UInt(swizzle_granularity))
+            * UInt(swizzle_granularity)
         )
         self.padded_depth = padded_depth.or_else(padded_depth_default)
         self.num_pipeline_stages = num_pipeline_stages
@@ -305,7 +306,7 @@ struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
                 #        - 20*persistent) // (depth*pipeline_stages)
                 smem_upper_bound = (
                     smem_total // 2
-                    - self.num_queries_per_block * depth * (1 + persistent)
+                    - self.num_queries_per_block * depth * UInt(1 + persistent)
                     - 8 * num_pipeline_stages
                     - 20 * persistent
                 ) // (depth * num_pipeline_stages)
@@ -674,11 +675,17 @@ fn dispatch_mask_and_score_mod[
 
 @always_inline
 fn dispatch_materialized_mask_and_score_mod[
-    score_mod_type: String, callback_fn: callback_fn_type, num_heads: Int = -1
+    dtype: DType,
+    layout: Layout, //,
+    score_mod_type: String,
+    callback_fn: callback_fn_type,
+    num_heads: Int = -1,
 ](
-    mask_nd: NDBuffer,
+    mask_nd: LayoutTensor[dtype, layout, MutableAnyOrigin],
     start_pos_nd: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ] = None,
 ) raises -> None:
     var mask = MaterializedMask(mask_nd, start_pos_nd)

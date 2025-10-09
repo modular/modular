@@ -26,5 +26,5 @@ fn test_has_intel_amx() raises:
     assert_true(init_intel_amx())
 
 
-fn main() raises:
+def main():
     test_has_intel_amx()

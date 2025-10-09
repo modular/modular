@@ -15,10 +15,18 @@ from os import stat
 from stat import S_ISREG
 
 from builtin._location import __source_location
-from testing import assert_not_equal, assert_true
+from testing import TestSuite, assert_not_equal, assert_true
 
 
-def main():
+def test_stat():
     var st = stat(__source_location().file_name)
     assert_not_equal(String(st), "")
     assert_true(S_ISREG(st.st_mode))
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_stat]()
+
+    suite^.run()

@@ -13,10 +13,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import cached_property, partial
-from typing import Callable, Optional
 
 from max._core import Value as _Value
 from max._core.dialects import mo
@@ -194,6 +193,7 @@ def tensor_parallel_sharding_strategy(
     weight: Weight, i: int, num_devices: int
 ) -> TensorValue:
     """Shards a :obj:`Module` across multiple devices using tensor parallel.
+
     This strategy is designed for :obj:`Module` that has multiple weights,
     for which a single weight sharding strategy is not sufficient.
 
@@ -206,10 +206,32 @@ def tensor_parallel_sharding_strategy(
         A :obj:`TensorValue` representing the sharded portion of the weight
         for the i-th device.
     """
-
     raise NotImplementedError(
         "tensor_parallel_sharding_strategy is a placeholder and should not be called directly. "
         "Modules are expected to implement their own tensor parallel sharding strategy."
+    )
+
+
+def expert_parallel_sharding_strategy(
+    weight: Weight, i: int, num_devices: int
+) -> TensorValue:
+    """Shards a :obj:`Module` across multiple devices using expert parallel.
+
+    This strategy is designed for :obj:`Module` that has multiple weights,
+    for which a single weight sharding strategy is not sufficient.
+
+    Args:
+        weight: The :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded portion of the weight
+        for the i-th device.
+    """
+    raise NotImplementedError(
+        "expert_parallel_sharding_strategy is a placeholder and should not be called directly. "
+        "Modules are expected to implement their own expert parallel sharding strategy."
     )
 
 
@@ -279,6 +301,11 @@ class ShardingStrategy:
     def is_tensor_parallel(self) -> bool:
         """Whether the sharding strategy is tensor parallel."""
         return self.shard is tensor_parallel_sharding_strategy
+
+    @property
+    def is_expert_parallel(self) -> bool:
+        """Whether the sharding strategy is expert parallel."""
+        return self.shard is expert_parallel_sharding_strategy
 
     @staticmethod
     def rowwise(num_devices: int) -> ShardingStrategy:
@@ -401,6 +428,25 @@ class ShardingStrategy:
             num_devices=num_devices, shard=tensor_parallel_sharding_strategy
         )
 
+    @staticmethod
+    def expert_parallel(num_devices: int) -> ShardingStrategy:
+        """Creates an expert parallel sharding strategy.
+
+        This strategy is designed for Module that has multiple weights,
+        for which a single weight sharding strategy is not sufficient. This strategy
+        is a placeholder and should not be called directly. Modules are expected
+        to implement their own expert parallel sharding strategy.
+
+        Args:
+            num_devices: The number of devices to shard the Module across.
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for expert parallel sharding.
+        """
+        return ShardingStrategy(
+            num_devices=num_devices, shard=expert_parallel_sharding_strategy
+        )
+
 
 @dataclass
 class _ShardingStrategyContainer:
@@ -428,15 +474,18 @@ class Weight(TensorValue):
     _dtype: DType
     _shape: ShapeLike
     _device: DeviceRef
-    quantization_encoding: Optional[QuantizationEncoding]
-    align: Optional[int]
-    _sharding_strategy: Optional[_ShardingStrategyContainer]
-    shard_idx: Optional[int]
+    quantization_encoding: QuantizationEncoding | None
+    align: int | None
+    _sharding_strategy: _ShardingStrategyContainer | None
+    shard_idx: int | None
 
     def __new__(cls, *args, **kwargs):
-        # Skip the `Value.__new__` method to avoid staging a `TensorValue`.
-        # A `Weight` can be initialized outside of a graph, but must be located
-        # within a graph when operating on it.
+        """Create a new Weight instance.
+
+        Skip the `Value.__new__` method to avoid staging a `TensorValue`.
+        A `Weight` can be initialized outside of a graph, but must be located
+        within a graph when operating on it.
+        """
         return super(Value, Weight).__new__(cls)
 
     def __init__(
@@ -445,12 +494,25 @@ class Weight(TensorValue):
         dtype: DType,
         shape: ShapeLike,
         device: DeviceRef,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        align: Optional[int] = None,
-        sharding_strategy: Optional[ShardingStrategy] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        align: int | None = None,
+        sharding_strategy: ShardingStrategy | None = None,
         _placeholder: bool = False,
         _has_alias: bool = False,
     ) -> None:
+        """Initialize a Weight.
+
+        Args:
+            name: The name of the weight.
+            dtype: The data type of the weight.
+            shape: The shape of the weight.
+            device: The device where the weight resides.
+            quantization_encoding: Optional quantization encoding for the weight.
+            align: Optional alignment requirement in bytes.
+            sharding_strategy: Optional sharding strategy for distributed execution.
+            _placeholder: Internal flag indicating if this is a placeholder weight.
+            _has_alias: Internal flag indicating if this weight has an alias.
+        """
         self.name = name
         self._dtype = dtype
         self._shape = shape
@@ -468,10 +530,16 @@ class Weight(TensorValue):
 
     @property
     def dtype(self) -> DType:
+        """The data type of the weight."""
         return self._dtype
 
     @property
     def shape(self) -> Shape:
+        """The shape of the weight.
+
+        For sharded weights, returns the shape of the shard. Otherwise,
+        returns the original weight shape.
+        """
         if self.shard_idx is not None:
             # If this is a weight shard, then the weight shape will not
             # match the actual shard shape. The correct shape is the shape of
@@ -490,6 +558,7 @@ class Weight(TensorValue):
 
     @property
     def device(self) -> DeviceRef:
+        """The device where the weight resides."""
         return self._device
 
     @cached_property
@@ -513,7 +582,7 @@ class Weight(TensorValue):
             )
 
     @property
-    def sharding_strategy(self) -> Optional[ShardingStrategy]:
+    def sharding_strategy(self) -> ShardingStrategy | None:
         """Gets the weight sharding strategy."""
         return (
             self._sharding_strategy.shard_value
@@ -577,7 +646,7 @@ class Weight(TensorValue):
         return shards
 
 
-def _add_weight_to_graph(weight: Weight):
+def _add_weight_to_graph(weight: Weight):  # noqa: ANN202
     try:
         current_graph = graph.Graph.current
     except LookupError:

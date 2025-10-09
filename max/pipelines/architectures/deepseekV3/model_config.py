@@ -66,6 +66,8 @@ class DeepseekV3ConfigBase(MAXModelConfigBase):
     attention_bias: bool = False
     attention_dropout: float = 0.0
 
+    graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
+
     def __post_init__(self):
         if self.hidden_act != "silu":
             raise ValueError(
@@ -98,6 +100,7 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         page_size: int = 128,
+        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=cache_dtype,
@@ -112,4 +115,5 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
+            data_parallel_degree=data_parallel_degree,
         )

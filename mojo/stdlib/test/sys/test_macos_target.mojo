@@ -19,7 +19,7 @@ from sys import CompilationTarget, is_big_endian, is_little_endian
 from sys.info import _macos_version
 
 from testing import assert_false, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 fn test_os_query() raises:

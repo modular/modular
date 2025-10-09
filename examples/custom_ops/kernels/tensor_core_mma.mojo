@@ -36,6 +36,7 @@ from gpu.sync import schedule_barrier as amd_schedule_barrier
 from gpu.sync import schedule_group_barrier
 
 # Import AMD helper functions and structs from the kernels subdirectory
+
 from kernels.amd_helpers import (
     AMD_MMA,
     MMATileBuffers,
@@ -59,7 +60,6 @@ from layout.layout_tensor import (
 )
 from layout.math import outer_product_acc
 from layout.swizzle import Swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
 from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
@@ -516,7 +516,16 @@ fn naive_tensor[
     alias frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate only small register tile for accumulating partial results
-    c_reg = tb[output_type]().row_major[1, frag_size]().local().alloc().fill(0)
+    c_reg = (
+        LayoutTensor[
+            output_type,
+            Layout.row_major(1, frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Naive approach: Load directly from global memory for each tensor core operation
     # No intermediate tile caching - simpler but less efficient
@@ -619,15 +628,34 @@ fn basic_shared_mem[
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    B_sram_tile = tb[input_type]().row_major[BK, BN]().shared().alloc()
+    A_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     alias frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
-    c_reg = tb[output_type]().row_major[1, frag_size]().local().alloc().fill(0)
+    c_reg = (
+        LayoutTensor[
+            output_type,
+            Layout.row_major(1, frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Iterate over tiles of A and B in the K dimension
     for k_i in range(ceildiv(K, BK)):
@@ -750,8 +778,18 @@ fn multi_block_tiled[
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    B_sram_tile = tb[input_type]().row_major[BK, BN]().shared().alloc()
+    A_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -759,10 +797,13 @@ fn multi_block_tiled[
 
     # Allocate register tile for accumulating partial results
     c_reg = (
-        tb[output_type]()
-        .row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            output_type,
+            Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
@@ -912,8 +953,18 @@ fn scheduler_hints[
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate single set of shared memory buffers (single buffering to fit memory limit)
-    A_sram_tile = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    B_sram_tile = tb[input_type]().row_major[BK, BN]().shared().alloc()
+    A_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_tile = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -922,10 +973,13 @@ fn scheduler_hints[
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     c_reg = (
-        tb[output_type]()
-        .row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            output_type,
+            Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
 
@@ -1098,10 +1152,30 @@ fn double_buffer[
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate two sets of shared memory buffers for double buffering
-    A_sram_buffer_0 = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    A_sram_buffer_1 = tb[input_type]().row_major[BM, BK]().shared().alloc()
-    B_sram_buffer_0 = tb[input_type]().row_major[BK, BN]().shared().alloc()
-    B_sram_buffer_1 = tb[input_type]().row_major[BK, BN]().shared().alloc()
+    A_sram_buffer_0 = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    A_sram_buffer_1 = LayoutTensor[
+        input_type,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_buffer_0 = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    B_sram_buffer_1 = LayoutTensor[
+        input_type,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -1110,10 +1184,13 @@ fn double_buffer[
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     c_reg = (
-        tb[output_type]()
-        .row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
-        .local()
-        .alloc()
+        LayoutTensor[
+            output_type,
+            Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
         .fill(0)
     )
     # Thread layout for memory transfers

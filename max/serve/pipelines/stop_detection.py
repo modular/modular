@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Optional, Union
-
 
 class StopDetector:
     """
     Utility to detect a stop sequence in a continuation
     """
 
-    def __init__(self, stop: Optional[Union[str, list[str]]]) -> None:
+    def __init__(self, stop: str | list[str] | None) -> None:
         self.continuation_tail = ""
         self.stop: list[str]
 
@@ -35,7 +33,7 @@ class StopDetector:
         if len(self.stop) > 0:
             self._max_stop_length = max(map(len, self.stop))
 
-    def step(self, next_token_decoded: str) -> Optional[str]:
+    def step(self, next_token_decoded: str) -> str | None:
         """
         Register an incremental decoded str into the continuation buffer.
         If a stop sequence is detected, return the matched sequence. Else,

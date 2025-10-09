@@ -28,7 +28,7 @@ import traceback
 from collections.abc import Generator
 from pathlib import Path
 from types import TracebackType
-from typing import IO, Any, AnyStr, BinaryIO, Generic, TypeVar, Union, cast
+from typing import IO, Any, AnyStr, BinaryIO, Generic, TypeVar, cast
 
 import msgspec
 from typing_extensions import Buffer
@@ -74,7 +74,7 @@ class _DieNotification(_Notification, tag="die_notification"):
 
 _AllRequests = _StopRequest
 _AllReplies = _StopReply
-_AllNotifications = Union[_ReadyNotification, _DieNotification]
+_AllNotifications = _ReadyNotification | _DieNotification
 
 
 async def _want_readable(file: IO[AnyStr]) -> None:
@@ -158,8 +158,8 @@ class _RecorderProcess:
             # It's true it's not a real 'type' object, but msgspec knows how to
             # deal with this special form so it's OK.
             cast(
-                type[Union[_AllReplies, _AllNotifications]],
-                Union[_AllReplies, _AllNotifications],
+                type[_AllReplies | _AllNotifications],
+                _AllReplies | _AllNotifications,
             ),
         )
         self.outch = _OutputChannel[_AllRequests](proc.stdin)
@@ -399,9 +399,7 @@ class _KeepableTempFile(io.RawIOBase, BinaryIO):
 
 async def recorder_async_main() -> None:
     inch = _InputChannel(sys.stdin.buffer, _AllRequests)
-    outch = _OutputChannel[Union[_AllReplies, _AllNotifications]](
-        sys.stdout.buffer
-    )
+    outch = _OutputChannel[_AllReplies | _AllNotifications](sys.stdout.buffer)
 
     @contextlib.contextmanager
     def die_notifier() -> Generator[None, None, None]:

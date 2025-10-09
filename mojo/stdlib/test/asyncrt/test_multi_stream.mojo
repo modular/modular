@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
+from testing import TestSuite
 
 
 fn vec_func(
@@ -28,16 +29,13 @@ fn vec_func(
     output[tid] = in0[tid] + in1[tid]
 
 
-fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
-    print("-------")
-    print(
-        "Running test_concurrent_copy("
-        + ctx1.name()
-        + ", "
-        + ctx2.name()
-        + "):"
-    )
+def test_concurrent_copy():
+    var ctx1 = create_test_device_context()
+    var ctx2 = create_test_device_context()
+    _run_test_concurrent_copy(ctx1, ctx2)
 
+
+fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     alias length = 1 * 1024 * 1024
     alias T = DType.float32
 
@@ -149,19 +147,14 @@ fn test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             out_host3[i],
         )
 
-    print("Done.")
+
+def test_concurrent_func():
+    var ctx1 = create_test_device_context()
+    var ctx2 = create_test_device_context()
+    _run_test_concurrent_func(ctx1, ctx2)
 
 
-fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
-    print("-------")
-    print(
-        "Running test_concurrent_func("
-        + ctx1.name()
-        + ", "
-        + ctx2.name()
-        + "):"
-    )
-
+fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     alias length = 20 * 1024 * 1024
     alias T = DType.float32
 
@@ -277,11 +270,11 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             ")",
         )
 
-    print("Done.")
 
+def main():
+    var suite = TestSuite()
 
-fn main() raises:
-    var ctx1 = create_test_device_context()
-    var ctx2 = create_test_device_context()
-    test_concurrent_copy(ctx1, ctx2)
-    test_concurrent_func(ctx1, ctx2)
+    suite.test[test_concurrent_copy]()
+    suite.test[test_concurrent_func]()
+
+    suite^.run()

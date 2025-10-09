@@ -16,7 +16,7 @@ from os.env import getenv, setenv
 from os.path import expanduser, join
 from sys.info import CompilationTarget
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
 fn get_user_path() -> String:
@@ -31,7 +31,7 @@ def set_home(path: String):
     _ = os.env.setenv("HOME", path)
 
 
-fn main() raises:
+def test_expanduser():
     alias user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)
@@ -58,3 +58,11 @@ fn main() raises:
     assert_equal(join(user_path, "~folder"), expanduser("~/~folder"))
 
     set_home(original_home)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_expanduser]()
+
+    suite^.run()

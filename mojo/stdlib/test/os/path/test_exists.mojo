@@ -15,10 +15,10 @@ from os.path import exists, lexists
 from pathlib import Path, cwd
 
 from builtin._location import __source_location
-from testing import assert_false, assert_true
+from testing import TestSuite, assert_false, assert_true
 
 
-def main():
+def test_exists():
     assert_true(exists(__source_location().file_name))
     assert_true(lexists(__source_location().file_name))
 
@@ -30,3 +30,11 @@ def main():
 
     assert_true(exists(Path()))
     assert_true(lexists(Path()))
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_exists]()
+
+    suite^.run()

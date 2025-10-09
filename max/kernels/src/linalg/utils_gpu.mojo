@@ -191,7 +191,7 @@ struct MatmulConfig[
             self.num_warps_m()
             * self.num_warps_n()
             * self.num_warp_k_partitions
-            * WARP_SIZE
+            * UInt(WARP_SIZE)
         )
 
     fn shared_mem_usage(self) -> Int:

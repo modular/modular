@@ -15,7 +15,7 @@ import math
 
 from complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
 from testing import assert_almost_equal, assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_init():

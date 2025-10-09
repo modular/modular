@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Union
 
 from max.interfaces import (
     MAXPullQueue,
@@ -54,13 +53,13 @@ class TokenGenerationScheduler(Scheduler):
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TextGenerationPipelineType[TextContext],
         *,
-        request_queue: MAXPullQueue[Union[TextContext, TextAndVisionContext]],
+        request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager | None = None,
-        offload_queue_draining: bool = True,
+        offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -80,14 +79,13 @@ class TokenGenerationScheduler(Scheduler):
         # the use case where we want to drain the queue in the main thread.
         # This is useful for debugging and testing purposes.
         self._queue_drainer: (
-            BackgroundQueueDrainer[Union[TextContext, TextAndVisionContext]]
-            | None
+            BackgroundQueueDrainer[TextContext | TextAndVisionContext] | None
         ) = None
         if offload_queue_draining:
             # I am setting this to drain at max batch size ce * 2, to ensure we do not drain
             # forever, but have more than enough to form full batches.
             self._queue_drainer = BackgroundQueueDrainer[
-                Union[TextContext, TextAndVisionContext]
+                TextContext | TextAndVisionContext
             ](
                 self.request_queue,
                 max_items_per_drain=self.scheduler_config.max_batch_size_ce * 2,
@@ -180,14 +178,12 @@ class TokenGenerationScheduler(Scheduler):
         # execute the batch
         responses = self.pipeline.execute(inputs)
 
-        # Process each batch (usually just one unless using data parallelism)
-        for executed_batch in inputs.batches:
-            # If there is a chunked request, we put it back into the request queue
-            add_newly_encoded_reqs_to_tg_batch(
-                executed_batch,
-                responses,
-                self.batch_constructor,
-            )
+        # If there is a chunked request, we put it back into the request queue
+        add_newly_encoded_reqs_to_tg_batch(
+            inputs.batch,
+            responses,
+            self.batch_constructor,
+        )
 
         # remove terminated requests from the batch
         num_terminated_reqs = release_terminated_requests(
@@ -211,7 +207,7 @@ class TokenGenerationScheduler(Scheduler):
 def load_text_generation_scheduler(
     pipeline: TextGenerationPipelineType[TextContext],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[Union[TextContext, TextAndVisionContext]],
+    request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],
@@ -233,4 +229,5 @@ def load_text_generation_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
+        offload_queue_draining=pipeline_config.experimental_background_queue,
     )

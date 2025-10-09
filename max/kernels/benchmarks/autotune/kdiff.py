@@ -20,7 +20,7 @@ import click
 import yaml
 
 
-def shell(arg_str: str, check: bool = False, verbose=True):  # noqa: ANN001
+def shell(arg_str: str, check: bool = False, verbose=True):  # noqa: ANN001, ANN201
     if not arg_str:
         return None
     print(f"$ [{arg_str}]")
@@ -68,7 +68,7 @@ def export_arg_env() -> None:
         export_env(k, v)
 
 
-def check_argo_workflow_exists(git_sha):  # noqa: ANN001
+def check_argo_workflow_exists(git_sha):  # noqa: ANN001, ANN201
     # check if workflow exists and return the output of argo list as yaml else None
     result = shell(
         f'argo list --prefix "kernels-{git_sha}" --completed -o yaml'
@@ -79,7 +79,7 @@ def check_argo_workflow_exists(git_sha):  # noqa: ANN001
     return None
 
 
-def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):  # noqa: ANN001
+def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):  # noqa: ANN001, ANN201
     print(
         f"Checking {last_n_commits} of origin/main for existing CI workflows"
         " (baseline)"

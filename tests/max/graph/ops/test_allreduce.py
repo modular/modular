@@ -146,5 +146,5 @@ def test_allreduce_basic() -> None:
             allreduce_outputs[2],
             allreduce_outputs[3],
         )
-        for output, device in zip(allreduce_outputs, devices):
+        for output, device in zip(allreduce_outputs, devices, strict=True):
             assert device == output.device

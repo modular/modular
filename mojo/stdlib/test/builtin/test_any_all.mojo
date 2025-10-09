@@ -13,8 +13,7 @@
 
 from collections.set import Set
 
-from testing import assert_false, assert_true
-from test_utils import TestSuite
+from testing import assert_false, assert_true, TestSuite
 
 
 def test_list_any():

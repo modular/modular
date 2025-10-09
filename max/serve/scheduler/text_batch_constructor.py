@@ -19,7 +19,7 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass
 
 from max.interfaces import RequestID, TextGenerationInputs
-from max.nn.kv_cache import MultiPagedKVCacheManager, PagedKVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import (
     LoRAManager,
@@ -378,17 +378,10 @@ class TextBatchConstructor:
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
-                    if isinstance(self.paged_cache, MultiPagedKVCacheManager):
-                        replica_idx = self.paged_cache.get_or_recommend_replica(
-                            ctx
-                        )
-                        self.paged_cache.external_claim_for_replica(
-                            replica_idx, req_id
-                        )
-                    else:
-                        self.paged_cache.external_claim(req_id)
-
-            orig_prompt_length = ctx.active_length
+                    replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
+                    self.paged_cache.external_claim(
+                        req_id, replica_idx=replica_idx
+                    )
 
             if self.paged_cache is not None:
                 # Attempt to schedule the request.

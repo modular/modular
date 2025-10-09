@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
-from test_utils import TestSuite
+from testing import assert_equal, assert_true, TestSuite
 
 
 def test_none_end_folds():

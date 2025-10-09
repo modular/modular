@@ -14,7 +14,7 @@
 from os.atomic import Atomic, fence
 
 from compile import compile_info
-from testing import assert_false, assert_true
+from testing import TestSuite, assert_false, assert_true
 
 
 def test_compile_atomic():
@@ -59,6 +59,10 @@ def test_compile_compare_exchange():
 
 
 def main():
-    test_compile_atomic()
-    test_compile_fence()
-    test_compile_compare_exchange()
+    var suite = TestSuite()
+
+    suite.test[test_compile_atomic]()
+    suite.test[test_compile_fence]()
+    suite.test[test_compile_compare_exchange]()
+
+    suite^.run()

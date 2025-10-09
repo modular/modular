@@ -67,7 +67,7 @@ class LoRARequestProcessor:
             payload_type=tuple[RequestID, LoRAResponse],
         )
 
-    def process_lora_requests(self):
+    def process_lora_requests(self) -> None:
         """Check for new LoRA requests and processes them."""
         while True:
             try:

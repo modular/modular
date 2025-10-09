@@ -325,7 +325,7 @@ fn create_bmm_bench[
     )
 
 
-fn main() raises:
+def main():
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var B = Int(arg_parse("B", 1))

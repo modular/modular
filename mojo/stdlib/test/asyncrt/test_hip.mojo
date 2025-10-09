@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP, hipDevice_t
+from testing import TestSuite
 
 
 fn _run_hip_context(ctx: DeviceContext) raises:
@@ -36,12 +37,20 @@ fn _run_hip_stream(ctx: DeviceContext) raises:
     print("hipStream_t: " + String(hip_stream))
 
 
-fn main() raises:
+def test_hip_context():
     var ctx = create_test_device_context()
-    print("-------")
-    print("Running test_smoke(" + ctx.name() + "):")
-
     _run_hip_context(ctx)
+
+
+def test_hip_stream():
+    var ctx = create_test_device_context()
     _run_hip_stream(ctx)
 
-    print("Done.")
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_hip_context]()
+    suite.test[test_hip_stream]()
+
+    suite^.run()

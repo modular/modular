@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 alias nan = FloatLiteral.nan
 alias neg_zero = FloatLiteral.negative_zero
@@ -172,12 +172,16 @@ def test_float_conversion():
 
 
 def main():
-    test_init()
-    test_division()
-    test_mod()
-    test_int_conversion()
-    test_bool()
-    test_is_special_value()
-    test_abs()
-    test_comparison()
-    test_float_conversion()
+    var suite = TestSuite()
+
+    suite.test[test_init]()
+    suite.test[test_division]()
+    suite.test[test_mod]()
+    suite.test[test_int_conversion]()
+    suite.test[test_bool]()
+    suite.test[test_is_special_value]()
+    suite.test[test_abs]()
+    suite.test[test_comparison]()
+    suite.test[test_float_conversion]()
+
+    suite^.run()

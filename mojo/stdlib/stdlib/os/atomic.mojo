@@ -294,7 +294,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
     ](
-        ptr: UnsafePointer[Scalar[dtype], mut=True, **_], rhs: Scalar[dtype]
+        ptr: UnsafePointer[Scalar[dtype], mut=False, **_], rhs: Scalar[dtype]
     ) -> Scalar[dtype]:
         """Performs atomic in-place add.
 
@@ -317,7 +317,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         # Comptime interpreter doesn't support these operations.
         if is_compile_time():
             var res = ptr[]
-            ptr[] += rhs
+            # Safety: This is at compile-time so data races will not happen.
+            ptr.origin_cast[True]()[] += rhs
             return res
 
         var res = __mlir_op.`pop.atomic.rmw`[
@@ -403,7 +404,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline
     fn fetch_add[
         *, ordering: Consistency = Consistency.SEQUENTIAL
-    ](mut self, rhs: Scalar[dtype]) -> Scalar[dtype]:
+    ](self, rhs: Scalar[dtype]) -> Scalar[dtype]:
         """Performs atomic in-place add.
 
         Atomically replaces the current value with the result of arithmetic

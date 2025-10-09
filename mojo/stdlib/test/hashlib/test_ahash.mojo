@@ -26,9 +26,8 @@ from test_utils import (
     words_lv,
     words_pl,
     words_ru,
-    TestSuite,
 )
-from testing import assert_equal, assert_not_equal, assert_true
+from testing import assert_equal, assert_not_equal, assert_true, TestSuite
 
 alias hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 alias hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]

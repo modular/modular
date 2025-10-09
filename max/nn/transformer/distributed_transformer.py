@@ -13,9 +13,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from itertools import islice
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from max.dtype import DType
 from max.graph import (
@@ -81,7 +81,7 @@ def forward_sharded_layers(
     assert len(xs) == len(layers), (
         f"Number of layers ({len(layers)}) must match number of inputs ({len(xs)})"
     )
-    return [layer(x) for layer, x in zip(layers, xs)]
+    return [layer(x) for layer, x in zip(layers, xs, strict=True)]
 
 
 class DistributedTransformerBlock(Module):
@@ -160,7 +160,7 @@ class DistributedTransformerBlock(Module):
             input_row_offsets=input_row_offsets,
         )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
 
         # Apply post attention layer norm to each shard
         norm_outs = forward_sharded_layers(
@@ -183,7 +183,7 @@ class DistributedTransformerBlock(Module):
                 signal_buffers,
             )
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 

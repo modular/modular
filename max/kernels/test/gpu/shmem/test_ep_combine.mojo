@@ -29,6 +29,7 @@ from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from shmem import *
+from shmem._mpi import MPI_Finalize
 from shmem.ep_comm import (
     EPMsgConfig,
     combine_cb_kernel,
@@ -449,7 +450,7 @@ fn test_combine[
     shmem_free(recv_count)
 
 
-fn main() raises:
+def main():
     alias test_gpu_counts = (8,)
 
     @parameter
@@ -458,10 +459,8 @@ fn main() raises:
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 
-        shmem_init()
-        var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
-
-        with DeviceContext(device_id=Int(mype_node)) as ctx:
+        with SHMEMContext() as shmem_ctx:
+            var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
             test_combine[
                 input_type = DType.bfloat16,
                 hidden_size=7168,
@@ -469,6 +468,4 @@ fn main() raises:
                 n_experts = min(num_gpus * 32, 256),
                 n_ranks=num_gpus,
                 n_tokens_per_rank=128,
-            ](ctx, Int(mype_node))
-
-        shmem_finalize()
+            ](shmem_ctx.get_device_context(), Int(mype_node))

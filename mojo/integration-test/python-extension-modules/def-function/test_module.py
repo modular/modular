@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import sys
-from typing import Callable
+from collections.abc import Callable
 
 # Imports from 'mojo_module.so'
 import mojo_module as def_function

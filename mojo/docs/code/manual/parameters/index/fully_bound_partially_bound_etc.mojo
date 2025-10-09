@@ -43,6 +43,23 @@ def my_fn5(mt: MyType):
 
 
 @fieldwise_init
+struct MyComplicatedType[a: Int = 7, /, b: Int = 8, *, c: Int, d: Int = 9]:
+    pass
+
+
+fn my_func1(t: MyComplicatedType):
+    pass
+
+
+fn my_func2(t: MyComplicatedType[1]):
+    pass
+
+
+fn my_func3(t: MyComplicatedType[1, 8, c=_, d=9]):
+    pass
+
+
+@fieldwise_init
 struct KeyWordStruct[pos_or_kw: Int, *, kw_only: Int = 10]:
     pass
 

@@ -82,7 +82,7 @@ def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
     ]
     tensor_inputs = [
         Tensor.from_numpy(a.astype(np.float32)).to(device)
-        for a, device in zip(numpy_inputs, devices)
+        for a, device in zip(numpy_inputs, devices, strict=True)
     ]
 
     # Synchronize devices so that the signal buffers are initialized.
@@ -134,7 +134,7 @@ def test_allgather_execution_uneven(
             list[Type[Any]],
             [
                 TensorType(dtype=DType.float32, shape=shape, device=device)
-                for shape, device in zip(shapes, devices)
+                for shape, device in zip(shapes, devices, strict=True)
             ]
             + signals.input_types(),
         ),

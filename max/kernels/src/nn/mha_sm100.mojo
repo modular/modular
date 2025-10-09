@@ -1323,7 +1323,9 @@ fn mha_sm100_dispatch[
     var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, BM)
     var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
 
-    alias num_scheduler_heads = config.num_heads // group if decoding else config.num_heads
+    alias num_scheduler_heads = config.num_heads // UInt(
+        group
+    ) if decoding else config.num_heads
     # if decoding,
     alias scheduler_tile_shape = 1 if decoding else BM
     alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
@@ -1815,9 +1817,9 @@ fn _mha_sm100_enqueue[
     # we add smem use for SharedMemBarrier synchronization
     # 2*8 for mma mbars
     alias extra_B200_smem = (2 * num_s + 3) * 8
-    alias smem_use = config.shared_mem_bytes[
-        True, sm_90=True
-    ]() + extra_B200_smem
+    alias smem_use = config.shared_mem_bytes[True, sm_90=True]() + UInt(
+        extra_B200_smem
+    )
     alias num_threads = config.num_threads[True]()
     ctx.enqueue_function[kernel_sm100](
         q_tma_op,
@@ -2143,7 +2145,7 @@ fn _mha_sm100[
     alias accum_simd_width = simd_width_of[accum_type]()
     alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // group
+    alias kv_num_heads = num_heads // UInt(group)
 
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 
@@ -2634,7 +2636,7 @@ fn _mha_sm100[
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
                     num_softmax_threads * simd_size // depth,
-                    depth // simd_size,
+                    depth // UInt(simd_size),
                 ),
                 swizzle=swizzle,
             ](

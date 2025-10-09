@@ -314,7 +314,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         )
         return model
 
-    def _build_graph(self):
+    def _build_graph(self):  # noqa: ANN202
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(

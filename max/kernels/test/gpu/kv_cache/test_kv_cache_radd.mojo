@@ -256,7 +256,7 @@ fn test_kv_cache_radd[
     _ = paged_lut_host
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
             IndexList[4](10, 20, 30, 40),

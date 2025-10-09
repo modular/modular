@@ -13,10 +13,10 @@
 
 from os.path import dirname
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
-fn main() raises:
+def test_dirname():
     # Root directories
     assert_equal("/", dirname("/"))
 
@@ -74,3 +74,11 @@ fn main() raises:
     # Unix hidden files
     assert_equal("/path/to", dirname("/path/to/.hiddenfile"))
     assert_equal("/path/to/dir", dirname("/path/to/dir/.hiddenfile"))
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_dirname]()
+
+    suite^.run()

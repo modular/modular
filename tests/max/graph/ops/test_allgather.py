@@ -226,7 +226,7 @@ def test_allgather_basic() -> None:
             allgather_outputs[2],
             allgather_outputs[3],
         )
-        for output, device in zip(allgather_outputs, devices):
+        for output, device in zip(allgather_outputs, devices, strict=True):
             assert device == output.device
             assert output.shape == Shape((24, 5))
             assert output.dtype == DType.float32

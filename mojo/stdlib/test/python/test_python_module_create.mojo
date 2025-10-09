@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import Python
+from testing import TestSuite
 
 
 def test_create_module():
@@ -25,4 +26,8 @@ def test_create_module():
 
 
 def main():
-    test_create_module()
+    var suite = TestSuite()
+
+    suite.test[test_create_module]()
+
+    suite^.run()

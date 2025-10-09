@@ -240,7 +240,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
             )
 
         var valid_len = cache.cache_length(b_idx)
-        var cache_t_idx = t_idx + valid_len
+        var cache_t_idx = t_idx + UInt(valid_len)
         cache.store(
             b_idx,
             h_idx,
@@ -675,7 +675,18 @@ fn _flash_attention_dispatch_materialized_mask[
         score_mod_str,
         _dispatch_flash_attention,
         collection_t.kv_params.num_heads,
-    ](mask_nd)
+    ](
+        LayoutTensor[
+            mask_nd.type,
+            Layout.row_major[mask_nd.rank](mask_nd.shape),
+            MutableAnyOrigin,
+        ](
+            mask_nd.data,
+            RuntimeLayout[
+                Layout.row_major[mask_nd.rank](mask_nd.shape)
+            ].row_major(mask_nd.dynamic_shape.canonicalize()),
+        )
+    )
 
 
 # ===-----------------------------------------------------------------------===#

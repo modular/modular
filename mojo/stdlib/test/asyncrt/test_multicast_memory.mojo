@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context
 from gpu import *
 from gpu.host import DeviceContext, DeviceMulticastBuffer
+from testing import TestSuite
 
 
 fn test_multicast_memory(contexts: List[DeviceContext]) raises:
@@ -31,7 +32,7 @@ fn test_multicast_memory(contexts: List[DeviceContext]) raises:
     print(multicast_buf.unicast_buffer_for(contexts[0]))
 
 
-fn main() raises:
+def test_multicast():
     var ctx0 = create_test_device_context(device_id=0)
     if not ctx0.supports_multicast():
         print("Multicast memory not supported")
@@ -45,3 +46,11 @@ fn main() raises:
     var ctx1 = create_test_device_context(device_id=1)
 
     test_multicast_memory([ctx0, ctx1])
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_multicast]()
+
+    suite^.run()

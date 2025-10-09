@@ -75,7 +75,7 @@ devices = st.sampled_from([DeviceRef.CPU(), DeviceRef.GPU()])
 
 # Strategy for valid range parameters that produce reasonable output sizes
 @st.composite
-def valid_range_params(draw):  # noqa: ANN001
+def valid_range_params(draw):  # noqa: ANN001, ANN201
     """Generate valid range parameters with reasonable output dimensions."""
     # Generate step first (non-zero)
     step = draw(
@@ -308,7 +308,7 @@ def test_range_step_zero() -> None:
 
 # Strategy for sign mismatch cases
 @st.composite
-def sign_mismatch_params(draw):  # noqa: ANN001
+def sign_mismatch_params(draw):  # noqa: ANN001, ANN201
     """Generate parameters where sign(stop-start) != sign(step)."""
     choice = draw(st.integers(min_value=0, max_value=2))
     if choice == 0:

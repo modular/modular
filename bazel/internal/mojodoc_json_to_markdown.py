@@ -185,7 +185,7 @@ def removeStaticFromInitializers(mojo_json) -> None:  # noqa: ANN001
 # The slug is the name of the module, except for the index
 # module, which is named "index_" to avoid a name conflict with
 # the index file.
-def nameToSlug(name):  # noqa: ANN001
+def nameToSlug(name):  # noqa: ANN001, ANN201
     return "index_" if name == "index" else name
 
 

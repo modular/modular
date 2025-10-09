@@ -963,7 +963,7 @@ fn _mha_sm90[
     alias depth = config.depth
     # num_consumer_threads ignores the producers
     # actual number of threads is num_consumer_threads + 128
-    alias num_consumer = num_consumer_threads // WARPGROUP_SIZE
+    alias num_consumer = num_consumer_threads // UInt(WARPGROUP_SIZE)
     alias pipeline_stages = Int(config.num_pipeline_stages)
     var tid: UInt32 = thread_idx.x
     var warp_group_idx: UInt32 = warp.broadcast(tid // WARPGROUP_SIZE)
@@ -978,7 +978,7 @@ fn _mha_sm90[
     partition = pack.partition
 
     constrained[
-        num_warps_m == UInt(num_consumer_threads // WARP_SIZE),
+        num_warps_m == UInt(num_consumer_threads // UInt(WARP_SIZE)),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -1107,7 +1107,7 @@ fn _mha_sm90[
             IntTuple(frag_simdwidth, p_frag_size),
             IntTuple(
                 num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * p_frag_size,
+                num_m_mmas * UInt(p_frag_size),
             ),
         ),
     )
@@ -1123,7 +1123,7 @@ fn _mha_sm90[
             IntTuple(frag_simdwidth, o_frag_size),
             IntTuple(
                 num_row_blocks_per_mma * frag_simdwidth,
-                num_m_mmas * o_frag_size,
+                num_m_mmas * UInt(o_frag_size),
             ),
         ),
     )
@@ -1135,7 +1135,7 @@ fn _mha_sm90[
     alias accum_simd_width = simd_width_of[accum_type]()
     alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
-    alias kv_num_heads = num_heads // group
+    alias kv_num_heads = num_heads // UInt(group)
 
     alias mma_thread_layout = Layout.row_major(8, 4)
 
@@ -1372,7 +1372,7 @@ fn _mha_sm90[
             .fill(0)
         )
         alias p_reg_tile_layout = Layout.row_major(
-            num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+            num_m_mmas * num_n_mmas * UInt(frag_ratio), a_frag_size
         )
         p_frag = LayoutTensor[
             kv_type,
@@ -1428,7 +1428,7 @@ fn _mha_sm90[
             * log2e
         )
         constrained[
-            depth % wgmma_0.mma_shape[2] == 0,
+            depth % UInt(wgmma_0.mma_shape[2]) == 0,
             "depth: "
             + String(depth)
             + "is not divisible by mma_shape: "
@@ -1446,7 +1446,9 @@ fn _mha_sm90[
             wgmma_0.wgmma[
                 num_consumer,
                 scale_c=0,
-                num_k_iters = OptionalReg[Int](depth // wgmma_0.mma_shape[2]),
+                num_k_iters = OptionalReg[Int](
+                    depth // UInt(wgmma_0.mma_shape[2])
+                ),
             ](
                 q_smem_sub,
                 k_smem_sub,
@@ -1604,8 +1606,8 @@ fn _mha_sm90[
             # vector and stored using 16B store instruction.
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
-                    num_consumer_threads * simd_size // config.depth,
-                    config.depth // simd_size,
+                    num_consumer_threads * UInt(simd_size) // config.depth,
+                    config.depth // UInt(simd_size),
                 ),
                 swizzle=swizzle,
             ](
@@ -1733,7 +1735,7 @@ fn _mha_sm90[
                 ]().copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
                     p_reg_tile.reshape[
                         Layout.row_major(
-                            num_m_mmas * num_n_mmas * frag_ratio,
+                            num_m_mmas * num_n_mmas * UInt(frag_ratio),
                             a_frag_size,
                         )
                     ]().vectorize[1, a_frag_size](),
@@ -1909,7 +1911,7 @@ fn _mha_sm90[
         p_frag.vectorize[1, a_frag_size]().copy_from(
             p_reg_tile.reshape[
                 Layout.row_major(
-                    num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+                    num_m_mmas * num_n_mmas * UInt(frag_ratio), a_frag_size
                 )
             ]().vectorize[1, a_frag_size](),
         )

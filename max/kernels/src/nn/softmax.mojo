@@ -649,6 +649,8 @@ fn softmax_kernel[
         IndexList[_rank]
     ) capturing [_] -> SIMD[_dtype, _simd_width],
     dtype: DType,
+    sink_type: DType,
+    output_shape: DimList,
     rank: Int,
     accum_type: DType = get_accum_type[dtype](),
     *,
@@ -656,8 +658,8 @@ fn softmax_kernel[
     logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
-    output: NDBuffer[dtype, rank, MutableAnyOrigin],
-    sink_weights: NDBuffer[dtype, 1, MutableAnyOrigin],
+    output: NDBuffer[dtype, rank, MutableAnyOrigin, output_shape],
+    sink_weights: NDBuffer[sink_type, 1, MutableAnyOrigin],
 ):
     alias axis = rank - 1
 
@@ -695,7 +697,7 @@ fn softmax_kernel[
 
         @parameter
         if sink:
-            sink_val = sink_weights[row_idx % sink_weights.dim[0]()].cast[
+            sink_val = sink_weights[row_idx % UInt(sink_weights.dim[0]())].cast[
                 accum_type
             ]()
 
@@ -795,16 +797,23 @@ fn _softmax_gpu[
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
-    ctx.enqueue_function[
-        softmax_kernel[
-            BLOCK_SIZE,
-            input_fn_wrapper,
-            dtype,
-            rank,
-            sink=sink,
-            logsoftmax=logsoftmax,
-        ]
-    ](shape, output, sink_weights, grid_dim=num_blocks, block_dim=BLOCK_SIZE)
+    alias kernel = softmax_kernel[
+        BLOCK_SIZE,
+        input_fn_wrapper,
+        dtype,
+        sink_type,
+        static_shape,
+        rank,
+        sink=sink,
+        logsoftmax=logsoftmax,
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
+        shape,
+        output,
+        sink_weights.value(),
+        grid_dim=num_blocks,
+        block_dim=BLOCK_SIZE,
+    )
 
 
 fn softmax[
@@ -1103,7 +1112,9 @@ fn _online_softmax_iter_for_mma_output[
 
     var tid = thread_idx.x
     var lane = lane_id()
-    var warp_x = warp.broadcast(tid // WARP_SIZE) % UInt(num_rowwise_warps)
+    var warp_x = warp.broadcast(tid // UInt(WARP_SIZE)) % UInt(
+        num_rowwise_warps
+    )
 
     # Assume p_reg_tile has been properly vectorized. The element layout
     # represents number elements per thread in a row or column
@@ -1359,7 +1370,7 @@ fn _online_softmax_iter_for_mma_output[
                     )
 
                     warp_scratch[
-                        warp_x + num_rowwise_warps, Int(score_row_idx)
+                        warp_x + UInt(num_rowwise_warps), Int(score_row_idx)
                     ] = score_frag_rowsum[col_tile, row][0]
 
         # Guard writing warp_scratch
@@ -1535,7 +1546,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     var tid = thread_idx.x
     var lane = lane_id()
-    var warp_y, warp_x = divmod(tid // WARP_SIZE, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(tid // UInt(WARP_SIZE), UInt(num_warps_n))
 
     alias fragment_layout = Layout.row_major(
         1, 2
@@ -1575,7 +1586,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
     var o_smem_ptr = (
         o_smem_ptr_base
-        + warp_y * (num_warps_n - 1) * row_warp_tile_size if num_warps_m
+        + warp_y
+        * UInt(num_warps_n - 1)
+        * UInt(row_warp_tile_size) if num_warps_m
         > 1 else o_smem_ptr_base
     )
 
@@ -1583,7 +1596,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
 
     alias o_smem_layout = Layout.row_major(
-        WM * WN // (2 * frag_size), frag_size
+        WM * WN // UInt(2 * frag_size), frag_size
     )
 
     alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
@@ -1786,7 +1799,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             # -----------------------------------
             # `N\X` refer to `warp_n`, `warp_x`
             alias row = warp_n
-            var col = warp_x - (1 if warp_x > warp_n else 0)
+            var col = warp_x - UInt(1 if warp_x > UInt(warp_n) else 0)
             var o_smem_ptr_write = (
                 o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
             )
@@ -1819,7 +1832,8 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         var row = warp_x
         alias col = warp_n
         var o_smem_ptr_reduce = (
-            o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
+            o_smem_ptr
+            + (row * UInt(num_warps_n - 1) + UInt(col)) * warp_tile_size
         )
         var o_smem_reduce = (
             LayoutTensor[

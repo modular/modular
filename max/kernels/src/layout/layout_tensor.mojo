@@ -30,7 +30,7 @@ from algorithm import vectorize
 from bit import log2_floor
 from builtin.device_passable import DevicePassable
 from builtin.dtype import _unsigned_integral_type_of
-from gpu.host import DeviceBuffer, HostBuffer
+from gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import AMDBufferResource
@@ -1946,7 +1946,8 @@ struct LayoutTensor[
         - The elements are loaded according to the tensor's stride configuration.
         """
         constrained[self.rank == coords.size]()
-        constrained[Int(self.layout.stride[self.rank - 1]) == 1]()
+        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
+
         var idx = self.runtime_layout(
             RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
         )
@@ -1984,6 +1985,38 @@ struct LayoutTensor[
         """
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
             self.ptr.offset(self._offset(m, n))
+        )
+
+    @always_inline
+    fn prefetch(self, coords: IndexList):
+        """Prefetch tensor data at the specified coordinates into cache.
+
+        Issues a software prefetch hint to the processor to load the data at
+        coords into the cache hierarchy. This can improve performance
+        by reducing memory latency for subsequent accesses to the same location.
+
+        Args:
+            coords: The indices.
+
+        Performance:
+
+        - Prefetching is a performance hint and does not guarantee data will be
+            cached.
+        - Most effective when issued sufficiently ahead of the actual data
+            access.
+        - Uses high locality prefetch to the data cache, optimized for data that
+            will be accessed multiple times.
+        - Can reduce memory access latency by 50-90% when used correctly.
+
+        Notes:
+
+        - Excessive prefetching can pollute the cache and degrade performance.
+        - Most beneficial for predictable access patterns that would otherwise
+            cause cache misses.
+        - No operation is performed on the prefetched data.
+        """
+        prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
+            self.ptr.offset(self._offset(coords))
         )
 
     @always_inline("nodebug")
@@ -2099,7 +2132,7 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
         constrained[self.rank == coords.size]()
-        constrained[Int(self.layout.stride[self.rank - 1]) == 1]()
+        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
 
         var idx = self.runtime_layout(
             RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
@@ -2254,6 +2287,27 @@ struct LayoutTensor[
         masked=masked,
         alignment=alignment,
     ]
+
+    @always_inline
+    fn to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[dtype]:
+        """Convert the tensor to a `DeviceBuffer`.
+
+        Args:
+            ctx: The device context to use.
+
+        Returns:
+            A `DeviceBuffer` containing the tensor's data.
+        """
+        constrained[
+            address_space == address_space.GENERIC,
+            "DeviceBuffer is only used on GENERIC address space",
+        ]()
+        return DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](self.ptr),
+            self.size(),
+            owning=False,
+        )
 
     @always_inline("nodebug")
     fn _stack_copy(
@@ -3373,7 +3427,9 @@ struct LayoutTensor[
         for i in range(Self.rank):
             alias thread_stride_i = Int(thread_stride[i])
             alias thread_shape_i = Int(thread_shape[i])
-            var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
+            var tile_idx = (thread_id // UInt(thread_stride_i)) % UInt(
+                thread_shape_i
+            )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
             var bound_i = Int((tile_shape_i - 1) * thread_shape_i + tile_idx)
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
@@ -3603,7 +3659,7 @@ struct LayoutTensor[
                     mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
-                offset += thread_coord_i * fragments_stride_i
+                offset += thread_coord_i * UInt(fragments_stride_i)
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -3788,7 +3844,7 @@ struct LayoutTensor[
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * fragments_stride_i
+                offset += thread_coord_i * UInt(fragments_stride_i)
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -6020,7 +6076,7 @@ fn cp_async_mn_major[
         desc_shape1 // simd_size,
     )
 
-    warp_id = thread_idx.x // gpu_memory.WARP_SIZE
+    warp_id = thread_idx.x // UInt(gpu_memory.WARP_SIZE)
 
     @parameter
     for tile_id_per_warp in range(num_tiles_per_warp):
@@ -6031,7 +6087,7 @@ fn cp_async_mn_major[
         )
         dst_tile = LayoutTensor[
             dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
-        ](dst.ptr + tile_id * desc_size)
+        ](dst.ptr + tile_id * UInt(desc_size))
 
         copy_dram_to_sram_async[
             thread_layout_per_warp,
@@ -7029,7 +7085,9 @@ fn _copy_dram_to_local[
         offset_helper(offset.value())
     else:
         var base_ptr = buffer.get_base_ptr()
-        offset_helper(UInt((Int(src.ptr) - base_ptr)) // size_of[src.dtype]())
+        offset_helper(
+            UInt(UInt((Int(src.ptr) - base_ptr)) // UInt(size_of[src.dtype]()))
+        )
 
 
 @always_inline("nodebug")

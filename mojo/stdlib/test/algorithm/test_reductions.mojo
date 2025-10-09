@@ -452,7 +452,7 @@ fn test_cumsum():
         print(cumsum_out2[i], ",", end="")
 
 
-fn main() raises:
+def main():
     test_reductions()
     test_fused_reductions_inner()
     test_fused_reductions_outer()

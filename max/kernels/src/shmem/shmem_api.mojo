@@ -43,7 +43,7 @@ from gpu.host import (
 )
 from gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
 from gpu.host.device_context import (
-    _CharPtr,
+    _ConstCharPtr,
     _checked,
     _DeviceContextPtr,
     _DumpPath,
@@ -91,6 +91,7 @@ from ._nvshmem import (
     nvshmem_team_my_pe,
     nvshmemx_barrier_all_on_stream,
     nvshmemx_cumodule_init,
+    nvshmemx_cumodule_finalize,
     nvshmemx_hostlib_finalize,
     nvshmemx_init,
     nvshmemx_init_status,
@@ -145,7 +146,6 @@ alias SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
 alias SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
 alias SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
 
-
 # ===----------------------------------------------------------------------=== #
 # 1: Library Setup, Exit, and Query Routines
 # ===----------------------------------------------------------------------=== #
@@ -175,10 +175,34 @@ fn shmem_init() raises:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmemx_init()
+        nvshmemx_init()
     else:
         return CompilationTarget.unsupported_target_error[
             operation="shmem_init"
+        ]()
+
+
+fn shmem_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
+    """Modular specific initialization that enables launching one GPU per thread.
+    You must provide the `mype_node` (Processing Element ID) and `npes_node`
+    (Number of processing elements) for the single node.
+
+    It returns a `DeviceContext` which is ready for `SHMEM` operations.
+
+    Arguments:
+        mype_node: (my) (p)rocessing (e)lement ID on this (node)
+        npes_node: (n)umber of (p)rocessing (e)lements on this (node)
+
+    Raises:
+        If SHMEM initialization fails.
+    """
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        return nvshmemx_init(mype_node, npes_node)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            DeviceContext, operation="shmem_init"
         ]()
 
 
@@ -213,10 +237,6 @@ fn shmem_finalize():
     @parameter
     if has_nvidia_gpu_accelerator():
         nvshmemx_hostlib_finalize()
-        try:
-            _ = MPI_Finalize()
-        except e:
-            pass
     else:
         return CompilationTarget.unsupported_target_error[
             operation="shmem_finalize",
@@ -832,4 +852,28 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
     else:
         CompilationTarget.unsupported_target_error[
             operation="shmem_cumodule_init",
+        ]()
+
+
+fn shmem_module_finalize(device_function: DeviceFunction) raises:
+    """
+    Finalizes the device state in the compiled function module and cleans up
+    NVSHMEM operations. This should be called when NVSHMEM operations are no
+    longer needed for the given device function.
+
+    Args:
+        device_function: The compiled device function to finalize and clean up
+            NVSHMEM resources.
+
+    Raises:
+        String: If module finalization fails.
+    """
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        var func = CUDA_MODULE(device_function)
+        _ = nvshmemx_cumodule_finalize(func)
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation="shmem_module_finalize",
         ]()

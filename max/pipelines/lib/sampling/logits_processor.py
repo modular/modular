@@ -52,26 +52,19 @@ def apply_logits_processors(
         processors = context.sampling_params.logits_processors
         if processors is None:
             continue
-
         if batch_logit_offsets_cpu is None and batch_logit_offsets is not None:
             batch_logit_offsets_cpu = batch_logit_offsets.to(CPU())
 
+        if batch_logit_offsets_cpu is not None:
+            start_idx = batch_logit_offsets_cpu[i].item()
+            end_idx = batch_logit_offsets_cpu[i + 1].item()
+        else:
+            start_idx = i
+            end_idx = i + 1
+        logits = batch_logits[start_idx:end_idx, :]
+        assert isinstance(logits, Tensor)
         for processor in processors:
-            start_idx: int | None = None
-            end_idx: int | None = None
-
-            if batch_logit_offsets_cpu is not None:
-                start_idx = batch_logit_offsets_cpu[i].item()
-                end_idx = batch_logit_offsets_cpu[i + 1].item()
-            else:
-                start_idx = i
-                end_idx = i + 1
-            logits = batch_logits[start_idx:end_idx, :]
-            inputs = ProcessorInputs(
-                logits=logits,
-                context=context,
-            )
-            processor(inputs)
+            processor(ProcessorInputs(logits=logits, context=context))
 
     if batch_processors is not None:
         for batch_processor in batch_processors:

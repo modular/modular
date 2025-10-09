@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Optional, cast
+from typing import cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -63,13 +63,13 @@ class BertInputs(ModelInputs):
 
     input_ids: Tensor
     attention_mask: Tensor
-    token_type_ids: Optional[Tensor]
+    token_type_ids: Tensor | None
 
     def __init__(
         self,
         input_ids: Tensor,
         attention_mask: Tensor,
-        token_type_ids: Optional[Tensor] = None,
+        token_type_ids: Tensor | None = None,
     ) -> None:
         self.input_ids = input_ids
         self.attention_mask = attention_mask
@@ -88,7 +88,7 @@ class BertPipelineModel(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
         # Auto-select BERT adapter if not provided

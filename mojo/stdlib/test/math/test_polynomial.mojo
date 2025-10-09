@@ -13,7 +13,7 @@
 
 from math.polynomial import _horner_evaluate, polynomial_evaluate
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_equal
 
 

@@ -275,7 +275,7 @@ struct MHA_cfg(ImplicitlyCopyable, Movable):
         # fmt: on
 
 
-fn main() raises:
+def main():
     alias qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
     alias mask_type = env_get_dtype["mask_type", DType.float32]()
     alias depth = env_get_int["depth", 128]()

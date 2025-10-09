@@ -620,7 +620,7 @@ fn test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
 
 
-fn main() raises:
+def main():
     alias llama3_vocab_size = 128256
     with DeviceContext() as ctx:
         alias dtype = DType.float32

@@ -26,7 +26,7 @@ from testing import assert_almost_equal
 from utils.index import IndexList
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_max_pool_2d(ctx)
         test_avg_pool_2d(ctx)

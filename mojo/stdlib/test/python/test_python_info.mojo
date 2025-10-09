@@ -13,7 +13,7 @@
 
 from python import Python
 from python._cpython import PythonVersion
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 fn test_python_version(mut python: Python) raises:
@@ -24,6 +24,14 @@ fn test_python_version(mut python: Python) raises:
     assert_equal(python_version.patch, 8)
 
 
-def main():
+def test_with_python_version():
     var python = Python()
     test_python_version(python)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_with_python_version]()
+
+    suite^.run()

@@ -20,10 +20,9 @@ import multiprocessing
 import multiprocessing.queues
 import queue
 import threading
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import Callable
 
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings

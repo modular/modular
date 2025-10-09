@@ -20,22 +20,13 @@ import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
-try:
-    from .benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore]
-        DATASET_REGISTRY,
-        DatasetMode,
-    )
-except ImportError:
-    from benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        DATASET_REGISTRY,
-        DatasetMode,
-    )
+from .datasets import DATASET_REGISTRY, DatasetMode
 
-logger = logging.getLogger("max.benchmark")
+logger = logging.getLogger(__name__)
 
 from max.pipelines.lib import (  # type: ignore[import-not-found, unused-ignore, no-redef]
     MAXConfig,
@@ -76,8 +67,8 @@ def _add_config_file_arg_to_parser(
 
 
 def _resolve_user_provided_config_file_cli_arg(
-    args: Optional[Sequence[str]] = None,
-) -> tuple[Optional[Path], list[str]]:
+    args: Sequence[str] | None = None,
+) -> tuple[Path | None, list[str]]:
     """Resolve the user-provided --config-file argument from command line arguments.
 
     This utility function extracts the config file path from command line arguments
@@ -121,13 +112,13 @@ class BaseBenchmarkConfig(MAXConfig):
     """The section name to use when loading this config from a MAXConfig file."""
 
     # Model and tokenizer configuration (common to all benchmarks)
-    model: Optional[str] = None
+    model: str | None = None
     """Name of the model. Required when running benchmark."""
 
-    tokenizer: Optional[str] = None
+    tokenizer: str | None = None
     """Name or path of the tokenizer, if not using the default tokenizer."""
 
-    model_max_length: Optional[int] = None
+    model_max_length: int | None = None
     """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
 
     trust_remote_code: bool = False
@@ -137,14 +128,14 @@ class BaseBenchmarkConfig(MAXConfig):
     dataset_name: str = "sharegpt"
     """Name of the dataset to benchmark on."""
 
-    dataset_path: Optional[str] = None
+    dataset_path: str | None = None
     """Path to the dataset."""
 
     dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
     """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
 
     # Basic workload parameters
-    num_prompts: int = 1000
+    num_prompts: int | None = None
     """Number of prompts to process."""
 
     seed: int = 0
@@ -228,7 +219,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Backend to use for benchmarking. Choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat"""
 
-    base_url: Optional[str] = field(
+    base_url: str | None = field(
         default=None, metadata={"group": "Backend and API Configuration"}
     )
     """Server or API base url if not using http host and port."""
@@ -250,22 +241,24 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
 
     # Request configuration (serving-specific)
-    max_concurrency: Optional[int] = field(
+    max_concurrency: str | None = field(
         default=None,
         metadata={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
+            "sweepable_type": int,
         },
     )
-    """Maximum concurrent requests (optimized for serving benchmarks)."""
+    """Maximum concurrent requests (optimized for serving benchmarks).
+    Can be a single integer, "None", or comma-separated string for sweep configs."""
 
-    lora: Optional[str] = field(
+    lora: str | None = field(
         default=None, metadata={"group": "Request Configuration"}
     )
     """Optional LoRA name."""
 
     # Workload configuration (serving-specific)
-    max_benchmark_duration_s: Optional[int] = field(
+    max_benchmark_duration_s: int | None = field(
         default=None,
         metadata={
             "group": "Workload Configuration",
@@ -274,18 +267,18 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Maximum benchmark duration in seconds."""
 
-    num_chat_sessions: Optional[int] = field(
+    num_chat_sessions: int | None = field(
         default=None, metadata={"group": "Workload Configuration"}
     )
     """Number of multiturn chat sessions."""
 
-    delay_between_chat_turns: Optional[int] = field(
+    delay_between_chat_turns: int | None = field(
         default=None, metadata={"group": "Workload Configuration"}
     )
     """Delay between chat turns in ms."""
 
     # Output control (serving-specific extensions)
-    output_lengths: Optional[str] = field(
+    output_lengths: str | None = field(
         default=None,
         metadata={
             "group": "Output Control",
@@ -294,7 +287,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Path to YAML file with output lengths or int."""
 
-    max_output_len: Optional[int] = field(
+    max_output_len: int | None = field(
         default=None, metadata={"group": "Output Control"}
     )
     """Maximum output length per request."""
@@ -307,20 +300,22 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     top_p: float = field(default=1.0, metadata={"group": "Output Control"})
     """Top-p for sampling."""
 
-    top_k: Optional[int] = field(
+    top_k: int | None = field(
         default=None, metadata={"group": "Output Control"}
     )
     """Top-k for sampling."""
 
     # Traffic control (serving-specific)
-    request_rate: float = field(
-        default=float("inf"),
+    request_rate: str | None = field(
+        default="inf",
         metadata={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
+            "sweepable_type": float,
         },
     )
-    """Requests per second (finite rate for realistic benchmarking)."""
+    """Requests per second (finite rate for realistic benchmarking).
+    Can be a single float value or comma-separated string for sweep configs."""
 
     burstiness: float = field(
         default=1.0, metadata={"group": "Traffic Control"}
@@ -349,6 +344,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "group": "Dataset-Specific Parameters",
             "group_description": "Parameters specific to different dataset types and workloads",
         },
+    )
+    batch_job_image_dir: str | None = field(
+        default=None, metadata={"group": "Dataset-Specific Parameters"}
     )
     obfuscated_conversations_average_output_len: int = field(
         default=175, metadata={"group": "Dataset-Specific Parameters"}
@@ -431,17 +429,17 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Specify to save benchmark results to a json file."""
 
-    record_output_lengths: Optional[str] = field(
+    record_output_lengths: str | None = field(
         default=None, metadata={"group": "Result Saving"}
     )
     """Path to save output lengths in YAML format."""
 
-    result_dir: Optional[str] = field(
+    result_dir: str | None = field(
         default=None, metadata={"group": "Result Saving"}
     )
     """Directory to save results."""
 
-    result_filename: Optional[str] = field(
+    result_filename: str | None = field(
         default=None, metadata={"group": "Result Saving"}
     )
     """Custom filename (auto-generated if null)."""
@@ -457,12 +455,12 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     lora_rank: int = field(default=16, metadata={"group": "LoRA Configuration"})
     """LoRA rank for generated adapters."""
 
-    lora_output_dir: Optional[str] = field(
+    lora_output_dir: str | None = field(
         default="/tmp/loras", metadata={"group": "LoRA Configuration"}
     )
     """Directory to save generated LoRA adapters."""
 
-    lora_server_path: Optional[str] = field(
+    lora_server_path: str | None = field(
         default="/tmp/loras", metadata={"group": "LoRA Configuration"}
     )
     """Path where a docker server can access LoRA adapters."""
@@ -524,6 +522,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
             "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",
             "arxiv_summarization_input_len": "Number of input tokens per request, used only for arxiv-summarization dataset.",
+            "batch_job_image_dir": "Directory where server can access images for batch-job dataset (file reference mode). If not specified, uses embedded base64 mode.",
             "obfuscated_conversations_average_output_len": "Average output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_shuffle": "Shuffle the obfuscated-conversations dataset.",
@@ -563,10 +562,118 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         return super().get_default_required_fields().union({"dataset_name"})
 
 
+@dataclass
+class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
+    """Configuration class for sweep serving benchmarks (sweep-benchmark-serving.py).
+
+    Inherits from ServingBenchmarkConfig and adds sweep-specific parameters:
+    - Workload configuration
+    - Logging and debugging options
+    - Result upload configuration
+    - Sweep-specific concurrency and duration parameters
+    - Metadata and result tracking
+    """
+
+    # Workload configuration (sweep-specific)
+    workload_config: str = field(
+        default="",
+        metadata={
+            "group": "Workload Configuration",
+            "group_description": "Parameters controlling workload and dataset configuration",
+        },
+    )
+    """YAML file specifying the workload to benchmark."""
+
+    # Logging and debugging (sweep-specific)
+    log_dir: str | None = field(
+        default=None,
+        metadata={
+            "group": "Logging and Debugging",
+            "group_description": "Parameters controlling logging and debugging behavior",
+        },
+    )
+    """Path to save logs (in event of command failure only). Default: <backend>-latency-Y.m.d-H.M.S"""
+
+    dry_run: bool = field(
+        default=False,
+        metadata={"group": "Logging and Debugging"},
+    )
+    """Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed."""
+
+    # Result upload configuration (sweep-specific)
+    upload_results: bool = field(
+        default=False,
+        metadata={
+            "group": "Result Upload Configuration",
+            "group_description": "Parameters controlling result upload to BigQuery",
+        },
+    )
+    """Upload results to BigQuery."""
+
+    benchmark_sha: str | None = field(
+        default=None,
+        metadata={"group": "Result Upload Configuration"},
+    )
+    """Commit hash of the docker image used for load generation."""
+
+    cluster_information_path: str | None = field(
+        default=None,
+        metadata={"group": "Result Upload Configuration"},
+    )
+    """Path to the cluster information file. Usually a json file with metadata about the cluster setup if you're benchmarking more than a single node."""
+
+    benchmark_config_name: str | None = field(
+        default=None,
+        metadata={"group": "Result Upload Configuration"},
+    )
+    """(For serving benchmarks) config name for tracking."""
+
+    # Metadata and result tracking (sweep-specific)
+    metadata: list[str] = field(
+        default_factory=list,
+        metadata={
+            "group": "Metadata and Result Tracking",
+            "group_description": "Parameters for metadata and result tracking",
+        },
+    )
+    """Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes."""
+
+    latency_percentiles: str = field(
+        default="50,90,95,99",
+        metadata={"group": "Metadata and Result Tracking"},
+    )
+    """Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported (default: 50,90,95,99)."""
+
+    # Sweep-specific concurrency and duration parameters
+    num_iters: int = field(
+        default=1,
+        metadata={
+            "group": "Sweep Configuration",
+            "group_description": "Parameters controlling sweep behavior and iteration",
+        },
+    )
+    """Number of iterations to run per configuration."""
+
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
+        """Get required fields for the sweep benchmark config."""
+
+        # TODO: This is really lame. dataset_name is a required flag in benchmark_serving.py,
+        # so you'd think it would also be required here, but it's not. This is
+        # because we only parse dataset_name from the workload config file and not
+        # through the command line in sweep-benchmark-serving.py. Turns out we
+        # also can't quite easily pull that apart trivially when we roll this
+        # part. Will circle back in a follow up PR. the --dataset-name flag
+        # is set to optional here and is a no-op.
+        parent_required_fields = super().get_default_required_fields()
+        parent_required_fields.remove("dataset_name")
+        return parent_required_fields.union({"workload_config"})
+
+
 # Convenience functions for loading specific configuration types
 def load_base_benchmark_config(
     config_file: str = "configs/base_config.yaml",
-    overrides: Optional[dict[str, Any]] = None,
+    overrides: dict[str, Any] | None = None,
 ) -> BaseBenchmarkConfig:
     """Load base benchmark configuration with optional overrides.
 
@@ -586,7 +693,7 @@ def load_base_benchmark_config(
 
 def load_serving_benchmark_config(
     config_file: str = "configs/serving_config.yaml",
-    overrides: Optional[dict[str, Any]] = None,
+    overrides: dict[str, Any] | None = None,
 ) -> ServingBenchmarkConfig:
     """Load serving benchmark configuration with optional overrides.
 
@@ -682,7 +789,7 @@ def parse_benchmark_args(
     config_class: type[BaseBenchmarkConfig],
     default_config_path: Path,
     description: str,
-    args: Optional[Sequence[str]] = None,
+    args: Sequence[str] | None = None,
 ) -> argparse.Namespace:
     """Parse command line arguments for benchmark entrypoints with config file inheritance.
 

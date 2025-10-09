@@ -13,7 +13,13 @@
 
 
 from bit import count_trailing_zeros
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_simple_uint():
@@ -254,28 +260,32 @@ def test_comptime():
 
 
 def main():
-    test_simple_uint()
-    test_uint_representation()
-    test_equality()
-    test_inequality()
-    test_properties()
-    test_add()
-    test_sub()
-    test_div()
-    test_pow()
-    test_ceil()
-    test_floor()
-    test_round()
-    test_trunc()
-    test_floordiv()
-    test_mod()
-    test_divmod()
-    test_abs()
-    test_string_conversion()
-    test_int_representation()
-    test_indexer()
-    test_simd_conversion()
-    test_comparison()
-    test_pos()
-    test_hash()
-    test_comptime()
+    var suite = TestSuite()
+
+    suite.test[test_simple_uint]()
+    suite.test[test_uint_representation]()
+    suite.test[test_equality]()
+    suite.test[test_inequality]()
+    suite.test[test_properties]()
+    suite.test[test_add]()
+    suite.test[test_sub]()
+    suite.test[test_div]()
+    suite.test[test_pow]()
+    suite.test[test_ceil]()
+    suite.test[test_floor]()
+    suite.test[test_round]()
+    suite.test[test_trunc]()
+    suite.test[test_floordiv]()
+    suite.test[test_mod]()
+    suite.test[test_divmod]()
+    suite.test[test_abs]()
+    suite.test[test_string_conversion]()
+    suite.test[test_int_representation]()
+    suite.test[test_indexer]()
+    suite.test[test_simd_conversion]()
+    suite.test[test_comparison]()
+    suite.test[test_pos]()
+    suite.test[test_hash]()
+    suite.test[test_comptime]()
+
+    suite^.run()

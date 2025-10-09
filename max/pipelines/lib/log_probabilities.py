@@ -181,7 +181,9 @@ def compute_log_probabilities_ragged(
         top_assoc = [
             (int(token), float(logit))
             for token, logit in zip(
-                lp_tokens[output_index, :-1], lp_logits[output_index, :-1]
+                lp_tokens[output_index, :-1],
+                lp_logits[output_index, :-1],
+                strict=True,
             )
             if token < vocab_size
         ]

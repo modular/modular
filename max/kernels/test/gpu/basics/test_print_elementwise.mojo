@@ -75,6 +75,6 @@ fn test_dual_matmul[
     _ = mat_c01^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_dual_matmul(ctx)

@@ -21,7 +21,7 @@ from collections.string._utf8 import (
 )
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data

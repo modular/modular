@@ -13,6 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
+from testing import TestSuite
 
 
 fn _ownership_helper(
@@ -134,7 +135,7 @@ fn _run_peer_access(ctx: DeviceContext) raises:
             print("Enabled peer access.")
 
 
-fn main() raises:
+def test_smoke():
     var ctx = create_test_device_context()
     print("-------")
     print("Running test_smoke(" + ctx.name() + "):")
@@ -148,3 +149,11 @@ fn main() raises:
     _run_peer_access(ctx)
 
     print("Done.")
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_smoke]()
+
+    suite^.run()

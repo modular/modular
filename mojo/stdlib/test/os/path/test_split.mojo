@@ -16,10 +16,10 @@ from os.path import expanduser, split
 from pathlib import Path
 
 from builtin._location import __source_location
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
-def main():
+def test_split():
     # Normal case
     head, tail = split(os.path.join("a", "b", "c.txt"))
     assert_equal(head, os.path.join("a", "b"))
@@ -64,3 +64,11 @@ def main():
     source_location = String(__source_location().file_name)
     head, tail = split(source_location)
     assert_equal(head + os.sep + tail, source_location)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_split]()
+
+    suite^.run()

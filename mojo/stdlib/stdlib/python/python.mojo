@@ -564,7 +564,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @no_inline
     fn as_string_slice(
         self, str_obj: PythonObject
-    ) -> StringSlice[MutableAnyOrigin]:
+    ) -> StringSlice[ImmutableAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:

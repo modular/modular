@@ -386,7 +386,7 @@ struct PyType_Spec:
     - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
     """
 
-    var name: UnsafePointer[c_char]
+    var name: UnsafePointer[c_char, mut=False]
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
@@ -624,10 +624,10 @@ struct PyModuleDef(Movable, Representable, Stringable, Writable):
 
     var base: PyModuleDef_Base
 
-    var name: UnsafePointer[c_char]
+    var name: UnsafePointer[c_char, mut=False]
     """Name for the new module."""
 
-    var docstring: UnsafePointer[c_char]
+    var docstring: UnsafePointer[c_char, mut=False]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
@@ -1591,19 +1591,20 @@ struct CPython(Defaultable, Movable):
         raise an error if one occurred when initializing the global CPython.
         """
         if self.init_error:
-            var error = String(self.init_error)
             var mojo_python = getenv("MOJO_PYTHON")
             var python_lib = getenv("MOJO_PYTHON_LIBRARY")
             var python_exe = getenv("PYTHONEXECUTABLE")
-            if mojo_python:
-                error += String("\nMOJO_PYTHON: ", mojo_python)
-            if python_lib:
-                error += String("\nMOJO_PYTHON_LIBRARY: ", python_lib)
-            if python_exe:
-                error += String("\npython executable: ", python_exe)
-            error += "\n\nMojo/Python interop error, troubleshooting docs at:"
-            error += "\n    https://modul.ar/fix-python\n"
-            raise error
+            raise Error(
+                self.init_error,
+                "\nMOJO_PYTHON: " if mojo_python else "",
+                mojo_python if mojo_python else "",
+                "\nMOJO_PYTHON_LIBRARY: " if python_lib else "",
+                python_lib if python_lib else "",
+                "\npython executable: " if python_exe else "",
+                python_exe if python_exe else "",
+                "\n\nMojo/Python interop error, troubleshooting docs at:",
+                "\n    https://modul.ar/fix-python\n",
+            )
 
     fn unsafe_get_error(self) -> Error:
         """Get the `Error` object corresponding to the current CPython
@@ -2356,7 +2357,7 @@ struct CPython(Defaultable, Movable):
     # TODO: fix signature to take unicode and size as args
     fn PyUnicode_AsUTF8AndSize(
         self, obj: PyObjectPtr
-    ) -> StringSlice[MutableAnyOrigin]:
+    ) -> StringSlice[ImmutableAnyOrigin]:
         """Return a pointer to the UTF-8 encoding of the Unicode object, and
         store the size of the encoded representation (in bytes) in `size`.
 
@@ -2365,7 +2366,7 @@ struct CPython(Defaultable, Movable):
         """
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
-        return StringSlice[MutableAnyOrigin](
+        return StringSlice[ImmutableAnyOrigin](
             ptr=ptr.bitcast[Byte](), length=UInt(length)
         )
 
@@ -2609,7 +2610,7 @@ struct CPython(Defaultable, Movable):
     fn PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: UnsafePointer[c_char],
+        name: UnsafePointer[c_char, mut=False],
         value: PyObjectPtr,
     ) -> c_int:
         """Add an object to `module` as `name`.

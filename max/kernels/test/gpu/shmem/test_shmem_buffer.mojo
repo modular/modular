@@ -15,12 +15,11 @@
 
 from math import iota
 
-from shmem import SHMEMBuffer, SHMEMContext
+from shmem import SHMEMBuffer, SHMEMContext, shmem_launch
 from testing import assert_equal
 
 
 def test_buffer_copy(ctx: SHMEMContext):
-    print("Testing SHMEM bi-directional host<->device memory copy")
     alias length = 1024
 
     var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -39,5 +38,4 @@ def test_buffer_copy(ctx: SHMEMContext):
 
 
 def main():
-    var ctx = SHMEMContext()
-    test_buffer_copy(ctx)
+    shmem_launch[test_buffer_copy]()

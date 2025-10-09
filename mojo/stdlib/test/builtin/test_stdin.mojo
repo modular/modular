@@ -15,7 +15,7 @@
 import sys
 from io.io import _fdopen
 
-from testing import testing
+from testing import testing, TestSuite
 
 
 fn test_stdin() raises:
@@ -25,5 +25,9 @@ fn test_stdin() raises:
     testing.assert_equal(stdin.readline(), " World")
 
 
-fn main() raises:
-    test_stdin()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_stdin]()
+
+    suite^.run()

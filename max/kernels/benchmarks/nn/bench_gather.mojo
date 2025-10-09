@@ -14,8 +14,7 @@
 from random import rand, randint
 
 from benchmark import *
-from buffer import NDBuffer
-from buffer.dimlist import Dim
+from layout import LayoutTensor, RuntimeLayout, Layout, UNKNOWN_VALUE
 from nn.gather_scatter import gather_elements
 
 from utils.index import Index
@@ -42,7 +41,10 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
 
     var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
     rand(data_ptr, input_shape.flattened_length())
-    var data_tensor = NDBuffer[DType.float32, 2](data_ptr, input_shape)
+    alias layout_2d = Layout.row_major[2]()
+    var data_tensor = LayoutTensor[DType.float32, layout_2d](
+        data_ptr, RuntimeLayout[layout_2d].row_major(input_shape)
+    )
 
     var indices_ptr = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
@@ -53,12 +55,16 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
         index_rand_min,
         index_rand_max,
     )
-    var indices_tensor = NDBuffer[DType.int32, 2](indices_ptr, indices_shape)
+    var indices_tensor = LayoutTensor[DType.int32, layout_2d](
+        indices_ptr, RuntimeLayout[layout_2d].row_major(indices_shape)
+    )
 
     var output_ptr = UnsafePointer[Float32].alloc(
         indices_shape.flattened_length()
     )
-    var output_tensor = NDBuffer[DType.float32, 2](output_ptr, indices_shape)
+    var output_tensor = LayoutTensor[DType.float32, layout_2d](
+        output_ptr, RuntimeLayout[layout_2d].row_major(indices_shape)
+    )
 
     @always_inline
     @parameter
@@ -75,9 +81,9 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
 
     bencher.iter[bench_fn]()
 
-    _ = data_tensor
-    _ = indices_tensor
-    _ = output_tensor
+    data_tensor.ptr.free()
+    indices_tensor.ptr.free()
+    output_tensor.ptr.free()
 
 
 @fieldwise_init

@@ -14,10 +14,10 @@
 from os.path import getsize
 from tempfile import NamedTemporaryFile
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
-def main():
+def test_getsize():
     with NamedTemporaryFile(delete=False) as tmp_file:
         file_path = tmp_file.name
         # No bytes written yet, 0 size.
@@ -25,3 +25,11 @@ def main():
         var data_to_write = "test"
         tmp_file.write(data_to_write)
         assert_equal(getsize(file_path), len(data_to_write))
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_getsize]()
+
+    suite^.run()

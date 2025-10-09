@@ -18,7 +18,8 @@ from __future__ import annotations
 import ctypes
 import inspect
 import sys
-from typing import Annotated, Any, Callable, TypeVar, cast, get_args, get_origin
+from collections.abc import Callable
+from typing import Annotated, Any, TypeVar, cast, get_args, get_origin
 
 _T = TypeVar("_T")
 _TCData = TypeVar("_TCData", bound="ctypes._CData")

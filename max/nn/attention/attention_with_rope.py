@@ -16,9 +16,8 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 from max.dtype import DType
 from max.graph import (
@@ -32,9 +31,7 @@ from max.graph import (
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
 from max.nn.float8_config import Float8Config
-from max.nn.kernels import (
-    convert_weights_to_fp8_fnuz_if_needed,
-)
+from max.nn.kernels import convert_weights_to_fp8_fnuz_if_needed
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -49,7 +46,7 @@ from ..kernels import (
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
 from ..kv_cache import KVCacheParams, PagedCacheValues
-from ..layer import Module
+from ..layer import Module, Shardable
 from ..linear import Linear
 from ..no_opaque_kernels import (
     PagedKVCacheTensorsNoOpaque,
@@ -74,14 +71,12 @@ class AttentionWithRopeV1(AttentionImpl):
     Deprecated: Use `AttentionWithRope` instead.
     """
 
-    # This class will not use the RotaryEmbedding to
-    # calculate rope, but it already includes a freqs_cis
-    # calculation, which we will borrow
-
+    # This class does not use the RotaryEmbedding to calculate rope, but it
+    # already includes a freqs_cis calculation, which we will borrow.
     rope: RotaryEmbedding
-    bias: Optional[TensorValue] = None
-    perm_idx: Optional[TensorValue] = None
-    quantization_config: Optional[QuantizationConfig] = None
+    bias: TensorValue | None = None
+    perm_idx: TensorValue | None = None
+    quantization_config: QuantizationConfig | None = None
 
     def __call__(
         self,
@@ -120,7 +115,7 @@ class AttentionWithRopeV1(AttentionImpl):
                 bias=self.bias,
             )
 
-        # Apply rope.
+        # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
@@ -154,18 +149,18 @@ class AttentionWithRopeV1(AttentionImpl):
         return self.wo(attn_out)
 
 
-class AttentionWithRope(Module):
-    """Implementation of attention that uses the rope frequency."""
+class AttentionWithRope(Module, Shardable):
+    """Implementation of attention that uses Rotary Position Embedding (RoPE)."""
 
-    # This class will not use the RotaryEmbedding to
-    # calculate rope, but it already includes a freqs_cis
-    # calculation, which we will borrow
+    # This class will not use the RotaryEmbedding to calculate rope, but it
+    # already includes a freqs_cis calculation, which we will borrow.
     rope: RotaryEmbedding
 
     def __init__(
         self,
         *,
         rope: RotaryEmbedding,
+        sharding_strategy: ShardingStrategy | None = None,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
@@ -183,57 +178,68 @@ class AttentionWithRope(Module):
 
         Args:
             rope: The rope layer to borrow the freqs_cis value from.
+            sharding_strategy: Optional initial sharding strategy.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            kv_params: KV Cache params, including number of kv heads, head dim, and dtype.
             dtype: DType of the QKV and output projection weights.
-            devices: Device to place the weights and run the computation. If
-                multiple are provided, the first device is used. Use
-                `TensorParallelAttentionWithRope` to use all devices during
-                attention computation.
-            linear_cls: Linear class to use for the outputs dense layer.
-            stacked_qkv: Whether the weights are stacked together.
-            scale: Value used to scale the results of the attention output.
-            has_bias: Whether to use an attention bias.
-            clip_qkv: If provided, the QKV weights are clamped between
-                `[-clip_qkv, clip_qkv]`
+            devices: Device(s) on which to place the weights and run the computation. If multiple are
+                provided, the first device is used for weight placement here.
+            linear_cls: Linear class to use for projections.
+            stacked_qkv: Whether Q/K/V weights are stacked in a single Weight.
+            scale: Optional attention scale; defaults to sqrt(1/head_dim).
+            has_bias: Whether Q/K/V have bias (stacked_qkv forbids bias).
+            float8_config: Optional Float8 config (dynamic or static).
+            clip_qkv: If provided, clamp Q/K/V weights to [-clip_qkv, clip_qkv].
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
         self.kv_params = kv_params
+        self.hidden_size = hidden_size
         self.has_bias = has_bias
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.clip_qkv = clip_qkv
         self.devices = devices or [DeviceRef.CPU()]
         self.float8_config = float8_config
+        self.stacked_qkv = stacked_qkv
+        self._sharding_strategy: ShardingStrategy | None = None
 
         if stacked_qkv and clip_qkv:
             raise ValueError(
-                "`clip_qkv` not yet supported when `stack_qkv=True`."
+                "`clip_qkv` not yet supported when `stacked_qkv=True`."
             )
 
         if stacked_qkv and has_bias:
-            raise ValueError("Bias is not supported with stacked qkv.")
+            raise ValueError("Bias is not supported with stacked_qkv.")
+
+        # Static FP8 + stacked QKV needs special scale plumbing; not wired up yet.
+        if (
+            stacked_qkv
+            and (float8_config is not None)
+            and float8_config.is_static
+        ):
+            raise NotImplementedError(
+                "Float8 static scaling with stacked_qkv=True is not supported yet."
+            )
 
         if not self.kv_params.cache_strategy.uses_opaque():
             raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
+                f"{self.kv_params.cache_strategy} cache strategy is not supported in the Attention layer."
             )
 
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
         self.q_weight_dim = q_weight_dim
-        self.stacked_qkv = stacked_qkv
 
         if stacked_qkv:
-            # To keep the weight names consistent with the transformers attention,
-            # the names are suffixed ".weight".
+            # Keep names consistent with other stacks by suffixing ".weight".
             self.qkv_proj = Weight(
                 name="qkv_proj.weight",
                 dtype=dtype,
@@ -274,6 +280,184 @@ class AttentionWithRope(Module):
             float8_config=float8_config,
         )
 
+        if sharding_strategy is not None:
+            self.sharding_strategy = sharding_strategy
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the Module sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the Module sharding strategy and propagate to weights.
+
+        We support both tensor-parallel and data-parallel (replicate) sharding strategies.
+        """
+        if strategy.is_tensor_parallel:
+            self._sharding_strategy = strategy
+
+            num_devices = strategy.num_devices
+            if self.stacked_qkv:
+                # Partition the [Q|K|V] block by heads.
+                self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
+                    num_devices, self.n_heads, self.kv_params.head_dim
+                )
+            else:
+                # Column-shard by output channels (heads) for each projection.
+                self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+                self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+                self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+
+            # Row-shard o_proj.weight (standard tensor parallel o-proj).
+            self.o_proj.sharding_strategy = (
+                ShardingStrategy.head_aware_columnwise(
+                    num_devices, self.n_heads, self.kv_params.head_dim
+                )
+            )
+        elif strategy.is_replicate:
+            self._sharding_strategy = strategy
+
+            num_devices = strategy.num_devices
+            if self.stacked_qkv:
+                self.qkv_proj.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+            else:
+                self.q_proj.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+                self.k_proj.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+                self.v_proj.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+            self.o_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+        else:
+            raise ValueError(
+                "Only tensor-parallel (rowwise) or data-parallel (replicate) sharding strategies are supported for AttentionWithRope"
+            )
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[AttentionWithRope]:
+        """Create sharded views across `devices` (tensor-parallel).
+
+        Returns one `AttentionWithRope` per device with appropriately sliced weights.
+        """
+        devices = list(devices)
+        if not self.sharding_strategy:
+            raise ValueError(
+                "AttentionWithRope cannot be sharded: no sharding_strategy set. "
+                "Set `self.sharding_strategy = ShardingStrategy.tensor_parallel(N)` first."
+            )
+
+        if self.sharding_strategy.is_tensor_parallel:
+            if DeviceRef.CPU() in devices:
+                raise ValueError(
+                    "Tensor-parallel AttentionWithRope does not support CPU devices"
+                )
+
+            if self.stacked_qkv:
+                qkv_proj_shards = self.qkv_proj.shard(devices)
+            else:
+                q_proj_shards = self.q_proj.shard(devices)
+                k_proj_shards = self.k_proj.shard(devices)
+                v_proj_shards = self.v_proj.shard(devices)
+            o_proj_shards = self.o_proj.shard(devices)
+
+            default_dtype = o_proj_shards[0].weight.dtype
+            linear_cls = self.o_proj.__class__
+
+            shards: list[AttentionWithRope] = []
+            num_devices = len(devices)
+            for n, device in enumerate(devices):
+                # Compute this shard's number of attention heads.
+                head_start, head_end = _compute_shard_range(
+                    self.n_heads, n, num_devices
+                )
+                device_num_heads = head_end - head_start
+
+                layer = AttentionWithRope(
+                    rope=self.rope,
+                    num_attention_heads=device_num_heads,
+                    num_key_value_heads=self.num_key_value_heads,
+                    hidden_size=self.hidden_size,
+                    kv_params=self.kv_params,
+                    devices=[device],
+                    dtype=default_dtype,
+                    linear_cls=linear_cls,
+                    stacked_qkv=self.stacked_qkv,
+                    scale=self.scale,
+                    has_bias=self.has_bias,
+                    float8_config=self.float8_config,
+                    clip_qkv=self.clip_qkv,
+                )
+
+                if self.stacked_qkv:
+                    layer.qkv_proj = qkv_proj_shards[n]
+                else:
+                    layer.q_proj = q_proj_shards[n]
+                    layer.k_proj = k_proj_shards[n]
+                    layer.v_proj = v_proj_shards[n]
+                layer.o_proj = o_proj_shards[n]
+
+                shards.append(layer)
+            return shards
+
+        elif self.sharding_strategy.is_replicate:
+            # Replicate full weights to each device (no head split).
+            if self.stacked_qkv:
+                qkv_proj_replicas = self.qkv_proj.shard(devices)
+            else:
+                q_proj_replicas = self.q_proj.shard(devices)
+                k_proj_replicas = self.k_proj.shard(devices)
+                v_proj_replicas = self.v_proj.shard(devices)
+            o_proj_replicas = self.o_proj.shard(devices)
+
+            default_dtype = o_proj_replicas[0].weight.dtype
+            linear_cls = self.o_proj.__class__
+
+            replicas: list[AttentionWithRope] = []
+            for i, device in enumerate(devices):
+                replica = AttentionWithRope(
+                    rope=self.rope,
+                    num_attention_heads=self.n_heads,  # DP keeps full heads
+                    num_key_value_heads=self.num_key_value_heads,
+                    hidden_size=self.hidden_size,
+                    kv_params=self.kv_params,
+                    devices=[device],
+                    dtype=default_dtype,
+                    linear_cls=linear_cls,
+                    stacked_qkv=self.stacked_qkv,
+                    scale=self.scale,
+                    has_bias=self.has_bias,
+                    float8_config=self.float8_config,
+                    clip_qkv=self.clip_qkv,
+                )
+                if self.stacked_qkv:
+                    replica.qkv_proj = qkv_proj_replicas[i]
+                else:
+                    replica.q_proj = q_proj_replicas[i]
+                    replica.k_proj = k_proj_replicas[i]
+                    replica.v_proj = v_proj_replicas[i]
+                replica.o_proj = o_proj_replicas[i]
+                replicas.append(replica)
+            return replicas
+
+        else:
+            # Should not happen due to setter validation.
+            raise ValueError(
+                "Unsupported sharding strategy for AttentionWithRope"
+            )
+
     @property
     def wqkv(self) -> TensorValue:
         """The concatenation of q, k, and v weight vectors."""
@@ -313,7 +497,6 @@ class AttentionWithRope(Module):
                 wqkv, qkv_weight_scale = convert_weights_to_fp8_fnuz_if_needed(
                     wqkv, self.qkv_weight_scale.to(DeviceRef.CPU())
                 )
-
                 wqkv = quantize_static_scaled_float8(
                     wqkv, qkv_weight_scale.to(DeviceRef.CPU())
                 )
@@ -325,7 +508,6 @@ class AttentionWithRope(Module):
         """The concatenation of q, k, and v bias weight vectors."""
         if not self.has_bias:
             return None
-
         # This was already checked in the constructor.
         assert not self.stacked_qkv
 
@@ -366,7 +548,7 @@ class AttentionWithRope(Module):
     @property
     def qkv_weight_scale(self) -> TensorValue:
         """The max of q, k, and v scale weight vectors."""
-        assert self.float8_config
+        assert self.float8_config is not None
 
         # TODO(MODELS-595): Reuse AttentionWithRopeQKV for this.
         if self.stacked_qkv:
@@ -395,8 +577,7 @@ class AttentionWithRope(Module):
             # In the dynamic scaling case, return the weight scales directly.
             return weight_scale
 
-        assert self.float8_config.is_static
-        # Otherwise, return a scalar max QKV weight scale in the static case.
+        # Static case: return a scalar max QKV weight scale.
         return ops.max(weight_scale).reshape([])
 
     def __call__(
@@ -411,13 +592,12 @@ class AttentionWithRope(Module):
         total_seq_len = x.shape[0]
 
         wqkv = self.wqkv.to(x.device)
-        if self.wqkv_bias is not None:
-            wqkv_bias = self.wqkv_bias.to(x.device)
-        else:
-            wqkv_bias = None
+        wqkv_bias = (
+            self.wqkv_bias.to(x.device) if self.wqkv_bias is not None else None
+        )
 
         if self.float8_config:
-            x_scales: TensorValue
+            # FP8 path
             weight_scale = self.qkv_weight_scale
             if self.float8_config.is_static:
                 assert self.qkv_input_scale is not None
@@ -446,7 +626,7 @@ class AttentionWithRope(Module):
                 weight_scale=weight_scale.to(x.device),
             )
         else:
-            # Call into fused qkv ragged matmul.
+            # Regular fused QKV matmul.
             xq = fused_qkv_ragged_matmul(
                 self.kv_params,
                 input=x,
@@ -458,7 +638,7 @@ class AttentionWithRope(Module):
                 n_heads=self.n_heads,
             )
 
-        # Apply rope.
+        # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
@@ -471,11 +651,11 @@ class AttentionWithRope(Module):
             xq,
             input_row_offsets,
             kv_collection,
-            freqs_cis,
-            layer_idx,
+            freqs_cis=freqs_cis,
+            layer_idx=layer_idx,
             interleaved=self.rope.interleaved,
         )
-        # Calculate Flash Attention.
+
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -494,9 +674,8 @@ class AttentionWithRope(Module):
 class GGUFQAttentionWithRope(AttentionWithRope):
     """Implementation of attention with GGUF quantized weights."""
 
-    # This class will not use the RotaryEmbedding to
-    # calculate rope, but it already includes a freqs_cis
-    # calculation, which we will borrow
+    # This class will not use the RotaryEmbedding to calculate rope, but it
+    # already includes a freqs_cis calculation, which we will borrow.
     rope: RotaryEmbedding
 
     def __init__(
@@ -515,17 +694,17 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         has_bias: bool = False,
         clip_qkv: float | None = None,
     ) -> None:
-        """Initializes the attention layer.
+        """Initializes the GGUF attention layer.
 
         Args:
             rope: The rope layer to borrow the freqs_cis value from.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            kv_params: KV Cache params, including number of kv heads, head dim, and dtype.
             layer_idx: The layer number associated with this Attention block.
             dtype: DType of the weights, should always be uint8.
-            devices: Device to place the weights and run the computation. If
+            devices: Device(s) on which to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
                 `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
@@ -536,32 +715,26 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             clip_qkv: If provided, the QKV weights are clamped between
                 `[-clip_qkv, clip_qkv]`
         """
-        # Skip AttentionWithRope.__init__ because the weights are created
-        # differently.
+        # Skip AttentionWithRope.__init__ because the weights are created differently.
         Module.__init__(self)
 
         if dtype != DType.uint8:
             raise ValueError(
                 f"GGUFQAttentionWithRope only supports uint8 dtype weights but got {dtype}"
             )
-
         if clip_qkv is not None:
             raise ValueError(
                 "clip_qkv is not supported for GGUFQAttentionWithRope"
             )
-
         if has_bias:
             raise ValueError("GGUFQAttentionWithRope does not support bias")
-
         if not quantization_encoding.is_gguf:
             raise ValueError(
                 f"Only GGUF quantization encoding is supported for GGUFQAttentionWithRope. Found: {quantization_encoding}"
             )
-
         if not kv_params.cache_strategy.uses_opaque():
             raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
+                f"{kv_params.cache_strategy} cache strategy is not supported in the Attention layer."
             )
 
         self.quantization_encoding = quantization_encoding
@@ -571,7 +744,9 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         self.num_key_value_heads = num_key_value_heads
         self.hidden_size = hidden_size
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.devices = devices or [DeviceRef.CPU()]
 
@@ -582,7 +757,6 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             quantization_encoding=quantization_encoding,
             device=self.devices[0],
         )
-
         self.k_proj_weight = Weight(
             name="k_proj.weight",
             dtype=DType.uint8,
@@ -597,12 +771,11 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             quantization_encoding=quantization_encoding,
             device=self.devices[0],
         )
-
         self.o_proj = linear_cls(
             in_dim=1,  # Shape will be overridden at load_state_dict.
             out_dim=1,  # Shape will be overridden at load_state_dict.
             dtype=DType.uint8,
-            quantization_encoding=quantization_encoding,  # Shape will be overridden at load_state_dict.
+            quantization_encoding=quantization_encoding,
             device=self.devices[0],
         )
 
@@ -633,7 +806,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         assert self.k_proj_weight.quantization_encoding is not None
         assert self.v_proj_weight.quantization_encoding is not None
 
-        # Call into unfused qkv ragged matmul.
+        # Unfused GGUF path.
         xq = unfused_qkv_ragged_matmul_gguf_quantized(
             self.kv_params,
             input=x,
@@ -649,21 +822,19 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             layer_idx=layer_idx,
         )
 
-        # Apply rope.
+        # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
         freqs_cis = ops.cast(freqs_cis, xq.dtype)
-
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
             input_row_offsets,
             kv_collection,
-            freqs_cis,
-            layer_idx,
+            freqs_cis=freqs_cis,
+            layer_idx=layer_idx,
             interleaved=self.rope.interleaved,
         )
 
-        # Calculate Flash Attention.
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -679,7 +850,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
 
 class GPTQAttentionWithRope(AttentionWithRope):
-    """Implementation of the GPT-Q attention layer."""
+    """Implementation of the GPTQ attention layer."""
 
     def __init__(
         self,
@@ -694,8 +865,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         scale: float | None = None,
         linear_cls: Callable[..., Linear] = Linear,
     ) -> None:
-        # Skip AttentionWithRope.__init__ because the weights are created
-        # differently.
+        # Skip AttentionWithRope.__init__ because the weights are created differently.
         Module.__init__(self)
         self.quantization_config = quantization_config
         self.rope = rope
@@ -704,12 +874,13 @@ class GPTQAttentionWithRope(AttentionWithRope):
         self.hidden_size = hidden_size
         self.devices = devices or [DeviceRef.CPU()]
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         if not self.kv_params.cache_strategy.uses_opaque():
             raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
+                f"{self.kv_params.cache_strategy} cache strategy is not supported in the Attention layer."
             )
 
         self.kv_weight_dim = (
@@ -778,10 +949,10 @@ class GPTQAttentionWithRope(AttentionWithRope):
 
     @property
     def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
+        """The concatenation of q, k, and v weight vectors (packed + scales)."""
 
         # fmt: off
-        # the `qweight` tensor for a QuantLinear is of type uint32. When allocated as bytes, we reshape the
+        # The `qweight` tensor for a QuantLinear is of type uint32. When allocated as bytes, we reshape the
         # uint8 tensor to [cols, rows * 4] so concatenating the uint8 tensors along axis=1 is equivalent to
         # concatenating the original uint32 tensors along axis=1.
         wq_qweight = ops.reshape(self.q_proj_qweight, (-1, self.hidden_size * 4))
@@ -819,7 +990,6 @@ class GPTQAttentionWithRope(AttentionWithRope):
         if self.devices:
             wqkv = wqkv.to(self.devices[0])
 
-        # Call into fused qkv ragged matmul.
         xq = fused_qkv_ragged_matmul_quantized(
             self.kv_params,
             input=x,
@@ -832,7 +1002,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
             quantization_config=self.quantization_config,
         )
 
-        # Apply rope.
+        # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
@@ -845,12 +1015,11 @@ class GPTQAttentionWithRope(AttentionWithRope):
             xq,
             input_row_offsets,
             kv_collection,
-            freqs_cis,
-            layer_idx,
+            freqs_cis=freqs_cis,
+            layer_idx=layer_idx,
             interleaved=self.rope.interleaved,
         )
 
-        # Calculate Flash Attention.
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -874,6 +1043,8 @@ def distribute_value(
 class TensorParallelAttentionWithRope(
     AttentionWithRope, DistributedAttentionImpl
 ):
+    """Tensor-parallel wrapper that delegates sharding to the base module."""
+
     def __init__(
         self,
         *,
@@ -898,8 +1069,8 @@ class TensorParallelAttentionWithRope(
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
-            devices: Device to place the weights and run the computation. Must
+            kv_params: KV Cache params, including number of kv heads, head dim, and dtype.
+            devices: Device(s) on which to place the weights and run the computation. Must
                 provide at least 2 devices for tensor parallel attention.
             dtype: DType of the QKV and output projection weights.
             linear_cls: Linear class to use for the outputs dense layer.
@@ -929,70 +1100,13 @@ class TensorParallelAttentionWithRope(
             raise ValueError(
                 "TensorParallelAttentionWithRope does not support CPU devices"
             )
-        # Shard weights into separate AttentionWithRope layers.
+
         num_devices = len(self.devices)
         self.allreduce = Allreduce(num_devices)
 
-        if self.stacked_qkv:
-            self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
-                num_devices, self.n_heads, self.kv_params.head_dim
-            )
-        else:
-            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-        self.o_proj.sharding_strategy = ShardingStrategy.head_aware_columnwise(
-            num_devices, self.n_heads, self.kv_params.head_dim
-        )
-
-        self.list_of_attentions = []
-
-        # Shard weights once for all devices
-        if self.stacked_qkv:
-            qkv_proj_shards = self.qkv_proj.shard(self.devices)
-        else:
-            q_proj_shards = self.q_proj.shard(self.devices)
-            k_proj_shards = self.k_proj.shard(self.devices)
-            v_proj_shards = self.v_proj.shard(self.devices)
-        o_proj_shards = self.o_proj.shard(self.devices)
-
-        for n, device in enumerate(self.devices):
-            # Calculate the number of heads for this device
-            head_start, head_end = _compute_shard_range(
-                num_attention_heads, n, len(self.devices)
-            )
-            device_num_heads = head_end - head_start
-
-            layer = AttentionWithRope(
-                rope=rope,
-                num_attention_heads=device_num_heads,
-                num_key_value_heads=num_key_value_heads,
-                hidden_size=hidden_size,
-                kv_params=kv_params,
-                devices=[device],
-                dtype=dtype,
-                linear_cls=linear_cls,
-                stacked_qkv=stacked_qkv,
-                scale=scale,
-                has_bias=has_bias,
-                float8_config=float8_config,
-                clip_qkv=clip_qkv,
-            )
-            if self.stacked_qkv:
-                layer.qkv_proj = qkv_proj_shards[n]
-            else:
-                layer.q_proj = q_proj_shards[n]
-                layer.k_proj = k_proj_shards[n]
-                layer.v_proj = v_proj_shards[n]
-
-            layer.o_proj = o_proj_shards[n]
-            self.list_of_attentions.append(layer)
+        # Delegate: configure base sharding + create per-device modules.
+        self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
+        self.list_of_attentions = self.shard(self.devices)
 
     def __call__(  # type: ignore[override]
         self,
@@ -1009,11 +1123,11 @@ class TensorParallelAttentionWithRope(
             raise ValueError(
                 f"Expected {len(self.devices)} input_row_offsets, got {len(input_row_offsets)}"
             )
-        if not all(isinstance(x, TensorValue) for x in input_row_offsets):
+        if not all(isinstance(t, TensorValue) for t in input_row_offsets):
             raise TypeError(
                 "All elements in input_row_offsets must be TensorValue instances"
             )
-        if not all(isinstance(x, TensorValue) for x in freqs_cis):
+        if not all(isinstance(t, TensorValue) for t in freqs_cis):
             raise TypeError(
                 "All elements in freqs_cis must be TensorValue instances"
             )
@@ -1030,16 +1144,158 @@ class TensorParallelAttentionWithRope(
         ]
 
         return self.allreduce(
-            inputs=attn_outputs,
-            signal_buffers=signal_buffers,
+            inputs=attn_outputs, signal_buffers=signal_buffers
         )
+
+
+class DataParallelAttentionWithRope(AttentionWithRope):
+    """Data-parallel implementation of Attention with RoPE.
+
+    This replicates the attention module across devices and runs each replica on
+    its local inputs (x, kv, freqs_cis, input_row_offsets). No collective ops
+    are required; KV-cache remains local to each device.
+
+    Notes:
+      - Assumes the caller has already distributed `xs`, `kv_collections`,
+        `freqs_cis`, and `input_row_offsets` so that index i corresponds to
+        device i, with `input_row_offsets[i]` rebased to start at 0.
+    """
+
+    def __init__(
+        self,
+        *,
+        rope: RotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        devices: Sequence[DeviceRef] | None = None,
+        dtype: DType = DType.float32,
+        linear_cls: Callable[..., Linear] = Linear,
+        stacked_qkv: bool = False,
+        scale: float | None = None,
+        has_bias: bool = False,
+        float8_config: Float8Config | None = None,
+        clip_qkv: float | None = None,
+    ) -> None:
+        super().__init__(
+            rope=rope,
+            sharding_strategy=None,
+            num_attention_heads=num_attention_heads,
+            num_key_value_heads=num_key_value_heads,
+            hidden_size=hidden_size,
+            kv_params=kv_params,
+            devices=devices,
+            dtype=dtype,
+            linear_cls=linear_cls,
+            stacked_qkv=stacked_qkv,
+            scale=scale,
+            has_bias=has_bias,
+            float8_config=float8_config,
+            clip_qkv=clip_qkv,
+        )
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        num_devices = len(self.devices)
+
+        # Replicate component weights/modules to each device.
+        if self.stacked_qkv:
+            self.qkv_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            qkv_proj_replicas = self.qkv_proj.shard(self.devices)
+        else:
+            self.q_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            self.k_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            self.v_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+            q_proj_replicas = self.q_proj.shard(self.devices)
+            k_proj_replicas = self.k_proj.shard(self.devices)
+            v_proj_replicas = self.v_proj.shard(self.devices)
+
+        self.o_proj.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        o_proj_replicas = self.o_proj.shard(self.devices)
+
+        # Build one full copy per device (no head-splitting).
+        self.replicated_attentions: list[AttentionWithRope] = []
+        for i, device in enumerate(self.devices):
+            replica = AttentionWithRope(
+                rope=self.rope,
+                sharding_strategy=None,
+                num_attention_heads=self.n_heads,  # DP keeps full heads
+                num_key_value_heads=self.num_key_value_heads,
+                hidden_size=self.hidden_size,
+                kv_params=self.kv_params,
+                devices=[device],
+                dtype=dtype,
+                linear_cls=linear_cls,
+                stacked_qkv=self.stacked_qkv,
+                scale=self.scale,
+                has_bias=self.has_bias,
+                float8_config=self.float8_config,
+                clip_qkv=self.clip_qkv,
+            )
+            if self.stacked_qkv:
+                replica.qkv_proj = qkv_proj_replicas[i]
+            else:
+                replica.q_proj = q_proj_replicas[i]
+                replica.k_proj = k_proj_replicas[i]
+                replica.v_proj = v_proj_replicas[i]
+            replica.o_proj = o_proj_replicas[i]
+            self.replicated_attentions.append(replica)
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        n = len(self.devices)
+        if not (
+            len(xs)
+            == len(kv_collections)
+            == len(freqs_cis)
+            == len(input_row_offsets)
+            == n
+        ):
+            raise ValueError(
+                "xs, kv_collections, freqs_cis, and input_row_offsets must all have "
+                f"length equal to number of devices ({n})"
+            )
+
+        outs: list[TensorValue] = []
+        for i in range(n):
+            if xs[i].shape[0] == 0:
+                outs.append(xs[i])
+                continue
+
+            outs.append(
+                self.replicated_attentions[i](
+                    layer_idx,
+                    xs[i],
+                    kv_collections[i],
+                    freqs_cis=freqs_cis[i],
+                    input_row_offsets=input_row_offsets[i],
+                )
+            )
+        return outs
 
 
 @dataclass
 class AttentionWithRopeQKV(AttentionImplQKV):
-    # This class will not use the RotaryEmbedding to
-    # calculate rope, but it already includes a freqs_cis
-    # calculation, which we will borrow
+    # This class will not use the RotaryEmbedding to calculate rope, but it
+    # already includes a freqs_cis calculation, which we will borrow.
     rope: RotaryEmbedding
 
     def __call__(
@@ -1050,12 +1306,10 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
-        # Get attributes from input.
         total_seq_len = x.shape[0]
 
         wqkv = ops.concat((self.wq, self.wk, self.wv))
 
-        # Call into fused qkv ragged matmul.
         xq = fused_qkv_ragged_matmul(
             self.kv_params,
             input=x,
@@ -1066,7 +1320,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
             n_heads=self.n_heads,
         )
 
-        # Apply rope.
+        # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Cast freqs_cis to xq's dtype to match the fused_qk_ragged_rope kernel.
@@ -1077,12 +1331,11 @@ class AttentionWithRopeQKV(AttentionImplQKV):
             xq,
             input_row_offsets,
             kv_collection,
-            freqs_cis,
-            layer_idx,
+            freqs_cis=freqs_cis,
+            layer_idx=layer_idx,
             interleaved=self.rope.interleaved,
         )
 
-        # Calculate Flash Attention.
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -1099,19 +1352,18 @@ class AttentionWithRopeQKV(AttentionImplQKV):
 
 
 class AttentionWithRopeNoOpaque(Module):
-    """Implementation of attention that uses the rope frequency without opaque cache.
+    """Attention with RoPE without opaque KV cache.
 
     Assumes:
-    - no float8
-    - no stacked qkv
-    - no bias
-    - no clip_qkv
-    - no float8_config
+      - no float8
+      - no stacked qkv
+      - no bias
+      - no clip_qkv
+      - no float8_config
     """
 
-    # This class will not use the RotaryEmbedding to
-    # calculate rope, but it already includes a freqs_cis
-    # calculation, which we will borrow
+    # This class will not use the RotaryEmbedding to calculate rope, but it
+    # already includes a freqs_cis calculation, which we will borrow.
     rope: RotaryEmbedding
 
     def __init__(
@@ -1134,30 +1386,30 @@ class AttentionWithRopeNoOpaque(Module):
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            kv_params: KV Cache params, including number of kv heads, head dim, and dtype.
             dtype: DType of the QKV and output projection weights.
-            devices: Device to place the weights and run the computation. If
+            devices: Device(s) on which to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
                 `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
         self.kv_params = kv_params
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.devices = devices or [DeviceRef.CPU()]
 
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
-        # To keep the weight names consistent with the transformers attention,
-        # the names are suffixed ".weight".
+        # To keep names consistent, suffix ".weight".
         self.qkv_proj = Linear(
             in_dim=hidden_size,
             out_dim=q_weight_dim + 2 * kv_weight_dim,
@@ -1212,10 +1464,6 @@ class AttentionWithRopeNoOpaque(Module):
             x_k, input_row_offsets, kv_collection.cache_lengths, freqs_cis
         )
 
-        # Store K and V in the cache.
-        # TODO:
-        # - we could also fuse this into a single kernel, not sure if that's useful.
-        # - the graph compiler would fuse this output store in the output of the rope kernel above.
         store_k_cache(kv_collection, xk_rope, input_row_offsets, layer_idx)
         store_v_cache(
             kv_collection,
@@ -1226,7 +1474,6 @@ class AttentionWithRopeNoOpaque(Module):
             layer_idx,
         )
 
-        # Calculate Flash Attention.
         attn_out = flash_attention_ragged_no_opaque(
             self.kv_params,
             input=xq_rope,

@@ -41,9 +41,10 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.attention.multi_latent_attention import (
-    TensorParallelLatentAttentionWithRope,
+    DataParallelLatentAttentionWithRope,
 )
 from max.nn.comm.allreduce import Allreduce
+from max.nn.data_parallelism import split_batch_replicated
 from max.nn.kv_cache import (
     PagedCacheValues,
     PagedKVCacheManager,
@@ -72,10 +73,10 @@ class DeepseekV3DecoderLayer(Module):
         distributed_gemm_config: DistributedGemmConfig | None = None,
     ) -> None:
         super().__init__()
+        self.config = config
         num_devices = len(config.devices)
 
-        # Create self-attention layer
-        self.self_attn = TensorParallelLatentAttentionWithRope(
+        self.self_attn = DataParallelLatentAttentionWithRope(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
@@ -88,6 +89,9 @@ class DeepseekV3DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
+            # TODO(GEX-2653): Force prefill, when using "both", the graph
+            # compilation crashes.
+            graph_mode="prefill",
         )
 
         # Create MLP or MoE layer
@@ -152,13 +156,6 @@ class DeepseekV3DecoderLayer(Module):
                     n_group=config.n_group,
                     topk_group=config.topk_group,
                     norm_topk_prob=config.norm_topk_prob,
-                    # These parameters are passed to the MoEGate class
-                    # from the MoE layer.
-                    # num_experts_per_tok=config.num_experts_per_tok,
-                    # num_experts=config.n_routed_experts,
-                    # hidden_dim=config.hidden_size,
-                    # devices=config.devices,
-                    # dtype=config.dtype,
                 ),
                 has_shared_experts=True,
                 shared_experts_dim=config.n_shared_experts
@@ -194,6 +191,8 @@ class DeepseekV3DecoderLayer(Module):
         kv_max_lengths: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
+        input_row_offsets_int64: TensorValue,
+        data_parallel_splits: TensorValue,
     ) -> list[TensorValue]:
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
@@ -211,18 +210,33 @@ class DeepseekV3DecoderLayer(Module):
             for i in range(len(kv_blocks))
         ]
 
+        norm_xs, split_offsets = split_batch_replicated(
+            self.config.devices,
+            norm_xs,
+            input_row_offsets,
+            input_row_offsets_int64,
+            data_parallel_splits,
+        )
+
+        # Data-parallel attention (per-device)
         attn_outs = self.self_attn(
             layer_idx,
             norm_xs,
             signal_buffers,
             kv_collections,
             freqs_cis=freqs_cis,
-            input_row_offsets=input_row_offsets,
+            input_row_offsets=split_offsets,
         )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        attn_outs = ops.allgather(attn_outs, signal_buffers)
 
-        # Apply post attention layer norm to each shard
+        # Use rebind to assert that the gathered shape is the same as the
+        # original input shape
+        attn_outs = [out.rebind(xs[0].shape) for out in attn_outs]
+
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
+
+        # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
             self.post_attention_layernorm_shards, hs
         )
@@ -243,7 +257,7 @@ class DeepseekV3DecoderLayer(Module):
                 signal_buffers,
             )
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -311,14 +325,17 @@ class DeepseekV3(Module):
             quantization_encoding=None,
         )
 
-        self.subgraph_layer_groups = [
-            [
-                i
-                for i in range(
-                    config.first_k_dense_replace, config.num_hidden_layers
-                )
+        if config.use_subgraphs:
+            self.subgraph_layer_groups = [
+                [
+                    i
+                    for i in range(
+                        config.first_k_dense_replace, config.num_hidden_layers
+                    )
+                ]
             ]
-        ]
+        else:
+            self.subgraph_layer_groups = []
         self.return_logits = ReturnLogits.LAST_TOKEN
         self.logits_scaling = 1.0
 
@@ -329,13 +346,19 @@ class DeepseekV3(Module):
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
+        data_parallel_splits: TensorValue,
     ) -> tuple[TensorValue, ...]:
+        if not input_row_offsets.device == DeviceRef.CPU():
+            raise ValueError("input_row_offsets must be located on CPU")
+        if not data_parallel_splits.device == DeviceRef.CPU():
+            raise ValueError("data_parallel_splits must be located on CPU")
+
         devices = self.config.devices
         h = self.embed_tokens(tokens, signal_buffers)
 
         freqs_cis = distribute_value(self.rope.freqs_cis, devices)
-
         input_row_offsets_ = distribute_value(input_row_offsets, devices)
+        input_row_offsets_int64 = input_row_offsets.cast(DType.int64)
 
         subgraph_input_types: Sequence[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
@@ -347,9 +370,10 @@ class DeepseekV3(Module):
             [kv_collection[3].type for kv_collection in kv_collections],
             [freq.type for freq in freqs_cis],
             [offset.type for offset in input_row_offsets_],
+            input_row_offsets_int64.type,
+            data_parallel_splits.type,
         ]
 
-        # First, we need to build the subgraphs for each layer group.
         subgraphs = []
         for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
             assert len(layer_group) > 0, (
@@ -367,7 +391,6 @@ class DeepseekV3(Module):
                 )
             )
 
-        # Then, we need to call the subgraphs for each layer group.
         for idx, layer in enumerate(self.layers):
             has_subgraph = False
             for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
@@ -400,12 +423,13 @@ class DeepseekV3(Module):
                             ],
                             *freqs_cis,
                             *input_row_offsets_,
+                            input_row_offsets_int64,
+                            data_parallel_splits,
                             prefix=f"layers.{idx}.",
                         )
                     ]
                     break
             if not has_subgraph:
-                # If no subgraph was found, call the layer directly.
                 h = layer(
                     ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                     h,
@@ -416,13 +440,16 @@ class DeepseekV3(Module):
                     [kv_collection[3] for kv_collection in kv_collections],
                     freqs_cis=freqs_cis,
                     input_row_offsets=input_row_offsets_,
+                    input_row_offsets_int64=input_row_offsets_int64,
+                    data_parallel_splits=data_parallel_splits,
                 )
                 assert isinstance(h, list)
 
         h0 = h[0]
-        last_token_indices = input_row_offsets[1:] - 1
+        last_token_indices = input_row_offsets_[0][1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
         last_token_distributed = distribute_value(last_token_h, devices)
+
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(
             self.norm_shards, last_token_distributed
@@ -495,35 +522,39 @@ class DeepseekV3(Module):
         # config.
         device_ref = self.config.devices[0]
 
-        # Construct general input types
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=device_ref
-        )
-
-        kv_inputs = kv_manager.input_symbols()
-
         # Construct Graph Inputs
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
         input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=DeviceRef.CPU(),
         )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=device_ref
+        )
+        data_parallel_splits_type = TensorType(
+            DType.int64,
+            shape=[self.config.data_parallel_degree + 1],
+            device=DeviceRef.CPU(),
+        )
+
+        kv_inputs = kv_manager.input_symbols()
+
         # Flatten kv types for each device
         flattened_kv_types: list[TensorType] = [
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
 
         signals = Signals(devices=self.config.devices)
-
-        # Explicitly construct tuple with mixed types
         signal_buffer_types: list[BufferType] = signals.input_types()
 
-        # Build the complete input types list
         all_input_types: list[TensorType | BufferType] = [
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
+            data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
         all_input_types.extend(flattened_kv_types)

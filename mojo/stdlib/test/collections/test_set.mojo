@@ -15,7 +15,7 @@ from collections import Set
 
 from testing import assert_equal as AE
 from testing import assert_false, assert_raises, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 fn assert_equal[T: EqualityComparable](lhs: T, rhs: T) raises:

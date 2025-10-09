@@ -14,7 +14,7 @@
 import os
 from os.path import expandvars
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
 @fieldwise_init
@@ -96,9 +96,13 @@ def test_invalid_syntax():
 
 
 def main():
-    test_expansion()
-    test_braced_expansion()
-    test_unset_expansion()
-    test_dollar_sign()
-    test_short_variable()
-    test_invalid_syntax()
+    var suite = TestSuite()
+
+    suite.test[test_expansion]()
+    suite.test[test_braced_expansion]()
+    suite.test[test_unset_expansion]()
+    suite.test[test_dollar_sign]()
+    suite.test[test_short_variable]()
+    suite.test[test_invalid_syntax]()
+
+    suite^.run()

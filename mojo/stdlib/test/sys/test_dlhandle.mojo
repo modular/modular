@@ -15,7 +15,7 @@ from pathlib import Path
 from sys import DLHandle
 
 from testing import assert_raises
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def check_invalid_dlhandle():

@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceContext, Dim
 from gpu.host._nvidia_cuda import CUDA, CUcontext, CUDA_get_current_context
+from testing import TestSuite
 
 
 fn _run_cuda_context(ctx: DeviceContext) raises:
@@ -177,16 +178,33 @@ $L__BB0_2:
                 raise Error("Bad value out[", i, "] is ", out[i])
 
 
-fn main() raises:
+def test_cuda_context():
     var ctx = create_test_device_context()
-    print("-------")
-    print("Running test cuda(" + ctx.name() + "):")
-
     _run_cuda_context(ctx)
+
+
+def test_cuda_stream():
+    var ctx = create_test_device_context()
     _run_cuda_stream(ctx)
+
+
+def test_cuda_external_function():
+    var ctx = create_test_device_context()
     _run_cuda_external_function(ctx)
 
+
+def test_cuda_multi_context():
     if DeviceContext.number_of_devices() > 1:
+        var ctx = create_test_device_context()
         _run_cuda_multi_context(ctx, create_test_device_context(device_id=1))
 
-    print("Done.")
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_cuda_context]()
+    suite.test[test_cuda_stream]()
+    suite.test[test_cuda_external_function]()
+    suite.test[test_cuda_multi_context]()
+
+    suite^.run()

@@ -30,11 +30,11 @@ import sys
 import time
 import traceback
 import warnings
-from collections.abc import AsyncGenerator, Awaitable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import aiohttp
@@ -52,17 +52,18 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 try:
-    from .benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from .benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ServingBenchmarkConfig,
         parse_benchmark_args,
     )
-    from .benchmark_cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from .benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         CpuMetricsCollector,
         collect_pids_for_port,
     )
-    from .benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from .benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
+        BatchJobBenchmarkDataset,
         BenchmarkDataset,
         ChatSession,
         CodeDebugBenchmarkDataset,
@@ -74,24 +75,25 @@ try:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
-    from .metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from .benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
 except ImportError:
-    from benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ServingBenchmarkConfig,
         parse_benchmark_args,
     )
-    from benchmark_cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         CpuMetricsCollector,
         collect_pids_for_port,
     )
-    from benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
+        BatchJobBenchmarkDataset,
         BenchmarkDataset,
         ChatSession,
         CodeDebugBenchmarkDataset,
@@ -103,7 +105,7 @@ except ImportError:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
-    from metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
         StandardPercentileMetrics,
@@ -1155,7 +1157,7 @@ async def chat_session_driver(
     return session_outputs
 
 
-async def benchmark(
+async def benchmark(  # noqa: ANN201
     backend: str,
     chat: bool,
     api_url: str,
@@ -1251,7 +1253,7 @@ async def benchmark(
             test_max_tokens = min_ignore_none(
                 (test_request.output_len, max_output_len)
             )
-            test_ignore_eos = test_request.output_len is not None
+            test_ignore_eos = test_request.ignore_eos
             test_images = test_request.encoded_images
 
         test_input = RequestFuncInput(
@@ -1360,14 +1362,9 @@ async def benchmark(
                     if time.perf_counter_ns() >= benchmark_should_end_time:
                         break
 
-                # If the request length is pinned, then we use ignore_eos+max_tokens
-                # to force the model's hand into the given request length. Otherwise,
-                # we run until the model generates EOS. Letting the model choose
-                # request lengths has some downsides (e.g., benchmarking is
-                # vulnerable to correctness bugs or even minor optimizations), but
-                # sometimes necessary if we have no other way to set the appropriate
-                # distribution of output lengths.
-                ignore_eos = request.output_len is not None
+                # Use the ignore_eos setting from the dataset.
+                # Each dataset determines whether to respect EOS based on its own logic.
+                ignore_eos = request.ignore_eos
                 max_tokens = min_ignore_none(
                     (request.output_len, max_output_len)
                 )
@@ -1977,6 +1974,16 @@ def main(args: argparse.Namespace) -> None:
             shuffle=args.obfuscated_conversations_shuffle,
             seed=args.seed,
         )
+    elif isinstance(benchmark_dataset, BatchJobBenchmarkDataset):
+        input_requests = benchmark_dataset.sample_requests(
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            output_lengths=output_lengths,
+            shuffle=(
+                args.output_lengths is None and not args.record_output_lengths
+            ),
+            image_dir=args.batch_job_image_dir,
+        )
     else:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")
 
@@ -2010,6 +2017,21 @@ def main(args: argparse.Namespace) -> None:
             args.lora_output_dir,
             args.lora_server_path,
         )
+
+    if args.max_concurrency is not None:
+        try:
+            args.max_concurrency = int(args.max_concurrency)
+        except ValueError as e:
+            raise ValueError(
+                f"Expected a single integer value for max_concurrency, got {args.max_concurrency}"
+            ) from e
+    if args.request_rate is not None:
+        try:
+            args.request_rate = float(args.request_rate)
+        except ValueError as e:
+            raise ValueError(
+                f"Expected a single float value for request_rate, got {args.request_rate}"
+            ) from e
 
     logger.info("starting benchmark run")
     benchmark_result = asyncio.run(

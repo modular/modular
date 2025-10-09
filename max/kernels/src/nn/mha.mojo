@@ -132,7 +132,7 @@ fn flash_attention[
     q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
-    mask: NDBuffer,
+    mask: NDBuffer[*_, address_space = AddressSpace.GENERIC, **_],
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: OptionalReg[Int] = None,
@@ -169,7 +169,18 @@ fn flash_attention[
             q,
             k,
             v,
-            MaterializedMask(mask),
+            MaterializedMask(
+                LayoutTensor[
+                    mask.type,
+                    Layout.row_major[mask.rank](mask.shape),
+                    MutableAnyOrigin,
+                ](
+                    mask.data,
+                    RuntimeLayout[
+                        Layout.row_major[mask.rank](mask.shape)
+                    ].row_major(mask.get_shape().canonicalize()),
+                )
+            ),
             IdentityScoreMod(),
             scale,
             context.get_device_context(),
@@ -435,7 +446,7 @@ fn flash_attention_dispatch[
 ) raises:
     alias num_heads = config.num_heads
     alias depth = config.depth
-    alias group = config.num_heads // kv_num_heads
+    alias group = config.num_heads // UInt(kv_num_heads)
 
     # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
     alias is_shared_kv = ctx.default_device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
@@ -802,7 +813,12 @@ fn flash_attention_dispatch[
                     # q # [B, S, H, D]
                     var output_intermediate_data = ctx.enqueue_create_buffer[
                         output.dtype
-                    ](num_heads * depth * batch_size * num_partitions_value)
+                    ](
+                        num_heads
+                        * depth
+                        * UInt(batch_size)
+                        * UInt(num_partitions_value)
+                    )
 
                     var output_intermediate = NDBuffer[output.dtype, 4](
                         output_intermediate_data.unsafe_ptr(),
@@ -814,7 +830,11 @@ fn flash_attention_dispatch[
                         ),
                     )
 
-                    var data_len = num_heads * batch_size * num_partitions_value
+                    var data_len = (
+                        num_heads
+                        * UInt(batch_size)
+                        * UInt(num_partitions_value)
+                    )
                     var data_dim = Index(
                         num_partitions_value,
                         batch_size,
@@ -1301,7 +1321,7 @@ fn mha[
 
         num_keys = seq_len + k.cache_length(batch_idx)
         q_batch_offset = (
-            config.depth * config.num_heads * max_seq_len * batch_idx
+            config.depth * config.num_heads * UInt(max_seq_len) * batch_idx
         )
     # NDBuffer inputs, homogeneous and padded batching.
     else:
@@ -1317,7 +1337,7 @@ fn mha[
         if seq_len < block_idx.x * config.block_m():
             return
         q_batch_offset = (
-            config.depth * config.num_heads * max_seq_len * batch_idx
+            config.depth * config.num_heads * UInt(max_seq_len) * batch_idx
         )
 
         # When cache length (num_keys) is greater, we assume it has
@@ -1453,7 +1473,7 @@ fn mha_single_batch[
     alias depth = config.depth
 
     constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -1550,8 +1570,8 @@ fn mha_single_batch[
     alias MMA_K = mma_shape[2]
     alias WM = config.WM
     alias WN = config.WN
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    alias num_m_mmas = WM // UInt(MMA_M)
+    alias num_n_mmas = WN // UInt(MMA_N)
 
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
@@ -1632,14 +1652,15 @@ fn mha_single_batch[
     var mask_warp_col = warp_x * WN
 
     # Account for group query.
-    alias kv_num_heads = num_heads // group
+    alias kv_num_heads = num_heads // UInt(group)
 
     alias num_pipeline_stages = config.num_pipeline_stages
 
-    alias q_num_vecs = BM * BK // simd_size
+    alias q_num_vecs = BM * BK // UInt(simd_size)
 
     alias async_copy_q_layout = Layout.row_major(
-        min(num_threads, q_num_vecs) * simd_size // BK, BK // simd_size
+        min(num_threads, q_num_vecs) * UInt(simd_size) // BK,
+        BK // UInt(simd_size),
     )
 
     @parameter
@@ -1745,11 +1766,11 @@ fn mha_single_batch[
                 ),
             }
 
-        alias kv_num_vecs = BN * BK // simd_size
+        alias kv_num_vecs = BN * BK // UInt(simd_size)
         alias async_copy_k_layout = Layout.row_major(
             min(num_threads, kv_num_vecs)
-            * simd_size
-            // k_smem_iter.layout.stride[0].value(),
+            * UInt(simd_size)
+            // UInt(k_smem_iter.layout.stride[0].value()),
             k_smem_iter.layout.stride[0].value() // simd_size,
         )
 
@@ -1815,8 +1836,8 @@ fn mha_single_batch[
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
-                    var mask_frag_row = mask_warp_row + m_mma * MMA_M
-                    var mask_frag_col = mask_warp_col + n_mma * MMA_N
+                    var mask_frag_row = mask_warp_row + m_mma * UInt(MMA_M)
+                    var mask_frag_col = mask_warp_col + n_mma * UInt(MMA_N)
 
                     # Offset to current thread's fragment
                     mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
@@ -1917,8 +1938,8 @@ fn mha_single_batch[
 
         alias async_copy_v_layout = Layout.row_major(
             min(num_threads, kv_num_vecs)
-            * simd_size
-            // v_smem_iter.layout.stride[0].value(),
+            * UInt(simd_size)
+            // UInt(v_smem_iter.layout.stride[0].value()),
             v_smem_iter.layout.stride[0].value() // simd_size,
         )
 
@@ -2095,7 +2116,7 @@ fn mha_single_batch[
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
             thread_layout = Layout.row_major(
-                num_threads * simd_size // depth, depth // simd_size
+                num_threads * UInt(simd_size) // depth, depth // UInt(simd_size)
             ),
             swizzle=swizzle,
         ](
@@ -2168,7 +2189,7 @@ fn mha_single_batch_pipelined[
     alias depth = config.depth
 
     constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -2256,8 +2277,8 @@ fn mha_single_batch_pipelined[
     alias MMA_K = mma_shape[2]
     alias WM = config.WM
     alias WN = config.WN
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    alias num_m_mmas = WM // UInt(MMA_M)
+    alias num_n_mmas = WN // UInt(MMA_N)
 
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
@@ -2344,7 +2365,7 @@ fn mha_single_batch_pipelined[
     var mask_warp_col = warp_x * WN
 
     # Account for group query.
-    alias kv_num_heads = num_heads // group
+    alias kv_num_heads = num_heads // UInt(group)
 
     alias num_pipeline_stages = config.num_pipeline_stages
     var is_first_iter = True
@@ -2519,8 +2540,8 @@ fn mha_single_batch_pipelined[
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
-                    var mask_frag_row = mask_warp_row + m_mma * MMA_M
-                    var mask_frag_col = mask_warp_col + n_mma * MMA_N
+                    var mask_frag_row = mask_warp_row + m_mma * UInt(MMA_M)
+                    var mask_frag_col = mask_warp_col + n_mma * UInt(MMA_N)
 
                     mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
                     mask_frag_col += lane * p_frag_simdwidth % MMA_N
@@ -2764,7 +2785,7 @@ fn mha_single_batch_pipelined[
         barrier()
         copy_sram_to_dram[
             thread_layout = Layout.row_major(
-                num_threads * simd_size // depth, depth // simd_size
+                num_threads * UInt(simd_size) // depth, depth // UInt(simd_size)
             ),
             swizzle=swizzle,
         ](
@@ -2852,10 +2873,10 @@ fn mha_decoding[
     var partition_idx = block_idx.x
     var output_batch_offset = (
         depth * num_heads * batch_idx
-        + depth * num_heads * batch_size * partition_idx
+        + depth * num_heads * UInt(batch_size) * partition_idx
     )
     var qk_max_offset = (
-        num_heads * batch_idx + num_heads * batch_size * partition_idx
+        num_heads * batch_idx + num_heads * UInt(batch_size) * partition_idx
     )
     var exp_sum_offset = qk_max_offset
 
@@ -3035,7 +3056,7 @@ fn scale_and_mask_helper[
     if lane >= UInt(4 * group):
         return
     var batch_cache_valid_length = num_keys - 1
-    var warp_offset = warp * WN
+    var warp_offset = warp * UInt(WN)
 
     # Number of groups updated by each thread. E.g. for group=16 and 16x8x16 mma,
     # Each thread updates 2 rows in mma output, mapped to 2 groups.
@@ -3048,14 +3069,14 @@ fn scale_and_mask_helper[
         # offset in fragment
         var frag_offset = n_mma * MMA_N
         # Current thread's offset mapped in num_keys dim
-        var key_offset = warp_offset + frag_offset
+        var key_offset = warp_offset + UInt(frag_offset)
         # Current thread's index in current mma tile, e.g. T1 and T5 are 1 in 16x8 mma output.
-        var frag_lane_col = Int((lane % 4) * simd_width)
+        var frag_lane_col = Int((lane % 4) * UInt(simd_width))
 
         @parameter
         for i_group in range(num_groups_per_thread):
             group_idx = i_group * 8 + lane // 4
-            q_head_idx = block_idx.y * group + group_idx
+            q_head_idx = block_idx.y * UInt(group) + UInt(group_idx)
 
             @parameter
             for i in range(simd_width):
@@ -3160,7 +3181,7 @@ fn mha_decoding_single_batch[
     alias num_warps_n = BN // WN
 
     constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -3176,7 +3197,7 @@ fn mha_decoding_single_batch[
     ]()
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -3236,8 +3257,8 @@ fn mha_decoding_single_batch[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    alias num_m_mmas = WM // UInt(MMA_M)
+    alias num_n_mmas = WN // UInt(MMA_N)
 
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
@@ -3348,10 +3369,11 @@ fn mha_decoding_single_batch[
         num_keys, num_partitions, block_idx.x
     )
 
-    alias q_num_vecs = BM * BK // simd_size
+    alias q_num_vecs = BM * BK // UInt(simd_size)
 
     alias async_copy_q_layout = Layout.row_major(
-        min(num_threads, q_num_vecs) * simd_size // BK, BK // simd_size
+        min(num_threads, q_num_vecs) * UInt(simd_size) // BK,
+        BK // UInt(simd_size),
     )
 
     @always_inline
@@ -3409,11 +3431,11 @@ fn mha_decoding_single_batch[
 
         _ = p_reg_tile.fill(0)
 
-        alias kv_num_vecs = BN * BK // simd_size
+        alias kv_num_vecs = BN * BK // UInt(simd_size)
         alias async_copy_k_layout = Layout.row_major(
             min(num_threads, kv_num_vecs)
-            * simd_size
-            // k_smem_iter.layout.stride[0].value(),
+            * UInt(simd_size)
+            // UInt(k_smem_iter.layout.stride[0].value()),
             k_smem_iter.layout.stride[0].value() // simd_size,
         )
 
@@ -3548,8 +3570,8 @@ fn mha_decoding_single_batch[
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
         alias async_copy_v_layout = Layout.row_major(
-            min(num_threads, kv_num_vecs) * simd_size // BN,
-            BN // simd_size,
+            min(num_threads, kv_num_vecs) * UInt(simd_size) // BN,
+            BN // UInt(simd_size),
         )
 
         # load V tile into smem
@@ -3696,7 +3718,7 @@ fn mha_decoding_single_batch[
     for m_mma in range(num_m_mmas):
 
         @parameter
-        if m_mma * MMA_M < group:
+        if m_mma * UInt(MMA_M) < group:
             var rowsum_inv = Scalar[accum_type](recip(rowsum[2 * m_mma]))
 
             @parameter
@@ -3705,7 +3727,7 @@ fn mha_decoding_single_batch[
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 1] *= rowsum_inv
 
         @parameter
-        if m_mma * MMA_M + MMA_M // 2 < group:
+        if m_mma * UInt(MMA_M) + UInt(MMA_M // 2) < group:
             var rowsum_inv = Scalar[accum_type](recip(rowsum[2 * m_mma + 1]))
 
             @parameter
@@ -3728,8 +3750,11 @@ fn mha_decoding_single_batch[
     @parameter
     if decoding_warp_split_k:
         accum_smem_warp_ptr += (
-            (num_warps_n * (num_warps_n - 1)) * WM * WN * size_of[accum_type]()
-        ) // size_of[output_type]()
+            (num_warps_n * (num_warps_n - 1))
+            * WM
+            * WN
+            * UInt(size_of[accum_type]())
+        ) // UInt(size_of[output_type]())
     var accum_smem_warp_tile = LayoutTensor[
         output_type,
         Layout.row_major(WM, WN),
@@ -3779,7 +3804,7 @@ fn mha_decoding_single_batch[
 
     copy_sram_to_dram[
         thread_layout = Layout.row_major(
-            WARP_SIZE * simd_size // WN, WN // simd_size
+            WARP_SIZE * simd_size // WN, WN // UInt(simd_size)
         ),
         swizzle=swizzle,
     ](
@@ -3837,7 +3862,7 @@ fn mha_decoding_single_batch_pipelined[
     alias num_warps_n = BN // WN
 
     constrained[
-        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // UInt(WARP_SIZE)),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -3851,7 +3876,7 @@ fn mha_decoding_single_batch_pipelined[
     ]()
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -3903,8 +3928,8 @@ fn mha_decoding_single_batch_pipelined[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias num_m_mmas = WM // MMA_M
-    alias num_n_mmas = WN // MMA_N
+    alias num_m_mmas = WM // UInt(MMA_M)
+    alias num_n_mmas = WN // UInt(MMA_N)
 
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
@@ -4243,7 +4268,7 @@ fn mha_decoding_single_batch_pipelined[
     )
     copy_sram_to_dram[
         thread_layout = Layout.row_major(
-            WARP_SIZE * simd_size // WN, WN // simd_size
+            WARP_SIZE * simd_size // WN, WN // UInt(simd_size)
         ),
         swizzle=swizzle,
     ](
@@ -4293,7 +4318,7 @@ fn mha_splitk_reduce[
     if partition_idx < UInt(num_partitions):
         var qk_max_offset = (
             num_heads * batch_idx
-            + num_heads * batch_size * partition_idx
+            + num_heads * UInt(batch_size) * partition_idx
             + q_head_idx
         )
         l = qk_max_ptr[qk_max_offset]
@@ -4331,7 +4356,7 @@ fn mha_splitk_reduce[
     if partition_idx < UInt(num_partitions):
         var qk_max_offset = (
             num_heads * batch_idx
-            + num_heads * batch_size * partition_idx
+            + num_heads * UInt(batch_size) * partition_idx
             + q_head_idx
         )
         rescaled_exp_sum = exp_sum_ptr[qk_max_offset] * exp_fn(l - qk_max)
@@ -4362,7 +4387,7 @@ fn mha_splitk_reduce[
 
             @parameter
             for w in range(width):
-                d = thread_idx.x + w * num_threads
+                d = thread_idx.x + UInt(w * num_threads)
                 if d < depth:
                     var x = (
                         intermediate_output[
@@ -4375,7 +4400,7 @@ fn mha_splitk_reduce[
 
     @parameter
     for w in range(width):
-        d = thread_idx.x + w * num_threads
+        d = thread_idx.x + UInt(w * num_threads)
         if d < depth:
             output[batch_idx, q_head_idx, d] = acc[w].cast[output_type]()
 
@@ -4425,6 +4450,9 @@ fn mha_gpu_naive[
     alias v_type = k_type
 
     var num_keys = max_cache_size
+
+    if batch_size == 0 or num_keys == 0 or max_prompt_len == 0:
+        return
 
     alias p_type = get_accum_type[q_type]()
     var p_device = ctx.enqueue_create_buffer[p_type](
@@ -4566,7 +4594,7 @@ fn _bmm0_bs[
     var q_offset: Int
     var cur_cache_len: Int
     var padded_num_keys = max_cache_size
-    var p_offset = batch_head * max_prompt_len * padded_num_keys
+    var p_offset = batch_head * UInt(max_prompt_len) * UInt(padded_num_keys)
     var start_pos: UInt32 = 0
 
     @parameter
@@ -4583,15 +4611,19 @@ fn _bmm0_bs[
         cur_cache_len = Int(start_pos) + cur_query_len
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
-        q_offset = Int(depth * (head + num_heads * max_prompt_len * batch))
+        q_offset = Int(
+            depth * (head + UInt(num_heads * max_prompt_len * batch))
+        )
         cur_cache_len = k.cache_length(batch) + cur_query_len
     # When inputs are all NDBuffers i.e. all sequences in batch have the same
     # length and same cache length
     else:
         cur_query_len = max_prompt_len
-        q_offset = Int(depth * (head + num_heads * max_prompt_len * batch))
+        q_offset = Int(
+            depth * (head + UInt(num_heads * max_prompt_len * batch))
+        )
         cur_cache_len = max_cache_size
-        p_offset = batch_head * max_prompt_len * max_cache_size
+        p_offset = batch_head * UInt(max_prompt_len) * UInt(max_cache_size)
 
     debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
     debug_assert(
@@ -4604,7 +4636,7 @@ fn _bmm0_bs[
 
     var q = q_ptr + q_offset
 
-    var kv_head = Int(head // group)
+    var kv_head = Int(head // UInt(group))
 
     var p = p_ptr + Int(p_offset)
 
@@ -4626,7 +4658,7 @@ fn _bmm0_bs[
             fn accum_fn[width: Int](offset: Int):
                 alias alignment = align_of[SIMD[p_type, width]]()
                 var q_val = q.load[width=width, alignment=alignment](
-                    y * num_heads * depth + offset
+                    y * UInt(num_heads) * UInt(depth) + UInt(offset)
                 ).cast[k_type]()
                 var k_val = k_ptr.load[width=width, alignment=alignment](offset)
                 var qk_val = (q_val * k_val).cast[p_type]()
@@ -4641,13 +4673,13 @@ fn _bmm0_bs[
             accum += accum_vec.reduce_add()
         else:
             for d in range(depth):
-                var q_val = q[y * num_heads * depth + d]
+                var q_val = q[y * UInt(num_heads) * UInt(depth) + UInt(d)]
                 var k_val = k_ptr[d]
                 accum += q_val.cast[p_type]() * k_val.cast[p_type]()
 
-    var score_row = y + cur_cache_len - cur_query_len
+    var score_row = y + UInt(cur_cache_len) - UInt(cur_query_len)
     var score_col = x
-    p[y * padded_num_keys + x] = mask_functor.mask(
+    p[y * UInt(padded_num_keys) + x] = mask_functor.mask(
         Index(
             Int(batch),
             Int(head),
@@ -4658,7 +4690,7 @@ fn _bmm0_bs[
     )
 
     if x >= UInt(cur_cache_len) or y >= UInt(cur_query_len):
-        p[y * padded_num_keys + x] = min_or_neg_inf[p_type]()
+        p[y * UInt(padded_num_keys) + x] = min_or_neg_inf[p_type]()
 
 
 @always_inline
@@ -4703,7 +4735,7 @@ fn _bmm1_bs[
     var output_offset: Int
     var cur_cache_len: Int
     var padded_num_keys = max_cache_size
-    var p_offset = batch_head * max_prompt_len * padded_num_keys
+    var p_offset = batch_head * UInt(max_prompt_len) * UInt(padded_num_keys)
     var start_pos: UInt32 = 0
 
     @parameter
@@ -4720,15 +4752,19 @@ fn _bmm1_bs[
         cur_cache_len = cur_query_len + Int(start_pos)
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
-        output_offset = depth * (head + num_heads * max_prompt_len * batch)
+        output_offset = depth * (
+            head + UInt(num_heads * max_prompt_len * batch)
+        )
         cur_cache_len = cur_query_len + v.cache_length(batch)
     # When inputs are all NDBuffers i.e. all sequences in batch have the same
     # length and same cache length
     else:
         cur_query_len = max_prompt_len
-        output_offset = depth * (head + num_heads * max_prompt_len * batch)
+        output_offset = depth * (
+            head + UInt(num_heads * max_prompt_len * batch)
+        )
         cur_cache_len = max_cache_size
-        p_offset = batch_head * max_prompt_len * max_cache_size
+        p_offset = batch_head * UInt(max_prompt_len) * UInt(max_cache_size)
 
     debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
 
@@ -4737,7 +4773,7 @@ fn _bmm1_bs[
 
     var p = p_ptr + p_offset
 
-    var kv_head = Int(head // group)
+    var kv_head = Int(head // UInt(group))
     var output = output_ptr + Int(output_offset)
 
     var accum = Float32(0.0)
@@ -4745,11 +4781,11 @@ fn _bmm1_bs[
     for i in range(cur_cache_len):
         var v_ptr = v.block_paged_ptr[1](batch, i, kv_head, x)
         accum += (
-            p[y * padded_num_keys + i].cast[DType.float32]()
+            p[y * UInt(padded_num_keys) + UInt(i)].cast[DType.float32]()
             * v_ptr[0].cast[DType.float32]()
         )
 
-    output[y * num_heads * depth + x] = accum.cast[output_type]()
+    output[y * UInt(num_heads) * UInt(depth) + x] = accum.cast[output_type]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4770,7 +4806,9 @@ fn mha_gpu_naive[
     q: NDBuffer[q_type, rank, *_],
     k: NDBuffer[k_type, rank, *_],
     v: NDBuffer[v_type, rank, *_],
-    mask: NDBuffer[mask_type, mask_rank, *_, **_],
+    mask: NDBuffer[
+        mask_type, mask_rank, *_, address_space = AddressSpace.GENERIC, **_
+    ],
     output: NDBuffer[mut=True, output_type, rank, *_],
     scale: Float32,
     batch_size: Int,
@@ -4793,7 +4831,18 @@ fn mha_gpu_naive[
         q,
         k_operand,
         v_operand,
-        MaterializedMask(mask),
+        MaterializedMask(
+            LayoutTensor[
+                mask_type,
+                Layout.row_major[mask_rank](mask.shape),
+                MutableAnyOrigin,
+            ](
+                mask.data,
+                RuntimeLayout[
+                    Layout.row_major[mask_rank](mask.shape)
+                ].row_major(mask.dynamic_shape.canonicalize()),
+            )
+        ),
         output,
         null_valid_length,
         scale,

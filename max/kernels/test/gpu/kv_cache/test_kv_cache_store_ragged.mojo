@@ -258,7 +258,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     _ = input_row_offsets_managed^
 
 
-fn main() raises:
+def main():
     seed(42)  # Set seed for reproducible tests
 
     with DeviceContext() as ctx:

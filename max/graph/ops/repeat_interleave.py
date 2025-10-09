@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for repeat_interleave."""
 
-from typing import Optional, Union
-
 import numpy as np
 from max.dtype import DType
 
@@ -27,10 +25,10 @@ from .custom import custom
 
 
 def _promote_repeats(
-    repeats: Union[int, TensorValue],
+    repeats: int | TensorValue,
     input_dim: Dim,
-    out_dim: Optional[DimLike],
-) -> tuple[TensorValue, Optional[Dim]]:
+    out_dim: DimLike | None,
+) -> tuple[TensorValue, Dim | None]:
     if out_dim is not None:
         out_dim = Dim(out_dim)
 
@@ -51,9 +49,9 @@ def _promote_repeats(
 
 def repeat_interleave(
     x: TensorValueLike,
-    repeats: Union[int, TensorValue],
-    axis: Optional[int] = None,
-    out_dim: Optional[DimLike] = None,
+    repeats: int | TensorValue,
+    axis: int | None = None,
+    out_dim: DimLike | None = None,
 ) -> TensorValue:
     """Repeats elements of a tensor along the given dimension.
 

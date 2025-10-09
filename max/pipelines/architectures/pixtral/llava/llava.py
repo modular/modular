@@ -75,7 +75,7 @@ class LlavaConditionalGeneration(Module):
         inputs_embeds: TensorValue = self.language_model.embed_tokens(input_ids)
 
         # If image tokens exist, replace place-holder image tokens by patch embeddings from vision encoder
-        def img_then_fn():
+        def img_then_fn():  # noqa: ANN202
             # Replace image place-holders in inputs_embeds with image embeddings.
             # Obtain image embeddings from the vision encoder and project it to text embeddings space.
             # Output shape = (num_images, num_patches_in_image, language_model_hidden_dim)
@@ -97,7 +97,7 @@ class LlavaConditionalGeneration(Module):
                 out_dim="unmasked_inputs",
             )
 
-        def else_fn():
+        def else_fn():  # noqa: ANN202
             return inputs_embeds
 
         # Create a runtime condition by computing the total number of elements in pixel_values

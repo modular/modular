@@ -846,7 +846,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @doc_private
     fn __init__(
-        out self: StringSlice[MutableAnyOrigin],
+        out self: StringSlice[ImmutableAnyOrigin],
         *,
         unsafe_borrowed_obj: PythonObject,
     ) raises:

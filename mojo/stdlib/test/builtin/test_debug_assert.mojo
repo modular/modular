@@ -15,11 +15,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
+
 
 def main():
-    test_debug_assert()
-    test_debug_assert_multiple_args()
-    test_debug_assert_writable()
+    var suite = TestSuite()
+
+    suite.test[test_debug_assert]()
+    suite.test[test_debug_assert_multiple_args]()
+    suite.test[test_debug_assert_writable]()
+
+    suite^.run()
 
 
 # CHECK-LABEL: test_debug_assert

@@ -52,13 +52,13 @@ alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 @always_inline
 fn _word_index(idx: UInt) -> UInt:
     """Computes the 0-based index of the 64-bit word containing bit `idx`."""
-    return UInt(idx >> _WORD_BITS_LOG2)
+    return UInt(idx >> UInt(_WORD_BITS_LOG2))
 
 
 @always_inline
 fn _bit_mask(idx: UInt) -> UInt64:
     """Returns a UInt64 mask with only the bit corresponding to `idx` set."""
-    return UInt64(1) << (idx & (_WORD_BITS - 1))
+    return UInt64(1) << (idx & UInt(_WORD_BITS - 1))
 
 
 @always_inline

@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -139,7 +139,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         """
@@ -456,7 +456,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     def _get_state_dict(
         self,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
     ) -> dict[str, WeightData]:
         # Get Config
         huggingface_config = self.huggingface_config
@@ -474,7 +474,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     def _build_graph(
         self,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
@@ -649,7 +649,7 @@ class Llama3Model(LlamaModelBase):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(

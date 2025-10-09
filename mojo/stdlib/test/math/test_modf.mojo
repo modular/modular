@@ -13,7 +13,7 @@
 
 from math import modf
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_almost_equal, assert_equal
 
 

@@ -121,7 +121,7 @@ def _promote_to_strong(
     """
     if _is_strong_tensor_value_like(value):
         return TensorValue(value)
-    elif isinstance(value, (int, np.integer)):
+    elif isinstance(value, int | np.integer):
         min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
         if min <= value <= max:
             return ops.constant(value, strong_dtype, device)
@@ -131,7 +131,7 @@ def _promote_to_strong(
             f" dtype({strong_dtype}). It would lose precision."
         )
 
-    elif isinstance(value, (float, np.floating)):
+    elif isinstance(value, float | np.floating):
         if strong_dtype.is_float():
             return ops.constant(value, strong_dtype, device)
 

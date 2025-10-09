@@ -27,18 +27,17 @@ import random
 import time
 import warnings
 from collections.abc import Mapping
-from pathlib import Path
-from typing import Any, Optional
-
-from huggingface_hub import hf_hub_download
-
-# MODULAR MAX BEGIN
-# isort: split
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 import pyarrow.parquet
-from benchmark_config import BaseBenchmarkConfig
-from benchmark_datasets import BenchmarkDataset, CodeDebugBenchmarkDataset
+from benchmark_shared.config import BaseBenchmarkConfig
+from benchmark_shared.datasets import (
+    BenchmarkDataset,
+    CodeDebugBenchmarkDataset,
+)
+from huggingface_hub import hf_hub_download
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
     PipelinesFactory,
@@ -67,8 +66,6 @@ from max.serve.telemetry.metrics import NoopClient
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-
-# MODULAR MAX END
 
 
 @dataclass
@@ -208,7 +205,7 @@ class ThroughputBenchmarkConfig(BaseBenchmarkConfig):
     top_k: int | None = None
 
     # Output configuration (throughput-specific)
-    output_json: Optional[str] = field(
+    output_json: str | None = field(
         default=None,
         metadata={
             "group": "Output Configuration",
@@ -268,7 +265,7 @@ class RequestPayload:
     prompt: str
     prompt_len: int
     output_len: int
-    image: Optional[bytes]
+    image: bytes | None
 
 
 def load_parquet_dataset(
@@ -306,8 +303,8 @@ def sample_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
-    fixed_output_len: Optional[int],
-    max_length: Optional[int],
+    fixed_output_len: int | None,
+    max_length: int | None,
 ) -> list[RequestPayload]:
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
@@ -530,18 +527,18 @@ async def run_max_async(
 
 def load_model_config(
     model_id: str,
-    devices: Optional[str | list[int]],
-    weight_path: Optional[str],
-    quantization_encoding: Optional[str],
-    max_length: Optional[int],
-    max_batch_size: Optional[int],
-    kv_cache_page_size: Optional[int],
-    enable_prefix_caching: Optional[bool],
-    enable_kvcache_swapping_to_host: Optional[bool],
-    host_kvcache_swap_space_gb: Optional[float],
-    device_memory_utilization: Optional[float],
-    max_num_steps: Optional[int],
-    trust_remote_code: Optional[bool],
+    devices: str | list[int] | None,
+    weight_path: str | None,
+    quantization_encoding: str | None,
+    max_length: int | None,
+    max_batch_size: int | None,
+    kv_cache_page_size: int | None,
+    enable_prefix_caching: bool | None,
+    enable_kvcache_swapping_to_host: bool | None,
+    host_kvcache_swap_space_gb: float | None,
+    device_memory_utilization: float | None,
+    max_num_steps: int | None,
+    trust_remote_code: bool | None,
     pipeline_task: PipelineTask,
 ) -> tuple[PipelinesFactory, PipelineConfig, TextTokenizer]:
     config_kwargs: dict[str, Any] = {}
@@ -664,7 +661,7 @@ def main(args: argparse.Namespace) -> None:
 
         # TODO: benchmark_throughput.py should be refactored to use the BenchmarkDataset class.
         # Some of the fetch_dataset_from_hf() logic have different filenames
-        # than the ones defined in benchmark_datasets.py. These should be reconciled.
+        # than the ones defined in benchmark_shared.datasets. These should be reconciled.
         if args.dataset_name == "code_debug":
             benchmark_dataset = BenchmarkDataset.from_flags(
                 dataset_name=args.dataset_name,
@@ -675,7 +672,7 @@ def main(args: argparse.Namespace) -> None:
             )
 
             # code_debug is a long-context dataset based on InfiniteBench
-            def sample_requests_func(
+            def sample_requests_func(  # noqa: ANN202
                 dataset_path: str,
                 num_requests: int,
                 tokenizer: PreTrainedTokenizerBase,
@@ -692,6 +689,7 @@ def main(args: argparse.Namespace) -> None:
                     assert request.output_len is not None, (
                         "output_len is required for CodeDebugBenchmarkDataset"
                     )
+                    assert isinstance(request.prompt_formatted, str)
                     converted.append(
                         RequestPayload(
                             request.prompt_formatted,
@@ -824,12 +822,6 @@ if __name__ == "__main__":
     # Load configuration from YAML file and create argument parser
     config_path = os.path.join(
         os.path.dirname(__file__),
-        "..",
-        "..",
-        "..",
-        "open-source",
-        "max",
-        "benchmark",
         "configs",
         "throughput_config.yaml",
     )

@@ -234,7 +234,7 @@ fn test[
         print("Succeed")
 
 
-fn main() raises:
+def main():
     alias dtype = DType.float32
 
     test[DType.float32, False](  # dtype, filter_packed

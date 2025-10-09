@@ -25,9 +25,8 @@ from test_utils import (
     words_lv,
     words_pl,
     words_ru,
-    TestSuite,
 )
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 def test_hash_byte_array():

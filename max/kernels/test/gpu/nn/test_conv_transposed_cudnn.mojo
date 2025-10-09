@@ -224,7 +224,7 @@ fn test_conv_transposed_cudnn[
     _ = d_output^
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
         if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:

@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
+from testing import TestSuite
 
 
-fn main() raises:
+def test_host_mapped():
     var ctx = create_test_device_context()
 
     alias length = 20
@@ -33,3 +34,11 @@ fn main() raises:
             expect_eq(out_map[i], i)
 
     print("Done")
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_host_mapped]()
+
+    suite^.run()

@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Union, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -53,7 +54,7 @@ from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
-PipelineTypes = Union[
+PipelineTypes = Union[  # noqa: UP007 (This breaks a mypy check, unsure why)
     TextGenerationPipeline[TextContext],
     EmbeddingsPipeline,
     AudioGeneratorPipeline,
@@ -210,7 +211,7 @@ class PipelineRegistry:
 
     def retrieve_architecture(
         self, huggingface_repo: HuggingFaceRepo
-    ) -> Optional[SupportedArchitecture]:
+    ) -> SupportedArchitecture | None:
         # Retrieve model architecture names
         hf_config = self.get_active_huggingface_config(
             huggingface_repo=huggingface_repo

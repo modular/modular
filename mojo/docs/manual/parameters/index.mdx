@@ -1013,10 +1013,9 @@ MyType["Hello", _, _, _]
 ```
 
 The `*_` expression specifically matches any parameters that can be specified by
-position (positional-only or positional-or-keyword). To unbind keyword-only
-parameters, use the double-star-underscore expression, `**_`, which matches any
-parameters that can be specified by keyword (positional-or-keyword or
-keyword-only).
+position (positional-only or positional-or-keyword). To unbind all parameters
+that can be specified by keyword (positional-or-keyword or keyword-only), use
+the double-star-underscore expression, `**_`.
 
 ```mojo
 @fieldwise_init
@@ -1031,9 +1030,9 @@ def main():
     use_kw_struct(KeyWordStruct[10, kw_only=11]())
 ```
 
-When a parameter is explicitly unbound with the `_`, `*_`, or `**_` expressions, you
-**must** specify a value for that parameter to use the type. Any default value from the
-original type declaration is ignored.
+When a parameter is explicitly unbound with the `_`, `*_`, or `**_` expressions,
+you **must** specify a value for that parameter to use the type.
+The default values of explicitly unbound parameters are ignored.
 
 Partially-bound and unbound parametric types can be used in some contexts where
 the missing (unbound) parameters will be supplied later—such as in
@@ -1042,24 +1041,31 @@ the missing (unbound) parameters will be supplied later—such as in
 
 ### Omitted parameters
 
-Mojo also supports an alternate format for unbound parameter where the parameter
-is simply omitted from the expression:
+Mojo also supports an alternate format for unbound parameters where parameters
+are simply omitted from the expression:
+
+```mojo
+@fieldwise_init
+struct MyComplicatedType[a: Int = 7, /, b: Int = 8, *, c: Int, d: Int = 9]:
+    pass
+
+# Unbound
+fn my_func(t: MyComplicatedType):
+    pass
+```
+
+This is equivalent to `fn my_func(t: MyComplicatedType[*_, **_]): pass`.
+That is, all parameters (positional-only, positional-or-keyword, keyword-only)
+are unbound and their default values (if any) ignored.
+
+Note that when an argument type is _partially bound_, default values will be
+bound:
 
 ```mojo
 # Partially bound
-MyType["Hi there"]
-# Unbound
-MyType
-```
-
-This format differs from the explicit unbinding syntax described above in that
-the default values for omitted parameters are bound immediately. For example,
-the following expressions are equivalent:
-
-```mojo
-MyType["Hi there"]
-# equivalent to
-MyType["Hi there", _, _, True] # Uses the default value for `b`
+MyComplicatedType[1]
+# Equivalent to
+MyComplicatedType[1, 8, c=_, d=9]  # Uses default values for `b` and `d`.
 ```
 
 :::note

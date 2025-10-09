@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import sys
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def main():

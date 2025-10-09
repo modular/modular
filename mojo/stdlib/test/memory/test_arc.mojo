@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import ArcPointer
-from test_utils import ObservableDel, TestSuite
-from testing import assert_equal, assert_false, assert_true
+from test_utils import ObservableDel
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_basic():

@@ -16,13 +16,12 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Iterable, Sequence
-from typing import Optional, Union
+from typing import TypeGuard, Union
 
 import numpy as np
 from max import mlir
 from max.dtype import DType
 from max.mlir.dialects import rmo
-from typing_extensions import TypeGuard
 
 from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
@@ -38,7 +37,7 @@ from .where import where
 # move this, but this is the simplest path to get us nice results.
 
 
-SliceIndex = Union[TensorValue, int, slice, tuple[slice, DimLike]]
+SliceIndex = TensorValue | int | slice | tuple[slice, DimLike]
 SliceIndices = Sequence[Union[SliceIndex, "builtins.ellipsis"]]
 
 
@@ -107,7 +106,7 @@ def _static_slice(n: int, index: slice) -> tuple[slice, DimLike]:
 
 def _slice_index_and_output(
     dim: Dim, index: SliceIndex
-) -> tuple[slice, Optional[DimLike]]:
+) -> tuple[slice, DimLike | None]:
     # These are values within an index which contains at least one
     # shape. The returned values will be used as `start, stop, step`
     # values in a mo.slice op. slices can therefore be forwarded
@@ -158,7 +157,7 @@ def _slice_index_and_output(
         isinstance(index, tuple)
         and len(index) == 2
         and isinstance(index[0], slice)
-        and isinstance(index[1], (int, str, Dim, np.integer))
+        and isinstance(index[1], int | str | Dim | np.integer)
     ):
         start = index[0].start
         stop = index[0].stop
@@ -186,7 +185,7 @@ def _stack_scalars(vals: Iterable[TensorValue]) -> TensorValue:
     return Graph.current._add_op(rmo.concat, vals, axis=axis)[0].tensor
 
 
-def _slice_and_output_tensors(
+def _slice_and_output_tensors(  # noqa: ANN202
     x: BufferValue | TensorValue, indices: SliceIndices
 ):
     if not x.shape:
@@ -217,7 +216,7 @@ def _slice_and_output_tensors(
     # For each dim, convert idx (if int or TensorValue) to slice(idx, idx+1, 1).
     slices_and_outputs = [
         _slice_index_and_output(dim, index)
-        for dim, index in zip(x.shape, full_index)
+        for dim, index in zip(x.shape, full_index, strict=True)
     ]
     slices = [s for s, _ in slices_and_outputs]
     unsqueezed_shape = Shape(
@@ -226,8 +225,8 @@ def _slice_and_output_tensors(
     squeezed_shape = Shape(d for _, d in slices_and_outputs if d is not None)
 
     # If type(dim,int), convert to an int constant TensorValue.
-    def value(dim: Union[TensorValue, int]) -> TensorValue:
-        assert isinstance(dim, (TensorValue, int))
+    def value(dim: TensorValue | int) -> TensorValue:
+        assert isinstance(dim, TensorValue | int)
         return (
             dim
             if isinstance(dim, TensorValue)
@@ -290,7 +289,7 @@ def slice_arguments(
     stops: list[int | Dim] = []
     steps: list[int] = []
     for i, subslice in enumerate(not_none_indices):
-        if not isinstance(subslice, (slice, int)):
+        if not isinstance(subslice, slice | int):
             raise TypeError(
                 f"slice of tensor with symbolic shape {input_shape} "
                 f"unsupported with indices {indices}. Currently, only slices "
@@ -323,7 +322,7 @@ def slice_arguments(
             )
 
         starts.append(start)
-        assert isinstance(stop, (int, Dim))
+        assert isinstance(stop, int | Dim)
         stops.append(stop)
         steps.append(step)
 
@@ -418,7 +417,7 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     x = TensorValue(x)
 
     if not any(
-        isinstance(subslice, (TensorValue, HasTensorValue, tuple))
+        isinstance(subslice, TensorValue | HasTensorValue | tuple)
         for subslice in indices
     ):
         # For symbolic tensors, take a special path that emits rmo.slice.

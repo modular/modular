@@ -81,6 +81,7 @@ from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
 from ..tile_scheduler import RasterOrder
 from .tile_scheduler import TileScheduler, WorkInfo
+from .pipeline import ProducerConsumerPipeline
 
 
 @fieldwise_init
@@ -163,13 +164,7 @@ fn load_AB[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    producer_phase: PipelineState[num_pipeline_stages],
+    load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
     work_tile_coord: Tuple[UInt, UInt],
     a_multicast_mask: UInt16,
@@ -194,43 +189,45 @@ fn load_AB[
     alias a_tma_rows = a_desc_layout.shape[0].value()
     alias b_tma_rows = b_desc_layout.shape[0].value()
 
-    var stage = producer_phase.index()
-    var phase = producer_phase.phase()
-    mma_mbar[stage].wait(phase)
+    var stage = load_mma_pipeline.producer_stage()
 
-    var a_gmem_slice_coord = (
-        peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
-    )
+    # Wait until MMA (consumer) has used the buffer.
+    load_mma_pipeline.wait_consumer()
+
+    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+        a_tma_rows
+    ) + work_tile_coord[0] * UInt(BM)
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * b_tma_rows
-        + peer_cta_coord[0] * BN
-        + work_tile_coord[1] * MMA_N
+        peer_cta_coord[1] * UInt(b_tma_rows)
+        + peer_cta_coord[0] * UInt(BN)
+        + work_tile_coord[1] * UInt(MMA_N)
     )
 
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
     var a_smem_slice = __type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
     var b_smem_slice = __type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
+    var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[stage].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(expected_bytes)
 
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
-            tma_mbar[stage],
+            tma_mbar[0],
             (UInt(iter_idx) * UInt(BK), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
-            tma_mbar[stage],
+            tma_mbar[0],
             (UInt(iter_idx) * UInt(BK), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
@@ -270,13 +267,7 @@ fn consumer_main_loop[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    consumer_phase: PipelineState[pipeline_stages],
+    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     mma_op: MmaOpSM100_SS[
         c_type,
         a_type,
@@ -293,10 +284,9 @@ fn consumer_main_loop[
     elect_one_warp: Bool,
     iter_idx: UInt32,
 ):
-    var stage = consumer_phase.index()
-    var phase = consumer_phase.phase()
+    var stage = load_mma_pipeline.consumer_stage()
 
-    tma_mbar[stage].wait(phase)
+    load_mma_pipeline.wait_producer()
 
     var a_smem_tile = a_smem_iter.next(stage)[]
     var b_smem_tile = b_smem_iter.next(stage)[]
@@ -309,7 +299,7 @@ fn consumer_main_loop[
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
 
-        mma_op.commit(mma_mbar + stage)
+        mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
 @always_inline
@@ -348,7 +338,7 @@ fn stsm_helper[
     alias RLayout32Bits[layout: Layout] = RuntimeLayout[
         layout, element_type = DType.uint32, linear_idx_type = DType.uint32
     ]
-    var stsm_lane_offset: UInt32 = (lane & 15) * stride0 + (
+    var stsm_lane_offset: UInt32 = (lane & 15) * UInt(stride0) + (
         lane >> 4
     ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
 
@@ -445,7 +435,7 @@ fn shared_memory_epilogue[
     for i in range(fragment_size):
         alias alignment = align_of[SIMD[c_type, simd_size]]()
 
-        # these offsets are swizzled so to reteive the corresponding gmem offset we need to remove the swizzle
+        # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
         # luckily removing the swizzle is as simple as swizzling a second time
         var swz_offset_upper = (
             shared_memory_row_upper_half * shared_n + shared_memory_col
@@ -462,7 +452,7 @@ fn shared_memory_epilogue[
         var shared_lower_row: Int64
         var shared_lower_col: Int64
 
-        # Now that we have the true index we, need to add the global tile index to find the correlating
+        # Now that we have the true index we, need to add the global tile index to find the corresponding
         # index, in gmem. However the data will be stored in tensor memory differently depending on
         # MMA_M size, we take that into account here.
 
@@ -554,10 +544,10 @@ fn shared_memory_epilogue[
         # If more than one chunk is created (happens when 8x4 is used)
         # they will be spaced 8 rows away from each other
 
-        shared_memory_row_upper_half += distribute_rows
-        shared_memory_row_lower_half += distribute_rows
+        shared_memory_row_upper_half += UInt(distribute_rows)
+        shared_memory_row_lower_half += UInt(distribute_rows)
 
-    named_barrier[num_output_warps * WARP_SIZE]()
+    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
 @always_inline
@@ -567,6 +557,7 @@ fn _compute_register_lambda_fn[
     inc: UInt,
     offset: UInt,
     compute_lambda_fn: elementwise_compute_lambda_type,
+    transpose_c: Bool,
 ](
     top_coord: StaticTuple[UInt32, 2],
     bottom_coord: StaticTuple[UInt32, 2],
@@ -587,19 +578,45 @@ fn _compute_register_lambda_fn[
     var simd_top = frag.slice[2, offset=offset]()
     var simd_bottom = frag.slice[2, offset = offset + 2]()
 
-    simd_top = compute_lambda_fn(
-        IndexList[2](
-            Int(top_frag_upper_coord[0]), Int(top_frag_upper_coord[1])
-        ),
-        simd_top,
-    )
+    # In normal case, simd_top and simd_bottom are elements on the M dimension
+    # when transpose_c is true, they are on the N dimension. We change the index order
+    # when we do the transpose and pass the SIMD sector one-by-one to the lambda function.
+    @parameter
+    for i in range(simd_top.size):
 
-    simd_bottom = compute_lambda_fn(
-        IndexList[2](
-            Int(bottom_frag_upper_coord[0]), Int(bottom_frag_upper_coord[1])
-        ),
-        simd_bottom,
-    )
+        @parameter
+        if not transpose_c:
+            simd_top[i] = compute_lambda_fn(
+                IndexList[2](
+                    Int(top_frag_upper_coord[0]),
+                    Int(top_frag_upper_coord[1] + i),
+                ),
+                simd_top[i],
+            )
+
+            simd_bottom[i] = compute_lambda_fn(
+                IndexList[2](
+                    Int(bottom_frag_upper_coord[0]),
+                    Int(bottom_frag_upper_coord[1] + i),
+                ),
+                simd_bottom[i],
+            )
+        else:
+            simd_top[i] = compute_lambda_fn(
+                IndexList[2](
+                    Int(top_frag_upper_coord[1] + i),
+                    Int(top_frag_upper_coord[0]),
+                ),
+                simd_top[i],
+            )
+
+            simd_bottom[i] = compute_lambda_fn(
+                IndexList[2](
+                    Int(bottom_frag_upper_coord[1] + i),
+                    Int(bottom_frag_upper_coord[0]),
+                ),
+                simd_bottom[i],
+            )
 
     # store the results back into the fragment
     frag[offset] = simd_top[0]
@@ -621,6 +638,7 @@ fn register_epilogue[
     accum_type: DType,
     frag_size: UInt,
     repeats: UInt,
+    transpose_c: Bool,
 ](
     mut upper_frag: SIMD[accum_type, frag_size],
     mut lower_frag: SIMD[accum_type, frag_size],
@@ -691,6 +709,7 @@ fn register_epilogue[
             compute_lambda_fn=compute_lambda_fn,
             inc=inc,
             offset=offset,
+            transpose_c=transpose_c,
         ]
 
         helper(
@@ -741,13 +760,7 @@ fn multi_stage_store_C[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
-    accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
+    mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
@@ -795,16 +808,16 @@ fn multi_stage_store_C[
     var warp_id = get_warp_id()
 
     # lets keep track of the of the starting row and column in GMEM
-    var c_row = work_tile_coord[0] * BM
-    var c_col = work_tile_coord[1] * MMA_N
+    var c_row = work_tile_coord[0] * UInt(BM)
+    var c_col = work_tile_coord[1] * UInt(MMA_N)
 
     # before i start the process of transferring over num_stages * stageN= MMA_N from tensor memory to global, i should wait
     # on the accum_full_mbar barrier
-    var index = accum_pipeline_consumer_state.index()
-    var phase = accum_pipeline_consumer_state.phase()
-    accum_full_mbar[index].wait(phase)
+    var mma_output_output_stage = mma_output_pipeline.consumer_stage()
+    mma_output_pipeline.wait_producer()
+
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
-    var tmem_offset = index * stage_stride_cols + tmem_addr
+    var tmem_offset = mma_output_output_stage * stage_stride_cols + tmem_addr
 
     @parameter
     for stage in range(num_stages):
@@ -832,7 +845,9 @@ fn multi_stage_store_C[
 
         @parameter
         if stage == num_stages - 1:
-            umma_arrive_leader_cta(accum_empty_mbar + index)
+            umma_arrive_leader_cta(
+                mma_output_pipeline.consumer_mbar(mma_output_output_stage)
+            )
 
         @parameter
         if elementwise_compute_lambda_fn:
@@ -840,17 +855,18 @@ fn multi_stage_store_C[
             @parameter
             if register_based_epilogue:
                 register_epilogue[
-                    MMA_M,
+                    UInt(MMA_M),
                     data_paths,
-                    num_stages,
+                    UInt(num_stages),
                     bits,
-                    stage,
-                    stageN,
+                    UInt(stage),
+                    UInt(stageN),
                     elementwise_compute_lambda_fn.value(),
                     num_output_warps,
                     accum_type,
-                    upper_frag.size,
-                    rep,
+                    UInt(upper_frag.size),
+                    UInt(rep),
+                    transpose_c,
                 ](upper_frag, lower_frag, c_row, c_col, N)
 
         # Assume double-buffer for shared memory packing
@@ -878,7 +894,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -886,14 +902,14 @@ fn multi_stage_store_C[
                 @parameter
                 if not register_based_epilogue:
                     shared_memory_epilogue[
-                        MMA_M,
+                        UInt(MMA_M),
                         data_paths,
-                        num_stages,
-                        stage,
-                        stageN,
+                        UInt(num_stages),
+                        UInt(stage),
+                        UInt(stageN),
                         c_smem_warp_tile_upper.dtype,
-                        c_smem_tile.shape[1](),
-                        simd_size,
+                        UInt(c_smem_tile.shape[1]()),
+                        UInt(simd_size),
                         c_smem_warp_tile_upper.layout,
                         c_smem_warp_tile_lower.layout,
                         swizzle,
@@ -902,8 +918,8 @@ fn multi_stage_store_C[
                     ](
                         M,
                         N,
-                        c_col,
-                        c_row,
+                        UInt(c_col),
+                        UInt(c_row),
                         c_smem_warp_tile_upper,
                         c_smem_warp_tile_lower,
                     )
@@ -924,7 +940,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -932,14 +948,14 @@ fn multi_stage_store_C[
                 @parameter
                 if not register_based_epilogue:
                     shared_memory_epilogue[
-                        MMA_M,
+                        UInt(MMA_M),
                         data_paths,
-                        num_stages,
-                        stage,
-                        stageN,
+                        UInt(num_stages),
+                        UInt(stage),
+                        UInt(stageN),
                         c_smem_warp_tile_upper.dtype,
-                        c_smem_tile.shape[1](),
-                        simd_size,
+                        UInt(c_smem_tile.shape[1]()),
+                        UInt(simd_size),
                         c_smem_warp_tile_upper.layout,
                         c_smem_warp_tile_lower.layout,
                         swizzle,
@@ -948,8 +964,8 @@ fn multi_stage_store_C[
                     ](
                         M,
                         N,
-                        c_col,
-                        c_row,
+                        UInt(c_col),
+                        UInt(c_row),
                         c_smem_warp_tile_upper,
                         c_smem_warp_tile_lower,
                     )
@@ -960,9 +976,13 @@ fn multi_stage_store_C[
             0
         ].value() if MMA_M == 256 else BM
         var elect_one_warp = warp_id == 0 if MMA_M == 256 else warp_id % 2 == 0
-        var coord_n_mma_m256 = work_tile_coord[1] * MMA_N + stage * stageN
+        var coord_n_mma_m256 = work_tile_coord[1] * UInt(MMA_N) + UInt(
+            stage * stageN
+        )
         var coord_n_mma_m128 = (
-            work_tile_coord[1] * MMA_N + stage * stageN + BN * (warp_id // 2)
+            work_tile_coord[1] * UInt(MMA_N)
+            + UInt(stage * stageN)
+            + UInt(BN * (warp_id // 2))
         )
 
         var coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
@@ -982,7 +1002,7 @@ fn multi_stage_store_C[
                     c_tma_op.async_store(
                         c_smem_warp_tile,
                         (
-                            UInt(work_tile_coord[0] * BM + i * 16),
+                            UInt(work_tile_coord[0] * UInt(BM) + UInt(i * 16)),
                             UInt(coord_n),
                         ),
                     )
@@ -995,7 +1015,7 @@ fn multi_stage_store_C[
                     c_smem_split,
                     (
                         UInt(coord_n),
-                        UInt(work_tile_coord[0] * BM),
+                        UInt(work_tile_coord[0] * UInt(BM)),
                     ),
                 )
             c_tma_op.commit_group()
@@ -1011,270 +1031,7 @@ fn multi_stage_store_C[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
-
-
-@always_inline
-fn store_C[
-    c_type: DType,
-    c_smem_layout: Layout,
-    c_layout: Layout,
-    c_desc_layout: Layout,
-    num_accum_pipeline_stages: UInt,
-    /,
-    *,
-    accum_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    cta_group: Int = 1,
-    num_output_warps: UInt = 4,
-    max_tmem_cols: UInt = 512,
-](
-    c_smem_tile: LayoutTensor[
-        c_type,
-        c_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
-    accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    tmem_addr: UInt32,
-    work_tile_coord: Tuple[UInt, UInt],
-    elect_one_warp: Bool,
-    stage_stride_cols: UInt,
-):
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
-
-    alias num_m_mmas = BM // (mma_shape[0] // cta_group)
-    alias num_n_mmas = BN // (mma_shape[1] // cta_group)
-
-    alias TMA_BN = c_layout.shape[1].value()
-    var warp_id = get_warp_id()
-
-    # Rows each warp is responsible for:
-    # warp_id 0 -> 0-15 upper, 16-31 lower
-    # warp_id 1 -> 32-47 upper, 48-63 lower
-    # warp_id 2 -> 64-79 upper, 80-95 lower
-    # warp_id 3 -> 96-111 upper, 112-127 lower
-
-    # Calculate how many elements we need to load based on MMA_N
-    alias elements_per_row = BN if MMA_M == 128 else MMA_N
-    # this is the main load, most cases use this, power of 2
-    alias main_load_elements = prev_power_of_two(elements_per_row)
-    # this is remainder load, executed only if MMA_N is not power of 2
-    alias num_remainder = elements_per_row - main_load_elements
-
-    # if i do have non-power of 2, then remainder_elements must be divisible by 32 (can extend to support more values later)
-    constrained[
-        num_remainder % 32 == 0,
-        "num_remainder must be divisible by 32",
-    ]()
-
-    alias main_repeats = main_load_elements // 8
-    alias remainder_repeats = num_remainder // 8
-
-    alias data_paths = 16
-    alias bits = 256
-    alias num_elements_per_load = bits // 32  # each element in tmem is 4 bytes, 32 bits
-    alias fragment_size = (data_paths * num_elements_per_load) // WARP_SIZE
-
-    alias NUM_TMA_TILES = MMA_N // TMA_BN
-    alias NUM_ST_MATRIX = BN // TMA_BN if MMA_M == 128 else MMA_N // TMA_BN
-    alias C_SPLIT_ROWS = BM * NUM_TMA_TILES // 2 if MMA_M == 128 else BM * NUM_TMA_TILES
-
-    # NOTE: Every load is 8 elements (256 bits), repetitions is row size / 8
-    # We load 16 lanes by 8 elements so 128 elements total
-    # 1 warp or 32 threads does this, each thread storing 128/32=4 elements on every load
-    # and total number of register usage is num_regs_per_thread * main_repeats
-
-    # Load c_frag_upper
-    # Load once if MMA_N is power of 2, otherwise load twice
-
-    var index = accum_pipeline_consumer_state.index()
-    var phase = accum_pipeline_consumer_state.phase()
-    accum_full_mbar[index].wait(phase)
-
-    var c_upper_pow_2_main: SIMD[accum_type, main_repeats * fragment_size]
-
-    var c_lower_pow_2_main: SIMD[accum_type, main_repeats * fragment_size]
-
-    # dummy registers in case there's no remainder. We still need to
-    # satisfy power-of-2 when using SIMD.
-    alias remainder_reg_size = max(2, remainder_repeats * fragment_size)
-
-    var c_upper_pow_2_rem = SIMD[accum_type, remainder_reg_size](0)
-    var c_lower_pow_2_rem = SIMD[accum_type, remainder_reg_size](0)
-
-    var tmem_offset = index * stage_stride_cols
-    # Primary Load
-    c_upper_pow_2_main = tcgen05_ld[
-        datapaths=data_paths,
-        bits=bits,
-        repeat=main_repeats,
-        dtype=accum_type,
-        pack=False,
-        width = c_upper_pow_2_main.size,
-    ](tmem_addr | tmem_offset | ((warp_id * 32) << 16))
-
-    # Load c_frag_lower
-    # Primary load
-    c_lower_pow_2_main = tcgen05_ld[
-        datapaths=data_paths,
-        bits=bits,
-        repeat=main_repeats,
-        dtype=accum_type,
-        pack=False,
-        width = c_lower_pow_2_main.size,
-    ](tmem_addr | tmem_offset | ((warp_id * 32 + 16) << 16))
-
-    @parameter
-    if not MMA_N.is_power_of_two():
-        # no mma_n can be larger than 256, so if there's a remainder,
-        # we've loaded the smallest power of 2, 128, and the rem is after
-        # 128. this is why tmem address is offset by 128
-        c_upper_pow_2_rem = tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=remainder_repeats,
-            dtype=accum_type,
-            pack=False,
-            width = c_upper_pow_2_rem.size,
-        ](tmem_addr + 128 | tmem_offset | ((warp_id * WARP_SIZE) << 16))
-
-        c_lower_pow_2_rem = tcgen05_ld[
-            datapaths=data_paths,
-            bits=bits,
-            repeat=remainder_repeats,
-            dtype=accum_type,
-            pack=False,
-            width = c_lower_pow_2_rem.size,
-        ](tmem_addr + 128 | tmem_offset | ((warp_id * WARP_SIZE + 16) << 16))
-
-    # Remainder load happens later, only if needed
-    tcgen05_load_wait()
-
-    umma_arrive_leader_cta(accum_empty_mbar + index)
-
-    # Create a layout for everything
-    var st_matrix_rt_layout = RuntimeLayout[
-        st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]()
-
-    alias st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
-
-    # 128*160 = 20,480 and is same as (128 * 5) * 32 = 20,480
-    var c_smem_tile_reshaped = c_smem_tile.reshape[
-        Layout.row_major(BM * NUM_TMA_TILES, TMA_BN)
-    ]()
-
-    var split_coord_x = warp_id // 2 if MMA_M == 128 else 0
-    var c_smem_split = c_smem_tile_reshaped.tile[C_SPLIT_ROWS, TMA_BN](
-        split_coord_x, 0
-    )
-
-    @parameter
-    for tma_n in range(NUM_ST_MATRIX):
-        var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
-        var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
-            warp_id % 2 if MMA_M == 128 else warp_id, 0
-        )
-        var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
-        var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
-
-        var d_reg_upper: SIMD[DType.bfloat16, 8]
-        var d_reg_lower: SIMD[DType.bfloat16, 8]
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for i in range((TMA_BN // 16)):
-                var st_matrix_args = RuntimeTuple[
-                    IntTuple(
-                        UNKNOWN_VALUE,
-                        IntTuple(
-                            i,
-                            m_mma,
-                            UNKNOWN_VALUE,
-                        ),
-                    )
-                ](lane_id(), i, m_mma, 0)
-
-                # i,0,0                # if MMA_N is a power of 2, then just use the main load for all iterations
-                # if it's not a power of 2, then go till NUM_ST_MATRIX -1 using the main regists
-                # and for last iteration we load remainder registers (for the remainder 32 )
-                @parameter
-                if MMA_N.is_power_of_two() or tma_n < NUM_ST_MATRIX - 1:
-                    # every iteration of tma_n is a motion across BM * 32 elements
-                    # and we agree that each of those has 2 rows * 8 elements in the register
-                    d_reg_upper = c_upper_pow_2_main.slice[
-                        8, offset = (i * 8) + tma_n * (TMA_BN // 16) * 8
-                    ]().cast[DType.bfloat16]()
-                    d_reg_lower = c_lower_pow_2_main.slice[
-                        8, offset = (i * 8) + tma_n * (TMA_BN // 16) * 8
-                    ]().cast[DType.bfloat16]()
-                else:
-                    d_reg_upper = c_upper_pow_2_rem.slice[
-                        8, offset = (i * 8)
-                    ]().cast[DType.bfloat16]()
-                    d_reg_lower = c_lower_pow_2_rem.slice[
-                        8, offset = (i * 8)
-                    ]().cast[DType.bfloat16]()
-
-                var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
-                var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
-
-                st_matrix[simd_width=4](
-                    upper.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                    ),
-                    d_reg_upper_packed,
-                )
-                st_matrix[simd_width=4](
-                    lower.ptr.offset(
-                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
-                    ),
-                    d_reg_lower_packed,
-                )
-
-    named_barrier[num_output_warps * WARP_SIZE]()
-
-    # SMEM -> GMEM: Direct TMA store
-    # UMMA (tensor memory) → registers → shared memory → global memory
-    # #           c_frag                   c_smem_tile      c_tma_op
-    if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
-        var row_start = work_tile_coord[0] * BM
-        var col_start = work_tile_coord[1] * MMA_N + thread_idx.x * TMA_BN
-
-        fence_async_view_proxy()
-        var c_smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
-
-        var c_tma_tile = LayoutTensor[
-            c_type,
-            c_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            alignment=128,
-        ](c_smem_offset)
-
-        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
-        c_tma_op.commit_group()
-        c_tma_op.wait_group[0]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -1417,24 +1174,37 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         alignment=128,
     ](c_smem_base, c_smem_size)
 
-    var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
-
-    var tma_mbar_ptr = smem_pool
-    var mma_mbar_ptr = tma_mbar_ptr + num_pipeline_stages
-    var accum_full_mbar_ptr = mma_mbar_ptr + num_pipeline_stages
-    var accum_empty_mbar_ptr = accum_full_mbar_ptr + num_accum_pipeline_stages
-
-    var clc_full_mbar_ptr = accum_empty_mbar_ptr + num_accum_pipeline_stages
-    var clc_empty_mbar_ptr = clc_full_mbar_ptr + num_clc_pipeline_stages
-    var clc_throttle_full_mbar_ptr = (
-        clc_empty_mbar_ptr + num_clc_pipeline_stages
+    # Load warp as producer and mma warp as consumer
+    # Dependence on MMA input in SMEM.
+    # Conumer phase = 1 so that producer's wait on consumer passes trivially
+    # at the start when buffer is empty.
+    var load_mma_mbar_ptr = (c_smem_base + c_smem_size).bitcast[
+        SharedMemBarrier
+    ]()
+    var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
+        load_mma_mbar_ptr
     )
-    var clc_throttle_empty_mbar_ptr = (
-        clc_throttle_full_mbar_ptr + num_clc_pipeline_stages
+
+    # MMA warp as producer and Output warp as consumer.
+    # Dependence on MMA output in TMEM.
+    var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
+    var mma_output_pipeline = ProducerConsumerPipeline[
+        num_accum_pipeline_stages
+    ](mma_output_mbar_ptr)
+
+    var clc_full_mbar_ptr = mma_output_mbar_ptr + 2 * num_accum_pipeline_stages
+    var clc_empty_mbar_ptr = clc_full_mbar_ptr + num_clc_pipeline_stages
+
+    # Load warp as producer and scheduler warp as consumer.
+    # No data dependence. Introduce dependence to prevent CLC goes too ahead.
+    # In the extreme case, all ctas keep querying next work simultaneously,
+    # there will be no guarantee they get balanced number of tiles.
+    var load_clc_pipeline = ProducerConsumerPipeline[num_clc_pipeline_stages](
+        clc_empty_mbar_ptr + num_clc_pipeline_stages
     )
 
     var clc_response_ptr = (
-        clc_throttle_empty_mbar_ptr + num_clc_pipeline_stages
+        clc_empty_mbar_ptr + 3 * num_clc_pipeline_stages
     ).bitcast[Int128]()
 
     var tmem_dealloc_mbar_ptr = (
@@ -1443,24 +1213,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
     clc_response = clc_response_ptr.bitcast[UInt128]()
     clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
     clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
     tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_throttle_full_mbar = clc_throttle_full_mbar_ptr.bitcast[
-        SharedMemBarrier
-    ]()
-    clc_throttle_empty_mbar = clc_throttle_empty_mbar_ptr.bitcast[
-        SharedMemBarrier
-    ]()
 
     alias accum_type = get_accum_type[a_type]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
@@ -1472,18 +1232,17 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
-            tma_mbar[i].init()
-            # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
-            mma_mbar[i].init(
-                cluster_shape[0] // cta_group + cluster_shape[1] - 1
-            )
-
-        @parameter
-        for i in range(num_accum_pipeline_stages):
-            accum_full_mbar[i].init(accum_pipeline_producer_arv_count)
-            accum_empty_mbar[i].init(accum_pipeline_consumer_arv_count)
+        load_mma_pipeline.init_mbars(
+            Int32(1), cluster_shape[0] // cta_group + cluster_shape[1] - 1
+        )
+        mma_output_pipeline.init_mbars(
+            accum_pipeline_producer_arv_count,
+            accum_pipeline_consumer_arv_count,
+        )
+        load_clc_pipeline.init_mbars(
+            clc_throttle_producer_arv_count,
+            clc_throttle_consumer_arv_count,
+        )
 
         tmem_dealloc_mbar[].init(EPILOGUE_THREADS * cta_group)
 
@@ -1491,31 +1250,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     for i in range(num_clc_pipeline_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(clc_consumer_arv_count)
-        clc_throttle_full_mbar[i].init(clc_throttle_producer_arv_count)
-        clc_throttle_empty_mbar[i].init(clc_throttle_consumer_arv_count)
 
     fence_mbarrier_init()
     cluster_sync()
-
-    var consumer_phase = PipelineState[num_pipeline_stages]()
-    var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
     var clc_pipe_producer_state = PipelineState[num_clc_pipeline_stages](
         0, 1, 0
     )
     var clc_pipe_consumer_state = PipelineState[num_clc_pipeline_stages]()
-
-    var clc_throttle_producer_state = PipelineState[num_clc_pipeline_stages](
-        0, 1, 0
-    )
-    var clc_throttle_consumer_state = PipelineState[num_clc_pipeline_stages]()
-
-    var accum_pipeline_producer_state = PipelineState[
-        num_accum_pipeline_stages
-    ](0, 1, 0)
-    var accum_pipeline_consumer_state = PipelineState[
-        num_accum_pipeline_stages
-    ]()
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -1549,8 +1291,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % cta_group),
-        UInt(rank_m // cta_group),
+        UInt(rank_m % UInt(cta_group)),
+        UInt(rank_m // UInt(cta_group)),
         rank_n,
     )  # v,m,n
 
@@ -1569,7 +1311,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     a_multicast_mask <<= rank_m
     b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * CLUSTER_M
+    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -1581,14 +1323,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         var required_clc_query = True
 
         while work_info.is_valid():
-            # CLC throuttle prevents each CTA from going a few waves ahead.
+            # CLC throttle prevents each CTA from going a few waves ahead.
             if is_first_cta_in_cluster and required_clc_query:
-                var index = clc_throttle_producer_state.index()
-                var phase = clc_throttle_producer_state.phase()
-                clc_throttle_empty_mbar[index].wait(phase)
-                _ = clc_throttle_full_mbar[index].arrive()
-
-                clc_throttle_producer_state.step()
+                load_clc_pipeline.wait_consumer()
+                var load_clc_producer_state = load_clc_pipeline.producer_stage()
+                _ = load_clc_pipeline.producer_mbar(load_clc_producer_state)[
+                    0
+                ].arrive()
+                load_clc_pipeline.producer_step()
 
             # DO TMA LOAD
             for i in range(num_iters):
@@ -1601,9 +1343,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     b_tma_op,
                     a_smem,
                     b_smem,
-                    mma_mbar,
-                    tma_mbar,
-                    producer_phase,
+                    load_mma_pipeline,
                     peer_cta_coord,
                     (UInt(work_info.m), UInt(work_info.n)),
                     a_multicast_mask,
@@ -1611,7 +1351,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     i,
                     elect_one_cta,
                 )
-                producer_phase.step()
+                load_mma_pipeline.producer_step()
 
             syncwarp()
             var next_work_info = scheduler.fetch_next_work(
@@ -1620,22 +1360,23 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
+        # Prevent CTA to exit when a peer CTA is still working on mma.
         @parameter
         for i in range(num_pipeline_stages):
-            mma_mbar[producer_phase.index()].wait(producer_phase.phase())
-            producer_phase.step()
+            load_mma_pipeline.wait_consumer()
+            load_mma_pipeline.producer_step()
 
     if WarpRole.is_scheduler() and is_first_cta_in_cluster:
         var required_clc_query = True
 
         while work_info.is_valid():
             if required_clc_query:
-                var index = clc_throttle_consumer_state.index()
-                var phase = clc_throttle_consumer_state.phase()
-                clc_throttle_full_mbar[index].wait(phase)
-                _ = clc_throttle_empty_mbar[index].arrive()
-
-                clc_throttle_consumer_state.step()
+                load_clc_pipeline.wait_producer()
+                var load_clc_consumer_stage = load_clc_pipeline.consumer_stage()
+                _ = load_clc_pipeline.consumer_mbar(load_clc_consumer_stage)[
+                    0
+                ].arrive()
+                load_clc_pipeline.consumer_step()
 
                 # advance to next work
                 clc_pipe_producer_state = scheduler.advance_to_next_work(
@@ -1674,11 +1415,11 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             clc_pipe_consumer_state.step()
             # DO MMA
             if elect_one_cta:
-                var accum_index = accum_pipeline_producer_state.index()
-                var accum_phase = accum_pipeline_producer_state.phase()
-
-                accum_empty_mbar[accum_index].wait(accum_phase)
-                var tmem_offset = tmem_addr + (accum_index * stage_stride_cols)
+                var mma_output_mma_stage = mma_output_pipeline.producer_stage()
+                mma_output_pipeline.wait_consumer()
+                var tmem_offset = tmem_addr + (
+                    mma_output_mma_stage * stage_stride_cols
+                )
 
                 for i in range(num_iters):
                     consumer_main_loop[
@@ -1692,22 +1433,20 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         tmem_offset,
                         a_smem,
                         b_smem,
-                        mma_mbar,
-                        tma_mbar,
-                        consumer_phase,
+                        load_mma_pipeline,
                         mma_op,
                         elect_one_warp,
                         i,
                     )
-                    consumer_phase.step()
+                    load_mma_pipeline.consumer_step()
 
                 # mma arrive multicast will track completion of all mma prior to this barrier.
                 if elect_one_sync():
                     mma_arrive_multicast[cta_group](
-                        accum_full_mbar + accum_index,
+                        mma_output_pipeline.producer_mbar(mma_output_mma_stage),
                         mma_complete_mask,
                     )
-                accum_pipeline_producer_state.step()
+                mma_output_pipeline.producer_step()
             work_info = next_work_info
 
         tcgen05_release_allocation_lock[cta_group]()
@@ -1739,16 +1478,14 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             ](
                 c_smem_iter,
                 c_tma_op,
-                accum_pipeline_consumer_state,
-                accum_full_mbar,
-                accum_empty_mbar,
+                mma_output_pipeline,
                 tmem_addr,
                 work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
                 elect_one_warp=elect_one_warp,
                 M=mnk[0],
                 N=mnk[1],
             )
-            accum_pipeline_consumer_state.step()
+            mma_output_pipeline.consumer_step()
 
             next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
@@ -1872,16 +1609,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias BN = MMA_N // cta_group
     alias BK = config.block_tile_shape[2]
 
-    # constraint for bfloat16 matmul
     constrained[
-        (a_type != DType.bfloat16) or (MMA_M != 128) or (MMA_N % 32 == 0),
+        (MMA_M != 128) or (MMA_N % 32 == 0),
         "if MMA_M is 128, then MMA_N must be a multiple of 32",
-    ]()
-
-    # constraint for fp8 matmul
-    constrained[
-        (a_type != DType.float8_e4m3fn) or (MMA_N % 64 == 0),
-        "MMA_N must be a multiple of 64 for fp8 matmul",
     ]()
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -1992,7 +1722,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages: UInt = smem_leftover // producer_consumer_smem_per_stage
+    alias max_pipeline_stages: UInt = UInt(
+        smem_leftover // producer_consumer_smem_per_stage
+    )
 
     constrained[
         max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
@@ -2186,7 +1918,7 @@ fn matmul_sm100_fallback_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
@@ -2272,8 +2004,8 @@ fn matmul_sm100_fallback_kernel[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
+    alias num_warps = num_threads // UInt(WARP_SIZE)
+    warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x

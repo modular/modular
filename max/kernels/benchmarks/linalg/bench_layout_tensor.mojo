@@ -385,7 +385,7 @@ fn test_all() raises:
     C.data.free()
 
 
-fn main() raises:
+def main():
     test_all()
     print("CPU Results\n")
 

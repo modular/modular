@@ -332,7 +332,7 @@ fn test_negative_lora_id_vendor[
     )
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # Single matmul
         test_vendor[

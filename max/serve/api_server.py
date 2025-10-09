@@ -53,7 +53,7 @@ ROUTES = {
 logger = logging.getLogger("max.serve")
 
 
-def validate_port_is_free(port: int):
+def validate_port_is_free(port: int):  # noqa: ANN201
     # check if port is already in use
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
@@ -75,7 +75,7 @@ class ServingTokenGeneratorSettings:
 
 
 @asynccontextmanager
-async def lifespan(
+async def lifespan(  # noqa: ANN201
     app: FastAPI,
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
@@ -171,7 +171,7 @@ async def lifespan(
         logger.debug("start_model_worker has completed")
 
 
-def version():
+def version():  # noqa: ANN201
     """Returns max-serve version information."""
     from importlib.metadata import PackageNotFoundError, version
 
@@ -188,7 +188,7 @@ async def health() -> Response:
     return Response(status_code=200)
 
 
-def make_metrics_app():
+def make_metrics_app():  # noqa: ANN201
     from prometheus_client import disable_created_metrics, make_asgi_app
 
     disable_created_metrics()

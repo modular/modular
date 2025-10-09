@@ -339,7 +339,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
     # overridden for Gemma3 multi-modal.
     _strict_state_dict_loading = True
 
-    def _build_graph(self):
+    def _build_graph(self):  # noqa: ANN202
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(

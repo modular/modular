@@ -43,7 +43,6 @@ modular_multi_py_version_test(
     ],
     data = ["//SDK/lib/API/python/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
-    exclude = ["3.13"],  # numpy issues
     imports = ["."],
     deps = [
         "//SDK/lib/API/python/max/dtype",

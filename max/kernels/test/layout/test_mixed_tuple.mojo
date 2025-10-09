@@ -55,7 +55,7 @@ fn test_list_literal_construction() raises:
     assert_equal(t[1].value(), 3)
 
 
-fn main() raises:
+def main():
     test_nested_layouts()
     test_list_literal_construction()
     test_int_tuple_conversion()

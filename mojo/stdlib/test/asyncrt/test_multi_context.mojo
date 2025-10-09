@@ -14,6 +14,7 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
+from testing import TestSuite
 
 
 fn vec_func(
@@ -28,10 +29,13 @@ fn vec_func(
     output[tid] = in0[tid] + in1[tid]
 
 
-fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
-    print("-------")
-    print("Running test_function(" + ctx1.name() + ", " + ctx2.name() + "):")
+def test_multi_function():
+    var ctx1 = create_test_device_context()
+    var ctx2 = create_test_device_context()
+    _run_test_multi_function(ctx1, ctx2)
 
+
+fn _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     alias length = 1024
 
     var in0_dev1 = ctx1.enqueue_create_buffer[DType.float32](length)
@@ -96,10 +100,10 @@ fn test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
                 out_host2[i],
             )
 
-    print("Done.")
 
+def main():
+    var suite = TestSuite()
 
-fn main() raises:
-    var ctx1 = create_test_device_context()
-    var ctx2 = create_test_device_context()
-    test_multi_function(ctx1, ctx2)
+    suite.test[test_multi_function]()
+
+    suite^.run()

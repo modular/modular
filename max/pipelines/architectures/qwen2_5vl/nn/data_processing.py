@@ -29,24 +29,24 @@ def mrope_pos_ids_3d(
 
     for t, h, w in grid_thw:
         hpos_ids = np.arange(h).reshape(h, 1)
-        hpos_ids = np.tile(hpos_ids, (1, w))
-        hpos_ids = hpos_ids.reshape(
+        hpos_ids = np.tile(hpos_ids, (1, w))  # type: ignore
+        hpos_ids = hpos_ids.reshape(  # type: ignore
             h // spatial_merge_size,
             spatial_merge_size,
             w // spatial_merge_size,
             spatial_merge_size,
         )
-        hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3)).flatten()
+        hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3)).flatten()  # type: ignore
 
         wpos_ids = np.arange(w).reshape(1, w)
-        wpos_ids = np.tile(wpos_ids, (h, 1))
-        wpos_ids = wpos_ids.reshape(
+        wpos_ids = np.tile(wpos_ids, (h, 1))  # type: ignore
+        wpos_ids = wpos_ids.reshape(  # type: ignore
             h // spatial_merge_size,
             spatial_merge_size,
             w // spatial_merge_size,
             spatial_merge_size,
         )
-        wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3)).flatten()
+        wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3)).flatten()  # type: ignore
 
         pos_ids.append(
             np.stack([hpos_ids, wpos_ids], axis=-1).repeat(t, axis=0)
@@ -236,7 +236,7 @@ def get_rope_index(
 
         for i, input_ids_row in enumerate(total_input_ids):
             # Extract valid input_ids using the attention_mask.
-            input_ids_row = input_ids_row[attention_mask[i] == 1]
+            input_ids_row = input_ids_row[attention_mask[i] == 1]  # type: ignore
             vision_start_indices = np.where(
                 input_ids_row == vision_start_token_id
             )[0]
@@ -347,7 +347,7 @@ def get_rope_index(
         if attention_mask is not None:
             position_ids = np.cumsum(attention_mask, axis=-1) - 1
             position_ids[attention_mask == 0] = 1
-            position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))
+            position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))  # type: ignore
             max_position_ids = position_ids.max(axis=1, keepdims=True).max(
                 axis=-1, keepdims=True
             )

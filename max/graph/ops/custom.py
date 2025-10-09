@@ -87,7 +87,7 @@ def custom(
     symbol_attr = StringAttr.get(name, graph._context)
     device = DeviceRef.from_device(device)
 
-    if any(isinstance(val, (BufferValue, _OpaqueValue)) for val in values):
+    if any(isinstance(val, BufferValue | _OpaqueValue) for val in values):
         raise TypeError(
             "custom ops that take buffers or opaque values to do in-place "
             "updates should use ops.inplace_custom instead"

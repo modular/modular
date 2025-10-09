@@ -88,6 +88,7 @@ def load_scheduler(
             ),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
+            offload_queue_draining=pipeline_config.experimental_background_queue,
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "speech_lm_pipeline")
@@ -121,6 +122,7 @@ def load_scheduler(
             response_queue=response_queue,
             cancel_queue=cancel_queue,
             paged_manager=paged_manager,
+            offload_queue_draining=pipeline_config.experimental_background_queue,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, Pipeline)

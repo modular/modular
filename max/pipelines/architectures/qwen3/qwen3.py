@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType

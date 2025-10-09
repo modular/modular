@@ -13,6 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context
 from gpu.host import DeviceBuffer, DeviceContext
+from testing import TestSuite
 
 
 fn _run_badbuf(ctx: DeviceContext) raises:
@@ -43,7 +44,7 @@ fn _run_badbuf(ctx: DeviceContext) raises:
     raise "Test failed: Should not reach here."
 
 
-fn main() raises:
+def test_buffer():
     var ctx = create_test_device_context()
 
     print("-------")
@@ -52,3 +53,11 @@ fn main() raises:
     _run_badbuf(ctx)
 
     print("Done.")
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_buffer]()
+
+    suite^.run()

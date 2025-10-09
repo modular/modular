@@ -45,11 +45,10 @@ def validate_only_one_image(
     Raises:
         InputError: If more than one image is provided.
     """
-    if isinstance(context, TextAndVisionContext):
-        if context.pixel_values is not None and len(context.pixel_values) > 1:
-            raise InputError(
-                f"This model only supports one image per request, got {len(context.pixel_values)}"
-            )
+    if isinstance(context, TextAndVisionContext) and len(context.images) > 1:
+        raise InputError(
+            f"This model only supports one image per request, got {len(context.images)}"
+        )
 
 
 def validate_initial_prompt_has_image(
@@ -64,7 +63,7 @@ def validate_initial_prompt_has_image(
         InputError: If the initial prompt doesn't contain an image.
     """
     if isinstance(context, TextAndVisionContext):
-        if context.is_initial_prompt and not context.pixel_values:
+        if context.is_initial_prompt and not context.images:
             raise InputError(
                 "This model requires a prompt with an image. "
                 "Consider using text-only models for non-image prompts."
@@ -82,7 +81,7 @@ def validate_aspect_ratio_args(
     Raises:
         InputError: If required aspect ratio arguments are missing.
     """
-    if isinstance(context, TextAndVisionContext) and context.pixel_values:
+    if isinstance(context, TextAndVisionContext) and context.images:
         if "aspect_ratio_ids" not in context.extra_model_args:
             raise InputError(
                 "aspect_ratio_ids is required in extra_model_args for vision model input"
@@ -105,12 +104,56 @@ def validate_image_shape_5d(
     Raises:
         InputError: If the image shape is not 5-dimensional.
     """
-    if isinstance(context, TextAndVisionContext) and context.pixel_values:
-        if len(context.pixel_values) > 0:
-            image_shape = context.pixel_values[0].shape
+    if isinstance(context, TextAndVisionContext) and context.images:
+        for img in context.images:
+            image_shape = img.pixel_values.shape
             expected_dims = 5
             if len(image_shape) != expected_dims:
                 raise InputError(
                     f"Invalid image shape: expected {expected_dims} dimensions, "
                     f"got {len(image_shape)} dimensions"
                 )
+
+
+def validate_image_grid_thw_args(
+    context: TextContext | TextAndVisionContext,
+) -> None:
+    """Validates that image_grid_thw is present when vision encoding is needed.
+
+    Args:
+        context: The context to validate.
+
+    Raises:
+        InputError: If image_grid_thw is missing from extra_model_args when
+            vision encoding is needed.
+    """
+    if (
+        isinstance(context, TextAndVisionContext)
+        and context.needs_vision_encoding
+    ):
+        if "image_grid_thw" not in context.extra_model_args:
+            raise InputError(
+                "image_grid_thw is required in extra_model_args for vision model input when vision encoding is needed"
+            )
+
+
+def validate_vision_position_ids(
+    context: TextContext | TextAndVisionContext,
+) -> None:
+    """Validates that vision_position_ids is present when vision encoding is needed.
+
+    Args:
+        context: The context to validate.
+
+    Raises:
+        InputError: If vision_position_ids is missing from extra_model_args when
+            vision encoding is needed.
+    """
+    if (
+        isinstance(context, TextAndVisionContext)
+        and context.needs_vision_encoding
+    ):
+        if "vision_position_ids" not in context.extra_model_args:
+            raise InputError(
+                "vision_position_ids is required in extra_model_args for vision model input when vision encoding is needed"
+            )

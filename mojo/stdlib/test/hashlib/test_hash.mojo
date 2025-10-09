@@ -19,7 +19,7 @@
 from hashlib import default_comp_time_hasher
 
 from testing import assert_equal, assert_not_equal, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) -> UInt8:

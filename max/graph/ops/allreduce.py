@@ -84,7 +84,7 @@ def sum(
     # Do not merge device chains.
     results = []
     graph = Graph.current
-    for input_tensor, device in zip(inputs, devices):
+    for input_tensor, device in zip(inputs, devices, strict=True):
         in_chain = graph.device_chains[device]
         # Each op takes all inputs but only produces output for its device.
         (result, out_chain), _ = Graph.current._add_op_get_op_with_results(
@@ -127,7 +127,7 @@ def matmul_allreduce(
     *results, out_chain = Graph.current._add_op_generated(
         mo.DistributedMatmulAllreduceOp,
         # Types for 2 outputs: chain, list of tensors
-        [infer_out_type(a, b) for a, b in zip(inputs, weights)],
+        [infer_out_type(a, b) for a, b in zip(inputs, weights, strict=True)],
         _ChainType(),
         list(inputs),
         list(weights),

@@ -15,7 +15,7 @@ from sys.info import CompilationTarget, _current_target
 
 from compile.reflection import get_linkage_name, get_type_name
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 fn my_func() -> Int:

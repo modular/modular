@@ -14,8 +14,7 @@
 
 import logging
 import uuid
-from collections.abc import Awaitable
-from typing import Callable
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from max.serve.telemetry.stopwatch import StopWatch

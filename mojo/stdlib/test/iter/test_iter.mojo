@@ -14,7 +14,7 @@
 from sys.intrinsics import _type_is_eq
 
 from stdlib.collections.list import _ListIter
-from testing import assert_true
+from testing import TestSuite, assert_true
 
 
 fn test_iter() raises:
@@ -26,5 +26,9 @@ fn test_iter() raises:
     assert_true(_type_is_eq[__type_of(_it2), _ListIter[Int, __origin_of(l)]]())
 
 
-fn main() raises:
-    test_iter()
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_iter]()
+
+    suite^.run()

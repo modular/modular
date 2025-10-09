@@ -33,7 +33,7 @@ benchmark_config:
   dataset_path: null  # Path to dataset file
 
   # Basic workload parameters
-  num_prompts: 1000  # Number of prompts to process
+  num_prompts: null  # Number of prompts to process
   seed: 0  # Random seed for reproducibility
 
   # Control flags

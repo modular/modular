@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
 fn sum_items(data: List[Int8]) -> Int:
@@ -25,6 +25,14 @@ fn make_abcd_vector() -> List[Int8]:
     return List[Int8](97, 98, 99, 100)
 
 
-def main():
+def test_issue_13632():
     var vec = make_abcd_vector()
     assert_equal(sum_items(vec), 394)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_issue_13632]()
+
+    suite^.run()

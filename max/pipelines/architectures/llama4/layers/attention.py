@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import math
-from typing import Callable
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import (
@@ -47,7 +47,7 @@ from max.nn.rotary_embedding import RotaryEmbedding
 from .norm import l2_norm
 
 
-def Llama4TextAttention(**kwargs):
+def Llama4TextAttention(**kwargs):  # noqa: ANN201
     """Implementation of the attention layer for the Llama4 text model."""
     devices = kwargs["devices"]
     if len(devices) == 1:

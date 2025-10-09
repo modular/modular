@@ -172,7 +172,9 @@ def test_load_and_mma_and_multiply_operands[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
 
-    ctx.enqueue_function[mma_load_and_print_kernel_fn](
+    ctx.enqueue_function_checked[
+        mma_load_and_print_kernel_fn, mma_load_and_print_kernel_fn
+    ](
         lhs.device_tensor(),
         rhs.device_tensor(),
         grid_dim=(1, 1),
@@ -196,9 +198,9 @@ def test_write_res_operand[
     alias mma_load_and_print_kernel_fn = mma_write_operand_kernel[
         dst_dtype, dtype, dst.layout, shape
     ]
-    ctx.enqueue_function[mma_load_and_print_kernel_fn](
-        dst.device_tensor(), grid_dim=(1, 1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function_checked[
+        mma_load_and_print_kernel_fn, mma_load_and_print_kernel_fn
+    ](dst.device_tensor(), grid_dim=(1, 1), block_dim=(WARP_SIZE))
     ctx.synchronize()
 
     print(dst.tensor())
@@ -336,7 +338,9 @@ def test_load_operands_ldmatrix[
     alias mma_load_and_print_kernel_fn = mma_load_and_print_operands_kernel_ldmatrix[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
-    ctx.enqueue_function[mma_load_and_print_kernel_fn](
+    ctx.enqueue_function_checked[
+        mma_load_and_print_kernel_fn, mma_load_and_print_kernel_fn
+    ](
         lhs.device_tensor(),
         rhs.device_tensor(),
         grid_dim=(1, 1),

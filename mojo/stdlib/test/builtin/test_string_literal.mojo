@@ -13,7 +13,13 @@
 
 from sys.ffi import c_char
 
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_add():
@@ -344,27 +350,31 @@ def test_float_conversion():
 
 
 def main():
-    test_add()
-    test_mul()
-    test_equality()
-    test_len()
-    test_bool()
-    test_find()
-    test_rfind()
-    test_comparison_operators()
-    test_count()
-    test_indexing()
-    test_intable()
-    test_isdigit()
-    test_islower()
-    test_isupper()
-    test_layout()
-    test_lower_upper()
-    test_repr()
-    test_rjust()
-    test_ljust()
-    test_center()
-    test_startswith()
-    test_endswith()
-    test_strip()
-    test_float_conversion()
+    var suite = TestSuite()
+
+    suite.test[test_add]()
+    suite.test[test_mul]()
+    suite.test[test_equality]()
+    suite.test[test_len]()
+    suite.test[test_bool]()
+    suite.test[test_find]()
+    suite.test[test_rfind]()
+    suite.test[test_comparison_operators]()
+    suite.test[test_count]()
+    suite.test[test_indexing]()
+    suite.test[test_intable]()
+    suite.test[test_isdigit]()
+    suite.test[test_islower]()
+    suite.test[test_isupper]()
+    suite.test[test_layout]()
+    suite.test[test_lower_upper]()
+    suite.test[test_repr]()
+    suite.test[test_rjust]()
+    suite.test[test_ljust]()
+    suite.test[test_center]()
+    suite.test[test_startswith]()
+    suite.test[test_endswith]()
+    suite.test[test_strip]()
+    suite.test[test_float_conversion]()
+
+    suite^.run()

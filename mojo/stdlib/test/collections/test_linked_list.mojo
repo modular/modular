@@ -18,9 +18,14 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
+)
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
     TestSuite,
 )
-from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_construction():

@@ -435,7 +435,7 @@ struct SplitKTileScheduler[
         var num_output_tiles = problem_blocks_m * problem_blocks_n
 
         var locks_workspace_bytes = (
-            num_output_tiles * size_of[Int32]() * dyn_num_consumer
+            num_output_tiles * UInt(size_of[Int32]()) * dyn_num_consumer
         )
 
         return Int(locks_workspace_bytes)
@@ -529,7 +529,7 @@ struct SplitKTileScheduler[
         var num_peers = 0
         var reduction_peer_offset = 0
 
-        var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
+        var warp_group_thread_idx = thread_idx.x % UInt(WARPGROUP_SIZE)
 
         if not self.is_last_split(work_tile_info):
             if work_tile_info.k_start == 0:

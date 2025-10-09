@@ -130,7 +130,7 @@ def main():
             sin,
             asin,
             cos,
-            # acos,
+            acos,
             tanh,
             atanh,
             exp,

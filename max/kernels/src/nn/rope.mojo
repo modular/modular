@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import gcd
-from sys.info import _current_target, alignof, simd_width_of
+from sys.info import _current_target, simd_width_of
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer

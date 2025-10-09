@@ -20,6 +20,7 @@ from sys.ffi import (
     _Global,
     _OwnedDLHandle,
     c_int,
+    c_uint,
     c_size_t,
     external_call,
 )
@@ -35,17 +36,26 @@ from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 # ===-----------------------------------------------------------------------===#
 
 alias NVSHMEM_LIBRARY_PATHS = List[Path](
-    "libnvshmem_host.so.3.3.9",
+    "libnvshmem_host.so.3.4.5",
     "libnvshmem_host.so.3",
     "libnvshmem_host.so",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so.3.3.9",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so.3",
-    "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so",
 )
 
 
-fn _on_error_msg() -> String:
-    return String(
+@register_passable
+struct NVSHMEMIVersion:
+    var major: c_int
+    var minor: c_int
+    var patch: c_int
+
+    fn __init__(out self):
+        self.major = 3
+        self.minor = 4
+        self.patch = 5
+
+
+fn _on_error_msg() -> Error:
+    return Error(
         (
             "Cannot find the NVShmem libraries. Please make sure that "
             "the CUDA toolkit is installed and that the library path is "
@@ -210,18 +220,6 @@ struct NVSHMEMXUniqueID:
         self.internal = InlineArray[Byte, 124](fill=0)
 
 
-@register_passable
-struct NVSHMEMIVersion:
-    var major: c_int
-    var minor: c_int
-    var patch: c_int
-
-    fn __init__(out self):
-        self.major = 3
-        self.minor = 3
-        self.patch = 9
-
-
 fn _get_prefix[scope: SHMEMScope]() -> StaticString:
     @parameter
     if scope == SHMEMScope.default:
@@ -313,15 +311,11 @@ fn _dtype_to_nvshmem_type[
 # ===-----------------------------------------------------------------------===#
 
 
-# TODO: calculate how many jobs are set to launch on the current node and number
-# of devices, splitting up jobs evenly between devices. To enable launching
-# multiple kernels on the same device, and avoid initializing DeviceContext
-# twice. This doesn't work in MPI and UID initialization examples, but does
-# in nvshmem_init examples, so follow that logic.
+# Run one GPU per process
 fn nvshmemx_init() raises:
     var _argv = argv()
     var argc = len(_argv)
-    var mpi_status = MPI_Init(argc, _argv)
+    MPI_Init(argc, _argv)
 
     # Get MPI rank and size
     var rank = c_int(0)
@@ -334,6 +328,10 @@ fn nvshmemx_init() raises:
 
     # Initialize NVSHMEM with MPI
     var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    # For single process per GPU, fallback to one device per process per node.
+    attr.args.uid_args.myrank = 0
+    attr.args.uid_args.nranks = 1
+
     _ = nvshmemx_hostlib_init_attr(
         NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
     )
@@ -341,6 +339,30 @@ fn nvshmemx_init() raises:
     # Check initialization status
     if nvshmemx_init_status() != 2:
         raise Error("failed to initialize NVSHMEM")
+
+
+# Modular specific init, run one GPU per thread and return associated DeviceContext
+fn nvshmemx_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
+    var ctx = DeviceContext(mype_node)
+    ctx.set_as_current()
+
+    # Initialize NVSHMEM with MPI
+    var mpi_comm = get_mpi_comm_world()
+    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    attr.args.uid_args.myrank = mype_node
+    attr.args.uid_args.nranks = npes_node
+
+    var status = nvshmemx_hostlib_init_attr(
+        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
+    )
+    if status:
+        raise Error("failed to initialize NVSHMEM with status:", status)
+    # Check initialization status
+    status = nvshmemx_init_status()
+    if status != 2:
+        raise Error("failed to initialize NVSHMEM with status:", status)
+
+    return ctx
 
 
 fn nvshmemx_hostlib_init_attr(
@@ -363,6 +385,13 @@ fn nvshmemx_hostlib_finalize():
 fn nvshmemx_cumodule_init(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_init",
+        fn (CUmodule) -> c_int,
+    ]()(module)
+
+
+fn nvshmemx_cumodule_finalize(module: CUmodule) -> c_int:
+    return _get_nvshmem_function[
+        "nvshmemx_cumodule_finalize",
         fn (CUmodule) -> c_int,
     ]()(module)
 

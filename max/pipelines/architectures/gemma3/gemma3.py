@@ -189,7 +189,7 @@ class Gemma3TextModel(Module):
         if h:
             last_token_h = [
                 ops.gather(h_device, indices, axis=0)
-                for h_device, indices in zip(h, last_token_indices)
+                for h_device, indices in zip(h, last_token_indices, strict=True)
             ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
@@ -227,7 +227,9 @@ class Gemma3TextModel(Module):
             # Gather, normalize, and get logits
             variable_tokens = [
                 self.norm_shards[i](ops.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(zip(h, last_indices))
+                for i, (h_device, indices) in enumerate(
+                    zip(h, last_indices, strict=True)
+                )
             ]
             logits = ops.cast(
                 self.lm_head(variable_tokens, signal_buffers)[0], DType.float32

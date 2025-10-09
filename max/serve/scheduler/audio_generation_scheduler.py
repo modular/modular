@@ -227,7 +227,7 @@ class AudioGenerationScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager,
-        offload_queue_draining: bool = True,
+        offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

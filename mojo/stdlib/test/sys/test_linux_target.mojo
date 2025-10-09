@@ -18,7 +18,7 @@
 from sys import CompilationTarget
 
 from testing import assert_false, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_os_query():

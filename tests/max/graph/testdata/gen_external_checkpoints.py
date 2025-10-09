@@ -24,7 +24,7 @@ import torch
 from gguf import GGMLQuantizationType, GGUFWriter
 
 
-def test_data():
+def test_data():  # noqa: ANN201
     return {
         "a": np.arange(10, dtype=np.int32).reshape(5, 2),
         "b": np.full((1, 2, 3), 3.5, dtype=np.float64),

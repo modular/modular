@@ -435,7 +435,7 @@ def fetch_video(
 
         return resized_video, sample_fps
     else:
-        assert isinstance(ele["video"], (list, tuple))
+        assert isinstance(ele["video"], list | tuple)
         process_info = ele.copy()
         process_info.pop("type", None)
         process_info.pop("video", None)

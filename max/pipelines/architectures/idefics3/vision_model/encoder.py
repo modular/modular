@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import LayerNorm, Linear, Module
@@ -160,7 +158,7 @@ class Idefics3VisionEncoderLayer(Module):
     def __call__(
         self,
         hidden_states: TensorValue,
-        attention_mask: Optional[TensorValue] = None,
+        attention_mask: TensorValue | None = None,
         output_attentions: bool = False,
     ) -> TensorValue:
         """Forward pass of the encoder layer.
@@ -242,7 +240,7 @@ class Idefics3VisionEncoder(Module):
     def __call__(
         self,
         hidden_states: TensorValue,
-        attention_mask: Optional[TensorValue] = None,
+        attention_mask: TensorValue | None = None,
     ) -> TensorValue:
         """Forward pass through all encoder layers.
 

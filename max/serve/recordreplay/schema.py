@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing_extensions import TypeAlias
+    from typing import TypeAlias
 
 import msgspec
 
@@ -97,6 +97,6 @@ class Dummy(msgspec.Struct, kw_only=True, tag="dummy"):
 # isinstance as appropriate and do not assume this list is fixed.
 # Note: Due to msgspec limitations, Union[] must be used, and the | syntax is
 # unsupported in TypeAliases.
-RecordingItem: TypeAlias = Union[Dummy, Transaction]
+RecordingItem: TypeAlias = Dummy | Transaction
 
 Recording: TypeAlias = Sequence[RecordingItem]

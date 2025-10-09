@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from max._core.engine import Model
 from max.driver import Tensor
@@ -52,8 +52,8 @@ class Qwen3Model(LlamaModelBase):
     def _build_graph(
         self,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
-        session: Optional[InferenceSession] = None,
+        adapter: WeightsAdapter | None = None,
+        session: InferenceSession | None = None,
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)

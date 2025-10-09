@@ -22,8 +22,8 @@ from builtin.sort import (
     _small_sort,
     _stable_sort,
 )
-from test_utils import CopyCounter, TestSuite
-from testing import assert_equal, assert_false, assert_true
+from test_utils import CopyCounter
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 fn random_numbers[

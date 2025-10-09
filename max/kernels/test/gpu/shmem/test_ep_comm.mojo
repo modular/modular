@@ -35,6 +35,7 @@ from shmem.ep_comm import (
     dispatch_cb_kernel,
     dispatch_kernel,
 )
+from shmem._mpi import MPI_Finalize
 from testing import assert_equal
 
 from utils import IndexList
@@ -484,7 +485,7 @@ fn test_dispatch[
     shmem_free(recv_count)
 
 
-fn main() raises:
+def main():
     alias test_gpu_counts = (2, 4, 8)
 
     @parameter
@@ -493,10 +494,8 @@ fn main() raises:
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 
-        shmem_init()
-        var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
-
-        with DeviceContext(device_id=Int(mype_node)) as ctx:
+        with SHMEMContext() as shmem_ctx:
+            var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
             test_dispatch[
                 input_type = DType.bfloat16,
                 hidden_size=3584,  # equivalent to send 7168 FP8s.
@@ -504,6 +503,4 @@ fn main() raises:
                 n_experts = min(num_gpus * 32, 256),
                 n_ranks=num_gpus,
                 n_tokens_per_rank=128,
-            ](ctx, Int(mype_node))
-
-        shmem_finalize()
+            ](shmem_ctx.get_device_context(), Int(mype_node))

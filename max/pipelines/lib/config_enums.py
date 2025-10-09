@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 from max.driver import DeviceSpec
 from max.dtype import DType
@@ -99,7 +98,7 @@ class SupportedEncoding(str, Enum):
     gptq = "gptq"
 
     @classmethod
-    def parse_from_file_name(cls, name: str):
+    def parse_from_file_name(cls, name: str):  # noqa: ANN206
         # TODO(AITLIB-127): Robustify detection of quantization encoding
         name = name.lower()
         if "f32" in name or "fp32" in name or "float32" in name:
@@ -121,7 +120,7 @@ class SupportedEncoding(str, Enum):
             return None
 
     @property
-    def quantization_encoding(self) -> Optional[QuantizationEncoding]:
+    def quantization_encoding(self) -> QuantizationEncoding | None:
         if self not in _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING:
             raise ValueError(
                 f"SupportedEncoding({self}) does not have corresponding QuantizationEncoding."

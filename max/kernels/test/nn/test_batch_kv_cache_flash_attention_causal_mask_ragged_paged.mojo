@@ -26,6 +26,7 @@ from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
 from testing import assert_almost_equal
+from sys import size_of
 
 from utils import IndexList
 
@@ -164,21 +165,39 @@ def execute_ragged_flash_attention[
             paged_lut.tensor[bs, block_idx] = randval
 
             for kv_idx in range(2):
+                var dest = kv_block_paged.tensor._offset(
+                    IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
+                )
+                var src = kv_block_continuous.tensor._offset(
+                    IndexList[6](
+                        continuous_idx,
+                        kv_idx,
+                        layer_idx,
+                        block_idx * page_size,
+                        0,
+                        0,
+                    )
+                )
+                var dest_byte_offset = UInt(Int(dest)) - UInt(
+                    Int(kv_block_paged.tensor.data)
+                )
+                var src_byte_offset = UInt(Int(src)) - UInt(
+                    Int(kv_block_continuous.tensor.data)
+                )
+                var dest_len = (
+                    kv_block_paged.tensor.bytecount() - dest_byte_offset
+                )
+                var src_len = (
+                    kv_block_continuous.tensor.bytecount() - src_byte_offset
+                )
                 memcpy(
-                    dest=kv_block_paged.tensor._offset(
-                        IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
+                    dest=dest,
+                    src=src,
+                    count=min(
+                        dest_len // size_of[dest.type](),
+                        src_len // size_of[src.type](),
+                        page_size * kv_params.num_heads * kv_params.head_size,
                     ),
-                    src=kv_block_continuous.tensor._offset(
-                        IndexList[6](
-                            continuous_idx,
-                            kv_idx,
-                            layer_idx,
-                            block_idx * page_size,
-                            0,
-                            0,
-                        )
-                    ),
-                    count=page_size * kv_params.num_heads * kv_params.head_size,
                 )
 
     kv_collection_paged = PagedKVCacheCollection[dtype, kv_params, page_size](

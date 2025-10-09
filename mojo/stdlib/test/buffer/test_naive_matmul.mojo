@@ -65,6 +65,7 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from testing import TestSuite
 
 from utils.index import IndexList
 
@@ -160,12 +161,32 @@ fn test_naive_matmul[size: Int]():
     print_matrix[size](c)
 
 
-fn main():
+def test_naive_matmul_2():
     # CHECK: 4.0
     test_naive_matmul[2]()
+
+
+def test_naive_matmul_4():
     # CHECK: 72.0
     test_naive_matmul[4]()
+
+
+def test_naive_matmul_8():
     # CHECK: 784.0
     test_naive_matmul[8]()
+
+
+def test_naive_matmul_16():
     # CHECK: 7200.0
     test_naive_matmul[16]()
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_naive_matmul_2]()
+    suite.test[test_naive_matmul_4]()
+    suite.test[test_naive_matmul_8]()
+    suite.test[test_naive_matmul_16]()
+
+    suite^.run()

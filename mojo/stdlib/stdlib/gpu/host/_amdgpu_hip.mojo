@@ -15,7 +15,7 @@ from sys import external_call
 
 from gpu.host import DeviceContext, DeviceStream
 from gpu.host.device_context import (
-    _CharPtr,
+    _ConstCharPtr,
     _checked,
     _DeviceContextPtr,
     _DeviceStreamPtr,
@@ -44,7 +44,7 @@ fn HIP(ctx: DeviceContext) raises -> hipDevice_t:
     _checked(
         external_call[
             "AsyncRT_DeviceContext_hip_device",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[hipDevice_t],
             _DeviceContextPtr,
         ](
@@ -64,7 +64,7 @@ fn HIP(stream: DeviceStream) raises -> hipStream_t:
     _checked(
         external_call[
             "AsyncRT_DeviceStream_hip_stream",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[hipStream_t],
             _DeviceStreamPtr,
         ](

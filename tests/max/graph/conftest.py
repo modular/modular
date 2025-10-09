@@ -19,10 +19,9 @@ import math
 import operator
 import os
 import random
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from functools import reduce
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 import pytest
@@ -76,32 +75,32 @@ dtypes = st.sampled_from(
 )
 
 
-def float_dtypes():
+def float_dtypes():  # noqa: ANN201
     return st.sampled_from([d for d in DType if d.is_float()])
 
 
-def integral_dtypes():
+def integral_dtypes():  # noqa: ANN201
     return st.sampled_from([d for d in DType if d.is_integral()])
 
 
-def uniform_distributed_static_dims(min: int = 0, max: int = 2**63 - 1):
+def uniform_distributed_static_dims(min: int = 0, max: int = 2**63 - 1):  # noqa: ANN201
     return st.builds(StaticDim, st.integers(min_value=min, max_value=max))
 
 
-def clip(v, min, max):  # noqa: ANN001
+def clip(v, min, max):  # noqa: ANN001, ANN201
     # Like np.clip, but more stable for python int types.
     # np.clip will cast to a float for values > intmax.
     return min if v < min else max if v > max else v  # noqa: FURB136
 
 
 @st.composite
-def log_bucket(draw, e: float, min: int, max: int):  # noqa: ANN001
+def log_bucket(draw, e: float, min: int, max: int):  # noqa: ANN001, ANN201
     lower = clip(int(2**e), min, max)
     upper = clip(int(2 ** (e + 1)), min, max)
     return draw(st.integers(min_value=lower, max_value=upper))
 
 
-def log_distributed_static_dims(min: int = 1, max: int = 2**63 - 1):
+def log_distributed_static_dims(min: int = 1, max: int = 2**63 - 1):  # noqa: ANN201
     assert min > 0, "can't generate 0 with log distribution"
     return (
         st.floats(min_value=math.log2(min), max_value=math.log2(max))
@@ -110,7 +109,7 @@ def log_distributed_static_dims(min: int = 1, max: int = 2**63 - 1):
     )
 
 
-def static_dims(min: int = 0, max: int = 2**63 - 1):
+def static_dims(min: int = 0, max: int = 2**63 - 1):  # noqa: ANN201
     return st.one_of(
         uniform_distributed_static_dims(min, max),
         log_distributed_static_dims(builtins.max(1, min), max),
@@ -170,17 +169,17 @@ def all_shapes(
     return draw(st.permutations(all_dims).map(Shape))
 
 
-def small_shapes(*args, **kwargs):
+def small_shapes(*args, **kwargs):  # noqa: ANN201
     return all_shapes(*args, dims=small_dims, **kwargs)  # type: ignore
 
 
-def shapes(*args, **kwargs):
+def shapes(*args, **kwargs):  # noqa: ANN201
     if "dims" in kwargs:
         return all_shapes(*args, **kwargs)
     return st.one_of(small_shapes(*args, **kwargs), all_shapes(*args, **kwargs))
 
 
-def valid_broadcast_rank(shape_st, max_size: int | None = None):  # noqa: ANN001
+def valid_broadcast_rank(shape_st, max_size: int | None = None):  # noqa: ANN001, ANN201
     """Samples valid ranks to broadcast a shape to.
 
     Valid ranks are >= len(shape).
@@ -196,7 +195,7 @@ def tensor_types(
     return st.builds(TensorType, dtypes, shapes, st.just(device))
 
 
-def opaque_types():
+def opaque_types():  # noqa: ANN201
     names = st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1)
     si64s = st.integers(min_value=-(2**63), max_value=2**63 - 1)
     parameters = st.dictionaries(
@@ -219,15 +218,15 @@ def buffer_types(
     return st.builds(BufferType, dtypes, shapes, st.just(device))
 
 
-def axes(shapes):  # noqa: ANN001
-    def strategy(shape):  # noqa: ANN001
+def axes(shapes):  # noqa: ANN001, ANN201
+    def strategy(shape):  # noqa: ANN001, ANN202
         assume(shape.rank > 0)
         return st.integers(min_value=-shape.rank, max_value=shape.rank - 1)
 
     return shapes.flatmap(strategy)
 
 
-def axes_of(
+def axes_of(  # noqa: ANN201
     shapes: st.Strategy[Shape | TensorType],  # type: ignore
     pred: Callable[[Dim], bool],
 ):
@@ -235,7 +234,7 @@ def axes_of(
     the given shapes.
     """
 
-    def strategy(shape: Shape | TensorType):
+    def strategy(shape: Shape | TensorType):  # noqa: ANN202
         if isinstance(shape, TensorType):
             shape = shape.shape
 
@@ -252,7 +251,7 @@ def axes_of(
     return shapes.flatmap(strategy)
 
 
-def static_axes(shapes):  # noqa: ANN001
+def static_axes(shapes):  # noqa: ANN001, ANN201
     """Samples the axes corresponding to the static dimensions of the given
     shapes.
     """
@@ -260,7 +259,7 @@ def static_axes(shapes):  # noqa: ANN001
     return axes_of(shapes, lambda x: isinstance(x, StaticDim))
 
 
-def symbolic_axes(shapes):  # noqa: ANN001
+def symbolic_axes(shapes):  # noqa: ANN001, ANN201
     """Samples the axes corresponding to the symbolic dimensions of the given
     shapes.
     """
@@ -268,7 +267,7 @@ def symbolic_axes(shapes):  # noqa: ANN001
     return axes_of(shapes, lambda x: isinstance(x, SymbolicDim))
 
 
-def non_static_axes(shapes):  # noqa: ANN001
+def non_static_axes(shapes):  # noqa: ANN001, ANN201
     """Samples the axes corresponding to the non-static (SymbolicDim or
     AlgebraicDim) dimensions of the given shapes.
     """
@@ -276,8 +275,8 @@ def non_static_axes(shapes):  # noqa: ANN001
     return axes_of(shapes, lambda x: not isinstance(x, StaticDim))
 
 
-def new_axes(shapes):  # noqa: ANN001
-    def strategy(shapes):  # noqa: ANN001
+def new_axes(shapes):  # noqa: ANN001, ANN201
+    def strategy(shapes):  # noqa: ANN001, ANN202
         if not shapes.rank:
             return st.sampled_from([0, -1])
         return st.integers(min_value=-shapes.rank, max_value=shapes.rank)
@@ -295,7 +294,7 @@ st.register_type_strategy(BufferType, buffer_types())
 st.register_type_strategy(_OpaqueType, opaque_types())
 
 
-def broadcastable_subshape(shape: list[Dim], random: random.Random):
+def broadcastable_subshape(shape: list[Dim], random: random.Random):  # noqa: ANN201
     shape = shape[random.randint(0, len(shape)) :]
     ones = random.sample(range(len(shape)), random.randint(0, len(shape)))
     for idx in ones:
@@ -303,7 +302,7 @@ def broadcastable_subshape(shape: list[Dim], random: random.Random):
     return shape
 
 
-def _broadcastable_shapes(n: int, dims_strategy):  # noqa: ANN001
+def _broadcastable_shapes(n: int, dims_strategy):  # noqa: ANN001, ANN202
     return st.lists(dims_strategy).flatmap(
         lambda shape: st.lists(
             st.builds(broadcastable_subshape, st.just(shape), st.randoms()),
@@ -313,15 +312,15 @@ def _broadcastable_shapes(n: int, dims_strategy):  # noqa: ANN001
     )
 
 
-def broadcastable_shapes(n: int):
+def broadcastable_shapes(n: int):  # noqa: ANN201
     return _broadcastable_shapes(n, dims)
 
 
-def broadcastable_static_positive_shapes(n: int):
+def broadcastable_static_positive_shapes(n: int):  # noqa: ANN201
     return _broadcastable_shapes(n, static_positive_dims)
 
 
-def broadcastable_tensor_types(n: int):
+def broadcastable_tensor_types(n: int):  # noqa: ANN201
     return dtypes.flatmap(
         lambda dtype: broadcastable_shapes(n).map(
             lambda shapes: [
@@ -333,7 +332,7 @@ def broadcastable_tensor_types(n: int):
 
 
 def broadcast_shapes(s1: list[Dim], s2: list[Dim]) -> list[Dim]:
-    def broadcast_dim(d1: Dim | None, d2: Dim | None):
+    def broadcast_dim(d1: Dim | None, d2: Dim | None):  # noqa: ANN202
         if d1 is None:
             return d2
         if d2 is None:
@@ -363,24 +362,24 @@ def shapes_are_broadcastable(*shapes: list[Dim]) -> bool:
     return True
 
 
-def int_value_in_range(dtype: DType):
+def int_value_in_range(dtype: DType):  # noqa: ANN201
     min, max = dtype_promotion._DTYPE_MIN_AND_MAX_FULL_PRECISION[dtype]
     return st.integers(min_value=int(min), max_value=int(max))
 
 
-def int_value_out_of_range(dtype: DType):
+def int_value_out_of_range(dtype: DType):  # noqa: ANN201
     min, max = dtype_promotion._DTYPE_MIN_AND_MAX_FULL_PRECISION[dtype]
     return st.one_of(
         st.integers(max_value=int(min) - 1), st.integers(min_value=int(max) + 1)
     )
 
 
-def float_value_in_range(dtype: DType):
+def float_value_in_range(dtype: DType):  # noqa: ANN201
     min, max = dtype_promotion._DTYPE_MIN_AND_MAX_FULL_PRECISION[dtype]
     return st.floats(min_value=min, max_value=max)
 
 
-def float_value_out_of_range(dtype: DType):
+def float_value_out_of_range(dtype: DType):  # noqa: ANN201
     min, max = dtype_promotion._DTYPE_MIN_AND_MAX_FULL_PRECISION[dtype]
     return st.one_of(
         st.floats(max_value=min, exclude_max=True),

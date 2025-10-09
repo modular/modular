@@ -13,7 +13,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from max.dtype import DType
 
@@ -37,9 +36,9 @@ class KVCacheParams:
     head_dim: int
     enable_prefix_caching: bool = False
     enable_kvcache_swapping_to_host: bool = False
-    host_kvcache_swap_space_gb: Optional[float] = None
+    host_kvcache_swap_space_gb: float | None = None
     cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED
-    page_size: Optional[int] = None
+    page_size: int | None = None
     n_devices: int = 1
 
     data_parallel_degree: int = 1

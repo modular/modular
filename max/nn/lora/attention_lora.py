@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Callable, cast
+from collections.abc import Callable
+from typing import cast
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
@@ -179,7 +180,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
 
         return out
 
-    def fused_qkv_lora(
+    def fused_qkv_lora(  # noqa: ANN201
         self,
         x: TensorValue,
         kv_collection: PagedCacheValues,

@@ -14,7 +14,7 @@
 from math import frexp, ldexp
 from sys import external_call
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_almost_equal, assert_equal
 
 

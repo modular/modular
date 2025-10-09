@@ -14,7 +14,7 @@
 from collections.counter import Counter
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_and():

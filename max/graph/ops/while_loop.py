@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import Any, Callable
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 from max import mlir
 from max._core import Value as _Value
@@ -124,7 +124,7 @@ def while_loop(
     out_types = [arg.type for arg in initial_values]
     out_mlir_types = [t.to_mlir() for t in out_types]
 
-    def wrap_while_block_function(
+    def wrap_while_block_function(  # noqa: ANN202
         user_func,  # noqa: ANN001
         block_args: Iterable[mlir.BlockArgument],
         is_cond_block: bool = False,
@@ -154,7 +154,7 @@ def while_loop(
             across loop iterations.
         """
 
-        def chain_aware_wrapper():
+        def chain_aware_wrapper():  # noqa: ANN202
             # Separate loop variables from the execution chain
             loop_vars: Sequence[Value[Any]]
             execution_chain: Value[Any]

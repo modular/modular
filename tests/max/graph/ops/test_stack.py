@@ -143,7 +143,7 @@ def test_stack_error_with_many_different_dtypes(
 shared_shapes_rank_gt_0 = st.shared(shapes(min_rank=1))
 
 
-def invalid_axes(rank: int):
+def invalid_axes(rank: int):  # noqa: ANN201
     lower_bound, upper_bound = -(rank + 1), rank
     return st.one_of(
         st.integers(max_value=lower_bound - 1),

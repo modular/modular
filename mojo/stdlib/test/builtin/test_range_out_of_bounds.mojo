@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 # CHECK: test_range_getitem_uint_out_of_bounds
@@ -38,4 +38,8 @@ def test_range_getitem_uint_out_of_bounds():
 
 
 def main():
-    test_range_getitem_uint_out_of_bounds()
+    var suite = TestSuite()
+
+    suite.test[test_range_getitem_uint_out_of_bounds]()
+
+    suite^.run()

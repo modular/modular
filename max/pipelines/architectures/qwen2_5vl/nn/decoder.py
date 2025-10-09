@@ -20,8 +20,7 @@ from __future__ import annotations
 
 import functools
 import math
-from collections.abc import Iterable, Sequence
-from typing import Callable
+from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import (
@@ -413,7 +412,7 @@ class Qwen25VLDecoderTransformerBlock(Module):
         ]
         attn_outs = self.allreduce(attn_out, signal_buffers)
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
 
         # Apply post attention layer norm to each shard
         norm_outs = forward_sharded_layers(
@@ -423,7 +422,7 @@ class Qwen25VLDecoderTransformerBlock(Module):
 
         mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -571,7 +570,7 @@ class Qwen25VLDecoder(Module):
                 image_token_indices=img_tok_indices,
             )
             for h_device, img_embed, img_tok_indices in zip(
-                h, image_embeddings, image_token_indices
+                h, image_embeddings, image_token_indices, strict=True
             )
         ]
 
@@ -598,7 +597,7 @@ class Qwen25VLDecoder(Module):
         assert h is not None and len(h) == len(last_token_indices)
         last_token_h = [
             ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices)
+            for h_device, indices in zip(h, last_token_indices, strict=True)
         ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
@@ -636,7 +635,9 @@ class Qwen25VLDecoder(Module):
             # Gather, normalize, and get logits
             variable_tokens = [
                 self.norm_shards[i](ops.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(zip(h, last_indices))
+                for i, (h_device, indices) in enumerate(
+                    zip(h, last_indices, strict=True)
+                )
             ]
             logits = ops.cast(
                 self.lm_head(variable_tokens, signal_buffers)[0], DType.float32

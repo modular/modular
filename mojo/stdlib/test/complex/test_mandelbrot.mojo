@@ -21,7 +21,7 @@ from testing import assert_equal
 
 # NOTE: This is commented out because TestSuite is part of `test_utils` which
 # is not packaged with the stdlib.
-# from test_utils import TestSuite
+# from testing import TestSuite
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:

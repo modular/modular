@@ -22,6 +22,8 @@ from internal_utils import (
     update_bench_config_args,
 )
 
+from time import sleep
+
 
 fn bench_func[
     dtype: DType, M: Int, N: Int, K: Int, stages: Int
@@ -32,7 +34,7 @@ fn bench_func[
         @parameter
         @always_inline
         fn call_fn():
-            pass
+            sleep(0.1)
 
         b.iter[call_fn]()
 
@@ -48,7 +50,7 @@ fn bench_func[
         print("pretending to run the kernel...PASS")
 
 
-fn main() raises:
+def main():
     alias dtype = env_get_dtype["dtype", DType.float16]()
     alias shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
     alias shape = int_list_to_tuple[shape_int_list]()
@@ -68,9 +70,7 @@ fn main() raises:
     if Mode.VERIFY == mode:
         print("-- mode: verify kernel")
 
-    var m = Bench(
-        BenchConfig(max_iters=1, max_batch_size=1, min_warmuptime_secs=0)
-    )
+    var m = Bench(BenchConfig(max_iters=1, max_batch_size=1))
 
     update_bench_config_args(m)
 

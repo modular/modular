@@ -19,9 +19,9 @@ import asyncio
 import dataclasses
 import queue
 import threading
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from threading import Thread
-from typing import Callable, TypeVar, cast
+from typing import TypeVar, cast
 
 import tqdm
 from max.interfaces import RequestID, SamplingParams, TextGenerationRequest

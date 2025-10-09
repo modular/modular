@@ -17,7 +17,7 @@ from gpu.host import *
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from testing import *
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_compile_llvm():

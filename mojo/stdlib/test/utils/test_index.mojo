@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 from utils import Index, IndexList
 
@@ -70,7 +70,11 @@ def test_list_literal():
 
 
 def main():
-    test_basics()
-    test_cast()
-    test_index()
-    test_list_literal()
+    var suite = TestSuite()
+
+    suite.test[test_basics]()
+    suite.test[test_cast]()
+    suite.test[test_index]()
+    suite.test[test_list_literal]()
+
+    suite^.run()

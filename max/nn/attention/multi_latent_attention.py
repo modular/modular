@@ -15,8 +15,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
-from typing import Callable
+from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import (
@@ -75,6 +74,7 @@ class LatentAttentionWithRope(Module, Shardable):
         qk_rope_head_dim: int = 64,
         v_head_dim: int = 128,
         buffer_size: int = 16384,
+        graph_mode: str | None = None,
     ) -> None:
         """Initializes the latent attention layer.
 
@@ -83,7 +83,8 @@ class LatentAttentionWithRope(Module, Shardable):
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            kv_params: KV Cache Params, including the number of kv heads, the
+                head dim, and data type.
             dtype: DType of the weights, currently only bfloat16 is supported.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used.
@@ -94,10 +95,19 @@ class LatentAttentionWithRope(Module, Shardable):
             qk_nope_head_dim: Head dimension for non-positional encoding part.
             qk_rope_head_dim: Head dimension for rope part.
             v_head_dim: Head dimension for value.
-            buffer_size: Buffer size for storing the temporal results during prefill,
-                in unit of tokens.
+            buffer_size: Buffer size for storing the temporal results during
+                prefill, in unit of tokens.
+            graph_mode: Pipeline role to use for the attention layer. Should be
+                "prefill", "decode", or "auto".
         """
         super().__init__()
+
+        _role = graph_mode or "auto"
+        if _role not in ("prefill", "decode", "auto"):
+            raise ValueError(
+                f"Invalid graph_mode '{_role}'. Use 'prefill', 'decode', or 'auto'."
+            )
+        self.graph_mode = _role
 
         if dtype != DType.bfloat16:
             raise ValueError(
@@ -201,7 +211,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     "MLA head per device must be a multiple of 16."
                 )
 
-            # set the sharding strategy for the weights
+            # Tensor parallelism: shard/replicate weights appropriately
             if self.q_lora_rank is not None:
                 self.q_a_proj.sharding_strategy = ShardingStrategy.replicate(
                     strategy.num_devices
@@ -229,9 +239,40 @@ class LatentAttentionWithRope(Module, Shardable):
             self.o_proj.weight.sharding_strategy = ShardingStrategy.columnwise(
                 strategy.num_devices
             )
+        elif strategy.is_replicate:
+            # Data parallelism: replicate the entire module's weights to each device.
+            self._sharding_strategy = strategy
+
+            if self.q_lora_rank is not None:
+                self.q_a_proj.sharding_strategy = ShardingStrategy.replicate(
+                    strategy.num_devices
+                )
+                self.q_a_layernorm.weight.sharding_strategy = (
+                    ShardingStrategy.replicate(strategy.num_devices)
+                )
+                self.q_b_proj.sharding_strategy = ShardingStrategy.replicate(
+                    strategy.num_devices
+                )
+            else:
+                self.q_proj.sharding_strategy = ShardingStrategy.replicate(
+                    strategy.num_devices
+                )
+
+            self.kv_a_proj_layernorm.sharding_strategy = (
+                ShardingStrategy.replicate(strategy.num_devices)
+            )
+            self.kv_a_proj_with_mqa.sharding_strategy = (
+                ShardingStrategy.replicate(strategy.num_devices)
+            )
+            self.kv_b_proj.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+            self.o_proj.weight.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
         else:
             raise ValueError(
-                "Only tensor parallel sharding strategy is supported for LatentAttentionWithRope"
+                "Only tensor parallel or replicate sharding strategies are supported for LatentAttentionWithRope"
             )
 
     def shard(
@@ -277,6 +318,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     kv_params=self.kv_params,
                     dtype=self.dtype,
                     devices=[device],
+                    graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
                     scale=self._scale,
                     q_lora_rank=self.q_lora_rank,
@@ -309,9 +351,67 @@ class LatentAttentionWithRope(Module, Shardable):
                 shards.append(sharded)
 
             return shards
+        elif self.sharding_strategy.is_replicate:
+            # Replicate full weights to each device (no head split).
+            if self.q_lora_rank is not None:
+                q_a_proj_shards = self.q_a_proj.shard(devices)
+                q_a_layernorm_weight_shards = self.q_a_layernorm.weight.shard(
+                    devices
+                )
+                q_b_proj_shards = self.q_b_proj.shard(devices)
+            else:
+                q_proj_shards = self.q_proj.shard(devices)
+
+            kv_a_proj_layernorm_shards = self.kv_a_proj_layernorm.shard(devices)
+            kv_a_proj_with_mqa_shards = self.kv_a_proj_with_mqa.shard(devices)
+            kv_b_proj_shards = self.kv_b_proj.shard(devices)
+            o_proj_weight_shards = self.o_proj.weight.shard(devices)
+
+            replicas: list[LatentAttentionWithRope] = []
+            for shard_idx, device in enumerate(devices):
+                replica = LatentAttentionWithRope(
+                    rope=self.rope,
+                    num_attention_heads=self.n_heads,  # DP keeps full heads
+                    num_key_value_heads=self.num_key_value_heads,
+                    hidden_size=self.hidden_size,
+                    kv_params=self.kv_params,
+                    dtype=self.dtype,
+                    devices=[device],
+                    graph_mode=self.graph_mode,
+                    linear_cls=self.linear_cls,
+                    scale=self._scale,
+                    q_lora_rank=self.q_lora_rank,
+                    kv_lora_rank=self.kv_lora_rank,
+                    qk_nope_head_dim=self.qk_nope_head_dim,
+                    qk_rope_head_dim=self.qk_rope_head_dim,
+                    v_head_dim=self.v_head_dim,
+                    buffer_size=self.BUFFER_TOK_SIZE,
+                )
+
+                if self.q_lora_rank is not None:
+                    replica.q_a_proj = q_a_proj_shards[shard_idx]
+                    replica.q_a_layernorm.weight = q_a_layernorm_weight_shards[
+                        shard_idx
+                    ]
+                    replica.q_b_proj = q_b_proj_shards[shard_idx]
+                else:
+                    replica.q_proj = q_proj_shards[shard_idx]
+
+                replica.kv_a_proj_layernorm = kv_a_proj_layernorm_shards[
+                    shard_idx
+                ]
+                replica.kv_a_proj_with_mqa = kv_a_proj_with_mqa_shards[
+                    shard_idx
+                ]
+                replica.kv_b_proj = kv_b_proj_shards[shard_idx]
+                replica.o_proj.weight = o_proj_weight_shards[shard_idx]
+
+                replicas.append(replica)
+
+            return replicas
         else:
             raise ValueError(
-                "Only tensor parallel sharding strategy is supported for LatentAttentionWithRope"
+                "Only tensor parallel or replicate sharding strategies are supported for LatentAttentionWithRope"
             )
 
     @property
@@ -488,24 +588,31 @@ class LatentAttentionWithRope(Module, Shardable):
         # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
         max_seq_len = kv_cache_get_max_seq_len(self.kv_params, kv_collection)
 
-        result = ops.cond(
-            max_seq_len > 1,
-            [
-                TensorType(
-                    dtype=xq_nope.dtype,
-                    shape=[
-                        xq_nope.shape[0],
-                        self.n_heads,
-                        self.v_head_dim,
-                    ],
-                    device=xq_nope.device,
-                )
-            ],
-            _mla_prefill,
-            _mla_decode,
-        )[0].tensor
+        if self.graph_mode == "prefill":
+            result = _mla_prefill()
+        elif self.graph_mode == "decode":
+            result = _mla_decode()
+        else:
+            result = ops.cond(
+                max_seq_len > 1,
+                [
+                    TensorType(
+                        dtype=xq_nope.dtype,
+                        shape=[
+                            xq_nope.shape[0],
+                            self.n_heads,
+                            self.v_head_dim,
+                        ],
+                        device=xq_nope.device,
+                    )
+                ],
+                _mla_prefill,
+                _mla_decode,
+            )[0].tensor
 
-        result = ops.reshape(result, shape=[result.shape[0], -1])
+        result = ops.reshape(
+            result, shape=[result.shape[0], self.n_heads * self.v_head_dim]
+        )
 
         return result
 
@@ -622,3 +729,66 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
             ],
             signal_buffers=signal_buffers,
         )
+
+
+class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
+    """Data-parallel implementation of Latent Attention with RoPE.
+
+    This replicates the attention module across devices and runs each replica on
+    its local inputs (x, kv, freqs_cis, input_row_offsets). No collective ops
+    are required; KV-cache remains local to each device.
+
+    Notes:
+      - `signal_buffers` is accepted for interface parity with the distributed
+        implementation but is not used here.
+      - Assumes the caller has already distributed `xs`, `kv_collections`,
+        `freqs_cis`, and `input_row_offsets` so that index i corresponds to
+        device i, with `input_row_offsets[i]` rebased to start at 0.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        num_devices = len(self.devices)
+        self.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        self.list_of_attentions = self.shard(self.devices)
+
+    def __call__(  # type: ignore[override]
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: list[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+
+        n = len(self.devices)
+        if not (
+            len(xs)
+            == len(kv_collections)
+            == len(freqs_cis)
+            == len(input_row_offsets)
+            == n
+        ):
+            raise ValueError(
+                "xs, kv_collections, freqs_cis, and input_row_offsets must all have "
+                f"length equal to number of devices ({n})"
+            )
+
+        outs: list[TensorValue] = []
+        for i in range(n):
+            outs.append(
+                self.list_of_attentions[i](
+                    layer_idx,
+                    xs[i],
+                    kv_collections[i],
+                    freqs_cis=freqs_cis[i],
+                    input_row_offsets=input_row_offsets[i],
+                )
+            )
+        return outs

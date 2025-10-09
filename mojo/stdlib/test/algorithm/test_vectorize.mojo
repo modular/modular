@@ -15,7 +15,7 @@ from algorithm import vectorize
 from buffer import NDBuffer
 from memory import memcmp
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_vectorize():

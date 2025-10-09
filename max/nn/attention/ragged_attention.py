@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops

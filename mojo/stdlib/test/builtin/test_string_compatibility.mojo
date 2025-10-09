@@ -11,14 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
-def test_literals(cond: Bool = True):
+def test_literals():
     """Test string literal operations and type inference.
 
     String literals now materialize to String by default.
     """
+
+    var cond = True
 
     # Concatenation with literals
     var concat_static = "foo" + StaticString("bar")
@@ -308,19 +310,69 @@ def test_conditional_edge_cases(
     assert_equal(empty_cond2, empty_string)
 
 
-def main():
-    test_literals()
-    test_alias_expressions()
-
+def test_string_types_compatibility():
     var string = "string"
     var static_string = StaticString("static_string")
     var string_slice = "string_slice".as_string_slice()
-
     test_string_types_compatibility(string, static_string, string_slice)
+
+
+def test_string_slice_conversions():
+    var string = "string"
+    var string_slice = "string_slice".as_string_slice()
     test_string_slice_conversions(string, string_slice)
+
+
+def test_equality_operations():
+    var string = "string"
+    var static_string = StaticString("static_string")
+    var string_slice = "string_slice".as_string_slice()
     test_equality_operations(string, static_string, string_slice)
+
+
+def test_chained_operations():
+    var string = "string"
+    var static_string = StaticString("static_string")
+    var string_slice = "string_slice".as_string_slice()
     test_chained_operations(string, static_string, string_slice)
+
+
+def test_with_collections():
+    var string = "string"
+    var static_string = StaticString("static_string")
     test_with_collections(string, static_string)
+
+
+def test_dict_literals():
+    var string = "string"
+    var static_string = StaticString("static_string")
     test_dict_literals(string, static_string)
+
+
+def test_list_comprehensions():
+    var string = "string"
+    var static_string = StaticString("static_string")
     test_list_comprehensions(string, static_string)
+
+
+def test_conditional_edge_cases():
+    var string = "string"
+    var static_string = StaticString("static_string")
     test_conditional_edge_cases(string, static_string)
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_literals]()
+    suite.test[test_alias_expressions]()
+    suite.test[test_string_types_compatibility]()
+    suite.test[test_string_slice_conversions]()
+    suite.test[test_equality_operations]()
+    suite.test[test_chained_operations]()
+    suite.test[test_with_collections]()
+    suite.test[test_dict_literals]()
+    suite.test[test_list_comprehensions]()
+    suite.test[test_conditional_edge_cases]()
+
+    suite^.run()

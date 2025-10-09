@@ -17,6 +17,7 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.id import global_idx
 from layout import Layout, LayoutTensor
 from tensor_internal import InputTensor, OutputTensor, StaticTensorSpec
+from testing import TestSuite
 
 from utils import IndexList
 
@@ -65,7 +66,7 @@ def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
         print("")
 
 
-fn main() raises:
+def test_color_to_grayscale():
     var ctx = create_test_device_context()
 
     var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
@@ -124,3 +125,11 @@ fn main() raises:
 
     _ = rgb_buffer
     _ = gray_buffer
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_color_to_grayscale]()
+
+    suite^.run()

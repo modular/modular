@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv2d."""
 
-from typing import Optional
-
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
@@ -29,7 +27,7 @@ def conv2d(
     dilation: tuple[int, int] = (1, 1),
     padding: tuple[int, int, int, int] = (0, 0, 0, 0),
     groups: int = 1,
-    bias: Optional[TensorValueLike] = None,
+    bias: TensorValueLike | None = None,
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> TensorValue:
@@ -126,7 +124,7 @@ def conv3d(
     dilation: tuple[int, int, int] = (1, 1, 1),
     padding: tuple[int, int, int, int, int, int] = (0, 0, 0, 0, 0, 0),
     groups: int = 1,
-    bias: Optional[TensorValueLike] = None,
+    bias: TensorValueLike | None = None,
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.QRSCF,
 ) -> TensorValue:

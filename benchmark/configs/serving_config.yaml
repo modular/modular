@@ -32,6 +32,8 @@ benchmark_config:
   port: 8000
   endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
 
+  num_prompts: 1000  # Number of prompts to process (serving-specific)
+
   # Dataset configuration (serving-specific)
   dataset_name: "sharegpt"  # has to be set to a valid dataset name for serving benchmarks
 
@@ -52,7 +54,7 @@ benchmark_config:
   top_k: null  # Top-k for sampling
 
   # Traffic control (serving-specific)
-  request_rate: inf  # Requests per second (finite rate for realistic benchmarking)
+  request_rate: "inf"  # Requests per second (finite rate for realistic benchmarking)
   burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
   skip_first_n_requests: 0  # Skip first N requests for measurements
   chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions
@@ -101,3 +103,6 @@ benchmark_config:
   max_concurrent_lora_ops: 1
   max_num_loras: 10
   lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+  # Batch job dataset parameters
+  batch_job_image_dir: null  # When set, use file references instead of embedded images

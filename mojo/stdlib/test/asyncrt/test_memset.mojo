@@ -13,6 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceContext
+from testing import TestSuite
 
 
 fn _run_memset[
@@ -61,7 +62,7 @@ fn _run_memset_cascade[
             expect_eq(buf[i], val, "at index ", i, " the value is ", buf[i])
 
 
-fn main() raises:
+def test_memset():
     var ctx = create_test_device_context()
 
     print("-------")
@@ -84,3 +85,11 @@ fn main() raises:
     _run_memset_cascade[DType.int64](ctx, one_mb, 1234567890)
 
     print("Done.")
+
+
+def main():
+    var suite = TestSuite()
+
+    suite.test[test_memset]()
+
+    suite^.run()

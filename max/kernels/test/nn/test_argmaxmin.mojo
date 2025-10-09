@@ -590,7 +590,7 @@ fn test_argn_parallelize() raises:
     input_ptr.free()
 
 
-fn main() raises:
+def main():
     test_argn()
     test_argn_2()
     test_argn_2_test_2()

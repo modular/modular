@@ -93,6 +93,8 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
     current_graph._current_chain = _ChainValue(chain_results[0])
     current_graph.device_chains.update(
         (device, _ChainValue(chain_value))
-        for device, chain_value in zip(chain_devices, chain_results[1:])
+        for device, chain_value in zip(
+            chain_devices, chain_results[1:], strict=True
+        )
     )
     return call_results[:-chain_result_count]

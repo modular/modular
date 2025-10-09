@@ -16,9 +16,14 @@ from test_utils import (
     MoveCounter,
     ObservableDel,
     ObservableMoveOnly,
+)
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
     TestSuite,
 )
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
 def test_unsafepointer_of_move_only_type():

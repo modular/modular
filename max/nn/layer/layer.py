@@ -17,11 +17,11 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
 from itertools import islice
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 import numpy as np
 from max.driver import DLPackArray, Tensor
@@ -232,7 +232,7 @@ class Module(Layer, ABC):
         subgraph_input_types: list[Type[Any]] = []
 
         def flatten(t: Any, result: list[Any]) -> None:
-            if isinstance(t, (list, tuple)):
+            if isinstance(t, list | tuple):
                 for item in t:
                     flatten(item, result)
             else:
@@ -263,7 +263,7 @@ class Module(Layer, ABC):
                     weight.name = weight.name.removeprefix(weight_prefix)
 
             result = self(*subgraph_inputs)
-            if isinstance(result, (list, tuple)):
+            if isinstance(result, list | tuple):
                 subgraph.output(*result)
             else:
                 subgraph.output(result)
@@ -574,7 +574,7 @@ def _validate_weight_value(
             # Check each dimension: static dims must match, symbolic dims can vary
             mismatches = []
             for i, (weight_dim, value_dim) in enumerate(
-                zip(weight_shape_dims, shape_tuple)
+                zip(weight_shape_dims, shape_tuple, strict=True)
             ):
                 if isinstance(weight_dim, StaticDim):
                     # This is a static dimension - must match exactly

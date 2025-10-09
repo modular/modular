@@ -45,8 +45,8 @@ fn test_grid_dim(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(output_buffer, output_host)
 
-    ctx.enqueue_function[kernel](
-        output_buffer.unsafe_ptr(),
+    ctx.enqueue_function_checked[kernel, kernel](
+        output_buffer,
         buffer_size,
         grid_dim=(20, 15, 10),
         block_dim=20,
@@ -62,6 +62,6 @@ fn test_grid_dim(ctx: DeviceContext) raises:
     output_host.free()
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_grid_dim(ctx)

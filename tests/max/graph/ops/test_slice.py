@@ -54,7 +54,7 @@ def test_slice_with_tensor_value(graph_builder: GraphBuilder) -> None:
         graph.output(out)
 
 
-def dim_indexes(dim: Dim):
+def dim_indexes(dim: Dim):  # noqa: ANN201
     assume(dim != 0)  # still need to test attempting to index with 0 dim
     # Can index symbolic dims at any index, checked at runtime.
     bound = dim.dim if isinstance(dim, StaticDim) else (2**63 - 1)
@@ -65,10 +65,10 @@ def dim_indexes(dim: Dim):
     )
 
 
-def shape_indexes(shape: list[Dim]):
+def shape_indexes(shape: list[Dim]):  # noqa: ANN201
     full_indexes = st.tuples(*(dim_indexes(dim) for dim in shape))
 
-    def with_ellipsis(index, slice):  # noqa: ANN001
+    def with_ellipsis(index, slice):  # noqa: ANN001, ANN202
         # Ellipses can only be contiguous indices.
         assume(slice.step in (None, 1))
         new_index = list(index)
@@ -88,7 +88,7 @@ def shape_indexes(shape: list[Dim]):
 shared_shapes = st.shared(st.from_type(list[Dim]))
 
 
-def expected_slice_shape(shape, index):  # noqa: ANN001
+def expected_slice_shape(shape, index):  # noqa: ANN001, ANN201
     if Ellipsis in index:
         # Split around Ellipsis, fill its with slice(None)
         ei = index.index(Ellipsis)
@@ -100,7 +100,7 @@ def expected_slice_shape(shape, index):  # noqa: ANN001
 
     assert len(effective_index) == len(shape)
 
-    def expected_dim(dim, dim_index):  # noqa: ANN001
+    def expected_dim(dim, dim_index):  # noqa: ANN001, ANN202
         if dim_index == slice(None):
             return dim
         elif isinstance(dim_index, int):
@@ -111,7 +111,8 @@ def expected_slice_shape(shape, index):  # noqa: ANN001
         raise NotImplementedError
 
     expected = (
-        expected_dim(dim, idx) for dim, idx in zip(shape, effective_index)
+        expected_dim(dim, idx)
+        for dim, idx in zip(shape, effective_index, strict=True)
     )
     return [dim for dim in expected if dim is not None]
 
@@ -503,7 +504,11 @@ def test_slice_int_dims(
     assert result_type.rank == len(expected_shape)  # type: ignore
     assert all(
         dim == expected_dim
-        for dim, expected_dim in zip(result_type.shape, expected_shape)  # type: ignore
+        for dim, expected_dim in zip(
+            result_type.shape,  # type: ignore
+            expected_shape,
+            strict=True,
+        )
         if isinstance(expected_dim, int)
     )
 

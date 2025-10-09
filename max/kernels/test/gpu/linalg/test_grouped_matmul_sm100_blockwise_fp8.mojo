@@ -244,10 +244,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         c,
         a,
         b,
-        a_offsets,
-        expert_ids,
         a_scales,
         b_scales,
+        a_offsets,
+        expert_ids,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -320,14 +320,14 @@ def main():
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(768, 1024),
+            expert_shape = Index(4096, 7168),
         ](2, List[Int](128, 256), List[Int](0, 2), ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(1280, 1024),
+            expert_shape = Index(7168, 2048),
         ](4, List[Int](20, 1500, 300, 28), List[Int](0, 3, 2, 4), ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[

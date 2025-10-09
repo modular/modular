@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import CopyCounter
-from testing import assert_equal
+from testing import TestSuite, assert_equal
 
 
-fn test_map() raises:
+def test_map():
     var l = [1, 2, 3]
 
     fn add_one(x: Int) -> Int:
@@ -55,5 +55,9 @@ def test_map_function_can_take_owned_value():
 
 
 def main():
-    test_map()
-    test_map_function_can_take_owned_value()
+    var suite = TestSuite()
+
+    suite.test[test_map]()
+    suite.test[test_map_function_can_take_owned_value]()
+
+    suite^.run()

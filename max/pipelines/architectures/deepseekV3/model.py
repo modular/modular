@@ -16,19 +16,57 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 
+import numpy as np
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.nn import Signals
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    MultiPagedKVCacheManager,
+    PagedKVCacheManager,
+    load_kv_manager,
+)
+from max.pipelines.core import TextContext
+from max.pipelines.lib import ModelInputs, ModelOutputs
+from max.pipelines.lib.config_enums import PipelineRole
 from typing_extensions import override
 
-from ..deepseekV2.model import DeepseekV2Model
+from ..deepseekV2.model import DeepseekV2Inputs, DeepseekV2Model
 from .deepseekV3 import DeepseekV3
 from .model_config import DeepseekV3Config
 
 logger = logging.getLogger("max.pipelines")
+
+
+class DeepseekV3Inputs(DeepseekV2Inputs):
+    """A class representing inputs for the DeepseekV3 model."""
+
+    data_parallel_splits: Tensor
+    """Tensor containing the data parallel splits for the MLA layer."""
+
+    def __init__(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        signal_buffers: list[Tensor],
+        kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: Tensor | None = None,
+        data_parallel_splits: Tensor | None = None,
+    ) -> None:
+        if data_parallel_splits is None:
+            raise ValueError("data_parallel_splits must be provided")
+        self.data_parallel_splits = data_parallel_splits
+        super().__init__(
+            tokens,
+            input_row_offsets,
+            signal_buffers,
+            kv_cache_inputs,
+            return_n_logits,
+        )
 
 
 class DeepseekV3Model(DeepseekV2Model):
@@ -37,6 +75,13 @@ class DeepseekV3Model(DeepseekV2Model):
     def _create_model_config(self) -> DeepseekV3Config:
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
+
+        if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+            graph_mode = "prefill"
+        elif self.pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+            graph_mode = "decode"
+        else:
+            graph_mode = "auto"
 
         kv_params = DeepseekV3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
@@ -81,11 +126,20 @@ class DeepseekV3Model(DeepseekV2Model):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            graph_mode=graph_mode,
+            data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
+            use_subgraphs=self.pipeline_config.model_config.use_subgraphs,
         )
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
         """Load the model with the given weights."""
+
+        max_batch_size = self.pipeline_config.max_batch_size
+        assert max_batch_size, "Expected max_batch_size to be set"
+        self._input_row_offsets_prealloc_cpu = Tensor.from_numpy(
+            np.arange(max_batch_size + 1, dtype=np.uint32)
+        )
 
         # Override signal buffers from DeepSeekV2 model, because this model
         # always requires the signal buffer input. This can be removed once
@@ -121,9 +175,13 @@ class DeepseekV3Model(DeepseekV2Model):
             "deepseekV3_graph",
             input_types=nn_model.input_types(self.kv_manager),
         ) as graph:
-            tokens, input_row_offsets, return_n_logits, *variadic_args = (
-                graph.inputs
-            )
+            (
+                tokens,
+                input_row_offsets,
+                return_n_logits,
+                data_parallel_splits,
+                *variadic_args,
+            ) = graph.inputs
             # Multi-GPU passes a signal buffer per device: unmarshal these.
             signal_buffers = [
                 v.buffer for v in variadic_args[: len(self.devices)]
@@ -140,6 +198,7 @@ class DeepseekV3Model(DeepseekV2Model):
                 kv_caches_per_dev,
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
+                data_parallel_splits.tensor,
             )
 
             graph.output(*outputs)
@@ -161,3 +220,114 @@ class DeepseekV3Model(DeepseekV2Model):
         load_time = after - before
         logging.info(f"DeepseekV3 model loaded in {load_time:.6f} seconds")
         return model
+
+    def execute(
+        self,
+        model_inputs: ModelInputs,
+    ) -> ModelOutputs:
+        assert isinstance(model_inputs, DeepseekV3Inputs)
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+
+        model_outputs = self.model.execute(
+            model_inputs.tokens,
+            model_inputs.input_row_offsets,
+            model_inputs.return_n_logits,
+            model_inputs.data_parallel_splits,
+            *model_inputs.signal_buffers,
+            *curr_kv_cache_inputs,
+        )
+        if len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[1],
+                logit_offsets=model_outputs[2],
+            )
+        else:
+            assert isinstance(model_outputs[0], Tensor)
+            return ModelOutputs(
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
+            )
+
+    def prepare_initial_token_inputs(
+        self,
+        context_batch: Sequence[TextContext],
+        kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
+    ) -> DeepseekV3Inputs:
+        # Get input_row_offsets: start and end position of each batch in the
+        # combined total_seq_len dimension.
+        input_row_offsets = np.cumsum(
+            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
+        )
+
+        # Create a ragged token vector of length: sum(len(t) for t in tokens).
+        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
+
+        data_parallel_splits: Tensor
+        if self.pipeline_config.model_config.data_parallel_degree > 1:
+            assert isinstance(self.kv_manager, MultiPagedKVCacheManager)
+            data_parallel_splits = self.kv_manager.get_data_parallel_splits(
+                context_batch
+            )
+        else:
+            data_parallel_splits = Tensor.from_numpy(
+                np.array([0, len(context_batch)], dtype=np.int64)
+            )
+
+        return DeepseekV3Inputs(
+            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
+            input_row_offsets=Tensor.from_numpy(input_row_offsets),
+            signal_buffers=self.signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=Tensor.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ).to(self.devices[0]),
+            data_parallel_splits=data_parallel_splits,
+        )
+
+    def prepare_next_token_inputs(
+        self,
+        next_tokens: Tensor,
+        prev_model_inputs: ModelInputs,
+    ) -> DeepseekV3Inputs:
+        assert isinstance(prev_model_inputs, DeepseekV3Inputs)
+        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
+        next_row_offsets = self._input_row_offsets_prealloc_cpu[
+            :row_offsets_size
+        ]
+        return DeepseekV3Inputs(
+            tokens=next_tokens,
+            input_row_offsets=next_row_offsets,
+            signal_buffers=self.signal_buffers,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+            return_n_logits=prev_model_inputs.return_n_logits,
+            data_parallel_splits=prev_model_inputs.data_parallel_splits,
+        )
+
+    def load_kv_manager(
+        self,
+        session: InferenceSession,
+        available_cache_memory: int,
+    ) -> PagedKVCacheManager:
+        return load_kv_manager(
+            params=DeepseekV3Config.get_kv_params(
+                huggingface_config=self.huggingface_config,
+                n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
+                data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
+            ),
+            max_batch_size=self.pipeline_config.max_batch_size,
+            max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config, huggingface_config=self.huggingface_config
+            ),
+            num_layers=self.huggingface_config.num_hidden_layers,
+            devices=self.devices,
+            available_cache_memory=available_cache_memory,
+            page_size=self.kv_cache_config.kv_cache_page_size,
+            session=session,
+        )

@@ -20,6 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import NDBufferMHAOperand
@@ -227,7 +228,18 @@ fn test[
                 output_device,
                 q_device,
                 k_device,
-                MaterializedMask(mask3d),
+                MaterializedMask(
+                    LayoutTensor[
+                        mask3d.dtype,
+                        Layout.row_major[mask3d.rank](mask3d.shape),
+                        MutableAnyOrigin,
+                    ](
+                        mask3d.data,
+                        RuntimeLayout[
+                            Layout.row_major[mask3d.rank](mask3d.shape)
+                        ].row_major(mask3d.get_shape().canonicalize()),
+                    ),
+                ),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -238,7 +250,18 @@ fn test[
                 output_device,
                 q_device,
                 k_device,
-                MaterializedMask(mask4d),
+                MaterializedMask(
+                    LayoutTensor[
+                        mask4d.dtype,
+                        Layout.row_major[mask4d.rank](mask4d.shape),
+                        MutableAnyOrigin,
+                    ](
+                        mask4d.data,
+                        RuntimeLayout[
+                            Layout.row_major[mask4d.rank](mask4d.shape)
+                        ].row_major(mask4d.get_shape().canonicalize()),
+                    ),
+                ),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -336,6 +359,9 @@ fn test[
         ctx.synchronize()
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
+
+    if o_size == 0:
+        return
 
     # since we pass the whole K tensor as the V tensor to our naive mha kernel,
     # the last 64 elements of each head in the reference result are invalid.
@@ -1166,3 +1192,9 @@ def main():
 
         # test mla cascade prefill
         test_mla_cascade_prefill[2](ctx)
+
+        # Test with zero batch size
+        test_mla_prefill[0](ctx)
+        test_mla_cascade_prefill[0](ctx)
+        test_decoding[0, 1, False, False](ctx, False)
+        test_decoding[0, 1, False, True](ctx, False)

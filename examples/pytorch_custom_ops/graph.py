@@ -17,13 +17,13 @@ from max.torch import graph_op
 
 
 @graph_op
-def max_matmul(a: max.graph.TensorValue, b: max.graph.TensorValue):
+def max_matmul(a: max.graph.TensorValue, b: max.graph.TensorValue):  # noqa: ANN201
     """Custom PyTorch operation built using an internal MAX graph."""
     return a @ b  # Same as ops.matmul(a, b)
 
 
 @torch.compile
-def matmul_max(a: torch.Tensor, b: torch.Tensor):
+def matmul_max(a: torch.Tensor, b: torch.Tensor):  # noqa: ANN201
     """Wrapper function that calls the MAX matmul operation."""
     # Create output tensor with appropriate shape
     output = a.new_empty(a.shape[0], b.shape[1])

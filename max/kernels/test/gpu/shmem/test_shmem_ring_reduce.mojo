@@ -12,17 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %mojo %s
 
+from algorithm import parallelize
+from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from math import iota
-from os import abort, getenv, listdir, setenv
-from sys import size_of
-from sys.ffi import c_int
-
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from os import abort
 from shmem import *
+from sys.ffi import c_int
+from sys.info import size_of
 
 alias min_size = 1024 * 1024 * 32
 alias max_size = min_size * 16
@@ -121,103 +119,106 @@ fn ring_reduce(
         signal[0] = 0
 
 
-def main():
+def bench_ring_reduce(ctx: SHMEMContext):
     var min_ints = min_size // size_of[DType.int32]()
     debug_assert(
         min_ints % num_blocks == 0, "min_size must be divisible by num_blocks"
     )
 
-    with SHMEMContext() as ctx:
-        var mype = shmem_my_pe()
-        var npes = shmem_n_pes()
+    var mype = shmem_my_pe()
+    var npes = shmem_n_pes()
 
-        # Allocate buffers
-        var max_ints = max_size // size_of[DType.int32]()
+    # Allocate buffers
+    var max_ints = max_size // size_of[DType.int32]()
 
-        var dst = ctx.enqueue_create_buffer[DType.int32](max_ints)
-        var src = ctx.enqueue_create_buffer[DType.int32](max_ints)
-        var data_h = ctx.enqueue_create_host_buffer[DType.int32](max_ints)
-        var signal = shmem_calloc[DType.uint64](1)
+    var dst = ctx.enqueue_create_buffer[DType.int32](max_ints)
+    var src = ctx.enqueue_create_buffer[DType.int32](max_ints)
+    var data_h = ctx.enqueue_create_host_buffer[DType.int32](max_ints)
+    var signal = shmem_calloc[DType.uint64](1)
 
-        # Initialize test data - each element has value equal to its index
-        iota(data_h.unsafe_ptr(), max_ints)
+    # Initialize test data - each element has value equal to its index
+    iota(data_h.unsafe_ptr(), max_ints)
 
-        # Copy test data to source buffer
-        src.enqueue_copy_from(data_h)
-        ctx.barrier_all()
+    # Copy test data to source buffer
+    src.enqueue_copy_from(data_h)
+    ctx.barrier_all()
 
-        var dev_ctx = ctx.get_device_context()
-        var dst_ptr = dst.unsafe_ptr()
-        var src_ptr = src.unsafe_ptr()
+    var dev_ctx = ctx.get_device_context()
+    var dst_ptr = dst.unsafe_ptr()
+    var src_ptr = src.unsafe_ptr()
 
-        # Test different sizes
-        var size = min_size
-        while size <= max_size:
-            var num_ints = size // size_of[DType.int32]()
+    # Test different sizes
+    var size = min_size
+    while size <= max_size:
+        var num_ints = size // size_of[DType.int32]()
 
-            # Warmup iterations
-            for i in range(warmup_iters):
-                ctx.enqueue_function_collective[ring_reduce](
-                    dst_ptr,
-                    src_ptr,
-                    num_ints,
-                    signal,
-                    chunk_size,
-                    grid_dim=num_blocks,
-                    block_dim=threads_per_block,
-                )
-                ctx.barrier_all()
-            ctx.synchronize()
+        # Warmup iterations
+        for i in range(warmup_iters):
+            ctx.enqueue_function_collective[ring_reduce](
+                dst_ptr,
+                src_ptr,
+                num_ints,
+                signal,
+                chunk_size,
+                grid_dim=num_blocks,
+                block_dim=threads_per_block,
+            )
+            ctx.barrier_all()
+        ctx.synchronize()
 
-            @parameter
-            def benchmark():
-                ctx.enqueue_function_collective[ring_reduce](
-                    dst_ptr,
-                    src_ptr,
-                    num_ints,
-                    signal,
-                    chunk_size,
-                    grid_dim=num_blocks,
-                    block_dim=threads_per_block,
-                )
-                ctx.barrier_all()
+        @parameter
+        def benchmark():
+            ctx.enqueue_function_collective[ring_reduce](
+                dst_ptr,
+                src_ptr,
+                num_ints,
+                signal,
+                chunk_size,
+                grid_dim=num_blocks,
+                block_dim=threads_per_block,
+            )
+            ctx.barrier_all()
 
-            var elapsed_ns = dev_ctx.execution_time[benchmark](iters) / iters
-            var elapsed_ms = elapsed_ns / 1e6
+        var elapsed_ns = dev_ctx.execution_time[benchmark](iters) / iters
+        var elapsed_ms = elapsed_ns / 1e6
 
-            ctx.synchronize()
+        ctx.synchronize()
 
-            # Validate results - copy back and check
-            dst.enqueue_copy_to(data_h)
-            ctx.synchronize()
+        # Validate results - copy back and check
+        dst.enqueue_copy_to(data_h)
+        ctx.synchronize()
 
-            # Each element should be i * npes after allreduce
-            for i in range(num_ints):
-                var expected = Int32(i * npes)
-                if data_h[i] != expected:
-                    # Avoid assert_equal overhead on these large buffers
-                    abort(
-                        String(
-                            "PE: ",
-                            mype,
-                            " unexpected value at data_h[",
-                            i,
-                            "]",
-                            " expected: ",
-                            expected,
-                            " actual: ",
-                            data_h[i],
-                        )
+        # Each element should be i * npes after allreduce
+        for i in range(num_ints):
+            var expected = Int32(i * npes)
+            if data_h[i] != expected:
+                # Avoid assert_equal overhead on these large buffers
+                abort(
+                    String(
+                        "PE: ",
+                        mype,
+                        " unexpected value at data_h[",
+                        i,
+                        "]",
+                        " expected: ",
+                        expected,
+                        " actual: ",
+                        data_h[i],
                     )
-
-            if mype == 0:
-                print(
-                    "Test passed on size:",
-                    size / 1024 / 1024,
-                    "MB",
-                    "\telapsed:",
-                    elapsed_ms,
-                    "ms",
                 )
 
-            size *= step_factor
+        if mype == 0:
+            print(
+                "Test passed on size:",
+                size / 1024 / 1024,
+                "MB",
+                "\telapsed:",
+                elapsed_ms,
+                "ms",
+            )
+
+        size *= step_factor
+
+
+def main():
+    shmem_launch[bench_ring_reduce]()

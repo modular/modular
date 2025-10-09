@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true
+from testing import TestSuite, assert_equal, assert_false, assert_true
 
 from utils import IndexList
 
@@ -52,5 +52,9 @@ def test_tuple_literal():
 
 
 def main():
-    test_static_int_tuple()
-    test_tuple_literal()
+    var suite = TestSuite()
+
+    suite.test[test_static_int_tuple]()
+    suite.test[test_tuple_literal]()
+
+    suite^.run()

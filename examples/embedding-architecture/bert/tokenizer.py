@@ -26,7 +26,7 @@ class BertTextTokenizer(TextTokenizer):
         # Update the cached EOS token ID after configuration
         self._cached_eos = self._get_eos_token_id()
 
-    def _configure_eos_token(self):
+    def _configure_eos_token(self) -> None:
         """Configure EOS token for BERT models that don't have one."""
         # Try different ways to access the underlying HF tokenizer
         hf_tokenizer = None
@@ -55,7 +55,7 @@ class BertTextTokenizer(TextTokenizer):
         if hasattr(self, "_update_eos"):
             self._update_eos()
 
-    def _get_eos_token_id(self):
+    def _get_eos_token_id(self):  # noqa: ANN202
         """Get the EOS token ID, falling back to SEP token ID for BERT."""
         # Try different ways to access the underlying HF tokenizer
         hf_tokenizer = getattr(self, "tokenizer", None) or getattr(
@@ -77,7 +77,7 @@ class BertTextTokenizer(TextTokenizer):
         return 102
 
     @property
-    def eos(self):
+    def eos(self):  # noqa: ANN201
         """Get EOS token ID, using SEP token if EOS is not available."""
         # Return cached value that is guaranteed to be non-None
         return self._cached_eos

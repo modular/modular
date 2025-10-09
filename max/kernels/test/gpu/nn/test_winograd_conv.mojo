@@ -443,7 +443,7 @@ fn test_winograd_conv_gpu[
         )
 
 
-fn main() raises:
+def main():
     alias dtype = DType.float32
 
     with DeviceContext() as ctx:

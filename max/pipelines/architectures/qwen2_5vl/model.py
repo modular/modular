@@ -32,11 +32,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import (
-    Module,
-    ReturnLogits,
-    Signals,
-)
+from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
@@ -45,6 +41,7 @@ from max.nn.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
+from max.nn.parallel import ParallelArrayOps
 from max.pipelines.architectures.internvl.model import (
     assert_image_embeddings_invariant,
 )
@@ -62,11 +59,6 @@ from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
 from .model_config import Qwen2_5VLConfig
-from .nn.data_processing import (
-    get_seqlens,
-    get_window_index,
-    mrope_pos_ids_3d,
-)
 from .qwen2_5vl import Qwen2_5VL
 
 logger = logging.getLogger("max.pipelines")
@@ -220,6 +212,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ]
 
         self.vision_model, self.language_model = self.load_model(session)
+
+        self._parallel_ops = ParallelArrayOps(max_workers=24)
 
     @staticmethod
     def calculate_max_seq_len(
@@ -419,24 +413,6 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             TensorType(
                 DType.int64,
                 shape=["window_seq_len"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        attention_mask_window_types = [
-            TensorType(
-                DType.float32,
-                shape=[1, "vision_seq_len", "vision_seq_len"],
-                device=DeviceRef.from_device(device),
-            )
-            for device in self.devices
-        ]
-
-        attention_mask_full_types = [
-            TensorType(
-                DType.float32,
-                shape=[1, "vision_seq_len", "vision_seq_len"],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
@@ -695,126 +671,6 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         return graph
 
-    @traced
-    def _prepare_vision_inputs(
-        self, context_batch: Sequence[TextAndVisionContext]
-    ) -> dict[str, list[Tensor]] | None:
-        """Prepares vision inputs for vision processing including pixel values, window index, and position IDs."""
-        pixel_values_list: list[npt.NDArray[np.floating[Any]]] = []
-        image_grid_thw: list[npt.NDArray[np.integer[Any]]] = []
-
-        for context in context_batch:
-            if context.needs_vision_encoding:
-                assert context.pixel_values is not None, (
-                    "image_pixel_values must be present"
-                )
-                pixel_values_list.extend(context.pixel_values)
-                assert context.extra_model_args["image_grid_thw"] is not None, (
-                    "image_grid_thw must be present"
-                )
-                image_grid_thw.append(
-                    context.extra_model_args["image_grid_thw"]
-                )
-
-        if not pixel_values_list or not image_grid_thw:
-            return None
-
-        # Stack pixel values and image_grid_thw
-        with Tracer("stacking image pixels"):
-            stacked_pixel_values = np.concatenate(pixel_values_list, axis=0)
-            stacked_image_grid_thw = np.concatenate(image_grid_thw, axis=0)
-
-        pixel_values_tensor = Tensor.from_numpy(stacked_pixel_values)
-
-        # Get vision config parameters
-        assert self.model_config is not None, "Model config must be initialized"
-
-        vision_config = self.model_config.vision_config
-        spatial_merge_size = vision_config.spatial_merge_size
-        window_size = vision_config.window_size
-        patch_size = vision_config.patch_size
-
-        # Calculate spatial_merge_unit
-        spatial_merge_unit = spatial_merge_size * spatial_merge_size
-
-        # Generate window index and cumulative window sequence lengths
-        window_index, cu_window_seqlens = get_window_index(
-            grid_thw=stacked_image_grid_thw,
-            window_size=window_size,
-            spatial_merge_size=spatial_merge_size,
-            patch_size=patch_size,
-            spatial_merge_unit=spatial_merge_unit,
-        )
-
-        # Generate 3D RoPE position IDs
-        vision_position_ids = mrope_pos_ids_3d(
-            grid_thw=stacked_image_grid_thw,
-            spatial_merge_size=spatial_merge_size,
-        )
-
-        # Calculate sequence length and max grid size
-        vision_seq_length = stacked_pixel_values.shape[0]
-
-        vision_max_grid_size = int(
-            np.max(stacked_image_grid_thw[:, 1:])
-        )  # Max of height and width dimensions
-
-        # Generate attention masks and cumulative sequence lengths
-        (
-            cu_seqlens,
-            cu_window_seqlens_unique,
-            max_seqlen,
-            window_max_seqlen,
-        ) = get_seqlens(
-            grid_thw=stacked_image_grid_thw,
-            cu_win_seqlens=cu_window_seqlens,
-        )
-
-        # Convert to tensors
-        window_index_tensor = Tensor.from_numpy(window_index.astype(np.int64))
-        position_ids_tensor = Tensor.from_numpy(
-            vision_position_ids.astype(np.int64)
-        )
-        max_grid_size_tensor = Tensor.from_numpy(
-            np.array(vision_max_grid_size, dtype=np.int32)
-        )
-        cu_seqlens_tensor = Tensor.from_numpy(cu_seqlens.astype(np.uint32))
-        cu_window_seqlens_tensor = Tensor.from_numpy(
-            cu_window_seqlens_unique.astype(np.uint32)
-        )
-        max_seqlen_tensor = Tensor.from_numpy(
-            np.array([max_seqlen], dtype=np.uint32)
-        )
-        max_window_seqlen_tensor = Tensor.from_numpy(
-            np.array([window_max_seqlen], dtype=np.uint32)
-        )
-
-        # Return all vision inputs as tensors distributed across devices
-        vision_inputs = {
-            "pixel_values": [
-                pixel_values_tensor.to(device) for device in self.devices
-            ],
-            "window_index": [
-                window_index_tensor.to(device) for device in self.devices
-            ],
-            "position_ids": [
-                position_ids_tensor.to(device) for device in self.devices
-            ],
-            "cu_seqlens": [
-                cu_seqlens_tensor.to(device) for device in self.devices
-            ],
-            "cu_window_seqlens": [
-                cu_window_seqlens_tensor.to(device) for device in self.devices
-            ],
-            "max_seqlen": [max_seqlen_tensor for _ in self.devices],
-            "max_window_seqlen": [
-                max_window_seqlen_tensor for _ in self.devices
-            ],
-            "max_grid_size": [max_grid_size_tensor for _ in self.devices],
-        }
-
-        return vision_inputs
-
     @cached_property
     def _empty_image_embeddings(self) -> list[Tensor]:
         """Create empty image embeddings for text-only inputs on multi-device."""
@@ -978,107 +834,220 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""
-        tracer = Tracer("_prepare_initial_token_inputs")
-        assert kv_cache_inputs is not None, "KV cache inputs must be provided"
 
-        # Prepare vision inputs
-        tracer.next("_prepare_vision_inputs")
-        vision_inputs = self._prepare_vision_inputs(context_batch)
+        if kv_cache_inputs is None:
+            raise ValueError("KV Cache Inputs must be provided")
 
-        # Extract individual vision input components
-        tracer.next("_extra_inputs_from_vision_inputs")
-        assert kv_cache_inputs is not None, "KV cache inputs must be provided"
-
-        # Extract individual vision input components
-        tracer.next("_retrieve_vision_inputs_from_context")
-        pixel_values = vision_inputs["pixel_values"] if vision_inputs else None
-        window_index = vision_inputs["window_index"] if vision_inputs else None
-        vision_position_ids = (
-            vision_inputs["position_ids"] if vision_inputs else None
-        )
-
-        max_grid_size = (
-            vision_inputs["max_grid_size"] if vision_inputs else None
-        )
-        cu_seqlens = vision_inputs["cu_seqlens"] if vision_inputs else None
-        cu_window_seqlens = (
-            vision_inputs["cu_window_seqlens"] if vision_inputs else None
-        )
-        max_seqlen = vision_inputs["max_seqlen"] if vision_inputs else None
-        max_window_seqlen = (
-            vision_inputs["max_window_seqlen"] if vision_inputs else None
-        )
-
-        # Create input_row_offsets for each device
-        tracer.next("_calculate_input_row_offsets")
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
-        )
-        input_row_offsets_tensors = [
-            Tensor.from_numpy(input_row_offsets).to(device)
-            for device in self.devices
-        ]
-
-        # Generate position_ids for the decoder using numpy get_rope_index we have in data_processing.py
-        tracer.next("_calculate_decoder_position_ids")
-        assert self.model_config is not None, "Model config must be initialized"
-
-        decoder_position_ids = []
-        for ctx in context_batch:
-            # If its the first time, we can use the precomputed values
-            if "temp_position_ids" in ctx.extra_model_args:
-                decoder_position_ids.append(
-                    ctx.extra_model_args.pop("temp_position_ids")
+        # Prepare Inputs Needed Regardless of Images
+        with Tracer("prepare_input_ids"):
+            input_ids = Tensor.from_numpy(
+                self._parallel_ops.concatenate(
+                    [ctx.next_tokens for ctx in context_batch]
                 )
-            else:
-                # Recompute this value on the fly.
-                context_seq_length = ctx.next_tokens.shape[0]
-                temp_position_ids = np.arange(context_seq_length)
-                temp_position_ids = temp_position_ids.reshape(1, 1, -1)
-                temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
-                delta = (
-                    ctx.current_length
-                    + ctx.extra_model_args["rope_delta"].item()
+            ).to(self.devices[0])
+
+        with Tracer("prepare_input_row_offsets"):
+            input_row_offsets = np.cumsum(
+                [0] + [ctx.active_length for ctx in context_batch],
+                dtype=np.uint32,
+            )
+            input_row_offsets_tensors = [
+                Tensor.from_numpy(input_row_offsets).to(device)
+                for device in self.devices
+            ]
+
+        with Tracer("prepare_decoder_position_ids"):
+            position_ids_list = []
+
+            for ctx in context_batch:
+                ctx_decoder_position_ids: npt.NDArray[np.int32] | None = None
+                if "decoder_position_ids" in ctx.extra_model_args:
+                    ctx_decoder_position_ids = ctx.extra_model_args.pop(
+                        "decoder_position_ids"
+                    )
+                    if ctx_decoder_position_ids.shape[1] == ctx.active_length:
+                        position_ids_list.append(ctx_decoder_position_ids)
+                    else:
+                        ctx_decoder_position_ids = None
+
+                if ctx_decoder_position_ids is None:
+                    # Recompute this value on the fly.
+                    context_seq_length = ctx.next_tokens.shape[0]
+                    temp_position_ids = np.arange(context_seq_length)
+                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)  # type: ignore
+                    temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
+                    delta = (
+                        ctx.current_length
+                        + ctx.extra_model_args["rope_delta"].item()
+                    )
+                    temp_position_ids = temp_position_ids + delta
+                    temp_position_ids = temp_position_ids.squeeze(1)
+                    position_ids_list.append(temp_position_ids)
+
+            decoder_position_ids = Tensor.from_numpy(
+                self._parallel_ops.concatenate(
+                    position_ids_list, axis=1
+                ).astype(np.uint32)
+            ).to(self.devices[0])
+
+        with Tracer("prepare_image_token_indices"):
+            image_token_indices = self._batch_image_token_indices(context_batch)
+
+        if not any(ctx.needs_vision_encoding for ctx in context_batch):
+            return Qwen2_5VLInputs(
+                input_ids=input_ids,
+                input_row_offsets=input_row_offsets_tensors,
+                position_ids=decoder_position_ids,
+                signal_buffers=self.signal_buffers,
+                return_n_logits=Tensor.from_numpy(
+                    np.array([return_n_logits], dtype=np.int64)
+                ),
+                kv_cache_inputs=kv_cache_inputs,
+                image_token_indices=image_token_indices,
+                pixel_values=None,
+                window_index=None,
+                vision_position_ids=None,
+                max_grid_size=None,
+                cu_seqlens=None,
+                cu_window_seqlens=None,
+                max_seqlen=None,
+                max_window_seqlen=None,
+            )
+
+        # From here on, assume that all inputs are available in extra_model_args
+        # due to context validators
+        with Tracer("preparing_pixel_values"):
+            # pixel_values is a tuple of tensors, that is always length 1 with
+            # Qwen, so we can just take the first element.
+            pixel_values_tensor = Tensor.from_numpy(
+                self._parallel_ops.concatenate(
+                    [
+                        ctx.extra_model_args["concatenated_pixel_values"]
+                        for ctx in context_batch
+                        if ctx.needs_vision_encoding
+                    ]
                 )
-                temp_position_ids = temp_position_ids + delta
-                temp_position_ids = temp_position_ids.squeeze(1)
-                decoder_position_ids.append(temp_position_ids)
+            )
+            pixel_values = [
+                pixel_values_tensor.to(device) for device in self.devices
+            ]
 
-        tracer.next("_concatenate_decoder_position_ids")
-        decoder_position_ids = np.concatenate(decoder_position_ids, axis=1)
+        with Tracer("preparing_window_index"):
+            # Concatenate per-context window_index with cross-context offsets so indices are unique
+            window_index_parts: list[npt.NDArray[np.int64]] = []
+            index_offset = 0
+            for ctx in context_batch:
+                if ctx.needs_vision_encoding:
+                    per_ctx_index = ctx.extra_model_args["window_index"].astype(
+                        np.int64
+                    )
+                    window_index_parts.append(per_ctx_index + index_offset)
+                    index_offset += int(per_ctx_index.shape[0])
+            window_index_np = np.concatenate(window_index_parts, axis=0)
+            window_index_tensor = Tensor.from_numpy(window_index_np)
+            window_index = [
+                window_index_tensor.to(device) for device in self.devices
+            ]
 
-        # Batch image token indices, offsetting for position in the batch.
-        tracer.next("_batch_image_token_indices")
-        image_token_indices = self._batch_image_token_indices(context_batch)
+        with Tracer("preparing_vision_position_ids"):
+            vision_position_ids_tensor = Tensor.from_numpy(
+                self._parallel_ops.concatenate(
+                    [
+                        ctx.extra_model_args["vision_position_ids"]
+                        for ctx in context_batch
+                        if ctx.needs_vision_encoding
+                    ]
+                ).astype(np.int64)
+            )
+            vision_position_ids = [
+                vision_position_ids_tensor.to(device) for device in self.devices
+            ]
 
-        tracer.next("_prepare_remaining_inputs")
-        # position_ids is a 2D tensor that is passed down to the 2D RoPE kernel in the decoder along with mrope_section
-        # Convert to uint32 to match the expected dtype in the language model
-        position_ids = Tensor.from_numpy(
-            decoder_position_ids.astype(np.uint32)
-        ).to(self.devices[0])
+        with Tracer("preparing_max_grid_size"):
+            max_grid_size_value = max(
+                ctx.extra_model_args["max_grid_size"].item()
+                for ctx in context_batch
+                if ctx.needs_vision_encoding
+            )
+            max_grid_size_tensor = Tensor.from_numpy(
+                np.array(max_grid_size_value, dtype=np.int32)
+            )
+            max_grid_size = [max_grid_size_tensor for _ in self.devices]
 
-        # Input IDs
-        tracer.next("concat_tokens")
-        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
-        input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
+        with Tracer("preparing_cu_seqlens"):
+            # Handle cumulative offsets properly when batching
+            cu_seqlens_list = []
+            offset = 0
+            for ctx in context_batch:
+                if ctx.needs_vision_encoding:
+                    seqlens = ctx.extra_model_args["cu_seqlens"]
+                    adjusted = seqlens.copy()
+                    adjusted[1:] += offset
+                    cu_seqlens_list.append(adjusted[1:])
+                    offset = adjusted[-1]
 
-        # Batch image token indices, offsetting for position in the batch.
-        tracer.next("batch_image_token_indices")
-        image_token_indices = self._batch_image_token_indices(context_batch)
+            cu_seqlens_tensor = Tensor.from_numpy(
+                np.concatenate(
+                    [np.array([0], dtype=np.uint32), *cu_seqlens_list]
+                ).astype(np.uint32)
+            )
+            cu_seqlens = [
+                cu_seqlens_tensor.to(device) for device in self.devices
+            ]
 
-        # Mark that vision encoding is complete for all contexts in the batch.
-        # This prevents re-encoding on subsequent calls.
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
+        with Tracer("preparing_cu_window_seqlens"):
+            # cu_window_seqlens_unique is already scaled by spatial_merge_unit per-context.
+            # We only need to add cross-context offsets and concatenate.
+            cu_window_seqlens_parts: list[npt.NDArray[np.uint32]] = []
+            offset = 0
+            for ctx in context_batch:
+                if ctx.needs_vision_encoding:
+                    seqlens_unique = ctx.extra_model_args[
+                        "cu_window_seqlens_unique"
+                    ].astype(np.uint32)
+                    cu_window_seqlens_parts.append(
+                        (seqlens_unique[1:] + offset).astype(np.uint32)
+                    )
+                    offset = offset + seqlens_unique[-1]
 
-        tracer.pop()
+            cu_window_seqlens_np = np.concatenate(
+                [np.array([0], dtype=np.uint32), *cu_window_seqlens_parts]
+            ).astype(np.uint32)
+            cu_window_seqlens_unique_tensor = Tensor.from_numpy(
+                cu_window_seqlens_np
+            )
+            cu_window_seqlens = [
+                cu_window_seqlens_unique_tensor.to(device)
+                for device in self.devices
+            ]
+
+        with Tracer("preparing_max_seqlen"):
+            max_seqlen_value = max(
+                ctx.extra_model_args["max_seqlen"].item()
+                for ctx in context_batch
+                if ctx.needs_vision_encoding
+            )
+            max_seqlen_tensor = Tensor.from_numpy(
+                np.array([max_seqlen_value], dtype=np.uint32)
+            )
+            max_seqlen = [max_seqlen_tensor for _ in self.devices]
+
+        with Tracer("preparing_max_window_seqlen"):
+            window_max_seqlen_value = max(
+                ctx.extra_model_args["window_max_seqlen"].item()
+                for ctx in context_batch
+                if ctx.needs_vision_encoding
+            )
+            window_max_seqlen_tensor = Tensor.from_numpy(
+                np.array([window_max_seqlen_value], dtype=np.uint32)
+            )
+            max_window_seqlen = [window_max_seqlen_tensor for _ in self.devices]
 
         return Qwen2_5VLInputs(
             input_ids=input_ids,
             input_row_offsets=input_row_offsets_tensors,
             signal_buffers=self.signal_buffers,
-            position_ids=position_ids,
+            position_ids=decoder_position_ids,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
