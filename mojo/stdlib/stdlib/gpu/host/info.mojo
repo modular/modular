@@ -287,8 +287,8 @@ fn _get_empty_target() -> _TargetType:
         `arch = "", `,
         `features = "", `,
         `data_layout="",`,
-        `simd_bit_width = 0,`,
-        `index_bit_width = 0`,
+        `index_bit_width = 0,`,
+        `simd_bit_width = 0`,
         `> : !kgen.target`,
     ]
 
@@ -312,13 +312,12 @@ alias NoGPU = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 # Apple M1
 # ===-----------------------------------------------------------------------===#
-fn _get_metal_m1_target() -> __mlir_type.`!kgen.target`:
+fn _get_metal_m1_target() -> _TargetType:
     """Creates an MLIR target configuration for M1 Metal GPU.
 
     Returns:
         MLIR target configuration for M1 Metal.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m1", `,
@@ -329,13 +328,12 @@ fn _get_metal_m1_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_metal_m2_target() -> __mlir_type.`!kgen.target`:
+fn _get_metal_m2_target() -> _TargetType:
     """Creates an MLIR target configuration for M2 Metal GPU.
 
     Returns:
         MLIR target configuration for M2 Metal.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m2", `,
@@ -346,13 +344,12 @@ fn _get_metal_m2_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_metal_m3_target() -> __mlir_type.`!kgen.target`:
+fn _get_metal_m3_target() -> _TargetType:
     """Creates an MLIR target configuration for M3 Metal GPU.
 
     Returns:
         MLIR target configuration for M3 Metal.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m3", `,
@@ -363,13 +360,12 @@ fn _get_metal_m3_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_metal_m4_target() -> __mlir_type.`!kgen.target`:
+fn _get_metal_m4_target() -> _TargetType:
     """Creates an MLIR target configuration for M4 Metal GPU.
 
     Returns:
         MLIR target configuration for M4 Metal.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m4", `,
@@ -444,15 +440,14 @@ fn _get_a100_target() -> _TargetType:
     Returns:
         MLIR target configuration for A100.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_80", `,
         `features = "+ptx81,+sm_80", `,
         `tune_cpu = "sm_80", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 64`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
@@ -479,15 +474,14 @@ fn _get_a10_target() -> _TargetType:
     Returns:
         MLIR target configuration for A10.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_86", `,
         `features = "+ptx81,+sm_86", `,
         `tune_cpu = "sm_86", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 64`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
@@ -514,15 +508,14 @@ fn _get_orin_nano_target() -> _TargetType:
     Returns:
         MLIR target configuration for Orin Nano.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_87", `,
         `features = "+ptx81,+sm_87", `,
         `tune_cpu = "sm_87", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 64`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
@@ -584,15 +577,14 @@ fn _get_l4_target() -> _TargetType:
     Returns:
         MLIR target configuration for L4.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_89", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 64`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
@@ -617,15 +609,14 @@ fn _get_rtx4090m_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
 
     Returns:
-        MLIR target configuration for H100.
+        MLIR target configuration for RTX 4090M.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_90a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -652,15 +643,14 @@ fn _get_rtx4090_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 4090.
 
     Returns:
-        MLIR target configuration for H100.
+        MLIR target configuration for RTX 4090.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_90a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -690,7 +680,6 @@ fn _get_h100_target() -> _TargetType:
     Returns:
         MLIR target configuration for H100.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_90a", `,
@@ -726,7 +715,6 @@ fn _get_b100_target() -> _TargetType:
     Returns:
         MLIR target configuration for B100.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_100a", `,
@@ -774,7 +762,6 @@ fn _get_rtx5090_target() -> _TargetType:
     Returns:
         MLIR target configuration for RTX5090.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_120a", `,
@@ -811,13 +798,12 @@ fn _get_rtx3090_target() -> _TargetType:
     Returns:
         MLIR target configuration for NVIDIA GeForce RTX 3090.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_86", `,
         `features = "+ptx63,+sm_86", `,
         `tune_cpu = "sm_86", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -848,6 +834,7 @@ fn _get_gtx1080ti_target() -> _TargetType:
     Returns:
         MLIR target configuration for GTX 1080 Ti.
     """
+    # Note: GTX 1080 Ti doesn't specify tune_cpu, data_layout, or index_bit_width
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_61", `,
@@ -880,6 +867,7 @@ fn _get_gtx970_target() -> _TargetType:
     Returns:
         MLIR target configuration for GTX 970.
     """
+    # Note: GTX 970 doesn't specify tune_cpu, data_layout, or index_bit_width
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_52", `,
@@ -912,13 +900,12 @@ fn _get_teslap100_target() -> _TargetType:
     Returns:
         MLIR target configuration for Tesla P100.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_60", `,
         `features = "+ptx50,+sm_60", `,
         `tune_cpu = "sm_60", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -948,13 +935,12 @@ fn _get_rtx2060_target() -> _TargetType:
     Returns:
         MLIR target configuration for RTX 2060.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_75", `,
         `features = "+ptx63,+sm_75", `,
         `tune_cpu = "sm_75", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -984,7 +970,6 @@ fn _get_mi300x_target() -> _TargetType:
     Returns:
         MLIR target configuration for MI300X.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx942", `,
@@ -1019,7 +1004,6 @@ fn _get_mi355x_target() -> _TargetType:
     Returns:
         MLIR target configuration for MI355X.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx950", `,
@@ -1054,7 +1038,6 @@ fn _get_9070_target() -> _TargetType:
     Returns:
         MLIR target configuration for 9070.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1201", `,
@@ -1072,7 +1055,6 @@ fn _get_9060_target() -> _TargetType:
     Returns:
         MLIR target configuration for 9060.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1200", `,
@@ -1090,7 +1072,6 @@ fn _get_7900_target() -> _TargetType:
     Returns:
         MLIR target configuration for 7900.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1100", `,
@@ -1108,7 +1089,6 @@ fn _get_7800_target() -> _TargetType:
     Returns:
         MLIR target configuration for 7800/7700.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1101", `,
@@ -1126,7 +1106,6 @@ fn _get_7600_target() -> _TargetType:
     Returns:
         MLIR target configuration for 7600.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1102", `,
@@ -1144,7 +1123,6 @@ fn _get_6900_target() -> _TargetType:
     Returns:
         MLIR target configuration for 6900.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1030", `,
@@ -1162,7 +1140,6 @@ fn _get_780m_target() -> _TargetType:
     Returns:
         MLIR target configuration for 780m.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1103", `,
@@ -1180,7 +1157,6 @@ fn _get_880m_target() -> _TargetType:
     Returns:
         MLIR target configuration for 880M.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1150", `,
@@ -1198,7 +1174,6 @@ fn _get_8060s_target() -> _TargetType:
     Returns:
         MLIR target configuration for 8060S.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1151", `,
@@ -1216,7 +1191,6 @@ fn _get_860m_target() -> _TargetType:
     Returns:
         MLIR target configuration for 860M.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1152", `,
