@@ -1,6 +1,6 @@
 """Define the Mojo toolchain"""
 
-PACKAGE_VERSION = "25.7.0.dev2025100805"
+PACKAGE_VERSION = "25.7.0.dev2025100916"
 
 BASE_URL = "https://dl.modular.com/public/nightly/python"
 
