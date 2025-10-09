@@ -384,6 +384,7 @@ async def all_tokens(
     request_id: int,
     request_payload: RequestPayload,
     top_k: int | None,
+    config: PipelineConfig,
 ) -> tuple[str, list[TokenGeneratorOutput]]:
     """Generate all tokens for a request."""
     prompt = request_payload.prompt
@@ -395,7 +396,10 @@ async def all_tokens(
         ignore_eos=True,
         top_k=top_k,
     )
-    sampling_params = SamplingParams.from_input(params)
+    sampling_params = SamplingParams.from_input_and_generation_config(
+        params,
+        sampling_params_defaults=config.model_config.sampling_params_defaults,
+    )
     request = TextGenerationRequest(
         request_id=RequestID(str(request_id)),
         model_name=model_name,
@@ -488,7 +492,9 @@ async def run_max_async(
         # Submit all request for execution in the model worker.
         if pipeline_task == PipelineTask.TEXT_GENERATION:
             all_tokens_tasks = [
-                all_tokens(model_name, pipeline, pbar, i, request, top_k)
+                all_tokens(
+                    model_name, pipeline, pbar, i, request, top_k, config
+                )
                 for i, request in enumerate(requests)
             ]
         elif pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:

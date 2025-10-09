@@ -24,7 +24,12 @@ from threading import Thread
 from typing import TypeVar, cast
 
 import tqdm
-from max.interfaces import RequestID, SamplingParams, TextGenerationRequest
+from max.interfaces import (
+    RequestID,
+    SamplingParams,
+    SamplingParamsInput,
+    TextGenerationRequest,
+)
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipeline
@@ -221,8 +226,11 @@ async def _async_worker(
 
             # Lambda to do a full text generation for a request.
             async def all_tokens(prompt: str) -> str:
-                sampling_params = SamplingParams(
-                    max_new_tokens=request.max_new_tokens  # noqa: B023
+                sampling_params = SamplingParams.from_input_and_generation_config(
+                    SamplingParamsInput(
+                        max_new_tokens=request.max_new_tokens  # noqa: B023
+                    ),
+                    sampling_params_defaults=pipeline_config.model_config.sampling_params_defaults,
                 )
                 gen_request = TextGenerationRequest(
                     request_id=RequestID(),
