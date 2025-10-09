@@ -32,8 +32,45 @@ from subprocess import Popen
 import click
 import requests
 
+DUMMY_1X1_IMAGE = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+URL = "http://localhost:8000/v1/chat/completions"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def test_single_request(model: str, task: str) -> None:
+    is_vision = task == "chartqa"
+    if is_vision:
+        m = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Say 'hello image'",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": DUMMY_1X1_IMAGE},
+                    },
+                ],
+            }
+        ]
+    else:
+        m = [{"role": "user", "content": "Say: 'hello world'"}]
+
+    r = requests.post(
+        URL,
+        json={"model": model, "messages": m, "max_tokens": 8, "temperature": 0},
+        timeout=10,
+    )
+    r.raise_for_status()
+    resp = r.json()["choices"][0]["message"]["content"]
+    logger.info(f"Test single request OK. Response: {resp}")
 
 
 def get_gpu_model() -> str:
@@ -113,7 +150,7 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
         "--model",
         "local-chat-completions",
         "--model_args",
-        f"model={model},base_url=http://localhost:8000/v1/chat/completions,num_concurrent=64",
+        f"model={model},base_url={URL},num_concurrent=64",
         "--tasks",
         task,
         "--fewshot_as_multiturn",
@@ -246,6 +283,12 @@ def smoke_test(framework: str, model: str, output_file: Path | None) -> None:
         startup_time = time.perf_counter() - script_start_time
         logger.info(f"Server started in {startup_time:.2f} seconds")
         write_github_output("startup_time", f"{startup_time:.2f}")
+
+        try:
+            test_single_request(model, task)
+        except Exception as e:
+            gracefully_stop_process(server_process)
+            raise Exception(f"Test single request failed: {e}") from e
 
         try:
             lm_eval_cmd = get_lm_eval_cmd(model, task)
