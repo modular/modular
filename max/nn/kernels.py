@@ -1908,6 +1908,24 @@ def grouped_dynamic_scaled_fp8_matmul(
             f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
         )
 
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+
+    if expert_ids.rank != 1:
+        raise ValueError(
+            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
+        )
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            f"expert_start_indices dtype must be uint32, but got {expert_start_indices.dtype}"
+        )
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            f"expected expert_start_indices of rank 1 but got {expert_start_indices.rank}"
+        )
+
     if a_scales.rank != 2 or b_scales.rank != 3:
         raise ValueError(
             f"expected a_scales of rank 2 and b_scales of rank 3 but got {a_scales.rank} and {b_scales.rank}"
@@ -1924,8 +1942,9 @@ def grouped_dynamic_scaled_fp8_matmul(
             raise ValueError(
                 f"expected b_scales of rank 3 but got {b_scales.rank}"
             )
+
     else:
-        raise ValueError("unsupported FP8 scaling granularity")
+        raise ValueError("grouped FP8 matmul only supports blockwise scaling")
 
     # if (a_scales.shape[1] * a_scales.dtype.size_in_bytes) % 16 != 0:
     #     raise ValueError(
@@ -1982,9 +2001,21 @@ def batched_dynamic_scaled_fp8_matmul(
     Returns:
         The result of the matmul operation.
     """
+    if a.dtype != b.dtype:
+        raise TypeError(
+            f"a and b dtypes must match, but got {a.dtype}, {b.dtype}"
+        )
 
-    if a.rank != 3 or b.rank != 3 or a_scales.rank != 3 or b_scales.rank != 3:
-        raise ValueError("All arguments must be rank 3 tensors")
+    if a_scales.dtype != b_scales.dtype or a_scales.dtype != DType.float32:
+        raise TypeError(
+            f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if a.rank != 3 or b.rank != 3:
+        raise ValueError("A and B must be rank 3 tensors")
+
+    if a_scales.rank != 3 or b_scales.rank != 3:
+        raise ValueError("A_scales and B_scales must be rank 3 tensors")
 
     if a.shape[0] != b.shape[0]:
         raise ValueError(
@@ -2004,11 +2035,6 @@ def batched_dynamic_scaled_fp8_matmul(
             "Only bfloat16 is supported for batched blockwise scaled matmul"
         )
 
-    if a_scales.dtype != b_scales.dtype or a_scales.dtype != DType.float32:
-        raise TypeError(
-            f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
-        )
-
     # if (a_scales.shape[1] * a_scales.dtype.size_in_bytes) % 16 != 0:
     #     raise ValueError(
     #         "TMA expects total_num_tokens to be divisible by 16 bytes"
@@ -2024,12 +2050,6 @@ def batched_dynamic_scaled_fp8_matmul(
 
     else:
         raise ValueError("unsupported FP8 scaling granularity")
-
-    if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
-        raise TypeError(
-            f"a and b dtypes {a.dtype}, {b.dtype} must match, "
-            f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
-        )
 
     result = ops.custom(
         "mo.batched.matmul.dynamic.scaled.fp8",
