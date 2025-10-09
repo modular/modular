@@ -85,6 +85,7 @@ def generate_max_outputs(
         cache_strategy=KVCacheStrategy.PAGED,
         n_devices=1,
         page_size=128,
+        is_mla=True,
     )
 
     latent_attention = LatentAttentionWithRope(
@@ -248,6 +249,7 @@ def generate_max_outputs_dp(
         cache_strategy=KVCacheStrategy.PAGED,
         n_devices=1,
         page_size=128,
+        is_mla=True,
     )
 
     dp_attention = DataParallelLatentAttentionWithRope(

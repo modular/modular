@@ -6,6 +6,7 @@
 
 
 import numpy as np
+import pytest
 import torch
 from max.driver import Accelerator, Tensor
 from max.dtype import DType
@@ -35,6 +36,7 @@ def test_mla_prefill_plan() -> None:
         head_dim=128,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
+        is_mla=True,
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -138,6 +140,7 @@ def test_mla_decompress_k_cache() -> None:
         head_dim=576,
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
+        is_mla=True,
     )
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
@@ -270,3 +273,94 @@ def test_mla_decompress_k_cache() -> None:
         rtol=1e-3,
         atol=1e-3,
     )
+
+
+def test_mla_decompress_k_cache_only_k() -> None:
+    """Tests the mla_decompress_k_cache custom op."""
+    # Set up hyperparameters for the test.
+    device0 = Accelerator(0)
+    session = InferenceSession(devices=[device0])
+
+    page_size = 128
+    kv_params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=1,
+        head_dim=576,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=page_size,
+        is_mla=False,  # intentionally false, which is incorrect
+    )
+
+    # Set MLIR types for the graph.
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], device=DeviceRef.GPU()
+    )
+    weight_type = TensorType(
+        DType.float32,
+        [4096, 512],
+        device=DeviceRef.GPU(),
+    )
+
+    kv_manager = PagedKVCacheManager(
+        kv_params,
+        available_cache_memory=1024 * 2 * 576,
+        page_size=page_size,
+        max_batch_size=2,
+        max_seq_len=100,
+        num_layers=1,
+        devices=[Accelerator(0)],
+        session=session,
+    )
+
+    def construct() -> Graph:
+        with Graph(
+            "call_mla_decompress_k_cache",
+            input_types=[
+                input_row_offsets_type,
+                weight_type,
+                *kv_manager.input_symbols()[0],
+            ],
+        ) as g:
+            input_row_offsets = g.inputs[0].tensor
+            weight = g.inputs[1].tensor
+            layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
+
+            kv_collection = PagedCacheValues(
+                kv_blocks=g.inputs[2].buffer,
+                cache_lengths=g.inputs[3].tensor,
+                lookup_table=g.inputs[4].tensor,
+                max_lengths=g.inputs[5].tensor,
+            )
+
+            # Allocate a buffer to hold KV cache for 60 decompressed tokens
+            buffer_tok_size = 60
+
+            (buffer_row_offsets, cache_offsets, buffer_lengths) = (
+                flare_mla_prefill_plan(
+                    kv_params,
+                    input_row_offsets,
+                    kv_collection,
+                    layer_idx,
+                    buffer_tok_size,
+                )
+            )
+
+            buffer_lengths_host = buffer_lengths.to(DeviceRef.CPU())
+
+            result = flare_mla_decompress_k_cache(
+                kv_params,
+                buffer_row_offsets[0, :],  # Process first chunk only
+                cache_offsets[0, :],
+                buffer_lengths_host[0],
+                weight,
+                kv_collection,
+                layer_idx,
+                buffer_tok_size,
+            )
+
+            g.output(result)
+        return g
+
+    with pytest.raises(ValueError):
+        graph = construct()
+        _ = session.load(graph)

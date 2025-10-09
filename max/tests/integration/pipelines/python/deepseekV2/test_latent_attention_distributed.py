@@ -79,6 +79,7 @@ def _single_gpu_baseline(
         cache_strategy=KVCacheStrategy.PAGED,
         n_devices=1,
         page_size=128,
+        is_mla=True,
     )
 
     attn = DataParallelLatentAttentionWithRope(
@@ -227,6 +228,7 @@ def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
         n_devices=1,
         page_size=128,
         data_parallel_degree=dp_degree,
+        is_mla=True,
     )
 
 
