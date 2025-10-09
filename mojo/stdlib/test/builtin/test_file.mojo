@@ -300,22 +300,4 @@ def test_file_get_raw_fd():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_file_read]()
-    suite.test[test_file_read_multi]()
-    suite.test[test_file_read_bytes_multi]()
-    suite.test[test_file_read_bytes_all]()
-    suite.test[test_file_read_all]()
-    suite.test[test_file_read_path]()
-    suite.test[test_file_path_direct_read]()
-    suite.test[test_file_read_context]()
-    suite.test[test_file_read_to_address]()
-    suite.test[test_file_seek]()
-    suite.test[test_file_open_nodir]()
-    suite.test[test_file_write]()
-    suite.test[test_file_write_span]()
-    suite.test[test_file_write_again]()
-    suite.test[test_file_get_raw_fd]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

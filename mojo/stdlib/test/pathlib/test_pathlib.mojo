@@ -218,21 +218,4 @@ def test_parts():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_cwd]()
-    suite.test[test_path]()
-    suite.test[test_path_exists]()
-    suite.test[test_path_isdir]()
-    suite.test[test_path_isfile]()
-    suite.test[test_suffix]()
-    suite.test[test_joinpath]()
-    suite.test[test_read_write]()
-    suite.test[test_read_write_bytes]()
-    suite.test[test_expand_user]()
-    suite.test[test_home]()
-    suite.test[test_stat]()
-    suite.test[test_name]()
-    suite.test[test_parts]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

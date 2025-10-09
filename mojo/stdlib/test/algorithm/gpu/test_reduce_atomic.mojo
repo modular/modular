@@ -143,6 +143,8 @@ def test_reduce_atomic():
 
 
 def main():
+    # TODO(MOCO-2561): Use automatic discovery when it can handle global_idx.
+    # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_reduce_atomic]()

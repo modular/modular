@@ -207,8 +207,4 @@ def test_copies():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_copies]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

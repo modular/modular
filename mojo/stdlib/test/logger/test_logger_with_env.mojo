@@ -26,8 +26,4 @@ def test_log_with_env():
 
 
 fn main() raises:
-    var suite = TestSuite()
-
-    suite.test[test_log_with_env]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

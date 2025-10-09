@@ -71,8 +71,4 @@ def test_trig():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_trig]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

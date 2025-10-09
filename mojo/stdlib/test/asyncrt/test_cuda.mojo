@@ -200,11 +200,4 @@ def test_cuda_multi_context():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_cuda_context]()
-    suite.test[test_cuda_stream]()
-    suite.test[test_cuda_external_function]()
-    suite.test[test_cuda_multi_context]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

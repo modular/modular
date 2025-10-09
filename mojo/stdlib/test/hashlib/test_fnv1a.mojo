@@ -181,13 +181,4 @@ def test_hash_at_compile_time():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_hash_byte_array]()
-    suite.test[test_avalanche]()
-    suite.test[test_trailing_zeros]()
-    suite.test[test_fill_factor]()
-    suite.test[test_hash_simd_values]()
-    suite.test[test_hash_at_compile_time]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

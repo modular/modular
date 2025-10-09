@@ -48,8 +48,4 @@ def test_recip():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_recip]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

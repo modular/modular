@@ -182,11 +182,4 @@ def test_naive_matmul_16():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_naive_matmul_2]()
-    suite.test[test_naive_matmul_4]()
-    suite.test[test_naive_matmul_8]()
-    suite.test[test_naive_matmul_16]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

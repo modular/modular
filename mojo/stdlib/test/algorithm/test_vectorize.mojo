@@ -114,10 +114,4 @@ def test_vectorize_size_param():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_vectorize]()
-    suite.test[test_vectorize_unroll]()
-    suite.test[test_vectorize_size_param]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

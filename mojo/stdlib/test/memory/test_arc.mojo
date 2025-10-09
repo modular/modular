@@ -109,14 +109,4 @@ def test_steal_data_does_not_decrement_refcount():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_basic]()
-    suite.test[test_is]()
-    suite.test[test_deleter_not_called_until_no_references]()
-    suite.test[test_deleter_not_called_until_no_references_explicit_copy]()
-    suite.test[test_count]()
-    suite.test[test_steal_data_and_construct_from_raw_ptr]()
-    suite.test[test_steal_data_does_not_decrement_refcount]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -117,9 +117,4 @@ def test_tuple_unpack():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_tuple_contains]()
-    suite.test[test_tuple_unpack]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

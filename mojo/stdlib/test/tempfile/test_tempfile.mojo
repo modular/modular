@@ -230,12 +230,4 @@ def test_named_temporary_file_write():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_mkdtemp]()
-    suite.test[test_gettempdir]()
-    suite.test[test_temporary_directory]()
-    suite.test[test_named_temporary_file_write]()
-    suite.test[test_named_temporary_file_deletion]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

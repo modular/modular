@@ -225,22 +225,4 @@ def test_optional_iter_empty():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_basic]()
-    suite.test[test_optional_reg_basic]()
-    suite.test[test_optional_is]()
-    suite.test[test_optional_isnot]()
-    suite.test[test_optional_reg_is]()
-    suite.test[test_optional_reg_isnot]()
-    suite.test[test_optional_take_mutates]()
-    suite.test[test_optional_explicit_copy]()
-    suite.test[test_optional_str_repr]()
-    suite.test[test_optional_equality]()
-    suite.test[test_optional_copied]()
-    suite.test[test_optional_unwrap]()
-    suite.test[test_optional_repr_wrap]()
-    suite.test[test_optional_iter]()
-    suite.test[test_optional_iter_empty]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

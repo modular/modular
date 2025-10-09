@@ -87,7 +87,8 @@ alias BAD_SEQUENCES = [
 # ===----------------------------------------------------------------------=== #
 
 
-def validate_utf8[span: Span[Byte]]() -> Bool:
+# TODO(MOCO-2557): Change back to validate_utf8.
+def validate_utf8_comptime[span: Span[Byte]]() -> Bool:
     alias comptime = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comptime, runtime)
@@ -101,7 +102,7 @@ def validate_utf8(span: Span[Byte]) -> Bool:
     return comptime
 
 
-fn test_utf8_validation() raises:
+def test_utf8_validation():
     alias text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
     varius tellus quis tincidunt dictum. Donec eros orci, ultricies ac metus non
     , rutrum faucibus neque. Nunc ultricies turpis ut lacus consequat dapibus.
@@ -129,7 +130,7 @@ fn test_utf8_validation() raises:
      ظهرت نسخ جديدة ومختلفة من نص لوريم إيبسوم، أحياناً عن طريق
      الصدفة، وأحياناً عن عمد كإدخال بعض العبارات الفكاهية إليها.
     """
-    assert_true(validate_utf8[text.as_bytes()]())
+    assert_true(validate_utf8_comptime[text.as_bytes()]())
 
     alias positive = List[List[UInt8]](
         List[UInt8](0x0),
@@ -151,7 +152,7 @@ fn test_utf8_validation() raises:
 
     @parameter
     for i in range(len(positive)):
-        assert_true(validate_utf8[positive[i]]())
+        assert_true(validate_utf8_comptime[positive[i]]())
 
     alias negative = List[List[UInt8]](
         List[UInt8](0x80),
@@ -183,19 +184,19 @@ fn test_utf8_validation() raises:
 
     @parameter
     for i in range(len(negative)):
-        assert_false(validate_utf8[negative[i]]())
+        assert_false(validate_utf8_comptime[negative[i]]())
 
 
 def test_good_utf8_sequences():
     @parameter
     for i in range(len(GOOD_SEQUENCES)):
-        assert_true(validate_utf8[GOOD_SEQUENCES[i]]())
+        assert_true(validate_utf8_comptime[GOOD_SEQUENCES[i]]())
 
 
 def test_bad_utf8_sequences():
     @parameter
     for i in range(len(BAD_SEQUENCES)):
-        assert_false(validate_utf8[BAD_SEQUENCES[i]]())
+        assert_false(validate_utf8_comptime[BAD_SEQUENCES[i]]())
 
 
 def test_stringslice_from_utf8():
@@ -300,18 +301,4 @@ def test_utf8_byte_type():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_count_utf8_continuation_bytes]()
-    suite.test[test_utf8_byte_type]()
-    suite.test[test_utf8_validation]()
-    suite.test[test_good_utf8_sequences]()
-    suite.test[test_bad_utf8_sequences]()
-    suite.test[test_stringslice_from_utf8]()
-    suite.test[test_combination_good_utf8_sequences]()
-    suite.test[test_combination_bad_utf8_sequences]()
-    suite.test[test_combination_good_bad_utf8_sequences]()
-    suite.test[test_combination_10_good_utf8_sequences]()
-    suite.test[test_combination_10_good_10_bad_utf8_sequences]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

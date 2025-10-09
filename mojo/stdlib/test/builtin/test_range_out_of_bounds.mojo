@@ -38,8 +38,4 @@ def test_range_getitem_uint_out_of_bounds():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_range_getitem_uint_out_of_bounds]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

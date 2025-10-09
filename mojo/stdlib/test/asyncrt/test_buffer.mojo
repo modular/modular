@@ -56,8 +56,4 @@ def test_buffer():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_buffer]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

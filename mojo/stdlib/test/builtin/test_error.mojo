@@ -35,9 +35,4 @@ def test_from_and_to_string():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_error_raising]()
-    suite.test[test_from_and_to_string]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -63,11 +63,4 @@ def test_empty_path():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_absolute_path]()
-    suite.test[test_relative_path]()
-    suite.test[test_root_directory]()
-    suite.test[test_empty_path]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

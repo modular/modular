@@ -134,10 +134,4 @@ def test_print_sep():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_print]()
-    suite.test[test_print_end]()
-    suite.test[test_print_sep]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

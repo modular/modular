@@ -166,12 +166,4 @@ def test_report():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_stopping_criteria]()
-    suite.test[test_keep]()
-    suite.test[test_non_capturing]()
-    suite.test[test_change_units]()
-    suite.test[test_report]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

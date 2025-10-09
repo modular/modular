@@ -59,10 +59,4 @@ def test_compile_compare_exchange():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_compile_atomic]()
-    suite.test[test_compile_fence]()
-    suite.test[test_compile_compare_exchange]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

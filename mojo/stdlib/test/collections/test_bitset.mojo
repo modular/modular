@@ -710,24 +710,4 @@ def test_bitset_small_size():
 
 
 def main():
-    var suite = TestSuite()
-    suite.test[test_bitset_init]()
-    suite.test[test_bitset_set_test_clear]()
-    suite.test[test_bitset_toggle]()
-    suite.test[test_bitset_toggle_all]()
-    suite.test[test_bitset_set_all]()
-    suite.test[test_bitset_count]()
-    suite.test[test_bitset_bounds]()
-    suite.test[test_bitset_str_repr]()
-    suite.test[test_bitset_edge_cases]()
-    suite.test[test_bitset_consecutive_operations]()
-    suite.test[test_bitset_word_boundaries]()
-    suite.test[test_bitset_large_indices]()
-    suite.test[test_bitset_union]()
-    suite.test[test_bitset_intersection]()
-    suite.test[test_bitset_difference]()
-    suite.test[test_bitset_simd_init]()
-    suite.test[test_bitset_len]()
-    suite.test[test_bitset_small_size]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

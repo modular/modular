@@ -57,10 +57,4 @@ def test_c_long_long_types():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_c_int_type]()
-    suite.test[test_c_long_types]()
-    suite.test[test_c_long_long_types]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

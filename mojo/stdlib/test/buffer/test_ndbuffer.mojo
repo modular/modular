@@ -450,15 +450,4 @@ def test_ndbuffer_tile():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_ndbuffer]()
-    suite.test[test_fill]()
-    suite.test[test_ndbuffer_prefetch]()
-    suite.test[test_aligned_load_store]()
-    suite.test[test_get_nd_index]()
-    suite.test[test_print]()
-    suite.test[test_ndbuffer_tofile]()
-    suite.test[test_ndbuffer_tile]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

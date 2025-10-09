@@ -75,10 +75,4 @@ def test_rebind_memory():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_rebind_register]()
-    print()
-    suite.test[test_rebind_memory]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

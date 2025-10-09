@@ -153,15 +153,4 @@ def test_atof_generate_cases():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_basic_parsing]()
-    suite.test[test_scientific_notation]()
-    suite.test[test_nan_and_inf]()
-    suite.test[test_leading_decimal]()
-    suite.test[test_trailing_f]()
-    suite.test[test_large_exponents]()
-    suite.test[test_error_cases]()
-    suite.test[test_atof_generate_cases]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

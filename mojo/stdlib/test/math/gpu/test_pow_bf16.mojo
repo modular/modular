@@ -93,8 +93,4 @@ def test_pow_bf16():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_pow_bf16]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

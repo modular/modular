@@ -248,29 +248,4 @@ def test_is_power_of_two():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_properties]()
-    suite.test[test_add]()
-    suite.test[test_sub]()
-    suite.test[test_div]()
-    suite.test[test_pow]()
-    suite.test[test_ceil]()
-    suite.test[test_floor]()
-    suite.test[test_round]()
-    suite.test[test_trunc]()
-    suite.test[test_floordiv]()
-    suite.test[test_mod]()
-    suite.test[test_divmod]()
-    suite.test[test_abs]()
-    suite.test[test_string_conversion]()
-    suite.test[test_int_representation]()
-    suite.test[test_indexer]()
-    suite.test[test_bool]()
-    suite.test[test_decimal_digit_count]()
-    suite.test[test_comparison]()
-    suite.test[test_int_uint]()
-    suite.test[test_float_conversion]()
-    suite.test[test_is_power_of_two]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

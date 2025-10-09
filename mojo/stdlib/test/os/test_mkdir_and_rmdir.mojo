@@ -34,7 +34,7 @@ def create_and_delete(path: String):
         os.rmdir(path)
 
 
-def test_mkdir_and_rmdir(path: String):
+def _test_mkdir_and_rmdir_str(path: String):
     try:
         os.rmdir(path)
     except:
@@ -54,7 +54,7 @@ def test_mkdir_and_rmdir(path: String):
         os.rmdir(path)
 
 
-def test_mkdir_and_rmdir(path: Path):
+def _test_mkdir_and_rmdir_path(path: Path):
     try:
         os.rmdir(path)
     except:
@@ -73,7 +73,7 @@ def test_mkdir_and_rmdir(path: Path):
         os.rmdir(path)
 
 
-def test_makedirs_and_removedirs(path: Path):
+def _test_makedirs_and_removedirs(path: Path):
     try:
         os.removedirs(path)
     except:
@@ -135,23 +135,16 @@ def test_rmdir_not_empty():
 
 
 def test_all_mkdir_and_rmdir():
-    test_mkdir_and_rmdir("my_dir")
-    test_mkdir_and_rmdir(Path("my_dir"))
+    _test_mkdir_and_rmdir_str("my_dir")
+    _test_mkdir_and_rmdir_path(Path("my_dir"))
     if os.env.getenv("HOME") or os.env.getenv("USERPROFILE"):
-        test_mkdir_and_rmdir(Path("~/my_dir").expanduser())
+        _test_mkdir_and_rmdir_path(Path("~/my_dir").expanduser())
 
 
 def test_all_makedirs_and_removedirs():
-    test_makedirs_and_removedirs(os.path.join("dir1", "dir2", "dir3"))
-    test_makedirs_and_removedirs(Path("dir1") / "dir2" / "dir3")
+    _test_makedirs_and_removedirs(os.path.join("dir1", "dir2", "dir3"))
+    _test_makedirs_and_removedirs(Path("dir1") / "dir2" / "dir3")
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_all_mkdir_and_rmdir]()
-    suite.test[test_all_makedirs_and_removedirs]()
-    suite.test[test_mkdir_mode]()
-    suite.test[test_rmdir_not_empty]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -53,9 +53,4 @@ def test_pack_bits():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_bitcast]()
-    suite.test[test_pack_bits]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

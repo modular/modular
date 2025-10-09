@@ -83,10 +83,4 @@ def test_erf_libm():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_erf_float32]()
-    suite.test[test_erf_float64]()
-    suite.test[test_erf_libm]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

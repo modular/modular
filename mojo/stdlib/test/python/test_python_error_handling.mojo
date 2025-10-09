@@ -50,11 +50,4 @@ fn test_python_exception_call() raises:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_python_exception_import]()
-    suite.test[test_python_exception_getattr]()
-    suite.test[test_python_exception_getitem]()
-    suite.test[test_python_exception_call]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -199,10 +199,4 @@ def test_interval_tree():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_interval]()
-    suite.test[test_interval_floating]()
-    suite.test[test_interval_tree]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -48,9 +48,4 @@ def test_uint_parameter_for():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_uint_for]()
-    suite.test[test_uint_parameter_for]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

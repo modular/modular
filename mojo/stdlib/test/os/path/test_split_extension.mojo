@@ -56,11 +56,4 @@ def test_file_names():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_absolute_file_path]()
-    suite.test[test_relative_file_path]()
-    suite.test[test_relative_directories]()
-    suite.test[test_file_names]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

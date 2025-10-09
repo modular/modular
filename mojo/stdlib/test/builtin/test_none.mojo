@@ -67,11 +67,4 @@ def test_type_from_none():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_str]()
-    suite.test[test_repr]()
-    suite.test[test_format_to]()
-    suite.test[test_type_from_none]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

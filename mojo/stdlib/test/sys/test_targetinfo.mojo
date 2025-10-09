@@ -69,11 +69,4 @@ fn test_target_has_feature() raises:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_size_of]()
-    suite.test[test_align_of]()
-    suite.test[test_cores]()
-    suite.test[test_target_has_feature]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

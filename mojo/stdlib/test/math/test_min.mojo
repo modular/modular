@@ -38,9 +38,4 @@ def test_min_scalar():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_min]()
-    suite.test[test_min_scalar]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

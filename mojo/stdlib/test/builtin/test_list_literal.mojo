@@ -41,9 +41,4 @@ def test_contains():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_variadic_list]()
-    suite.test[test_contains]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

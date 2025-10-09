@@ -247,11 +247,4 @@ fn test_source_location_struct() raises:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_source_location_struct]()
-    suite.test[test_builtin_source_loc]()
-    suite.test[test_parameter_context]()
-    suite.test[test_builtin_call_loc]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

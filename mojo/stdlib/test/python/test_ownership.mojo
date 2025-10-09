@@ -89,13 +89,4 @@ def test_with_python_import():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_with_python_list]()
-    suite.test[test_with_python_tuple]()
-    suite.test[test_with_python_call_ownership]()
-    suite.test[test_with_python_getitem_ownership]()
-    suite.test[test_with_python_getattr_ownership]()
-    suite.test[test_with_python_import]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

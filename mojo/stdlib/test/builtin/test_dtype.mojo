@@ -138,15 +138,4 @@ def test_get_dtype():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_equality]()
-    suite.test[test_stringable]()
-    suite.test[test_representable]()
-    suite.test[test_is_xxx]()
-    suite.test[test_key_element]()
-    suite.test[test_size_of]()
-    suite.test[test_from_str]()
-    suite.test[test_get_dtype]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

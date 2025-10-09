@@ -104,10 +104,4 @@ def test_compare():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_is_negative]()
-    suite.test[test_splat]()
-    suite.test[test_compare]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -146,17 +146,4 @@ def test_comptime_compare_exchange():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_consistency_equality_comparable]()
-    suite.test[test_consistency_representable]()
-    suite.test[test_consistency_stringable]()
-    suite.test[test_atomic[DType.int32]]()
-    suite.test[test_atomic[DType.float64]]()
-    suite.test[test_compare_exchange[DType.int32]]()
-    suite.test[test_compare_exchange[DType.float64]]()
-    suite.test[test_comptime_atomic]()
-    suite.test[test_comptime_fence]()
-    suite.test[test_comptime_compare_exchange]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

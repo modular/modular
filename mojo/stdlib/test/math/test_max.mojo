@@ -38,9 +38,4 @@ def test_max_scalar():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_max]()
-    suite.test[test_max_scalar]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

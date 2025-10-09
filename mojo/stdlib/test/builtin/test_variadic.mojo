@@ -30,8 +30,4 @@ fn test_iterator() raises:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_iterator]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

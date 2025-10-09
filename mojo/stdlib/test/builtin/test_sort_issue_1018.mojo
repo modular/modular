@@ -42,7 +42,4 @@ def test_sort_issue_1018():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_sort_issue_1018]()
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

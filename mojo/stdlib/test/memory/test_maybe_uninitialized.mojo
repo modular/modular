@@ -99,12 +99,4 @@ def test_maybe_uninitialized_copy():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_maybe_uninitialized]()
-    suite.test[test_write_does_not_trigger_destructor]()
-    suite.test[test_maybe_uninitialized_move]()
-    suite.test[test_maybe_uninitialized_move_from_pointer]()
-    suite.test[test_maybe_uninitialized_copy]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

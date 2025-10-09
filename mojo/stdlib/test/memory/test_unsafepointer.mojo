@@ -422,32 +422,4 @@ def test_swap_pointees_non_trivial_move():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_address_of]()
-    suite.test[test_pointer_to]()
-    suite.test[test_refitem]()
-    suite.test[test_refitem_offset]()
-    suite.test[test_unsafepointer_of_move_only_type]()
-    suite.test[test_unsafepointer_move_pointee_move_count]()
-    suite.test[test_unsafepointer_init_pointee_copy]()
-    suite.test[test_explicit_copy_of_pointer_address]()
-    suite.test[test_bitcast]()
-    suite.test[test_unsafepointer_string]()
-    suite.test[test_eq]()
-    suite.test[test_comparisons]()
-    suite.test[test_unsafepointer_address_space]()
-    suite.test[test_unsafepointer_aligned_alloc]()
-    suite.test[test_unsafepointer_alloc_origin]()
-    suite.test[test_indexing]()
-    suite.test[test_indexing_simd]()
-    suite.test[test_bool]()
-    suite.test[test_alignment]()
-    suite.test[test_offset]()
-    suite.test[test_load_and_store_simd]()
-    suite.test[test_volatile_load_and_store_simd]()
-    suite.test[test_merge]()
-    suite.test[test_swap_pointees_trivial_move]()
-    suite.test[test_swap_pointees_non_trivial_move]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

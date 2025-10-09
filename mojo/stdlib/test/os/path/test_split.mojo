@@ -67,8 +67,4 @@ def test_split():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_split]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

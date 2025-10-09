@@ -351,27 +351,4 @@ def test_unsafe_subspan():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_span_list_int]()
-    suite.test[test_span_list_str]()
-    suite.test[test_span_array_int]()
-    suite.test[test_span_array_str]()
-    suite.test[test_indexing]()
-    suite.test[test_span_slice]()
-    suite.test[test_equality]()
-    suite.test[test_bool]()
-    suite.test[test_contains]()
-    suite.test[test_fill]()
-    suite.test[test_ref]()
-    suite.test[test_reversed]()
-    suite.test[test_swap_elements]()
-    suite.test[test_merge]()
-    suite.test[test_span_to_string]()
-    suite.test[test_span_repr]()
-    suite.test[test_reverse]()
-    suite.test[test_apply]()
-    suite.test[test_count_func]()
-    suite.test[test_unsafe_subspan]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

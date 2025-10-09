@@ -461,30 +461,4 @@ def test_with_cpython_common_object_structure_api():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_with_cpython_very_high_level_api]()
-    suite.test[test_with_cpython_reference_counting_api]()
-    suite.test[test_with_cpython_exception_handling_api]()
-    suite.test[test_with_cpython_threading_api]()
-    suite.test[test_with_cpython_importing_module_api]()
-    suite.test[test_with_cpython_object_protocol_api]()
-    suite.test[test_with_cpython_call_protocol_api]()
-    suite.test[test_with_cpython_number_protocol_api]()
-    suite.test[test_with_cpython_iterator_protocol_api]()
-    suite.test[test_with_cpython_type_object_api]()
-    suite.test[test_with_cpython_integer_object_api]()
-    suite.test[test_with_cpython_boolean_object_api]()
-    suite.test[test_with_cpython_floating_point_object_api]()
-    suite.test[test_with_cpython_unicode_object_api]()
-    suite.test[test_with_cpython_tuple_object_api]()
-    suite.test[test_with_cpython_list_object_api]()
-    suite.test[test_with_cpython_dictionary_object_api]()
-    suite.test[test_with_cpython_set_object_api]()
-    suite.test[test_with_cpython_module_object_api]()
-    suite.test[test_with_cpython_slice_object_api]()
-    suite.test[test_with_cpython_capsule_api]()
-    suite.test[test_with_cpython_memory_management_api]()
-    suite.test[test_with_cpython_common_object_structure_api]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -49,8 +49,4 @@ def test_map():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_map]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

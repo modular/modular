@@ -141,10 +141,4 @@ def test_reversed_dict():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_reversed_dict]()
-    suite.test[test_reversed_list]()
-    suite.test[test_reversed_deque]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

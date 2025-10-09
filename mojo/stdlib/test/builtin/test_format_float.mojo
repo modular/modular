@@ -189,9 +189,4 @@ def test_float32():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_float64]()
-    suite.test[test_float32]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

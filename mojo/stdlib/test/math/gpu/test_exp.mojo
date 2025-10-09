@@ -90,8 +90,4 @@ def test_exp():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_exp]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

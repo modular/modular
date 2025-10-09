@@ -165,19 +165,4 @@ def test_get_type_name_alias():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_get_linkage_name]()
-    suite.test[test_get_linkage_name_nested]()
-    suite.test[test_get_linkage_name_parameterized]()
-    suite.test[test_get_linkage_name_on_itself]()
-    suite.test[test_get_type_name]()
-    suite.test[test_get_type_name_nested]()
-    suite.test[test_get_type_name_simd]()
-    suite.test[test_get_type_name_non_scalar_simd_value]()
-    suite.test[test_get_type_name_struct]()
-    suite.test[test_get_type_name_partially_bound_type]()
-    suite.test[test_get_type_name_unprintable]()
-    suite.test[test_get_type_name_alias]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

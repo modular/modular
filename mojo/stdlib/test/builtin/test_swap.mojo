@@ -78,11 +78,4 @@ def test_swap_Tuple_Mixed():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_swap_Int]()
-    suite.test[test_swap_String]()
-    suite.test[test_swap_Tuple_Int]()
-    suite.test[test_swap_Tuple_Mixed]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

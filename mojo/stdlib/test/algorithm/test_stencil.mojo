@@ -497,11 +497,4 @@ def test_stencil_max_pool_dilation_2():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_stencil_avg_pool]()
-    suite.test[test_stencil_avg_pool_padded]()
-    suite.test[test_stencil_avg_pool_stride_2]()
-    suite.test[test_stencil_max_pool_dilation_2]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

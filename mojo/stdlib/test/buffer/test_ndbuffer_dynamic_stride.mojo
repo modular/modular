@@ -99,9 +99,4 @@ def test_broadcast():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_sub_matrix]()
-    suite.test[test_broadcast]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

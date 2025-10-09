@@ -306,9 +306,4 @@ def test_errno():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_errno]()
-    suite.test[test_errno_message]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

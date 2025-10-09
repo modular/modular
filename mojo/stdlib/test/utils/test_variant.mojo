@@ -185,17 +185,4 @@ def test_is_type_supported():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_basic]()
-    suite.test[test_get_returns_mutable_reference]()
-    suite.test[test_copy]()
-    suite.test[test_explicit_copy]()
-    suite.test[test_move]()
-    suite.test[test_del]()
-    suite.test[test_take_doesnt_call_deleter]()
-    suite.test[test_set_calls_deleter]()
-    suite.test[test_replace]()
-    suite.test[test_is_type_supported]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -391,8 +391,4 @@ def test_reduce():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_reduce]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -342,38 +342,4 @@ def test_range_iterable():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_range_len]()
-    suite.test[test_range_len_uint]()
-    suite.test[test_range_len_uint_maxuint]()
-    suite.test[test_range_len_uint_empty]()
-    suite.test[test_range_int_bounds]()
-    suite.test[test_range_uint_bounds]()
-    suite.test[test_larger_than_int_max_bounds]()
-    suite.test[test_range_getitem]()
-    suite.test[test_range_getitem_uint]()
-    suite.test[test_range_reversed]()
-    suite.test[test_indexing]()
-    suite.test[test_range_bounds]()
-    suite.test[test_scalar_range]()
-    suite.test[test_range_compile_time]()
-    suite.test[test_range_iterable]()
-
-    alias dtypes = [
-        DType.int8,
-        DType.int16,
-        DType.int32,
-        DType.int64,
-        DType.uint8,
-        DType.uint16,
-        DType.uint32,
-        DType.uint64,
-    ]
-
-    @parameter
-    for dtype in dtypes:
-        test_range_len_scalar[dtype]()
-        test_range_scalar_bounds[dtype]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -66,11 +66,4 @@ def test_closure():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_some_arg]()
-    suite.test[test_some_param]()
-    suite.test[test_some_return]()
-    suite.test[test_closure]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

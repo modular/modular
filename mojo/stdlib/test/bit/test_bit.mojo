@@ -476,8 +476,9 @@ fn _log2_floor(n: Int) -> Int:
     return Int(floor(log2(Float64(n))))
 
 
+# TODO(MOCO-2557): Change back to _log2_ceil.
 @always_inline
-fn _log2_ceil(n: Int) -> Int:
+fn _log2_ceil_int(n: Int) -> Int:
     """Computes ceil(log_2(d))."""
 
     return Int(_log2_ceil(Scalar[DType.int](n)))
@@ -564,12 +565,12 @@ def test_log2_ceil():
     for i in range(1, 100):
         assert_equal(
             log2_ceil(i),
-            _log2_ceil(i),
+            _log2_ceil_int(i),
             msg=String(
                 "mismatching value for the input value of ",
                 i,
                 " expected ",
-                _log2_ceil(i),
+                _log2_ceil_int(i),
                 " but got ",
                 log2_ceil(i),
             ),
@@ -636,29 +637,4 @@ def test_log2_ceil_int32():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_rotate_bits_int]()
-    suite.test[test_rotate_bits_simd]()
-    suite.test[test_next_power_of_two]()
-    suite.test[test_next_power_of_two_simd]()
-    suite.test[test_prev_power_of_two]()
-    suite.test[test_prev_power_of_two_simd]()
-    suite.test[test_bit_width]()
-    suite.test[test_bit_width_simd]()
-    suite.test[test_count_leading_zeros]()
-    suite.test[test_count_leading_zeros_simd]()
-    suite.test[test_count_trailing_zeros]()
-    suite.test[test_count_trailing_zeros_simd]()
-    suite.test[test_bit_reverse]()
-    suite.test[test_bit_reverse_simd]()
-    suite.test[test_byte_swap]()
-    suite.test[test_byte_swap_simd]()
-    suite.test[test_pop_count]()
-    suite.test[test_pop_count_simd]()
-    suite.test[test_bit_not_simd]()
-    suite.test[test_log2_floor]()
-    suite.test[test_log2_ceil]()
-    suite.test[test_log2_ceil_int32]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

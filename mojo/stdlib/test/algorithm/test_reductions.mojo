@@ -454,17 +454,4 @@ def test_cumsum():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_reductions]()
-    suite.test[test_fused_reductions_inner]()
-    suite.test[test_fused_reductions_outer]()
-    suite.test[test_product]()
-    suite.test[test_mean_variance]()
-    suite.test[test_3d_reductions_axis_0]()
-    suite.test[test_3d_reductions_axis_1]()
-    suite.test[test_3d_reductions_axis_2]()
-    suite.test[test_boolean]()
-    suite.test[test_cumsum]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

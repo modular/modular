@@ -149,13 +149,4 @@ def test_simd_all():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_list_any]()
-    suite.test[test_set_any]()
-    suite.test[test_simd_any]()
-    suite.test[test_list_all]()
-    suite.test[test_set_all]()
-    suite.test[test_simd_all]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

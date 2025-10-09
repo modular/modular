@@ -48,9 +48,4 @@ def test_hip_stream():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_hip_context]()
-    suite.test[test_hip_stream]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
