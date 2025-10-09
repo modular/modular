@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.dtype import DType
+from max.interfaces import SamplingParamsGenerationConfigDefaults
 
 from ..max_config import MAXConfig
 
@@ -56,6 +57,55 @@ class SamplingConfig(MAXConfig):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
+
+    @classmethod
+    def from_generation_config_sampling_defaults(
+        cls,
+        sampling_params_defaults: SamplingParamsGenerationConfigDefaults,
+        **kwargs,
+    ) -> SamplingConfig:
+        """
+        Create a SamplingConfig instance from SamplingParamsGenerationConfigDefaults and additional keyword arguments.
+
+        This method inspects the provided SamplingParamsGenerationConfigDefaults to determine if penalty-related
+        or min-tokens-related fields are set to non-default values. If so, it enables the corresponding flags
+        ('do_penalties' and 'enable_min_tokens') in the resulting SamplingConfig unless they are already set
+        in kwargs.
+
+        Args:
+            sampling_params_defaults (SamplingParamsGenerationConfigDefaults): The generation config defaults
+                containing explicit values for sampling parameters.
+            **kwargs: Additional keyword arguments to override or supplement the config.
+
+        Returns:
+            SamplingConfig: A new SamplingConfig instance with the appropriate fields set.
+        """
+        config_kwargs = kwargs.copy()
+
+        gen_config_explicit = sampling_params_defaults.values_to_update
+        if config_kwargs.get("do_penalties", False) is False:
+            has_penalties = any(
+                field in gen_config_explicit
+                and gen_config_explicit[field] not in (None, 0, 1.0)
+                for field in [
+                    "frequency_penalty",
+                    "presence_penalty",
+                    "repetition_penalty",
+                ]
+            )
+            if has_penalties:
+                config_kwargs["do_penalties"] = True
+
+        if config_kwargs.get("enable_min_tokens", False) is False:
+            has_min_tokens = any(
+                field in gen_config_explicit
+                and gen_config_explicit[field] not in (None, 0)
+                for field in ["min_tokens", "min_new_tokens"]
+            )
+            if has_min_tokens:
+                config_kwargs["enable_min_tokens"] = True
+
+        return cls(**config_kwargs)
 
     @classmethod
     def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:

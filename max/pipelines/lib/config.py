@@ -108,7 +108,7 @@ class PipelineConfig(MAXConfig):
 
     experimental_background_queue: bool = False
     """When enabled, offloads queue draining to a background thread for improved performance.
-    
+
     This is an experimental flag. Use with caution.
     """
 
@@ -277,11 +277,11 @@ class PipelineConfig(MAXConfig):
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
         config_mappings = [
+            # NOTE: _model_config must come before _sampling_config so that
+            # SamplingConfig can use generation_config from the model
+            "_model_config",
             "_sampling_config",
             "_profiling_config",
-            # TODO(zheng): Remove this once backward compatibility is no
-            # longer needed for MAXModelConfig.
-            "_model_config",
         ]
 
         for config_name in config_mappings:
@@ -348,11 +348,21 @@ class PipelineConfig(MAXConfig):
                     **kv_cache_kwargs
                 )
 
-        elif config_name == "_sampling_config" and (
-            self.enable_echo or self._draft_model_config
-        ):
-            sampling_config = config_class(**matched_kwargs)
-            sampling_config.enable_variable_logits = True
+        elif config_name == "_sampling_config":
+            if hasattr(self, "_model_config") and self._model_config:
+                assert isinstance(self._model_config, MAXModelConfig)
+                assert hasattr(
+                    config_class, "from_generation_config_sampling_defaults"
+                )
+                sampling_config = config_class.from_generation_config_sampling_defaults(
+                    sampling_params_defaults=self._model_config.sampling_params_defaults,
+                    **matched_kwargs,
+                )
+            else:
+                sampling_config = config_class(**matched_kwargs)
+
+            if self.enable_echo or self._draft_model_config:
+                sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
             setattr(self, config_name, config_class(**matched_kwargs))
