@@ -54,7 +54,7 @@ def test_children() -> None:
     assert dict(s.children) == {"0": c1, "1": c2}
 
 
-def test_descendents() -> None:
+def test_descendants() -> None:
     t1 = TestModule(1)
     t2 = TestModule(2)
     t3 = TestModule(3)
@@ -62,7 +62,7 @@ def test_descendents() -> None:
     c1 = Sequential(t1, t2)
     c2 = Sequential(t3, t4)
     s = Sequential(c1, c2)
-    assert dict(s.descendents) == {
+    assert dict(s.descendants) == {
         "0": c1,
         "1": c2,
         "0.0": t1,

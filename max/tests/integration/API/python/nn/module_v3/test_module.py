@@ -131,16 +131,16 @@ def test_module_children(
     assert dict(test_module.sub.children) == {}
 
 
-def test_module_descendents(
+def test_module_descendants(
     test_module: TestModule, super_module: SuperModule
 ) -> None:
     assert super_module.mod is test_module
-    assert dict(super_module.descendents) == {
+    assert dict(super_module.descendants) == {
         "mod": test_module,
         "mod.sub": test_module.sub,
     }
-    assert dict(super_module.mod.descendents) == {"sub": super_module.mod.sub}
-    assert dict(test_module.sub.descendents) == {}
+    assert dict(super_module.mod.descendants) == {"sub": super_module.mod.sub}
+    assert dict(test_module.sub.descendants) == {}
 
 
 def test_apply_to_local_parameters(test_module: TestModule) -> None:
