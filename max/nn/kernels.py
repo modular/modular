@@ -1117,6 +1117,11 @@ def flare_mla_decode_ragged(
             f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
         )
 
+    if kv_collection.kv_blocks.shape[1] != 1:
+        raise ValueError(
+            f"expected kv_collection.kv_blocks.shape[1] to be 1, got {kv_collection.kv_blocks.shape[1]}"
+        )
+
     assert kv_params.page_size is not None
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {

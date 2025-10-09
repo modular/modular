@@ -116,4 +116,5 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             data_parallel_degree=data_parallel_degree,
+            is_mla=True,
         )

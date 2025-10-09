@@ -1089,8 +1089,7 @@ fn _matmul_blockwise_scaled_fp8_common[
 
 fn kv_matmul_ragged_paged[
     dtype: DType,
-    num_heads: Int,
-    head_dim: Int,
+    params: KVCacheStaticParams,
     page_size: Int, //,
     target: StaticString,
 ](
@@ -1099,9 +1098,7 @@ fn kv_matmul_ragged_paged[
     weight: NDBuffer[dtype, 2, _, _],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        params,
         page_size,
     ],
     layer_idx: UInt32,
@@ -1310,8 +1307,7 @@ fn _matmul_kv_cache_ragged_impl[
 
 fn k_matmul_ragged_paged[
     dtype: DType,
-    num_heads: Int,
-    head_dim: Int,
+    params: KVCacheStaticParams,
     page_size: Int, //,
     target: StaticString,
 ](
@@ -1320,9 +1316,7 @@ fn k_matmul_ragged_paged[
     weight: NDBuffer[dtype, 2, *_],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        params,
         page_size,
     ],
     layer_idx: UInt32,
@@ -1671,8 +1665,7 @@ fn _matmul_k_cache_ragged_scale_impl[
 
 fn unfused_qkv_matmul_ragged_paged_gguf_quantized[
     dtype: DType,
-    num_heads: Int,
-    head_dim: Int,
+    params: KVCacheStaticParams,
     page_size: Int, //,
     quantization_encoding_q: StaticString,
     quantization_encoding_k: StaticString,
@@ -1685,9 +1678,7 @@ fn unfused_qkv_matmul_ragged_paged_gguf_quantized[
     v_weight: NDBuffer[DType.uint8, 2, _, _],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        params,
         page_size,
     ],
     layer_idx: UInt32,

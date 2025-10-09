@@ -145,13 +145,14 @@ class PagedKVCacheManager:
 
         # The number of bytes that a single page will occupy.
         single_page_size_per_device_bytes = (
-            2
+            (2 if not params.is_mla else 1)
             * num_layers
             * params.n_kv_heads_per_device
             * params.head_dim
             * page_size
             * params.dtype.size_in_bytes
         )
+
         single_page_size_bytes = single_page_size_per_device_bytes * len(
             devices
         )
@@ -410,7 +411,7 @@ class PagedKVCacheManager:
         # split k and v caches across a single dim
         # 0 = key
         # 1 = value
-        kv_dim = 2
+        kv_dim = 2 if not params.is_mla else 1
         return [
             "total_num_pages" if is_parameterized else total_num_pages,
             kv_dim,

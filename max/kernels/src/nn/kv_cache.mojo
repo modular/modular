@@ -718,17 +718,14 @@ fn _flash_attention_dispatch_materialized_mask[
 
 def rms_norm_kv_cache_ragged_continuous_batching[
     dtype: DType,
-    num_heads: Int,
-    head_dim: Int, //,
+    params: KVCacheStaticParams, //,
     target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
 ](
     kv_collection: ContinuousBatchingKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        params,
     ],
     gamma: NDBuffer[dtype, 1, *_],
     epsilon: Scalar[dtype],
@@ -820,8 +817,8 @@ def rms_norm_kv_cache_ragged_continuous_batching[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // head_dim
-            head_dim_idx = idx[1] % head_dim
+            head_idx = idx[1] // params.head_size
+            head_dim_idx = idx[1] % params.head_size
 
         return k_cache.load[width=width](
             bs=batch_idx,
@@ -861,8 +858,8 @@ def rms_norm_kv_cache_ragged_continuous_batching[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // head_dim
-            head_dim_idx = idx[1] % head_dim
+            head_idx = idx[1] // params.head_size
+            head_dim_idx = idx[1] % params.head_size
 
         k_cache.store(
             bs=batch_idx,
@@ -906,17 +903,16 @@ def rms_norm_kv_cache_ragged_continuous_batching[
 
 def rms_norm_kv_cache_ragged_paged[
     dtype: DType,
-    num_heads: Int,
-    head_dim: Int, //,
+    params: KVCacheStaticParams,
+    page_size: Int, //,
     target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
 ](
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        params,
+        page_size,
     ],
     gamma: NDBuffer[dtype, 1, *_],
     epsilon: Scalar[dtype],
@@ -1008,8 +1004,8 @@ def rms_norm_kv_cache_ragged_paged[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // head_dim
-            head_dim_idx = idx[1] % head_dim
+            head_idx = idx[1] // params.head_size
+            head_dim_idx = idx[1] % params.head_size
 
         return k_cache.load[width=width](
             bs=batch_idx,
@@ -1049,8 +1045,8 @@ def rms_norm_kv_cache_ragged_paged[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // head_dim
-            head_dim_idx = idx[1] % head_dim
+            head_idx = idx[1] // params.head_size
+            head_dim_idx = idx[1] % params.head_size
         k_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
@@ -1437,6 +1433,7 @@ fn generic_get_paged_cache[
         KVCacheStaticParams(
             UInt(blocks.static_spec.shape.get[4]()),
             UInt(blocks.static_spec.shape.get[5]()),
+            blocks.static_spec.shape.get[1]() == 1,
         ),
         blocks.static_spec.shape.get[3](),
     ],
@@ -1444,8 +1441,11 @@ fn generic_get_paged_cache[
     alias page_size = blocks.static_spec.shape.get[3]()
     alias head_dim = blocks.static_spec.shape.get[5]()
     alias num_heads = blocks.static_spec.shape.get[4]()
+    alias is_mla = blocks.static_spec.shape.get[1]() == 1
     return generic_get_paged_cache[
-        dtype, KVCacheStaticParams(UInt(num_heads), UInt(head_dim)), page_size
+        dtype,
+        KVCacheStaticParams(UInt(num_heads), UInt(head_dim), is_mla),
+        page_size,
     ](
         managed_tensor_slice_to_ndbuffer(blocks),
         managed_tensor_slice_to_ndbuffer(cache_lengths),
