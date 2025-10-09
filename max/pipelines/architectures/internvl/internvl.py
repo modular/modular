@@ -49,6 +49,10 @@ from max.nn import (
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
 from max.nn.kv_cache import PagedCacheValues
+from max.pipelines.architectures.llama3.model_config import (
+    Llama3Config as Qwen2Config,
+)
+from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 from .embedding_utils import merge_multimodal_embeddings
 from .layers.attention import (
@@ -109,6 +113,19 @@ class InternVLDecoderLayer(Module):
         llm_config = config.llm_config
         devices = config.devices
 
+        if isinstance(llm_config, Qwen3Config):
+            # Qwen3: no bias, uses QK-Norm
+            has_bias = False
+            use_qk_norm = True
+        elif isinstance(llm_config, Qwen2Config):
+            # Qwen2: has bias, no QK-Norm
+            has_bias = True
+            use_qk_norm = False
+        else:
+            # Default / unknown model family
+            has_bias = getattr(config, "attention_bias", True)
+            use_qk_norm = getattr(config, "use_qk_norm", not has_bias)
+
         self.self_attn = TensorParallelAttentionWithRope(
             stacked_qkv=llm_config.stacked_qkv,
             scale=llm_config.attention_multiplier,
@@ -121,7 +138,9 @@ class InternVLDecoderLayer(Module):
             rope=rope,
             linear_cls=Linear,
             devices=devices,
-            has_bias=True,  # Qwen2 uses attention bias
+            has_bias=has_bias,
+            use_qk_norm=use_qk_norm,
+            rms_norm_eps=getattr(config.llm_config, "rms_norm_eps", 1e-6),
         )
 
         self.mlp = MLP(
@@ -262,16 +281,19 @@ class InternVLLanguageModel(Module):
         llm_config = config.llm_config
         self.devices = config.devices
 
-        if config.llm_config.tie_word_embeddings:
+        if llm_config.tie_word_embeddings:
             raise ValueError("tied embeddings unsupported by InternVL")
 
-        # Create RoPE embeddings.
+        interleaved_rope = getattr(
+            llm_config, "interleaved_rope_weights", True
+        ) or isinstance(llm_config, Qwen3Config)
+
         self.rope = DynamicRotaryEmbedding(
             dim=llm_config.hidden_size,
             n_heads=llm_config.num_attention_heads,
             theta=llm_config.rope_theta,
             max_seq_len=llm_config.max_seq_len,
-            interleaved=llm_config.interleaved_rope_weights,
+            interleaved=interleaved_rope,
             device=self.devices[0],
         )
 
