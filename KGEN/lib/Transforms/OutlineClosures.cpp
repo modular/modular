@@ -247,33 +247,14 @@ void OutlineClosuresPass::runOnOperation() {
                                         /*evaluationContext=*/nullptr);
       }
 
-      // Now replace the region decl with a partial binding to the lifted
-      // wrapper. The location of the region decl op contains the subprogram
-      // scope that itself creates, which we need to override with the
-      // parent's scope.
-      if (DebugInfo::DIScopeAttr scope =
-              DebugInfo::extractScope(regionDecl->getParentOp())) {
-        MLIRContext *ctx = scope.getContext();
-        Location regionLoc = regionDecl->getLoc();
-        // The region may not include a scope if it's always_inline_no_debug.
-        if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(regionLoc)) {
-          if (outlinedGenerators.contains(
-                  regionDecl->getParentOfType<GeneratorOp>()) ||
-              !isa<mlir::CallSiteLoc>(regionDecl->getParentOp()->getLoc())) {
-            b.setLoc(FusedLoc::get(ctx, fusedLoc.getLocations(), scope));
-          } else {
-            // FIXME MOCO-2052: DebugInfo should be set correctly when outlining
-            // outermost closure within previously inlined scope.
-            // For now set it to unknown as it could cause to a scope location
-            // mismatch. Specifically, the problem is that `extractScope`
-            // function will return `callee` scope, not `caller` scope, which is
-            // expected by the verifier.
-            // Using `caller` scope causes Elaborator to fail.
-            b.setLoc(UnknownLoc::get(ctx));
-          }
-        } else {
-          b.setLoc(FusedLoc::get(ctx, regionLoc, scope));
-        }
+      // The param region's location should be the fusion of the file location
+      // and the program scope.
+      mlir::FunctionOpInterface caller =
+          regionDecl->getParentOfType<mlir::FunctionOpInterface>();
+      if (DebugInfo::DISubprogramAttr scope = DebugInfo::extractScope(caller)) {
+        Location fileOnlyLoc =
+            DebugInfo::extractSourceLoc(regionDecl->getLoc());
+        b.setLoc(FusedLoc::get(scope.getContext(), fileOnlyLoc, scope));
       }
 
       // Set the insertion point to the regionDecl.

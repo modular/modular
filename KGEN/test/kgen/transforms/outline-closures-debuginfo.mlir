@@ -130,3 +130,39 @@ kgen.generator @ignore_param_defined_in_nested_non_decl_region_scope() {
 
 // CHECK: #[[LOC_X:.*]] = loc("x:0")
 // CHECK: #[[LOC_CONTINUE:.*]] = loc(fused<#kgen.param.decl.ref<"decl"> : index>[#[[LOC_X]]])
+
+// -----
+
+// COM: Ensure inlined scopes are not fused with kgen.param.op's location
+
+module {
+  kgen.generator @toplevel() {
+    // CHECK: hlcf.loop "inlined_cf_scope" {
+    hlcf.loop "inlined_cf_scope" {
+      // CHECK-NEXT: kgen.param.declare _float32_dispatch: () capturing -> !kgen.none = <@toplevel__float32_dispatch> loc([[LOC:#.*]])
+      kgen.param.declare.region _float32_dispatch = () capturing -> !kgen.none always_inline_no_debug {
+        %none = kgen.param.constant: none = <#kgen.none> loc(#loc4)
+        kgen.return %none : !kgen.none loc(#loc4)
+      } {isolated} loc(#loc4)
+      kgen.unreachable loc(#loc8)
+    } loc(#loc8)
+    kgen.unreachable loc(#loc7)
+  } loc(#loc5)
+} loc(#loc)
+// CHECK-DAG: [[LOC1:#.*]] = loc("delete-me.mojo":28:8)
+// CHECK-DAG: #subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <"CALLER">
+// CHECK-DAG: [[LOC]] = loc(fused<#subprogram>[[[LOC1]]])
+!subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
+#file = #debuginfo.file<"delete-me.mojo" in "">
+#loc = loc("this.mlir":1:1)
+#loc1 = loc("delete-me.mojo":29:5)
+#loc2 = loc("delete-me.mojo":26:36)
+#loc3 = loc("delete-me.mojo":31:41)
+#loc4 = loc("delete-me.mojo":28:8)
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full, nameTableKind = None>
+#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <"CALLER">, linkageName = "CALLER", file = #file, line = 29, scopeLine = 29, subprogramFlags = "Definition|Optimized"> : !subroutine
+#subprogram1 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <"CALLEE">, linkageName = "CALLEE", file = #file, line = 23, scopeLine = 23, subprogramFlags = "Definition|Optimized"> : !subroutine
+#loc5 = loc(fused<#subprogram>[#loc1])
+#loc6 = loc(fused<#subprogram1>[#loc2])
+#loc7 = loc(fused<#subprogram>[#loc3])
+#loc8 = loc(callsite(#loc6 at #loc7))
