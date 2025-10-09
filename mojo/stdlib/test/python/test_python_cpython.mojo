@@ -264,14 +264,11 @@ def test_module_object_api(cpy: CPython):
     assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
     _ = funcs
 
-    if cpy.version.minor >= 10:
-        var n = cpy.PyLong_FromSsize_t(0)
-        var name = "n"
-        # returns 0 on success, -1 on failure
-        assert_equal(
-            cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0
-        )
-        _ = name
+    var n = cpy.PyLong_FromSsize_t(0)
+    var name = "n"
+    # returns 0 on success, -1 on failure
+    assert_equal(cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0)
+    _ = name
 
 
 def test_slice_object_api(cpy: CPython):

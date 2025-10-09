@@ -1172,20 +1172,6 @@ fn _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
     )
 
 
-fn _PyModule_AddObjectRef_dummy(
-    module: PyObjectPtr,
-    name: UnsafePointer[c_char, mut=False],
-    value: PyObjectPtr,
-) -> c_int:
-    return abort[c_int](
-        "PyModule_AddObjectRef is not available in this Python version"
-    )
-
-
-fn _Py_Is_dummy(x: PyObjectPtr, y: PyObjectPtr) -> c_int:
-    return abort[c_int]("Py_Is is not available in this Python version")
-
-
 # ===-------------------------------------------------------------------===#
 # Context Managers for Python GIL and Threading
 # ===-------------------------------------------------------------------===#
@@ -1560,10 +1546,7 @@ struct CPython(Defaultable, Movable):
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
         self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
-        if self.version.minor >= 10:
-            self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
-        else:
-            self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
+        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
         # Slice Objects
         self._PySlice_New = PySlice_New.load(self.lib)
         # Capsules
@@ -1573,10 +1556,7 @@ struct CPython(Defaultable, Movable):
         self._PyObject_Free = PyObject_Free.load(self.lib)
         # Object Implementation Support
         # Common Object Structures
-        if self.version.minor >= 10:
-            self._Py_Is = Py_Is.load(self.lib)
-        else:
-            self._Py_Is = _Py_Is_dummy
+        self._Py_Is = Py_Is.load(self.lib)
 
     fn __del__(deinit self):
         pass
@@ -2707,13 +2687,10 @@ struct CPython(Defaultable, Movable):
         Python.
 
         Part of the Stable ABI since version 3.10.
-        This function is patched to work with Python 3.9 and earlier versions.
 
         References:
         - https://docs.python.org/3/c-api/structures.html#c.Py_Is
         """
-        if self.version.minor < 11:
-            return c_int(Int(x == y))
         return self._Py_Is(x, y)
 
     fn Py_TYPE(self, obj: PyObjectPtr) -> PyTypeObjectPtr:
