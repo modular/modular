@@ -622,6 +622,10 @@ fn threadfence[scope: Scope = Scope.GPU]():
         scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
         "invalid threadfence scope",
     ]()
+    constrained[
+        is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
+    ]()
+
     alias suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
