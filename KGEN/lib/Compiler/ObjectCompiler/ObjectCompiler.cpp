@@ -635,8 +635,8 @@ KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
     effectiveTriple = "arm64" + effectiveTriple.substr(5);
   }
 
-  const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(effectiveTriple, errorMessage);
+  const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
+      llvm::Triple(effectiveTriple), errorMessage);
   if (!target)
     return Error("no target exists for '" + options.targetTriple +
                  "': " + errorMessage);

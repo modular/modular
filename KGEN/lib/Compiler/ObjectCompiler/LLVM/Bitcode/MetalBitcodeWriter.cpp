@@ -2123,7 +2123,7 @@ void ModuleBitcodeWriter::writeDICompileUnit(const DICompileUnit *N,
                                              unsigned Abbrev) {
   assert(N->isDistinct() && "Expected distinct compile units");
   Record.push_back(/* IsDistinct */ true);
-  Record.push_back(N->getSourceLanguage());
+  Record.push_back(N->getSourceLanguage().getUnversionedName());
   Record.push_back(VE.getMetadataOrNullID(N->getFile()));
   Record.push_back(VE.getMetadataOrNullID(N->getRawProducer()));
   Record.push_back(N->isOptimized());
@@ -5268,7 +5268,7 @@ void BitcodeWriter::writeSymtab() {
 
     std::string Err;
     const Triple TT(M->getTargetTriple());
-    const Target *T = TargetRegistry::lookupTarget(TT.str(), Err);
+    const Target *T = TargetRegistry::lookupTarget(TT, Err);
     if (!T || !T->hasMCAsmParser())
       return;
   }
