@@ -237,7 +237,42 @@ RUFF_VERSION = "0.11.13"
 
 http_archive(
     name = "nvshmem_prebuilt",
-    build_file = "//bazel/third-party:nvshmem_prebuilt.BUILD",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+
+# This is the device-side bitcode that is linked into shmem.mojopkg.
+filegroup(
+    name = "device",
+    srcs = ["lib/libnvshmem_device.bc"],
+)
+
+# For linking the nvshmem hostlibs when compiling Mojo binaries from bazel
+cc_library(
+    name = "hostlibs",
+    srcs = glob(["lib/*.so*"]),
+)
+
+# This has three purposes:
+#  - copy the libs to python wheel `site-packages/modular/lib` folder
+#  - relink and copy the libs to conda package `lib` folder
+#  - enable `bmojo` to dlopen the libs from `bazel-bin/external/+http_archive+nvshmem_prebuilt`
+genrule(
+    name = "hostlibs_data",
+    srcs = glob(["lib/*.so*"]),
+    outs = [
+        "libnvshmem_host.so.3",
+        "nvshmem_bootstrap_mpi.so.3",
+        "nvshmem_transport_ibrc.so.3",
+        "nvshmem_transport_ibgda.so.3",
+    ],
+    cmd = '''
+        # Copy all lib/*.so* files from our prebuilt tar
+        for src in $(SRCS); do
+            cp -L $$src $(@D)
+        done
+    ''',
+)
+""",
     sha256 = "8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655/nvshmem.tar.gz",
 )
