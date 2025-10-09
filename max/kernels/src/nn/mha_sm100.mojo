@@ -18,7 +18,6 @@ from sys import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
 from algorithm.functional import unswitch
-from buffer import NDBuffer
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -53,7 +52,7 @@ from gpu.tcgen05 import (
     tcgen05_st,
     tcgen05_store_wait,
 )
-from layout.int_tuple import IntTuple
+from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import (
     LayoutTensor,
@@ -1270,12 +1269,16 @@ fn mha_sm100_dispatch[
     max_cache_valid_length_arg: Int,
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ],
 ) raises:
     alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     alias new_config = MHAConfig(
@@ -1366,7 +1369,7 @@ fn mha_sm100_dispatch[
         alias SinkType = NonNullPointer[KVType.dtype]
         var sink_ptr: SinkType = {
             rebind[UnsafePointer[Scalar[KVType.dtype]]](
-                sink_weights.value().data
+                sink_weights.value().ptr
             )
         }
         _mha_sm100_kv_input_row_offset_dispatch[
@@ -1490,7 +1493,9 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     num_keys_arg: UInt32,
     valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ],
     sink_weights: SinkType,
     partition: PartitionType,
@@ -1502,7 +1507,7 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     alias KVRowOffsetsNull = NullPointer[DType.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
-            kv_input_row_offsets.value().data
+            kv_input_row_offsets.value().ptr
         }
         _mha_sm100_valid_length_dispatch[
             SchedulerType=SchedulerType,
