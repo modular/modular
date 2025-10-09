@@ -474,6 +474,11 @@ fn _is_sm_101x() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_sm_110x() -> Bool:
+    return is_nvidia_gpu["sm_110"]() or is_nvidia_gpu["sm_110a"]()
+
+
+@always_inline("nodebug")
 fn _is_sm_120x() -> Bool:
     return is_nvidia_gpu["sm_120"]() or is_nvidia_gpu["sm_120a"]()
 
@@ -495,7 +500,12 @@ fn _is_sm_9x_or_newer() -> Bool:
 
 @always_inline("nodebug")
 fn _is_sm_100x_or_newer() -> Bool:
-    return _is_sm_100x() or _is_sm_120x_or_newer()
+    return _is_sm_100x() or _is_sm_110x_or_newer()
+
+
+@always_inline("nodebug")
+fn _is_sm_110x_or_newer() -> Bool:
+    return _is_sm_110x() or _is_sm_120x_or_newer()
 
 
 @always_inline("nodebug")

@@ -538,6 +538,40 @@ alias OrinNano = GPUInfo.from_family(
     sm_count=8,
 )
 
+# ===-----------------------------------------------------------------------===#
+# Jetson Thor
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_jetson_thor_target() -> _TargetType:
+    """Creates an MLIR target configuration for NVIDIA Jetson Thor.
+
+    Returns:
+        MLIR target configuration for Jetson Thor.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_110", `,
+        `features = "+ptx85,+sm_110", `,
+        `tune_cpu = "sm_110", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128,`,
+        `index_bit_width = 64`,
+        `> : !kgen.target`,
+    ]
+
+
+alias JetsonThor = GPUInfo.from_family(
+    family=NvidiaBlackwellFamily,
+    name="Jetson Thor",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="blackwell",
+    compute=11.0,
+    version="sm_110",
+    sm_count=20,
+)
 
 # ===-----------------------------------------------------------------------===#
 # L4
@@ -1389,6 +1423,8 @@ struct GPUInfo(Identifiable, Stringable, Writable):
             return _get_b100_target()
         if self.name == "RTX5090":
             return _get_rtx5090_target()
+        if self.name == "Jetson Thor":
+            return _get_jetson_thor_target()
         if self.name == "MI300X":
             return _get_mi300x_target()
         if self.name == "MI355X":
@@ -1670,6 +1706,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
             StaticString("90a"),
             StaticString("100"),
             StaticString("100a"),
+            StaticString("110"),
+            StaticString("110a"),
             StaticString("120"),
             StaticString("120a"),
             # AMD
@@ -1720,6 +1758,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
         # architecture wise are different. We need to differentiate between them here.
         return materialize[B200]()
+    elif target_arch == "110" or target_arch == "110a":
+        return materialize[JetsonThor]()
     elif target_arch == "120" or target_arch == "120a":
         return materialize[RTX5090]()
     elif target_arch == "gfx942" or target_arch == "mi300x":
