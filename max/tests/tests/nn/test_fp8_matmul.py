@@ -20,8 +20,10 @@ from max.nn import (
     Float8WeightScaleSpec,
 )
 from max.nn.kernels import (
+    batched_dynamic_scaled_fp8_matmul,
     dynamic_scaled_matmul,
     fused_qkv_ragged_matmul_scaled_float8,
+    grouped_dynamic_scaled_fp8_matmul,
     matmul_k_cache_ragged_scaled_float8,
 )
 from max.nn.kv_cache import (
@@ -683,3 +685,365 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
                 scale_granularity,
                 layer_idx.tensor,
             )
+
+
+def test_grouped_dynamic_scaled_fp8_matmul_valid() -> None:
+    """Tests grouped_dynamic_scaled_fp8_matmul with all tensors on same device."""
+    device = DeviceRef.CPU()
+
+    with Graph(
+        "grouped_dynamic_scaled_fp8_matmul",
+        input_types=[
+            # hidden_states
+            TensorType(DType.float8_e4m3fn, shape=(99, 512), device=device),
+            # weight
+            TensorType(DType.float8_e4m3fn, shape=(3, 256, 512), device=device),
+            # a_scales
+            TensorType(DType.float32, shape=(4, 99), device=device),
+            # b_scales
+            TensorType(DType.float32, shape=(3, 2, 4), device=device),
+            # expert_start_indices
+            TensorType(DType.uint32, shape=(1,), device=device),
+            # expert_ids
+            TensorType(DType.int32, shape=(3,), device=device),
+            # expert_usage_stats_host
+            TensorType(DType.uint32, shape=(2,), device=device),
+        ],
+    ) as graph:
+        (
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host,
+        ) = graph.inputs
+
+        output = grouped_dynamic_scaled_fp8_matmul(
+            hidden_states.tensor,
+            weight.tensor,
+            a_scales.tensor,
+            b_scales.tensor,
+            expert_start_indices.tensor,
+            expert_ids.tensor,
+            expert_usage_stats_host.tensor,
+            input_scale_spec=Float8InputScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                origin=Float8ScaleOrigin.DYNAMIC,
+                dtype=DType.float32,
+            ),
+            weight_scale_spec=Float8WeightScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                dtype=DType.float32,
+            ),
+            out_type=DType.bfloat16,
+        )
+        assert output.shape == [99, 256]
+        assert output.dtype == DType.bfloat16
+
+
+def test_grouped_dynamic_scaled_fp8_matmul_invalid() -> None:
+    """Tests grouped_dynamic_scaled_fp8_matmul with invalid inputs."""
+    device = DeviceRef.CPU()
+
+    def get_valid_input_types() -> list[TensorType | BufferType]:
+        return [
+            # hidden_states
+            TensorType(DType.float8_e4m3fn, shape=(99, 512), device=device),
+            # weight
+            TensorType(DType.float8_e4m3fn, shape=(3, 256, 512), device=device),
+            # a_scales
+            TensorType(DType.float32, shape=(4, 99), device=device),
+            # b_scales
+            TensorType(DType.float32, shape=(3, 2, 4), device=device),
+            # expert_start_indices
+            TensorType(DType.uint32, shape=(1,), device=device),
+            # expert_ids
+            TensorType(DType.int32, shape=(3,), device=device),
+            # expert_usage_stats_host
+            TensorType(DType.uint32, shape=(2,), device=device),
+        ]
+
+    def try_create_graph(input_types: list[TensorType | BufferType]) -> None:
+        with Graph(
+            "grouped_dynamic_scaled_fp8_matmul",
+            input_types=input_types,
+        ) as graph:
+            (
+                hidden_states,
+                weight,
+                a_scales,
+                b_scales,
+                expert_start_indices,
+                expert_ids,
+                expert_usage_stats_host,
+            ) = graph.inputs
+
+        grouped_dynamic_scaled_fp8_matmul(
+            hidden_states.tensor,
+            weight.tensor,
+            a_scales.tensor,
+            b_scales.tensor,
+            expert_start_indices.tensor,
+            expert_ids.tensor,
+            expert_usage_stats_host.tensor,
+            input_scale_spec=Float8InputScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                origin=Float8ScaleOrigin.DYNAMIC,
+                dtype=DType.float32,
+            ),
+            weight_scale_spec=Float8WeightScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                dtype=DType.float32,
+            ),
+            out_type=DType.bfloat16,
+        )
+
+    # Test 1: hidden_states and weight dtype mismatch
+    invalid_types = get_valid_input_types()
+    invalid_types[0].dtype = DType.bfloat16  # hidden_states
+    with pytest.raises(
+        TypeError,
+        match="hidden_states and weight dtypes must be float8_e4m3fn",
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 2: weight and hidden_states dtype mismatch (reverse case)
+    invalid_types = get_valid_input_types()
+    invalid_types[1].dtype = DType.bfloat16  # weight
+    with pytest.raises(
+        TypeError,
+        match="hidden_states and weight dtypes must be float8_e4m3fn",
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 3: input_scale and weight_scale dtype mismatch
+    invalid_types = get_valid_input_types()
+    invalid_types[2].dtype = DType.float16  # input_scale
+    with pytest.raises(
+        TypeError,
+        match="a_scales and b_scales dtypes must be float32",
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 4: hidden_states with invalid rank (should be 2)
+    invalid_types = get_valid_input_types()
+    invalid_types[0] = TensorType(
+        # rank 3
+        DType.float8_e4m3fn,
+        shape=(10, 512, 1),
+        device=device,
+    )
+    with pytest.raises(ValueError, match="expected hidden_states of rank 2"):
+        try_create_graph(invalid_types)
+
+    # Test 5: weight with invalid rank (should be 3)
+    invalid_types = get_valid_input_types()
+    invalid_types[1] = TensorType(
+        # rank 2
+        DType.float8_e4m3fn,
+        shape=(3, 256),
+        device=device,
+    )
+    with pytest.raises(ValueError, match="expected weight of rank 3 but got"):
+        try_create_graph(invalid_types)
+
+    # Test 6: hidden state and weight shape mismatch
+    invalid_types = get_valid_input_types()
+    invalid_types[0] = TensorType(
+        # rank 2
+        DType.float8_e4m3fn,
+        shape=(3, 512),
+        device=device,
+    )
+    invalid_types[1] = TensorType(
+        # rank 3
+        DType.float8_e4m3fn,
+        shape=(99, 512, 1024),
+        device=device,
+    )
+    with pytest.raises(ValueError, match="expected weight is of shape "):
+        try_create_graph(invalid_types)
+
+    # Test 7: weight shape and expert_ids mismatch
+    invalid_types = get_valid_input_types()
+    invalid_types[1] = TensorType(
+        # rank 3
+        DType.float8_e4m3fn,
+        shape=(16, 512, 1024),
+        device=device,
+    )
+    invalid_types[5] = TensorType(
+        # rank 1
+        DType.int32,
+        shape=(15,),
+        device=device,
+    )
+    with pytest.raises(ValueError, match="expected weight is of shape "):
+        try_create_graph(invalid_types)
+
+
+def test_batched_dynamic_scaled_fp8_matmul_valid() -> None:
+    """Tests batched_dynamic_scaled_fp8_matmul with all tensors on same device."""
+    device = DeviceRef.CPU()
+
+    with Graph(
+        "batched_dynamic_scaled_fp8_matmul",
+        input_types=[
+            # hidden_states
+            TensorType(DType.float8_e4m3fn, shape=(3, 99, 512), device=device),
+            # weight
+            TensorType(DType.float8_e4m3fn, shape=(3, 256, 512), device=device),
+            # a_scales
+            TensorType(DType.float32, shape=(3, 4, 99), device=device),
+            # b_scales
+            TensorType(DType.float32, shape=(3, 2, 4), device=device),
+        ],
+    ) as graph:
+        (
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+        ) = graph.inputs
+
+        output = batched_dynamic_scaled_fp8_matmul(
+            hidden_states.tensor,
+            weight.tensor,
+            a_scales.tensor,
+            b_scales.tensor,
+            input_scale_spec=Float8InputScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                origin=Float8ScaleOrigin.DYNAMIC,
+                dtype=DType.float32,
+            ),
+            weight_scale_spec=Float8WeightScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                dtype=DType.float32,
+            ),
+            out_type=DType.bfloat16,
+        )
+        assert output.shape == [3, 99, 256]
+        assert output.dtype == DType.bfloat16
+
+
+def test_batched_dynamic_scaled_fp8_matmul_invalid() -> None:
+    """Tests batched_dynamic_scaled_fp8_matmul with invalid inputs."""
+    device = DeviceRef.CPU()
+
+    def get_valid_input_types() -> list[TensorType | BufferType]:
+        return [
+            # hidden_states
+            TensorType(DType.float8_e4m3fn, shape=(3, 99, 512), device=device),
+            # weight
+            TensorType(DType.float8_e4m3fn, shape=(3, 256, 512), device=device),
+            # a_scales
+            TensorType(DType.float32, shape=(3, 4, 99), device=device),
+            # b_scales
+            TensorType(DType.float32, shape=(3, 2, 4), device=device),
+        ]
+
+    def try_create_graph(input_types: list[TensorType | BufferType]) -> None:
+        with Graph(
+            "batched_dynamic_scaled_fp8_matmul",
+            input_types=input_types,
+        ) as graph:
+            (
+                hidden_states,
+                weight,
+                a_scales,
+                b_scales,
+            ) = graph.inputs
+
+        batched_dynamic_scaled_fp8_matmul(
+            hidden_states.tensor,
+            weight.tensor,
+            a_scales.tensor,
+            b_scales.tensor,
+            input_scale_spec=Float8InputScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                origin=Float8ScaleOrigin.DYNAMIC,
+                dtype=DType.float32,
+            ),
+            weight_scale_spec=Float8WeightScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                dtype=DType.float32,
+            ),
+            out_type=DType.bfloat16,
+        )
+
+    # Test 1: hidden_states and weight dtype mismatch
+    invalid_types = get_valid_input_types()
+    invalid_types[0].dtype = DType.bfloat16  # hidden_states
+    with pytest.raises(
+        TypeError,
+        match="a and b dtypes must match,",
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 2: weight and hidden_states dtype mismatch (reverse case)
+    invalid_types = get_valid_input_types()
+    invalid_types[1].dtype = DType.bfloat16  # weight
+    with pytest.raises(
+        TypeError,
+        match="a and b dtypes must match,",
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 3: input_scale and weight_scale dtype mismatch
+    invalid_types = get_valid_input_types()
+    invalid_types[2].dtype = DType.float16  # input_scale
+    with pytest.raises(
+        TypeError,
+        match="a_scales and b_scales dtypes must be float32,",
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 4: hidden_states with invalid rank (should be 3)
+    invalid_types = get_valid_input_types()
+    invalid_types[0] = TensorType(
+        # rank 2
+        DType.float8_e4m3fn,
+        shape=(10, 512),
+        device=device,
+    )
+    with pytest.raises(ValueError, match="A and B must be rank 3 tensors"):
+        try_create_graph(invalid_types)
+
+    # Test 5: weight with invalid rank (should be 3)
+    invalid_types = get_valid_input_types()
+    invalid_types[1] = TensorType(
+        # rank 2
+        DType.float8_e4m3fn,
+        shape=(3, 256),
+        device=device,
+    )
+    with pytest.raises(ValueError, match="A and B must be rank 3 tensors"):
+        try_create_graph(invalid_types)
+
+    # Test 6: a_scales with invalid rank (should be 3)
+    invalid_types = get_valid_input_types()
+    invalid_types[2] = TensorType(
+        # rank 2
+        DType.float32,
+        shape=(10, 512),
+        device=device,
+    )
+    with pytest.raises(
+        ValueError, match="A_scales and B_scales must be rank 3 tensors"
+    ):
+        try_create_graph(invalid_types)
+
+    # Test 7: b_scales with invalid rank (should be 3)
+    invalid_types = get_valid_input_types()
+    invalid_types[3] = TensorType(
+        # rank 2
+        DType.float32,
+        shape=(3, 256),
+        device=device,
+    )
+    with pytest.raises(
+        ValueError, match="A_scales and B_scales must be rank 3 tensors"
+    ):
+        try_create_graph(invalid_types)
