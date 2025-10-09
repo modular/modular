@@ -30,7 +30,7 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     BaseContextType,
-    EmbeddingsGenerationContextType,
+    EmbeddingsContext,
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
     Pipeline,
@@ -61,7 +61,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[EmbeddingsGenerationContextType]],
+        pipeline_model: type[PipelineModel[EmbeddingsContext]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[

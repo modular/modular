@@ -16,10 +16,9 @@ import queue
 from dataclasses import dataclass
 
 from max.interfaces import (
-    EmbeddingsGenerationContextType,
+    EmbeddingsContext,
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
-    InputContext,
     MAXPullQueue,
     MAXPushQueue,
     RequestID,
@@ -48,7 +47,7 @@ class EmbeddingsScheduler(Scheduler):
         self,
         scheduler_config: EmbeddingsSchedulerConfig,
         pipeline: EmbeddingsPipelineType,
-        request_queue: MAXPullQueue[EmbeddingsGenerationContextType],
+        request_queue: MAXPullQueue[EmbeddingsContext],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
         ],
@@ -64,10 +63,12 @@ class EmbeddingsScheduler(Scheduler):
         # We are parameterizing the offload of queue draining to allow for
         # the use case where we want to drain the queue in the main thread.
         # This is useful for debugging and testing purposes.
-        self._queue_drainer: BackgroundQueueDrainer[InputContext] | None = None
+        self._queue_drainer: (
+            BackgroundQueueDrainer[EmbeddingsContext] | None
+        ) = None
         if offload_queue_draining:
             # Initialize the background queue drainer
-            self._queue_drainer = BackgroundQueueDrainer[InputContext](
+            self._queue_drainer = BackgroundQueueDrainer[EmbeddingsContext](
                 self.request_queue,
                 max_items_per_drain=self.scheduler_config.max_batch_size * 2,
             )
@@ -75,10 +76,10 @@ class EmbeddingsScheduler(Scheduler):
     @traced
     def _create_batch_to_execute(
         self,
-    ) -> dict[RequestID, EmbeddingsGenerationContextType]:
+    ) -> dict[RequestID, EmbeddingsContext]:
         max_batch_size_to_create = self.scheduler_config.max_batch_size
 
-        batch: dict[RequestID, EmbeddingsGenerationContextType] = {}
+        batch: dict[RequestID, EmbeddingsContext] = {}
 
         if self._queue_drainer is not None:
             # Start draining the queue in the background
@@ -125,7 +126,7 @@ class EmbeddingsScheduler(Scheduler):
     @traced
     def _handle_terminated_responses(
         self,
-        batch_executed: dict[RequestID, EmbeddingsGenerationContextType],
+        batch_executed: dict[RequestID, EmbeddingsContext],
         batch_response: dict[RequestID, EmbeddingsGenerationOutput],
     ) -> None:
         """Task that handles responses"""
@@ -139,7 +140,7 @@ class EmbeddingsScheduler(Scheduler):
 
     @traced
     def _schedule_encode(
-        self, batch_to_execute: dict[RequestID, EmbeddingsGenerationContextType]
+        self, batch_to_execute: dict[RequestID, EmbeddingsContext]
     ) -> None:
         # execute the batch
         batch_responses = self.pipeline.execute(

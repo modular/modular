@@ -42,7 +42,6 @@ from .pipeline import (
     ModelOutputs,
     PipelineModel,
     TextGenerationPipeline,
-    TextGenerationPipelineType,
     get_paged_manager,
     upper_bounded_default,
 )
@@ -98,7 +97,6 @@ __all__ = [
     "SupportedEncoding",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
-    "TextGenerationPipelineType",
     "TextTokenizer",
     "WeightPathParser",
     "convert_max_config_value",
