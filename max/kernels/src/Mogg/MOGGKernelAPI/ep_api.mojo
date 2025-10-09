@@ -281,15 +281,15 @@ struct Struct_ep_dispatch:
             var func = gpu_ctx.compile_function[dispatch]()
             shmem_module_init(func)
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](send_ptrs[gpu_id])
+            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(send_ptrs[gpu_id])
             )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](recv_ptrs[gpu_id])
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[
-                DType.uint64
-            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
+                Int(recv_count_ptrs[gpu_id])
+            )
 
             gpu_ctx.enqueue_function(
                 func,
@@ -424,12 +424,12 @@ struct Struct_ep_dispatch_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](recv_ptrs[gpu_id])
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[
-                DType.uint64
-            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
+                Int(recv_count_ptrs[gpu_id])
+            )
 
             gpu_ctx.enqueue_function[dispatch_cb](
                 output_tokens_tensor,
@@ -562,15 +562,15 @@ struct Struct_ep_combine:
             var func = gpu_ctx.compile_function[combine]()
             shmem_module_init(func)
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](send_ptrs[gpu_id])
+            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(send_ptrs[gpu_id])
             )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](recv_ptrs[gpu_id])
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[
-                DType.uint64
-            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
+                Int(recv_count_ptrs[gpu_id])
+            )
 
             gpu_ctx.enqueue_function(
                 func,
@@ -681,12 +681,12 @@ struct Struct_ep_combine_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](recv_ptrs[gpu_id])
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[
-                DType.uint64
-            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
+                Int(recv_count_ptrs[gpu_id])
+            )
 
             gpu_ctx.enqueue_function[combine_cb](
                 output_tokens_tensor,

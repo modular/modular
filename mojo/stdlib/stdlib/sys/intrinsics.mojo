@@ -99,9 +99,9 @@ fn llvm_intrinsic[
 # is assumed not to alias any Mojo-derived pointer. DO NOT proliferate usage of
 # this function!
 fn _unsafe_aliasing_address_to_pointer[
-    dtype: DType
-](var addr: Scalar[DType.int]) -> UnsafePointer[Scalar[dtype]]:
-    return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
+    T: AnyType
+](var addr: Int) -> UnsafePointer[T]:
+    return UnsafePointer(to=addr).bitcast[UnsafePointer[T]]()[]
 
 
 @always_inline("nodebug")
@@ -157,9 +157,9 @@ fn gather[
 
     @parameter
     if size == 1:
-        return _unsafe_aliasing_address_to_pointer[dtype](base[0]).load[
-            invariant=invariant
-        ]() if mask else passthrough[0]
+        return _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+            Int(base[0])
+        ).load[invariant=invariant]() if mask else passthrough[0]
 
     @parameter
     if is_gpu() and invariant:
@@ -167,8 +167,8 @@ fn gather[
 
         @parameter
         for i in range(size):
-            result[i] = _unsafe_aliasing_address_to_pointer[dtype](
-                base[i]
+            result[i] = _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+                Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
 
@@ -251,7 +251,9 @@ fn scatter[
     @parameter
     if size == 1:
         if mask:
-            var ptr = _unsafe_aliasing_address_to_pointer[dtype](base[0])
+            var ptr = _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+                Int(base[0])
+            )
             ptr.store(value[0])
         return
     llvm_intrinsic["llvm.masked.scatter", NoneType](

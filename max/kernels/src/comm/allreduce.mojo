@@ -233,18 +233,14 @@ fn _p2p_cache_init_wrapper() -> OpaquePointer:
       1 => p2p_not_available
       2 => p2p_available
     """
-    alias p2p_not_available = Scalar[DType.int](1)
-    alias p2p_available = Scalar[DType.int](2)
+    alias p2p_not_available = 1
+    alias p2p_available = 2
 
     try:
         DeviceContext.enable_all_peer_access()
-        return _unsafe_aliasing_address_to_pointer[DType.int](
-            p2p_available
-        ).bitcast[NoneType]()
+        return _unsafe_aliasing_address_to_pointer[NoneType](p2p_available)
     except:
-        return _unsafe_aliasing_address_to_pointer[DType.int](
-            p2p_not_available
-        ).bitcast[NoneType]()
+        return _unsafe_aliasing_address_to_pointer[NoneType](p2p_not_available)
 
 
 fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:

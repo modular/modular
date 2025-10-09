@@ -1306,10 +1306,7 @@ struct PythonObject(
         Returns:
             An `UnsafePointer` for the underlying Python data.
         """
-        var tmp = Int(self)
-        var result = _unsafe_aliasing_address_to_pointer[dtype](tmp)
-        _ = tmp
-        return result
+        return _unsafe_aliasing_address_to_pointer[Scalar[dtype]](Int(self))
 
     fn downcast_value_ptr[
         T: AnyType
