@@ -21,7 +21,7 @@ from max.mlir.dialects import mo
 
 from ..graph import Graph
 from ..type import DeviceRef, Type, _ChainType
-from ..value import TensorValue, TensorValueLike, Value
+from ..value import TensorValue, TensorValueLike, Value, _ChainValue
 
 
 def cond(
@@ -96,6 +96,7 @@ def cond(
     out_types_actual = [
         *(t.to_mlir() for t in out_types or []),
         _ChainType().to_mlir(),
+        *(_ChainType().to_mlir() for _ in Graph.current.device_chains),
     ]
 
     # Pause verification until the operation is fully constructed
@@ -104,14 +105,50 @@ def cond(
             mo.if_, pred, out_types_actual
         )
 
-    results_len = len(results)
-    out_chain = results[results_len - 1]
-    results = results[: results_len - 1]
+    num_values = len(list(out_types)) if out_types is not None else 0
+
+    results, out_chain, device_chains = (
+        results[:num_values],
+        results[num_values],
+        results[num_values + 1 :],
+    )
+
+    def wrap_region_func(  # noqa: ANN202
+        user_func,  # noqa: ANN001
+    ):
+        # Capture the set of live devices before and after constructing the
+        # body region. If new per-device chains were introduced, merge them
+        # back into the global chain (guaranteed to exist).
+        def handle_chains(*args, **kwargs):  # noqa: ANN202
+            live_devices_on_entry = dict.fromkeys(Graph.current.device_chains)
+
+            results = user_func(*args, **kwargs)
+
+            live_devices_on_exit = tuple(Graph.current.device_chains)
+
+            for device in live_devices_on_exit:
+                if device in live_devices_on_entry:
+                    continue
+
+                # Merge this chain with the global chain
+                Graph.current._merge_chains(
+                    [
+                        Graph.current._current_chain,
+                        Graph.current.device_chains[device],
+                    ]
+                )
+
+                # Remove the new device chain from the map
+                del Graph.current.device_chains[device]
+
+            return results
+
+        return handle_chains
 
     try:
         Graph.current._build_block(
             if_op.thenRegion.blocks[0],
-            then_fn,
+            wrap_region_func(then_fn),
             mo.YieldOp,
             "then_block",
             out_types,
@@ -119,13 +156,18 @@ def cond(
 
         Graph.current._build_block(
             if_op.elseRegion.blocks[0],
-            else_fn,
+            wrap_region_func(else_fn),
             mo.YieldOp,
             "else_block",
             out_types,
         )
 
         Graph.current._update_chain(out_chain)
+        for i, device in enumerate(Graph.current.device_chains):
+            new_chain = device_chains[i]
+            assert isinstance(new_chain, _ChainValue)
+            Graph.current.device_chains[device] = new_chain
+
         Graph.current._verify_op(if_op)
         return results
     except Exception as e:
