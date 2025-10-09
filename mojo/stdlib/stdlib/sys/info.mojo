@@ -562,6 +562,20 @@ fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_amd_rdna2() -> Bool:
+    # RDNA2 architectures (Radeon RX 6000 series)
+    return (
+        is_amd_gpu["amdgpu:gfx1030"]()  # Navi 21 (RX 6900/6800)
+        or is_amd_gpu["amdgpu:gfx1031"]()  # Navi 22 (RX 6700)
+        or is_amd_gpu["amdgpu:gfx1032"]()  # Navi 23 (RX 6600)
+        or is_amd_gpu["amdgpu:gfx1033"]()  # Navi 24
+        or is_amd_gpu["amdgpu:gfx1034"]()  # Navi 24
+        or is_amd_gpu["amdgpu:gfx1035"]()  # Rembrandt APU
+        or is_amd_gpu["amdgpu:gfx1036"]()  # Raphael APU
+    )
+
+
+@always_inline("nodebug")
 fn _is_amd_rdna3() -> Bool:
     return (
         is_amd_gpu["amdgpu:gfx1100"]()
@@ -582,7 +596,7 @@ fn _is_amd_rdna4() -> Bool:
 
 @always_inline("nodebug")
 fn _is_amd_rdna() -> Bool:
-    return _is_amd_rdna3() or _is_amd_rdna4()
+    return _is_amd_rdna2() or _is_amd_rdna3() or _is_amd_rdna4()
 
 
 @always_inline("nodebug")

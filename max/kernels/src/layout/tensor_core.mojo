@@ -53,6 +53,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
+from sys.info import _is_amd_rdna, _is_amd_rdna2, _is_amd_rdna3, _is_amd_cdna
 
 from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
@@ -321,7 +322,7 @@ struct TensorCore[
             bf8_dtype,
         ):
             constrained[
-                (reg_per_thread in (1,) and in_type is DType.float32)
+                (reg_per_thread in (1, 2) and in_type is DType.float32)
                 or (
                     reg_per_thread in (4, 8)
                     and (in_type in (DType.bfloat16, DType.float16))
@@ -493,7 +494,7 @@ struct TensorCore[
             bf8_dtype,
         ):
             constrained[
-                (reg_per_thread in (1,) and in_type is DType.float32)
+                (reg_per_thread in (1, 2) and in_type is DType.float32)
                 or (
                     reg_per_thread in (4, 8)
                     and (in_type in (DType.bfloat16, DType.float16))
@@ -697,7 +698,7 @@ struct TensorCore[
         @parameter
         if out_type is DType.float32:
             constrained[
-                reg_per_thread in (4, 16),
+                reg_per_thread in (4, 8, 16),
                 "No valid shape to store to LayoutTensor d",
             ]()
 
@@ -1032,6 +1033,10 @@ struct TensorCore[
                         )
                     )
             elif in_type.is_float8():
+                constrained[
+                    _has_native_f8_support(),
+                    "float8 formats are only supported in SM90+",
+                ]()
 
                 @parameter
                 for i in range(num_frags):
@@ -1383,17 +1388,46 @@ fn get_mma_shape[
             constrained[False, "Unsupported mma shape."]()
             return shape_null
     else:
-
         @parameter
-        if accum_type is DType.float32 and input_type is DType.float32:
-            return shape_16x16x4
-        elif accum_type is DType.float32 and input_type.is_half_float():
-            return shape_16x16x16
-        elif accum_type is DType.float32 and input_type.is_float8():
-            return shape_16x16x32
+        if _is_amd_rdna():
+            @parameter
+            if _is_amd_rdna2():
+                constrained[
+                    False,
+                    "RDNA2 and earlier tensor core support requires fallback paths (not yet implemented)"
+                ]()
+                return shape_null
+
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                constrained[False, "FP8 is not supported on RDNA GPUs."]()
+                return shape_null
+            else:
+                constrained[False, "Unsupported RDNA mma shape."]()
+                return shape_null
         else:
-            constrained[False, "Unsupported mma shape."]()
-            return shape_null
+            @parameter
+            if accum_type is DType.float32 and input_type is DType.float32:
+                return shape_16x16x4
+            elif accum_type is DType.float32 and input_type.is_half_float():
+                @parameter
+                if shape_id == 0:
+                    return shape_32x32x8
+                else:
+                    return shape_16x16x16
+            elif accum_type is DType.float32 and input_type.is_float8():
+                @parameter
+                if shape_id == 0:
+                    return shape_32x32x16
+                else:
+                    return shape_16x16x32
+            else:
+                constrained[False, "Unsupported CDNA mma shape."]()
+                return shape_null
 
 
 @always_inline
