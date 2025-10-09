@@ -59,16 +59,24 @@ fn is_defined[name: StaticString]() -> Bool:
     ]
 
 
-fn _is_bool_like[val: StaticString]() -> Bool:
-    alias lower_val = val.lower()
+fn _truthy[val: StaticString]() -> Bool:
     return (
-        lower_val == "true"
-        or lower_val == "1"
-        or lower_val == "on"
-        or lower_val == "false"
-        or lower_val == "0"
-        or lower_val == "off"
+        val.is_like[value="true"]()
+        or val.is_like[value="1"]()
+        or val.is_like[value="on"]()
     )
+
+
+fn _falsy[val: StaticString]() -> Bool:
+    return (
+        val.is_like[value="false"]()
+        or val.is_like[value="0"]()
+        or val.is_like[value="off"]()
+    )
+
+
+fn _is_bool_like[val: StaticString]() -> Bool:
+    return _truthy[val]() or _falsy[val]()
 
 
 fn env_get_bool[name: StaticString]() -> Bool:
@@ -81,20 +89,14 @@ fn env_get_bool[name: StaticString]() -> Bool:
     Returns:
         An boolean parameter value.
     """
-    alias val = env_get_string[name]().lower()
+    alias val = env_get_string[name]()
 
+    alias env_val = "the boolean environment value of `"
     constrained[
         _is_bool_like[val](),
-        String(
-            "the boolean environment value of `",
-            name,
-            "` with value `",
-            env_get_string[name](),
-            "` is not recognized",
-        ),
+        String(env_val, name, "` with value `", val, "` is not recognized"),
     ]()
-
-    return val == "true" or val == "1" or val == "on"
+    return _truthy[val]()
 
 
 fn env_get_bool[name: StaticString, default: Bool]() -> Bool:

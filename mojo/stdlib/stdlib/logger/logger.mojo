@@ -172,20 +172,19 @@ struct Level(
         Returns:
             The corresponding Level value, or NOTSET if not recognized.
         """
-        var lname = name.lower()
-        if lname == "notset":
+        if name.is_like[value="notset"]():
             return Self.NOTSET
-        if lname == "trace":
+        if name.is_like[value="trace"]():
             return Self.TRACE
-        if lname == "debug":
+        if name.is_like[value="debug"]():
             return Self.DEBUG
-        if lname == "info":
+        if name.is_like[value="info"]():
             return Self.INFO
-        if lname == "warning":
+        if name.is_like[value="warning"]():
             return Self.WARNING
-        if lname == "error":
+        if name.is_like[value="error"]():
             return Self.ERROR
-        if lname == "critical":
+        if name.is_like[value="critical"]():
             return Self.CRITICAL
         return Self.NOTSET
 

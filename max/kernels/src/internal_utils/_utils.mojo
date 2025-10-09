@@ -647,14 +647,13 @@ struct Mode(ImplicitlyCopyable, Movable, Stringable):
     alias SEP = "+"
 
     fn __init__(out self, handle: String = "run+benchmark+verify") raises:
-        var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
-        for h in handle_lower:
-            if String(Self.RUN.handle) == h:
+        for h in handle.split(Self.SEP):
+            if h.is_like[value = Self.RUN.handle]():
                 self.append(Self.RUN)
-            elif String(Self.BENCHMARK.handle) == h:
+            elif h.is_like[value = Self.BENCHMARK.handle]():
                 self.append(Self.BENCHMARK)
-            elif String(Self.VERIFY.handle) == h:
+            elif h.is_like[value = Self.VERIFY.handle]():
                 self.append(Self.VERIFY)
 
     fn append(mut self, other: Self):

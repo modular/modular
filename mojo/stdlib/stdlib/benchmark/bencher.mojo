@@ -91,7 +91,7 @@ struct BenchMetric(ImplicitlyCopyable, Movable, Stringable, Writable):
         Returns:
             True if 'alt_name' is valid alternative of the metric's name.
         """
-        return self.name.lower() == alt_name.lower()
+        return self.name.is_like(alt_name)
 
     @staticmethod
     fn get_metric_from_list(

@@ -1872,6 +1872,41 @@ struct String(
         self._capacity_or_data = new_capacity
         self._set_ref_counted()
 
+    @always_inline
+    fn is_ascii(self) -> Bool:
+        """Return whether the values in the string are all ASCII.
+
+        Returns:
+            Whether the values in the string are all ASCII.
+        """
+        return self.as_string_slice().is_ascii()
+
+    @always_inline
+    fn is_like[value: StringSlice](self) -> Bool:
+        """Whether the string is like the given value. This is the equivalent
+        of doing `self.lower() == value.lower()`, but optimized.
+
+        Parameters:
+            value: The given value to compare against.
+
+        Returns:
+            Whether the string is like the given value.
+        """
+        return self.as_string_slice().is_like[value=value]()
+
+    @always_inline
+    fn is_like(self, value: StringSlice) -> Bool:
+        """Whether the string is like the given value. This is the equivalent
+        of doing `self.lower() == value.lower()`, but optimized.
+
+        Args:
+            value: The given value to compare against.
+
+        Returns:
+            Whether the string is like the given value.
+        """
+        return self.as_string_slice().is_like(value)
+
 
 # ===----------------------------------------------------------------------=== #
 # ord

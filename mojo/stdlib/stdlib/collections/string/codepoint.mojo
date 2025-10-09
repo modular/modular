@@ -45,6 +45,7 @@ from sys.intrinsics import likely
 
 from bit import count_leading_zeros
 from bit._mask import splat
+from collections.string._unicode import _get_lowercase_mapping
 
 
 @always_inline
@@ -589,3 +590,29 @@ struct Codepoint(
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
         return UInt(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())
+
+    fn lower(self) -> Codepoint:
+        """Get the lowercase version of the codepoint.
+
+        Returns:
+            The lowercase version of the codepoint.
+        """
+        alias `a` = Byte(ord("a"))
+        alias `A` = Byte(ord("A"))
+        alias lower_ascii_latin1 = `A` ^ `a`
+
+        var size = self.utf8_byte_length()
+        if likely(size == 1):  # ASCII fast path
+            alias `z` = Byte(ord("z"))
+            var b = Byte(self.to_u32())
+            var low = b | lower_ascii_latin1
+            return Codepoint(low if `a` <= low <= `z` else b)
+        elif likely(size == 2):  # latin-1 fast path
+            alias `à` = Byte(ord("à"))
+            alias `þ` = Byte(ord("þ"))
+            alias `÷` = Byte(ord("÷"))
+            var b = Byte(self.to_u32())
+            var low = b | lower_ascii_latin1
+            return Codepoint(low if `à` <= low <= `þ` and low != `÷` else b)
+        else:
+            return _get_lowercase_mapping(self).or_else(self)
