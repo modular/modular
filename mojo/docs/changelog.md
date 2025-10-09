@@ -52,6 +52,9 @@ Literals now have a default type. For example, you can now bind
 - `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
   size 1 or 0.
 
+- `String.splitlines()` now returns an iterator instead of a
+  `List[StringSlice]`.
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`

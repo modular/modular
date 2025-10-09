@@ -77,14 +77,14 @@ fn get_git_files() raises -> Set[String]:
 
 fn check_path(path: Path, mut files_without_license: List[Path]) raises:
     file_text = path.read_text()
-
+    var start = file_text.as_string_slice()
     # Ignore #! in scripts
     if file_text.startswith("#!"):
-        has_license = "\n".join(file_text.splitlines()[1:]).startswith(LICENSE)
-    else:
-        has_license = file_text.startswith(LICENSE)
+        var idx = file_text.find("\n")
+        if idx >= 0 and len(file_text) > idx:
+            start = start[idx + 1 :]
 
-    if not has_license:
+    if not start.startswith(LICENSE):
         files_without_license.append(path)
 
 

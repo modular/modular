@@ -13,7 +13,7 @@
 
 from collections import Optional
 from collections.string._utf8 import _is_valid_utf8
-from collections.string.string_slice import _split
+from collections.string.string_slice import _split, _to_string_slice_list
 from os import abort
 from pathlib import _dir_of_current_file
 from random import seed
@@ -160,8 +160,8 @@ fn bench_string_splitlines[
     @always_inline
     @parameter
     fn call_fn() raises:
-        for _ in range(1_000_000 // length):
-            var res = items.splitlines()
+        for _ in range(10**6 // length):
+            var res = _to_string_slice_list(items.splitlines())
             keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
