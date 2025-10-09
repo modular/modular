@@ -404,6 +404,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw___get_nearest_error_slot:
   case Token::kw___origin_of:
   case Token::kw___type_of:
+  case Token::kw___functions_in_module:
     return true;
   default:
     return false;
@@ -565,6 +566,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw___get_nearest_error_slot:
   case Token::kw___origin_of:
   case Token::kw___type_of:
+  case Token::kw___functions_in_module:
     if (failed(parseMagicFunction(result)))
       return failure();
     break;
@@ -1199,7 +1201,11 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
   case Token::kw___type_of:
     nodeKind = ExprNode::kTypeOf;
     break;
+  case Token::kw___functions_in_module:
+    nodeKind = ExprNode::kFunctionsInModule;
+    break;
   }
+
   SMLoc baseLoc = consumeToken().getLoc();
 
   SmallVector<ExprNode *> subExprs;

@@ -84,8 +84,9 @@ public:
     kGetNearestErrorSlot,      // __get_nearest_error_slot()
     kOriginOf,                 // __origin_of(x)
     kTypeOf,                   // __type_of(x)
+    kFunctionsInModule,        // __functions_in_module()
     kFirstMagicFunction = kGetMValueAsLitRef,
-    kLastMagicFunction = kTypeOf,
+    kLastMagicFunction = kFunctionsInModule,
 
     // Prefix and Postfix unary expressions.
     kNeg,      // -x
