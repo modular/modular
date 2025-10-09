@@ -85,6 +85,7 @@ enum ExprContext {
   EC_Closure,              // closure formation
   EC_Origin,               // origin specifier
   EC_TypeOf,               // __type_of(x)
+  EC_FunctionsInModule,    // __functions_in_module()
   EC_PyBindGen,            // within Python binding generation
   EC_MergeWith,            // implicit __merge_with__ call
   EC_RefBinding,           // ref r = x
@@ -313,7 +314,7 @@ public:
   /// PValue.
   PValue emitErrorForDynamicValueInParameter(const ExprNode *expr,
                                              const char *customMessage = {});
-  PValue emitErrorForDynamicValueInParameter(llvm::SMLoc loc,
+  PValue emitErrorForDynamicValueInParameter(SMLoc loc,
                                              const char *customMessage = {});
   PValue emitErrorForDynamicValueInParameter(Location loc,
                                              const char *customMessage = {});
@@ -464,8 +465,7 @@ public:
 
   /// This returns an instance of Tuple[...] with the specified element types
   /// installed.
-  ASTType getBuiltinTupleInstantiation(llvm::SMLoc loc,
-                                       ArrayRef<Type> elements);
+  ASTType getBuiltinTupleInstantiation(SMLoc loc, ArrayRef<Type> elements);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.

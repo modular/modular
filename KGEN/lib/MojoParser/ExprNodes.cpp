@@ -24,6 +24,7 @@
 #include "Traits.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -3817,6 +3818,14 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return emitter.emitResult(err, this, dest);
   }
 
+  if (kind == kFunctionsInModule) {
+    if (subExprs.size() != 0) {
+      emitter.emitError(getLoc(), "expected no arguments") << getRange();
+      return {};
+    }
+    return emitFunctionsInModule(dest, emitter);
+  }
+
   // All other magic function types take exactly one argument.
   if (subExprs.size() != 1) {
     emitter.emitError(getLoc(), "expected a single argument") << getRange();
@@ -3926,6 +3935,52 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
     return {};
 
   return emitter.emitResult(PValue(resultType), this, dest);
+}
+
+AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
+                                                  IREmitter &emitter) const {
+
+  // We are basically emitting an expression of the form `Tuple(foo, bar)`,
+  // where `foo` and `bar` are the functions declared in the module.
+
+  // Collect references to the functions in the module.
+  SmallVector<DeclRefNode> funcDeclRefs;
+  if (ASTDecl *fileModuleDecl =
+          emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>()) {
+    for (auto &[name, decls] : fileModuleDecl->getDeclsInScope()) {
+      for (ASTDecl *decl : decls) {
+        // TODO: consider allowing imported functions. This could be a feature,
+        // allowing one to run tests from across several files, simply by
+        // importing them. If we decide to do so, it might be best to control
+        // this behavior with a flag. For now, we keep the behavior simple.
+        if (decl->getParentDecl() != fileModuleDecl)
+          continue;
+
+        auto fnOp = dyn_cast_or_null<FnOp>(decl->getIfOperation());
+        if (!fnOp)
+          continue;
+
+        // TODO(MOCO-2556): consistently allow recursive references.
+        if (name == "main")
+          continue;
+
+        // TODO(MOCO-2557): handle overloads.
+        funcDeclRefs.emplace_back(name.strref());
+      }
+    }
+  }
+
+  // Build the expression.
+  DeclRefNode tupleDeclRef("Tuple");
+  SmallVector<Operand> callOperands;
+  for (DeclRefNode &funcDeclRef : funcDeclRefs) {
+    callOperands.emplace_back(
+        Operand(&funcDeclRef, getLoc(), Operand::PassKind::kPositional));
+  }
+  CallNode tupleCallNode(&tupleDeclRef, getLoc(), callOperands, getLoc());
+
+  // Finally, emit the IR for the expression.
+  return tupleCallNode.emitIR(dest, emitter);
 }
 
 // There are two options. We are either emitting a type or an instance of Tuple.

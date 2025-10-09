@@ -87,6 +87,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "OriginOf";
   case ExprNode::kTypeOf:
     return "TypeOf";
+  case ExprNode::kFunctionsInModule:
+    return "FunctionsInModule";
   case ExprNode::kNeg:
     return "Neg";
   case ExprNode::kPos:
