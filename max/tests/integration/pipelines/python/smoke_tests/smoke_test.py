@@ -74,10 +74,32 @@ def test_single_request(model: str, task: str) -> None:
 
 
 def get_gpu_model() -> str:
-    return subprocess.check_output(
-        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader", "-i", "0"],
-        text=True,
-    ).strip()
+    try:
+        # Try AMD first
+        result = subprocess.check_output(
+            ["rocm-smi", "--showid", "--json"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        data = json.loads(result)
+        return next(iter(data.values()))["Device Name"]
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        StopIteration,
+        KeyError,
+    ):
+        # Fallback to NVIDIA
+        return subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=name",
+                "--format=csv,noheader",
+                "-i",
+                "0",
+            ],
+            text=True,
+        ).strip()
 
 
 def server_is_ready() -> bool:
