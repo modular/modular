@@ -89,9 +89,7 @@ class DeepseekV3DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
-            # TODO(GEX-2653): Force prefill, when using "both", the graph
-            # compilation crashes.
-            graph_mode="prefill",
+            graph_mode=config.graph_mode,
         )
 
         # Create MLP or MoE layer
