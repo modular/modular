@@ -14,7 +14,6 @@
 from sys import simd_width_of
 
 from algorithm.functional import elementwise
-from buffer import NDBuffer
 from layout import (
     UNKNOWN_VALUE,
     Layout,
