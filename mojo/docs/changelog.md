@@ -21,10 +21,27 @@ what we publish.
 
 ### Language enhancements
 
-Literals now have a default type. For example, you can now bind
-`[1,2,3]` to `T` in a call to a function defined as
- `fn zip[T: Iterable](impl:T)` because it will default to the
- standard library's List type.
+- Literals now have a default type. For example, you can now bind `[1,2,3]` to
+  `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
+  it will default to the standard library's List type.
+
+- Mojo now has a `__functions_in_module` experimental intrinsic that allows
+  reflection over the functions declared in the module where it is called. For
+  example:
+
+  ```mojo
+  fn foo(): pass
+
+  def bar(x: Int): pass
+
+  def main():
+    alias funcs = __functions_in_module()
+    # equivalent to:
+    alias same_funcs = Tuple(foo, bar)
+  ```
+
+  The intrinsic is currently limited for use from within `main`, and only works
+  if the module in which it's called does not declare overloaded functions.
 
 ### Language changes
 
