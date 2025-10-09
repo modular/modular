@@ -638,6 +638,20 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def to_generation_output(self) -> TextGenerationOutput:
+        """
+        Convert this context to a TextGenerationOutput object.
+
+        This property provides a standardized way to extract the final output
+        of the text generation process from the context, including generated
+        text, tokens, and any associated metadata.
+
+        Returns:
+            TextGenerationOutput: The output object containing the results of
+            the text generation for this context.
+        """
+        ...
+
 
 TextGenerationContextType = TypeVar(
     "TextGenerationContextType", bound=TextGenerationContext
@@ -705,3 +719,59 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
 
     def __repr__(self) -> str:
         return f"TextGenerationInputs(batch_size={len(self.batch)}, num_steps={self.num_steps})"
+
+
+class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
+    """Metadata about an image in the prompt.
+
+    Each image corresponds to a range in the text token array [start_idx, end_idx).
+    """
+
+    start_idx: int
+    """Index of the first <vision_token_id> special token for the image"""
+
+    end_idx: int
+    """One after the index of the last <vision_token_id> special token for the image"""
+
+    pixel_values: npt.NDArray[np.floating[Any]]
+    """Pixel values for the image"""
+
+    def __post_init__(self) -> None:
+        if self.start_idx < 0:
+            raise ValueError("Images must have a valid start index")
+        if self.end_idx <= self.start_idx:
+            raise ValueError(
+                "Images must have a valid start and end index containing at least one <vision_token_id>"
+            )
+
+    def __repr__(self):
+        return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"
+
+
+@runtime_checkable
+class VLMTextGenerationContext(TextGenerationContext, Protocol):
+    """Protocol defining the interface for VLM input contexts."""
+
+    @property
+    def image_idx(self) -> int:
+        """Index of the next unencoded image in the prompt."""
+        ...
+
+    @property
+    def images(self) -> list[ImageMetadata]:
+        """Returns the images in the context."""
+        ...
+
+    @property
+    def next_images(self) -> list[ImageMetadata]:
+        """Returns the images that are not yet encoded."""
+        ...
+
+    @property
+    def needs_vision_encoding(self) -> bool:
+        """Returns whether vision encoding is needed for this context."""
+        ...
+
+    def compute_image_aligned_idx(self, idx: int) -> int:
+        """Possibly aligns a index value downward if it lies in the middle of an image."""
+        ...

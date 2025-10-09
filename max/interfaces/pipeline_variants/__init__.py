@@ -19,6 +19,7 @@ from .embeddings_generation import (
 )
 from .text_generation import (
     BatchType,
+    ImageMetadata,
     TextGenerationContext,
     TextGenerationContextType,
     TextGenerationInputs,
@@ -28,6 +29,7 @@ from .text_generation import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VLMTextGenerationContext,
 )
 
 __all__ = [
@@ -42,6 +44,7 @@ __all__ = [
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
+    "ImageMetadata",
     "TextGenerationContext",
     "TextGenerationContextType",
     "TextGenerationInputs",
@@ -51,4 +54,5 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
+    "VLMTextGenerationContext",
 ]

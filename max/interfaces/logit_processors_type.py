@@ -47,13 +47,13 @@ from typing import TYPE_CHECKING, TypeAlias
 import max.driver as md
 
 if TYPE_CHECKING:
-    from .context import InputContext
+    from .pipeline_variants.text_generation import TextGenerationContext
 
 
 @dataclass
 class ProcessorInputs:
     logits: md.Tensor
-    context: InputContext
+    context: TextGenerationContext
 
 
 LogitsProcessor: TypeAlias = Callable[[ProcessorInputs], None]
@@ -73,7 +73,7 @@ class BatchProcessorInputs:
 
     logits: md.Tensor
     logit_offsets: md.Tensor | None
-    context_batch: Sequence[InputContext]
+    context_batch: Sequence[TextGenerationContext]
 
 
 BatchLogitsProcessor: TypeAlias = Callable[[BatchProcessorInputs], None]

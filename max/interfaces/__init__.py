@@ -10,12 +10,9 @@ from collections.abc import Callable
 from .context import (
     BaseContext,
     BaseContextType,
-    ImageMetadata,
-    InputContext,
     SamplingParams,
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
-    VLMInputContext,
 )
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
@@ -44,6 +41,7 @@ from .pipeline_variants import (
     EmbeddingsGenerationContextType,
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
+    ImageMetadata,
     TextGenerationContext,
     TextGenerationContextType,
     TextGenerationInputs,
@@ -53,6 +51,7 @@ from .pipeline_variants import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
 from .request import Request, RequestID, RequestType
@@ -101,7 +100,6 @@ __all__ = [
     "EmbeddingsGenerationOutput",
     "GenerationStatus",
     "ImageMetadata",
-    "InputContext",
     "LoRAOperation",
     "LoRARequest",
     "LoRAResponse",
@@ -140,7 +138,7 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
-    "VLMInputContext",
+    "VLMTextGenerationContext",
     "drain_queue",
     "get_blocking",
     "msgpack_eq",
