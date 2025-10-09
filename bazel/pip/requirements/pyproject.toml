@@ -11,6 +11,7 @@ dependencies = [
   "async-asgi-testclient",
   "boto3",
   "click>=8.1",
+  "codeowners",
   "datasets",
   "device-smi",
   "docutils",

@@ -37,6 +37,7 @@ PINS = {
     "async-asgi-testclient": "async-asgi-testclient@1.4.11",
     "boto3": "boto3@1.34.128",
     "click": "click@8.1.7",
+    "codeowners": "codeowners@0.8.0",
     "datasets": "datasets@2.21.0",
     "device-smi": "device-smi@0.4.1",
     "docutils": "docutils@0.20.1",
@@ -870,6 +871,22 @@ def targets():
         name = "click@8.1.7",
         wheel = ":_wheel_click@8.1.7",
         testonly = "click" in _TESTONLY_DEPS,
+    )
+
+    _codeowners_0_8_0_deps = [
+        ":typing-extensions@4.12.2",
+    ]
+
+    native.alias(
+        name = "_wheel_codeowners@0.8.0",
+        actual = "@pycross_lock_file_wheel_codeowners_0.8.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "codeowners@0.8.0",
+        deps = _codeowners_0_8_0_deps,
+        wheel = ":_wheel_codeowners@0.8.0",
+        testonly = "codeowners" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -8504,6 +8521,16 @@ def repositories():
         ],
         sha256 = "ae74fb96c20a0277a1d615f1e4d73c8414f5a98db8b799a7931d1582f3390c28",
         downloaded_file_path = "click-8.1.7-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_codeowners_0.8.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/75/e5/ae08304853f5c6184292e9c679458623c937a2e33d98730ce30fa8f4a8b5/codeowners-0.8.0-py3-none-any.whl",
+        ],
+        sha256 = "b92ce6f6c36dd9de5295c4dc285b2a3b14c81cae8b5eb3b05f0cfdbc4d93995a",
+        downloaded_file_path = "codeowners-0.8.0-py3-none-any.whl",
     )
 
     maybe(
