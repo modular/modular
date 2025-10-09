@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import itertools
 import json
 import logging
 import math
@@ -2151,7 +2150,7 @@ def main(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Save config and results to json
-    if args.save_result:
+    if args.result_filename:
         logger.info("saving results")
         result_json: dict[str, Any] = {}
 
@@ -2203,32 +2202,7 @@ def main(args: argparse.Namespace) -> None:
             result_json["lora_metrics"] = benchmark_result["lora_metrics"]
 
         # Save to file
-        if args.result_filename:
-            file_name = os.path.join(
-                args.result_dir or "", args.result_filename
-            )
-        else:
-            base_model_id = model_id.split("/")[-1]
-            max_concurrency_str = (
-                f"-concurrency{args.max_concurrency}"
-                if args.max_concurrency is not None
-                else ""
-            )
-            # When auto-generating file names, add suffixes if we have to to
-            # ensure we're not overwriting an existing file (best effort,
-            # subject to TOCTTOU).
-            for uniq_count in itertools.count(1):
-                if uniq_count == 1:
-                    uniq_suffix = ""
-                else:
-                    uniq_suffix = f"-{uniq_count}"
-                file_name = (
-                    f"{backend}-{args.request_rate}qps{max_concurrency_str}-"
-                    f"{base_model_id}-{current_dt}{uniq_suffix}.json"
-                )
-                file_name = os.path.join(args.result_dir or "", file_name)
-                if not os.path.exists(file_name):
-                    break
+        file_name = args.result_filename
         logger.info(f"Writing file: {file_name}")
         if os.path.isfile(file_name):
             logger.warning(
