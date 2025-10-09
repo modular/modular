@@ -841,9 +841,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Prepare Inputs Needed Regardless of Images
         with Tracer("prepare_input_ids"):
             input_ids = Tensor.from_numpy(
-                self._parallel_ops.concatenate(
-                    [ctx.next_tokens for ctx in context_batch]
-                )
+                np.concatenate([ctx.next_tokens for ctx in context_batch])
             ).to(self.devices[0])
 
         with Tracer("prepare_input_row_offsets"):
