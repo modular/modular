@@ -52,6 +52,10 @@ Literals now have a default type. For example, you can now bind
 - `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
   size 1 or 0.
 
+- `String` can now decode UTF-16 input using the `String(from_utf16=...)`
+  constructor. PR [#5255](https://github.com/modular/modular/pull/5255) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
