@@ -1093,8 +1093,8 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                     StringRef features, StringRef tuneCpu,
                     StringRef acceleratorArch, llvm::Reloc::Model relocModel) {
   std::string errorMessage;
-  const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(targetTriple.str(), errorMessage);
+  const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
+      llvm::Triple(targetTriple), errorMessage);
   if (!target)
     return Error("could not construct host target info: " + errorMessage);
 

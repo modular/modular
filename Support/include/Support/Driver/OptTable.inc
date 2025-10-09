@@ -20,7 +20,7 @@ enum ID {
   OPT_INVALID = 0,
 #define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,         \
                VISIBILITY, PARAM, HELPTEXT, HELPTEXTFORVARIANTS, METAVAR,      \
-               VALUES)                                                         \
+               VALUES, SUBCOMMANDIDSOFFSET)                                    \
   OPT_##ID,
 #include DRIVER_OPTIONS_PATH
 #undef OPTION
@@ -46,7 +46,7 @@ using llvm::opt::HelpHidden;
 static constexpr llvm::opt::OptTable::Info InfoTable[] = {
 #define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,         \
                VISIBILITY, PARAM, HELPTEXT, HELPTEXTFORVARIANTS, METAVAR,      \
-               VALUES)                                                         \
+               VALUES, SUBCOMMANDIDSOFFSET)                                    \
   {PREFIX,                                                                     \
    NAME,                                                                       \
    HELPTEXT,                                                                   \
@@ -60,7 +60,8 @@ static constexpr llvm::opt::OptTable::Info InfoTable[] = {
    options::OPT_##GROUP,                                                       \
    options::OPT_##ALIAS,                                                       \
    ALIASARGS,                                                                  \
-   VALUES},
+   VALUES,                                                                     \
+   SUBCOMMANDIDSOFFSET},
 #include DRIVER_OPTIONS_PATH
 #undef OPTION
 };
