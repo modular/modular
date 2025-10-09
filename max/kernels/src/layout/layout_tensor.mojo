@@ -2930,6 +2930,11 @@ struct LayoutTensor[
         """
         return self.tile[tile_size, simd_width_of[Self.dtype]()](tile_idx)
 
+    alias CornerCoordsType = IndexList[
+        len(flatten(Self.layout.shape)),
+        element_type = Self.layout_int_type,
+    ]
+
     @always_inline
     fn tile_with_offset[
         *tile_sizes: Int,
@@ -2937,11 +2942,8 @@ struct LayoutTensor[
         self,
         *tile_coords: Int,
     ) -> Tuple[
-        self.TileType[*tile_sizes],
-        IndexList[
-            len(flatten(self.layout.shape)),
-            element_type = Self.layout_int_type,
-        ],
+        Self.TileType[*tile_sizes],
+        Self.CornerCoordsType,
         Scalar[Self.linear_idx_type],
     ]:
         """Similar to `tile`, but also returns the corner coordinates of the
