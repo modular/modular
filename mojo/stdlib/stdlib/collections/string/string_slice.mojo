@@ -60,6 +60,7 @@ from collections.string._utf8 import (
     _is_valid_utf8,
     _utf8_byte_type,
     _utf8_first_byte_sequence_length,
+    _is_utf8_continuation_byte,
 )
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from hashlib.hasher import Hasher
@@ -255,7 +256,7 @@ struct CodepointSliceIter[
             #   Guaranteed not to go out of bounds because UTF-8
             #   guarantees there is always a "start" byte eventually before any
             #   continuation bytes.
-            while _utf8_byte_type(back_ptr[]) == 1:
+            while _is_utf8_continuation_byte(back_ptr[]):
                 byte_len += 1
                 back_ptr -= 1
 
@@ -834,6 +835,20 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # step.  Mojo supports slice type inference that can express this in the
         # static type system instead of debug_assert.
         debug_assert(span.step.or_else(1) == 1, "Slice step must be 1")
+
+        fn _check_last_bytes(span: Span[Byte]) -> Bool:
+            var amnt = Byte(1)
+            var b0 = Byte(0)
+            for b in reversed(span):
+                if not _is_utf8_continuation_byte(b):
+                    b0 = b
+                    break
+                amnt += 1
+            return Byte(_utf8_first_byte_sequence_length(b0)) == amnt
+
+        debug_assert(
+            _check_last_bytes(self._slice[span]), "sliced a multi-byte sequence"
+        )
         return Self(unsafe_from_utf8=self._slice[span])
 
     fn to_python_object(var self) raises -> PythonObject:
@@ -1072,8 +1087,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A new string containing the character at the specified position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic
-        # evaluation at compile time
+        # TODO(#5281): implement this for unicode
+        debug_assert(
+            self._slice[idx] < 0b1000_0000,
+            "String indexing is currently only for ASCII.",
+        )
         var result = String(capacity=1)
         result.append_byte(self._slice[idx])
         return result^
@@ -1301,10 +1319,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
 
         var r_idx = self.byte_length()
-        while r_idx > 0 and self[r_idx - 1] in chars:
+        var data = self.as_bytes()
+        while r_idx > 0 and data[r_idx - 1] in chars.as_bytes():
             r_idx -= 1
 
-        return Self(unsafe_from_utf8=self.as_bytes()[:r_idx])
+        return Self(unsafe_from_utf8=data[:r_idx])
 
     @always_inline
     fn rstrip(self) -> Self:
@@ -1327,11 +1346,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #     if not s.isspace():
         #         break
         #     r_idx -= 1
-        while (
-            r_idx > 0 and Codepoint(self.as_bytes()[r_idx - 1]).is_posix_space()
-        ):
+        var data = self.as_bytes()
+        while r_idx > 0 and Codepoint(data[r_idx - 1]).is_posix_space():
             r_idx -= 1
-        return Self(unsafe_from_utf8=self.as_bytes()[:r_idx])
+        return Self(unsafe_from_utf8=data[:r_idx])
 
     @always_inline
     fn lstrip(self, chars: StringSlice) -> Self:
@@ -1351,10 +1369,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
 
         var l_idx = 0
-        while l_idx < self.byte_length() and self[l_idx] in chars:
+        var data = self.as_bytes()
+        while l_idx < len(data) and data[l_idx] in chars.as_bytes():
             l_idx += 1
 
-        return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
+        return Self(unsafe_from_utf8=data[l_idx:])
 
     @always_inline
     fn lstrip(self) -> Self:
@@ -1377,12 +1396,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #     if not s.isspace():
         #         break
         #     l_idx += 1
-        while (
-            l_idx < self.byte_length()
-            and Codepoint(self.as_bytes()[l_idx]).is_posix_space()
-        ):
+        var data = self.as_bytes()
+        while l_idx < len(data) and Codepoint(data[l_idx]).is_posix_space():
             l_idx += 1
-        return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
+        return Self(unsafe_from_utf8=data[l_idx:])
 
     @always_inline
     fn codepoints(self) -> CodepointsIter[origin]:
@@ -1619,7 +1636,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
-        return _utf8_byte_type(byte) != 1
+        return not _is_utf8_continuation_byte(byte)
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
