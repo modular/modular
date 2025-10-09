@@ -22,6 +22,7 @@ from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
     PipelinesFactory,
     RequestID,
     TextGenerationInputs,
@@ -31,7 +32,6 @@ from max.interfaces import (
 from max.pipelines.lib import (
     IdentityPipelineTokenizer,
     PipelineConfig,
-    TextGenerationPipelineType,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
@@ -54,7 +54,9 @@ class MockContext(Mock):
         return self.status.is_done
 
 
-class MockValueErrorTokenGenerator(TextGenerationPipelineType[MockContext]):
+class MockValueErrorTokenGenerator(
+    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
+):
     """A mock generator that throws a value error when used."""
 
     def execute(

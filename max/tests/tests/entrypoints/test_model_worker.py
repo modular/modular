@@ -13,6 +13,7 @@ from unittest.mock import Mock
 import pytest
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
     PipelineTask,
     RequestID,
     TextGenerationInputs,
@@ -21,7 +22,6 @@ from max.interfaces import (
 from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
-    TextGenerationPipelineType,
 )
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
@@ -79,7 +79,9 @@ async def test_model_worker_propagates_exception(
             raise AssertionError
 
 
-class MockInvalidTokenGenerator(TextGenerationPipelineType[MockContext]):
+class MockInvalidTokenGenerator(
+    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
+):
     ERROR_MESSAGE = "I am invalid"
 
     def __init__(self) -> None:
@@ -117,7 +119,9 @@ async def test_model_worker_propagates_construction_exception(
             pass
 
 
-class MockSlowTokenGenerator(TextGenerationPipelineType[MockContext]):
+class MockSlowTokenGenerator(
+    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
+):
     def __init__(self) -> None:
         time.sleep(0.2)
 
