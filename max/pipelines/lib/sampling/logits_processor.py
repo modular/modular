@@ -13,21 +13,17 @@
 
 from __future__ import annotations
 
-from typing import TypeVar
-
 from max.driver import CPU, Tensor
-from max.interfaces.context import InputContext
+from max.interfaces import TextGenerationContextType
 from max.interfaces.logit_processors_type import (
     BatchLogitsProcessor,
     BatchProcessorInputs,
     ProcessorInputs,
 )
 
-T = TypeVar("T", bound=InputContext)
-
 
 def apply_logits_processors(
-    context_batch: list[T],
+    context_batch: list[TextGenerationContextType],
     batch_logits: Tensor,
     batch_logit_offsets: Tensor | None,
     batch_processors: list[BatchLogitsProcessor] | None = None,

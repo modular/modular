@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import InputContext
 from max.nn import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -55,8 +55,8 @@ class WhisperInputs(ModelInputs):
     decoder_input_ids: Tensor
 
 
-# TODO: Need specific InputContext type, not just this base type.
-class Whisper(PipelineModel[InputContext]):
+# TODO: Need specific Context type, not just this base type.
+class Whisper(PipelineModel[Any]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,

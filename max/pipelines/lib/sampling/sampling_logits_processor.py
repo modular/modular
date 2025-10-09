@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
-    TypeVar,
 )
 
 import numpy as np
@@ -29,7 +28,7 @@ import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import Model
-from max.interfaces import BatchProcessorInputs, InputContext
+from max.interfaces import BatchProcessorInputs, TextGenerationContextType
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
@@ -234,10 +233,7 @@ class FusedSamplingProcessor:
         self.step_counter += 1
 
 
-T = TypeVar("T", bound=InputContext)
-
-
-def _check_need_penalties(batch: list[T]) -> None:
+def _check_need_penalties(batch: list[TextGenerationContextType]) -> None:
     """Check if the batch has penalties, but do_penalties is False."""
     for context in batch:
         if (
@@ -253,7 +249,7 @@ def _check_need_penalties(batch: list[T]) -> None:
 
 @traced
 def _build_token_frequency_csr(
-    batch: list[T],
+    batch: list[TextGenerationContextType],
     padding_size: int,
     device: Device,
     include_prompt: bool = False,
@@ -321,7 +317,7 @@ def _build_token_frequency_csr(
 
 @traced
 def _build_min_tokens_masks(
-    batch: list[T],
+    batch: list[TextGenerationContextType],
     num_steps: int,
     device: Device,
     enable_min_tokens: bool,

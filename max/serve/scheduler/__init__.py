@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import TypeVar, cast
+from typing import cast
 
 from max.interfaces import (
     EmbeddingsContext,
-    InputContext,
     MAXPullQueue,
     Pipeline,
     PipelineInputsType,
@@ -58,8 +57,6 @@ __all__ = [
     "PrefillResponse",
     "load_scheduler",
 ]
-
-T = TypeVar("T", bound=InputContext)
 
 
 def load_scheduler(

@@ -29,7 +29,6 @@ from typing import (
     Any,
     Generic,
     Protocol,
-    TypeVar,
     runtime_checkable,
 )
 
@@ -50,7 +49,7 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import (
-    BaseContext,
+    BaseContextType,
     BatchLogitsProcessor,
     GenerationStatus,
     LogProbabilities,
@@ -173,10 +172,7 @@ class ModelOutputs:
     """Offsets to access variable length logits for each sequence."""
 
 
-T = TypeVar("T", bound=BaseContext)
-
-
-class PipelineModel(ABC, Generic[T]):
+class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
 
     _MAX_DEFAULT_BATCH_SIZE = 4096
@@ -377,7 +373,7 @@ class PipelineModel(ABC, Generic[T]):
     @abstractmethod
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[T],
+        context_batch: Sequence[BaseContextType],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
@@ -926,7 +922,9 @@ class TextGenerationPipeline(
         )
 
     @traced
-    def _maybe_sort_loras(self, batch: dict[RequestID, T]):  # noqa: ANN202
+    def _maybe_sort_loras(
+        self, batch: dict[RequestID, TextGenerationContextType]
+    ) -> dict[RequestID, TextGenerationContextType]:
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
         to be adjacent to each other.

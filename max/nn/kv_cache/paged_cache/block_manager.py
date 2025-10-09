@@ -356,7 +356,7 @@ class BlockManager:
         This increments the committed_idx.
 
         Args:
-            ctx: Request InputContext.
+            ctx: TextGenerationContext.
         """
 
         req_blocks = self.req_to_blocks[ctx.request_id]
