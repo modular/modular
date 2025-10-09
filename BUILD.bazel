@@ -87,6 +87,12 @@ alias(
 )
 
 alias(
+    name = "format-fast",
+    actual = "//bazel/lint:fix-fast",
+    tags = [TOP_LEVEL_TAG],
+)
+
+alias(
     name = "format",
     actual = "//bazel/lint:fix",
     tags = [TOP_LEVEL_TAG],
