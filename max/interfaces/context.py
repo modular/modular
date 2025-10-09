@@ -469,14 +469,14 @@ class InputContext(BaseContext, Protocol):
         ...
 
     @property
-    def max_length(self) -> int | None:
+    def max_length(self) -> int:
         """The maximum allowed length for this sequence.
 
         When set, generation will stop when this length is reached, regardless
         of other stopping criteria.
 
         Returns:
-            The maximum sequence length limit, or None if no limit is set.
+            The maximum sequence length limit.
         """
         ...
 
