@@ -1059,3 +1059,19 @@ fn bitwidth_from_instance[T: MyTrait, Inst: T]() -> ZInt:
 fn bitwidth_from_composition_instance[T: MyTrait & MyTrait2, Inst: T]() -> ZInt:
     # CHECK-NEXT: #kgen.get_witness<:!MyTrait !kgen.param<:!MyTrait_MyTrait2 T>, "associated_aliases::MyTrait", "BIT_WIDTH">
     return Inst.BIT_WIDTH
+
+
+# // -----
+
+
+trait DependentAssociatedTypeInDefault:
+    alias T1: AnyType
+    alias V1: Self.T1
+
+
+fn foo[
+    T: DependentAssociatedTypeInDefault,
+    # CHECK: V: !kgen.param<:!AnyType #kgen.get_witness<:!{{.*}} T, "{{.*}}", "T1">> = #kgen.get_witness<:!{{.*}} T, "{{.*}}", "V1">>
+    V: T.T1 = T.V1,
+]():
+    pass
