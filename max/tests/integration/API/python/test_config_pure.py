@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.entrypoints.cli.config import parse_task_flags
+from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.pipelines import PIPELINE_REGISTRY, SupportedEncoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig, SamplingConfig
 from test_common.mocks import (
@@ -831,3 +832,64 @@ def test_integration_full_config_initialization_do_penalties_speculative_decodin
         match="frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding.",
     ):
         _ = PipelineConfig(**kwargs)
+
+
+class TestSamplingConfig:
+    """Test suite for SamplingConfig."""
+
+    def test_from_generation_config_sampling_defaults_with_repetition_penalty(
+        self,
+    ) -> None:
+        """Test that do_penalties is True when repetition_penalty is set to non-default value."""
+        # Create sampling defaults with repetition_penalty=1.05
+        sampling_defaults = SamplingParamsGenerationConfigDefaults(
+            repetition_penalty=1.05
+        )
+
+        # Create SamplingConfig from the defaults
+        sampling_config = (
+            SamplingConfig.from_generation_config_sampling_defaults(
+                sampling_defaults
+            )
+        )
+
+        # Assert that do_penalties is True
+        assert sampling_config.do_penalties is True
+
+    def test_from_generation_config_sampling_defaults_with_default_repetition_penalty(
+        self,
+    ) -> None:
+        """Test that do_penalties is False when repetition_penalty is at default value."""
+        # Create sampling defaults with repetition_penalty=1.0 (default)
+        sampling_defaults = SamplingParamsGenerationConfigDefaults(
+            repetition_penalty=1.0
+        )
+
+        # Create SamplingConfig from the defaults
+        sampling_config = (
+            SamplingConfig.from_generation_config_sampling_defaults(
+                sampling_defaults
+            )
+        )
+
+        # Assert that do_penalties is False (since 1.0 is the default)
+        assert sampling_config.do_penalties is False
+
+    def test_from_generation_config_sampling_defaults_without_penalties(
+        self,
+    ) -> None:
+        """Test that do_penalties is False when no penalty parameters are set."""
+        # Create sampling defaults without any penalty parameters
+        sampling_defaults = SamplingParamsGenerationConfigDefaults(
+            temperature=0.7, top_k=50
+        )
+
+        # Create SamplingConfig from the defaults
+        sampling_config = (
+            SamplingConfig.from_generation_config_sampling_defaults(
+                sampling_defaults
+            )
+        )
+
+        # Assert that do_penalties is False
+        assert sampling_config.do_penalties is False
