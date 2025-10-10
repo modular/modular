@@ -135,6 +135,7 @@ struct OffloadInfo {
 struct OffloadCompilationResult {
   OwningOpRef<Operation *> func;
   IntegerAttr numCaptures;
+  mlir::DenseI64ArrayAttr captureSizes;
   SymbolConstantAttr populate;
   DenseMap<EmitAs, StringAttr> contents;
 
