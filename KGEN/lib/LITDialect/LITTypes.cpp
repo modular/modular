@@ -727,6 +727,12 @@ TypedAttr OriginType::stripMutCastAndFieldExtract(TypedAttr origin) {
   return origin;
 }
 
+/// Given a possibly sugared type, get the canonical type and cast it to an
+/// OriginType.
+OriginType OriginType::castCanonical(Type type) {
+  return llvm::cast<OriginType>(getCanonicalType(type));
+}
+
 //===----------------------------------------------------------------------===//
 // OriginSetType
 //===----------------------------------------------------------------------===//

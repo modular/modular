@@ -393,6 +393,10 @@ def LIT_OriginType : LITType<"Origin", "origin",
 
     /// Remove any OriginMutCast and ._mlir_origin if present.
     static TypedAttr stripMutCastAndFieldExtract(TypedAttr origin);
+
+    /// Given a possibly sugared type, get the canonical type and cast it to an
+    /// OriginType.
+    static OriginType castCanonical(Type type);
   }];
 }
 

@@ -410,6 +410,7 @@ RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
          "Not a VariadicPack struct?");
 
   TypedAttr origin = ASTType::extractOriginOf(SMLoc(), bindings[2], shared);
+  assert(origin && "Origin is null");
   return RefPackType::get(
       /*variadicList*/ bindings[4], origin,
       /*addrSpace*/

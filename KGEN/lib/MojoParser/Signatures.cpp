@@ -43,7 +43,7 @@ static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
   // call emission because Origin is parametric.  Therefore it will break
   // parameter inference.
   ASTDecl *typeDecl = ASTType(value.getType()).getDecl(shared);
-  if (!typeDecl || !isa<LIT::StructType>(value.getType()))
+  if (!typeDecl || !isa<LIT::StructType>(getCanonicalType(value.getType())))
     return {};
 
   // Check to see if it has the expected field of Origin.
@@ -67,15 +67,16 @@ static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
 /// underlying !lit.origin.  This returns null on failure.
 TypedAttr ASTType::extractOriginOf(SMLoc loc, TypedAttr value,
                                    SharedState &shared) {
+  // If this is a value of Origin struct type, process it.
+  if (auto extractVal =
+          digOutSingleField(value, ORIGIN_FIELD_NAME, loc, shared))
+    value = extractVal;
+
   // A raw !lit.origin always works.
   if (isa<OriginType>(value.getType()))
     return value;
-
-  // If this is a value of Origin type, process it.
-  if (auto extractVal =
-          digOutSingleField(value, ORIGIN_FIELD_NAME, loc, shared))
-    if (isa<OriginType>(extractVal.getType()))
-      return extractVal;
+  if (auto type = dyn_cast<OriginType>(getCanonicalType(value.getType())))
+    return ParamOperatorAttr::getRebind(value, type);
   return {};
 }
 

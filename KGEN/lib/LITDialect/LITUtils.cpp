@@ -59,17 +59,20 @@ StringRef LIT::demangleParameterName(StringRef name) {
 /// forms are: "imm expr", "mut expr", "mut=<expr>, expr" and "muttoimm expr"
 /// without quotes.
 void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
-  OriginType type = cast<OriginType>(value.getType());
+  // If the type is sugared, then we don't want to sugar this operation because
+  // round tripping would lose the sugar.
+  auto type = dyn_cast<OriginType>(value.getType());
+  auto castVal = dyn_cast<OriginMutCastAttr>(value);
 
-  // It is extremely common to have a OriginMutCastAttr cast from known
-  // mutable origin to known immutable origin (this happens when borrowed
-  // arguments are formed).  So much so that we sugar it.
-  if (auto castVal = dyn_cast<OriginMutCastAttr>(value);
-      castVal && type.isMutableKnown(false) &&
-      cast<OriginType>(castVal.getOperand().getType()).isMutableKnown(true)) {
+  // It is extremely common to have a OriginMutCastAttr cast from known mutable
+  // origin to known immutable origin (this happens when borrowed arguments are
+  // formed).  So much so that we sugar it.
+  if (type && castVal && type.isMutableKnown(false) &&
+      OriginType::castCanonical(castVal.getOperand().getType())
+          .isMutableKnown(true)) {
     p << "muttoimm ";
     value = castVal.getOperand();
-  } else {
+  } else if (type) {
     TypedAttr mutability = type.isMutable();
     if (auto boolAttr = dyn_cast<BoolAttr>(mutability)) {
       p << (boolAttr.getValue() ? "mut " : "imm ");

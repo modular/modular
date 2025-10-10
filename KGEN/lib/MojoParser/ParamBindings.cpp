@@ -288,7 +288,8 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
 
   // If the parameter already has the right type, then we're good.
   if (expectedType.isEqualCanon(bindingVal.getType()))
-    return bindingVal;
+    // Align sugar if necessary.
+    return ParamOperatorAttr::getRebind(bindingVal, expectedType);
 
   // If the parameter can be implicitly converted, do so.
   if (IREmitter::canImplicitlyConvertToType(
