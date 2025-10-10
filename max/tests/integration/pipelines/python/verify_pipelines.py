@@ -852,8 +852,8 @@ PIPELINES = {
             pipeline="internvl3-8b-instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=6.3e-1,
-            kl_div_threshold=5.9e-01,
+            cos_dist_threshold=3.0e-1,
+            kl_div_threshold=6.3e-01,
         ),
     ),
     "OpenGVLab/InternVL3-14B-Instruct-bfloat16": PipelineDef(
