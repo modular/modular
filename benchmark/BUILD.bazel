@@ -37,8 +37,8 @@ modular_py_binary(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/lib/API/python/max/benchmark/benchmark_shared",
         "//SDK/lib/API/python/max/diagnostics",
-        "//open-source/max/benchmark/benchmark_shared",
         requirement("aiohttp"),
         requirement("datasets"),
         requirement("huggingface-hub"),
