@@ -130,14 +130,18 @@ struct Struct_ep_init:
         _ = shmem_init(Int(gpu_ctx.id()), n_gpus_per_node)
 
         # Allocate SHMEM buffers for dispatch phase
-        var dispatch_send_p = shmem_malloc[DType.uint8](dispatch_send_size)
-        var dispatch_recv_p = shmem_malloc[DType.uint8](dispatch_recv_size)
-        var dispatch_recv_count_p = shmem_malloc[DType.uint64](n_experts)
+        var dispatch_send_p = shmem_malloc[DType.uint8](
+            UInt(dispatch_send_size)
+        )
+        var dispatch_recv_p = shmem_malloc[DType.uint8](
+            UInt(dispatch_recv_size)
+        )
+        var dispatch_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
 
         # Allocate SHMEM buffers for combine phase
-        var combine_send_p = shmem_malloc[DType.uint8](combine_send_size)
-        var combine_recv_p = shmem_malloc[DType.uint8](combine_recv_size)
-        var combine_recv_count_p = shmem_malloc[DType.uint64](n_experts)
+        var combine_send_p = shmem_malloc[DType.uint8](UInt(combine_send_size))
+        var combine_recv_p = shmem_malloc[DType.uint8](UInt(combine_recv_size))
+        var combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
 
         # Initialize receive count buffers to MAX_FINITE
         # This sentinel value indicates that no data has been received yet

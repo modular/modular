@@ -901,7 +901,7 @@ struct TMATensorTile[
         self.async_multicast_load(
             dst_slice,
             mem_barrier,
-            (coords[0], coords[1] + rank * tma_rows),
+            (coords[0], coords[1] + rank * UInt(tma_rows)),
             multicast_mask,
         )
 

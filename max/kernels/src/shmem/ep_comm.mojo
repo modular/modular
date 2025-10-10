@@ -354,7 +354,7 @@ fn dispatch_kernel[
                 input_tokens._offset(token_idx, 0)
             )
             token_fmt_type.copy_token_to_send_buf(
-                curr_send_buf_ptr, input_tensor_ptr, num_threads
+                curr_send_buf_ptr, input_tensor_ptr, UInt(num_threads)
             )
 
             if tid < UInt(top_k):

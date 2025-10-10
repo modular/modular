@@ -316,16 +316,18 @@ fn copy_dram_to_sram_lds[
         for i in range(32 // 16):
             var dst_partitions = dst.tile[32, 32](tile, 0).tile[16, 32](i, 0)
             var src_partitions = src.tile[32, 32](tile, 0).tile[16, 32](i, 0)
-            var worker_idx_with_offset = worker_idx + i * WARP_SIZE
+            var worker_idx_with_offset = worker_idx + UInt(i * UInt(WARP_SIZE))
             var src_dist = src_partitions.vectorize[1, load_width]().distribute[
                 thread_layout
             ](
-                (
-                    swizzle.value()(worker_idx_with_offset) if swizzle else Int(
-                        worker_idx_with_offset
+                UInt(
+                    (
+                        swizzle.value()(
+                            worker_idx_with_offset
+                        ) if swizzle else Int(worker_idx_with_offset)
                     )
+                    % UInt(WARP_SIZE)
                 )
-                % WARP_SIZE
             )
             alias dtype = src.dtype
             var src_offset = (Int(src_dist.ptr) - Int(src.ptr)) // size_of[
@@ -528,10 +530,10 @@ struct KBuffer[
             @parameter
             for depth_tile in range(depth // 128):
                 var smem_warp_tile = smem_tile.tile[BN, BK](
-                    0, get_warp_id() + num_warps * depth_tile
+                    0, get_warp_id() + UInt(num_warps * depth_tile)
                 )
                 var gmem_warp_tile = global_tile.tile[BN, BK](
-                    0, get_warp_id() + num_warps * depth_tile
+                    0, get_warp_id() + UInt(num_warps * depth_tile)
                 )
                 # load from dram to sram directly
                 num_loads += copy_dram_to_sram_lds[swizzle=swizzle,](
@@ -560,7 +562,7 @@ struct KBuffer[
         transpose_b: Bool,
     ](self, buffer: UInt, bk_tile: UInt):
         alias num_warps_n = BN // WN
-        var warp_col = get_warp_id() % num_warps_n
+        var warp_col = get_warp_id() % UInt(num_warps_n)
         var smem_tile = self.smem_iter.next_unsafe(buffer)[].tile[BN, BK](
             0, bk_tile
         )
@@ -613,7 +615,7 @@ fn load_4x16(tile: LayoutTensor, var lane_id_16: Int) -> SIMD[tile.dtype, 4]:
     alias thread_layout = Layout.row_major(4, 4)
     var dist_result = tile.vectorize[1, 4]().distribute_with_offset[
         thread_layout
-    ](lane_id_16)
+    ](UInt(lane_id_16))
     var offset = dist_result[2]
     var ptr = tile.ptr.address_space_cast[AddressSpace.SHARED]() + Int(offset)
     return ds_read_tr16_b64(ptr)
@@ -743,10 +745,10 @@ struct VBuffer[
             @parameter
             for depth_tile in range(depth // 128):
                 var smem_warp_tile = smem_tile.tile[BN, BK](
-                    0, get_warp_id() + num_warps * depth_tile
+                    0, get_warp_id() + UInt(num_warps * depth_tile)
                 )
                 var gmem_warp_tile = global_tile.tile[BN, BK](
-                    0, get_warp_id() + num_warps * depth_tile
+                    0, get_warp_id() + UInt(num_warps * depth_tile)
                 )
                 # load from dram to sram directly
 
@@ -884,7 +886,7 @@ struct QRegisterBuffer[
     @always_inline
     fn load_from_dram(mut self):
         alias num_warps_n = BN // WN
-        var warp_row = get_warp_id() // num_warps_n
+        var warp_row = get_warp_id() // UInt(num_warps_n)
         var bounds = max(
             min(Int32(WM), Int32(self.gmem_tensor.dim[0]() - WM * warp_row))
             * self.gmem_tensor.stride[0](),
@@ -1042,7 +1044,7 @@ fn _apply_mask[
                     alias fragment_col = fragment_layout(j)
                     var group_idx = lane_row
                     var q_head_idx = (
-                        block_idx.y * group + group_idx
+                        block_idx.y * UInt(group) + UInt(group_idx)
                     ) if token_gen else block_idx.y
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
                         IndexList[4, element_type = DType.uint32](
@@ -1465,7 +1467,7 @@ fn mha_single_batch_gfx950[
     var warp_row = warp_id // num_warps_n
     var warp_col = warp_id % num_warps_n
 
-    var kv_head_idx = block_idx.y // group
+    var kv_head_idx = block_idx.y // UInt(group)
 
     var q_tile_idx = block_idx.x
 
@@ -1543,13 +1545,13 @@ fn mha_single_batch_gfx950[
         BK=BK,
         num_threads=num_threads,
         depth=depth,
-        kv_num_heads = num_heads // group,
+        kv_num_heads = num_heads // UInt(group),
     ](
         k,
-        batch_idx,
+        UInt(batch_idx),
         kv_head_idx,
         smem_manager.get_k_ptr[k_t.dtype](),
-        num_keys,
+        UInt(num_keys),
     )
 
     var v_buffer = VBuffer[
@@ -1559,8 +1561,14 @@ fn mha_single_batch_gfx950[
         BK=BK,
         depth=depth,
         num_threads=num_threads,
-        kv_num_heads = num_heads // group,
-    ](v, batch_idx, kv_head_idx, smem_manager.get_v_ptr[v_t.dtype](), num_keys)
+        kv_num_heads = num_heads // UInt(group),
+    ](
+        v,
+        UInt(batch_idx),
+        kv_head_idx,
+        smem_manager.get_v_ptr[v_t.dtype](),
+        UInt(num_keys),
+    )
 
     alias num_v_loads = 4
     alias num_k_loads = 4
@@ -1591,7 +1599,7 @@ fn mha_single_batch_gfx950[
         # barrier()
         var mask_status = mask.status(
             Index[dtype = DType.uint32](
-                Int(q_tile_idx * BM + start_pos),
+                Int(q_tile_idx * BM + UInt(start_pos)),
                 Int(kv_tile_start_row),
             ),
             Index[dtype = DType.uint32](Int(BM), Int(BN)),
@@ -1635,7 +1643,7 @@ fn mha_single_batch_gfx950[
                     accum_type,
                     q_type,
                     True,
-                ](loop_counter % 2, i)
+                ](UInt(loop_counter % 2), i)
 
             @parameter
             for k_mma in range(num_k_mmas2):
@@ -1648,7 +1656,7 @@ fn mha_single_batch_gfx950[
 
         block_sync_lds_direct_load(num_k_loads + num_v_loads)
         # barrier()
-        v_buffer.load_from_shared(loop_counter % 2, 0)
+        v_buffer.load_from_shared(UInt(loop_counter % 2), 0)
 
         # @parameter
         # for i in range(12):
@@ -1739,7 +1747,7 @@ fn mha_single_batch_gfx950[
 
             @parameter
             if i != 0:
-                v_buffer.load_from_shared(loop_counter % 2, i)
+                v_buffer.load_from_shared(UInt(loop_counter % 2), i)
 
             var p_mma_tile_interleaved = p_buffer.interleave[i]()
 
@@ -1747,15 +1755,17 @@ fn mha_single_batch_gfx950[
             for k_mma_idx in range(v_buffer.num_k_tiles):
                 tensor_core_mma.mma[swap_a_b=swap_a_b](
                     p_mma_tile_interleaved.tile[1, simd_width](0, k_mma_idx),
-                    v_buffer.mma_tile.tile[depth // mma_shape[0], simd_width](
-                        k_mma_idx, 0
-                    ),
+                    v_buffer.mma_tile.tile[
+                        depth // UInt(mma_shape[0]), simd_width
+                    ](k_mma_idx, 0),
                     out_reg_tile,
                 )
         block_sync_lds_direct_load(num_k_loads + num_v_loads)
         # barrier()
         loop_counter = loop_counter ^ 1
-        k_buffer.load_from_shared[accum_type, q_type, True](loop_counter % 2, 0)
+        k_buffer.load_from_shared[accum_type, q_type, True](
+            UInt(loop_counter % 2), 0
+        )
 
         # @parameter
         # for i in range(12):

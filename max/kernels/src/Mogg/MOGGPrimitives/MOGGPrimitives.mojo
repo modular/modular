@@ -504,9 +504,9 @@ fn mogg_async_ready(async_ptr: OpaquePointer):
 
 @register_internal("mgp.assert")
 @no_inline
-fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: UInt) raises:
+fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: Int) raises:
     if not cond:
-        raise Error(pack_string_res(msg_ptr, msg_len))
+        raise Error(pack_string_res(msg_ptr, UInt(msg_len)))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -948,11 +948,11 @@ fn mgp_debug_tensor_print[
     buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     shape: IndexList[spec_rank],
     label_ptr: UnsafePointer[Byte],
-    label_len: UInt,
+    label_len: Int,
 ) raises:
     external_call["KGEN_CompilerRT_DebugTensorPrint", NoneType](
         label_ptr,
-        label_len,
+        UInt(label_len),
         dtype,
         UnsafePointer(to=shape.data),
         spec_rank,
