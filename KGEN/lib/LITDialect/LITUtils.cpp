@@ -61,26 +61,31 @@ StringRef LIT::demangleParameterName(StringRef name) {
 void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
   // If the type is sugared, then we don't want to sugar this operation because
   // round tripping would lose the sugar.
-  auto type = dyn_cast<OriginType>(value.getType());
-  auto castVal = dyn_cast<OriginMutCastAttr>(value);
-
-  // It is extremely common to have a OriginMutCastAttr cast from known mutable
-  // origin to known immutable origin (this happens when borrowed arguments are
-  // formed).  So much so that we sugar it.
-  if (type && castVal && type.isMutableKnown(false) &&
-      OriginType::castCanonical(castVal.getOperand().getType())
-          .isMutableKnown(true)) {
-    p << "muttoimm ";
-    value = castVal.getOperand();
-  } else if (type) {
-    TypedAttr mutability = type.isMutable();
-    if (auto boolAttr = dyn_cast<BoolAttr>(mutability)) {
-      p << (boolAttr.getValue() ? "mut " : "imm ");
-    } else {
-      p << "mut=";
-      printParamValue(p, mutability);
-      p << ", ";
+  if (auto castVal = dyn_cast<OriginMutCastAttr>(value)) {
+    if (auto type = dyn_cast<OriginType>(value.getType())) {
+      if (auto srcType = dyn_cast<OriginType>(castVal.getOperand().getType())) {
+        // It is extremely common to have a OriginMutCastAttr cast from known
+        // mutable origin to known immutable origin (this happens when borrowed
+        // arguments are formed).  So much so that we sugar it.
+        if (type.isMutableKnown(false) && srcType.isMutableKnown(true)) {
+          p << "muttoimm ";
+          // Now that the type is specified, print the origin value itself.
+          printParamValue(p, castVal.getOperand());
+          return;
+        }
+      }
     }
+  }
+
+  auto srcType =
+      ::cast<OriginType>(SugarAttr::stripTopLevelSugar(value.getType()));
+  TypedAttr mutability = srcType.isMutable();
+  if (auto boolAttr = dyn_cast<BoolAttr>(mutability)) {
+    p << (boolAttr.getValue() ? "mut " : "imm ");
+  } else {
+    p << "mut=";
+    printParamValue(p, mutability);
+    p << ", ";
   }
 
   // Now that the type is specified, print the origin value itself.
