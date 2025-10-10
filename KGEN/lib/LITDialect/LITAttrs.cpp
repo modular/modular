@@ -1247,81 +1247,6 @@ static bool canElideSugaredBuiltinApply(TypedAttr attr) {
   return false;
 }
 
-namespace {
-/// This class strips off all canonical information maintaining just the sugared
-/// form.
-class Sugarizer : public ParameterReplacer<Sugarizer> {
-  template <typename T>
-  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
-  doReplace(T value, size_t depth) {
-    // Param/Symbol references are handled specially because the decl being
-    // referenced may have a sugared type must always be referred to that
-    // sugared type (they must match up).  Handle this by using a rebind to the
-    // canonical type.
-    if constexpr (std::is_base_of_v<Attribute, T>) {
-      // If we see a SugarAttr completely discard the nested expressions and
-      // just keep the sugared form.
-      if (auto sugar = dyn_cast<SugarAttr>(value)) {
-        auto newType = this->replaceImpl(sugar.getType(), depth);
-        return ParamOperatorAttr::getRebind(sugar.getSugared(), newType);
-      }
-
-      // We can't change the type of a decl reference, because it will cause the
-      // verifier to complain.  Instead, form a canonical form by using the
-      // existing reference and immediately rebinding the sugar away.
-      if (isa<ParamDeclRefAttr, ParamIndexRefAttr, SymbolConstantAttr>(value)) {
-        auto ref = cast<TypedAttr>(value);
-        auto newType = this->replaceImpl(ref.getType(), depth);
-        return ParamOperatorAttr::getRebind(ref, newType);
-      }
-
-      // The values specified for BindParamsAttr must align with the declared
-      // types of the parameters, even if those types are canonical.
-      if (auto bind = dyn_cast<BindParamsAttr>(value)) {
-        auto newGenerator =
-            cast<TypedAttr>(this->replaceImpl(bind.getGenerator(), depth));
-        bool changed = newGenerator != bind.getGenerator();
-        SmallVector<TypedAttr> canBindings;
-        for (auto param : bind.getParamValues()) {
-          auto newParam = cast<TypedAttr>(this->replaceImpl(param, depth));
-          // The parameter values must line up with the declared types of the
-          // generator, but need to be canonicalized within themselves.
-          if (newParam.getType() != param.getType())
-            newParam = ParamOperatorAttr::getRebind(newParam, param.getType());
-          canBindings.push_back(newParam);
-          changed |= newParam != param;
-        }
-        auto newType = this->replaceImpl(bind.getType(), depth);
-        changed |= newType != bind.getType();
-        if (!changed)
-          return bind;
-        return BindParamsAttr::get(newGenerator.getContext(), newGenerator,
-                                   canBindings, newType);
-      }
-    }
-
-    // Otherwise, recursively walk and rebuild the attribute with
-    // canonicalized subelements.
-    SmallVector<Attribute, 16> newAttrs;
-    SmallVector<Type, 16> newTypes;
-    bool changed = false;
-    auto walkFn = [&](auto value, SmallVectorImpl<decltype(value)> &values) {
-      auto newValue = this->replaceImpl(value, depth);
-      changed |= newValue != value;
-      values.push_back(newValue);
-    };
-    value.walkImmediateSubElements(
-        [&](Attribute attr) { walkFn(attr, newAttrs); },
-        [&](Type type) { walkFn(type, newTypes); });
-    if (!changed)
-      return value;
-    return value.replaceImmediateSubElements(newAttrs, newTypes);
-  }
-
-  friend class ParameterReplacer<Sugarizer>;
-};
-}; // end anonymous namespace
-
 static ParseResult parseSugarAttr(AsmParser &p, TypedAttr &sugared,
                                   TypedAttr &original, TypedAttr &canonical) {
   Type type;
@@ -1351,11 +1276,6 @@ TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
   if (kind == SugarKind::AlwaysInlineBuiltin &&
       canElideSugaredBuiltinApply(original))
     return original;
-
-  // The sugared form may contain recursive expressions (e.g. in the case of an
-  // apply expression).  Since it will only be shown to users, we can strip out
-  // any structural information to simplify it in IR dumps.
-  sugared = Sugarizer().replace(sugared);
 
   auto canonical = getCanonicalAttr(original);
   return Base::get(sugared.getContext(), kind, sugared, original, canonical,
