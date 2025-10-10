@@ -1275,7 +1275,7 @@ PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
       deprecated(declRef.getDeprecationWarning().value_or(StringRef{})) {
   auto funcOp = cast<FnOp>(declRef.getIfOperation());
   isStaticFlag = funcOp.getIsStatic();
-  isImplicitConversionFlag = funcOp.getImplicitConversion();
+  isImplicitConversionFlag = funcOp.isImplicitConversion();
   isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
   isDefFlag = funcOp.isDef();
   isInit = funcOp.getSpecialFunctionInfo().isInitializer();

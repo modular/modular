@@ -791,6 +791,8 @@ void FnOp::print(OpAsmPrinter &p) {
     ignoredAttrNames.push_back(getLLVMMetadataArrayAttrName());
   if (getLLVMArgMetadataArray().empty())
     ignoredAttrNames.push_back(getLLVMArgMetadataArrayAttrName());
+  if (!isImplicitConversion())
+    ignoredAttrNames.push_back(getImplicitConversionAttrName());
 
   p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs(),
                                      ignoredAttrNames);
@@ -889,7 +891,9 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         TypeAttr::get(signature.getBody().getValues()),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         /*isStatic=*/none, /*isDef=*/none, /*isSynthetic=*/none,
-        /*isImplicitConversion=*/none, /*isExtern=*/none, /*isSelfDeinit=*/none,
+        ImplicitConversionKindAttr::get(ctx, ImplicitConversionKind::None),
+        /*isExtern=*/none,
+        /*isSelfDeinit=*/none,
         /*isDefaultedTraitFn=*/none, /*disabled=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),

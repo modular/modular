@@ -14,6 +14,20 @@
 include "mlir/IR/EnumAttr.td"
 
 //===----------------------------------------------------------------------===//
+// ImplicitConversionKind
+//===----------------------------------------------------------------------===//
+
+def LIT_ImplicitConversionKind : I32EnumAttr<
+  "ImplicitConversionKind", "implicit conversion kind",
+[
+  I32EnumAttrCase<"None", 0, "none">,
+  I32EnumAttrCase<"Implicit", 1, "implicit">
+]> {
+  let cppNamespace = "::M::KGEN::LIT";
+  let genSpecializedAttr = 0;
+}
+
+//===----------------------------------------------------------------------===//
 // SugarKind
 //===----------------------------------------------------------------------===//
 
