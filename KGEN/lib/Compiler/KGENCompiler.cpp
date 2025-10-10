@@ -133,10 +133,49 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   b.create<ReturnOp>(call.getResults());
 }
 
+/// Return size of the \p type in bits.
+/// TODO: Consider to merge it with similar functionality in `LLVMDataLayout`.
+int64_t KGEN::getTypeSizeInBits(TargetInfoAttr target, Type type) {
+  return 8 * TypeSwitch<Type, int64_t>(type)
+                 .Case<KGEN::StringType>([&](KGEN::StringType strTy) {
+                   return *strTy.getTypeSize(target);
+                 })
+                 .Case<KGEN::VariadicType>([&](KGEN::VariadicType varTy) {
+                   return *varTy.getTypeSize(target);
+                 })
+                 .Case<KGEN::PointerType>([&](KGEN::PointerType ptrTy) {
+                   return *ptrTy.getTypeSize(target);
+                 })
+                 .Case<KGEN::StructType>([&](KGEN::StructType structTy) {
+                   return *structTy.getTypeSize(target);
+                 })
+                 .Case<KGEN::VariantType>([&](KGEN::VariantType varTy) {
+                   return *varTy.getTypeSize(target);
+                 })
+                 .Case<POP::ArrayType>([&](POP::ArrayType arrTy) {
+                   return *arrTy.getTypeSize(target);
+                 })
+                 .Case<POP::UnionType>([&](POP::UnionType unTy) {
+                   return *unTy.getTypeSize(target);
+                 })
+                 .Case<POP::SIMDType>([&](POP::SIMDType simdTy) {
+                   return *simdTy.getTypeSize(target);
+                 })
+                 .Case<IntegerType, FloatType>(
+                     [&](Type ty) { return ty.getIntOrFloatBitWidth() / 8; })
+                 .Case<IndexType>([&](IndexType idxTy) {
+                   return target.resolveIndexBitWidth() / 8;
+                 })
+                 .Default([](Type type) {
+                   llvm_unreachable("Cannot get size of the type.");
+                   return 0;
+                 });
+}
+
 /// HACK HACK HACK https://github.com/modularml/modular/issues/22959
 /// HACK: Read out the magic attribute used to propagate captures across device
 /// boundaries, generate the capture function, and write them into the buffer.
-static std::pair<OwningOpRef<FuncOp>, unsigned>
+static std::tuple<OwningOpRef<FuncOp>, unsigned, mlir::DenseI64ArrayAttr>
 writeCaptureArgs(ModuleOp module, StringAttr name) {
   // First, go find the elaborated instance of the function.
   FuncOp sliced;
@@ -178,6 +217,8 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
   // FIXME: This does not account for copy constructors, obviously.
   Block *body = b.createBlock(&func->getBodyRegion());
   Value argPtrs = body->addArgument(sig.getArguments().front(), b.getLoc());
+  TargetInfoAttr target = lookupTargetInfo(module);
+  SmallVector<int64_t> typeSizes;
   for (auto [i, capture] : llvm::enumerate(captures)) {
     // ```
     // %value = pop.compiler.global_load "var" : T
@@ -198,12 +239,13 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
     Value gep = b.create<POP::OffsetOp>(
         argPtrPtrs, b.create<ParamConstantOp>(b.getIndexAttr(i)));
     Value opaque = b.create<POP::PointerBitcastOp>(nonePtr, ptr);
+    typeSizes.push_back(KGEN::getTypeSizeInBits(target, type));
     b.create<POP::StoreOp>(opaque, gep);
   }
   b.create<ReturnOp>(
       b.create<ParamConstantOp>(b.getAttr<NoneAttr>()).getResult());
 
-  return {std::move(func), captures.size()};
+  return {std::move(func), captures.size(), b.getDenseI64ArrayAttr(typeSizes)};
 }
 
 static StringAttr getXXH3Hash(StringAttr strAttr) {
@@ -296,7 +338,8 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
-  auto [capturesFunc, numCaptures] = writeCaptureArgs(*module, name);
+  auto [capturesFunc, numCaptures, captureSizes] =
+      writeCaptureArgs(*module, name);
 
   // Handle the emission options.
   ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
@@ -504,7 +547,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if (failed(pm.run(*module)))
         return Error("failed to run the pass manager for offload functions");
 
-      llvm::MapVector<uint64_t, std::pair<OwningOpRef<FuncOp>, unsigned>>
+      llvm::MapVector<uint64_t, std::tuple<OwningOpRef<FuncOp>, unsigned,
+                                           mlir::DenseI64ArrayAttr>>
           captures;
 
       llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds;
@@ -512,12 +556,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       for (auto [op, symbols] : offloadInfo.symbols) {
         for (auto [symbol, kernel] : symbols) {
 
-          auto [capturesFunc, numCaptures] =
+          auto [capturesFunc, numCaptures, captureSizes] =
               writeCaptureArgs(*module, kernel.name);
 
           captures.insert(
-              {kernel.kernelId,
-               std::make_pair(std::move(capturesFunc), numCaptures)});
+              {kernel.kernelId, std::make_tuple(std::move(capturesFunc),
+                                                numCaptures, captureSizes)});
           kernelEmissionKinds.insert({kernel.kernelId, kernel.emissionKinds});
         }
       }
@@ -562,8 +606,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         if (iter == captures.end())
           return Error("Can't find offload capture.");
 
-        OwningOpRef<FuncOp> func = std::move(iter->second.first);
-        unsigned numCaptures = iter->second.second;
+        OwningOpRef<FuncOp> func = std::move(std::get<0>(iter->second));
+        unsigned numCaptures = std::get<1>(iter->second);
+        mlir::DenseI64ArrayAttr captureSizes = std::get<2>(iter->second);
 
         auto populate = cast<FuncOp>(func.get());
         auto populateFnRef = SymbolConstantAttr::get(populate);
@@ -582,6 +627,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         targetResult.insert(
             {kernelID, OffloadCompilationResult{{std::move(func)},
                                                 b.getIndexAttr(numCaptures),
+                                                captureSizes,
                                                 populateFnRef,
                                                 std::move(contents),
                                                 std::move(moduleNames)}});

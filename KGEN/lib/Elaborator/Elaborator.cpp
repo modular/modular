@@ -17,6 +17,7 @@
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
@@ -2438,22 +2439,43 @@ static WalkResult rewriteCompileOffloadOp(
     return WalkResult::interrupt();
   }
 
-  OpBuilder b(op);
+  ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
   StringAttr content = iter->second.contents[emissionKind];
   StringAttr moduleName = iter->second.moduleNames[emissionKind];
   IntegerAttr numCaptures = iter->second.numCaptures;
-  auto structType = StructType::get(
-      op->getContext(),
-      {content.getType(), moduleName.getType(), numCaptures.getType()});
+  mlir::DenseI64ArrayAttr captureSizes = iter->second.captureSizes;
+  PointerType nonePtr = PointerType::get(KGEN::NoneType::get(op->getContext()));
+  auto structType = StructType::get(op->getContext(), {
+                                                          content.getType(),
+                                                          moduleName.getType(),
+                                                          numCaptures.getType(),
+                                                          nonePtr,
+                                                      });
 
   SmallVector<Value> values;
 
-  auto constantV = b.create<ParamConstantOp>(op.getLoc(), content);
-  auto moduleNameV = b.create<ParamConstantOp>(op.getLoc(), moduleName);
-  auto numCapturesV = b.create<ParamConstantOp>(op.getLoc(), numCaptures);
+  auto constantV = b.create<ParamConstantOp>(content);
+  auto moduleNameV = b.create<ParamConstantOp>(moduleName);
+  auto numCapturesV = b.create<ParamConstantOp>(numCaptures);
+  // Allocate an array numCaptures elements of int64 integers to store capture
+  // sizes
+  auto captureSizesV = b.create<POP::StackAllocationOp>(
+      PointerType::get(captureSizes.getElementType()), numCaptures.getInt());
+  for (auto [i, typeSize] : llvm::enumerate(captureSizes.asArrayRef())) {
+    Value gep = b.create<POP::OffsetOp>(
+        captureSizesV, b.create<ParamConstantOp>(b.getIndexAttr(i)));
+    b.create<POP::StoreOp>(
+        b.create<ParamConstantOp>(b.getI64IntegerAttr(typeSize)), gep);
+  }
+  auto opaqueCaptureSizesV =
+      b.create<POP::PointerBitcastOp>(nonePtr, captureSizesV);
+
+  assert(numCaptures.getInt() == captureSizes.size() &&
+         "Num captures and number of their sizes mismatch");
   values.push_back(constantV);
   values.push_back(moduleNameV);
   values.push_back(numCapturesV);
+  values.push_back(opaqueCaptureSizesV);
   auto newOp = b.create<StructCreateOp>(op->getLoc(), structType, values);
 
   op->replaceUsesOfWith(op.getResult(), newOp);

@@ -2199,18 +2199,25 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
   kgen.param.declare *"foo()": () capturing -> index = <@FOO>
   // CHECK: [[STR:%.*]] = kgen.param.constant: string = <"{{.*}}">
   // CHECK-NEXT: [[STR1:%.*]] = kgen.param.constant: string = <"{{.*}}">
-  // CHECK-NEXT: [[NUM:%.*]] = kgen.param.constant = <1>
-  // CHECK: %1 = kgen.struct.create([[STR]], [[STR1]], [[NUM]]) : !kgen.struct<(string, string, index)>
+  // CHECK-NEXT: [[NUM_CAPTURES:%.*]] = kgen.param.constant = <1>
+  // CHECK-NEXT: [[CAPTURE_SIZES:%.*]] = pop.stack_allocation 1 x i64
+  // CHECK-NEXT: [[INDEX0:%.*]] = kgen.param.constant = <0>
+  // CHECK-NEXT: [[GEP0:%.*]] = pop.offset [[CAPTURE_SIZES]][[[INDEX0]]] : !kgen.pointer<i64>
+  // CHECK-NEXT: [[CAPTURE_SIZE:%.*]] = kgen.param.constant: i64 = <64>
+  // CHECK-NEXT: pop.store [[CAPTURE_SIZE]], [[GEP0]] : !kgen.pointer<i64>
+  // CHECK-NEXT: [[OPAQUE_CAPTURE_SIZES:%.*]] = pop.pointer.bitcast [[CAPTURE_SIZES]] : !kgen.pointer<i64> to !kgen.pointer<none>
+  // CHECK: kgen.struct.create([[STR]], [[STR1]], [[NUM_CAPTURES]], [[OPAQUE_CAPTURE_SIZES]]) : !kgen.struct<(string, string, index, pointer<none>)>
 
   kgen.param.declare nvptx: target = <#kgen.target<triple = "nvptx64-nvidia-cuda",
                                          arch = "sm_80",
                                          simd_bit_width = 128,
                                          index_bit_width = 64,
-                                         tune_cpu = "sm_80">>
+                                         tune_cpu = "sm_80",
+                                         data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64">>
   %1 = kgen.compile_offload<nvptx, 2, "",
                             :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">>
                             : !kgen.struct<(string, index)>
-  // CHECK-NEXT: %2 = kgen.call @"HELLO,x=FOO_populate_captures"(%arg0) : (!kgen.pointer<none>) capturing -> !kgen.none
+  // CHECK-NEXT: kgen.call @"HELLO,x=FOO_populate_captures"(%arg0) : (!kgen.pointer<none>) capturing -> !kgen.none
   kgen.param.declare x: (!kgen.pointer<none>) capturing -> !kgen.none = <#kgen.compile_offload_closure<
     nvptx, #kgen.symbol.constant<@HELLO<:() capturing -> index *"foo()">> : !kgen.generator<() capturing -> !kgen.none>>>
   %2 = kgen.call_param[(!kgen.pointer<none>) capturing -> !kgen.none: x](%arg0)
