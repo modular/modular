@@ -21,6 +21,7 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
+from collections.string.string_slice import _to_string_slice_list
 
 
 # ===-----------------------------------------------------------------------===#
@@ -53,7 +54,9 @@ def main():
     @parameter
     for filename in files:
         var file_path = _dir_of_current_file() / "data" / (filename + ".txt")
-        var items_to_parse = file_path.read_text().splitlines()
+        var items_to_parse = _to_string_slice_list(
+            file_path.read_text().splitlines()
+        )
         var nb_of_bytes = 0
         for item2 in items_to_parse:
             nb_of_bytes += len(item2)

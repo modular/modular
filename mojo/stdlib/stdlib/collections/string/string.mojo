@@ -80,8 +80,8 @@ from collections.string._parsing_numbers.parsing_floats import _atof
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     CodepointSliceIter,
-    _to_string_list,
     _unsafe_strlen,
+    _SplitlinesIter,
 )
 from hashlib.hasher import Hasher
 from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
@@ -1452,21 +1452,23 @@ struct String(
         """
         return self.as_string_slice().split(sep, maxsplit=maxsplit)
 
-    fn splitlines(
-        self, keepends: Bool = False
-    ) -> List[StringSlice[__origin_of(self)]]:
+    fn splitlines[
+        keep_ends: Bool = False
+    ](self) -> _SplitlinesIter[
+        __origin_of(self), keep_ends=keep_ends, forward=True
+    ]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
         `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
-        Args:
-            keepends: If True, line breaks are kept in the resulting strings.
+        Parameters:
+            keep_ends: Whether to keep the line breaks in the resulting slices.
 
         Returns:
-            A List of Strings containing the input split by line boundaries.
+            An iterator of StringSlices over the input split by line boundaries.
         """
-        return self.as_string_slice().splitlines(keepends)
+        return self.as_string_slice().splitlines[keep_ends=keep_ends]()
 
     fn replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`

@@ -80,6 +80,169 @@ alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
 
 
+@fieldwise_init
+struct _RangedIteratorWrapper[
+    is_mutable: Bool, //,
+    origin: Origin[is_mutable],
+    keep_ends: Bool,
+    forward: Bool = True,
+](ImplicitlyCopyable, Iterable, Iterator, Movable, Writable):
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    alias Element = StringSlice[origin]
+
+    var _inner_iter: _SplitlinesIter[
+        origin=origin, keep_ends=keep_ends, forward=forward
+    ]
+    var _how: Slice
+    var _idx: Int
+
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return (
+            self._inner_iter.__has_next__()
+            and self._idx < self._how.end.or_else(Int.MAX)
+        )
+
+    @always_inline
+    fn _next(mut self) -> StringSlice[origin]:
+        if self.__has_next__():
+            self._idx += 1
+            return self._inner_iter.__next__()
+        else:
+            return {}
+
+    fn __next__(mut self) -> StringSlice[origin]:
+        for _ in range(self._how.start.or_else(0)):
+            _ = self._next()
+        self._how.start = None
+        var value = self._next()
+        for _ in range(self._how.step.or_else(1) - 1):
+            _ = self._next()
+        return value
+
+    fn __getitem__(var self, idx: Some[Indexer]) -> StringSlice[origin]:
+        debug_assert(index(idx) >= 0, "no negative indexing.")
+        var i = 0
+        for elem in self:
+            if i < index(idx):
+                i += 1
+                continue
+            return elem
+        return {}
+
+    fn write_to(self, mut writer: Some[Writer]):
+        for elem in self.copy():
+            writer.write(elem)
+
+    fn __str__(self) -> String:
+        return String(self)
+
+
+@fieldwise_init
+struct _SplitlinesIter[
+    is_mutable: Bool, //,
+    origin: Origin[is_mutable],
+    *,
+    keep_ends: Bool = False,
+    forward: Bool = True,
+](ImplicitlyCopyable, Iterable, Iterator, Movable, Writable):
+    """Iterator for `StringSlice` over unicode line breaks.
+
+    Parameters:
+        is_mutable: Whether the slice is mutable.
+        origin: The origin of the underlying string data.
+        keep_ends: Whether to keep the line breaks in the resulting slices.
+        forward: The iteration direction. `False` is backwards.
+    """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    alias Element = StringSlice[origin]
+    var _slice: StringSlice[origin]
+
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self.copy()
+
+    fn __next__(mut self) -> StringSlice[origin]:
+        alias `\r` = UInt8(ord("\r"))
+        alias `\n` = UInt8(ord("\n"))
+
+        # highly performance sensitive code, benchmark before touching
+        @parameter
+        if forward:
+            var ptr = self._slice.unsafe_ptr()
+            var length = UInt(self._slice.byte_length())
+            var line_end = UInt(0)
+            var is_new_line = False
+            var b0 = Byte(0)
+            var char_len = UInt(0)
+
+            while not is_new_line and line_end < length:
+                b0 = ptr[line_end]
+                char_len = _utf8_first_byte_sequence_length(b0)
+                debug_assert(
+                    line_end + char_len <= length,
+                    "corrupted sequence causing unsafe memory access",
+                )
+                # percentage-wise a newline is uncommon compared to a normal byte
+                is_new_line = unlikely(
+                    _is_newline_char_utf8(ptr, line_end, b0, char_len)
+                )
+                line_end += char_len
+
+            var str_len = line_end
+            var is_r = unlikely(b0 == `\r`)
+            var may_be_r_n = is_r and likely(line_end < length)
+            var is_r_n = UInt(unlikely(may_be_r_n and ptr[line_end] == `\n`))
+            line_end += is_r_n
+
+            @parameter
+            if keep_ends:
+                str_len += is_r_n
+            else:
+                str_len -= UInt(splat(likely(is_new_line))) & char_len
+
+            self._slice = StringSlice[origin](
+                ptr=ptr + line_end, length=length - line_end
+            )
+            return StringSlice[origin](ptr=ptr, length=str_len)
+        else:
+            constrained[False, "reversed splitlines is not yet implemented"]()
+            return abort[StringSlice[origin]]()
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self._slice.byte_length() > 0
+
+    fn __getitem__(
+        self, span: Slice
+    ) -> _RangedIteratorWrapper[origin, keep_ends=keep_ends]:
+        return {{self._slice}, span, 0}
+
+    fn __getitem__(var self, idx: Some[Indexer]) -> StringSlice[origin]:
+        debug_assert(index(idx) >= 0, "no negative indexing.")
+        var i = 0
+        for elem in self:
+            if i < index(idx):
+                i += 1
+                continue
+            return elem
+        return {}
+
+    fn write_to(self, mut writer: Some[Writer]):
+        for elem in self.copy():
+            writer.write(elem)
+
+    fn __str__(self) -> String:
+        return String(self)
+
+
 struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
@@ -2068,85 +2231,21 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 offset += b_len
             return length != 0
 
-    fn splitlines(self, keepends: Bool = False) -> List[Self.Immutable]:
+    fn splitlines[
+        keep_ends: Bool = False
+    ](self) -> _SplitlinesIter[origin, keep_ends=keep_ends, forward=True]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
         `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
 
-        Args:
-            keepends: If True, line breaks are kept in the resulting strings.
+        Parameters:
+            keep_ends: Whether to keep the line breaks in the resulting slices.
 
         Returns:
-            A List of Strings containing the input split by line boundaries.
+            An iterator of StringSlices over the input split by line boundaries.
         """
-
-        # highly performance sensitive code, benchmark before touching
-        alias `\r` = UInt8(ord("\r"))
-        alias `\n` = UInt8(ord("\n"))
-
-        var output = List[Self.Immutable](capacity=128)  # guessing
-        var ptr = self.get_immutable().unsafe_ptr()
-        var length = self.byte_length()
-        var line_start = UInt(0)
-        var prev_b0 = Byte(0)
-
-        @always_inline
-        @parameter
-        fn _splitlines[keep: Bool]():
-            while line_start < UInt(length):
-                var line_end = line_start
-                var is_new_line = False
-                var b0 = Byte(0)
-                var char_len = UInt(0)
-
-                while not is_new_line and line_end < UInt(length):
-                    b0 = ptr[line_end]
-                    char_len = _utf8_first_byte_sequence_length(b0)
-                    debug_assert(
-                        line_end + char_len <= UInt(length),
-                        "corrupted sequence causing unsafe memory access",
-                    )
-                    # percentage-wise a newline is uncommon compared to a normal byte
-                    is_new_line = unlikely(
-                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
-                    )
-                    line_end += char_len
-
-                var str_len = line_end - line_start
-
-                # NOTE: when keep=True the algorithm needs to check the next
-                # character to see whether it is \r\n due to having to store the
-                # full line + the line ending.
-                # When keep=False it is much faster because the previous
-                # character is stored in a variable instead of having to deref a
-                # pointer
-                @parameter
-                if keep:
-                    var is_r = unlikely(b0 == `\r`)
-                    var may_be_r_n = is_r and likely(line_end < UInt(length))
-                    var is_r_n = UInt(
-                        unlikely(may_be_r_n and ptr[line_end] == `\n`)
-                    )
-                    line_end += is_r_n
-                    str_len += is_r_n
-                else:
-                    str_len -= UInt(splat(likely(is_new_line))) & char_len
-                    var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
-                    prev_b0 = b0
-                    if is_r_n:  # the line was already appended
-                        line_start = line_end
-                        continue
-                var s = Self.Immutable(ptr=ptr + line_start, length=str_len)
-                output.append(s)
-                line_start = line_end
-
-        if keepends:
-            _splitlines[keep=True]()
-        else:
-            _splitlines[keep=False]()
-
-        return output^
+        return {self}
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring
@@ -2489,6 +2588,34 @@ fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
         return len(v)
 
     return _to_string_list[items.T, len_fn, unsafe_ptr_fn](items)
+
+
+fn _to_string_list(var it: _RangedIteratorWrapper, out res: List[String]):
+    res = {capacity = 32}  # guessing
+    for elem in it:
+        res.append(String(elem))
+
+
+fn _to_string_slice_list(
+    var it: _RangedIteratorWrapper, out res: List[__type_of(it).Element]
+):
+    res = {capacity = 32}  # guessing
+    for elem in it:
+        res.append(elem)
+
+
+fn _to_string_list(var it: _SplitlinesIter, out res: List[String]):
+    res = {capacity = 32}  # guessing
+    for elem in it:
+        res.append(String(elem))
+
+
+fn _to_string_slice_list(
+    var it: _SplitlinesIter, out res: List[__type_of(it).Element]
+):
+    res = {capacity = 32}  # guessing
+    for elem in it:
+        res.append(elem)
 
 
 @always_inline
