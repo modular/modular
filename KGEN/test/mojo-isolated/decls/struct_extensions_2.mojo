@@ -11,18 +11,23 @@
 # --mojo-disable-builtins. --mojo-disable-builtins makes it so structs',
 # extensions' and conformances' immediateParents doesn't contain AnyType.
 
+
 struct Spaceship:
     var location: Int
+
     fn set_location(mut self, new_location: Int):
         self.location = new_location
+
 
 trait Flying:
     fn fly_to(mut self, new_location: Int):
         ...
 
+
 # CHECK-LABEL: lit.trait.decl @Flying
 # All traits implicitly inherit from AnyType (unless builtins are disabled)
 # CHECK-SAME: immediateParents = #M<symbols[@{{.*}}::@AnyType]>
+
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
 # CHECK-SAME: immediateParents = #M<symbols[@struct_extensions_2::@Flying]>
@@ -34,6 +39,7 @@ __extension Spaceship(Flying):
     fn fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
+
 # CHECK: kgen.conformance @"struct_extensions_2::Flying" {
 # CHECK-NEXT: kgen.witness "fly_to"
 # CHECK-SAME: = @struct_extensions_2::@"extension:Spaceship"::@"fly_to
@@ -43,16 +49,48 @@ __extension Spaceship(Flying):
 
 # // -----
 
+
 struct ZDType:
     fn __init__(out self):
         pass
 
+
 alias ZScalar = ZSIMD[ZDType(), size=1]
+
 
 struct ZSIMD[dtype: ZDType, size: Int]:
     pass
 
+
 trait ZConvertibleToPython:
     pass
+
+
 __extension ZSIMD(ZConvertibleToPython):
     pass
+
+
+# // -----
+
+# Tests accessing a struct's generic parameter from an extension.
+# Makes sure that the `.d` correctly grabs the struct's alias, and not
+# the one that's duplicated into the extension.
+# TODO(MOCO-522): Arcana docs here!
+
+
+struct Int:
+    pass
+
+
+struct MyContainer[d: Int]:
+    pass
+
+
+__extension MyContainer:
+    pass
+
+
+fn test_param_access[dtype: Int]():
+    # Note the Int below, thats what makes sure it's working.
+    # CHECK: lit.alias.decl *"element_type`": !Int = <dtype>
+    alias element_type = MyContainer[dtype].d
