@@ -68,6 +68,9 @@ what we publish.
 - `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
   size 1 or 0.
 
+- `assert_equal` and `assert_not_equal` now take in `Writable` arguments instead
+  of `Stringable` ones.
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
