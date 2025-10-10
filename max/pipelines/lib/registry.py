@@ -173,7 +173,24 @@ class SupportedArchitecture:
     context_validators: list[
         Callable[[TextContext | TextAndVisionContext], None]
     ] = field(default_factory=list)
-    """A list of callable context validators for the architecture."""
+    """A list of callable validators that verify context inputs before model execution.
+
+    These validators are called during context creation to ensure inputs meet
+    model-specific requirements. Validators should raise `InputError` for invalid
+    inputs, providing early error detection before expensive model operations.
+
+    .. code-block:: python
+
+        def validate_single_image(context: TextContext | TextAndVisionContext) -> None:
+            if isinstance(context, TextAndVisionContext):
+                if context.pixel_values and len(context.pixel_values) > 1:
+                    raise InputError(f"Model supports only 1 image, got {len(context.pixel_values)}")
+
+        my_architecture = SupportedArchitecture(
+            # ... other fields ...
+            context_validators=[validate_single_image],
+        )
+    """
 
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
