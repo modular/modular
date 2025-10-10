@@ -39,6 +39,11 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 archive_override(
     module_name = "rules_mojo",
     integrity = "sha256-fOkBbbvPAZmBji2zJ7KSXxpvCgxSTi6buwMJal4zOEE=",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/modular/rules_mojo/pull/63
+        "//bazel/public-patches:rules_mojo_mi355.patch",
+    ],
     strip_prefix = "rules_mojo-ffd2636629835c1f1287dcf6846251e088eec1d8",
     urls = [
         "https://github.com/modular/rules_mojo/archive/ffd2636629835c1f1287dcf6846251e088eec1d8.tar.gz",
