@@ -408,39 +408,6 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
               exportABI.has_value());
 }
 
-static void applyExtern(SMLoc loc, ASTDecl &decl, FnOp func,
-                        const CallNode &node) {
-  auto &shared = decl.getShared();
-  ArrayRef<Operand> operands = node.operands;
-  if (operands.size() != 1) {
-    shared.emitError(node.getLoc(), "@extern requires 1 argument");
-    return;
-  }
-
-  Operand operand = operands[0];
-  auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
-  if (!strNode || !operand.isPositional()) {
-    shared.emitError(node.getLoc(), "@extern requires a string argument");
-    return;
-  }
-  std::string libName = strNode->getValue();
-  func.setLinkageName(libName);
-
-  if (!func.getInputParams().empty()) {
-    shared.emitError(node.getLoc(), "@extern cannot be applied to a function "
-                                    "with parameters");
-    return;
-  }
-
-  if (decl.getParentDecl() && llvm::isa_and_nonnull<TraitDeclOp, StructDeclOp>(
-                                  decl.getParentDecl()->getIfOperation())) {
-    shared.emitError(node.getLoc(), "@extern cannot be applied to a method");
-    return;
-  }
-
-  func.setExternal(true);
-}
-
 namespace {
 struct FnSigDecorators : public SharedStateUser {
   FnSigDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
@@ -458,18 +425,22 @@ struct FnSigDecorators : public SharedStateUser {
                                                 SharedState &shared);
 
 private:
-  void applyStaticMethod(const DeclRefNode &node);
   void applyImplicitDecorator(const DeclRefNode &node);
-  void applyCopyOrMoveCapture(const CallNode &node, bool isMove,
-                              StringRef decorator);
+  void applyCopyOrMoveCapture(SMLoc decoratorLoc, const CallNode *callNode,
+                              bool isMove, StringRef decorator);
+  void applyExtern(SMLoc decoratorLoc, const CallNode *node);
+  void applyAlwaysInline(const CallNode *node);
+  void applyLLVMMetadata(SMLoc decoratorLoc, const CallNode *node);
+
+  void applyArgumentless(StringRef spelling, const CallNode *callNode,
+                         function_ref<void()> applyImpl);
 
   ArrayAttr getLLVMMetadataArray(ArrayRef<Operand> operands);
-  void applyLLVMMetadata(const CallNode &node);
 
   /// Register an LLVM arg metadata in the internal list to avoid churning mlir
   /// attributes as these arg metadata decorators are parsed. Must call finalize
   /// to actually apply metadata onto the function.
-  void registerLLVMArgMetadata(const CallNode &node);
+  void applyLLVMArgMetadata(SMLoc decoratorLoc, const CallNode *node);
 
   ASTDecl &decl;
   ASTDecl &sigDecl;
@@ -518,66 +489,70 @@ LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp fnOp,
 }
 
 LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
-  // Process all the decorators we know about.
-  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    if (declRef->spelling == "export")
-      applyExport(decorator->getLoc(), decl, baseName, baseName, funcOp);
-    else if (declRef->spelling == "staticmethod")
-      applyStaticMethod(*declRef);
-    else if (declRef->spelling == "always_inline")
-      funcOp.setInlineLevel(InlineLevel::Always);
-    else if (declRef->spelling == "no_inline")
-      funcOp.setInlineLevel(InlineLevel::Never);
-    else if (declRef->spelling == "parameter")
-      tcSignature.argList.effects.setCapturing();
-    else if (declRef->spelling == "__unsafe_disable_nested_origin_exclusivity")
-      tcSignature.isNestedOriginExclusivityCheckingDisabled = true;
-    else if (declRef->spelling == "implicit")
-      applyImplicitDecorator(*declRef);
-    else
-      return failure();
-    return success();
-  }
+  const DeclRefNode *declRef = dyn_cast<DeclRefNode>(decorator);
+  const CallNode *callNode = nullptr;
+  if (!declRef) {
+    callNode = dyn_cast<CallNode>(decorator);
+    if (callNode)
+      declRef = dyn_cast<DeclRefNode>(callNode->callee);
 
-  // `x()` forms.
-  if (auto callNode = dyn_cast<CallNode>(decorator)) {
-    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
-      // @always_inline("nodebug")
-      if (declRef->spelling == "always_inline" &&
-          callNode->operands.size() == 1 &&
-          callNode->operands[0].isPositionalStringLiteral("nodebug"))
-        funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
-      else if (declRef->spelling == "always_inline" &&
-               callNode->operands.size() == 1 &&
-               callNode->operands[0].isPositionalStringLiteral("builtin"))
-        funcOp.setInlineLevel(InlineLevel::AlwaysBuiltin);
-      else if (declRef->spelling == "export")
-        applyExport(decorator->getLoc(), decl, baseName, *callNode, funcOp);
-      else if (declRef->spelling == "extern")
-        applyExtern(decorator->getLoc(), decl, funcOp, *callNode);
-      else if (declRef->spelling == "__move_capture")
-        applyCopyOrMoveCapture(*callNode, /*isMove=*/true, declRef->spelling);
-      else if (declRef->spelling == "__copy_capture")
-        applyCopyOrMoveCapture(*callNode, /*isMove=*/false, declRef->spelling);
-      else if (declRef->spelling == "__llvm_metadata")
-        applyLLVMMetadata(*callNode);
-      else if (declRef->spelling == "__llvm_arg_metadata")
-        registerLLVMArgMetadata(*callNode);
-      else
-        return failure();
-      return success();
+    if (!callNode || !declRef) {
+      emitError(decorator->getLoc(), "invalid expression in decorator");
+      decl.setErroneous();
+      return failure();
     }
   }
-  return failure();
-}
 
-void FnSigDecorators::applyStaticMethod(const DeclRefNode &node) {
-  // This decorator only applies to methods of structs and traits.
-  if (!decl.tryGetMethodParentDecl()) {
-    emitError(node.getLoc(), "only methods on structs may be declared static");
-    return;
+  StringRef spelling = declRef->spelling;
+  if (spelling == "export") {
+    // TODO: improve this
+    if (callNode)
+      applyExport(decorator->getLoc(), decl, baseName, *callNode, funcOp);
+    else
+      applyExport(decorator->getLoc(), decl, baseName, baseName, funcOp);
+  } else if (spelling == "staticmethod") {
+    applyArgumentless(spelling, callNode, [&]() {
+      if (!decl.tryGetMethodParentDecl()) {
+        emitError(declRef->getLoc(),
+                  "only methods on structs may be declared static");
+      }
+    });
+    // We set the staticmethod flag even on errors, since the user intention is
+    // clear, and this will suppress errors about missing self arguments.
+    funcOp.setIsStatic(true);
+  } else if (spelling == "always_inline") {
+    applyAlwaysInline(callNode);
+  } else if (spelling == "no_inline") {
+    applyArgumentless(spelling, callNode,
+                      [&]() { funcOp.setInlineLevel(InlineLevel::Never); });
+  } else if (spelling == "parameter") {
+    // TODO: test this with @parameter() and @parameter("abc") on closures
+    applyArgumentless(spelling, callNode,
+                      [&]() { tcSignature.argList.effects.setCapturing(); });
+  } else if (spelling == "__unsafe_disable_nested_origin_exclusivity") {
+    applyArgumentless(spelling, callNode, [&]() {
+      tcSignature.isNestedOriginExclusivityCheckingDisabled = true;
+    });
+  } else if (spelling == "implicit") {
+    applyArgumentless(spelling, callNode,
+                      [&]() { applyImplicitDecorator(*declRef); });
+  } else if (spelling == "extern") {
+    applyExtern(decorator->getLoc(), callNode);
+  } else if (spelling == "__move_capture") {
+    applyCopyOrMoveCapture(decorator->getLoc(), callNode, /*isMove=*/true,
+                           spelling);
+  } else if (spelling == "__copy_capture") {
+    applyCopyOrMoveCapture(decorator->getLoc(), callNode, /*isMove=*/false,
+                           spelling);
+  } else if (spelling == "__llvm_metadata") {
+    applyLLVMMetadata(decorator->getLoc(), callNode);
+  } else if (spelling == "__llvm_arg_metadata") {
+    applyLLVMArgMetadata(decorator->getLoc(), callNode);
+  } else {
+    return failure();
   }
-  funcOp.setIsStatic(true);
+
+  return success();
 }
 
 void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
@@ -628,8 +603,17 @@ void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
   funcOp.setImplicitConversion(true);
 }
 
-void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
+void FnSigDecorators::applyCopyOrMoveCapture(SMLoc decoratorLoc,
+                                             const CallNode *callNode,
+                                             bool isMove,
                                              StringRef decoratorSpelling) {
+  if (!callNode || callNode->operands.empty()) {
+    emitError(decoratorLoc, "'@")
+        << decoratorSpelling << "' must have arguments";
+    return;
+  }
+
+  const CallNode &node = *callNode;
   // HACK(#16110): Need to implement proper capture list syntax rather than rely
   // on a special decorator.
   for (const Operand &operand : node.operands) {
@@ -725,6 +709,74 @@ void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
   }
 }
 
+void FnSigDecorators::applyExtern(SMLoc decoratorLoc,
+                                  const CallNode *callNode) {
+  size_t numOperands = callNode ? callNode->operands.size() : 0;
+  if (numOperands != 1) {
+    emitError(decoratorLoc, "'@extern' requires 1 argument");
+    return;
+  }
+
+  Operand operand = callNode->operands[0];
+  auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
+  if (!strNode || !operand.isPositional()) {
+    emitError(operand.getLoc(), "'@extern' requires a string literal argument");
+    return;
+  }
+  std::string libName = strNode->getValue();
+  funcOp.setLinkageName(libName);
+
+  if (!funcOp.getInputParams().empty()) {
+    // TODO: Can this even happen?
+    emitError(callNode->getLoc(),
+              "'@extern' cannot be applied to a function with parameters");
+    return;
+  }
+
+  if (decl.getParentDecl() && llvm::isa_and_nonnull<TraitDeclOp, StructDeclOp>(
+                                  decl.getParentDecl()->getIfOperation())) {
+    emitError(callNode->getLoc(), "'@extern' cannot be applied to a method");
+    return;
+  }
+
+  funcOp.setExternal(true);
+}
+
+void FnSigDecorators::applyAlwaysInline(const CallNode *callNode) {
+  size_t numOperands = callNode ? callNode->operands.size() : 0;
+  if (numOperands == 0) {
+    // `@always_inline` and `@always_inline()` are both allowed.
+    funcOp.setInlineLevel(InlineLevel::Always);
+    return;
+  }
+
+  if (numOperands > 1) {
+    emitError(callNode->getLoc())
+        << "'@always_inline' may not have more than 1 operand, got "
+        << numOperands;
+    return;
+  }
+
+  const Operand &operand = callNode->operands[0];
+  if (operand.isPositionalStringLiteral("nodebug")) {
+    funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  } else if (operand.isPositionalStringLiteral("builtin")) {
+    funcOp.setInlineLevel(InlineLevel::AlwaysBuiltin);
+  } else {
+    emitError(callNode->getLoc())
+        << "'@always_inline' operand must be \"nodebug\" or \"builtin\"";
+  }
+}
+
+void FnSigDecorators::applyArgumentless(StringRef spelling,
+                                        const CallNode *callNode,
+                                        function_ref<void()> applyImpl) {
+  if (!callNode)
+    return applyImpl();
+  emitError(callNode->getLoc()) << "'@" << spelling << "' cannot have arguments"
+                                << FixIt::remove(callNode->getRange());
+}
+
 /// Return AliasDeclOp that corresponds to the value's name by looking at all
 /// aliases within parent scopes up to FileModule. Return nullopt if not found.
 /// Emit error if cannot resolve import op or declaration with the value.name is
@@ -809,32 +861,39 @@ ArrayAttr FnSigDecorators::getLLVMMetadataArray(ArrayRef<Operand> operands) {
   return ArrayAttr::get(getContext(), metadata);
 }
 
-void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
-  // Ignore empty metadata list.
-  if (node.operands.empty())
-    return;
-  ArrayAttr metadata = getLLVMMetadataArray(node.operands);
-  llvmMetadata.append(metadata.begin(), metadata.end());
-}
-
-void FnSigDecorators::registerLLVMArgMetadata(const CallNode &node) {
-  if (node.operands.empty()) {
-    emitError(node.getLoc(), "LLVM arg metadata requires an argument name");
+void FnSigDecorators::applyLLVMMetadata(SMLoc decoratorLoc,
+                                        const CallNode *node) {
+  size_t numOperands = node ? node->operands.size() : 0;
+  if (numOperands == 0) {
+    emitError(decoratorLoc, "'@__llvm_metadata' requires operands");
     return;
   }
 
-  Operand targetArg = node.operands[0];
+  ArrayAttr metadata = getLLVMMetadataArray(node->operands);
+  llvmMetadata.append(metadata.begin(), metadata.end());
+}
+
+void FnSigDecorators::applyLLVMArgMetadata(SMLoc decoratorLoc,
+                                           const CallNode *node) {
+  size_t numOperands = node ? node->operands.size() : 0;
+  if (numOperands == 0) {
+    emitError(decoratorLoc, "'@__llvm_arg_metadata' requires operands");
+    return;
+  }
+
+  Operand targetArg = node->operands[0];
   auto declRef = dyn_cast<DeclRefNode>(targetArg.expr);
   // We expect the first operand to be "positional", i.e. it should just be a
   // standalone name.
   if (targetArg.passKind != Operand::PassKind::kPositional || !declRef) {
-    emitError(targetArg.getLoc(),
-              "First argument of LLVM arg metadata must be an argument name");
+    emitError(
+        targetArg.getLoc(),
+        "First argument of '@__llvm_arg_metadata' must be an argument name");
     return;
   }
 
   // Ignore empty metadata list.
-  if (node.operands.size() == 1)
+  if (numOperands == 1)
     return;
 
   // Find argument number corresponding to this arg name.
@@ -847,7 +906,10 @@ void FnSigDecorators::registerLLVMArgMetadata(const CallNode &node) {
   }
 
   if (argIdx < 0) {
-    emitError(targetArg.getLoc(), "No argument named ") << declRef->spelling;
+    emitError(
+        targetArg.getLoc(),
+        "Function decorated by '@__llvm_arg_metadata' has no argument named '")
+        << declRef->spelling << "'";
     return;
   }
 
@@ -857,7 +919,7 @@ void FnSigDecorators::registerLLVMArgMetadata(const CallNode &node) {
                            tcSignature.argList.parsedArgs.size(),
                            ArrayAttr::get(getContext(), {}));
 
-  llvmArgMetadata[argIdx] = getLLVMMetadataArray(node.operands.drop_front());
+  llvmArgMetadata[argIdx] = getLLVMMetadataArray(node->operands.drop_front());
 }
 
 void FnSigDecorators::finalize() {
