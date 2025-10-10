@@ -621,3 +621,28 @@ fn test_linear_type() raises:
     do_something()
 
     tok2^.consume()
+
+
+# ===----------------------------------------------------------------------=== #
+# Trait-bound fields
+# ===----------------------------------------------------------------------=== #
+
+
+struct Pair[T: Movable](Movable):
+    var first: T
+    var second: T
+
+    fn __init__(out self, var first: T, var second: T):
+        self.first = first^
+        self.second = second^
+
+
+fn sink[T: AnyType](x: T):
+    pass
+
+
+fn test_trait_bound_field():
+    # @expected-error @below {{field '(expression temporary).first' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
+    var r = Pair[List[Int]](List[Int](), List[Int]()).first^
+    # To prevent optimization/warning on unused object
+    sink(r)
