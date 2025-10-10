@@ -35,9 +35,9 @@ def buffer_load(
     Returns:
         A tensor graph value representing a copy of the buffer loaded.
     """
-    in_chain = Graph.current._current_chain
+    in_chain = Graph.current.device_chains[x.device]
 
-    output = Graph.current._add_op_generated(
+    result, output_chain = Graph.current._add_op_generated(
         rmo.MoMutableLoadOp,
         TensorType(x.dtype, x.shape, x.device),
         mo.ChainType(),
@@ -46,9 +46,9 @@ def buffer_load(
         in_chain,
     )
 
-    Graph.current._update_chain(output[1])
+    Graph.current.device_chains[x.device] = output_chain
 
-    return TensorValue(output[0])
+    return result.tensor
 
 
 def buffer_store(destination: BufferValueLike, source: TensorValueLike) -> None:
@@ -61,18 +61,19 @@ def buffer_store(destination: BufferValueLike, source: TensorValueLike) -> None:
         x: The tensor to be stored in the buffer.
         y: The buffer to store the tensor in.
     """
-    in_chain = Graph.current._current_chain
+    destination = BufferValue(destination)
+    in_chain = Graph.current.device_chains[destination.device]
 
     output_chain = Graph.current._add_op_generated(
         rmo.MoMutableStoreOp,
         mo.ChainType(),
-        BufferValue(destination),
+        destination,
         TensorValue(source),
         kgen.ParamDeclArrayAttr([]),
         in_chain,
     )[0]
 
-    Graph.current._update_chain(output_chain)
+    Graph.current.device_chains[destination.device] = output_chain
 
 
 def buffer_create(type: BufferType) -> BufferValue:
@@ -100,10 +101,10 @@ def buffer_store_slice(
         source: The tensor to be stored in the buffer.
         indices: The index in the buffer where the tensor should be stored
     """
-    in_chain = Graph.current._current_chain
-
     destination = BufferValue(destination)
     source = TensorValue(source)
+
+    in_chain = Graph.current.device_chains[destination.device]
 
     starts, stops, steps, unsqueezed_shape, squeezed_shape = (
         _slice_and_output_tensors(destination, indices)
@@ -127,4 +128,4 @@ def buffer_store_slice(
         in_chain,
     )[-1]
 
-    Graph.current._update_chain(output_chain)
+    Graph.current.device_chains[destination.device] = output_chain

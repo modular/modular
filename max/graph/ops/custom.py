@@ -167,10 +167,6 @@ def inplace_custom(
     ]
 
     chain_operand = graph.device_chains[device]
-    if has_buffer_operand:
-        chain_operand = graph._merge_chains(
-            (graph._current_chain, chain_operand)
-        )
 
     (*results, out_chain), custom_op = graph._add_op_get_op_with_results(
         mo.custom,
@@ -179,8 +175,6 @@ def inplace_custom(
         symbol=StringAttr.get(name, graph._context),
     )
     graph.device_chains[device] = out_chain
-    if has_buffer_operand:
-        graph._update_chain(out_chain)
 
     if parameters is not None:
         custom_op.parameters = DictAttr.get(
