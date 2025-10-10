@@ -137,14 +137,14 @@ PINS = {
     "threadpoolctl": "threadpoolctl@3.5.0",
     "timm": "timm@1.0.15",
     "tokenicer": "tokenicer@0.0.4",
-    "tokenizers": "tokenizers@0.21.0",
+    "tokenizers": "tokenizers@0.22.1",
     "tomli": "tomli@2.0.1",
     "torch": "torch@multiple",
     "torchaudio": "torchaudio@multiple",
     "torchmetrics": "torchmetrics@1.7.2",
     "torchvision": "torchvision@multiple",
     "tqdm": "tqdm@4.66.5",
-    "transformers": "transformers@4.55.2",
+    "transformers": "transformers@4.57.0",
     "types-protobuf": "types-protobuf@5.28.3.20241030",
     "types-pyyaml": "types-pyyaml@6.0.12.20240917",
     "types-setuptools": "types-setuptools@75.5.0.20241121",
@@ -1356,7 +1356,7 @@ def targets():
         ":ctranslate2@4.6.0",
         ":huggingface-hub@0.34.3",
         ":onnxruntime@1.19.2",
-        ":tokenizers@0.21.0",
+        ":tokenizers@0.22.1",
         ":tqdm@4.66.5",
     ]
 
@@ -2862,7 +2862,7 @@ def targets():
         ":torch@multiple",
         ":tqdm-multiprocess@0.0.11",
         ":tqdm@4.66.5",
-        ":transformers@4.55.2",
+        ":transformers@4.57.0",
         ":word2number@1.1",
         ":zstandard@0.23.0",
     ]
@@ -4174,7 +4174,7 @@ def targets():
         ":numpy@2.2.6",
         ":packaging@24.1",
         ":torch@multiple",
-        ":transformers@4.55.2",
+        ":transformers@4.57.0",
     ]
 
     native.alias(
@@ -4297,7 +4297,7 @@ def targets():
         ":safetensors@0.4.4",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.55.2",
+        ":transformers@4.57.0",
     ]
 
     native.alias(
@@ -5552,7 +5552,7 @@ def targets():
         ":scipy@1.13.1",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.55.2",
+        ":transformers@4.57.0",
     ]
 
     native.alias(
@@ -6174,7 +6174,7 @@ def targets():
     )
 
     _tokenicer_0_0_4_deps = [
-        ":transformers@4.55.2",
+        ":transformers@4.57.0",
     ]
 
     _tokenicer_0_0_4_build_deps = [
@@ -6208,32 +6208,32 @@ def targets():
         testonly = "tokenicer" in _TESTONLY_DEPS,
     )
 
-    _tokenizers_0_21_0_deps = [
+    _tokenizers_0_22_1_deps = [
         ":huggingface-hub@0.34.3",
     ]
 
     native.alias(
-        name = "_wheel_tokenizers@0.21.0",
+        name = "_wheel_tokenizers@0.22.1",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "tokenizers@0.21.0",
-        deps = _tokenizers_0_21_0_deps,
-        wheel = ":_wheel_tokenizers@0.21.0",
+        name = "tokenizers@0.22.1",
+        deps = _tokenizers_0_22_1_deps,
+        wheel = ":_wheel_tokenizers@0.22.1",
         testonly = "tokenizers" in _TESTONLY_DEPS,
     )
 
@@ -6919,7 +6919,7 @@ def targets():
         testonly = "traitlets" in _TESTONLY_DEPS,
     )
 
-    _transformers_4_55_2_deps = [
+    _transformers_4_57_0_deps = [
         ":filelock@3.16.1",
         ":huggingface-hub@0.34.3",
         ":numpy@2.2.6",
@@ -6928,19 +6928,19 @@ def targets():
         ":regex@2024.11.6",
         ":requests@2.32.3",
         ":safetensors@0.4.4",
-        ":tokenizers@0.21.0",
+        ":tokenizers@0.22.1",
         ":tqdm@4.66.5",
     ]
 
     native.alias(
-        name = "_wheel_transformers@4.55.2",
-        actual = "@pycross_lock_file_wheel_transformers_4.55.2_py3_none_any//file",
+        name = "_wheel_transformers@4.57.0",
+        actual = "@pycross_lock_file_wheel_transformers_4.57.0_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "transformers@4.55.2",
-        deps = _transformers_4_55_2_deps,
-        wheel = ":_wheel_transformers@4.55.2",
+        name = "transformers@4.57.0",
+        deps = _transformers_4_57_0_deps,
+        wheel = ":_wheel_transformers@4.57.0",
         testonly = "transformers" in _TESTONLY_DEPS,
     )
 
@@ -15945,32 +15945,32 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/22/7a/88e58bb297c22633ed1c9d16029316e5b5ac5ee44012164c2edede599a5e/tokenizers-0.21.0-cp39-abi3-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/1c/58/2aa8c874d02b974990e89ff95826a4852a8b2a273c7d1b4411cdd45a4565/tokenizers-0.22.1-cp39-abi3-macosx_11_0_arm64.whl",
         ],
-        sha256 = "f53ea537c925422a2e0e92a24cce96f6bc5046bbef24a1652a5edc8ba975f62e",
-        downloaded_file_path = "tokenizers-0.21.0-cp39-abi3-macosx_11_0_arm64.whl",
+        sha256 = "8d4e484f7b0827021ac5f9f71d4794aaef62b979ab7608593da22b1d2e3c4edc",
+        downloaded_file_path = "tokenizers-0.22.1-cp39-abi3-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        name = "pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/f7/14/83429177c19364df27d22bc096d4c2e431e0ba43e56c525434f1f9b0fd00/tokenizers-0.21.0-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+            "https://files.pythonhosted.org/packages/1e/3b/55e64befa1e7bfea963cf4b787b2cea1011362c4193f5477047532ce127e/tokenizers-0.22.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
         ],
-        sha256 = "6b177fb54c4702ef611de0c069d9169f0004233890e0c4c5bd5508ae05abf193",
-        downloaded_file_path = "tokenizers-0.21.0-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        sha256 = "19d2962dd28bc67c1f205ab180578a78eef89ac60ca7ef7cbe9635a46a56422a",
+        downloaded_file_path = "tokenizers-0.22.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_tokenizers_0.21.0_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        name = "pycross_lock_file_wheel_tokenizers_0.22.1_cp39_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/22/06/69d7ce374747edaf1695a4f61b83570d91cc8bbfc51ccfecf76f56ab4aac/tokenizers-0.21.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+            "https://files.pythonhosted.org/packages/d0/c6/dc3a0db5a6766416c32c034286d7c2d406da1f498e4de04ab1b8959edd00/tokenizers-0.22.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
         ],
-        sha256 = "e84ca973b3a96894d1707e189c14a774b701596d579ffc7e69debfc036a61a04",
-        downloaded_file_path = "tokenizers-0.21.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        sha256 = "e2ef6063d7a84994129732b47e7915e8710f27f99f3a3260b8a38fc7ccd083f4",
+        downloaded_file_path = "tokenizers-0.22.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
@@ -16625,12 +16625,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_transformers_4.55.2_py3_none_any",
+        name = "pycross_lock_file_wheel_transformers_4.57.0_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/db/5a/022ac010bedfb5119734cf9d743cf1d830cb4c604f53bb1552216f4344dc/transformers-4.55.2-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/e5/2b/4d2708ac1ff5cd708b6548f4c5812d0ae40d1c28591c4c1c762b6dbdef2d/transformers-4.57.0-py3-none-any.whl",
         ],
-        sha256 = "097e3c2e2c0c9681db3da9d748d8f9d6a724c644514673d0030e8c5a1109f1f1",
-        downloaded_file_path = "transformers-4.55.2-py3-none-any.whl",
+        sha256 = "9d7c6d098c026e40d897e017ed1f481ab803cbac041021dbc6ae6100e4949b55",
+        downloaded_file_path = "transformers-4.57.0-py3-none-any.whl",
     )
 
     maybe(
