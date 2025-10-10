@@ -88,6 +88,7 @@ PINS = {
     "packaging": "packaging@24.1",
     "pandas": "pandas@2.3.1",
     "pathspec": "pathspec@0.12.1",
+    "peft": "peft@0.13.2",
     "pillow": "pillow@10.4.0",
     "platformdirs": "platformdirs@4.2.2",
     "plotly": "plotly@6.0.1",

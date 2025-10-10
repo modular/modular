@@ -149,6 +149,7 @@ amd = [
   "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
@@ -164,6 +165,7 @@ cpu = [
   "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
@@ -181,6 +183,7 @@ nvidia = [
   "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
