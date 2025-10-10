@@ -1757,14 +1757,18 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   if (spelling.empty())
     return {};
 
+  // This could be null for TraitType.
+  auto typeDeclOp = typeDecl->getIfOperation();
+
   // Handle module or package references.
-  if (isa_and_nonnull<PackageOp, FileModuleOp>(typeDecl->getIfOperation())) {
+  if (isa_and_nonnull<PackageOp, FileModuleOp>(typeDeclOp)) {
     // Look up the unqualified identifier in the right scope.
     return DeclRefNode::emitUnqualLookup(spelling, this, *typeDecl, dest,
                                          emitter, false);
   }
 
-  if (!isa_and_nonnull<StructDeclOp, TraitDeclOp>(typeDecl->getIfOperation()) &&
+  // We can only look up in something of struct or trait type.
+  if (!isa_and_nonnull<StructDeclOp, TraitDeclOp>(typeDeclOp) &&
       !isa<TraitType>(typeDecl->getIfTypeValue())) {
     emitter.emitError(getLoc(), "cannot access attribute in type ")
         << baseVal.getType() << base->getRange();
@@ -1868,13 +1872,13 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   if (auto aliasDeclOpParam =
           dyn_cast_or_null<AliasDeclOp>(memberDecl.getIfOperation())) {
     // Handle accessing an alias in a struct or an extension.
-    if (isa_and_nonnull<StructDeclOp>(typeDecl->getIfOperation()) ||
+    if (isa_and_nonnull<StructDeclOp>(typeDeclOp) ||
         isa_and_nonnull<ExtensionDeclOp>(
             memberDecl.getParentDecl()->getIfOperation())) {
       PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
                                             baseRVType.getParamBindings(),
                                             getLoc(), emitter);
-      return emitter.emitResult(result.get(), this, dest);
+      return emitter.emitResult(result, this, dest);
     }
 
     // If we get here, we're accessing an alias in a trait.

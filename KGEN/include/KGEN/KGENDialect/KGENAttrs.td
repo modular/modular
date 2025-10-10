@@ -1229,6 +1229,8 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
 
     /// Helper to build a rebind operation.
     static TypedAttr getRebind(TypedAttr operand, Type resultType) {
+      if (operand.getType() == resultType)
+        return operand;
       return get(POC::Rebind, {operand}, resultType);
     }
 
