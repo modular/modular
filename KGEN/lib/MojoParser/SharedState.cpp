@@ -396,6 +396,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   } else {
     collectDefaultImportPaths(impl->autoImportDirs);
   }
+  llvm::append_range(impl->autoImportDirs, options.extraSearchPaths);
   impl->diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
   impl->errorOnInvalidDocStrings = config.errorOnInvalidDocStrings;
   docsBasePath = config.docsBasePath;
