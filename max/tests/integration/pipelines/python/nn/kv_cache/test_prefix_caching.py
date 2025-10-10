@@ -14,7 +14,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.interfaces import RequestID
+from max.interfaces import ImageMetadata, RequestID
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -22,7 +22,7 @@ from max.nn.kv_cache import (
     RaggedKVCacheInputs,
 )
 from max.nn.kv_cache.paged_cache.block_manager import InsufficientBlocksError
-from max.pipelines.core import TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from test_common.context_utils import create_text_context
 
 
@@ -713,3 +713,131 @@ async def test_prefix_caching_chunked_prefill() -> None:
 
     assert kv_manager.metrics.cache_tokens == 6
     assert kv_manager.metrics.cache_hit_rate > 0.2
+
+
+def run_and_check_num_cached_tokens(
+    kv_manager: PagedKVCacheManager,
+    ctx: TextAndVisionContext,
+    do_step: bool = True,
+) -> int:
+    # reset cache_tokens to 0
+    kv_manager.reset_metrics()
+    kv_manager.external_claim(ctx.request_id)
+    kv_manager.fetch([ctx])
+    magic_token_value = 42  # this is arbitrary
+    if do_step:
+        ctx.update(magic_token_value)
+        kv_manager.step([ctx])
+    return kv_manager.metrics.cache_tokens
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_with_images() -> None:
+    IMG = 99
+    kv_manager = create_paged_manager(num_blocks=128, page_size=1)
+
+    vision_token_ids = [IMG]
+
+    img1_pixels = np.array([[777], [777], [777]])
+    # This differs from img1_pixels and should result in a different hash
+    img3_pixels = np.array([[777], [777], [888]])
+
+    #                              |<-     img     ->|
+    tokens1 = np.array([51, 52, 53, IMG, IMG, IMG, IMG, 54, 55])
+    #                      |<-     img      ->|
+    tokens4 = np.array([51, IMG, IMG, IMG, IMG, 52, 53, 54, 55, 56])
+
+    # ctx1 and ctx2 are exactly the same
+    ctx1 = TextAndVisionContext(
+        max_length=100,
+        tokens=tokens1,
+        images=[
+            ImageMetadata(start_idx=3, end_idx=7, pixel_values=img1_pixels),
+        ],
+        vision_token_ids=vision_token_ids,
+    )
+    ctx2 = TextAndVisionContext(
+        max_length=100,
+        tokens=tokens1,
+        images=[
+            ImageMetadata(start_idx=3, end_idx=7, pixel_values=img1_pixels),
+        ],
+        vision_token_ids=vision_token_ids,
+    )
+
+    # We should not get any cache hits since cache is empty
+    assert run_and_check_num_cached_tokens(kv_manager, ctx1) == 0
+
+    # We should get cache hits on all 8 eligible tokens
+    assert run_and_check_num_cached_tokens(kv_manager, ctx2) == 8
+
+    # ctx3 has different image pixels from ctx1 and ctx2
+    ctx3 = TextAndVisionContext(
+        max_length=100,
+        tokens=tokens1,
+        images=[
+            ImageMetadata(start_idx=3, end_idx=7, pixel_values=img3_pixels),
+        ],
+        vision_token_ids=vision_token_ids,
+    )
+
+    # We should only get cache hits on the first 3 tokens prior to the image
+    assert run_and_check_num_cached_tokens(kv_manager, ctx3) == 3
+
+    # ctx4 also has img1 but it is in a different position
+    ctx4 = TextAndVisionContext(
+        max_length=100,
+        tokens=tokens4,
+        images=[
+            ImageMetadata(start_idx=1, end_idx=5, pixel_values=img1_pixels),
+        ],
+        vision_token_ids=vision_token_ids,
+    )
+
+    # Because the image is in a different position, we should only get a cache
+    # hit on the first token
+    assert run_and_check_num_cached_tokens(kv_manager, ctx4) == 1
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
+    IMG = 99
+    kv_manager = create_paged_manager(num_blocks=128, page_size=4)
+    #   |    block 0     |      block 1     |      block 2     |
+    #               |<--------- img0 ----------->|     |<-- img1 -->|
+    tokens = np.array(
+        [51, 52, 53, IMG, IMG, IMG, IMG, IMG, IMG, 54, IMG, IMG, IMG, 56]
+    )
+
+    img0_pixels = np.array([[777], [777], [777]])
+    img1_pixels = np.array([[888], [888], [888]])
+
+    ctx0 = TextAndVisionContext(
+        max_length=100,
+        tokens=tokens,
+        images=[
+            ImageMetadata(start_idx=3, end_idx=9, pixel_values=img0_pixels),
+            ImageMetadata(start_idx=10, end_idx=13, pixel_values=img1_pixels),
+        ],
+        vision_token_ids=[IMG],
+    )
+
+    # Duplicate of above
+    ctx1 = TextAndVisionContext(
+        max_length=100,
+        tokens=tokens,
+        images=[
+            ImageMetadata(start_idx=3, end_idx=9, pixel_values=img0_pixels),
+            ImageMetadata(start_idx=10, end_idx=13, pixel_values=img1_pixels),
+        ],
+        vision_token_ids=[IMG],
+    )
+
+    assert run_and_check_num_cached_tokens(kv_manager, ctx0) == 0
+    # Notice that this is NOT rounded down to the nearest image boundary
+    assert (
+        run_and_check_num_cached_tokens(kv_manager, ctx1, do_step=False) == 12
+    )
+
+    assert ctx1.start_idx == 12
+    assert kv_manager.block_manager.req_to_committed_idx[ctx1.request_id] == 12

@@ -1044,9 +1044,9 @@ def test_text_and_vision_context_sad_case() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="It is invalid for the start_idx \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
+        match="It is invalid for the active_idx \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
     ):
-        ctx.set_token_indices(start_idx=7)
+        ctx.set_token_indices(active_idx=7)
 
     with pytest.raises(
         ValueError,

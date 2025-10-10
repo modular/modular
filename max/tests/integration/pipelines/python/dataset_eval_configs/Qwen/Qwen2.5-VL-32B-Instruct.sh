@@ -12,6 +12,5 @@ tasks=mathvista,chartqa,docvqa,mmmu
 
 extra_pipelines_args=(
   --trust-remote-code
-  --no-enable-prefix-caching
   --no-enable-chunked-prefill
 )
