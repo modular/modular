@@ -42,6 +42,24 @@ what we publish.
 
   The intrinsic is currently limited for use from within `main`.
 
+- The `@implicit` decorator now accepts an optional `deprecated` keyword
+  argument. This can be used to phase out implicit conversions instead of just
+  removing the decorator (which can result in another, unintended implicit
+  conversion path). For example, the compiler now warns about the following:
+
+  ```mojo
+  struct MyStuff:
+    @implicit(deprecated=True)
+    fn __init__(out self, value: Int):
+      pass
+
+  fn deprecated_implicit_conversion():
+    # warning: deprecated implicit conversion from 'IntLiteral[1]' to 'MyStuff'
+    _: MyStuff = 1
+
+    _ = MyStuff(1)  # this is okay, because the conversion is already explicit.
+  ```
+
 ### Language changes
 
 ### Standard library changes
