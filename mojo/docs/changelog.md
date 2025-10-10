@@ -68,6 +68,13 @@ what we publish.
 - `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
   size 1 or 0.
 
+- `origin_cast` for `LayoutTensor`, `NDBuffer` and `UnsafePointer` has been
+  deprecated. `LayoutTensor` and `NDBuffer` now supports a safer
+  `as_any_origin()` origin casting. `UnsafePointer` has the same
+  safe alternative and in addition, it has an additional safe `as_immutable`
+  casting function and explicitly unsafe `unsafe_mut_cast` and
+  `unsafe_origin_cast` casting function.
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`

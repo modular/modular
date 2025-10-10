@@ -782,7 +782,9 @@ struct LayoutTensor[
             A tensor merged with the specified `other_type`.
         """
         return {
-            self.ptr.origin_cast[result.mut, result.origin](),
+            self.ptr.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
+                result.origin
+            ](),
             self.runtime_layout,
             self.runtime_element_layout,
         }
@@ -847,6 +849,12 @@ struct LayoutTensor[
         alignment=alignment,
     ]
 
+    alias MutableAnyType = Self.OriginCastType[True, MutableAnyOrigin]
+
+    @deprecated(
+        "`origin_cast` is no longer supported for `LayoutTensor`. Use the safer"
+        " `as_any_origin`, `as_immutable` or binding the mutability instead."
+    )
     @always_inline("nodebug")
     fn origin_cast[
         target_mut: Bool = Self.mut,
@@ -866,10 +874,70 @@ struct LayoutTensor[
             origin.
         """
         return Self.OriginCastType[target_mut, target_origin](
-            self.ptr.origin_cast[target_mut, target_origin](),
+            self.ptr.unsafe_mut_cast[target_mut]().unsafe_origin_cast[
+                target_origin
+            ](),
             self.runtime_layout,
             self.runtime_element_layout,
         )
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: LayoutTensor[mut=True, *_, **_],
+    ) -> __type_of(self).OriginCastType[True, MutableAnyOrigin]:
+        """Casts the origin of the mutable `LayoutTensor` to `MutableAnyOrigin`.
+
+        Returns:
+            A pointer with the origin set to `MutableAnyOrigin`.
+
+        This requires the tensor to already be mutable as casting mutability
+        is inherently very unsafe.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
+        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the tensor.
+        """
+        return {
+            self.ptr.as_any_origin(),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: LayoutTensor[mut=False, *_, **_],
+    ) -> __type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
+        """Casts the origin of the immutable `LayoutTensor` to `ImmutableAnyOrigin`.
+
+        Returns:
+            A tensor with the origin set to `ImmutableAnyOrigin`.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the tensor.
+        """
+        return {
+            self.ptr.as_any_origin(),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
+
+    @doc_private
+    fn as_any_origin(
+        self: LayoutTensor[*_, **_],
+        out result: __type_of(self).OriginCastType[False, ImmutableAnyOrigin],
+    ):
+        constrained[
+            False,
+            (
+                "A LayoutTensor with unbound mutability cannot be cast to"
+                " 'AnyOrigin'. Consider using `as_immutable` or binding the"
+                " mutability explicitly before calling this function."
+            ),
+        ]()
+        result = abort[__type_of(result)]()
 
     alias AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -889,7 +957,7 @@ struct LayoutTensor[
     fn address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
     ](self) -> Self.AddressSpaceCastType[target_address_space]:
-        """Changes the origin or mutability of a pointer.
+        """Changes the address space of the `LayoutTensor`.
 
         Parameters:
             target_address_space: The new address space.
@@ -907,34 +975,18 @@ struct LayoutTensor[
     @always_inline
     fn get_immutable(
         self,
-    ) -> LayoutTensor[
-        dtype,
-        layout,
-        ImmutableOrigin.cast_from[origin],
-        address_space=address_space,
-        element_layout=element_layout,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
-        masked=masked,
-        alignment=alignment,
-    ]:
+    ) -> Self.OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
         """
         Return an immutable version of this tensor.
 
         Returns:
             A `LayoutTensor` covering the same elements, but without mutability.
         """
-        return LayoutTensor[
-            dtype,
-            layout,
-            ImmutableOrigin.cast_from[origin],
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ](self.ptr, self.runtime_layout, self.runtime_element_layout)
+        return {
+            self.ptr.as_immutable(),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
@@ -1745,11 +1797,14 @@ struct LayoutTensor[
         fn exp_func(val: Self.element_type) -> Self.element_type:
             return exp(val)
 
-        return (
+        return {
             self._stack_copy()
             ._elementwise_unary[exp_func]()
-            .origin_cast[mut, origin]()
-        )
+            .ptr.unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin](),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
 
     @always_inline("nodebug")
     fn _load_offset(

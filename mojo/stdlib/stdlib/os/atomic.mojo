@@ -318,7 +318,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         if is_compile_time():
             var res = ptr[]
             # Safety: This is at compile-time so data races will not happen.
-            ptr.origin_cast[True]()[] += rhs
+            ptr.unsafe_mut_cast[True]()[] += rhs
             return res
 
         var res = __mlir_op.`pop.atomic.rmw`[
@@ -524,7 +524,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         if is_compile_time():
             if ptr[] == expected:
                 # Safety: This is at compile-time so data races will not happen.
-                ptr.origin_cast[True]()[] = desired
+                ptr.unsafe_mut_cast[True]()[] = desired
                 return True
             expected = ptr[]
             return False

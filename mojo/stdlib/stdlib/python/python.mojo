@@ -58,9 +58,11 @@ fn _get_python_interface() raises -> Pointer[CPython, StaticConstantOrigin]:
     """
 
     var ptr = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
-    var ptr2 = UnsafePointer(to=ptr[].cpython).origin_cast[
-        False, StaticConstantOrigin
-    ]()
+    var ptr2 = (
+        UnsafePointer(to=ptr[].cpython)
+        .as_immutable()
+        .unsafe_origin_cast[StaticConstantOrigin]()
+    )
     return Pointer(to=ptr2[])
 
 

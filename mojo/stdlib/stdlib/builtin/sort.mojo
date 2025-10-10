@@ -34,7 +34,7 @@ fn _insertion_sort[
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     """Sort the array[start:end] slice"""
-    var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
+    var array = span.unsafe_ptr().as_any_origin()
     var size = len(span)
 
     for i in range(1, size):

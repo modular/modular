@@ -497,14 +497,14 @@ def test_ndbuffer[
 
     # Create MHAOperands
     src_operand = LayoutTensorMHAOperand(
-        src_device.to_layout_tensor().origin_cast[True, MutableAnyOrigin]()
+        src_device.to_layout_tensor().as_any_origin()
     )
     for is_k_major in range(2):
         dst_host = HostNDBuffer[dtype, 4](dyn_shape)
 
         dst_device = dst_host.copy_to_device(ctx)
         dst_operand = LayoutTensorMHAOperand(
-            dst_device.to_layout_tensor().origin_cast[True, MutableAnyOrigin]()
+            dst_device.to_layout_tensor().as_any_origin()
         )
 
         if is_k_major == 0:  # unswitch
@@ -530,10 +530,10 @@ def test_ndbuffer[
 
         # Create host-side MHAOperands for verification
         src_host_operand = LayoutTensorMHAOperand(
-            src_host.to_layout_tensor().origin_cast[True, MutableAnyOrigin]()
+            src_host.to_layout_tensor().as_any_origin()
         )
         dst_host_operand = LayoutTensorMHAOperand(
-            dst_host.to_layout_tensor().origin_cast[True, MutableAnyOrigin]()
+            dst_host.to_layout_tensor().as_any_origin()
         )
 
         # Verify using block_paged_ptr
@@ -585,10 +585,8 @@ def test_ragged[
 
     # Create MHAOperands
     src_operand = RaggedMHAOperand(
-        src_device.to_layout_tensor().origin_cast[True, MutableAnyOrigin](),
-        cache_row_offsets_device.to_layout_tensor().origin_cast[
-            True, MutableAnyOrigin
-        ](),
+        src_device.to_layout_tensor().as_any_origin(),
+        cache_row_offsets_device.to_layout_tensor().as_any_origin(),
     )
 
     # Find max sequence length for grid calculation
@@ -598,10 +596,8 @@ def test_ragged[
 
     # Create host-side MHAOperands for verification
     src_host_operand = RaggedMHAOperand(
-        src_host.to_layout_tensor().origin_cast[True, MutableAnyOrigin](),
-        cache_row_offsets_host.to_layout_tensor().origin_cast[
-            True, MutableAnyOrigin
-        ](),
+        src_host.to_layout_tensor().as_any_origin(),
+        cache_row_offsets_host.to_layout_tensor().as_any_origin(),
     )
 
     for is_k_major in range(2):
@@ -609,10 +605,8 @@ def test_ragged[
         dst_device = dst_host.copy_to_device(ctx)
 
         dst_operand = RaggedMHAOperand(
-            dst_device.to_layout_tensor().origin_cast[True, MutableAnyOrigin](),
-            cache_row_offsets_device.to_layout_tensor().origin_cast[
-                True, MutableAnyOrigin
-            ](),
+            dst_device.to_layout_tensor().as_any_origin(),
+            cache_row_offsets_device.to_layout_tensor().as_any_origin(),
         )
 
         if is_k_major == 0:
@@ -637,10 +631,8 @@ def test_ragged[
         ctx.synchronize()
 
         dst_host_operand = RaggedMHAOperand(
-            dst_host.to_layout_tensor().origin_cast[True, MutableAnyOrigin](),
-            cache_row_offsets_host.to_layout_tensor().origin_cast[
-                True, MutableAnyOrigin
-            ](),
+            dst_host.to_layout_tensor().as_any_origin(),
+            cache_row_offsets_host.to_layout_tensor().as_any_origin(),
         )
 
         # Verify using block_paged_ptr

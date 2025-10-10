@@ -278,7 +278,7 @@ struct InlineArray[
         for i in range(size):
             # Safety: We own the elements in the variadic list.
             ptr.init_pointee_move_from(
-                UnsafePointer(to=storage[i]).origin_cast[True]()
+                UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
             )
             ptr += 1
 
@@ -525,7 +525,7 @@ struct InlineArray[
         return (
             UnsafePointer(to=self._array)
             .bitcast[Self.ElementType]()
-            .origin_cast[origin.mut, origin]()
+            .unsafe_origin_cast[origin]()
             .address_space_cast[address_space]()
         )
 

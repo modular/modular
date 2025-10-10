@@ -140,12 +140,12 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     @parameter
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function_checked[kernel, kernel](
-            output_device_ref.origin_cast[True, MutableAnyOrigin](),
+            output_device_ref.as_any_origin(),
             StaticTuple[LayoutTensor[dtype, layout, MutableAnyOrigin], 4](
-                input_0_device_ref.origin_cast[True, MutableAnyOrigin](),
-                input_1_device_ref.origin_cast[True, MutableAnyOrigin](),
-                input_2_device_ref.origin_cast[True, MutableAnyOrigin](),
-                input_3_device_ref.origin_cast[True, MutableAnyOrigin](),
+                input_0_device_ref.as_any_origin(),
+                input_1_device_ref.as_any_origin(),
+                input_2_device_ref.as_any_origin(),
+                input_3_device_ref.as_any_origin(),
             ),
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
@@ -218,13 +218,13 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 epilogue_plus_one
             ) if test_epilogue else None
         ](
-            output_device_ref.origin_cast[True, MutableAnyOrigin](),
+            output_device_ref.as_any_origin(),
             4,
             StaticTuple[LayoutTensor[dtype, layout, MutableAnyOrigin], 4](
-                input_0_device_ref.origin_cast[True, MutableAnyOrigin](),
-                input_1_device_ref.origin_cast[True, MutableAnyOrigin](),
-                input_2_device_ref.origin_cast[True, MutableAnyOrigin](),
-                input_3_device_ref.origin_cast[True, MutableAnyOrigin](),
+                input_0_device_ref.as_any_origin(),
+                input_1_device_ref.as_any_origin(),
+                input_2_device_ref.as_any_origin(),
+                input_3_device_ref.as_any_origin(),
             ),
             ctx,
         )

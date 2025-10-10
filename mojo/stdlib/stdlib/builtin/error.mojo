@@ -210,7 +210,7 @@ struct Error(
         if self.loaded_length < 0:
             # Safety: if loaded_length < 0, we own the data allowing us to
             # safely free (and mutate) it.
-            self.data.origin_cast[True]().free()
+            self.data.unsafe_mut_cast[True]().free()
 
     fn __copyinit__(out self, existing: Self):
         """Creates a deep copy of an existing error.

@@ -760,7 +760,9 @@ struct HostBuffer[dtype: DType](
         # Safety: We are casting the pointer to the mutability and origin of
         # self and `_host_ptr` is already mutable.
         return {
-            ptr = self._host_ptr.origin_cast[mut, origin](),
+            ptr = self._host_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
+                origin
+            ](),
             length = UInt(len(self)),
         }
 
@@ -2275,7 +2277,7 @@ struct DeviceFunction[
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         @parameter
@@ -2428,7 +2430,7 @@ struct DeviceFunction[
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         if cluster_dim:
@@ -2998,7 +3000,7 @@ struct DeviceExternalFunction:
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         if cluster_dim:

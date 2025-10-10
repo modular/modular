@@ -1330,9 +1330,7 @@ fn flash_attention_ragged[
 
     var is_token_generation = False
 
-    var cache_row_offsets = input_row_offsets.to_layout_tensor().origin_cast[
-        True, MutableAnyOrigin
-    ]()
+    var cache_row_offsets = input_row_offsets.to_layout_tensor().as_any_origin()
 
     var k_operand = RaggedMHAOperand(
         LayoutTensor[

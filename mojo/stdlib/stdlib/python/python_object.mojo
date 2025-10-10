@@ -1415,7 +1415,11 @@ struct PythonObject(
         ref obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
         # TODO(MSTDL-950): Should use something like `addr_of!`
         # Safety: The mutability matches that of `self`.
-        return UnsafePointer(to=obj.mojo_value).origin_cast[mut, origin]()
+        return (
+            UnsafePointer(to=obj.mojo_value)
+            .unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
 
 
 # ===-----------------------------------------------------------------------===#

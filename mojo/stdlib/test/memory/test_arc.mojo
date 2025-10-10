@@ -35,9 +35,7 @@ def test_is():
 
 def test_deleter_not_called_until_no_references():
     var deleted = False
-    var p = ArcPointer(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[False]())
-    )
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted).as_immutable()))
     var p2 = p
     _ = p^
     assert_false(deleted)
@@ -52,9 +50,7 @@ def test_deleter_not_called_until_no_references():
 
 def test_deleter_not_called_until_no_references_explicit_copy():
     var deleted = False
-    var p = ArcPointer(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[False]())
-    )
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted).as_immutable()))
     var p2 = p.copy()
     _ = p^
     assert_false(deleted)
@@ -81,7 +77,7 @@ def test_count():
 def test_steal_data_and_construct_from_raw_ptr():
     var deleted = False
     var leaked = ArcPointer(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[False]())
+        ObservableDel(UnsafePointer(to=deleted).as_immutable())
     )
 
     var raw = leaked^.steal_data()

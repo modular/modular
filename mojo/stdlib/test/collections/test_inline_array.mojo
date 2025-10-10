@@ -221,7 +221,7 @@ def test_array_contains():
 def test_inline_array_runs_destructors():
     """Ensure we delete the right number of elements."""
     var destructor_recorder = List[Int]()
-    var ptr = UnsafePointer(to=destructor_recorder).origin_cast[False]()
+    var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
     alias capacity = 32
     var inline_list = InlineArray[DelRecorder[ptr.origin], 4](
         DelRecorder(0, ptr),
@@ -300,7 +300,7 @@ def test_move():
     # === 3. Check that the destructor is not called when moving. ===
 
     var del_counter = List[Int]()
-    var del_counter_ptr = UnsafePointer(to=del_counter).origin_cast[False]()
+    var del_counter_ptr = UnsafePointer(to=del_counter).as_immutable()
     var del_recorder = DelRecorder(0, del_counter_ptr)
     var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
 

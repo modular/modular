@@ -25,7 +25,7 @@ def test_maybe_uninitialized():
     # Every time an Int is destroyed, it's going to be recorded here.
     var destructor_recorder = List[Int]()
 
-    var ptr = UnsafePointer(to=destructor_recorder).origin_cast[False]()
+    var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
     var a = UnsafeMaybeUninitialized[DelRecorder[ptr.origin]]()
     a.write(DelRecorder(42, ptr))
 

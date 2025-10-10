@@ -215,7 +215,7 @@ struct String(
         # Safety: This should be safe since we set `capacity_or_data` to 0.
         # Meaning any mutation will cause us to either reallocate or inline
         # the string.
-        self._ptr_or_data = data._slice._data.origin_cast[True]()
+        self._ptr_or_data = data._slice._data.unsafe_mut_cast[True]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0
@@ -1173,10 +1173,13 @@ struct String(
             return (
                 UnsafePointer(to=self)
                 .bitcast[Byte]()
-                .origin_cast[False, __origin_of(self)]()
+                .as_immutable()
+                .unsafe_origin_cast[__origin_of(self)]()
             )
         else:
-            return self._ptr_or_data.origin_cast[False, __origin_of(self)]()
+            return self._ptr_or_data.as_immutable().unsafe_origin_cast[
+                __origin_of(self)
+            ]()
 
     fn unsafe_ptr_mut(
         mut self, var capacity: UInt = 0
@@ -1199,7 +1202,7 @@ struct String(
         elif not self._is_unique() or new_cap > self.capacity():
             self._realloc_mutable(new_cap)
 
-        return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
+        return self.unsafe_ptr().unsafe_mut_cast[True]()
 
     fn unsafe_cstr_ptr(
         mut self,

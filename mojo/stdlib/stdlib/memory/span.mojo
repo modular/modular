@@ -155,7 +155,7 @@ struct Span[
         self._data = (
             list.unsafe_ptr()
             .address_space_cast[address_space]()
-            .origin_cast[mut, origin]()
+            .unsafe_origin_cast[origin]()
         )
         self._len = list._len
 
@@ -177,7 +177,7 @@ struct Span[
             UnsafePointer(to=array)
             .bitcast[T]()
             .address_space_cast[address_space]()
-            .origin_cast[mut, origin]()
+            .unsafe_origin_cast[origin]()
         )
         self._len = size
 
@@ -608,7 +608,9 @@ struct Span[
             A pointer merged with the specified `other_type`.
         """
         return {
-            ptr = self._data.origin_cast[result.mut, result.origin](),
+            ptr = self._data.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
+                result.origin
+            ](),
             length = UInt(self._len),
         }
 

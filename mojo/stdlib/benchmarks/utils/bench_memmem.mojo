@@ -159,7 +159,7 @@ fn _memmem_baseline[
     if needle_len == 1:
         return _memchr(
             Span[Scalar[dtype], ImmutableAnyOrigin](
-                ptr=haystack.origin_cast[False](), length=UInt(haystack_len)
+                ptr=haystack.as_immutable(), length=UInt(haystack_len)
             ),
             needle[0],
         )
