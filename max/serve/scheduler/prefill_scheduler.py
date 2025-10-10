@@ -67,6 +67,10 @@ class PrefillScheduler(Scheduler):
     ) -> None:
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
+        if paged_cache.num_replicas > 1:
+            raise ValueError(
+                "PrefillScheduler does not support data parallelism"
+            )
         self.paged_cache = paged_cache
         # Initialize Scheduler state.
         self.active_transfers: dict[
@@ -80,7 +84,7 @@ class PrefillScheduler(Scheduler):
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
-            tensors=paged_cache.device_tensors,
+            tensors=paged_cache._replica_managers[0].device_tensors,
             total_num_pages=paged_cache.total_num_pages,
         )
 
@@ -186,7 +190,7 @@ class PrefillScheduler(Scheduler):
             ]
 
             # Retrieve source block ids.
-            src_idxs = self.paged_cache.block_manager.get_req_blocks(
+            src_idxs = self.paged_cache.get_req_blocks(
                 context.request_id,
             )
             assert len(src_idxs) == len(dst_idxs)

@@ -24,12 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.nn import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    MultiPagedKVCacheManager,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
+from max.nn.kv_cache import KVCacheInputs, PagedKVCacheManager, load_kv_manager
 from max.pipelines.core import TextContext
 from max.pipelines.lib import ModelInputs, ModelOutputs
 from max.pipelines.lib.config_enums import PipelineRole
@@ -266,17 +261,9 @@ class DeepseekV3Model(DeepseekV2Model):
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
-
-        data_parallel_splits: Tensor
-        if self.pipeline_config.model_config.data_parallel_degree > 1:
-            assert isinstance(self.kv_manager, MultiPagedKVCacheManager)
-            data_parallel_splits = self.kv_manager.get_data_parallel_splits(
-                context_batch
-            )
-        else:
-            data_parallel_splits = Tensor.from_numpy(
-                np.array([0, len(context_batch)], dtype=np.int64)
-            )
+        data_parallel_splits = self.kv_manager.get_data_parallel_splits(
+            context_batch
+        )
 
         return DeepseekV3Inputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),

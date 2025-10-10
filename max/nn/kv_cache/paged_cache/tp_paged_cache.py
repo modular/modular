@@ -71,7 +71,7 @@ class PagedCacheValues(NestedIterableDataclass):
     max_lengths: TensorValue
 
 
-class PagedKVCacheManager:
+class TPPagedKVCacheManager:
     page_size: int
     """Number of tokens stored per block."""
 
@@ -133,6 +133,11 @@ class PagedKVCacheManager:
         self.num_layers = num_layers
         self.devices = devices
         self.session = session
+
+        if params.data_parallel_degree > 1:
+            raise ValueError(
+                "TPPagedKVCacheManager does not support data parallelism"
+            )
 
         # Attributes for managing available slots.
         self._available = set(range(self.max_batch_size))
@@ -362,22 +367,6 @@ class PagedKVCacheManager:
 
         # return the minimum of the two
         return min(available_cache_memory, size_to_support_full_cache)
-
-    @classmethod
-    def infer_optimal_batch_size(
-        cls,
-        params: KVCacheParams,
-        max_seq_len: int,
-        num_layers: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        # We just hard-code a default of 512 for paged attention.
-        # The worst case scenario if this is too high is that we'll evict
-        # requests at an elevated rate. We print warnings in that case so users
-        # are aware of what needs to be tweaked/changed.
-        return 512
 
     def block_shape(
         self,
@@ -729,7 +718,7 @@ class PagedKVCacheManager:
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: list[RaggedKVCacheInputs],
+        kv_cache_inputs: Sequence[RaggedKVCacheInputs],
         prev_model_inputs: Any,
     ) -> list[RaggedKVCacheInputs]:
         """Prepares cache inputs for the next token in multistep execution.
@@ -774,6 +763,7 @@ class PagedKVCacheManager:
         updated_max_lengths = max_lengths[1:, :]
 
         # Return our updated batch.
+        assert isinstance(kv_cache_inputs, list)
         for i in range(len(self.devices)):
             updated_cache_length = updated_cache_lengths[i]
             assert isinstance(updated_cache_length, Tensor)
@@ -790,14 +780,8 @@ class PagedKVCacheManager:
         # As there is only one replica, we always return 0
         return 0
 
-    def external_claim(
-        self, request_id: RequestID, replica_idx: int = 0
-    ) -> None:
+    def external_claim(self, request_id: RequestID) -> None:
         """Reserve a sequence ID for the given request ID."""
-        if replica_idx != 0:
-            raise ValueError(
-                "PagedKVCacheManager does not support multiple replicas"
-            )
         if request_id in self._request_to_seq_id:
             raise ValueError(f"Request ID {request_id} is already claimed")
 

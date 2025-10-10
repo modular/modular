@@ -96,9 +96,13 @@ class DecodeScheduler(Scheduler):
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
 
         # Create Transfer Engine
+        if self.paged_manager.num_replicas > 1:
+            raise ValueError(
+                "DecodeScheduler does not support data parallelism"
+            )
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager.device_tensors,
+            tensors=self.paged_manager._replica_managers[0].device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
@@ -235,7 +239,7 @@ class DecodeScheduler(Scheduler):
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.paged_manager.block_manager.get_req_blocks(req_id)
+            dst_idxs = self.paged_manager.get_req_blocks(req_id)
             self.prefill_reqs[req_id] = context
             self.send_prefill_request(req_id, context, dst_idxs)
 
