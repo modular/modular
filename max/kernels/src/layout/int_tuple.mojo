@@ -2288,10 +2288,12 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
             var r = IntTuple()
             for v in a:
                 r.append(_prefix_product2(v, v_init))
-                v_init = (
-                    UNKNOWN_VALUE if v_init
-                    == UNKNOWN_VALUE else v_init * product(v)
-                )
+
+                var is_unknown = (
+                    v.is_value() and Int(v) == UNKNOWN_VALUE
+                ) or v_init == UNKNOWN_VALUE
+
+                v_init = UNKNOWN_VALUE if is_unknown else v_init * product(v)
             return r
     else:
 
