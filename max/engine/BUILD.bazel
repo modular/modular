@@ -3,7 +3,6 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 modular_py_library(
     name = "engine",
     srcs = glob(["**/*.py"]),
-    data = ["py.typed"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
