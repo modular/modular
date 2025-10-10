@@ -50,17 +50,14 @@ from max.nn.kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Shardable
 from max.nn.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
+    merge_multimodal_embeddings_with_gather,
 )
 from max.pipelines.architectures.internvl.internvl import distribute_value
 from max.pipelines.architectures.llama3.model_config import Llama3Config
@@ -551,7 +548,8 @@ class Qwen25VLDecoder(Module):
         tokens: TensorValueLike,
         return_n_logits: TensorValue,
         image_embeddings: list[TensorValue],
-        image_token_indices: list[TensorValue],
+        scatter_indices: list[TensorValue],
+        gather_indices: list[TensorValue],
         position_ids: TensorValue,
         mrope_section: list[int],
         kv_collections: list[PagedCacheValues],
@@ -564,13 +562,18 @@ class Qwen25VLDecoder(Module):
         # Let the kernel handle the no-image embeddings case.
         # And use the first device's image embeddings since they're replicated.
         h = [
-            merge_multimodal_embeddings(
+            merge_multimodal_embeddings_with_gather(
                 inputs_embeds=h_device,
                 multimodal_embeddings=img_embed,
-                image_token_indices=img_tok_indices,
+                scatter_indices=scatter_indices,
+                gather_indices=gather_indices,
             )
-            for h_device, img_embed, img_tok_indices in zip(
-                h, image_embeddings, image_token_indices, strict=True
+            for h_device, img_embed, scatter_indices, gather_indices in zip(
+                h,
+                image_embeddings,
+                scatter_indices,
+                gather_indices,
+                strict=True,
             )
         ]
 

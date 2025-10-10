@@ -627,10 +627,6 @@ class TextAndVisionContext(
             raise ValueError(
                 f"It is invalid for the active_idx ({self.active_idx}) to bisect an image ({img})."
             )
-        if img := self._find_bisected_image(self.start_idx):
-            raise ValueError(
-                f"It is invalid for the start_idx ({self.start_idx}) to bisect an image ({img})."
-            )
         if self.active_idx != self.end_idx:
             raise ValueError(
                 f"It is invalid for the active_idx ({self.active_idx}) to not be equal to the end_idx ({self._end_idx}) for VLM as chunked prefill is not supported."
