@@ -72,6 +72,8 @@ from _rocblas.hipblaslt import (
     hipblasLtMatrixLayout_t,
     hipblasLtMatrixLayoutCreate,
     hipblasLtMatrixLayoutDestroy,
+    hipblasLtMatrixLayoutSetAttribute,
+    hipblasLtMatmulLayoutAttribute_t,
     hipblasOperation_t,
     hipDataType_t,
 )
@@ -321,6 +323,7 @@ fn matmul[
     transpose_b: Bool = False,
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
+    batch_size: Int = 1,
 ) raises:
     """
     Matmul using the vendor BLAS library. With a global handle.
@@ -344,6 +347,7 @@ fn matmul[
             transpose_b=transpose_b,
             alpha=alpha,
             beta=beta,
+            batch_size=batch_size,
         )
 
 
@@ -366,6 +370,7 @@ fn matmul[
     transpose_b: Bool = False,
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
+    batch_size: Int = 1,
 ) raises:
     with ctx.push_context() as cur_ctx:
         return matmul[use_tf32=use_tf32](
@@ -379,6 +384,7 @@ fn matmul[
             transpose_b=transpose_b,
             alpha=alpha,
             beta=beta,
+            batch_size=batch_size,
         )
 
 
@@ -402,6 +408,7 @@ fn matmul[
     transpose_b: Bool = False,
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
+    batch_size: Int = 1,
 ) raises:
     @parameter
     if handle.resolved_backend is Backend.CUBLAS:
@@ -459,6 +466,7 @@ fn matmul[
                 transpose_b=transpose_b,
                 alpha=alpha,
                 beta=beta,
+                batch_size=batch_size,
             )
     else:
         raise Error(
@@ -1092,6 +1100,7 @@ fn _hipblasLt_matmul[
     transpose_b: Bool = False,
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
+    batch_size: Int = 1,
 ) raises:
     constrained[
         (
@@ -1131,6 +1140,29 @@ fn _hipblasLt_matmul[
         )
         return _desc
 
+    @always_inline
+    fn set_matrix_layout_batch_size(
+        mat_layout: hipblasLtMatrixLayout_t,
+        batch_size: Int,
+        batch_stride: Int64,
+    ) raises:
+        _check_hipblas_error(
+            hipblasLtMatrixLayoutSetAttribute(
+                mat_layout,
+                hipblasLtMatmulLayoutAttribute_t.BATCH_COUNT,
+                UnsafePointer(to=batch_size).bitcast[NoneType](),
+                size_of[Int](),
+            )
+        )
+        _check_hipblas_error(
+            hipblasLtMatrixLayoutSetAttribute(
+                mat_layout,
+                hipblasLtMatmulLayoutAttribute_t.STRIDED_BATCH_OFFSET,
+                UnsafePointer(to=batch_stride).bitcast[NoneType](),
+                size_of[Int64](),
+            )
+        )
+
     var _adata = UnsafePointer(a.ptr.bitcast[NoneType]())
     var _bdata = UnsafePointer(b.ptr.bitcast[NoneType]())
     var _ddata = UnsafePointer(d.ptr.bitcast[NoneType]())
@@ -1138,6 +1170,12 @@ fn _hipblasLt_matmul[
     var _adesc = create_matrix_layout(a)
     var _bdesc = create_matrix_layout(b)
     var _ddesc = create_matrix_layout(d)
+
+    # set batch size accordingly
+    if batch_size > 1:
+        set_matrix_layout_batch_size(_adesc, batch_size, a.dim(0) * a.dim(1))
+        set_matrix_layout_batch_size(_bdesc, batch_size, b.dim(0) * b.dim(1))
+        set_matrix_layout_batch_size(_ddesc, batch_size, d.dim(0) * d.dim(1))
 
     var transa = (
         hipblasOperation_t.OP_T if transpose_a else hipblasOperation_t.OP_N

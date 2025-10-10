@@ -188,7 +188,7 @@ struct hipblasLtMatmulDescAttributes_t:
 struct hipblasLtMatmulLayoutAttribute_t:
     var _value: Int32
     alias BATCH_COUNT = Self(0)
-    alias STRIDED_BATCH_COUNT = Self(1)
+    alias STRIDED_BATCH_OFFSET = Self(1)
     alias TYPE = Self(2)
     alias ORDER = Self(3)
     alias ROWS = Self(4)
