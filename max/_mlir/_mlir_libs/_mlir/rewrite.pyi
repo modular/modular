@@ -5,13 +5,10 @@
 from collections.abc import Callable
 from typing import overload
 
-import max._mlir._mlir_libs._mlir.ir
 import max._mlir.ir
 
 class PatternRewriter:
-    @property
-    def ip(self) -> max._mlir._mlir_libs._mlir.ir.InsertionPoint:
-        """The current insertion point of the PatternRewriter."""
+    pass
 
 class PDLResultList:
     @overload
