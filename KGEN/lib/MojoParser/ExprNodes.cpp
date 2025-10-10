@@ -1787,8 +1787,22 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     if (lookup.isErroneous())
       return {}; // Error already diagnosed.
     if (lookup.isSuccess()) {
-      ArrayRef<ASTDecl *> foundDecls = lookup.getIfSuccess();
-      memberDecls.append(foundDecls.begin(), foundDecls.end());
+      // The param decls from structs are duplicated into the extension's
+      // ASTDecl.
+      // This fact is inconvenient here in emitLCVIR, because we would see
+      // both the ParamDeclRefAttr from the struct and the extension, and it
+      // would look like a conflict further below. So, here we filter out the
+      // param refs from extensions to avoid duplicates.
+      bool isExtension =
+          isa_and_nonnull<ExtensionDeclOp>(containerDecl->getIfOperation());
+      for (auto *decl : lookup.getIfSuccess()) {
+        if (isExtension)
+          if (!decl->getIfOperation())
+            if (auto cv = decl->getIfIRValue().getIfPValue())
+              if (isa<ParamDeclRefAttr>(cv.get()))
+                continue;
+        memberDecls.push_back(decl);
+      }
     }
   }
 
