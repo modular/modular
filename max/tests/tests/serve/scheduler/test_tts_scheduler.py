@@ -135,9 +135,12 @@ def create_paged_scheduler(
     enable_prioritize_first_decode: bool = False,
 ) -> tuple[AudioGenerationScheduler, MAXPushQueue[TTSContext]]:
     # Create a paged manager that has one slot
+    max_kv_slots = max_batch_size
+    if max_queue_size_tg is not None:
+        max_kv_slots = max(max_kv_slots, max_queue_size_tg)
     paged_manager = create_paged_manager(
         num_blocks=num_blocks,
-        max_batch_size=max_batch_size,
+        max_batch_size=max_kv_slots,
         max_seq_len=max_seq_len,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
@@ -242,7 +245,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
         return responses
 
     def release(self, request_id: RequestID) -> None:
-        pass
+        self.paged_manager.release(request_id)
 
 
 @dataclass(eq=True)
