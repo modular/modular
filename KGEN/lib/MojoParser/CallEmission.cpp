@@ -180,7 +180,7 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
     // ambiguous when initializing with an implicitly convertible type e.g.
     // Bool is Intable and ImplicitlyIntable, so `Int(True)` would be ambiguous.
     bool isImplicit =
-        cast<FnOp>(candidate->getIfOperation()).getImplicitConversion();
+        cast<FnOp>(candidate->getIfOperation()).isImplicitConversion();
     if (!areTheBestCandidatesImplicit && isImplicit)
       continue;
 

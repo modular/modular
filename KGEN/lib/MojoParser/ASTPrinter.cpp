@@ -84,7 +84,7 @@ static void removeImplicitCtorCall(TypedAttr &value, SharedState *shared) {
   if (shared) {
     ASTDecl *decl = shared->getDeclResolver().getDeclForFuncSymbol(nameAttr);
     auto calleeFn = cast<FnOp>(decl->getIfOperation());
-    if (!calleeFn.getImplicitConversion())
+    if (!calleeFn.isImplicitConversion())
       return; // If it's not an implicit conversion, don't remove it.
   }
 
@@ -103,7 +103,7 @@ static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
 static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
   // List of common namespace prefixes to trim
   static const StringRef commonPrefixes[] = {
-      "stdlib::", "layout::",
+      "stdlib::", "layout::"
       // Add other common prefixes here
   };
 

@@ -600,7 +600,7 @@ void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
         << "'@implicit' initializers must accept a single argument value";
     return;
   }
-  funcOp.setImplicitConversion(true);
+  funcOp.setImplicitConversion(ImplicitConversionKind::Implicit);
 }
 
 void FnSigDecorators::applyCopyOrMoveCapture(SMLoc decoratorLoc,
@@ -2704,7 +2704,7 @@ void StructDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
                 "with a single field");
       return;
     }
-    fn.setImplicitConversion(true);
+    fn.setImplicitConversion(ImplicitConversionKind::Implicit);
   }
 }
 

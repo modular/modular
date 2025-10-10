@@ -60,7 +60,8 @@ def LIT_FnOp : LITOp<"fn", [
     UnitAttr:$isStatic,
     UnitAttr:$def,  // Present if 'def' absent if 'fn'.
     UnitAttr:$synthetic,
-    UnitAttr:$implicitConversion,
+    DefaultValuedAttr<LIT_ImplicitConversionKindAttr,
+      "ImplicitConversionKind::None">:$implicitConversion,
     UnitAttr:$external,
     UnitAttr:$selfDeinit, // First argument is 'deinit self'.
     UnitAttr:$defaultedTraitFn, // Present for trait methods with non-empty bodies.
@@ -147,6 +148,11 @@ def LIT_FnOp : LITOp<"fn", [
 
     /// Return true if this is a defaulted trait method.
     bool isDefaultedTraitFn() { return getDefaultedTraitFn(); }
+
+    /// Return true if this is an implicit conversion function.
+    bool isImplicitConversion() {
+      return getImplicitConversion() != ImplicitConversionKind::None;
+    }
 
     mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
     mlir::ArrayAttr getResAttrsAttr() { return nullptr; }

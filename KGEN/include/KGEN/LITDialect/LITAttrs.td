@@ -1002,6 +1002,13 @@ def LIT_VarDeclKindAttr : EnumAttr<LITDialect, LIT_VarDeclKind,
     "var.decl.kind">;
 
 //===----------------------------------------------------------------------===//
+// ImplicitConversionKindAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_ImplicitConversionKindAttr : EnumAttr<LITDialect,
+    LIT_ImplicitConversionKind, "implicit_conversion">;
+
+//===----------------------------------------------------------------------===//
 // SugarAttr
 //===----------------------------------------------------------------------===//
 
