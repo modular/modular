@@ -14,7 +14,7 @@ import traceback
 
 # Standard library
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,8 +24,6 @@ from typing import Any, TypeVar
 import click
 import hf_repo_lock
 import huggingface_hub
-
-# Tests
 import requests
 import torch
 import transformers
@@ -36,6 +34,9 @@ from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from peft.peft_model import PeftModel
+
+# Tests
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from test_common import (
     evaluate,
@@ -46,9 +47,30 @@ from test_common import (
 )
 from test_common.evaluate import NUM_STEPS, ModelOutput
 from test_common.github_utils import github_log_group
+from test_common.lora_utils import create_test_lora_adapter
 from test_common.storage import load_image
 from test_common.torch_utils import MockTextGenerationRequest
 from typing_extensions import ParamSpec
+
+
+# This is required since the presence of peft changes
+# code-path that our `transformer` pipelines take.
+# More specifically, when `weights_path` are present in an oracle,
+# the `UNUSED` value for the model path is used to try and query
+# for LoRA specific config. There isn't a good way to disable this path
+# since it is always taken when `peft` is available in the env.
+@contextmanager
+def disable_peft() -> Generator[None, None, None]:
+    original_peft_available = transformers.utils.import_utils._peft_available
+
+    transformers.utils.import_utils._peft_available = False
+    try:
+        yield
+    finally:
+        transformers.utils.import_utils._peft_available = (
+            original_peft_available
+        )
+
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -731,14 +753,16 @@ class GenericOracle(PipelineOracle):
                 )
             )
             config = transformers.AutoConfig.from_pretrained(config_path)
-            model = self.auto_model_cls.from_pretrained(
-                "UNUSED",
-                config=config,
-                gguf_file=str(downloaded_weight_path),
-                device_map=device,
-                trust_remote_code=trust_remote_code,
-                torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
-            )
+
+            with disable_peft():
+                model = self.auto_model_cls.from_pretrained(
+                    "UNUSED",
+                    config=config,
+                    gguf_file=str(downloaded_weight_path),
+                    device_map=device,
+                    trust_remote_code=trust_remote_code,
+                    torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+                )
         else:
             model = self.auto_model_cls.from_pretrained(
                 self.model_path,
@@ -747,6 +771,133 @@ class GenericOracle(PipelineOracle):
                 trust_remote_code=trust_remote_code,
                 torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
             )
+        return TorchModelAndDataProcessor(model=model, data_processor=processor)
+
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        return (
+            [
+                MockTextGenerationRequest.text_only(prompt=prompt)
+                for prompt in self._prompts
+            ]
+            if self._prompts
+            else test_data.DEFAULT_TEXT_ONLY
+        )
+
+    @property
+    def use_cache(self) -> bool:
+        return self._use_cache
+
+
+class LoRAOracle(PipelineOracle):
+    """Oracle for models with LoRA adapters."""
+
+    def __init__(
+        self,
+        *,
+        hf_repo_id: str,
+        target_modules: list[str],
+        lora_adapter_path: str | None = None,
+        device_encoding_map: dict[str, list[str]],
+        config_params: dict[str, Any] = {},  # noqa: B006
+        prompts: list[str] | None = None,
+        use_cache: bool = True,
+        lora_rank: int = 8,
+    ) -> None:
+        """Initialize LoRA oracle.
+
+        Args:
+            hf_repo_id: Path to the base model
+            target_modules: Target modules for LoRA (qkvo, gate, down, up, etc.)
+            lora_adapter_path: Path to the LoRA adapter (if None, creates test adapter)
+            device_encoding_map: Device to encoding mapping
+            config_params: Additional config parameters
+            prompts: Custom prompts to use
+            use_cache: Whether to use cache
+            lora_rank: LoRA rank parameter
+        """
+        self.hf_repo_id = hf_repo_id
+        self._device_encoding_map = device_encoding_map
+        self.config_params = config_params
+        self._prompts = prompts
+        self._use_cache = use_cache
+        self.target_modules = target_modules
+        self.lora_rank = lora_rank
+
+        self._adapter_path = lora_adapter_path
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return self._device_encoding_map
+
+    def _get_shared_adapter(self) -> str:
+        if self._adapter_path is None:
+            revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+            self._adapter_path = create_test_lora_adapter(
+                base_model_id=self.hf_repo_id,
+                lora_rank=self.lora_rank,
+                target_modules=self.target_modules,
+                revision=revision,
+            )
+
+        return self._adapter_path
+
+    def create_max_pipeline(
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+    ) -> MaxPipelineAndTokenizer:
+        """Create MAX pipeline with LoRA adapter."""
+        for device_spec in device_specs:
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
+
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+        lora_path = self._get_shared_adapter()
+
+        config = pipelines.PipelineConfig(
+            device_specs=device_specs,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            model_path=self.hf_repo_id,
+            huggingface_model_revision=revision,
+            max_num_steps=1,
+            enable_lora=True,
+            lora_paths=[lora_path],
+            max_num_loras=1,
+            max_lora_rank=self.lora_rank,
+            cache_strategy=KVCacheStrategy.PAGED,
+            enable_prefix_caching=False,  # LoRA requires prefix caching disabled
+            trust_remote_code=True,
+            **self.config_params,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        assert pipeline._pipeline_model._lora_manager is not None
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+    def create_torch_pipeline(
+        self, *, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        """Create PyTorch pipeline with LoRA adapter using PEFT."""
+
+        # Load base model
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
+        lora_path = self._get_shared_adapter()
+
+        processor = transformers.AutoTokenizer.from_pretrained(
+            self.hf_repo_id, revision=revision, trust_remote_code=True
+        )
+
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            self.hf_repo_id,
+            revision=revision,
+            device_map=device,
+            trust_remote_code=True,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+        )
+
+        # Apply LoRA adapter
+        model = PeftModel.from_pretrained(model, lora_path, revision=revision)
+
+        model.eval()
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     @property
@@ -1038,6 +1189,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32", "q4_k", "q4_0", "q6_k", "gptq"],
             "gpu": ["float32", "bfloat16"],
         },
+    ),
+    "smollm2-lora": LoRAOracle(
+        hf_repo_id="HuggingFaceTB/SmolLM2-135M-Instruct",
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+        },
+        config_params={
+            "max_length": 2048,
+        },
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        lora_rank=16,
     ),
     "mpnet": GenericOracle(
         model_path="sentence-transformers/all-mpnet-base-v2",

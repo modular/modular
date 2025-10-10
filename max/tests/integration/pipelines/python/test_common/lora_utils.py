@@ -33,8 +33,8 @@ def generate_test_lora_adapter(
     base_model_id: str,
     output_dir: str,
     lora_rank: int = 8,
-    lora_alpha: int = 16,
     target_modules: list[str] | None = None,
+    revision: str | None = None,
 ) -> None:
     """Generate a minimal LoRA adapter for testing.
 
@@ -42,18 +42,17 @@ def generate_test_lora_adapter(
         base_model_id: HuggingFace model ID to generate adapter for
         output_dir: Directory to save the adapter files
         lora_rank: LoRA rank (r parameter)
-        lora_alpha: LoRA alpha parameter for scaling
         target_modules: List of module names to apply LoRA to
+        revision: Model revision
     """
     os.makedirs(output_dir, exist_ok=True)
 
     # Load base model config to get dimensions
-    config = AutoConfig.from_pretrained(base_model_id)
+    config = AutoConfig.from_pretrained(base_model_id, revision=revision)
 
     # Default target modules for transformer models
-    # Use only q_proj to avoid GQA complexity with k_proj/v_proj
     if target_modules is None:
-        target_modules = ["q_proj"]
+        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
 
     # Create adapter config
     adapter_config: dict[str, Any] = {
@@ -67,7 +66,7 @@ def generate_test_lora_adapter(
         "layers_pattern": None,
         "layers_to_transform": None,
         "loftq_config": {},
-        "lora_alpha": lora_alpha,
+        "lora_alpha": 16,
         "lora_dropout": 0.0,
         "megatron_config": None,
         "megatron_core": "megatron.core",
@@ -92,26 +91,42 @@ def generate_test_lora_adapter(
     # For each layer and target module, create LoRA A and B matrices
     num_layers = config.num_hidden_layers
     hidden_size = config.hidden_size
-    num_attention_heads = config.num_attention_heads
-    num_key_value_heads = getattr(
-        config, "num_key_value_heads", num_attention_heads
-    )
-    head_dim = hidden_size // num_attention_heads
+
+    # Handle grouped query attention - k_proj and v_proj have different dimensions
+    num_heads = config.num_attention_heads
+    num_kv_heads = getattr(config, "num_key_value_heads", num_heads)
+    head_dim = hidden_size // num_heads
+
+    # Determine output dimensions for attention projection modules
+    attn_module_dims = {
+        "q_proj": hidden_size,  # hidden_size -> hidden_size
+        "k_proj": num_kv_heads * head_dim,  # hidden_size -> kv_hidden_size
+        "v_proj": num_kv_heads * head_dim,  # hidden_size -> kv_hidden_size
+        "o_proj": hidden_size,  # hidden_size -> hidden_size
+    }
 
     for layer_idx in range(num_layers):
         for module in target_modules:
-            # Use full hidden_size for all modules to match LoRA manager expectations
-            proj_dim = hidden_size
+            # Validate that module is supported (attention only for now)
+            if module not in attn_module_dims:
+                raise ValueError(
+                    f"Unsupported target module '{module}'. Only attention"
+                    " modules are currently supported:"
+                    f" {list(attn_module_dims.keys())}"
+                )
+
+            # Get the output dimension for this module type
+            out_dim = attn_module_dims[module]
 
             # LoRA A: maps from proj_dim to rank
             lora_a_key = f"base_model.model.layers.{layer_idx}.self_attn.{module}.lora_A.weight"
-            # Initialize with small random values
-            lora_weights[lora_a_key] = torch.randn(lora_rank, proj_dim) * 0.01
+            lora_weights[lora_a_key] = (
+                torch.randn(lora_rank, hidden_size) * 0.01
+            )
 
             # LoRA B: maps from rank to proj_dim
             lora_b_key = f"base_model.model.layers.{layer_idx}.self_attn.{module}.lora_B.weight"
-            # Initialize to zero (common practice)
-            lora_weights[lora_b_key] = torch.zeros(proj_dim, lora_rank)
+            lora_weights[lora_b_key] = torch.randn(out_dim, lora_rank) * 0.01
 
     # Save weights in safetensors format
     save_file(
@@ -122,24 +137,38 @@ def generate_test_lora_adapter(
 def create_test_lora_adapter(
     base_model_id: str = REPO_ID,
     lora_rank: int = 8,
-    lora_alpha: int = 16,
     target_modules: list[str] | None = None,
     prefix: str = "lora_test",
+    seed: int | None = None,
+    revision: str | None = None,
 ) -> str:
     """Create a temporary LoRA adapter for testing.
 
+    Args:
+        base_model_id: HuggingFace model ID to generate adapter for
+        lora_rank: LoRA rank (r parameter)
+        target_modules: List of module names to apply LoRA to
+        prefix: Prefix for temporary directory name
+        seed: Random seed for deterministic weight generation
+        revision: Model revision
     Returns:
         str: Path to the generated LoRA adapter directory
     """
-    temp_dir = tempfile.mkdtemp(prefix=f"{prefix}_")
-    generate_test_lora_adapter(
-        base_model_id=base_model_id,
-        output_dir=temp_dir,
-        lora_rank=lora_rank,
-        lora_alpha=lora_alpha,
-        target_modules=target_modules,
-    )
-    return temp_dir
+    # Set seed for deterministic weight generation
+
+    with torch.random.fork_rng():
+        if seed is not None:
+            torch.manual_seed(seed)
+
+        temp_dir = tempfile.mkdtemp(prefix=f"{prefix}_")
+        generate_test_lora_adapter(
+            base_model_id=base_model_id,
+            output_dir=temp_dir,
+            lora_rank=lora_rank,
+            target_modules=target_modules,
+            revision=revision,
+        )
+        return temp_dir
 
 
 def create_multiple_test_lora_adapters(
@@ -157,14 +186,12 @@ def create_multiple_test_lora_adapters(
     for i in range(num_adapters):
         # Vary the configuration slightly for each adapter
         lora_rank = 8 if i == 0 else 4
-        lora_alpha = 16 if i == 0 else 8
 
         temp_dir = tempfile.mkdtemp(prefix=f"{prefix}_{i}_")
         generate_test_lora_adapter(
             base_model_id=base_model_id,
             output_dir=temp_dir,
             lora_rank=lora_rank,
-            lora_alpha=lora_alpha,
             target_modules=["q_proj"],
         )
         adapters.append(temp_dir)

@@ -1107,6 +1107,16 @@ PIPELINES = {
             kl_div_threshold=7.5e-01,
         ),
     ),
+    "HuggingFaceTB/SmolLM2-135M-Instruct-LoRA-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=[],  # Small model (<8B params)
+        run=_make_pipeline_runner(
+            pipeline="smollm2-lora",
+            encoding="bfloat16",
+            cos_dist_threshold=1.1e-03,
+            kl_div_threshold=7.5e-03,
+        ),
+    ),
 }
 
 

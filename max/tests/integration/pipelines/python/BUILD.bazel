@@ -244,6 +244,7 @@ modular_py_binary(
         requirement("timm"),  # Required by InternVL.
         requirement("torch"),
         requirement("transformers"),
+        requirement("peft"),  # Required for LoRA support
     ] + select({
         "//:has_gpu": [
             requirement("gptqmodel"),
