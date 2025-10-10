@@ -1203,7 +1203,7 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
         typeDeclInfo.getFieldContaining(declRefType, firstInvalidOffset);
     firstInvalidOffset -= fieldBitOffset;
     nextValidOffset -= fieldBitOffset;
-    type = fieldDecl.getType();
+    type = fieldDecl.getReboundType(declRefType);
     diag << "." << fieldDecl.getName();
   }
 
@@ -1212,7 +1212,7 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
     auto declRefType = cast<LIT::StructType>(type);
     auto [fieldDecl, startBit, numBits] =
         typeDeclInfo.getFieldContaining(declRefType, 0);
-    type = fieldDecl.getType();
+    type = fieldDecl.getReboundType(declRefType);
     diag << "." << fieldDecl.getName();
   }
 
@@ -3581,14 +3581,19 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
   unsigned nextBit = 0;
   for (auto field : valueSet.typeDeclInfo.getStructDeclForType(valueDRType)
                         .getFieldDecls()) {
-    unsigned numBits =
-        valueSet.typeDeclInfo.getNumFieldsInType(field.getType());
+    // Rebound the field type first before we query the number of fields. This
+    // resolves potential generic fields.
+    // ```
+    // struct Pair[T: Movable](Movable):
+    //    var first: T
+    // ```
+    Type fieldType = field.getReboundType(valueDRType);
+    unsigned numBits = valueSet.typeDeclInfo.getNumFieldsInType(fieldType);
     // If this field has consumed bits, and if has trivial type, force it
     // back to being non-consumed.  This can allow the proper correctness
     // check to work and make the error diagnostic more accurate.
     ValueRef subFieldBits = valueRef.getSubfield(nextBit, numBits);
-    clearTrivialFields(subFieldBits, field.getReboundType(valueDRType), bits,
-                       valueSet);
+    clearTrivialFields(subFieldBits, fieldType, bits, valueSet);
     nextBit += numBits;
   }
 }
