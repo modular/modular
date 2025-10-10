@@ -102,7 +102,7 @@ fn test_producer_consumer[
         producer_warps_a + producer_warps_b
     ) * WARP_SIZE
 
-    if thread_idx.x < producer_thread_count:
+    if thread_idx.x < UInt(producer_thread_count):
         role = ThreadRole.PRODUCER
     else:
         role = ThreadRole.CONSUMER
@@ -154,7 +154,7 @@ fn test_producer_consumer[
     # NOTE: the 2 producer blocks are almost identical, you can proabbly make this a
     # a function
     if role is ThreadRole.PRODUCER:
-        if warp_id < producer_warps_a:
+        if warp_id < UInt(producer_warps_a):
             # NOTE: If there is a way to hide the phases that would be great, maybe the ringbuffer
             # handles the thread specific phase, or its encapsulated in the ThreadRole Struct.
 
@@ -211,7 +211,7 @@ fn test_producer_consumer[
 
                     local_tile_count += 1
         else:
-            var relative_warp_id = warp_id - producer_warps_a
+            var relative_warp_id = warp_id - UInt(producer_warps_a)
 
             var phases = InlineArray[
                 Int, pipeline_stages * (n_warps_per_block // producer_warps_b)
@@ -288,7 +288,9 @@ fn test_producer_consumer[
             warps_being_processed = total_consumer_operations // consumer_warps,
         ]()
 
-        var relative_warp_id = warp_id - (producer_warps_a + producer_warps_b)
+        var relative_warp_id = warp_id - UInt(
+            producer_warps_a + producer_warps_b
+        )
 
         for i in range(tile_count):
             var local_tile_count = 0

@@ -48,12 +48,12 @@ fn stencil2d(
         and tidy < UInt(num_rows - 1)
         and tidx < UInt(num_cols - 1)
     ):
-        b[tidy * num_cols + tidx] = (
-            coeff0 * a[tidy * num_cols + tidx - 1]
-            + coeff1 * a[tidy * num_cols + tidx]
-            + coeff2 * a[tidy * num_cols + tidx + 1]
-            + coeff3 * a[(tidy - 1) * num_cols + tidx]
-            + coeff4 * a[(tidy + 1) * num_cols + tidx]
+        b[tidy * UInt(num_cols) + tidx] = (
+            coeff0 * a[tidy * UInt(num_cols) + tidx - 1]
+            + coeff1 * a[tidy * UInt(num_cols) + tidx]
+            + coeff2 * a[tidy * UInt(num_cols) + tidx + 1]
+            + coeff3 * a[(tidy - 1) * UInt(num_cols) + tidx]
+            + coeff4 * a[(tidy + 1) * UInt(num_cols) + tidx]
         )
 
 
@@ -86,32 +86,32 @@ fn stencil2d_smem(
     ].stack_allocation()
 
     # Each element is loaded in shared memory.
-    a_shared[Index(lindex_y, lindex_x)] = a[tidy * num_cols + tidx]
+    a_shared[Index(lindex_y, lindex_x)] = a[tidy * UInt(num_cols) + tidx]
 
     # First column also loads elements left and right to the block.
     if thread_idx.x == 0:
         a_shared[Index(lindex_y, 0)] = (
-            a[tidy * num_cols + (tidx - 1)] if 0
-            <= tidy * num_cols + (tidx - 1)
-            < arr_size else 0
+            a[tidy * UInt(num_cols) + (tidx - 1)] if 0
+            <= tidy * UInt(num_cols) + (tidx - 1)
+            < UInt(arr_size) else 0
         )
         a_shared[Index(Int(lindex_y), BLOCK_DIM + 1)] = (
-            a[tidy * num_cols + tidx + BLOCK_DIM] if 0
-            <= tidy * num_cols + tidx + BLOCK_DIM
-            < arr_size else 0
+            a[tidy * UInt(num_cols) + tidx + BLOCK_DIM] if 0
+            <= tidy * UInt(num_cols) + tidx + BLOCK_DIM
+            < UInt(arr_size) else 0
         )
 
     # First row also loads elements above and below the block.
     if thread_idx.y == 0:
         a_shared[Index(0, lindex_x)] = (
-            a[(tidy - 1) * num_cols + tidx] if 0
-            < (tidy - 1) * num_cols + tidx
-            < arr_size else 0
+            a[(tidy - 1) * UInt(num_cols) + tidx] if 0
+            < (tidy - 1) * UInt(num_cols) + tidx
+            < UInt(arr_size) else 0
         )
         a_shared[Index(BLOCK_DIM + 1, lindex_x)] = (
-            a[(tidy + BLOCK_DIM) * num_cols + tidx] if 0
-            <= (tidy + BLOCK_DIM) * num_cols + tidx
-            < arr_size else 0
+            a[(tidy + BLOCK_DIM) * UInt(num_cols) + tidx] if 0
+            <= (tidy + BLOCK_DIM) * UInt(num_cols) + tidx
+            < UInt(arr_size) else 0
         )
 
     barrier()
@@ -122,7 +122,7 @@ fn stencil2d_smem(
         and tidy < UInt(num_rows - 1)
         and tidx < UInt(num_cols - 1)
     ):
-        b[tidy * num_cols + tidx] = (
+        b[tidy * UInt(num_cols) + tidx] = (
             coeff0 * a_shared[Index(lindex_y, lindex_x - 1)]
             + coeff1 * a_shared[Index(lindex_y, lindex_x)]
             + coeff2 * a_shared[Index(lindex_y, lindex_x + 1)]

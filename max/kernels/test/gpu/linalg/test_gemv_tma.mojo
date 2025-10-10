@@ -104,9 +104,9 @@ fn gemv_tma_kernel[
 
     alias a_size = a_smem_layout.size()
 
-    var b_smem_base = (a_smem_base + NUM_PIPELINE_STAGES * a_size).bitcast[
-        Scalar[dtype]
-    ]()
+    var b_smem_base = (
+        a_smem_base + NUM_PIPELINE_STAGES * UInt(a_size)
+    ).bitcast[Scalar[dtype]]()
 
     alias b_size = b_smem_layout.size()
 
@@ -157,14 +157,14 @@ fn gemv_tma_kernel[
     var producer_phase = PipelineState[NUM_PIPELINE_STAGES](0, 1, 0)
 
     for col_offset in range(0, K, BLOCK_SIZE_K):
-        var current_block_size = min(BLOCK_SIZE_K, K - col_offset)
+        var current_block_size = min(BLOCK_SIZE_K, K - UInt(col_offset))
 
         # Producer: Thread 0 loads data.
         if thread_idx.x == 0:
             var stage = producer_phase.index()
             tma_mbar[stage].expect_bytes(
-                BLOCK_SIZE_M * current_block_size * size_of[dtype]()
-                + current_block_size * size_of[dtype]()
+                BLOCK_SIZE_M * current_block_size * UInt(size_of[dtype]())
+                + current_block_size * UInt(size_of[dtype]())
             )
 
             cp_async_bulk_tensor_shared_cluster_global[

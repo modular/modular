@@ -26,11 +26,11 @@ fn kernel_wrapper[
         dtype, simd_width
     ],
 ](device_ptr: UnsafePointer[Scalar[dtype]]):
-    var val = device_ptr.load[width=simd_width](thread_idx.x * simd_width)
+    var val = device_ptr.load[width=simd_width](thread_idx.x * UInt(simd_width))
     var result = kernel_fn(val)
     barrier()
 
-    device_ptr.store(thread_idx.x * simd_width, result)
+    device_ptr.store(thread_idx.x * UInt(simd_width), result)
 
 
 fn _kernel_launch_helper[

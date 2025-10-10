@@ -396,8 +396,8 @@ fn gemm_kernel_3[
     number of rows in B.
     """
     # Calculate the column and row indices for each thread
-    var col = thread_idx.x % BN
-    var row = thread_idx.x // BN
+    var col = thread_idx.x % UInt(BN)
+    var row = thread_idx.x // UInt(BN)
 
     # Get the tile of the output matrix C that this thread block is responsible for
     var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
@@ -557,8 +557,8 @@ fn gemm_kernel_4[
     of rows in B.
     """
     # Calculate the column and row indices for each thread.
-    var col = thread_idx.x % BN
-    var row = thread_idx.x // BN
+    var col = thread_idx.x % UInt(BN)
+    var row = thread_idx.x // UInt(BN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
@@ -735,8 +735,8 @@ fn gemm_kernel_5[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    var partition_col = thread_idx.x % (BN // TN)
-    var partition_row = thread_idx.x // (BN // TN)
+    var partition_col = thread_idx.x % UInt(BN // TN)
+    var partition_row = thread_idx.x // UInt(BN // TN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
@@ -911,8 +911,8 @@ fn gemm_kernel_6[
     """
 
     alias simd_width = simd_width_of[dtype]()
-    var partition_col = thread_idx.x % (BN // TN)
-    var partition_row = thread_idx.x // (BN // TN)
+    var partition_col = thread_idx.x % UInt(BN // TN)
+    var partition_row = thread_idx.x // UInt(BN // TN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
@@ -1113,8 +1113,8 @@ fn matmul_kernel_tc[
     var warp_id = get_warp_id()  # Warp ID within the block
 
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id // (BN // WN)
-    warp_x = warp_id % (BN // WN)
+    warp_y = warp_id // UInt(BN // WN)
+    warp_x = warp_id % UInt(BN // WN)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](

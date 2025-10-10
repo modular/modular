@@ -265,7 +265,7 @@ fn winograd_conv2d_gpu_nhwc[
             for di in range(2):
                 for dj in range(2):
                     output_tensor[
-                        n, h_out + di, w_out + dj, c_out
+                        n, h_out + UInt(di), w_out + UInt(dj), c_out
                     ] = output_tile[di, dj]
 
 

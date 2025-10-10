@@ -254,8 +254,8 @@ fn tiled_matrix_multiplication[
     number of rows in B.
     """
     # Calculate the column and row indices for each thread
-    var col = thread_idx.x % BN
-    var row = thread_idx.x // BN
+    var col = thread_idx.x % UInt(BN)
+    var row = thread_idx.x // UInt(BN)
 
     # Get the tile of the output matrix C that this thread block is responsible for
     var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
@@ -362,8 +362,8 @@ fn tiled_register_matrix_multiplication[
     of rows in B.
     """
     # Calculate the column and row indices for each thread.
-    var col = thread_idx.x % BN
-    var row = thread_idx.x // BN
+    var col = thread_idx.x % UInt(BN)
+    var row = thread_idx.x // UInt(BN)
 
     # Get the tile of the output matrix C that this thread is
     # responsible for computing.
@@ -487,8 +487,8 @@ fn block_tiled_matrix_multiplication[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    var partition_col = thread_idx.x % (BN // TN)
-    var partition_row = thread_idx.x // (BN // TN)
+    var partition_col = thread_idx.x % UInt(BN // TN)
+    var partition_row = thread_idx.x // UInt(BN // TN)
 
     var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
         partition_row, partition_col
@@ -612,8 +612,8 @@ fn block_tiled_vectorized_matrix_multiplication[
     """
 
     alias simd_width = simd_width_of[dtype]()
-    var partition_col = thread_idx.x % (BN // TN)
-    var partition_row = thread_idx.x // (BN // TN)
+    var partition_col = thread_idx.x % UInt(BN // TN)
+    var partition_row = thread_idx.x // UInt(BN // TN)
 
     # Get the tile of the output matrix C that this thread is responsible
     # for computing.
@@ -762,8 +762,8 @@ fn tensor_core_matrix_multiplication[
     alias K = A.shape[1]()  # Number of columns in matrix A
 
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id() // (BN // WN)
-    warp_x = warp_id() % (BN // WN)
+    warp_y = warp_id() // UInt(BN // WN)
+    warp_x = warp_id() % UInt(BN // WN)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](

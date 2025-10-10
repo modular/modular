@@ -99,18 +99,26 @@ fn wgmma_kernel_rs[
         var a_reg = SIMD[DType.bfloat16, 8](0)
         var row = warp_id * 16 + lane_id // 4
         var col = (lane_id % 4) * 2
-        a_reg[0] = a_gmem_tile.ptr[row * K + col].cast[DType.bfloat16]()
-        a_reg[1] = a_gmem_tile.ptr[row * K + col + 1].cast[DType.bfloat16]()
-        a_reg[2] = a_gmem_tile.ptr[(row + 8) * K + col].cast[DType.bfloat16]()
-        a_reg[3] = a_gmem_tile.ptr[(row + 8) * K + col + 1].cast[
+        a_reg[0] = a_gmem_tile.ptr[row * UInt(K) + col].cast[DType.bfloat16]()
+        a_reg[1] = a_gmem_tile.ptr[row * UInt(K) + col + 1].cast[
             DType.bfloat16
         ]()
-        a_reg[4] = a_gmem_tile.ptr[row * K + col + 8].cast[DType.bfloat16]()
-        a_reg[5] = a_gmem_tile.ptr[row * K + col + 9].cast[DType.bfloat16]()
-        a_reg[6] = a_gmem_tile.ptr[(row + 8) * K + col + 8].cast[
+        a_reg[2] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col].cast[
             DType.bfloat16
         ]()
-        a_reg[7] = a_gmem_tile.ptr[(row + 8) * K + col + 9].cast[
+        a_reg[3] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 1].cast[
+            DType.bfloat16
+        ]()
+        a_reg[4] = a_gmem_tile.ptr[row * UInt(K) + col + 8].cast[
+            DType.bfloat16
+        ]()
+        a_reg[5] = a_gmem_tile.ptr[row * UInt(K) + col + 9].cast[
+            DType.bfloat16
+        ]()
+        a_reg[6] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 8].cast[
+            DType.bfloat16
+        ]()
+        a_reg[7] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 9].cast[
             DType.bfloat16
         ]()
 

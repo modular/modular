@@ -166,7 +166,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     # Initialize smem buffer
     if warpgroup_idx == 0:
         for i in range(num_stages):
-            offset = i * size_per_stage + thread_idx.x * size_per_copy
+            offset = i * size_per_stage + thread_idx.x * UInt(size_per_copy)
 
             @parameter
             for j in range(size_per_copy):
@@ -199,7 +199,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     # producer group
     if warpgroup_idx == 0:
         for i in range(num_stages):
-            offset = i * size_per_stage + thread_idx.x * size_per_copy
+            offset = i * size_per_stage + thread_idx.x * UInt(size_per_copy)
             async_copy[16](
                 (src + offset).address_space_cast[AddressSpace.GLOBAL](),
                 smem + offset,
@@ -214,7 +214,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             produced_mbar[i].wait(read_pipeline_states.phase())
 
-            offset = i * size_per_stage + warpgroup_tid * size_per_copy
+            offset = i * size_per_stage + warpgroup_tid * UInt(size_per_copy)
 
             @parameter
             for j in range(size_per_copy):
@@ -224,7 +224,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 
         # write back to global memory.
         for i in range(num_stages):
-            offset = i * size_per_stage + warpgroup_tid * size_per_copy
+            offset = i * size_per_stage + warpgroup_tid * UInt(size_per_copy)
 
             @parameter
             for j in range(size_per_copy):

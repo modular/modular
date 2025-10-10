@@ -86,17 +86,19 @@ fn sgemm_warp_tiling_kernel[
 
     # Placement of the warp in the threadblock tile.
     var warp_idx = warp_id()  # the warp this thread is in
-    var warp_col = warp_idx % (BN // WN)
-    var warp_row = warp_idx // (BN // WN)
+    var warp_col = warp_idx % UInt(BN // WN)
+    var warp_row = warp_idx // UInt(BN // WN)
 
     # Size of the warp sub-tile.
     alias w_sub_m = WM // WMITER  # 64/2=32
     alias w_sub_n = WN // WNITER  # 32/2=16
 
     # Placement of the thread in the warp sub-tile.
-    var thread_Idx_In_warp = thread_idx.x % WARP_SIZE  # [0, 31]
-    var thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
-    var thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
+    var thread_Idx_In_warp = thread_idx.x % UInt(WARP_SIZE)  # [0, 31]
+    var thread_col_in_warp = thread_Idx_In_warp % UInt(
+        w_sub_n // TN
+    )  # i%(16/4)
+    var thread_row_in_warp = thread_Idx_In_warp // UInt(w_sub_n // TN)  # i/4
 
     # Allocate space for the current blocktile in SMEM.
     # Pad the A tile in share memory to avoid bank conflicts.
@@ -119,20 +121,20 @@ fn sgemm_warp_tiling_kernel[
     ].stack_allocation()
 
     # Move blocktile to beginning of A's row and B's column.
-    var aa_ptr = mat_a._offset(Index(c_row * BM, 0))
-    var bb_ptr = mat_b._offset(Index(0, c_col * BN))
+    var aa_ptr = mat_a._offset(Index(c_row * UInt(BM), 0))
+    var bb_ptr = mat_b._offset(Index(0, c_col * UInt(BN)))
     # Move C_ptr to warp's output tile
-    var M_offset_warp = c_row * BM + warp_row * WM
-    var N_offset_warp = c_col * BN + warp_col * WN
+    var M_offset_warp = c_row * UInt(BM) + warp_row * UInt(WM)
+    var N_offset_warp = c_col * UInt(BN) + warp_col * UInt(WN)
     var cc_ptr = mat_c._offset(Index(M_offset_warp, N_offset_warp))
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    var inner_row_a = thread_idx.x // (BK // 4)
-    var inner_col_a = thread_idx.x % (BK // 4)
+    var inner_row_a = thread_idx.x // UInt(BK // 4)
+    var inner_col_a = thread_idx.x % UInt(BK // 4)
     alias row_stride_a = (NUM_THREADS * 4) // BK
-    var inner_row_b = thread_idx.x // (BN // 4)
-    var inner_co_ib = thread_idx.x % (BN // 4)
+    var inner_row_b = thread_idx.x // UInt(BN // 4)
+    var inner_co_ib = thread_idx.x % UInt(BN // 4)
     alias row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!
@@ -161,24 +163,36 @@ fn sgemm_warp_tiling_kernel[
         for offset in range(0, Int(BM - row_stride_a + 1), Int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                aa_ptr.offset(Int((inner_row_a + offset) * K + inner_col_a * 4))
+                aa_ptr.offset(
+                    Int(
+                        (inner_row_a + UInt(offset)) * UInt(K) + inner_col_a * 4
+                    )
+                )
             )
 
             @parameter
             for i in range(4):
                 a_sram[
                     Int(
-                        (inner_col_a * 4 + i) * BM_padded + inner_row_a + offset
+                        (inner_col_a * 4 + UInt(i)) * UInt(BM_padded)
+                        + inner_row_a
+                        + UInt(offset)
                     )
                 ] = tmp[i]
 
         for offset in range(0, Int(BK - row_stride_b + 1), Int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
             var tmp = ldg[width=4](
-                bb_ptr.offset(Int((inner_row_b + offset) * N + inner_co_ib * 4))
+                bb_ptr.offset(
+                    Int(
+                        (inner_row_b + UInt(offset)) * UInt(N) + inner_co_ib * 4
+                    )
+                )
             )
             b_sram.store[alignment=16](
-                Index((inner_row_b + offset) * BN + inner_co_ib * 4),
+                Index(
+                    (inner_row_b + UInt(offset)) * UInt(BN) + inner_co_ib * 4
+                ),
                 tmp,
             )
 
@@ -194,9 +208,9 @@ fn sgemm_warp_tiling_kernel[
                     var vec = a_sram.load[width=4, alignment=16](
                         Int(
                             (dot_idx * BM_padded)
-                            + warp_row * WM
+                            + warp_row * UInt(WM)
                             + w_sub_row_idx * w_sub_m
-                            + thread_row_in_warp * TM
+                            + thread_row_in_warp * UInt(TM)
                             + i
                         )
                     )
@@ -210,9 +224,9 @@ fn sgemm_warp_tiling_kernel[
                     var vec = b_sram.load[width=4, alignment=16](
                         Int(
                             (dot_idx * BN)
-                            + warp_col * WN
+                            + warp_col * UInt(WN)
                             + w_sub_col_idx * w_sub_n
-                            + thread_col_in_warp * TN
+                            + thread_col_in_warp * UInt(TN)
                         )
                     )
                     reg_n.store(Index(w_sub_col_idx, i), vec)
@@ -262,9 +276,13 @@ fn sgemm_warp_tiling_kernel[
 
                 @parameter
                 for res_idx_n in range(0, Int(TN), 4):
-                    var M_offset_val = thread_row_in_warp * TM + res_idx_m
-                    var N_offset_val = thread_col_in_warp * TN + res_idx_n
-                    var c_idx = M_offset_val * N + N_offset_val
+                    var M_offset_val = thread_row_in_warp * UInt(TM) + UInt(
+                        res_idx_m
+                    )
+                    var N_offset_val = thread_col_in_warp * UInt(TN) + UInt(
+                        res_idx_n
+                    )
+                    var c_idx = M_offset_val * UInt(N) + N_offset_val
                     var result_vec = thread_results.load[width=4](
                         Index(
                             w_sub_row_idx,
@@ -283,8 +301,12 @@ fn sgemm_warp_tiling_kernel[
                         alias elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[c_type, 4](
                             Index(
-                                M_offset_warp + M_offset_subtile + M_offset_val,
-                                N_offset_warp + N_offset_subtile + N_offset_val,
+                                M_offset_warp
+                                + UInt(M_offset_subtile)
+                                + M_offset_val,
+                                N_offset_warp
+                                + UInt(N_offset_subtile)
+                                + N_offset_val,
                             ),
                             vec,
                         )

@@ -675,7 +675,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                         head_idx,
                                         kv_params.head_size
                                         - rope_dim
-                                        + head_dim_idx,
+                                        + UInt(head_dim_idx),
                                     ],
                                     kv_block_paged_host_64.tensor[
                                         page_idx,

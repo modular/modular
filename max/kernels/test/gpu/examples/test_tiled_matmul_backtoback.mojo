@@ -79,14 +79,14 @@ struct BackToBackMatmulConfig[
         return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return UInt(self.num_warps_m() * self.num_warps_n() * WARP_SIZE)
+        return UInt(self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE))
 
     fn shared_mem_usage(self, K: UInt) -> Int:
         return (
             self.block_tile_shape[0] * K
             + self.num_pipeline_stages
-            * self.block_tile_shape[1]
-            * self.block_tile_shape[2]
+            * UInt(self.block_tile_shape[1])
+            * UInt(self.block_tile_shape[2])
         ) * size_of[src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:
@@ -198,7 +198,7 @@ fn b2b_gemm[
     # To avoid recalculating `A*B`:
     constrained[N == UInt(BN)]()
     # TODO: lift this restriction
-    constrained[K % BK == 0, "K must be an integer multiple of BK"]()
+    constrained[K % UInt(BK) == 0, "K must be an integer multiple of BK"]()
     constrained[BN % BK == 0, "BN must be an integer multiple of BK"]()
     constrained[
         K == UInt(BK),
@@ -212,7 +212,7 @@ fn b2b_gemm[
 
     var tid = thread_idx.x
     # var ln_id = lane_id()
-    var warp_id = tid // WARP_SIZE
+    var warp_id = tid // UInt(WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = in_type.is_half_float()
@@ -310,8 +310,8 @@ fn b2b_gemm[
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
         var b_tile_coords = (Int(l), 0) if transpose_b else (0, Int(l))
-        var c_tile_coords = (0, Int(l * (BN // BK))) if transpose_c else (
-            Int(l * (BN // BK)),
+        var c_tile_coords = (0, Int(l * UInt(BN // BK))) if transpose_c else (
+            Int(l * UInt(BN // BK)),
             0,
         )
         # We fetch c_gmem_iter when done
@@ -321,7 +321,7 @@ fn b2b_gemm[
         var c_gmem_iter = C.tiled_iterator[CD_0, CD_1, axis=c_tile_axis](
             c_tile_coords[0], c_tile_coords[1]
         )
-        var num_rows_b = min(BN, Int(L - BN * l))
+        var num_rows_b = min(BN, Int(L - UInt(BN * l)))
         # FIXME: this is a lot of code duplication, for only
         # a few different branches within `multistage_mma`!
         # Maybe fetch `A` outside, and always use `prefetch_a=False`?
@@ -452,7 +452,7 @@ fn b2b_gemm[
             Layout.row_major(WM, WN),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
+        ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * UInt(WM) * UInt(WN))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),

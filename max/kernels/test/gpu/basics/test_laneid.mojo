@@ -23,7 +23,7 @@ fn kernel(
     size: Int,
 ):
     var global_tid = global_idx.x
-    if global_tid >= size:
+    if global_tid >= UInt(size):
         return
     output[global_tid] = lane_id()
 

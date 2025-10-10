@@ -209,7 +209,7 @@ fn causal_conv1d_kernel[
     if (tidx > 0) or (chunk_id > 0):
         prev_input_chunk = rebind[__type_of(prev_input_chunk)](
             input_v[
-                batch_id * nChannels + channel_id,
+                batch_id * UInt(nChannels) + channel_id,
                 (chunk_id * kChunkSize + tidx - 1),
             ]
         )
@@ -218,7 +218,8 @@ fn causal_conv1d_kernel[
 
     input_chunk = rebind[__type_of(input_chunk)](
         input_v[
-            batch_id * nChannels + channel_id, (chunk_id * kChunkSize + tidx)
+            batch_id * UInt(nChannels) + channel_id,
+            (chunk_id * kChunkSize + tidx),
         ]
     )
 
@@ -233,7 +234,7 @@ fn causal_conv1d_kernel[
         out_vals[i] = tmp2 / (1 + exp(-tmp2))
 
     output_v[
-        batch_id * nChannels + channel_id, tidx + chunk_id * kChunkSize
+        batch_id * UInt(nChannels) + channel_id, tidx + chunk_id * kChunkSize
     ] = rebind[__type_of(output_v[0, 0])](out_vals)
 
 

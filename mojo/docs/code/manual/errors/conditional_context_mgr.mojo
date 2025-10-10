@@ -26,7 +26,7 @@ struct ConditionalTimer(ImplicitlyCopyable, Movable):
 
     fn __exit__(mut self):
         end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(((end_time - self.start_time) / 1e6), 3)
+        elapsed_time_ms = round(((end_time - UInt(self.start_time)) / 1e6), 3)
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
     fn __exit__(mut self, e: Error) raises -> Bool:

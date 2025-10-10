@@ -87,9 +87,9 @@ fn test_tma_3d_load_kernel[
             smem_tile,
             mbar[0],
             (
-                UInt(block_idx.x * cta_tile_dim2),
-                UInt(block_idx.y * cta_tile_dim1),
-                UInt(block_idx.z * cta_tile_dim0),
+                UInt(block_idx.x * UInt(cta_tile_dim2)),
+                UInt(block_idx.y * UInt(cta_tile_dim1)),
+                UInt(block_idx.z * UInt(cta_tile_dim0)),
             ),
         )
     # Ensure all threads sees initialized mbarrier
@@ -109,7 +109,7 @@ fn test_tma_3d_load_kernel[
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 
         dst_tile = dst.tile[cta_tile_dim1, cta_tile_dim2](
-            idx * cta_tile_dim0 + i, 0
+            idx * UInt(cta_tile_dim0) + UInt(i), 0
         )
         if thread_idx.x == 0:
             dst_tile.copy_from(smem_tile_i)
