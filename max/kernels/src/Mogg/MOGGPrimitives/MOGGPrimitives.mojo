@@ -461,6 +461,7 @@ fn mogg_tensor_init[
     static_shape: DimList,
     static_stride: DimList,
     alignment: Int,
+    exclusive: Bool,
 ](ptr: OpaquePointer, shape: IndexList[rank]) -> ManagedTensorSlice[
     io_spec = IOSpec[mut, input](),
     static_spec = StaticTensorSpec[dtype, rank](
@@ -468,7 +469,7 @@ fn mogg_tensor_init[
         static_stride,
         alignment,
         AddressSpace.GENERIC,
-        True,
+        exclusive,
         None,
         None,
         None,
@@ -479,7 +480,7 @@ fn mogg_tensor_init[
         static_stride,
         alignment,
         AddressSpace.GENERIC,
-        True,
+        exclusive,
         None,
         None,
         None,
