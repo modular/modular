@@ -721,6 +721,11 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return f"TextGenerationInputs(batch_size={len(self.batch)}, num_steps={self.num_steps})"
 
 
+def hash_image(pixel_values: npt.NDArray[np.floating[Any]]) -> int:
+    """Compute the hash of an image."""
+    return hash(pixel_values.data.tobytes())
+
+
 class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     """Metadata about an image in the prompt.
 
@@ -736,6 +741,9 @@ class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     pixel_values: npt.NDArray[np.floating[Any]]
     """Pixel values for the image"""
 
+    image_hash: int = -1
+    """Hash of the image, for use in prefix caching"""
+
     def __post_init__(self) -> None:
         if self.start_idx < 0:
             raise ValueError("Images must have a valid start index")
@@ -743,6 +751,9 @@ class ImageMetadata(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             raise ValueError(
                 "Images must have a valid start and end index containing at least one <vision_token_id>"
             )
+
+        # Compute the hash of the image in post init, overriding the default value of -1
+        self.image_hash = hash_image(self.pixel_values)
 
     def __repr__(self):
         return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"
