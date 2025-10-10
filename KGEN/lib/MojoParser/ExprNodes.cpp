@@ -3971,12 +3971,11 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
 
 AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
                                                   IREmitter &emitter) const {
-
   // We are basically emitting an expression of the form `Tuple(foo, bar)`,
   // where `foo` and `bar` are the functions declared in the module.
 
-  // Collect references to the functions in the module.
-  SmallVector<DeclRefNode> funcDeclRefs;
+  // Collect a SyntheticNode for each function declaration in the module.
+  SmallVector<SyntheticNode> funcValues;
   if (ASTDecl *fileModuleDecl =
           emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>()) {
     for (auto &[name, decls] : fileModuleDecl->getDeclsInScope()) {
@@ -3996,8 +3995,24 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
         if (name == "main")
           continue;
 
-        // TODO(MOCO-2557): handle overloads.
-        funcDeclRefs.emplace_back(name.strref());
+        // We need to resolve the signature, otherwise if the intrinsic is
+        // called before the function is declared, the emission will crash.
+        if (failed(
+                emitter.getDeclResolver().resolveSignature(*decl, getLoc()))) {
+          emitter.emitError(decl->getLoc(),
+                            "failed to resolve signature for function ");
+          return {};
+        }
+
+        // To handle overloads, we form a singleton overload set (since we have
+        // the ASTDecl for each overload), emit it, and wrap the result in a
+        // SyntheticNode, which will be passed to the `Tuple` constructor.
+        auto singletonOverloadSet =
+            OverloadSetUValue::create(name.strref(), ArrayRef<ASTDecl *>{decl},
+                                      ParamBindings(emitter.getDeclScope()),
+                                      this, CallSyntax::kDirectCall);
+        auto funcValue = emitter.emitResult(singletonOverloadSet, this, dest);
+        funcValues.emplace_back(SyntheticNode(getLoc(), funcValue));
       }
     }
   }
@@ -4005,9 +4020,9 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
   // Build the expression.
   DeclRefNode tupleDeclRef("Tuple");
   SmallVector<Operand> callOperands;
-  for (DeclRefNode &funcDeclRef : funcDeclRefs) {
+  for (SyntheticNode &funcValueNode : funcValues) {
     callOperands.emplace_back(
-        Operand(&funcDeclRef, getLoc(), Operand::PassKind::kPositional));
+        Operand(&funcValueNode, getLoc(), Operand::PassKind::kPositional));
   }
   CallNode tupleCallNode(&tupleDeclRef, getLoc(), callOperands, getLoc());
 
