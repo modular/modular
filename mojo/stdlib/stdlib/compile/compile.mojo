@@ -64,6 +64,7 @@ struct _Info:
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
+    var capture_sizes: __mlir_type.`!kgen.pointer<ui64>`
 
 
 @register_passable("trivial")
@@ -112,6 +113,9 @@ struct CompiledFunctionInfo[
 
     var num_captures: Int
     """Number of variables captured by the function closure."""
+
+    var capture_sizes: UnsafePointer[UInt64]
+    """Pointer to the sizes of the variables captured by the function closure."""
 
     alias populate = rebind[fn (OpaquePointer) capturing -> None](
         __mlir_attr[
@@ -266,9 +270,14 @@ fn compile_info[
         _type=_Info,
     ]()
 
+    var num_captures_ptr_ui64 = __mlir_op.`pop.pointer.bitcast`[
+        _type = UnsafePointer[UInt64,]._mlir_type,
+    ](offload.capture_sizes)
+
     return CompiledFunctionInfo[func_type, func, target](
         asm=StaticString(offload.asm),
         function_name=get_linkage_name[target, func](),
         module_name=StaticString(offload.module_name),
         num_captures=Int(mlir_value=offload.num_captures),
+        capture_sizes=num_captures_ptr_ui64,
     )

@@ -1,10 +1,6 @@
 load("//bazel:api.bzl", "mojo_test")
 
 _EXTRA_CONSTRAINTS = {
-    "test_binary_apply.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2399
     "test_elementwise.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
