@@ -20,13 +20,13 @@ from .module import Module
 
 
 class ModuleList(list[Module], Module):
-    """A Module subclass which is locally a list container.
+    """A ``Module`` subclass which is locally a list container.
 
-    ModuleLists will use the stringified integer index of their
+    ``ModuleList`` instances will use the stringified integer index of their
     submodules as the name of the module for the purposes of
     qualified paths.
 
-    For instance:
+    For example:
 
     .. code-block:: python
 
@@ -44,11 +44,11 @@ class ModuleList(list[Module], Module):
 
     @property
     def children(self) -> Iterable[tuple[str, Module]]:
-        """Iterates over the direct child modules of the Module.
+        """Iterates over the direct child modules of the ``Module``.
 
         Yields:
-            (name, module) pairs, where name is the attribute name of
-                the child on the module.
+            ``(name, module)`` pairs, where ``name`` is the attribute name of
+            the child on the module.
         """
         for i, child in enumerate(self):
             yield str(i), child
@@ -64,21 +64,19 @@ class ModuleList(list[Module], Module):
 
 
 class Sequential(ModuleList):
-    """A Module subclass which holds a sequence of unary Modules.
+    """A ``Module`` subclass which holds a sequence of unary modules.
 
-    A unary Module is one whose `__call__` method has the signature
-
-    .. code-block:: python
+    A unary ``Module`` is one whose ``__call__()`` method has the signature::
 
         def __call__(self, x: Tensor) -> Tensor: ...
 
-    `Sequential` is itself a unary Module. Its `__call__` method
+    ``Sequential`` is itself a unary ``Module``. Its ``__call__()`` method
     computes the result of applying each of its child modules
     in sequence to its input.
 
-    The following example will apply a linear transformation
-    up to a dimension of 10, apply a LayerNorm, and then apply a final
-    linear transformation to reduce back to the input dimension of 5.
+    For example, this will apply a linear transformation up to a dimension
+    of 10, apply a LayerNorm, and then apply a final linear transformation
+    to reduce back to the input dimension of 5:
 
     .. code-block:: python
 
@@ -98,9 +96,11 @@ class Sequential(ModuleList):
     def __init__(self, *modules: Module) -> None:
         """Constructs a sequential from a sequence of modules.
 
-        Following PyTorch, Sequential takes its inputs as a variadic
-        rather than an iterable. Use the splat operator (`*seq`) to make
-        a Sequential from an iterable.
+        Following PyTorch, ``Sequential`` takes its inputs as a variadic
+        rather than an iterable. Use the splat operator (``*seq``) to make
+        a ``Sequential`` from an iterable.
+
+        For example:
 
         .. code-block:: python
 
@@ -114,7 +114,7 @@ class Sequential(ModuleList):
             ))
 
         Args:
-            modules: The sequence of contained Modules in the order
+            modules: The sequence of contained modules in the order
                 of desired application.
         """
         super().__init__(modules)
@@ -122,13 +122,12 @@ class Sequential(ModuleList):
     def __call__(self, x: Tensor) -> Tensor:
         """Applies the contained modules in order.
 
-        For example, the following code creates a sequence of
-        linear transformations which each increase the dimension
-        of the input by 5.
+        For example, this code creates a sequence of linear transformations
+        which each increase the dimension of the input by 5.
 
         The input tensor must have dim 5. The intermediate applications
         will result in intermediate tensors of dim 10 and 15 respectively,
-        and the final result will have dim 20.
+        and the final result will have dim 20:
 
         .. code-block:: python
 
@@ -146,9 +145,10 @@ class Sequential(ModuleList):
             assert result.shape == [20]
 
         Args:
-            x: The input tensor
+            x: The input tensor.
+
         Returns:
             The result of iteratively applying each contained
-            Module in sequence.
+            module in sequence.
         """
         return functools.reduce(lambda x, f: f(x), self, x)
