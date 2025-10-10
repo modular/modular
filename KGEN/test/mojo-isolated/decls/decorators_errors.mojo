@@ -140,19 +140,58 @@ fn no_message():
 # ===----------------------------------------------------------------------=== #
 
 struct CheckImplicit:
-    @implicit # expected-error {{'@implicit' may only be applied to '__init__' methods}}
+    # expected-error @+1 {{'@implicit' may only be applied to '__init__' methods}}
+    @implicit
     fn foo(mut self): pass
-    @implicit  # expected-error {{'@implicit' requires an argument to convert from}}
+
+    # expected-error @+2 {{'@implicit' initializers must accept a single positional argument value}}
+    @implicit
     fn __init__(out self): pass
-    @implicit  # expected-error {{'@implicit' initializers must accept a single argument value}}
+
+    # expected-error @+2 {{'@implicit' initializers must accept a single positional argument value}}
+    @implicit
     fn __init__(out self, x: Int, y: Int): pass
-    @implicit  # expected-error {{'@implicit' may only be applied to '__init__' methods}}
+
+    # expected-error @+2 {{'@implicit' initializers must accept a single positional argument value}}
+    @implicit
+    fn __init__(out self, *, z: Int): pass
+
+    # expected-error @+1 {{'@implicit' may only be applied to '__init__' methods}}
+    @implicit
     fn __copyinit__(out self, other: Self): pass
-    @implicit()  # expected-error {{'@implicit' cannot have arguments}}
-    fn __init__(out self, b: Bool): pass
-    @implicit()  # expected-error {{'@implicit' cannot have arguments}}
+
+    # expected-error @+1 {{'@implicit' may not have more than 1 operand, got 2}}
+    @implicit(123, "abc")
+    fn __init__(out self, a: Int): pass
+
+    # expected-error @+1 {{'@implicit' may only have a keyword argument 'deprecated' with literal boolean value}}
+    @implicit(123)
+    fn __init__(out self, a: Int): pass
+
+    # expected-error @+1 {{'@implicit' may only have a keyword argument 'deprecated' with literal boolean value}}
+    @implicit(deprecated=123)
     fn __init__(out self, b: String): pass
 
+    # expected-error @+1 {{'@implicit' may only have a keyword argument 'deprecated' with literal boolean value}}
+    @implicit(foo=True)
+    fn __init__(out self, c: Bool): pass
+
+struct DeprecatedImplicitConversion:
+    # expected-note @+2 {{'@implicit' constructor 'DeprecatedImplicitConversion.__init__' declared here}}
+    @implicit(deprecated=True)
+    fn __init__(out self, value: Int):
+        pass
+
+struct NotDeprecatedImplicitConversion:
+    @implicit(deprecated=False)
+    fn __init__(out self, value: Int):
+        pass
+
+fn deprecated_implicit_conversion():
+    _: NotDeprecatedImplicitConversion = 1
+    _ = DeprecatedImplicitConversion(1)
+    # expected-warning @+1 {{deprecated implicit conversion from 'IntLiteral[1]' to 'DeprecatedImplicitConversion'}}
+    _: DeprecatedImplicitConversion = 1
 
 # ===----------------------------------------------------------------------=== #
 # @export

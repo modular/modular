@@ -593,6 +593,21 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     PValue boundFunction = newBindings(*bestFitness);
 
+    if (syntax == CallSyntax::kImplicitConvert &&
+        selectedFunc.getImplicitConversion() ==
+            ImplicitConversionKind::Deprecated) {
+      std::string toTyAsString = selfResultType.getAsString(&emitter.shared);
+      std::string fromTyAsString =
+          operands[0].ir.getRValueTypeIfResolvable().getAsString(
+              &emitter.shared);
+      auto diag = emitter.emitWarning(expr->getLoc(),
+                                      "deprecated implicit conversion from '")
+                  << fromTyAsString << "' to '" << toTyAsString << "'";
+      diag.attachNote(selectedDecl->getLoc())
+          << "'@implicit' constructor '"
+          << toTyAsString + ".__init__' declared here";
+    }
+
     // It is possible this candidate needs some arguments emitted as MValues
     // (from PValue or SValues) to be passed as 'ref' arguments.  If this
     // happens, emit them now and then re-infer the correct origins.  If not,

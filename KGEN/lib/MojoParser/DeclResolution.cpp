@@ -425,7 +425,7 @@ struct FnSigDecorators : public SharedStateUser {
                                                 SharedState &shared);
 
 private:
-  void applyImplicitDecorator(const DeclRefNode &node);
+  void applyImplicitDecorator(SMLoc decoratorLoc, const CallNode *callNode);
   void applyCopyOrMoveCapture(SMLoc decoratorLoc, const CallNode *callNode,
                               bool isMove, StringRef decorator);
   void applyExtern(SMLoc decoratorLoc, const CallNode *node);
@@ -526,7 +526,6 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
     applyArgumentless(spelling, callNode,
                       [&]() { funcOp.setInlineLevel(InlineLevel::Never); });
   } else if (spelling == "parameter") {
-    // TODO: test this with @parameter() and @parameter("abc") on closures
     applyArgumentless(spelling, callNode,
                       [&]() { tcSignature.argList.effects.setCapturing(); });
   } else if (spelling == "__unsafe_disable_nested_origin_exclusivity") {
@@ -534,8 +533,7 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
       tcSignature.isNestedOriginExclusivityCheckingDisabled = true;
     });
   } else if (spelling == "implicit") {
-    applyArgumentless(spelling, callNode,
-                      [&]() { applyImplicitDecorator(*declRef); });
+    applyImplicitDecorator(decorator->getLoc(), callNode);
   } else if (spelling == "extern") {
     applyExtern(decorator->getLoc(), callNode);
   } else if (spelling == "__move_capture") {
@@ -555,9 +553,32 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
   return success();
 }
 
-void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
+void FnSigDecorators::applyImplicitDecorator(SMLoc decoratorLoc,
+                                             const CallNode *callNode) {
+  size_t numOperands = callNode ? callNode->operands.size() : 0;
+  if (numOperands > 1) {
+    emitError(callNode->getLoc())
+        << "'@implicit' may not have more than 1 operand, got " << numOperands;
+    return;
+  }
+
+  ImplicitConversionKind conversionKind = ImplicitConversionKind::Implicit;
+  if (numOperands == 1) {
+    const Operand &operand = callNode->operands[0];
+
+    auto *boolExpr = dyn_cast<BoolLiteralNode>(operand.expr);
+    if (!boolExpr || !operand.isKeyword() || operand.name != "deprecated") {
+      emitError(callNode->getLoc())
+          << "'@implicit' may only have a keyword argument 'deprecated' with "
+             "literal boolean value";
+      return;
+    }
+    if (boolExpr->value)
+      conversionKind = ImplicitConversionKind::Deprecated;
+  }
+
   if (SpecialFunctionInfo::get(baseName).kind != SpecialFunctionKind::kInit) {
-    emitError(node.getLoc())
+    emitError(decoratorLoc)
         << "'@implicit' may only be applied to '__init__' methods";
     return;
   }
@@ -586,21 +607,15 @@ void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
       break;
   }
 
-  if (args.empty()) {
-    emitError(node.getLoc())
-        << "'@implicit' requires an argument to convert from";
-    return;
-  }
-
   // We must have a positional argument to take the new value.
   if (args.size() != 1 ||
       (args[0].kwArgHandling != KWArgHandling::kPositionalOnly &&
        args[0].kwArgHandling != KWArgHandling::kPositionalOrKeyword)) {
-    emitError(node.getLoc())
-        << "'@implicit' initializers must accept a single argument value";
+    emitError(decl.getLoc()) << "'@implicit' initializers must accept a single "
+                                "positional argument value";
     return;
   }
-  funcOp.setImplicitConversion(ImplicitConversionKind::Implicit);
+  funcOp.setImplicitConversion(conversionKind);
 }
 
 void FnSigDecorators::applyCopyOrMoveCapture(SMLoc decoratorLoc,
