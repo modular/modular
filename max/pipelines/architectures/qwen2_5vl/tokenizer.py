@@ -531,6 +531,21 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         attention_mask = None
         concatenated_pixel_values: npt.NDArray[Any] | None = None
 
+        # Extract attention_mask for use in get_rope_index
+        # This should be extracted regardless of whether images are present
+        # since the tokenizer always provides attention_mask
+        if "attention_mask" in processed_inputs:
+            attention_mask_raw = processed_inputs["attention_mask"]
+            # Handle various formats from tokenizer
+            if hasattr(attention_mask_raw, "numpy"):
+                attention_mask = attention_mask_raw.numpy()
+            elif isinstance(attention_mask_raw, list):
+                attention_mask = np.array(attention_mask_raw)
+            elif isinstance(attention_mask_raw, np.ndarray):
+                attention_mask = attention_mask_raw
+            else:
+                attention_mask = np.array(attention_mask_raw)
+
         if image_inputs is not None:
             if "concatenated_pixel_values" in processed_inputs:
                 concatenated_pixel_values = processed_inputs[
@@ -594,20 +609,6 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                     max_grid_size, dtype=np.int32
                 )
 
-            # Extract attention_mask for use in get_rope_index
-            # Note: attention_mask is only used locally for get_rope_index, not passed to model
-            if "attention_mask" in processed_inputs:
-                attention_mask_raw = processed_inputs["attention_mask"]
-                # Handle various formats from tokenizer
-                if hasattr(attention_mask_raw, "numpy"):
-                    attention_mask = attention_mask_raw.numpy()
-                elif isinstance(attention_mask_raw, list):
-                    attention_mask = np.array(attention_mask_raw)
-                elif isinstance(attention_mask_raw, np.ndarray):
-                    attention_mask = attention_mask_raw
-                else:
-                    attention_mask = np.array(attention_mask_raw)
-
         # Calculate Rope Delta and position ids
         temp_position_ids, rope_delta = get_rope_index(
             spatial_merge_size=self.spatial_merge_size,
@@ -624,11 +625,33 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             attention_mask=attention_mask,
         )
         temp_position_ids = temp_position_ids.squeeze(1)
-        extra_model_args["rope_delta"] = rope_delta
-        extra_model_args["decoder_position_ids"] = temp_position_ids
-        extra_model_args["concatenated_pixel_values"] = (
-            concatenated_pixel_values
+
+        extra_model_args["spatial_merge_size"] = np.array(
+            self.spatial_merge_size, dtype=np.int32
         )
+        extra_model_args["rope_delta"] = rope_delta
+        extra_model_args["image_token_id"] = np.array(
+            self.image_token_id, dtype=np.int32
+        )
+        extra_model_args["video_token_id"] = np.array(
+            self.video_token_id, dtype=np.int32
+        )
+        extra_model_args["vision_start_token_id"] = np.array(
+            self.vision_start_token_id, dtype=np.int32
+        )
+        extra_model_args["tokens_per_second"] = np.array(
+            self.tokens_per_second, dtype=np.int32
+        )
+        # Only add optional values if they are not None
+        if image_grid_thw is not None:
+            extra_model_args["image_grid_thw"] = image_grid_thw
+        if attention_mask is not None:
+            extra_model_args["attention_mask"] = attention_mask
+        extra_model_args["decoder_position_ids"] = temp_position_ids
+        if concatenated_pixel_values is not None:
+            extra_model_args["concatenated_pixel_values"] = (
+                concatenated_pixel_values
+            )
 
         # Handle JSON schema if provided
         json_schema = (
@@ -648,9 +671,23 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 "encoded_prompt is greater than the max_length of the tokenizer"
             )
 
-        start_and_end_idxs = find_contiguous_ranges(
-            encoded_prompt, [self.image_token_id]
-        )
+        if pixel_values_list:
+            start_and_end_idxs = find_contiguous_ranges(
+                encoded_prompt, [self.image_token_id]
+            )
+            images = [
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixel_values,
+                )
+                for (start_idx, end_idx), pixel_values in zip(
+                    start_and_end_idxs, pixel_values_list, strict=True
+                )
+            ]
+        else:
+            images = []
+
         # Create and return context
         context = TextAndVisionContext(
             request_id=request.request_id,
@@ -662,18 +699,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
-            images=[
-                ImageMetadata(
-                    start_idx=start_idx,
-                    end_idx=end_idx,
-                    pixel_values=pixels,
-                )
-                for (start_idx, end_idx), pixels in zip(
-                    start_and_end_idxs,
-                    pixel_values_list,
-                    strict=True,
-                )
-            ],
+            images=images,
             vision_token_ids=[self.image_token_id],
         )
         return context

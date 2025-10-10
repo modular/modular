@@ -56,6 +56,7 @@ from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
 from .model_config import Qwen2_5VLConfig
+from .nn.data_processing import get_rope_index
 from .qwen2_5vl import Qwen2_5VL
 
 logger = logging.getLogger("max.pipelines")
@@ -965,14 +966,6 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 ctx_decoder_position_ids = ctx.extra_model_args[
                     "decoder_position_ids"
                 ]
-                # FIXME E2EOPT-661: I believe there is a bug here with how we
-                # handle preemptions that existed prior to VLM prefix caching
-                # enablement. This is the case where:
-                #   `ctx.needs_vision_encoding and ctx_decoder_position_ids.shape[1] != ctx.current_length`
-                # We recompute the position ids in on the fly, assuming that the
-                # next_tokens inputs has no image placeholder tokens.
-                # This may not be true after a preemption since we have to recompute
-                # the original prompt.
 
                 # - For each text token, the position id increases by one each time.
                 # - Each image token of same image has the same position id as they
@@ -993,13 +986,79 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                             :, ctx.start_idx : ctx.active_idx
                         ]
                     )
+                elif ctx.needs_vision_encoding:
+                    # Recompute decoder_position_ids using get_rope_index
+                    # This handles the case after preemption where we need to recompute the prompt
+
+                    # Extract required parameters from ctx.extra_model_args
+                    # These are stored as numpy arrays, convert to Python ints
+                    spatial_merge_size = int(
+                        ctx.extra_model_args.get(
+                            "spatial_merge_size", np.array(2, dtype=np.int32)
+                        )
+                    )
+                    image_token_id = int(
+                        ctx.extra_model_args.get(
+                            "image_token_id", np.array(0, dtype=np.int32)
+                        )
+                    )
+                    video_token_id = int(
+                        ctx.extra_model_args.get(
+                            "video_token_id", np.array(0, dtype=np.int32)
+                        )
+                    )
+                    vision_start_token_id = int(
+                        ctx.extra_model_args.get(
+                            "vision_start_token_id", np.array(0, dtype=np.int32)
+                        )
+                    )
+                    tokens_per_second = int(
+                        ctx.extra_model_args.get(
+                            "tokens_per_second", np.array(2, dtype=np.int32)
+                        )
+                    )
+                    image_grid_thw = ctx.extra_model_args.get("image_grid_thw")
+
+                    # Always create a fresh attention mask based on current context length
+                    # The stored attention_mask in extra_model_args may be outdated if tokens
+                    # were added after context creation (e.g., during generation before reset)
+                    attention_mask = np.ones(
+                        (1, ctx.current_length), dtype=np.float32
+                    )
+
+                    # Recompute position_ids using get_rope_index (same logic as tokenizer)
+                    temp_position_ids, rope_delta = get_rope_index(
+                        spatial_merge_size=spatial_merge_size,
+                        image_token_id=image_token_id,
+                        video_token_id=video_token_id,
+                        vision_start_token_id=vision_start_token_id,
+                        tokens_per_second=tokens_per_second,
+                        input_ids=ctx.tokens[: ctx.current_length].reshape(
+                            1, -1
+                        ),
+                        image_grid_thw=image_grid_thw,
+                        video_grid_thw=None,
+                        second_per_grid_ts=None,
+                        attention_mask=attention_mask,
+                    )
+                    temp_position_ids = temp_position_ids.squeeze(1)
+
+                    # Update rope_delta in extra_model_args if needed
+                    ctx.extra_model_args["rope_delta"] = rope_delta
+
+                    # Slice to get only the active portion
+                    position_ids_list.append(
+                        temp_position_ids[:, ctx.start_idx : ctx.active_idx]
+                    )
                 else:
+                    # This case should only happen during Token Generation
+
                     # Recompute this value on the fly.
                     # This assumes that there are no image placeholder tokens in
                     # next_tokens so it is a simple arange operation.
                     context_seq_length = ctx.active_length
                     temp_position_ids = np.arange(context_seq_length)
-                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)  # type: ignore
+                    temp_position_ids = temp_position_ids.reshape(1, 1, -1)
                     temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
                     delta = (
                         ctx.current_length
