@@ -2161,7 +2161,6 @@ def main(args: argparse.Namespace) -> None:
         result_json["model_id"] = model_id
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
-        result_json["server_args"] = args.server_args
         result_json["dataset_name"] = args.dataset_name
         result_json["client_args"] = dict(vars(args))
         # json doesn't allow infinity as numeric, so cast this to string
