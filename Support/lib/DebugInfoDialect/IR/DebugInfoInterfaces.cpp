@@ -81,6 +81,15 @@ static LogicalResult verifyScope(ErrorOr<DIScopeAttr> scopeOr,
 
   if (funcScope == *scopeOr)
     return success();
+
+  op->print(llvm::errs(),
+            mlir::OpPrintingFlags().enableDebugInfo().assumeVerified());
+  llvm::errs() << "\n";
+  op->print(
+      llvm::errs(),
+      mlir::OpPrintingFlags().enableDebugInfo(true, true).assumeVerified());
+  llvm::errs() << "\n";
+
   return (op->emitOpError(
               "location scope does not match scope of parent func location: ")
           << *scopeOr)

@@ -69,7 +69,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
     name = structOp.getSymNameAttr();
     // Bundle the source names of the parameter types.
     for (Type type : structOp.getSignature().getParamTypes())
-      paramTypes.push_back(getSourceName(type));
+      paramTypes.push_back(getSourceName(getCanonicalType(type)));
     kind = DebugInfo::SourceNameKind::Struct;
   } else if (auto func = dyn_cast<FnOp>(*op)) {
     // Query the source name. Fall back to the symbol name otherwise.
@@ -80,7 +80,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
     // include the memory-only result slot if it's there.
     FnTypeGeneratorType sig = func.getFuncTypeGenerator();
     for (Type type : sig.getInputParamTypes())
-      paramTypes.push_back(getSourceName(type));
+      paramTypes.push_back(getSourceName(getCanonicalType(type)));
     for (auto [i, t, conv] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
       if (isResultSlot(conv))
@@ -90,7 +90,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
       if (sig.isPosVarArg(i))
         type = cast<VariadicType>(type).getElementType();
       type = RefType::stripRefConvention(type, conv);
-      argTypes.push_back(getSourceName(type));
+      argTypes.push_back(getSourceName(getCanonicalType(type)));
     }
     kind = DebugInfo::SourceNameKind::Fn;
     // The function will not have parameter values until elaboration.
@@ -113,6 +113,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
 }
 
 SourceNameAttr SourceNames::getSourceName(Type type) {
+  type = getCanonicalType(type);
   // If this is a reference to a source type, then we can use its full source
   // name.
   if (auto declRef = dyn_cast<StructType>(type)) {
@@ -123,7 +124,7 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
     // Add the parameter values.
     SmallVector<StringAttr> paramValues;
     for (TypedAttr value : declRef.getParamValues())
-      paramValues.push_back(getParamTypeAsString(value));
+      paramValues.push_back(getParamTypeAsString(getCanonicalAttr(value)));
     SmallVector<SourceNameAttr> decorators;
     processDecorators(op.getOperation(), decorators);
     return SourceNameAttr::get(
@@ -168,7 +169,7 @@ void SharedState::setLocationDebugScope(FnOp funcOp) {
   // Use unresolved types now for simplicity, these will get resolved during
   // compilation.
   auto mapUnresolvedType = [](Type type) -> DebugInfo::DIType {
-    return DebugInfo::DIUnresolvedMLIRType::get(type);
+    return DebugInfo::DIUnresolvedMLIRType::get(getCanonicalType(type));
   };
 
   auto type = DebugInfo::DISubroutineType::get(

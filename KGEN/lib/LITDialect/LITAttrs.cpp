@@ -1100,6 +1100,7 @@ TypedAttr LIT::StructExtractAttr::get(TypedAttr structValue, StringAttr field,
 TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
                                       TypedAttr structValue, StringAttr field,
                                       Type resultType) {
+
   if (auto value = dyn_cast_if_present<LITStructAttr>(structValue)) {
     auto it = llvm::find_if(value.getValues(), [&](const auto &p) {
       return std::get<0>(p) == field;
@@ -1209,12 +1210,11 @@ static bool canElideSugaredBuiltinApply(TypedAttr attr) {
   if (isa<ParamDeclRefAttr>(attr))
     return true;
 
-  StringRef typeName;
-  if (auto structType = dyn_cast<LIT::StructType>(attr.getType()))
-    typeName = structType.getSymbol().getLeafReference().strref();
-
-  if (typeName == "Origin")
-    return true; // FIXME: Not principled.
+  auto getTypeName = [&]() -> StringRef {
+    if (auto structType = dyn_cast<LIT::StructType>(attr.getType()))
+      return structType.getSymbol().getLeafReference().strref();
+    return {};
+  };
 
   /// A StructAttr is due to an inline @always_inline("builtin") initializer.
   /// Elide it if we have the default type with a literal so we don't print
@@ -1222,10 +1222,16 @@ static bool canElideSugaredBuiltinApply(TypedAttr attr) {
   if (auto structAttr = dyn_cast<LITStructAttr>(attr)) {
     // If the struct has a single element, elide the braces.
     if (structAttr.getValues().size() == 1) {
+      auto typeName = getTypeName();
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
       if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
           typeName == "DType" || typeName == "_AddressSpace") {
-        if (isa<IntegerAttr, AnyOriginAttr, DTypeConstantAttr>(elt))
+        if (isa<IntegerAttr, DTypeConstantAttr>(elt))
+          return true;
+      }
+
+      if (typeName == "Origin") {
+        if (isa<AnyOriginAttr, ComptimeOriginAttr>(elt))
           return true;
       }
 
@@ -1235,6 +1241,7 @@ static bool canElideSugaredBuiltinApply(TypedAttr attr) {
   }
 
   if (isa<UnknownAttr>(attr)) {
+    auto typeName = getTypeName();
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
         typeName == "StringLiteral")
       return true;
