@@ -286,8 +286,8 @@ def execute_flash_attention[
     v_cache_device = kv_collection_device.get_value_cache(0)
 
     flash_attention[use_score_mod=True](
-        test_output_device.tensor,
-        q_device.tensor,
+        test_output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         CausalMask(),
@@ -302,8 +302,8 @@ def execute_flash_attention[
 
     # Here pass mask that includes bias in q_idx >= k_idx (to compare).
     flash_attention(
-        ref_output_device.tensor,
-        q_device.tensor,
+        ref_output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         MaterializedMask(

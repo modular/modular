@@ -25,7 +25,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout, IntTuple
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -590,8 +590,30 @@ fn _flash_attention_dispatch[
                 score_mod_t, IdentityScoreMod
             ]()
             gpu_flash_attention[use_score_mod=use_score_mod](
-                output,
-                q,
+                LayoutTensor[
+                    output.type,
+                    Layout(IntTuple(output.shape), IntTuple(output.strides)),
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout(IntTuple(output.shape), IntTuple(output.strides))
+                    ](
+                        output.get_shape().canonicalize(),
+                        output.get_strides().canonicalize(),
+                    ),
+                ),
+                LayoutTensor[
+                    q.type,
+                    Layout(IntTuple(q.shape), IntTuple(q.strides)),
+                ](
+                    q.data,
+                    RuntimeLayout[
+                        Layout(IntTuple(q.shape), IntTuple(q.strides))
+                    ](
+                        q.get_shape().canonicalize(),
+                        q.get_strides().canonicalize(),
+                    ),
+                ),
                 k,
                 v,
                 mask,
@@ -634,27 +656,28 @@ fn _flash_attention_dispatch_materialized_mask[
         @always_inline
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
+            var sink_weights_lt: OptionalReg[
+                LayoutTensor[
+                    dtype,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ]
+            ] = None
+            if sink_weights:
+                var sw = sink_weights.value()
+                sink_weights_lt = sink_weights_lt.T(
+                    sw.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(sw))
+                    ),
+                )
+
             @parameter
             if is_cpu[target]():
                 alias q_layout = Layout.row_major[q.rank](q.shape)
                 alias output_layout = Layout.row_major[output.rank](
                     output.shape
                 )
-                var sink_weights_lt: OptionalReg[
-                    LayoutTensor[
-                        dtype,
-                        Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
-                    ]
-                ] = None
-                if sink_weights:
-                    var sw = sink_weights.value()
-                    sink_weights_lt = sink_weights_lt.T(
-                        sw.data,
-                        RuntimeLayout[
-                            Layout.row_major(UNKNOWN_VALUE)
-                        ].row_major(IndexList[1](len(sw))),
-                    )
                 return flash_attention_kv_cache_cpu(
                     LayoutTensor[q.type, q_layout](
                         q.data,
@@ -679,8 +702,34 @@ fn _flash_attention_dispatch_materialized_mask[
                     score_mod_t, IdentityScoreMod
                 ]()
                 gpu_flash_attention[use_score_mod=use_score_mod, sink=sink](
-                    output,
-                    q,
+                    LayoutTensor[
+                        output.type,
+                        Layout(
+                            IntTuple(output.shape), IntTuple(output.strides)
+                        ),
+                    ](
+                        output.data,
+                        RuntimeLayout[
+                            Layout(
+                                IntTuple(output.shape), IntTuple(output.strides)
+                            )
+                        ](
+                            output.get_shape().canonicalize(),
+                            output.get_strides().canonicalize(),
+                        ),
+                    ),
+                    LayoutTensor[
+                        q.type,
+                        Layout(IntTuple(q.shape), IntTuple(q.strides)),
+                    ](
+                        q.data,
+                        RuntimeLayout[
+                            Layout(IntTuple(q.shape), IntTuple(q.strides))
+                        ](
+                            q.get_shape().canonicalize(),
+                            q.get_strides().canonicalize(),
+                        ),
+                    ),
                     k,
                     v,
                     mask,
@@ -688,7 +737,7 @@ fn _flash_attention_dispatch_materialized_mask[
                     valid_lengths,
                     scale,
                     context.get_device_context(),
-                    sink_weights=sink_weights,
+                    sink_weights=sink_weights_lt,
                 )
 
         unswitch[call_flash_attention](Bool(sink_weights))

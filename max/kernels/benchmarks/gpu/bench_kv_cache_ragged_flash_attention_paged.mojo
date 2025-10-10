@@ -17,10 +17,11 @@ from random import random_ui64, seed
 from sys import env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer, arg_parse, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -156,8 +157,9 @@ def execute_kv_cache_ragged_flash_attention[
 
     # initialize mask tensor
     # dummy mask to satisfy the argument.
-    dummy_mask = NDBuffer[dtype, 4](
-        UnsafePointer[Scalar[dtype]](), IndexList[4]()
+    dummy_mask = LayoutTensor[dtype, Layout.row_major[4]()](
+        UnsafePointer[Scalar[dtype]](),
+        RuntimeLayout[Layout.row_major[4]()].row_major(IndexList[4]()),
     )
 
     # initialize reference output
@@ -220,8 +222,9 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                output_device.tensor,
-                q_device.tensor,
+                # TODO: remove the origin cast once unified closures are supported.
+                output_device.to_layout_tensor().origin_cast[True](),
+                q_device.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),

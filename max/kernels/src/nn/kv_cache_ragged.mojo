@@ -2404,27 +2404,28 @@ fn _flash_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
+            var sink_weights_lt: OptionalReg[
+                LayoutTensor[
+                    dtype,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ]
+            ] = None
+            if sink_weights:
+                var sw = sink_weights.value()
+                sink_weights_lt = sink_weights_lt.T(
+                    sw.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(sw))
+                    ),
+                )
+
             @parameter
             if is_cpu[target]():
                 alias q_layout = Layout.row_major[q.rank](q.shape)
                 alias output_layout = Layout.row_major[output.rank](
                     output.shape
                 )
-                var sink_weights_lt: OptionalReg[
-                    LayoutTensor[
-                        dtype,
-                        Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
-                    ]
-                ] = None
-                if sink_weights:
-                    var sw = sink_weights.value()
-                    sink_weights_lt = sink_weights_lt.T(
-                        sw.data,
-                        RuntimeLayout[
-                            Layout.row_major(UNKNOWN_VALUE)
-                        ].row_major(IndexList[1](len(sw))),
-                    )
                 return flash_attention_kv_cache_cpu(
                     LayoutTensor[q.type, q_layout](
                         q.data,
@@ -2453,8 +2454,34 @@ fn _flash_attention_dispatch[
                 gpu_flash_attention[
                     use_score_mod=use_score_mod, ragged=True, sink=sink
                 ](
-                    output,
-                    q,
+                    LayoutTensor[
+                        output.type,
+                        Layout(
+                            IntTuple(output.shape), IntTuple(output.strides)
+                        ),
+                    ](
+                        output.data,
+                        RuntimeLayout[
+                            Layout(
+                                IntTuple(output.shape), IntTuple(output.strides)
+                            )
+                        ](
+                            output.get_shape().canonicalize(),
+                            output.get_strides().canonicalize(),
+                        ),
+                    ),
+                    LayoutTensor[
+                        q.type,
+                        Layout(IntTuple(q.shape), IntTuple(q.strides)),
+                    ](
+                        q.data,
+                        RuntimeLayout[
+                            Layout(IntTuple(q.shape), IntTuple(q.strides))
+                        ](
+                            q.get_shape().canonicalize(),
+                            q.get_strides().canonicalize(),
+                        ),
+                    ),
                     k,
                     v,
                     mask,
@@ -2462,7 +2489,7 @@ fn _flash_attention_dispatch[
                     input_row_offsets,
                     scale,
                     context.get_device_context(),
-                    sink_weights=sink_weights,
+                    sink_weights=sink_weights_lt,
                 )
 
         unswitch[call_flash_attention](Bool(sink_weights))
@@ -3029,8 +3056,30 @@ fn _cross_attention_dispatch[
             gpu_flash_attention[
                 use_score_mod=use_score_mod, ragged=True, sink=False
             ](
-                output,
-                q,
+                LayoutTensor[
+                    output.type,
+                    Layout(IntTuple(output.shape), IntTuple(output.strides)),
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout(IntTuple(output.shape), IntTuple(output.strides))
+                    ](
+                        output.get_shape().canonicalize(),
+                        output.get_strides().canonicalize(),
+                    ),
+                ),
+                LayoutTensor[
+                    q.type,
+                    Layout(IntTuple(q.shape), IntTuple(q.strides)),
+                ](
+                    q.data,
+                    RuntimeLayout[
+                        Layout(IntTuple(q.shape), IntTuple(q.strides))
+                    ](
+                        q.get_shape().canonicalize(),
+                        q.get_strides().canonicalize(),
+                    ),
+                ),
                 k,
                 v,
                 mask,
@@ -3039,8 +3088,15 @@ fn _cross_attention_dispatch[
                 scale,
                 context.get_device_context(),
                 Int(q_max_seq_len),
-                OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                    kv_input_row_offsets
+                LayoutTensor[
+                    kv_input_row_offsets.type,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ](
+                    kv_input_row_offsets.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(kv_input_row_offsets))
+                    ),
                 ),
                 None,
             )

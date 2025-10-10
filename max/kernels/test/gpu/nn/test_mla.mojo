@@ -137,19 +137,37 @@ fn test[
         randn[mask_type](mask_ptr, mask_size)
 
     # Construct buffers.
-    var q = NDBuffer[qkv_type, 4](
-        q_ptr, Index(batch_size, seq_len, num_heads, depth)
+    alias layout_4d = Layout.row_major[4]()
+    var q = LayoutTensor[qkv_type, layout_4d](
+        q_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
-    var k = NDBuffer[qkv_type, 4](
-        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
+    var k = LayoutTensor[qkv_type, layout_4d](
+        k_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
     )
-    var mask = NDBuffer[mask_type, 2](mask_ptr, Index(seq_len, num_keys))
-    var output = NDBuffer[qkv_type, 4](
-        output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    var mask = LayoutTensor[mask_type, Layout.row_major[2]()](
+        mask_ptr,
+        RuntimeLayout[Layout.row_major[2]()].row_major(
+            Index(seq_len, num_keys)
+        ),
+    )
+    var output = LayoutTensor[qkv_type, layout_4d](
+        output_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
-    var flash_output = NDBuffer[qkv_type, 4](
-        flash_output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    var flash_output = LayoutTensor[qkv_type, layout_4d](
+        flash_output_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
     @parameter
@@ -158,12 +176,7 @@ fn test[
             qkv_type == mask_type, "expect qkv and mask have same type for CPU."
         ]()
         _naive_attention_with_transpose[qkv_type](
-            rebind[NDBuffer[qkv_type, 4, output.origin]](output),
-            rebind[NDBuffer[qkv_type, 4, q.origin]](q),
-            rebind[NDBuffer[qkv_type, 4, k.origin]](k),
-            rebind[NDBuffer[qkv_type, 4, k.origin]](k),
-            rebind[NDBuffer[qkv_type, 2, mask.origin]](mask),
-            scale,
+            output, q, k, k, mask.bitcast[qkv_type](), scale
         )
 
     # Device pointers
@@ -204,6 +217,47 @@ fn test[
         Index(batch_size, seq_len, num_heads, depth),
     )
 
+    # Construct layout tensor buffers.
+    alias q_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    )
+    var q_device_lt = LayoutTensor[qkv_type, q_layout](
+        q_device_ptr.unsafe_ptr(),
+        RuntimeLayout[q_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
+    )
+    alias k_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
+    )
+    var k_device_lt = LayoutTensor[qkv_type, k_layout](
+        k_device_ptr.unsafe_ptr(),
+        RuntimeLayout[k_layout].row_major(
+            Index(batch_size, num_keys, kv_num_heads, depth)
+        ),
+    )
+    var mask3d_lt = LayoutTensor[mask_type, Layout.row_major[3]()](
+        mask_device_ptr.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[3]()].row_major(
+            Index(batch_size, seq_len, num_keys)
+        ),
+    )
+    var mask4d_lt = LayoutTensor[mask_type, Layout.row_major[4]()](
+        mask_device_ptr.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[4]()].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
+    )
+    alias output_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    )
+    var output_device_lt = LayoutTensor[qkv_type, output_layout](
+        output_device_ptr.unsafe_ptr(),
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
+    )
+
     alias q_tile_num_rows = 32
     alias k_tile_num_rows = 128
 
@@ -228,18 +282,7 @@ fn test[
                 output_device,
                 q_device,
                 k_device,
-                MaterializedMask(
-                    LayoutTensor[
-                        mask3d.dtype,
-                        Layout.row_major[mask3d.rank](mask3d.shape),
-                        MutableAnyOrigin,
-                    ](
-                        mask3d.data,
-                        RuntimeLayout[
-                            Layout.row_major[mask3d.rank](mask3d.shape)
-                        ].row_major(mask3d.get_shape().canonicalize()),
-                    ),
-                ),
+                MaterializedMask(mask3d_lt),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -250,18 +293,7 @@ fn test[
                 output_device,
                 q_device,
                 k_device,
-                MaterializedMask(
-                    LayoutTensor[
-                        mask4d.dtype,
-                        Layout.row_major[mask4d.rank](mask4d.shape),
-                        MutableAnyOrigin,
-                    ](
-                        mask4d.data,
-                        RuntimeLayout[
-                            Layout.row_major[mask4d.rank](mask4d.shape)
-                        ].row_major(mask4d.get_shape().canonicalize()),
-                    ),
-                ),
+                MaterializedMask(mask4d_lt),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -288,11 +320,14 @@ fn test[
     @parameter
     if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-        var output_ref_device = NDBuffer[
-            qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-        ](
+        alias output_ref_layout = Layout.row_major(
+            Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+        )
+        var output_ref_device = LayoutTensor[qkv_type, output_ref_layout](
             output_ref_device_ptr.unsafe_ptr(),
-            Index(batch_size, seq_len, num_heads, depth),
+            RuntimeLayout[output_ref_layout].row_major(
+                Index(batch_size, seq_len, num_heads, depth)
+            ),
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
@@ -314,7 +349,7 @@ fn test[
                 UnsafePointer[UInt32](), Index(0)
             )
             mha_gpu_naive[_is_cache_length_accurate=True,](
-                q_device,
+                q_device_lt,
                 k_operand,
                 k_operand,
                 CausalMask(),
@@ -336,10 +371,10 @@ fn test[
             )
         elif mask_rank == 3:
             mha_gpu_naive(
-                q_device,
-                k_device,
-                k_device,
-                mask3d,
+                q_device_lt,
+                k_device_lt,
+                k_device_lt,
+                mask3d_lt,
                 output_ref_device,
                 scale,
                 batch_size,
@@ -352,10 +387,10 @@ fn test[
             )
         elif mask_rank == 4:
             mha_gpu_naive(
-                q_device,
-                k_device,
-                k_device,
-                mask4d,
+                q_device_lt,
+                k_device_lt,
+                k_device_lt,
+                mask4d_lt,
                 output_ref_device,
                 scale,
                 batch_size,
@@ -635,11 +670,14 @@ fn test_prefill[
                     v_ref[b, s, h, d + kv_depth] = 0
 
     # view q_device as a rank 4 buffer
-    var q_device_rank4 = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    alias q_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    )
+    var q_device_rank4 = LayoutTensor[qkv_type, q_layout](
         q_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[q_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
     # create device pointers for K_ref and V_ref
@@ -653,23 +691,32 @@ fn test_prefill[
         batch_size * seq_len * num_heads * depth
     )
     # create device buffers for K_ref and V_ref
-    var k_ref_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    alias k_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    )
+    var k_ref_device = LayoutTensor[qkv_type, k_layout](
         k_ref_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, num_heads, depth),
+        RuntimeLayout[k_layout].row_major(
+            Index(batch_size, num_keys, num_heads, depth)
+        ),
     )
-    var v_ref_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    alias v_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    )
+    var v_ref_device = LayoutTensor[qkv_type, v_layout](
         v_ref_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, num_heads, depth),
+        RuntimeLayout[v_layout].row_major(
+            Index(batch_size, num_keys, num_heads, depth)
+        ),
     )
-    var output_ref_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
+    alias output_layout = Layout.row_major(
+        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    )
+    var output_ref_device = LayoutTensor[qkv_type, output_layout](
         output_ref_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+        RuntimeLayout[output_layout].row_major(
+            Index(batch_size, seq_len, num_heads, depth)
+        ),
     )
 
     # copy from host to device
@@ -682,26 +729,26 @@ fn test_prefill[
 
     var k_ref_operand = LayoutTensorMHAOperand(
         LayoutTensor[
-            k_ref_device.type,
-            Layout.row_major[k_ref_device.rank](k_ref_device.shape),
+            k_ref_device.dtype,
+            Layout.row_major(k_ref_device.layout.shape),
             MutableAnyOrigin,
         ](
-            k_ref_device.data,
+            k_ref_device.ptr,
             RuntimeLayout[
-                Layout.row_major[k_ref_device.rank](k_ref_device.shape)
-            ].row_major(k_ref_device.get_shape().canonicalize()),
+                Layout.row_major(k_ref_device.layout.shape)
+            ].row_major(k_ref_device.runtime_layout.shape.value.canonicalize()),
         ),
     )
     var v_ref_operand = LayoutTensorMHAOperand(
         LayoutTensor[
-            v_ref_device.type,
-            Layout.row_major[v_ref_device.rank](v_ref_device.shape),
+            v_ref_device.dtype,
+            Layout.row_major(v_ref_device.layout.shape),
             MutableAnyOrigin,
         ](
-            v_ref_device.data,
+            v_ref_device.ptr,
             RuntimeLayout[
-                Layout.row_major[v_ref_device.rank](v_ref_device.shape)
-            ].row_major(v_ref_device.get_shape().canonicalize()),
+                Layout.row_major(v_ref_device.layout.shape)
+            ].row_major(v_ref_device.runtime_layout.shape.value.canonicalize()),
         ),
     )
 

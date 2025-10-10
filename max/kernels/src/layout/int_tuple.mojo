@@ -899,6 +899,28 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 return False
         return True
 
+    fn all_known[start: Int, end: Int](self) -> Bool:
+        """Check if all values in this tuple hierarchy are known (not `UNKNOWN_VALUE`).
+
+        Recursively traverses the nested tuple structure and checks if any value
+        is equal to `UNKNOWN_VALUE`.
+
+        Parameters:
+            start: The starting index (inclusive) for the range to check.
+            end: The ending index (exclusive) for the range to check.
+
+        Returns:
+            True if all values in this tuple and nested tuples are known,
+            False if any value is `UNKNOWN_VALUE`.
+        """
+        for i in range(start, end):
+            if self.is_tuple(i):
+                if not self[i].all_known():
+                    return False
+            elif self.value(i) == UNKNOWN_VALUE:
+                return False
+        return True
+
     @always_inline
     fn append(mut self, *elements: IntTuple):
         """Append one or more `IntTuple` elements to this tuple.
