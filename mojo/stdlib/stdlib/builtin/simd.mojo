@@ -3290,7 +3290,18 @@ fn _pow[
 
     @parameter
     if exp.dtype.is_floating_point() and base.dtype is exp.dtype:
-        return _powf(base, exp)
+
+        @parameter
+        if is_apple_gpu():
+            return llvm_intrinsic[
+                "llvm.air.pow",
+                __type_of(base),
+                __type_of(base),
+                __type_of(exp),
+                has_side_effect=False,
+            ](base, exp)
+        else:
+            return _powf(base, exp)
     elif exp.dtype.is_integral():
         # Common cases
         if all(exp.eq(2)):
