@@ -21,6 +21,7 @@ import queue
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, Generic
 
+import zmq
 from max.interfaces import (
     BaseContext,
     BaseContextType,
@@ -242,18 +243,25 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
 
                     count_no_progress = 0
 
-                except queue.Empty:
+                except (queue.Empty, zmq.error.Again) as e:
                     # If the worker dies this loop will keep running,
                     # so we have to check the worker status.
-                    if not self.is_worker_healthy():
+                    if (
+                        isinstance(e, zmq.error.Again)
+                        or not self.is_worker_healthy()
+                    ):
                         logger.error("Model worker process is not healthy")
                         self.worker_monitor.pc.set_canceled()
-                        raise Exception("Worker failed!")  # noqa: B904
+                        raise Exception(
+                            "Worker stopped unexpectedly."
+                        ) from None
 
                     await sleep_with_backoff(count_no_progress)
                     count_no_progress += 1
 
-        except asyncio.CancelledError:
-            raise
         finally:
             logger.debug("Terminating response worker [self=%s]", os.getpid())
+
+            # un-deadlock the tasks waiting in this.stream()
+            for q in self.pending_out_queues.values():
+                await q.put(SchedulerResult(is_done=True, result=None))

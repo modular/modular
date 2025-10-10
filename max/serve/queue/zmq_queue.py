@@ -111,6 +111,8 @@ def _open_zmq_socket(path: str, mode: int) -> zmq.Socket[bytes]:
     mem = psutil.virtual_memory()
 
     # Grab the singleton global zmq ctx
+    # https://zguide.zeromq.org/docs/chapter2/
+    # "one I/O thread per gigabyte of data per second"
     zmq_ctx = zmq.Context.instance(io_threads=2)
     socket = zmq_ctx.socket(mode)
 

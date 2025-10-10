@@ -32,13 +32,10 @@ def register_request(app: FastAPI) -> None:
         request.state.request_timer = StopWatch()
         try:
             response: Response = await call_next(request)
-            status_code = response.status_code
-        except HTTPException as e:
-            status_code = e.status_code
-            raise e
+        except HTTPException:
+            raise  # already wrapped
         except Exception as e:
             logger.exception("Exception in request session : %s", request_id)
-            status_code = 500
             raise HTTPException(
                 status_code=500, headers={"X-Request-ID": request_id}
             ) from e
