@@ -21,7 +21,8 @@ def LIT_ImplicitConversionKind : I32EnumAttr<
   "ImplicitConversionKind", "implicit conversion kind",
 [
   I32EnumAttrCase<"None", 0, "none">,
-  I32EnumAttrCase<"Implicit", 1, "implicit">
+  I32EnumAttrCase<"Implicit", 1, "implicit">,
+  I32EnumAttrCase<"Deprecated", 2, "deprecated">
 ]> {
   let cppNamespace = "::M::KGEN::LIT";
   let genSpecializedAttr = 0;
