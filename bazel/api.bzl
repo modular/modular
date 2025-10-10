@@ -72,8 +72,8 @@ def _rewrite_deps(deps):
         if dep.startswith("//SDK/lib/API/python/tests/graph"):
             replaced_dep = dep.replace("//SDK/lib/API/python/tests/graph", "//tests/max/graph")
             new_deps.append(replaced_dep)
-        elif dep.startswith("//SDK/lib/API/python/max/benchmark:"):
-            replaced_dep = dep.replace("//SDK/lib/API/python/max/benchmark:", "//benchmark:")
+        elif dep.startswith("//SDK/lib/API/python/max/benchmark"):
+            replaced_dep = dep.replace("//SDK/lib/API/python/max/benchmark", "//benchmark")
             new_deps.append(replaced_dep)
         elif dep.startswith("//SDK/lib/API/python/"):
             replaced_dep = dep.replace("//SDK/lib/API/python/", "//")
