@@ -23,7 +23,7 @@ fn issue1242():
     fn on_message(): pass
 
 @invalidDec # expected-error {{use of unknown declaration 'invalidDec'}}
-def bad_decorator(): pass
+def unknown_decorator(): pass
 
 fn decorator_on_var():
     @invalidDec
@@ -45,13 +45,60 @@ fn someFn2():
     if True: # expected-error {{unknown tokens at the end of a declaration}}
         pass
 
+@decorator[]  # expected-error {{invalid expression in decorator}}
+fn bad_decorator_expression_1():
+    pass
+
+@decorator[]()  # expected-error {{invalid expression in decorator}}
+fn bad_decorator_expression_2():
+    pass
+
+@567  # expected-error {{invalid expression in decorator}}
+fn bad_decorator_expression_3():
+    pass
+
+# ===----------------------------------------------------------------------=== #
+# @always_inline
+# ===----------------------------------------------------------------------=== #
+
+@always_inline("builtin", "nodebug")  # expected-error {{'@always_inline' may not have more than 1 operand, got 2}}
+fn bad_always_inline_1():
+    pass
+
+@always_inline(123)  # expected-error {{'@always_inline' operand must be "nodebug" or "builtin"}}
+fn bad_always_inline_2():
+    pass
+
+@always_inline("no_debug")  # expected-error {{'@always_inline' operand must be "nodebug" or "builtin"}}
+fn bad_always_inline_3():
+    pass
 
 # ===----------------------------------------------------------------------=== #
 # @staticmethod
 # ===----------------------------------------------------------------------=== #
 
-@staticmethod # expected-error {{only methods on structs may be declared static}}
+@staticmethod  # expected-error {{only methods on structs may be declared static}}
 def not_a_struct_method(): pass
+
+struct HasBadStaticMethod:
+    @staticmethod()  # expected-error {{'@staticmethod' cannot have arguments}}
+    fn bad_static_method_1(): pass
+
+    @staticmethod("abc")  # expected-error {{'@staticmethod' cannot have arguments}}
+    fn bad_static_method_2(): pass
+
+
+# ===----------------------------------------------------------------------=== #
+# @no_inline
+# ===----------------------------------------------------------------------=== #
+
+@no_inline()  # expected-error {{'@no_inline' cannot have arguments}}
+fn bad_no_inline_1():
+    pass
+
+@no_inline("abc")  # expected-error {{'@no_inline' cannot have arguments}}
+fn bad_no_inline_2():
+    pass
 
 
 # ===----------------------------------------------------------------------=== #
@@ -95,12 +142,16 @@ fn no_message():
 struct CheckImplicit:
     @implicit # expected-error {{'@implicit' may only be applied to '__init__' methods}}
     fn foo(mut self): pass
-    @implicit # expected-error {{'@implicit' requires an argument to convert from}}
+    @implicit  # expected-error {{'@implicit' requires an argument to convert from}}
     fn __init__(out self): pass
-    @implicit # expected-error {{'@implicit' initializers must accept a single argument value}}
+    @implicit  # expected-error {{'@implicit' initializers must accept a single argument value}}
     fn __init__(out self, x: Int, y: Int): pass
-    @implicit # expected-error {{'@implicit' may only be applied to '__init__' methods}}
+    @implicit  # expected-error {{'@implicit' may only be applied to '__init__' methods}}
     fn __copyinit__(out self, other: Self): pass
+    @implicit()  # expected-error {{'@implicit' cannot have arguments}}
+    fn __init__(out self, b: Bool): pass
+    @implicit()  # expected-error {{'@implicit' cannot have arguments}}
+    fn __init__(out self, b: String): pass
 
 
 # ===----------------------------------------------------------------------=== #
@@ -142,37 +193,88 @@ def func_overloaded(x: Bool):
 # @extern
 # ===----------------------------------------------------------------------=== #
 
+@extern  # expected-error {{'@extern' requires 1 argument}}
+fn bad_extern_1(): ...
+
+@extern()  # expected-error {{'@extern' requires 1 argument}}
+fn bad_extern_2(): ...
+
+@extern(123)  # expected-error {{'@extern' requires a string literal argument}}
+fn bad_extern_3(): ...
+
+@extern("bad_extern", "bad_extern_3")  # expected-error {{'@extern' requires 1 argument}}
+fn bad_extern_4(): ...
+
 # expected-error @+2 {{unexpected function body in extern function declaration, use `...`}}
 @extern("add_one")
 fn my_extern_add_one(x: Int) -> Int:
     return x + 1
 
 struct HasExtern:
-  # expected-error @+1 {{@extern cannot be applied to a method}}
+  # expected-error @+1 {{'@extern' cannot be applied to a method}}
   @extern("add_one_struct")
   fn my_extern_struct_add_one(self, x: Int) -> Int:
     ...
+
+# ===----------------------------------------------------------------------=== #
+# @__llvm_metadata
+# ===----------------------------------------------------------------------=== #
+
+@__llvm_metadata  # expected-error {{'@__llvm_metadata' requires operands}}
+fn llvm_meta_no_arg_1[x: Int](a: Int, b: Int):
+    pass
+
+@__llvm_metadata()  # expected-error {{'@__llvm_metadata' requires operands}}
+fn llvm_meta_no_arg_2[x: Int](a: Int, b: Int):
+    pass
 
 
 # ===----------------------------------------------------------------------=== #
 # @__llvm_arg_metadata
 # ===----------------------------------------------------------------------=== #
 
-# expected-error @below {{LLVM arg metadata requires an argument name}}
-@__llvm_arg_metadata()
-fn llvm_arg_meta_no_arg[x: Int](a: Int, b: Int):
+@__llvm_arg_metadata  # expected-error {{'@__llvm_arg_metadata' requires operands}}
+fn llvm_arg_meta_no_arg_1[x: Int](a: Int, b: Int):
     pass
 
-# expected-error @below {{First argument of LLVM arg metadata must be an argument name}}
+@__llvm_arg_metadata()  # expected-error {{'@__llvm_arg_metadata' requires operands}}
+fn llvm_arg_meta_no_arg_2[x: Int](a: Int, b: Int):
+    pass
+
+# expected-error @+1 {{First argument of '@__llvm_arg_metadata' must be an argument name}}
 @__llvm_arg_metadata(1 + 1)
 fn llvm_arg_meta_wrong_type[x: Int](a: Int, b: Int):
     pass
 
-# expected-error @below {{No argument named c}}
+# expected-error @+1 {{Function decorated by '@__llvm_arg_metadata' has no argument named 'c'}}
 @__llvm_arg_metadata(c, myMeta)
 fn llvm_arg_meta_wrong_name[x: Int](a: Int, b: Int):
     pass
 
+# ===----------------------------------------------------------------------=== #
+# Closure decorators
+# ===----------------------------------------------------------------------=== #
+
+fn outer_function():
+    @__copy_capture  # expected-error {{'@__copy_capture' must have arguments}}
+    @parameter()  # expected-error {{'@parameter' cannot have arguments}}
+    fn copy_capture_no_args_1():
+        pass
+
+    @__copy_capture()  # expected-error {{'@__copy_capture' must have arguments}}
+    @parameter("abc")  # expected-error {{'@parameter' cannot have arguments}}
+    fn copy_capture_no_args_2():
+        pass
+
+    @__move_capture  # expected-error {{'@__move_capture' must have arguments}}
+    @parameter
+    fn move_capture_no_args_1():
+        pass
+
+    @__move_capture()  # expected-error {{'@__move_capture' must have arguments}}
+    @parameter
+    fn move_capture_no_args_2():
+        pass
 
 # ===----------------------------------------------------------------------=== #
 # Struct decorators
