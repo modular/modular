@@ -353,10 +353,4 @@ def test_all():
 
 
 def main():
-    # TODO(MOCO-2557): Use automatic discovery when it can handle overloads.
-    # TestSuite.discover_tests[__functions_in_module()]().run()
-    var suite = TestSuite()
-
-    suite.test[test_all]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -476,9 +476,8 @@ fn _log2_floor(n: Int) -> Int:
     return Int(floor(log2(Float64(n))))
 
 
-# TODO(MOCO-2557): Change back to _log2_ceil.
 @always_inline
-fn _log2_ceil_int(n: Int) -> Int:
+fn _log2_ceil(n: Int) -> Int:
     """Computes ceil(log_2(d))."""
 
     return Int(_log2_ceil(Scalar[DType.int](n)))
@@ -565,12 +564,12 @@ def test_log2_ceil():
     for i in range(1, 100):
         assert_equal(
             log2_ceil(i),
-            _log2_ceil_int(i),
+            _log2_ceil(i),
             msg=String(
                 "mismatching value for the input value of ",
                 i,
                 " expected ",
-                _log2_ceil_int(i),
+                _log2_ceil(i),
                 " but got ",
                 log2_ceil(i),
             ),
@@ -598,7 +597,7 @@ def test_log2_ceil():
     _check_alias[32](5)
 
 
-def test_log2_ceil_int32():
+def test_log2_ceil32():
     assert_equal(log2_ceil(Int32(0)), 0)
     for i in range(Int32(1), Int32(100)):
         assert_equal(

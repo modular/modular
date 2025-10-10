@@ -23,10 +23,8 @@ fn bar(x: Int) -> Int:
     return 1
 
 
-def foobar(*, z: Float64 = 1.6):
-    pass
-
-
+# NOTE: this is intentionally in the middle here, to ensure that the intrinsic
+# correctly resolves signatures that are declared after the call.
 alias funcs = __functions_in_module()
 
 
@@ -34,6 +32,7 @@ def main():
     var expected_names = [
         "test_functions_in_module::foo()",
         "test_functions_in_module::bar(::Int)",
+        "test_functions_in_module::bar(::Int,::Int)",
         "test_functions_in_module::foobar(::SIMD[::DType(float64), ::Int(1)])",
     ]
 
@@ -41,3 +40,11 @@ def main():
     for i in range(len(funcs)):
         alias name = get_linkage_name[funcs[i]]()
         assert_equal(name, expected_names[i])
+
+
+fn bar(y: Int, z: Int):
+    pass
+
+
+def foobar(*, z: Float64 = 1.6):
+    pass

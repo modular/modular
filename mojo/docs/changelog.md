@@ -40,8 +40,7 @@ what we publish.
     alias same_funcs = Tuple(foo, bar)
   ```
 
-  The intrinsic is currently limited for use from within `main`, and only works
-  if the module in which it's called does not declare overloaded functions.
+  The intrinsic is currently limited for use from within `main`.
 
 ### Language changes
 
