@@ -1688,6 +1688,18 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               refWalker.walk(traitOp.getCanonicalTrait());
               return success();
             })
+            .Case([&](ExtensionDeclOp extensionOp) -> LogicalResult {
+              SymbolRefAttr targetStruct =
+                  extensionOp.getTargetStruct().value();
+              refWalker.walk(targetStruct);
+              ASTDecl &structAstDecl =
+                  declResolver->getDeclForTypeSymbol(targetStruct);
+              auto structOp = dyn_cast_or_null<StructDeclOp>(
+                  structAstDecl.getIfOperation());
+              assert(structOp && "extension target is not a struct");
+              decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structOp));
+              return success();
+            })
             .Case([&](UnresolvedImportOp unresolvedImport) {
               // Let the normal decl resolver handling insert aliases and other
               // import behavior.
@@ -1749,7 +1761,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // If this isn't a container op, we don't need to resolve any nested decls,
   // simply materialize everything nested within.
-  if (!isa<FileModuleOp, PackageOp, StructDeclOp, TraitDeclOp>(declOp)) {
+  if (!isa<FileModuleOp, PackageOp, StructDeclOp, TraitDeclOp, ExtensionDeclOp>(
+          declOp)) {
     return failure(declOp->walk<mlir::WalkOrder::PreOrder>(resolveSingleOp)
                        .wasInterrupted());
   }
@@ -1811,6 +1824,11 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());
             traitDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(op));
             // TODO(traits): Add decls for parameters, when they exist.
+          })
+          .Case([&](ExtensionDeclOp op) {
+            SymbolRefAttr targetStruct = op.getTargetStruct().value();
+            StringAttr baseName = targetStruct.getLeafReference();
+            addDeclForOp(op, baseName);
           })
           .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),
