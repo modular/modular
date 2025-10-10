@@ -713,9 +713,9 @@ OriginMutCastAttr OriginMutCastAttr::getFromBytecode(TypedAttr operand,
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
-  auto curTy = ::cast<OriginType>(operand.getType());
-  if (curTy.isMutable() == isMutable)
-    return operand;
+  if (auto curTy = ::dyn_cast<OriginType>(operand.getType()))
+    if (curTy.isMutable() == isMutable)
+      return operand;
 
   // Fold some common cases to canonicalize.
   // mutcast(mutcast(x)) -> mutcast(x), often canceling out.
@@ -734,23 +734,24 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
     return OriginUnionAttr::get(elts, OriginType::get(isMutable));
   }
 
-  auto context = curTy.getContext();
+  auto context = operand.getContext();
   return OriginMutCastAttr::Base::get(context, operand,
                                       OriginType::get(isMutable));
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, Type type) {
-  assert(::isa<OriginType>(type) && ::isa<OriginType>(operand.getType()) &&
-         "#lit.origin.mutcast always has !lit.origin type");
   if (operand.getType() == type)
     return operand;
-  return get(operand, ::cast<OriginType>(type).isMutable());
+
+  auto attr = get(operand, OriginType::castCanonical(type).isMutable());
+  // Ensure sugar lines up correctly.
+  return ParamOperatorAttr::getRebind(attr, type);
 }
 
 TypedAttr OriginMutCastAttr::get(TypedAttr operand, bool isMutable) {
-  auto operandType = ::cast<OriginType>(operand.getType());
-  if (operandType.isMutableKnown(isMutable))
-    return operand;
+  if (auto curTy = ::dyn_cast<OriginType>(operand.getType()))
+    if (curTy.isMutableKnown(isMutable))
+      return operand;
   return get(operand, BoolAttr::get(operand.getContext(), isMutable));
 }
 
@@ -1304,6 +1305,15 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
 TypedAttr SugarAttr::stripTopLevelSugar(TypedAttr value) {
   while (auto sugar = dyn_cast<SugarAttr>(value))
     value = sugar.getOriginal();
+  return value;
+}
+
+Type SugarAttr::stripTopLevelSugar(Type value) {
+  // Sugar for a type will be wrapped in a ParamType converting the attr into
+  // the type domain.
+  if (auto paramRef = dyn_cast<ParamType>(value))
+    if (isa<SugarAttr>(paramRef.getParam()))
+      return ParamType::get(stripTopLevelSugar(paramRef.getParam()));
   return value;
 }
 
