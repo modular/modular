@@ -62,7 +62,8 @@ public:
       std::string targetFeatures = getHostCPUFeatures(),
       std::string targetAccelerator = "",
       DebugInfoLanguage debugInfoLanguage = kLangMojo,
-      std::string searchPaths = "");
+      std::string searchPaths = "",
+      SmallVector<std::string> extraSearchPaths = {});
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -112,6 +113,7 @@ public:
 
   std::string saveTempsPrefix = "";
   std::string searchPaths = "";
+  SmallVector<std::string> extraSearchPaths = {};
 
   // File paths to external bitcode libraries specified via command line.
   SmallVector<std::string> bitcodeLibs = {};
