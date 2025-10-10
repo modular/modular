@@ -1521,6 +1521,7 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
     sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
     const llvm::MemoryBuffer *memoryBuf =
         sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
+    // TODO(MOCO-522): Arcana docs on this lazy loading.
     bytecodeReader = std::make_unique<mlir::BytecodeReader>(
         memoryBuf->getMemBufferRef(), impl->bytecodeParserContext,
         /*lazyLoad=*/true, sourceMgr);
@@ -1620,8 +1621,17 @@ SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
   auto declOp = lookupSymbolIn<ASTDeclInterface>(&container, leafRef);
   if (!declOp)
     return nullptr;
-  // Retrieve the proper decl name.
-  StringAttr name = declOp.getDeclName();
+
+  // Extensions should be registered in the ASTDecl name table under their
+  // target struct's name (e.g., "SIMD"), not their full decl name (like
+  // "extension:SIMD"). When looking up an extension, use the target struct's
+  // name.
+  StringAttr name;
+  if (auto *extOp = dyn_cast_or_null<ExtensionDeclOp>(&declOp)) {
+    name = extOp->getTargetStruct().value().getLeafReference();
+  } else {
+    name = declOp.getDeclName();
+  }
 
   // If the container is loaded from bytecode, the decl should already be
   // defined within the container decl, look it up directly. This avoids going

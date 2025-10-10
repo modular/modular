@@ -644,6 +644,15 @@ LITLowerer::lowerExtensionDecl(ExtensionDeclOp extensionDecl,
       member.erase();
       continue;
     }
+    if (auto conformance = dyn_cast<ConformanceOp>(member)) {
+      // The trait decl is going away. This reference is no longer necessary.
+      conformance.removeTraitRefAttr();
+      Block *structGenBody = &kgenStructGenOp.getRegion().front();
+      // Extension conformances need to be moved to the target struct's
+      // generator, because that's what the elaborator expects.
+      conformance->moveBefore(structGenBody, structGenBody->end());
+      continue;
+    }
 
     auto func = dyn_cast<FnOp>(member);
     if (!func)

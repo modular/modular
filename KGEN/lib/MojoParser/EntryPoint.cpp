@@ -123,9 +123,19 @@ static void sortValueUses(Operation *topLevelOp) {
 static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
   CompilerTimeTraceScope traceScope("eraseUnreachableDecls");
 
+  // Precompute a map from structs to their extensions, this will help with
+  // marking extensions as live further below.
+  DenseMap<SymbolRefAttr, SmallVector<LIT::ExtensionDeclOp>> structToExtensions;
+
   // Start by erasing unresolved imports. This puts the module in a
   // canonical form.
   module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    // Populate the structToExtensions map.
+    if (auto ext = dyn_cast<LIT::ExtensionDeclOp>(op)) {
+      if (auto targetStruct = ext.getTargetStruct())
+        structToExtensions[targetStruct.value()].push_back(ext);
+    }
+
     if (op == declOp) {
       // Don't purge anything from the main package if we are parsing one.
       if (isa<PackageOp>(op))
@@ -135,7 +145,7 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
           op->erase();
           return WalkResult::skip();
         }
-        if (isa<StructDeclOp, FnOp, LIT::TraitDeclOp>(op))
+        if (isa<StructDeclOp, FnOp, LIT::TraitDeclOp, LIT::ExtensionDeclOp>(op))
           return WalkResult::skip();
         return WalkResult::advance();
       });
@@ -185,6 +195,22 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
   while (!worklist.empty()) {
     Operation *cur = worklist.back();
     worklist.pop_back();
+
+    // Extensions are not children of structs, so they won't be found by walking
+    // the struct.
+    // For now, let's conservatively say that if a struct is live, all
+    // extensions that target it are marked live.
+    // TODO(MOCO-522): Factor in uses of the conformance, and uses of the
+    // methods perhaps? Could be more precise and avoid the need for a map.
+    if (auto structOp = dyn_cast<LIT::StructDeclOp>(cur)) {
+      SymbolRefAttr structRef = LIT::getFullyResolvedSymbolRef(structOp);
+      auto it = structToExtensions.find(structRef);
+      if (it != structToExtensions.end()) {
+        for (LIT::ExtensionDeclOp ext : it->second)
+          markLive(ext);
+      }
+    }
+
     // Collect symbol references between this symbol table and any child symbol
     // tables. Nested `lit.fn` operations are trickier, however.
     cur->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
