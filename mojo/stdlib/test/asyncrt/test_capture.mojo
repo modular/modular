@@ -89,7 +89,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
 
 
 def main():
-    # TODO(MOCO-2561): Use automatic discovery when it can handle global_idx.
+    # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
