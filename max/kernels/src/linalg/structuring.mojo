@@ -24,6 +24,7 @@ from layout.layout_tensor import (
     _copy_dram_to_local,
     _copy_local_to_dram,
 )
+from layout.tma_async import SharedMemBarrier
 
 
 # Tile based AMD Data Movement Delegate
@@ -130,6 +131,10 @@ alias RegTileType[
     MutableAnyOrigin,
     address_space = AddressSpace.LOCAL,
     alignment=alignment,
+]
+
+alias SMemBarrier = UnsafePointer[
+    SharedMemBarrier, address_space = AddressSpace.SHARED
 ]
 
 
