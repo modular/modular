@@ -18,6 +18,7 @@ Expert Parallelism (EP) Communication Kernel.
 import compiler_internal as compiler
 from gpu.host import DeviceBuffer, get_gpu_target
 from gpu.host.info import is_gpu
+from layout import Layout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import align_of, simd_width_of, size_of
@@ -29,7 +30,7 @@ from tensor_internal.managed_tensor_slice import (
 
 from shmem import shmem_init, shmem_malloc, shmem_module_init
 from shmem.ep_comm import (
-    EPMsgConfig,
+    BF16TokenFormat,
     dispatch_kernel,
     dispatch_cb_kernel,
     combine_kernel,
@@ -93,9 +94,10 @@ struct Struct_ep_init:
         ]()
 
         # Calculate message sizes for dispatch and combine phases
-        alias dispatch_msg_size = EPMsgConfig(
-            dispatch_dtype, hidden_size, top_k, gpu_alignment
-        ).msg_size()
+        alias token_fmt_type = BF16TokenFormat[
+            output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        ]
+        alias dispatch_msg_size = token_fmt_type.msg_size()
         # Combine messages only contain the processed token
         alias combine_msg_size = hidden_size * size_of[combine_dtype]()
 
@@ -238,9 +240,9 @@ struct Struct_ep_dispatch:
         alias gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
-        alias dispatch_msg_size = EPMsgConfig(
-            dispatch_dtype, hidden_size, top_k, gpu_alignment
-        ).msg_size()
+        alias token_fmt_type = BF16TokenFormat[
+            output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        ]
 
         alias n_ranks = n_gpus_per_node * n_nodes
 
@@ -253,8 +255,8 @@ struct Struct_ep_dispatch:
             n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
             n_experts,
             n_ranks,
-            dispatch_msg_size,
             max_token_per_rank,
+            token_fmt_type,
         ]
 
         @always_inline
@@ -269,7 +271,6 @@ struct Struct_ep_dispatch:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
-                ";dispatch_msg_size=", dispatch_msg_size,
             )
             # fmt: on
 
@@ -381,14 +382,15 @@ struct Struct_ep_dispatch_cb:
         alias gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
-        alias dispatch_msg_size = EPMsgConfig(
-            dispatch_dtype, hidden_size, top_k, gpu_alignment
-        ).msg_size()
 
         alias n_ranks = n_gpus_per_node * n_nodes
 
+        constrained[dispatch_dtype == DType.bfloat16]()
+        var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
+            output_tokens_tensor.bitcast[DType.bfloat16]()
+        )
+
         alias dispatch_cb = dispatch_cb_kernel[
-            dispatch_dtype,
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             row_offsets_tensor.layout,
@@ -396,11 +398,10 @@ struct Struct_ep_dispatch_cb:
             src_info_tensor.layout,
             hw_info.sm_count,
             1,
-            top_k,
             n_experts,
             n_ranks,
-            dispatch_msg_size,
             max_token_per_rank,
+            __type_of(format_handler),
         ]
 
         @always_inline
@@ -415,7 +416,6 @@ struct Struct_ep_dispatch_cb:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
-                ";dispatch_msg_size=", dispatch_msg_size,
             )
             # fmt: on
 
@@ -432,7 +432,7 @@ struct Struct_ep_dispatch_cb:
             )
 
             gpu_ctx.enqueue_function[dispatch_cb](
-                output_tokens_tensor,
+                format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
                 src_info_tensor,
