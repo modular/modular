@@ -203,11 +203,11 @@ def execute_fused_qkv_matmul[
         0 if is_context_encoding else max_seq_len,
     )
     _fused_qkv_matmul_kv_cache_impl[target="gpu"](
-        hidden_state_device.tensor,
-        weight_device.tensor,
+        hidden_state_device.to_layout_tensor(),
+        weight_device.to_layout_tensor(),
         kv_collection_device,
         UInt32(layer_idx),
-        test_output_device.tensor,
+        test_output_device.to_layout_tensor(),
         ctx,
     )
 

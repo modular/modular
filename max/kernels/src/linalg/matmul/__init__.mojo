@@ -19,10 +19,11 @@ from math import align_up, ceildiv
 from sys.info import align_of, simd_width_of
 
 from algorithm import sync_parallelize, tile, vectorize
-from buffer.buffer import NDBuffer
+from buffer.buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -37,6 +38,76 @@ from ..utils import (
     elementwise_epilogue_type,
 )
 from .gpu import _matmul_gpu
+
+
+@always_inline
+fn matmul[
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: OptionalReg[
+        elementwise_compute_lambda_type
+    ] = None,
+    saturated_vnni: Bool = False,
+    single_thread_blocking_override: Bool = False,
+    _trace_description: StaticString = "",
+    target: StaticString = "cpu",
+](
+    c: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[address_space = AddressSpace.GENERIC, **_],
+    ctx: Optional[DeviceContext],
+) raises:
+    return matmul[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        saturated_vnni=saturated_vnni,
+        single_thread_blocking_override=single_thread_blocking_override,
+        _trace_description=_trace_description,
+        target=target,
+    ](
+        NDBuffer[
+            c.dtype,
+            2,
+            c.origin,
+            DimList(
+                _to_value_or_dim(Int(c.layout.shape[0])),
+                _to_value_or_dim(Int(c.layout.shape[1])),
+            ),
+        ](
+            c.ptr,
+            rebind[IndexList[2]](c.runtime_layout.shape.value.canonicalize()),
+        ),
+        NDBuffer[
+            a.dtype,
+            2,
+            a.origin,
+            DimList(
+                _to_value_or_dim(Int(a.layout.shape[0])),
+                _to_value_or_dim(Int(a.layout.shape[1])),
+            ),
+        ](
+            a.ptr,
+            rebind[IndexList[2]](a.runtime_layout.shape.value.canonicalize()),
+        ),
+        NDBuffer[
+            b.dtype,
+            2,
+            b.origin,
+            DimList(
+                _to_value_or_dim(Int(b.layout.shape[0])),
+                _to_value_or_dim(Int(b.layout.shape[1])),
+            ),
+        ](
+            b.ptr,
+            rebind[IndexList[2]](b.runtime_layout.shape.value.canonicalize()),
+        ),
+        ctx,
+    )
 
 
 @always_inline
@@ -175,3 +246,10 @@ fn matmul[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             ](c, a, b, ctx.value())
+
+
+fn _to_value_or_dim(value: Int) -> Dim:
+    if value != UNKNOWN_VALUE:
+        return Dim(value)
+    else:
+        return Dim()

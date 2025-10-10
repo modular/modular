@@ -7519,12 +7519,12 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             per_head_norm=per_head_norm,
         ](
             kv_collection,
-            managed_tensor_slice_to_ndbuffer(gamma),
+            gamma.to_layout_tensor(),
             epsilon,
             weight_offset,
             layer_idx,
             total_seq_len,
-            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            input_row_offsets.to_layout_tensor(),
             context,
         )
 
@@ -7552,7 +7552,7 @@ fn print_kv_cache_paged_generic_kernel_api[
     @parameter
     if is_gpu[target]():
         print_kv_cache_paged_generic_gpu[target](
-            managed_tensor_slice_to_ndbuffer(valid_lengths),
+            valid_lengths.to_layout_tensor(),
             kv_collection,
             layer_idx,
             True,
@@ -7560,7 +7560,7 @@ fn print_kv_cache_paged_generic_kernel_api[
         )
     elif is_cpu[target]():
         print_kv_cache_paged_generic_cpu[target](
-            managed_tensor_slice_to_ndbuffer(valid_lengths),
+            valid_lengths.to_layout_tensor(),
             kv_collection,
             layer_idx,
             is_print_compact[0],
