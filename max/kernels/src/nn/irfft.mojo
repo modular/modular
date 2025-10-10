@@ -54,7 +54,10 @@ fn global_cache_insert(key: String, value: OpaquePointer):
 fn _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
 ) raises -> OpaquePointer:
-    var fft_buffer_key = String("CUFFT_BUFFER_PTR_", buffer_size)
+    # Include device ID in cache key to ensure per-device workspace buffers.
+    var fft_buffer_key = String(
+        "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
+    )
 
     if lookup := global_cache_lookup(fft_buffer_key):
         # we found the allocated device buffer
@@ -81,7 +84,10 @@ fn _get_fft_plan[
     workspace_size: Int,
     ctx: DeviceContext,
 ) raises -> cufftHandle:
-    var cached_plan_key = String("CUFFT_PLAN_", output_size, ",", batch_size)
+    # Include device ID in cache key to ensure per-device cuFFT plans.
+    var cached_plan_key = String(
+        "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
+    )
 
     if lookup := global_cache_lookup(cached_plan_key):
         # We found the plan in the cache, so just return it
@@ -131,7 +137,7 @@ fn _get_fft_plan[
     return plan
 
 
-fn irfft[
+fn _irfft[
     input_type: DType,
     output_type: DType,
     alignment: Int,
@@ -151,17 +157,6 @@ fn irfft[
     buffer_size_mb: Int,
     ctx: DeviceContext,
 ) raises:
-    """Compute the inverse real FFT of the input tensor.
-
-    Currently, only applies it to the last dimension.
-
-    Args:
-        input: Complex input tensor (NDBuffer).
-        output: Real output tensor (NDBuffer).
-        n: Output signal size (if <= 0, computed as 2*(input.size(axis) - 1)).
-        buffer_size_mb: Estimated buffer size in MB.
-        ctx: Device context.
-    """
     constrained[
         input.rank == output.rank, "Input and output must have the same rank"
     ]()
@@ -306,3 +301,39 @@ fn irfft[
                     output_ptr.bitcast[Float32](),
                 )
             )
+
+
+fn irfft[
+    input_type: DType,
+    output_type: DType,
+    alignment: Int,
+](
+    input: LayoutTensor[
+        input_type,
+        alignment=alignment,
+        address_space = AddressSpace.GENERIC, **_,
+    ],
+    output: LayoutTensor[
+        mut=True,
+        output_type,
+        alignment=alignment,
+        address_space = AddressSpace.GENERIC, **_,
+    ],
+    n: Int,
+    buffer_size_mb: Int,
+    ctx: DeviceContext,
+) raises:
+    """Compute the inverse real FFT of the input tensor.
+
+    Currently, only applies it to the last dimension.
+
+    Args:
+        input: Complex input tensor (NDBuffer).
+        output: Real output tensor (NDBuffer).
+        n: Output signal size (if <= 0, computed as 2*(input.size(axis) - 1)).
+        buffer_size_mb: Estimated buffer size in MB.
+        ctx: Device context.
+    """
+    # Set `ctx`'s CUcontext as current to satisfy cuFFT's stateful API.
+    with ctx.push_context():
+        _irfft(input, output, n, buffer_size_mb, ctx)

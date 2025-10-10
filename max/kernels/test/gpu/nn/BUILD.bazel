@@ -2,6 +2,8 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 _EXTRA_CONSTRAINTS = {
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
+    "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
+    "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
     "test_mha_causal_mask_amd.mojo": ["//:amd_gpu"],  # FIXME: KERN-1448, KERN-1437, KERN-1429
     "test_mha_operand_tma.mojo": select({

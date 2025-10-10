@@ -1635,7 +1635,7 @@ fn conv_transposed_gpu[
         )
 
 
-fn conv_transposed_cudnn[
+fn _conv_transposed_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -1738,3 +1738,23 @@ fn conv_transposed_cudnn[
     # ---------------- Cleanup ---------------------------------------------
     if workspace_ptr:
         workspace_ptr.free()
+
+
+fn conv_transposed_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: LayoutTensor[input_type, **_],
+    filter: LayoutTensor[filter_type, **_],
+    output: LayoutTensor[output_type, **_],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    ctx: DeviceContext,
+) raises:
+    # Set the CUcontext as current to satisfy stateful cuDNN APIs.
+    with ctx.push_context():
+        _conv_transposed_cudnn(
+            input, filter, output, stride, dilation, padding, ctx
+        )

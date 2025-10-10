@@ -314,3 +314,35 @@ def main():
             dilation_val=1,
             pad_val=3,
         ](ctx=ctx)
+
+    # Test with multiple device contexts consecutively
+    print("\n== Testing with multiple device contexts ==")
+
+    # First context - default device (GPU 0)
+    print("Creating first device context (default device)...")
+    with DeviceContext() as ctx1:
+        test_conv_transposed_cudnn[
+            input_len=9,
+            kernel_len=4,
+            in_channels=2,
+            out_channels=2,
+            stride_val=1,
+            dilation_val=1,
+            pad_val=0,
+        ](ctx=ctx1)
+
+    if DeviceContext.number_of_devices() >= 2:
+        # Second context - device 1
+        print("Creating second device context (device 1)...")
+        with DeviceContext(device_id=1) as ctx2:
+            test_conv_transposed_cudnn[
+                input_len=9,
+                kernel_len=4,
+                in_channels=2,
+                out_channels=2,
+                stride_val=1,
+                dilation_val=1,
+                pad_val=0,
+            ](ctx=ctx2)
+
+        print("Multiple device context test completed successfully!")
