@@ -72,6 +72,27 @@ struct ComplexSIMD[dtype: DType, size: Int](
         self.re = re
         self.im = im
 
+    fn __init__(out self, *, from_interleaved: SIMD[dtype, 2 * size]):
+        """Initializes a complex SIMD value.
+
+        Args:
+            from_interleaved: An interleaved vector of complex values e.g.
+                `[0, 1i, 1, 0i]`.
+        """
+        alias T = Tuple[Self.element_type, Self.element_type]
+        self.re, self.im = rebind[T](from_interleaved.deinterleave())
+
+    fn __init__(out self, *, from_deinterleaved: SIMD[dtype, 2 * size]):
+        """Initializes a complex SIMD value.
+
+        Args:
+            from_deinterleaved: A deinterleaved vector of complex values e.g.
+                `[0, 1, 1i, 0i]`.
+        """
+        alias T = Self.element_type
+        self.re = rebind[T](from_deinterleaved.slice[size]())
+        self.im = rebind[T](from_deinterleaved.slice[size, offset=size]())
+
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
