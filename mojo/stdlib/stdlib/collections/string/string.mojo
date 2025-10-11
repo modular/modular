@@ -83,6 +83,10 @@ from collections.string.string_slice import (
     _to_string_list,
     _unsafe_strlen,
 )
+from collections.string._utf8 import (
+    _is_utf8_continuation_byte,
+    _utf8_first_byte_sequence_length,
+)
 from hashlib.hasher import Hasher
 from io.write import STACK_BUFFER_BYTES, _TotalWritableBytes, _WriteBufferStack
 from os import PathLike, abort
@@ -714,8 +718,12 @@ struct String(
         Returns:
             A StringSlice view containing the character at the specified position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
+        # TODO(#5281): implement this for unicode
         var normalized_idx = normalize_index["String"](idx, len(self))
+        debug_assert(
+            self.unsafe_ptr()[normalized_idx] < 0b1000_0000,
+            "String indexing is currently only for ASCII.",
+        )
         return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
 
     fn __getitem__(self, span: Slice) -> String:
@@ -730,21 +738,31 @@ struct String(
         var start: Int
         var end: Int
         var step: Int
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
+        # TODO(#5281): implement this for unicode
+
+        fn _check_last_bytes(span: Span[Byte]) -> Bool:
+            var amnt = Byte(1)
+            var b0 = Byte(0)
+            for b in reversed(span):
+                if not _is_utf8_continuation_byte(b):
+                    b0 = b
+                    break
+                amnt += 1
+            return Byte(_utf8_first_byte_sequence_length(b0)) == amnt
 
         start, end, step = span.indices(self.byte_length())
         var r = range(start, end, step)
         if step == 1:
-            return String(
-                StringSlice(
-                    ptr=self.unsafe_ptr() + start,
-                    length=UInt(len(r)),
-                )
+            var span = Span(ptr=self.unsafe_ptr() + start, length=UInt(len(r)))
+            debug_assert(
+                _check_last_bytes(span), "sliced a multi-byte sequence"
             )
+            return String(StringSlice(unsafe_from_utf8=span))
 
         var result = String(capacity=len(r))
         var ptr = self.unsafe_ptr()
         for i in r:
+            debug_assert(ptr[i] < 0b1000_0000, "non-ascii char at index: ", i)
             result.append_byte(ptr[i])
         return result^
 
@@ -2219,21 +2237,22 @@ fn _str_to_base_error(base: Int, str_slice: StringSlice) -> String:
 
 fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
     var length = str_slice.byte_length()
+    var data = str_slice.as_bytes()
     # just 1 digit, assume base 10
     if start == (length - 1):
         return 10, start
-    if str_slice[start] == "0":
-        var second_digit = str_slice[start + 1]
-        if second_digit == "b" or second_digit == "B":
+    if data[start] == Byte(ord("0")):
+        var second_digit = data[start + 1]
+        if second_digit == Byte(ord("b")) or second_digit == Byte(ord("B")):
             return 2, start + 2
-        if second_digit == "o" or second_digit == "O":
+        if second_digit == Byte(ord("o")) or second_digit == Byte(ord("O")):
             return 8, start + 2
-        if second_digit == "x" or second_digit == "X":
+        if second_digit == Byte(ord("x")) or second_digit == Byte(ord("X")):
             return 16, start + 2
         # checking for special case of all "0", "_" are also allowed
         var was_last_character_underscore = False
         for i in range(start + 1, length):
-            if str_slice[i] == "_":
+            if data[i] == Byte(ord("_")):
                 if was_last_character_underscore:
                     return -1, -1
                 else:
@@ -2241,9 +2260,9 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
                     continue
             else:
                 was_last_character_underscore = False
-            if str_slice[i] != "0":
+            if data[i] != Byte(ord("0")):
                 return -1, -1
-    elif ord("1") <= ord(str_slice[start]) <= ord("9"):
+    elif Byte(ord("1")) <= data[start] <= Byte(ord("9")):
         return 10, start
     else:
         return -1, -1
