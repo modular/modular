@@ -697,12 +697,138 @@ def test_trunc():
 
 
 def test_round():
-    assert_equal(Float32.__round__(Float32(2.5)), 2.0)
-    assert_equal(Float32.__round__(Float32(3.5)), 4.0)
-    assert_equal(Float32.__round__(Float32(-3.5)), -4.0)
+    assert_equal(round(Float32(2.5)), 2.0)
+    assert_equal(round(Float32(3.5)), 4.0)
+    assert_equal(round(Float32(-3.5)), -4.0)
 
     alias F = SIMD[DType.float32, 4]
-    assert_equal(F.__round__(F(1.5, 2.5, -2.5, -3.5)), F(2.0, 2.0, -2.0, -4.0))
+    assert_equal(round(F(1.5, 2.5, -2.5, -3.5)), F(2.0, 2.0, -2.0, -4.0))
+
+    # RoundMode tests
+    alias half_modes_even = [
+        RoundMode.HalfUp,
+        RoundMode.HalfDown,
+        RoundMode.HalfToZero,
+    ]
+    alias half_modes_uneven = half_modes_even + [RoundMode.HalfToEven]
+    alias all_modes_even = half_modes_even + [
+        RoundMode.Up,
+        RoundMode.Down,
+        RoundMode.ToEven,
+        RoundMode.ToZero,
+    ]
+    alias all_modes_uneven = all_modes_even + [RoundMode.HalfToEven]
+
+    # ...........
+    # uneven number
+    # ...........
+    # normal
+    @parameter
+    for mode in all_modes_uneven:
+        assert_equal(round[mode, to_multiple_of=3](0), 0)
+
+    # normal
+    for i in range(1, 2 + 1):
+        assert_equal(round[RoundMode.Up, to_multiple_of=3](i), 3)
+        assert_equal(round[RoundMode.Down, to_multiple_of=3](i), 0)
+        assert_equal(round[RoundMode.ToEven, to_multiple_of=3](i), 0)
+        assert_equal(round[RoundMode.ToZero, to_multiple_of=3](i), 0)
+
+    @parameter
+    for mode in half_modes_uneven:
+        assert_equal(round[mode, to_multiple_of=3](1), 0)
+        assert_equal(round[mode, to_multiple_of=3](2), 3)
+
+    # normal
+    @parameter
+    for mode in all_modes_uneven:
+        assert_equal(round[mode, to_multiple_of=3](3), 3)
+
+    # normal
+    for i in range(4, 5 + 1):
+        assert_equal(round[RoundMode.Up, to_multiple_of=3](i), 6)
+        assert_equal(round[RoundMode.Down, to_multiple_of=3](i), 3)
+        assert_equal(round[RoundMode.ToEven, to_multiple_of=3](i), 6)
+        assert_equal(round[RoundMode.ToZero, to_multiple_of=3](i), 3)
+
+    @parameter
+    for mode in half_modes_uneven:
+        assert_equal(round[mode, to_multiple_of=3](4), 3)
+        assert_equal(round[mode, to_multiple_of=3](5), 6)
+
+    # normal
+    @parameter
+    for mode in all_modes_uneven:
+        assert_equal(round[mode, to_multiple_of=3](6), 6)
+
+    # ...........
+    # even number
+    # ...........
+    # normal
+    @parameter
+    for mode in all_modes_even:
+        assert_equal(round[mode, to_multiple_of=4](0), 0)
+
+    for i in range(1, 3 + 1):
+        assert_equal(round[RoundMode.Up, to_multiple_of=4](i), 4)
+        assert_equal(round[RoundMode.Down, to_multiple_of=4](i), 0)
+        assert_equal(round[RoundMode.ToEven, to_multiple_of=4](i), 0)
+        assert_equal(round[RoundMode.ToZero, to_multiple_of=4](i), 0)
+
+    @parameter
+    for mode in half_modes_even:
+        assert_equal(round[mode, to_multiple_of=4](1), 0)
+    # middle point
+    assert_equal(round[RoundMode.HalfUp, to_multiple_of=4](2), 4)
+    assert_equal(round[RoundMode.HalfDown, to_multiple_of=4](2), 0)
+    assert_equal(round[RoundMode.HalfToZero, to_multiple_of=4](2), 0)
+
+    # normal
+    @parameter
+    for mode in half_modes_even:
+        assert_equal(round[mode, to_multiple_of=4](3), 4)
+        assert_equal(round[mode, to_multiple_of=4](4), 4)
+        assert_equal(round[mode, to_multiple_of=4](5), 4)
+
+    for i in range(5, 7 + 1):
+        assert_equal(round[RoundMode.Up, to_multiple_of=4](i), 8)
+        assert_equal(round[RoundMode.Down, to_multiple_of=4](i), 4)
+        assert_equal(round[RoundMode.ToEven, to_multiple_of=4](i), 4)
+        assert_equal(round[RoundMode.ToZero, to_multiple_of=4](i), 4)
+
+    # middle point
+    assert_equal(round[RoundMode.HalfUp, to_multiple_of=4](6), 8)
+    assert_equal(round[RoundMode.HalfDown, to_multiple_of=4](6), 4)
+    assert_equal(round[RoundMode.HalfToZero, to_multiple_of=4](6), 4)
+
+    # normal
+    @parameter
+    for mode in half_modes_even:
+        assert_equal(round[mode, to_multiple_of=4](7), 8)
+
+    @parameter
+    for mode in all_modes_even:
+        assert_equal(round[mode, to_multiple_of=4](8), 8)
+
+    assert_equal(round[to_multiple_of=0.1](1.11), 1.1)
+    assert_equal(round[to_multiple_of=0.125](1.01), 1)
+    assert_equal(round[to_multiple_of=0.125](1.11), 1.125)
+    assert_equal(round[to_multiple_of=0.125](1.20), 1.25)
+    assert_equal(round[to_multiple_of=0.125](8.4), 8.375)
+    assert_equal(round[to_multiple_of=0.25](1.11), 1.0)
+    assert_equal(round[to_multiple_of=0.25](1.20), 1.25)
+    assert_equal(round[to_multiple_of=0.5](1.11), 1.0)
+    assert_equal(round[to_multiple_of=0.5](1.312), 1.5)
+    assert_equal(round[to_multiple_of=0.5](1.45), 1.5)
+    assert_equal(round[to_multiple_of=0.5](1.499), 1.5)
+    assert_equal(round[to_multiple_of=0.5](1.55), 1.5)
+    assert_equal(round[to_multiple_of=0.5](1.612), 1.5)
+    assert_equal(round[to_multiple_of=0.05](1.499), 1.5)
+    assert_equal(round[to_multiple_of=0.05](1.0499), 1.05)
+    assert_equal(round[to_multiple_of=0.02](1.0499), 1.04)
+    assert_equal(round[to_multiple_of=0.02](1.0511), 1.06)
+    assert_equal(round[to_multiple_of=0.12](0.599), 0.6)
+    assert_equal(round[to_multiple_of=0.12](5.99), 6)
 
 
 def test_div():
