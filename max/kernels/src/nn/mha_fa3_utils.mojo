@@ -67,6 +67,13 @@ from utils.index import Index, IndexList
 
 @register_passable("trivial")
 trait OptionalPointer(Copyable):
+    """Trait for optional pointer types that may be null or non-null.
+
+    Provides a unified interface for handling pointers that may or may not
+    point to valid memory, used for optional kernel parameters. Implementations
+    provide compile-time null-safety guarantees through the `is_null` alias.
+    """
+
     alias dtype: DType
     alias is_null: Bool
 
@@ -77,6 +84,12 @@ trait OptionalPointer(Copyable):
 
 @register_passable("trivial")
 struct NonNullPointer[dtype_: DType](OptionalPointer):
+    """Non-null pointer wrapper providing compile-time null-safety guarantees.
+
+    Wraps a pointer that is guaranteed to be non-null at compile time,
+    avoiding runtime null checks in performance-critical code.
+    """
+
     alias dtype: DType = dtype_
     alias is_null: Bool = False
 
@@ -100,6 +113,12 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
 
 @register_passable("trivial")
 struct NullPointer[dtype_: DType](OptionalPointer):
+    """Null pointer implementation for optional kernel parameters.
+
+    Represents the absence of a pointer, used when optional kernel
+    parameters are not provided.
+    """
+
     alias dtype: DType = dtype_
     alias is_null: Bool = True
 
@@ -123,6 +142,15 @@ struct Pack[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
 ]:
+    """Parameter pack for Flash Attention 3 kernel specializations.
+
+    Bundles all kernel parameters into a single struct for efficient
+    passing and specialization, including masks, score modifiers,
+    schedulers, and optional parameters. This design enables compile-time
+    specialization of kernels for different configurations while minimizing
+    runtime overhead.
+    """
+
     var mask: MaskType
     var score_mod: ScoreModType
     var scheduler: SchedulerType
@@ -164,10 +192,13 @@ struct MHAPosition[
     group: Int,
     decoding: Bool,
 ](ImplicitlyCopyable, Movable):
-    """
-    Position of the MHA-kernel.
-    When `decoding=False`, `q_head_stride == q_num_heads`.
-    When `decoding=True`, `q_head_stride == 1`.
+    """Position information for Multi-Head Attention kernel computation.
+
+    Encapsulates the current position in the attention computation space,
+    including query/key coordinates, sequence bounds, and head indices.
+    Memory layout differs between decoding and prefill modes:
+    - When `decoding=False`: prefill mode with multiple query tokens per batch
+    - When `decoding=True`: single token generation per batch (group tokens per head)
     """
 
     var q_row: UInt32
@@ -536,8 +567,15 @@ fn _apply_mask[
 
     @parameter
     if decoding:
+        # Decoding mode: Multiple query heads grouped per warp (GQA/MQA optimization)
+        # Each thread processes up to 2 groups, each group has 8 elements
+        # Early exit for threads beyond needed groups:
+        # - Warp ID calculation: (thread_idx.x - 128) // 32 gives producer warp offset
+        # - Each warp handles up to 16 groups, so if group < 16, later warps can exit
         if warp.broadcast((thread_idx.x - 128) // 32) > UInt((group - 1) // 16):
             return
+        # Early exit for lanes beyond needed: each group needs 4 lanes
+        # With 64 lanes/warp, we support up to 16 groups (4 lanes * 16 = 64)
         if lane >= 4 * group:
             return
         batch_cache_valid_length = position.num_keys - 1
@@ -572,8 +610,13 @@ fn _apply_mask[
                     if decoding:
                         group_idx = i * 8 + fragment_row
                         q_head_idx = group * q_head_idx + group_idx
-                    # The row in score matrix of shape seq_len x num_keys.
-                    # Mask col is score col since we don't partition in col.
+                    # Coordinate systems for attention score position:
+                    # 1. score_row: Position within current sequence (0-based from prompt start)
+                    #    - Used for masking decisions relative to sequence boundaries
+                    # 2. score_row_with_start_pos: Absolute position including prefix/cache
+                    #    - Used for mask/score_mod functions that need global position
+                    # Decoding mode: Single query at end of cache (num_keys - 1)
+                    # Prefill mode: Current tile position + within-tile offset + group stride
                     var score_row: UInt32
                     var score_row_with_start_pos: UInt32
 

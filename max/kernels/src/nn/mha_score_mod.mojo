@@ -21,7 +21,13 @@ from builtin.device_passable import DevicePassable
 
 @register_passable("trivial")
 trait ScoreModTrait(Copyable, DevicePassable):
-    """The ScoreMod trait desctribes score_mod for mha kernel like alibi bias.
+    """Trait for score modification implementations in Multi-Head Attention kernels.
+
+    Defines the interface for various attention score modification strategies,
+    such as ALiBi (Attention with Linear Biases) and other positional biases
+    that can be applied to attention scores before softmax. These modifications
+    are applied element-wise to the attention score matrix and can encode
+    positional information or other biases.
     """
 
     alias name_str: String
@@ -50,7 +56,13 @@ trait ScoreModTrait(Copyable, DevicePassable):
 struct AlibiScoreMod[
     num_heads: Int,
 ](ScoreModTrait):
-    """AlibiScoreMod adds the appropriate ALiBi constant bias to attention score.
+    """ALiBi (Attention with Linear Biases) score modification for attention.
+
+    Implements ALiBi bias that decays attention scores based on the distance
+    between query and key positions, providing better extrapolation for
+    longer sequences compared to traditional positional embeddings. The bias
+    is computed as: score + scale * (q_idx - k_idx), where scale varies per
+    head using geometric progression for better representation learning.
     """
 
     alias name_str: String = "alibi"
@@ -138,7 +150,11 @@ struct AlibiScoreMod[
 @fieldwise_init
 @register_passable("trivial")
 struct IdentityScoreMod(ImplicitlyCopyable, Movable, ScoreModTrait):
-    """IdentityScoreMod simply returns attention score."""
+    """Identity score modification that applies no changes to attention scores.
+
+    Used when no positional bias or score modification is required,
+    simply passing through the original attention scores unchanged.
+    """
 
     alias name_str: String = "no_pos"
 

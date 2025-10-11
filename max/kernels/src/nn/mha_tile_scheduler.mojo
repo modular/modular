@@ -26,6 +26,14 @@ from nn.mha_fa3_utils import NullPointer, OptionalPointer
 @fieldwise_init
 @register_passable("trivial")
 struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+    """Work tile information for MHA computation scheduling.
+
+    Defines the coordinates and validity of a work tile in the attention
+    computation space, including query offset, head index, and batch sequence
+    index. Used by schedulers to distribute work across thread blocks in both
+    transient and persistent kernel modes.
+    """
+
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -62,6 +70,14 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 
 @register_passable("trivial")
 struct SeqInfo(ImplicitlyCopyable, Movable):
+    """Sequence information for MHA tile scheduling.
+
+    Contains sequence length, position information, and work coordinates
+    for managing attention computation across different sequences in a batch.
+    Supports both ragged sequences (variable length) and padded sequences
+    through the valid_length parameter.
+    """
+
     var seq_len: UInt32
     var start_of_seq: UInt32
     var prompt_offset: UInt32
@@ -327,11 +343,16 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
 
 @register_passable("trivial")
 trait MHATileScheduler(Copyable):
+    """Trait for scheduling work tiles in Multi-Head Attention kernels.
+
+    Defines the interface for different scheduling strategies including transient
+    (one work item per thread block) and persistent (thread blocks process multiple
+    work items) kernel execution modes. Schedulers determine work distribution
+    across thread blocks and manage advancement to the next work item.
+    """
+
     alias may_advance: Bool
     alias mha_schedule: MHASchedule
-
-    """The MHATileScheduler trait describes a schedule for the persistent kernel.
-    """
 
     fn get_current_work_info[
         ValidLengthType: OptionalPointer, //,
@@ -577,9 +598,14 @@ struct QueuedTileScheduler[
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
 ](DevicePassable, ImplicitlyCopyable, MHATileScheduler, Movable):
-    """
-    If `decoding == False`, then `num_heads` is `q_num_heads`.
-    If `decoding == True`, then `num_heads` is `kv_num_heads`.
+    """Persistent kernel scheduler using atomic work queue for dynamic load balancing.
+
+    Uses atomic counter to assign work tiles dynamically to thread blocks, enabling
+    better load balancing for variable-length sequences. Supports skipping invalid
+    work items (e.g., out-of-bounds sequences) for efficient ragged batch processing.
+
+    Note: If `decoding == False`, `num_heads` is `q_num_heads`.
+          If `decoding == True`, `num_heads` is `kv_num_heads`.
     """
 
     # Linear work tile index i.e. idx-th work among all possible workload.

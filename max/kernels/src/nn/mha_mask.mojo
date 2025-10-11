@@ -26,7 +26,11 @@ from builtin.device_passable import DevicePassable
 
 
 struct MaskName(Stringable):
-    """A tile's masking status."""
+    """Enumeration of different mask types for Multi-Head Attention.
+
+    Defines string constants for various masking strategies used in attention
+    mechanisms, including causal, chunked, sliding window, and materialized masks.
+    """
 
     var name: String
 
@@ -63,7 +67,12 @@ struct MaskName(Stringable):
 struct TileMaskStatus(
     EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
 ):
-    """A tile's masking status."""
+    """Status indicating how a tile in the attention matrix is masked.
+
+    Used to optimize attention computation by determining whether tiles are
+    fully masked, partially masked, or unmasked, allowing for efficient
+    skipping of unnecessary computations.
+    """
 
     var status: UInt8
 
@@ -112,7 +121,14 @@ struct TileMaskStatus(
 
 @register_passable("trivial")
 trait MHAMask(Copyable, DevicePassable):
-    """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
+    """Trait for mask implementations in Multi-Head Attention kernels.
+
+    Defines the interface for various attention masking strategies including
+    causal, sliding window, chunked, and materialized masks. Implementations
+    provide methods for applying masks to attention scores and determining
+    tile masking status for computational optimization. Masks can skip entire
+    tiles (FULL_MASK), partially mask tiles (PARTIAL_MASK), or indicate no
+    masking is needed (NO_MASK) for performance optimization.
     """
 
     alias apply_log2e_after_mask: Bool
@@ -267,7 +283,12 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
-    """Mask that's effectively a noop."""
+    """No-op mask that applies no masking to attention scores.
+
+    Used when no attention masking is required, effectively passing through
+    all attention scores unchanged. Useful for bidirectional attention or
+    when masking is handled elsewhere.
+    """
 
     alias apply_log2e_after_mask: Bool = False
     alias mask_out_of_bound: Bool = True
@@ -319,15 +340,13 @@ struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
 struct ChunkedMask[local_window_size: Int](
     ImplicitlyCopyable, MHAMask, Movable
 ):
-    """Mask implementing Chunked attention.
+    """Mask implementing Chunked attention for block-sparse patterns.
 
-    This groups the mask into chunks of size `local_window_size`.
-    Considering the following case:
-    - Q_len = 7
-    - K_len = 10
-    - local_window_size = 4
+    Groups the attention mask into non-overlapping chunks of size
+    `local_window_size`. Each query token attends only to keys within its
+    corresponding chunk, enabling efficient sparse attention patterns.
 
-    The mask will be applied as follows:
+    Example with Q_len=7, K_len=10, local_window_size=4:
         K > 0 1 2 3 4 5 6 7 8 9
         Q v x--------------------x
         0 | 1 1 1 1 0 0 0 0 0 0
@@ -447,14 +466,14 @@ struct ChunkedMask[local_window_size: Int](
 struct SlidingWindowCausalMask[window_size: Int](
     ImplicitlyCopyable, MHAMask, Movable
 ):
-    """Mask implementing Sliding Window attention.
+    """Mask implementing Sliding Window Causal attention.
 
-    Considering the following case:
-    - Q_len = 7
-    - K_len = 7
-    - window_size = 3
+    Combines causal masking (tokens attend only to previous tokens) with a
+    sliding window constraint (tokens attend only to the most recent
+    `window_size` tokens). This reduces memory and compute for long sequences
+    while maintaining local context.
 
-    The mask will be applied as follows:
+    Example with Q_len=7, K_len=7, window_size=3:
         K > 0 1 2 3 4 5 6
         Q v x------------x
         0 | 1 0 0 0 0 0 0
@@ -592,7 +611,12 @@ struct SlidingWindowCausalMask[window_size: Int](
 struct MaterializedMask[dtype_: DType, layout_: Layout](
     ImplicitlyCopyable, MHAMask, Movable
 ):
-    """Mask that's backed by a materialized tensor."""
+    """Mask backed by a pre-computed tensor for custom attention patterns.
+
+    Allows arbitrary attention masking patterns defined by a tensor, supporting
+    complex masking requirements that cannot be expressed by algorithmic masks.
+    The mask values are added to attention scores during computation.
+    """
 
     alias apply_log2e_after_mask: Bool = True
     alias mask_out_of_bound: Bool = True
@@ -725,7 +749,12 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     ImplicitlyCopyable, MHAMask, Movable
 ):
-    """Mask that's the AND of two masks."""
+    """Composite mask that combines two masks using logical AND operation.
+
+    Applies both constituent masks to attention scores, taking the minimum
+    (most restrictive) masking effect. Useful for combining causal masking
+    with other attention patterns.
+    """
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
     alias mask_out_of_bound: Bool = T.mask_out_of_bound or S.mask_out_of_bound
@@ -789,7 +818,12 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     ImplicitlyCopyable, MHAMask, Movable
 ):
-    """Mask that's the OR of two masks."""
+    """Composite mask that combines two masks using logical OR operation.
+
+    Applies both constituent masks to attention scores, taking the maximum
+    (least restrictive) masking effect. Useful for creating complex masking
+    patterns from simpler components.
+    """
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
     alias mask_out_of_bound: Bool = T.mask_out_of_bound and S.mask_out_of_bound
