@@ -15,7 +15,6 @@ from buffer import DimList
 from internal_utils import TestTensor
 from nn.resize import (
     CoordinateTransformationMode,
-    RoundMode,
     resize_linear,
     resize_nearest_neighbor,
 )
@@ -141,7 +140,7 @@ def main():
         var output = TestTensor[dtype, 4](DimList(1, 1, 8, 8))
 
         test_case_nearest[
-            4, CoordinateTransformationMode.AlignCorners, RoundMode.Floor
+            4, CoordinateTransformationMode.AlignCorners, RoundMode.Down
         ](input, output)
 
     # CHECK-LABEL: test_upsample_sizes_nearest_floor_align_corners
@@ -179,7 +178,7 @@ def main():
         var output = TestTensor[dtype, 4](DimList(1, 1, 8, 8))
 
         test_case_nearest[
-            4, CoordinateTransformationMode.HalfPixel, RoundMode.Ceil
+            4, CoordinateTransformationMode.HalfPixel, RoundMode.Up
         ](input, output)
 
     # CHECK-LABEL: test_upsample_sizes_nearest_ceil_half_pixel
