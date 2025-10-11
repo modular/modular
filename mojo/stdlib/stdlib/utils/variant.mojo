@@ -427,3 +427,30 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         For example, the `Variant[Int, Bool]` permits `Int` and `Bool`.
         """
         return Self._check[T]() != Self._sentinel
+
+    fn is_in[*V: Copyable & Movable](self) -> Bool:
+        """Check if a variant instance is also in another variant instance.
+
+        Parameters:
+            V: The variant to check.
+
+        Returns:
+            True if the variant contains the requested type.
+
+        Example:
+        ```mojo
+        from utils import Variant
+
+        def main():
+            var x = Variant[Int, Float64](1)
+            alias OnlyFloats = Variant[Float64, Float32]
+            print(x.is_in[*OnlyFloats.Ts]())
+        ```
+        """
+
+        @parameter
+        for j in range(len(VariadicList(V))):
+            alias T = V[j]
+            if self.isa[T]():
+                return True
+        return False

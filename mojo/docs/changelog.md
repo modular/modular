@@ -64,6 +64,17 @@ what we publish.
 
 ### Standard library changes
 
+- Added `is_in` function to `Variant` class.
+
+```mojo
+from utils import Variant
+
+def main():
+    var x = Variant[Int, Float64](1)
+    alias OnlyFloats = Variant[Float64, Float32]
+    print(x.is_in[*OnlyFloats.Ts]())
+```
+
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
 - The deprecated `DType.index` is now removed in favor of the `DType.int`.

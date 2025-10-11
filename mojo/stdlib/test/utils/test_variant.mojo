@@ -184,5 +184,17 @@ def test_is_type_supported():
     assert_equal(_y.is_type_supported[SIMD[DType.uint8, 8]](), False)
 
 
+def test_is_in():
+    alias IntsVariant = Variant[Int8, Int16, Int32, Int64]
+    alias NumbersVariant = Variant[Int8, Float32, Float64]
+    alias JustFloatsVariant = Variant[Float32, Float64]
+    var _x = NumbersVariant(Float32(1))
+    assert_equal(_x.is_in[*JustFloatsVariant.Ts](), True)
+    assert_equal(_x.is_in[*IntsVariant.Ts](), False)
+    var _y = NumbersVariant(Int8(1))
+    assert_equal(_y.is_in[*JustFloatsVariant.Ts](), False)
+    assert_equal(_y.is_in[*NumbersVariant.Ts](), True)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
