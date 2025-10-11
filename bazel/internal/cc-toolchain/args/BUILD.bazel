@@ -15,14 +15,12 @@ cc_args(
         "//:linux_aarch64": ["--target=aarch64-unknown-linux-gnu"],
         # TODO: Pull 11.0 from config set in .bazelrc
         "@platforms//os:macos": ["--target=arm64-apple-macosx11.0"],
-        "@platforms//os:emscripten": [],  # Emscripten uses its own target
     }) + select({
         "@platforms//os:linux": [
             # Compress debug info to improve binary size, not supported on macOS
             "-gz",
         ],
         "@platforms//os:macos": [],
-        "@platforms//os:emscripten": [],  # No debug compression for Emscripten
     }),
     env = {
         "ZERO_AR_DATE": "1",  # Required for hermetic links on macOS (default dependent)
@@ -115,7 +113,6 @@ cc_args(
             "-ffunction-sections",
         ],
         "@platforms//os:macos": [],
-        "@platforms//os:emscripten": [],
     }),
 )
 
@@ -130,7 +127,6 @@ cc_args(
     ] + select({
         "@platforms//os:linux": ["-stdlib=libstdc++"],
         "@platforms//os:macos": ["-stdlib=libc++"],
-        "@platforms//os:emscripten": [],  # Emscripten uses its own std lib
     }),
 )
 
@@ -169,7 +165,6 @@ cc_args(
             "-Wl,-no_warn_duplicate_libraries",
             "-Wl,-oso_prefix,.",  # Strip absolute paths from debug info file references
         ],
-        "@platforms//os:emscripten": [],  # Emscripten uses its own linking
     }) + select({
         # Sanitizers are split across multiple libraries, some of which aren't linked to shared libraries
         "//:asan_linux": ["-Wl,-z,undefs"],
@@ -177,7 +172,6 @@ cc_args(
         "//:ubsan_linux": ["-Wl,-z,undefs"],
         # Error on undefined symbols
         "@platforms//os:linux": ["-Wl,-z,defs"],
-        "@platforms//os:emscripten": [],  # No undefined symbol checking for Emscripten
         "//conditions:default": [],
     }) + select({
         "//:modular_config_coverage": ["-fprofile-instr-generate"],
@@ -208,7 +202,6 @@ cc_args(
     args = select({
         "@platforms//os:linux": ["-Wl,--gc-sections"],
         "@platforms//os:macos": ["-Wl,-dead_strip"],
-        "@platforms//os:emscripten": [],  # No dead stripping for Emscripten
     }),
 )
 
