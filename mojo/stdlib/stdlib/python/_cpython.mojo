@@ -771,6 +771,11 @@ alias PyEval_EvalCode = ExternalFunction[
 ]
 
 # Reference Counting
+alias Py_NewRef = ExternalFunction[
+    "Py_NewRef",
+    # PyObject *Py_NewRef(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
 alias Py_IncRef = ExternalFunction[
     "Py_IncRef",
     # void Py_IncRef(PyObject *o)
@@ -1288,6 +1293,7 @@ struct CPython(Defaultable, Movable):
     var _Py_CompileString: Py_CompileString.type
     var _PyEval_EvalCode: PyEval_EvalCode.type
     # Reference Counting
+    var _Py_NewRef: Py_NewRef.type
     var _Py_IncRef: Py_IncRef.type
     var _Py_DecRef: Py_DecRef.type
     # Exception Handling
@@ -1442,6 +1448,7 @@ struct CPython(Defaultable, Movable):
         self._Py_CompileString = Py_CompileString.load(self.lib)
         self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
         # Reference Counting
+        self._Py_NewRef = Py_NewRef.load(self.lib)
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
         # Exception Handling
@@ -1744,6 +1751,18 @@ struct CPython(Defaultable, Movable):
     # Reference Counting
     # ref: https://docs.python.org/3/c-api/refcounting.html
     # ===-------------------------------------------------------------------===#
+
+    fn Py_NewRef(self, o: PyObjectPtr) -> PyObjectPtr:
+        """Create a new strong reference to an object: call `Py_INCREF()` on `o`
+        and return the object `o`.
+
+        The object `o` must not be `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_NewRef
+        """
+        debug_assert(Bool(o), "Py_NewRef called with NULL")
+        return self._Py_NewRef(o)
 
     fn Py_IncRef(self, ptr: PyObjectPtr):
         """Indicate taking a new strong reference to the object `ptr` points to.
