@@ -47,6 +47,11 @@ for squared in map[square](values):
 """
 
 
+# ===-----------------------------------------------------------------------===#
+# Iterable
+# ===-----------------------------------------------------------------------===#
+
+
 trait Iterable:
     """The `Iterable` trait describes a type that can be turned into an
     iterator.
@@ -63,6 +68,11 @@ trait Iterable:
             An iterator over the elements.
         """
         ...
+
+
+# ===-----------------------------------------------------------------------===#
+# Iterator
+# ===-----------------------------------------------------------------------===#
 
 
 trait Iterator(Copyable, Movable):
@@ -156,6 +166,11 @@ fn next[
     return iterator.__next__()
 
 
+# ===-----------------------------------------------------------------------===#
+# enumerate
+# ===-----------------------------------------------------------------------===#
+
+
 struct _Enumerate[InnerIteratorType: Iterator](
     Copyable, Iterable, Iterator, Movable
 ):
@@ -219,18 +234,9 @@ fn enumerate[
     return _Enumerate(iter(iterable), start=start)
 
 
-fn _zip_bounds(*bounds: Tuple[Int, Optional[Int]]) -> Tuple[Int, Optional[Int]]:
-    var zip_lower = Int.MAX
-    var zip_upper = Optional[Int](None)
-
-    # TODO: This can probably be optimized with some SIMD reduce_min/max algorithm.
-    for bound in bounds:
-        var lower, upper = bound
-        zip_lower = min(zip_lower, lower)
-        if upper:
-            zip_upper = min(zip_upper.or_else(Int.MAX), upper.value())
-
-    return (zip_lower, zip_upper)
+# ===-----------------------------------------------------------------------===#
+# zip
+# ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
@@ -258,7 +264,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         return next(self._inner_a), next(self._inner_b)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _zip_bounds(self._inner_a.bounds(), self._inner_b.bounds())
+        return _min_bounds(self._inner_a.bounds(), self._inner_b.bounds())
 
 
 @fieldwise_init
@@ -295,7 +301,7 @@ struct _Zip3[
         return next(self._inner_a), next(self._inner_b), next(self._inner_c)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _zip_bounds(
+        return _min_bounds(
             self._inner_a.bounds(),
             self._inner_b.bounds(),
             self._inner_c.bounds(),
@@ -352,7 +358,7 @@ struct _Zip4[
         )
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _zip_bounds(
+        return _min_bounds(
             self._inner_a.bounds(),
             self._inner_b.bounds(),
             self._inner_c.bounds(),
@@ -485,6 +491,11 @@ fn zip[
     )
 
 
+# ===-----------------------------------------------------------------------===#
+# map
+# ===-----------------------------------------------------------------------===#
+
+
 @fieldwise_init
 struct _MapIterator[
     OutputType: Copyable & Movable,
@@ -556,3 +567,122 @@ fn map[
     ```
     """
     return {iter(iterable)}
+
+
+# ===-----------------------------------------------------------------------===#
+# product
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
+    Copyable, Iterable, Iterator, Movable
+):
+    alias Element = Tuple[IteratorTypeA.Element, IteratorTypeB.Element]
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+
+    var _inner_a: IteratorTypeA
+    var _inner_b: IteratorTypeB
+    var _inner_a_elem: Optional[IteratorTypeA.Element]
+    var _initial_inner_b: IteratorTypeB
+
+    fn __init__(out self, inner_a: IteratorTypeA, inner_b: IteratorTypeB):
+        self._inner_a = inner_a.copy()
+        self._inner_b = inner_b.copy()
+        self._inner_a_elem = None
+        self._initial_inner_b = inner_b.copy()
+
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self.copy()
+
+    fn copy(self) -> Self:
+        return Self(
+            self._inner_a.copy(),
+            self._inner_b.copy(),
+            self._inner_a_elem.copy(),
+            self._initial_inner_b.copy(),
+        )
+
+    fn __has_next__(self) -> Bool:
+        if not self._inner_a_elem:
+            return self._inner_a.__has_next__()
+        if self._inner_b.__has_next__():
+            return True
+        # If _inner_b is exhausted, but _inner_a has more elements, we can reset _inner_b and continue
+        return self._inner_a.__has_next__()
+
+    fn __next__(mut self) -> Self.Element:
+        if not self._inner_a_elem:
+            self._inner_a_elem = next(self._inner_a)
+        if not self._inner_b.__has_next__():
+            # reset if we reach the end of the B iterator and grab the next
+            # item from the A iterator.
+            self._inner_b = self._initial_inner_b.copy()
+            self._inner_a_elem = next(self._inner_a)
+        return self._inner_a_elem.unsafe_value().copy(), next(self._inner_b)
+
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var a_bounds = self._inner_a.bounds()
+        var b_bounds = self._inner_b.bounds()
+
+        var lower_bound = a_bounds[0] * b_bounds[0]
+        var upper_bound = Optional[Int](None)
+        if a_bounds[1] and b_bounds[1]:
+            upper_bound = (
+                a_bounds[1].unsafe_value() * b_bounds[1].unsafe_value()
+            )
+        return (lower_bound, upper_bound)
+
+
+@always_inline
+fn product[
+    IterableTypeA: Iterable, IterableTypeB: Iterable
+](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Product2[
+    IterableTypeA.IteratorType[__origin_of(iterable_a)],
+    IterableTypeB.IteratorType[__origin_of(iterable_b)],
+]:
+    """Returns an iterator that yields tuples of the elements of the outer
+    product of the iterables.
+
+    Parameters:
+        IterableTypeA: The type of the first iterable.
+        IterableTypeB: The type of the second iterable.
+
+    Args:
+        iterable_a: The first iterable.
+        iterable_b: The second iterable.
+
+    Returns:
+        A product iterator that yields outer product tuples of elements from both
+        iterables.
+
+    Examples:
+
+    ```mojo
+    var l = ["hey", "hi", "hello"]
+    var l2 = [10, 20, 30]
+    for a, b in product(l, l2):
+        print(a, b)
+    ```
+    """
+    return {iter(iterable_a), iter(iterable_b)}
+
+
+# ===-----------------------------------------------------------------------===#
+# utilities
+# ===-----------------------------------------------------------------------===#
+
+
+fn _min_bounds(*bounds: Tuple[Int, Optional[Int]]) -> Tuple[Int, Optional[Int]]:
+    var res_lower = Int.MAX
+    var res_upper = Optional[Int](None)
+
+    for bound in bounds:
+        var lower, upper = bound
+        res_lower = min(res_lower, lower)
+        if upper:
+            res_upper = min(res_upper.or_else(Int.MAX), upper.value())
+
+    return (res_lower, res_upper)
