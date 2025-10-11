@@ -538,6 +538,15 @@ struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable, Movable):
         self.step()
         return self
 
+    @always_inline
+    fn __enter__(var self) -> Self:
+        """Enter the context manager.
+
+        Returns:
+            The pipeline state instance for use in a `with` statement.
+        """
+        return self
+
 
 # TMATensorTile is created on the host with specific memory and tile sizes.
 # Each TMATensorTile provides an asynchronous load of a specific tile at specified tile coordinates.
