@@ -27,6 +27,7 @@ from layout.int_tuple import fill_like
 from nn.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
+    conv_transpose_shape,
     pack_filter,
     pack_filter_shape,
 )
@@ -38,6 +39,8 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
+
+from testing import assert_equal, assert_raises
 
 from utils.index import Index, IndexList
 
@@ -351,6 +354,66 @@ fn test_conv_transposed[
     print("Succeed")
 
 
+fn test_conv_transpose_shape_basic() raises:
+    """Test conv_transpose_shape function with basic cases."""
+    # Test 4D: Basic 2D conv transpose (N=1, H=3, W=3, C=1) x (R=3, S=3, F=2, C=1)
+    # With stride=1, dilation=1, no padding
+    # Expected output: (1, 5, 5, 2)
+    var input_ptr = UnsafePointer[Scalar[DType.float32]].alloc(9)
+    var kernel_ptr = UnsafePointer[Scalar[DType.float32]].alloc(18)
+    var strides_ptr = UnsafePointer[Scalar[DType.int32]].alloc(2)
+    var dilations_ptr = UnsafePointer[Scalar[DType.int32]].alloc(2)
+    var pads_ptr = UnsafePointer[Scalar[DType.int32]].alloc(4)
+    var output_pads_ptr = UnsafePointer[Scalar[DType.int32]].alloc(2)
+
+    strides_ptr[0] = 1
+    strides_ptr[1] = 1
+    dilations_ptr[0] = 1
+    dilations_ptr[1] = 1
+    for i in range(4):
+        pads_ptr[i] = 0
+    output_pads_ptr[0] = 0
+    output_pads_ptr[1] = 0
+
+    var input = LayoutTensor[DType.float32, Layout.row_major[4]()](
+        input_ptr,
+        RuntimeLayout[Layout.row_major[4]()].row_major(Index(1, 3, 3, 1)),
+    )
+    var kernel = LayoutTensor[DType.float32, Layout.row_major[4]()](
+        kernel_ptr,
+        RuntimeLayout[Layout.row_major[4]()].row_major(Index(3, 3, 2, 1)),
+    )
+    var strides = LayoutTensor[DType.int32, Layout.row_major[1]()](
+        strides_ptr, RuntimeLayout[Layout.row_major[1]()].row_major(Index(2))
+    )
+    var dilations = LayoutTensor[DType.int32, Layout.row_major[1]()](
+        dilations_ptr, RuntimeLayout[Layout.row_major[1]()].row_major(Index(2))
+    )
+    var pads = LayoutTensor[DType.int32, Layout.row_major[1]()](
+        pads_ptr, RuntimeLayout[Layout.row_major[1]()].row_major(Index(4))
+    )
+    var output_pads = LayoutTensor[DType.int32, Layout.row_major[1]()](
+        output_pads_ptr,
+        RuntimeLayout[Layout.row_major[1]()].row_major(Index(2)),
+    )
+
+    var shape = conv_transpose_shape[
+        DType.float32, DType.int32, DType.int32, DType.int32, DType.int32, False
+    ](input, kernel, strides, dilations, pads, output_pads)
+
+    assert_equal(shape[0], 1)
+    assert_equal(shape[1], 5)
+    assert_equal(shape[2], 5)
+    assert_equal(shape[3], 2)
+
+    input_ptr.free()
+    kernel_ptr.free()
+    strides_ptr.free()
+    dilations_ptr.free()
+    pads_ptr.free()
+    output_pads_ptr.free()
+
+
 def main():
     test_conv_transposed[DType.float32, 2](
         1,  # N
@@ -459,6 +522,9 @@ def main():
         IndexList[6](0, 0, 0, 0, 0, 0),  # pad
         1,  # num_groups
     )
+
+    # Test conv_transpose_shape function
+    test_conv_transpose_shape_basic()
 
     # Large shapes commented out to save CI cost.
 
