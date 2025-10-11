@@ -93,7 +93,7 @@ trait ImplicitlyBoolable(Boolable):
         Returns:
             The boolean representation of the value.
         """
-        ...
+        return self.__bool__()
 
 
 # ===----------------------------------------------------------------------=== #
