@@ -1033,17 +1033,13 @@ struct List[T: Copyable & Movable](
             (self._data + i).destroy_pointee()
         self._len = 0
 
-    fn steal_data(mut self) -> UnsafePointer[T]:
+    fn steal_data(deinit self) -> UnsafePointer[T]:
         """Take ownership of the underlying pointer from the list.
 
         Returns:
             The underlying data.
         """
-        var ptr = self._data
-        self._data = UnsafePointer[T]()
-        self._len = 0
-        self.capacity = 0
-        return ptr
+        return self._data
 
     fn __getitem__(self, slice: Slice) -> Self:
         """Gets the sequence of elements at the specified positions.

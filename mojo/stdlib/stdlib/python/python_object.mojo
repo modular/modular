@@ -1279,16 +1279,13 @@ struct PythonObject(
         """
         return self^
 
-    fn steal_data(var self) -> PyObjectPtr:
+    fn steal_data(deinit self) -> PyObjectPtr:
         """Take ownership of the underlying pointer from the Python object.
 
         Returns:
             The underlying data.
         """
-        var ptr = self._obj_ptr
-        self._obj_ptr = PyObjectPtr()
-
-        return ptr
+        return self._obj_ptr
 
     fn unsafe_get_as_pointer[
         dtype: DType
