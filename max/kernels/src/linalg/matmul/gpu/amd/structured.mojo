@@ -31,6 +31,7 @@ from layout.swizzle import Swizzle
 from sys._assembly import inlined_assembly
 from gpu.mma import mma
 from sys import size_of, is_amd_gpu, _RegisterPackType
+from iter import product
 
 from layout.layout_tensor import _get_worker_idx
 
@@ -850,42 +851,33 @@ struct AmdTileOperator[
             )
 
             @parameter
-            for fragment in range(Self.fragments_per_simd_a):
+            for fragment, mma_m_idx in product(
+                range(Self.fragments_per_simd_a), range(Self.num_m_mmas)
+            ):
+                var a_fragment = a_tile.tile[1, Self.register_count_a](
+                    mma_m_idx, fragment
+                )
 
                 @parameter
-                for mma_m_idx in range(Self.num_m_mmas):
-                    var a_fragment = a_tile.tile[1, Self.register_count_a](
-                        mma_m_idx, fragment
+                for mma_n_idx in range(Self.num_n_mmas):
+                    var b_fragment = b_tile.tile[1, Self.register_count_b](
+                        mma_n_idx, fragment
                     )
 
-                    @parameter
-                    for mma_n_idx in range(Self.num_n_mmas):
-                        var b_fragment = b_tile.tile[1, Self.register_count_b](
-                            mma_n_idx, fragment
-                        )
+                    # NOTE: this storage scheme is column major, because distribute needs it
+                    # when writing back to global memory
 
-                        # NOTE: this storage scheme is column major, because distribute needs it
-                        # when writing back to global memory
+                    # TODO make c_layout column major
+                    var c_fragment = c_slice.tile[1, Self.register_count_a](
+                        mma_n_idx * Self.num_m_mmas + mma_m_idx, 0
+                    )
 
-                        # TODO make c_layout column major
-                        var c_fragment = c_slice.tile[1, Self.register_count_a](
-                            mma_n_idx * Self.num_m_mmas + mma_m_idx, 0
-                        )
-
-                        mma(
-                            c_fragment.vectorize[1, Self.register_count_a]()[
-                                0, 0
-                            ],
-                            b_fragment.vectorize[1, Self.register_count_b]()[
-                                0, 0
-                            ],
-                            a_fragment.vectorize[1, Self.register_count_a]()[
-                                0, 0
-                            ],
-                            c_fragment.vectorize[1, Self.register_count_a]()[
-                                0, 0
-                            ],
-                        )
+                    mma(
+                        c_fragment.vectorize[1, Self.register_count_a]()[0, 0],
+                        b_fragment.vectorize[1, Self.register_count_b]()[0, 0],
+                        a_fragment.vectorize[1, Self.register_count_a]()[0, 0],
+                        c_fragment.vectorize[1, Self.register_count_a]()[0, 0],
+                    )
 
         cache_manager.commit[True](stage, tile_idx_a)
         cache_manager.commit[False](stage, tile_idx_b)
