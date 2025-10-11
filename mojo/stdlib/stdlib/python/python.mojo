@@ -469,8 +469,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         for i in range(len(values)):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
@@ -496,8 +496,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @always_inline
@@ -541,8 +541,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @always_inline

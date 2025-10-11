@@ -51,6 +51,9 @@ def test_reference_counting_api(cpy: CPython):
     cpy.Py_DecRef(n)
     assert_equal(cpy._Py_REFCNT(n), 1)
 
+    var m = cpy.Py_NewRef(n)
+    assert_equal(cpy._Py_REFCNT(m), 2)
+
 
 def test_exception_handling_api(cpy: CPython):
     var ValueError = cpy.get_error_global("PyExc_ValueError")
@@ -94,8 +97,7 @@ def test_object_protocol_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     var z = cpy.PyLong_FromSsize_t(0)
     var l = cpy.PyList_New(1)
-    cpy.Py_IncRef(z)
-    _ = cpy.PyList_SetItem(l, 0, z)
+    _ = cpy.PyList_SetItem(l, 0, cpy.Py_NewRef(z))
 
     assert_equal(cpy.PyObject_HasAttrString(n, "__hash__"), 1)
     assert_true(cpy.PyObject_GetAttrString(n, "__hash__"))
@@ -141,8 +143,7 @@ def test_number_protocol_api(cpy: CPython):
 def test_iterator_protocol_api(cpy: CPython):
     var n = cpy.PyLong_FromSsize_t(42)
     var l = cpy.PyList_New(1)
-    cpy.Py_IncRef(n)
-    _ = cpy.PyList_SetItem(l, 0, n)
+    _ = cpy.PyList_SetItem(l, 0, cpy.Py_NewRef(n))
 
     var it = cpy.PyObject_GetIter(l)
 
