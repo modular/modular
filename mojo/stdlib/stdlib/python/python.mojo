@@ -381,6 +381,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             var val = entry.value.copy().to_python_object()
             var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
             cpy.Py_DecRef(key)
+            _ = val
             if errno == -1:
                 raise cpy.unsafe_get_error()
 
@@ -439,13 +440,15 @@ struct Python(Defaultable, ImplicitlyCopyable):
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(tuples)):
-            var key_obj = tuples[i][0].copy().to_python_object()
-            var val_obj = tuples[i][1].copy().to_python_object()
-            var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
+            var key = tuples[i][0].copy().to_python_object()
+            var val = tuples[i][1].copy().to_python_object()
+            var errno = cpython.PyDict_SetItem(
+                dict_obj_ptr, key._obj_ptr, val._obj_ptr
             )
-            if result == -1:
-                raise cpython.get_error()
+            _ = key
+            _ = val
+            if errno == -1:
+                raise cpython.unsafe_get_error()
 
         return PythonObject(from_owned=dict_obj_ptr)
 

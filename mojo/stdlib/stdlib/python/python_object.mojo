@@ -394,17 +394,13 @@ struct PythonObject(
         """
         ref cpython = Python().cpython()
         var dict_obj_ptr = cpython.PyDict_New()
-        if not dict_obj_ptr:
-            raise Error("internal error: PyDict_New failed")
 
-        for key, value in zip(keys, values):
-            var key_obj = key.copy().to_python_object()
-            var val_obj = value.copy().to_python_object()
-            var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
+        for key, val in zip(keys, values):
+            var errno = cpython.PyDict_SetItem(
+                dict_obj_ptr, key._obj_ptr, val._obj_ptr
             )
-            if result != 0:
-                raise Error("internal error: PyDict_SetItem failed")
+            if errno == -1:
+                raise cpython.unsafe_get_error()
 
         return PythonObject(from_owned=dict_obj_ptr)
 
