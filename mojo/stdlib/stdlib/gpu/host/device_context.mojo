@@ -168,7 +168,7 @@ fn _raise_checked_impl(
     err_msg: _ConstCharPtr, msg: String, location: _SourceLocation
 ) raises:
     var err = _string_from_owned_charptr(err_msg)
-    raise Error(location.prefix(err + ((" " + msg) if msg else "")))
+    raise location.prefix(err + ((" " + msg) if msg else ""))
 
 
 # Checks that the given `dim` has only positive integers in them.
@@ -182,7 +182,7 @@ fn _check_dim[
             dim_name_for_msg,
             ".x must be a positive number.",
         )
-        raise Error(location.prefix(msg))
+        raise location.prefix(msg)
     if dim.y() <= 0:
         alias msg = String(
             func_name_for_msg,
@@ -190,7 +190,7 @@ fn _check_dim[
             dim_name_for_msg,
             ".y must be a positive number.",
         )
-        raise Error(location.prefix(msg))
+        raise location.prefix(msg)
     if dim.z() <= 0:
         alias msg = String(
             func_name_for_msg,
@@ -198,7 +198,7 @@ fn _check_dim[
             dim_name_for_msg,
             ".z must be a positive number.",
         )
-        raise Error(location.prefix(msg))
+        raise location.prefix(msg)
 
 
 struct _DeviceTimer:
