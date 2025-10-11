@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv, exp, iota
-from sys import align_of, simd_width_of, size_of
+from sys import align_of, simd_width_of, size_of, env_get_bool
 
 import gpu.warp as warp
 from algorithm.functional import parallelize_over_rows
@@ -803,6 +803,107 @@ fn _block_reduce_topk[
     return _warp_reduce_topk[T, largest](block_accum)
 
 
+fn _topk_stage1_old[
+    T: DType,
+    out_idx_type: DType,
+    largest: Bool = True,
+](
+    K: UnsafePointer[Int64],
+    max_k: Int,
+    num_elements: Int,
+    num_blocks_per_input: Int,
+    in_buffer: UnsafePointer[Scalar[T]],
+    local_topk_vals: UnsafePointer[
+        Scalar[T]
+    ],  # Output buffer of size num_blocks_per_input * max_k
+    local_topk_idxs: UnsafePointer[
+        Scalar[out_idx_type]
+    ],  # Output buffer of size num_blocks_per_input * max_k
+):
+    """
+    Computes the Top-K elements within each block.
+
+    This kernel function is the first stage of a two-stage Top-K algorithm.
+    Each thread block processes a portion of the input data and finds its local top-K elements.
+    The local top-K results are stored in global memory for further processing in stage 2.
+
+    Parameters:
+        T: Data type of the elements.
+        out_idx_type: DType - The data dtype of the output indices.
+        largest: Bool - Whether to find the maximum or minimum value.
+
+    Args:
+        K: Number of top elements to select per block. Varies for each batch element.
+        max_k: Largest number of top elements to keep for each batch element.
+        num_elements: Size of last dimension of input buffer (vocab size).
+        num_blocks_per_input: Number of blocks used to process the input data.
+        in_buffer: Input buffer containing the elements to process.
+        local_topk_vals: Output buffer to store the local top-K values.
+        local_topk_idxs: Output buffer to store the indices of local top-K elements.
+
+    Note:
+        The output buffers (local_topk_vals and local_topk_idxs) should be of size num_blocks_per_input * max_k.
+    """
+    tid = thread_idx.x
+    bid = block_idx.x
+    block_size = block_dim.x
+
+    batch_id = bid // UInt(num_blocks_per_input)
+    block_lane = bid % UInt(num_blocks_per_input)
+
+    _in_buffer = in_buffer + batch_id * UInt(num_elements)
+
+    # Allocate shared memory for the values and indices
+    var topk_sram = external_memory[
+        TopK_2[T, largest],
+        address_space = AddressSpace.SHARED,
+        alignment = align_of[TopK_2[T, largest]](),
+    ]()
+
+    with PDL():
+        # Pack the topk_vals and topk_idxs into shared memory
+        var block_offset = block_lane * block_size
+        var stride = block_size * UInt(num_blocks_per_input)
+        topk_sram[tid] = TopK_2[T, largest]()
+        for i in range(tid + block_offset, num_elements, stride):
+            topk_sram[tid].insert(_in_buffer[i], i)
+        barrier()
+        var k_batch = max_k
+        if K:
+            k_batch = Int(K[batch_id])
+        # Prepare for K iterations to find the local top-K elements
+        for k in range(k_batch):
+            # Initialize each thread with its own TopK_2 value and index
+            var partial = topk_sram[tid]
+
+            # Perform block-level reduction to find the maximum TopK_2
+            var total = _block_reduce_topk[T, largest](partial)
+
+            if tid == 0:
+                # Store the local top-K values and indices in global memory
+                var vector_idx = total.p
+                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
+                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
+                    DType.int
+                ](vector_idx).cast[out_idx_type]()
+
+                # Remove the found maximum from consideration in the next iteration
+                var orig_tid = (vector_idx - block_offset) % stride
+                topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
+
+            barrier()
+
+        # Fill remaining positions with sentinel values for unused elements
+        if tid == 0:
+            for remaining_k in range(k_batch, max_k):
+                local_topk_vals[
+                    bid * UInt(max_k) + UInt(remaining_k)
+                ] = _topk_dead_val[T, largest]()
+                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
+                    out_idx_type
+                ](-1)
+
+
 fn _topk_stage1[
     T: DType,
     out_idx_type: DType,
@@ -1232,8 +1333,6 @@ fn _topk_gpu[
     )
     var N = input_buf.runtime_layout.shape.value.canonicalize()[1]
 
-    var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
-
     # Define the number of blocks per grid
     var num_blocks_per_input_: Int = ceildiv(
         N, block_size
@@ -1260,21 +1359,40 @@ fn _topk_gpu[
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
 
     # Enqueue the first kernel (stage 1)
-    alias kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
-    ctx.enqueue_function_checked[kernel_1, kernel_1](
-        k_device,
-        max_k,
-        N,
-        num_blocks_per_input_,
-        input_buf.to_device_buffer(ctx),
-        input_buf_tmp,
-        device_local_topk_vals.to_device_buffer(ctx),
-        device_local_topk_idxs.to_device_buffer(ctx),
-        grid_dim=grid_dim_stage1,
-        block_dim=block_dim_stage1,
-        shared_mem_bytes=shared_mem_bytes_1,
-        attributes=pdl_launch_attributes(),
-    )
+    @parameter
+    if env_get_bool["USE_OLD_TOP_K_KERNEL", False]():
+        alias kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
+        ctx.enqueue_function_checked[kernel_1, kernel_1](
+            k_device,
+            max_k,
+            N,
+            num_blocks_per_input_,
+            input_buf.to_device_buffer(ctx),
+            device_local_topk_vals.to_device_buffer(ctx),
+            device_local_topk_idxs.to_device_buffer(ctx),
+            grid_dim=grid_dim_stage1,
+            block_dim=block_dim_stage1,
+            shared_mem_bytes=shared_mem_bytes_1,
+            attributes=pdl_launch_attributes(),
+        )
+    else:
+        var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
+        alias kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
+        ctx.enqueue_function_checked[kernel_1, kernel_1](
+            k_device,
+            max_k,
+            N,
+            num_blocks_per_input_,
+            input_buf.to_device_buffer(ctx),
+            input_buf_tmp,
+            device_local_topk_vals.to_device_buffer(ctx),
+            device_local_topk_idxs.to_device_buffer(ctx),
+            grid_dim=grid_dim_stage1,
+            block_dim=block_dim_stage1,
+            shared_mem_bytes=shared_mem_bytes_1,
+            attributes=pdl_launch_attributes(),
+        )
+        _ = input_buf_tmp^
 
     var num_elem_reduced = (
         ceildiv(num_blocks_per_input_ * max_k, WARP_SIZE) * WARP_SIZE
@@ -1357,8 +1475,6 @@ fn _topk_gpu[
         shared_mem_bytes=shared_mem_bytes_2,
         attributes=pdl_launch_attributes(),
     )
-
-    _ = input_buf_tmp^
 
 
 @always_inline
