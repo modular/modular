@@ -1470,11 +1470,6 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     return failure();
   assert(nextValue.getIfPValue() && "expected PValue in param context");
 
-  // TODO: Emit the target like a normal pattern, reading from the indvar.
-  StringAttr target = decodeTarget(targetExpr, shared);
-  if (!target)
-    return failure();
-
   // Everything resolved, so we'll be able to parse the body, don't skip it.
   skipBodyOnFailure.release();
 
@@ -1483,16 +1478,16 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     // Push a new local variable scope for the subsequent suite.
     pushChildScope(scopeGuard, keepDecl);
+    LogicalResult res =
+        getParamEmitter(EC_ForIterator)
+            .emitDestructuringPValue(nextValue.getIfPValue(), targetExpr,
+                                     EC_ForIterator);
+    // Failed to destructure the parameter tuple.
+    if (failed(res))
+      return failure();
 
-    // Add an ASTDecl for the induction variable.
-    // TODO: Generalize to an arbitrary pattern.
-    auto &vd = getDeclResolver().addFullyResolvedDecl(
-        nextValue.getIfPValue(), target, targetExpr->getLoc(), curDeclScope);
-    getEmitter().shared.notifyListenerOnVariableDecl(vd, targetExpr->getLoc());
-
-    // Parse into the 'then' region of the parameter if.
+    //  Parse into the 'then' region of the parameter if.
     builder.setInsertionPointToStart(&paramIf.getThenRegion().front());
-
     // Parse the body.
     if (parseSuite(curIndent))
       return failure();
