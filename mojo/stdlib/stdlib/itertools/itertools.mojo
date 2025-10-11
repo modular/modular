@@ -10,6 +10,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# ===-----------------------------------------------------------------------===#
+# count
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct _CountIterator(Iterable, Iterator):
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    alias Element = Int
+    var start: Int
+    var step: Int
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
+
+    @always_inline
+    fn __next__(mut self) -> Int:
+        var result = self.start
+        self.start += self.step
+        return result
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return True
+
+
+@always_inline
+fn count(start: Int = 0, step: Int = 1) -> _CountIterator:
+    """Constructs an iterator that starts at the value `start` with a stride of
+    `step`.
+
+    Args:
+        start: The start of the iterator.
+        step: The stride of the iterator.
+
+    Returns:
+        The constructed iterator.
+    """
+    return {start, step}
+
 
 # ===-----------------------------------------------------------------------===#
 # product
