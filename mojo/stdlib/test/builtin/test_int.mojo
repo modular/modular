@@ -69,13 +69,13 @@ def test_floor():
 
 
 def test_round():
-    assert_equal(Int.__round__(Int(5)), 5)
-    assert_equal(Int.__round__(Int(0)), 0)
-    assert_equal(Int.__round__(Int(-5)), -5)
-    assert_equal(Int.__round__(5, 1), 5)
-    assert_equal(Int.__round__(0, 1), 0)
-    assert_equal(Int.__round__(-5, 1), -5)
-    assert_equal(Int.__round__(100, -2), 100)
+    assert_equal(round(Int(5)), 5)
+    assert_equal(round(Int(0)), 0)
+    assert_equal(round(Int(-5)), -5)
+    assert_equal(round(Int(5), 1), 5)
+    assert_equal(round(Int(0), 1), 0)
+    assert_equal(round(Int(-5), 1), -5)
+    assert_equal(round(Int(100), -2), 100)
 
 
 def test_trunc():

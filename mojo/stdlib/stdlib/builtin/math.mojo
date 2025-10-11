@@ -379,32 +379,123 @@ fn pow(base: SIMD, exp: Int) -> __type_of(base):
 # ===----------------------------------------------------------------------=== #
 
 
+@fieldwise_init
+struct RoundMode(Copyable, EqualityComparable, Movable):
+    """The `RoundMode` to use for the operation."""
+
+    alias Up = RoundMode(0)
+    """Round towards positive infinity."""
+    alias Down = RoundMode(1)
+    """Round towards negative infinity."""
+    alias ToEven = RoundMode(2)
+    """Round towards the even number."""
+    alias ToZero = RoundMode(3)
+    """Round towards zero."""
+    alias HalfUp = RoundMode(4)
+    """When in the middle, round towards positive infinity."""
+    alias HalfDown = RoundMode(5)
+    """When in the middle, round towards negative infinity."""
+    alias HalfToEven = RoundMode(6)
+    """When in the middle, round towards the even number."""
+    alias HalfToZero = RoundMode(7)
+    """When in the middle, round towards zero."""
+
+    var _value: UInt
+
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: Self) -> Bool:
+        """Compare this value to the RHS value using EQ comparison.
+
+        Args:
+            rhs: The other value to compare against.
+
+        Returns:
+            True if this value is equal to the RHS value.
+        """
+        return self._value == rhs._value
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: Self) -> Bool:
+        """Compare this value to the RHS value using NE comparison.
+
+        Args:
+            rhs: The other value to compare against.
+
+        Returns:
+            True if this value is not equal to the RHS value.
+        """
+        return self._value != rhs._value
+
+    @always_inline("nodebug")
+    fn __is__(self, rhs: Self) -> Bool:
+        """Compare this value to the RHS value using EQ comparison.
+
+        Args:
+            rhs: The other value to compare against.
+
+        Returns:
+            True if this value is equal to the RHS value.
+        """
+        return self == rhs
+
+    @always_inline("nodebug")
+    fn __isnot__(self, rhs: Self) -> Bool:
+        """Compare this value to the RHS value using NE comparison.
+
+        Args:
+            rhs: The other value to compare against.
+
+        Returns:
+            True if this value is not equal to the RHS value.
+        """
+        return self != rhs
+
+
 trait Roundable:
-    """
-    The `Roundable` trait describes a type that defines a rounding operation.
+    """The `Roundable` trait describes a type that defines a rounding operation.
 
     Types that conform to `Roundable` will work with the builtin `round`
     function. The round operation always returns the same type as the input.
 
-    For example:
+    Examples:
     ```mojo
     @fieldwise_init
     struct Complex(Roundable):
+        alias _RoundMultipleType = Float64
+        alias _RoundMultipleDefault = Float64(1)
+        alias _RoundModeDefault = RoundMode.HalfToEven
+
         var re: Float64
         var im: Float64
 
-        fn __round__(self) -> Self:
-            return Self(round(self.re), round(self.im))
+        fn __round__[
+            mode: RoundMode, to_multiple_of: Self._RoundMultipleType
+        ](self) -> Self:
+            return Self(
+                round[mode, to_multiple_of=to_multiple_of](self.re),
+                round[mode, to_multiple_of=to_multiple_of](self.im),
+            )
 
         fn __round__(self, ndigits: Int) -> Self:
             return Self(round(self.re, ndigits), round(self.im, ndigits))
     ```
     """
 
-    # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
-    # associated types.
-    fn __round__(self) -> Self:
+    # FIXME(#5276): The struct should be able to set the default round mode to
+    # `RoundMode.HalfToEven``.
+    alias _RoundMultipleType: AnyType
+    alias _RoundMultipleDefault: Self._RoundMultipleType
+    alias _RoundModeDefault: RoundMode
+
+    fn __round__[
+        mode: RoundMode, to_multiple_of: Self._RoundMultipleType
+    ](self) -> Self:
         """Get a rounded value for the type.
+
+        Parameters:
+            mode: The `RoundMode` for the operation.
+            to_multiple_of: The target base to which self is is rounded until
+                reaching a multiple of.
 
         Returns:
             The rounded value.
@@ -424,11 +515,19 @@ trait Roundable:
 
 
 @always_inline
-fn round[T: Roundable, //](number: T) -> T:
+fn round[
+    T: Roundable, //,
+    mode: RoundMode = T._RoundModeDefault,
+    *,
+    to_multiple_of: T._RoundMultipleType = T._RoundMultipleDefault,
+](number: T) -> T:
     """Get the rounded value of the given object.
 
     Parameters:
         T: The type conforming to Roundable.
+        mode: The `RoundMode` for the operation.
+        to_multiple_of: The target base to which self is is rounded until
+            reaching a multiple of.
 
     Args:
         number: The object to get the rounded value of.
@@ -436,7 +535,7 @@ fn round[T: Roundable, //](number: T) -> T:
     Returns:
         The rounded value of the object.
     """
-    return number.__round__()
+    return number.__round__[mode, to_multiple_of]()
 
 
 @always_inline

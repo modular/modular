@@ -195,7 +195,6 @@ from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.reshape import reshape, reshape_shape
 from nn.resize import (
     CoordinateTransformationMode,
-    RoundMode,
     resize_linear,
     resize_nearest_neighbor,
 )

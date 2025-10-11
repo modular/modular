@@ -24,7 +24,6 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from memory import memcpy
-
 from utils import IndexList, StaticTuple
 
 
@@ -73,22 +72,6 @@ fn coord_transform[
     else:
         constrained[False, "coordinate_transformation_mode not implemented"]()
         return 0
-
-
-struct RoundMode(ImplicitlyCopyable, Movable):
-    var value: Int
-    alias HalfDown = RoundMode(0)
-    alias HalfUp = RoundMode(1)
-    alias Floor = RoundMode(2)
-    alias Ceil = RoundMode(3)
-
-    @always_inline
-    fn __init__(out self, value: Int):
-        self.value = value
-
-    @always_inline
-    fn __eq__(self, other: RoundMode) -> Bool:
-        return self.value == other.value
 
 
 @fieldwise_init
@@ -158,9 +141,9 @@ fn resize_nearest_neighbor[
             return ceil(val - 0.5)
         elif round_mode == RoundMode.HalfUp:
             return floor(val + 0.5)
-        elif round_mode == RoundMode.Floor:
+        elif round_mode == RoundMode.Down:
             return floor(val)
-        elif round_mode == RoundMode.Ceil:
+        elif round_mode == RoundMode.Up:
             return ceil(val)
         else:
             constrained[False, "round_mode not implemented"]()

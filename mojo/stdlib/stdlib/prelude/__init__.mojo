@@ -66,6 +66,7 @@ from builtin.len import Sized, SizedRaising, UIntSized, len
 from builtin.math import (
     Absable,
     Powable,
+    RoundMode,
     Roundable,
     abs,
     divmod,
