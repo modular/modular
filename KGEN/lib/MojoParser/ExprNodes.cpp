@@ -514,9 +514,9 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
 
   if (kind == kDiscardLiteral) {
-    ASTType initializerType = dest.getIfLValueInitializerType();
+    ASTType initializerType = dest.getIfInitializerType();
     // The discard pattern can only be used in case where we have an inferred
-    // type for the lvalue.
+    // type for the lvalue or pvalue.
     if (!initializerType) {
       emitter.emitError(getLoc(), "cannot read from discard pattern '_'");
       return {};
@@ -703,8 +703,27 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     if (isSpeculative)
       return expr;
 
+    if (dest.patternDeclKind == PatternDeclKind::kParamBind) {
+      TypedAttr toBind = dest.getIfPValueInitializer();
+      assert(toBind && "No PValue provided when binding a parameter?");
+
+      ASTDecl &paramASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
+          toBind, spelling, loc, &lookupScope);
+      emitter.shared.notifyListenerOnVariableDecl(paramASTDecl, loc);
+      return emitter.emitResult(toBind, expr, dest);
+    }
+
+    if (dest.getIfPValueInitializer()) {
+      // This can not be a val/ref bind, it must be a param bind
+      emitter.emitError(loc, "cannot bind a parameter '")
+          << spelling << "' to a "
+          << (dest.patternDeclKind == PatternDeclKind::kRef ? "'ref'" : "'var'")
+          << " pattern" << expr->getRange();
+      return {};
+    }
+
     // Fail in cases like "var x = []" which is ambiguous.
-    ASTType varType = dest.getIfLValueInitializerType();
+    ASTType varType = dest.getIfInitializerType();
     if (!varType) {
       emitter.emitError(loc, "cannot declare '")
           << spelling << "' without a contextual type from its initializer"
@@ -771,7 +790,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     // symbol like a function, then we pretend we don't see it so the code below
     // will synthesize it.  If we are speculatively resolving this, then we
     // return unknown since we don't have a contextual type.
-    if (dest.getIfLValueInitializerType())
+    if (dest.getIfInitializerType())
       lookup = LookupResult::getFailure({});
     else if (isSpeculative)
       return expr;
@@ -782,8 +801,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   // indicating that we're in a `def` node, and if we have a contextual type
   // (which tells us we need to emit an LValue).
   if (lookup.isFailure() && emitter.varDeclCursor &&
-      dest.getIfLValueInitializerType()) {
-    auto contextualType = dest.getIfLValueInitializerType();
+      dest.getIfInitializerType()) {
+    auto contextualType = dest.getIfInitializerType();
     assert(contextualType && "must have contextual type");
 
     // Use this builder to place any VarDeclOps. In Python there is only one
@@ -2940,7 +2959,7 @@ BinOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
 
   // Handle type patterns like "(xyz) : Type": "xyz" must be an lvalue that has
   // the specified type, so we can direct emit it now.
-  ValueDest dest(LValueInitializerType{type}, EC_TypePattern);
+  ValueDest dest(LPValueInitializerType{type}, EC_TypePattern);
   dest.patternDeclKind = patKind;
   if (auto lv = emitter.emitExprLValue(lhs, dest))
     return AnyValue(lv);
@@ -4072,6 +4091,37 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     return emitter.emitResult(result, this, dest);
   };
 
+  auto getTupleItem = [&](Type eltType, unsigned index, PValue tuplePVal) {
+    // Get the item from the tuple into the corresponding LValue.
+    ValueDest eltDest(eltType, EC_TupleElement);
+
+    // Bind the i parameters.  Int explicitly constructs from index type now.
+    TypedAttr indexAttr =
+        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
+
+    CValue intIndexCValue =
+        emitter.emitInt(ASTExprAnd<PValue>{PValue(indexAttr), this},
+                        ExprContext::EC_CallParamValue);
+    PValue intIndex = intIndexCValue.getIfPValue();
+    assert(intIndex && "Int must be PValue when constructed from int attr");
+
+    SyntheticNode indexExpr(getLoc(), intIndex);
+    Operand exprOperand(&indexExpr, getLoc(), Operand::PassKind::kPositional);
+    SubscriptNode subscript(this, this->getLoc(), {}, this->getLoc());
+
+    // Emit the extraction from the tuple as a synthesized subscript with
+    // this value as an index.
+    auto elem = emitGetterSetterAccess(&subscript, {tuplePVal, this},
+                                       exprOperand, eltDest, emitter);
+    if (!elem) {
+      eltDest.resetForError(emitter);
+      return PValue{};
+    }
+    assert(elem.getIfPValue() &&
+           "expect PValue result when unpacking a PValue tuple");
+    return elem.getIfPValue();
+  };
+
   // If this tuple is being speculatively emitted on the LHS of an assignment,
   // speculatively emit each subelement.  It is possible that some will remain
   // unresolvable, e.g. for `(x, y) = foo()` when 'x' is implicitly declared but
@@ -4142,8 +4192,8 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   SmallVector<ASTType> eltTypes;
   bool isLValueType = false;
   if (auto expectedType = dest.getExpectedTypeIfSpecified()) {
-    // Inferring an LValue type or an RValue type?
-    isLValueType = !dest.getIfLValueInitializerType().isNull();
+    isLValueType =
+        dest.getIfInitializerType() && !dest.getIfPValueInitializer();
 
     // Special case the element type of Tuple.  We could be more general than
     // this when there was a reason to, e.g. looking up a __getitem__
@@ -4170,16 +4220,25 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   bool allEltsLValue = true;
   bool allEltsTypes = true;
+  TypedAttr tuplePVal = dest.getIfPValueInitializer();
   SmallVector<ASTExprAnd<AnyValue>> elements;
   for (auto [i, expr] : llvm::enumerate(exprs)) {
     // Use an inferred element type if we have one.
     ValueDest eltDest(EC_TupleElement);
     if (!eltTypes.empty()) {
-      if (isLValueType)
+      if (isLValueType) {
         eltDest =
-            ValueDest(LValueInitializerType{eltTypes[i]}, EC_TupleElement);
-      else
+            ValueDest(LPValueInitializerType{eltTypes[i]}, EC_TupleElement);
+      } else if (tuplePVal) {
+        PValue eltPVal = getTupleItem(eltTypes[i], i, tuplePVal);
+        if (!eltPVal) {
+          dest.resetForError(emitter);
+          return {};
+        }
+        eltDest = ValueDest(LPValueInitializerType{eltPVal}, EC_TupleElement);
+      } else {
         eltDest = ValueDest(eltTypes[i], EC_TupleElement);
+      }
     }
 
     // Propagate var/ref context.
@@ -4192,6 +4251,12 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     elements.push_back({std::move(exprVal), expr});
   }
   assert(!(allEltsTypes && allEltsLValue && !elements.empty()));
+
+  // If we are destructing a tuple parameter, the result after emitting the
+  // TupleNode is the same as the tuple we are destructing and we do not need to
+  // construct another tuple.
+  if (tuplePVal)
+    return emitter.emitResult(tuplePVal, this, dest);
 
   // HACK: Tuple emission should not be context dependent.
   if (allEltsTypes && !elements.empty()) {

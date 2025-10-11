@@ -72,8 +72,28 @@ fn test_else_block():
         debug_assert(False)  # This should NOT execute.
 
 
+fn test_tuple_unpack():
+    alias lst0 = [1, 4]
+    alias lst1 = [1, 4]
+    alias lst2 = [(2, 3), (5, 6)]
+
+    var ret = 0
+
+    # Additional loop with `i` to make sure the name shadowing works
+    @parameter
+    for i in range(0, 1):
+        debug_assert(i == 0)
+
+        @parameter
+        for _, i, (j, k) in zip(lst0, lst1, lst2):
+            ret = ret * 1000 + i * 100 + j * 10 + k
+
+    debug_assert(ret == 123456)
+
+
 fn main():
     test_unroll_warn_threshold()
     test_for_list()
     test_critical_edge()
     test_else_block()
+    test_tuple_unpack()

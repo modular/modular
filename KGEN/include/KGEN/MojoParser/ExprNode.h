@@ -38,6 +38,7 @@ enum class PatternDeclKind {
   kVar,  // Make a scoped vardecl in this context. "var x = ..."
   kRef,  // Bind a scoped reference in this context. "ref x = ..."
   kBind, // Bind a scoped variable in this context like a 'read' arg convention.
+  kParamBind, // Bind a scoped parameter in this context. "alias x, y = ..."
 };
 
 //===----------------------------------------------------------------------===//

@@ -97,11 +97,29 @@ const char *getContextMessage(ExprContext context);
 // ValueDest
 //===----------------------------------------------------------------------===//
 
-/// This is used in ValueDest when emitting an LValue expression whose type may
-/// be inferred from the RHS value in an assignment.  This allows implicitly
-/// declared variables and discard patterns to infer their type in `_ = foo()`.
-struct LValueInitializerType {
-  ASTType type;
+/// This is used in ValueDest when emitting an LValue/PValue expression whose
+/// type may be inferred from the RHS value in an assignment. This allows
+/// implicitly declared variables and discard patterns to infer their type in
+// `_ = foo()` and destructuring an alias pattern in `alias a, b = ...`
+struct LPValueInitializerType {
+  LPValueInitializerType(ASTType type) : typeSrc(type) {};
+  LPValueInitializerType(TypedAttr type) : typeSrc(type) {};
+
+  ASTType getInitializerType() const {
+    if (auto lvType = dyn_cast<ASTType>(typeSrc))
+      return lvType;
+    // Type inferred from a PValue
+    return cast<TypedAttr>(typeSrc).getType();
+  }
+
+  // Returns the PValue initializer if applicable.
+  TypedAttr getIfPValueInitializer() const {
+    LPValueInitializerType init(nullptr);
+    return dyn_cast<TypedAttr>(typeSrc);
+  }
+
+  // The source where we extract types for the initializer.
+  SmartVariant<ASTType, TypedAttr> typeSrc;
 };
 
 /// This is a marker type to indicate when a ValueDest has had its internal
@@ -161,7 +179,7 @@ public:
     if (!requiredType)
       representation = NullRepresentation();
   }
-  ValueDest(LValueInitializerType type, ExprContext context)
+  ValueDest(LPValueInitializerType type, ExprContext context)
       : representation(type), context(context) {}
 
   ValueDest(ValueDest &&rhs)
@@ -195,9 +213,18 @@ public:
   bool isSpecified() const { return !isa<NullRepresentation>(representation); }
 
   /// Return the LValueInitializerType this contains if it is one.
-  ASTType getIfLValueInitializerType() const {
-    if (isa<LValueInitializerType>(representation))
-      return cast<LValueInitializerType>(representation).type;
+  ASTType getIfInitializerType() const {
+    // LPValueInitializer does not support null test, test isa first and then do
+    // a cast.
+    if (isa<LPValueInitializerType>(representation))
+      return cast<LPValueInitializerType>(representation).getInitializerType();
+    return {};
+  }
+
+  TypedAttr getIfPValueInitializer() const {
+    if (isa<LPValueInitializerType>(representation))
+      return cast<LPValueInitializerType>(representation)
+          .getIfPValueInitializer();
     return {};
   }
 
@@ -260,7 +287,7 @@ private:
   //  This should only be accessed by IREmitter::emitResult.
   friend class IREmitter;
   SmartVariant<NullRepresentation, LValue, LValueBufferTaken, const ExprNode *,
-               Operation *, ASTType, LValueInitializerType>
+               Operation *, ASTType, LPValueInitializerType>
       representation;
   ExprContext context;
   friend raw_ostream &operator<<(raw_ostream &os, const ValueDest &value);
@@ -478,6 +505,12 @@ public:
   /// register-passable (and visa-versa).
   AnyValue emitResult(AnyValue value, const ExprNode *expr, ValueDest &dest);
   CValue emitCResult(CValue value, const ExprNode *expr, ValueDest &dest);
+
+  /// Destructing the specific PValue against the provided target expr
+  /// (which specifies the pattern).
+  LogicalResult emitDestructuringPValue(PValue value,
+                                        const ExprNode *targetExpr,
+                                        ExprContext context);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations.  This does not generate
