@@ -31,7 +31,7 @@ from layout.swizzle import Swizzle
 from sys._assembly import inlined_assembly
 from gpu.mma import mma
 from sys import size_of, is_amd_gpu, _RegisterPackType
-from iter import product
+from itertools import product
 
 from layout.layout_tensor import _get_worker_idx
 

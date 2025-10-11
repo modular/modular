@@ -57,7 +57,7 @@ from .._multistage_gemm_gpu import (
     warp_split_k_reduction,
     WarpSplitKReductionSMem,
 )
-from iter import product
+from itertools import product
 
 
 struct MmaOpAMD[

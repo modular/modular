@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from iter import product
+from itertools import product
 from testing import TestSuite, assert_equal, assert_false, assert_true
 
 
