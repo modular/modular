@@ -67,6 +67,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
+    MultiPagedKVCacheManager,
     PagedKVCacheManager,
     infer_optimal_batch_size,
 )
@@ -596,7 +597,12 @@ class GenerateMixin(
                 " speculative decoding) is not supported when data "
                 "parallelism is enabled."
             )
-
+        if data_parallel_degree > 1 and not isinstance(
+            kv_managers[0], MultiPagedKVCacheManager
+        ):
+            raise ValueError(
+                "MultiPagedKVCacheManager is required when data parallelism is enabled."
+            )
         batches = [{} for _ in range(data_parallel_degree)]
         for context in context_batch:
             req_id = context.request_id

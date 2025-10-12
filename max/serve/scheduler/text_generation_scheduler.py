@@ -172,12 +172,11 @@ class TokenGenerationScheduler(Scheduler):
 
         # TODO(E2EOPT-399): Add proper data parallelism support. Currently
         # this naively splits the batch onto different devices.
-        if self.batch_constructor.paged_cache is not None:
-            split_by_replica_idx(
-                inputs,
-                self.scheduler_config.data_parallel_degree,
-                self.batch_constructor.paged_cache,
-            )
+        split_by_replica_idx(
+            inputs,
+            self.scheduler_config.data_parallel_degree,
+            self.batch_constructor.paged_cache,
+        )
 
         # execute the batch
         responses = self.pipeline.execute(inputs)

@@ -44,16 +44,15 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheStrategy,
-    PagedCacheInputSymbols,
     PagedCacheValues,
     PagedKVCacheManager,
     RaggedKVCacheInputs,
-    TPPagedKVCacheManager,
     build_max_lengths_tensor,
     estimate_kv_cache_size,
     infer_optimal_batch_size,
-    validate_kv_manager_params,
+    load_kv_manager,
 )
+from max.nn.kv_cache.paged_cache.paged_cache import PagedCacheInputSymbols
 from max.nn.layer import Layer
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -105,10 +104,10 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
       extensible KVCacheInput type.
     """
 
-    text_kv_manager: TPPagedKVCacheManager
+    text_kv_manager: PagedKVCacheManager
     """KV cache manager for text inputs."""
 
-    vision_kv_manager: TPPagedKVCacheManager
+    vision_kv_manager: PagedKVCacheManager
     """KV cache manager for image inputs."""
 
     def __init__(
@@ -126,15 +125,8 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
     ) -> None:
         self.params = params
 
-        validate_kv_manager_params(
-            params=params,
-            max_batch_size=max_batch_size,
-            available_cache_memory=available_cache_memory,
-            page_size=page_size,
-        )
-        # We know these are non-null because of above validation
-        assert max_batch_size is not None
-        paged_text_kv_manager = TPPagedKVCacheManager(
+        assert max_batch_size, "Expected max_batch_size to be set"
+        paged_text_kv_manager = load_kv_manager(
             params=params,
             max_batch_size=max_batch_size,
             max_seq_len=text_max_seq_len,
@@ -144,6 +136,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             page_size=page_size,
             session=session,
         )
+        assert isinstance(paged_text_kv_manager, PagedKVCacheManager)
         self.text_kv_manager = paged_text_kv_manager
 
         # Assume the number of vision tokens is fixed per batch.
@@ -177,7 +170,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
         cache_memory = cache_memory_per_image * max_batch_size
 
         # Always use paged KV cache for the vision KV projections.
-        self.vision_kv_manager = TPPagedKVCacheManager(
+        self.vision_kv_manager = PagedKVCacheManager(
             params=self.vision_kv_params,
             max_batch_size=max_batch_size,
             max_seq_len=vision_max_seq_len,
@@ -398,18 +391,15 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
 
     def get_or_recommend_replica(self, _: TextGenerationContext) -> int:
         """Return idx of the replica that should be used for the given request."""
+        # As there is only one replica, we always return 0
         return 0
 
     def external_claim(
-        self, request_id: RequestID, replica_idx: int | None = None
+        self, request_id: RequestID, replica_idx: int = 0
     ) -> None:
         """Reserves sequence IDs for the given request ID in both modalities' KV caches."""
-        if replica_idx is not None and replica_idx != 0:
-            raise ValueError(
-                "replica_idx must be 0 for MultimodalKVCacheManager"
-            )
-        self.text_kv_manager.external_claim(request_id)
-        self.vision_kv_manager.external_claim(request_id)
+        self.text_kv_manager.external_claim(request_id, replica_idx)
+        self.vision_kv_manager.external_claim(request_id, replica_idx)
 
     def release(self, request_id: RequestID) -> None:
         """Marks the sequence complete for both modalities' KV caches."""
@@ -434,7 +424,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: Sequence[RaggedKVCacheInputs],
+        kv_cache_inputs: list[RaggedKVCacheInputs],
         prev_model_inputs: Iterable[Any],
     ) -> list[RaggedKVCacheInputs]:
         """Updates the cache lengths for multistep execution.
