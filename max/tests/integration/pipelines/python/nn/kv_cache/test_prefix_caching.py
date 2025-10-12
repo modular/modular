@@ -840,9 +840,4 @@ async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
     )
 
     assert ctx1.start_idx == 12
-    assert (
-        kv_manager._replica_managers[0].block_manager.req_to_committed_idx[
-            ctx1.request_id
-        ]
-        == 12
-    )
+    assert kv_manager.block_manager.req_to_committed_idx[ctx1.request_id] == 12

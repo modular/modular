@@ -77,12 +77,12 @@ def _dump_k_or_v_cache_to_torch_tensor(
 
     This should only be used for testing purposes.
     """
-    req_blocks = cache.get_req_blocks(ctx.request_id)
+    req_blocks = cache.block_manager.get_req_blocks(ctx.request_id)
 
     torch_dtype = cache.params.dtype.to_torch()
 
     # [total_num_pages, kv_dim, num_layers, page_size, n_heads, head_dim]
-    device_tensor = cache._replica_managers[device_id].device_tensors[device_id]
+    device_tensor = cache.device_tensors[device_id]
     device_tensor_torch = from_dlpack(device_tensor).to(torch_dtype).cpu()
 
     # [total_num_pages, num_layers, page_size, n_heads, head_dim]

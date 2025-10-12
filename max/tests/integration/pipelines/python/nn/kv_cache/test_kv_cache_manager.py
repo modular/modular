@@ -13,7 +13,8 @@ from max.interfaces import RequestID
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
-    TPPagedKVCacheManager,
+    PagedKVCacheManager,
+    load_kv_manager,
 )
 from test_common.context_utils import create_text_context
 
@@ -31,7 +32,7 @@ async def test_step() -> None:
         page_size=128,
     )
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = load_kv_manager(
         params=params,
         max_batch_size=16,
         max_seq_len=100,
@@ -47,7 +48,7 @@ async def test_step() -> None:
     for i in range(3):
         context = create_text_context(np.empty(prompt_lens[i]))
         kv_manager.external_claim(context.request_id)
-        assert isinstance(kv_manager, TPPagedKVCacheManager)
+        assert isinstance(kv_manager, PagedKVCacheManager)
         kv_manager.maybe_reserve(context, num_steps=1)
         batch.append(context)
 
@@ -86,7 +87,7 @@ async def test_claim_and_release() -> None:
         page_size=128,
     )
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = load_kv_manager(
         params=params,
         max_batch_size=16,
         max_seq_len=100,
@@ -141,7 +142,7 @@ async def test_fetch_paged() -> None:
         page_size=128,
     )
 
-    kv_manager = TPPagedKVCacheManager(
+    kv_manager = load_kv_manager(
         params=params,
         max_batch_size=16,
         max_seq_len=100,
@@ -157,7 +158,7 @@ async def test_fetch_paged() -> None:
         context = create_text_context(np.empty(1))
         kv_manager.external_claim(context.request_id)
         contexts.append(context)
-        assert isinstance(kv_manager, TPPagedKVCacheManager)
+        assert isinstance(kv_manager, PagedKVCacheManager)
         kv_manager.maybe_reserve(context, num_steps=1)
 
     # Fetch 3 of the 5 ids
