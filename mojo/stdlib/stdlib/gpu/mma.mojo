@@ -43,10 +43,40 @@ from utils.index import Index
 
 
 fn get_amd_fp8_dtype() -> DType:
+    @parameter
+    if _is_amd_rdna():
+
+        @parameter
+        if _is_amd_rdna4():
+            return DType.float8_e4m3fn
+        else:
+            constrained[
+                False,
+                (
+                    "FP8 operations require RDNA4 or newer. RDNA3 and earlier"
+                    " do not support native FP8."
+                ),
+            ]()
+            return DType.float8_e4m3fn
     return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
 
 
 fn get_amd_bf8_dtype() -> DType:
+    @parameter
+    if _is_amd_rdna():
+
+        @parameter
+        if _is_amd_rdna4():
+            return DType.float8_e5m2
+        else:
+            constrained[
+                False,
+                (
+                    "BF8 operations require RDNA4 or newer. RDNA3 and earlier"
+                    " do not support native BF8."
+                ),
+            ]()
+            return DType.float8_e5m2
     return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
 
 
@@ -107,6 +137,14 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     RDNA4 additional operations:
         - F32 = FP8 * FP8 + F32 (16x16x32 shape, native hardware support)
 
+    FP8 support by generation:
+        - RDNA4: Native FP8/BF8 via llvm.amdgcn.wmma.f32.16x16x32.fp8
+          - Supports E4M3 (float8_e4m3fn) and E5M2 (float8_e5m2) formats
+          - Hardware V_DOT4 instructions for 4-element dot products
+          - NEG must be zero for A/B matrices in WMMA operations
+        - RDNA3: FP8 not supported (requires FP16 emulation)
+        - RDNA1/2: FP8 not supported
+
     Args:
         d: Output accumulator SIMD vector (modified in-place).
         a: First input matrix as SIMD vector.
@@ -153,19 +191,31 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 _unsupported_mma_op(d, a, b, c)
                 return ""
-        elif a.dtype in [
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
-        ] or b.dtype in [
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
-        ]:
-            _unsupported_mma_op(d, a, b, c)
-            return ""
+        elif (
+            a.dtype
+            in [
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fnuz,
+                DType.float8_e5m2,
+                DType.float8_e5m2fnuz,
+            ]
+            and b.dtype
+            in [
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fnuz,
+                DType.float8_e5m2,
+                DType.float8_e5m2fnuz,
+            ]
+            and c.dtype is DType.float32
+            and d.dtype is DType.float32
+        ):
+
+            @parameter
+            if _is_amd_rdna4():
+                return "llvm.amdgcn.wmma.f32.16x16x32.fp8"
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
