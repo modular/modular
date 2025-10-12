@@ -308,7 +308,7 @@ struct CodepointSliceIter[
 
 
 struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
-    ImplicitlyCopyable, Movable, Sized
+    ImplicitlyCopyable, Iterable, Iterator, Movable, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
@@ -318,6 +318,9 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         origin: Origin of the underlying string data.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias Element = Codepoint
 
     var _slice: StringSlice[origin]
@@ -340,7 +343,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     # ===-------------------------------------------------------------------===#
 
     @doc_private
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     @always_inline
