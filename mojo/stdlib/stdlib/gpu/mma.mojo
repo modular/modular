@@ -46,8 +46,27 @@ fn get_amd_fp8_dtype() -> DType:
     """Gets the appropriate FP8 dtype for the current AMD GPU architecture.
 
     Returns:
-        `DType.float8_e4m3fn` for CDNA4+ GPUs, `DType.float8_e4m3fnuz` for older AMD GPUs.
+        `DType.float8_e4m3fn` for CDNA4+ and RDNA4+ GPUs, `DType.float8_e4m3fnuz` for CDNA1-3.
+
+    Constraints:
+        RDNA3 and earlier do not support native FP8 and will cause a compile-time error.
     """
+
+    @parameter
+    if _is_amd_rdna():
+
+        @parameter
+        if _is_amd_rdna4():
+            return DType.float8_e4m3fn
+        else:
+            constrained[
+                False,
+                (
+                    "FP8 operations require RDNA4 or newer. RDNA3 and earlier"
+                    " do not support native FP8."
+                ),
+            ]()
+            return DType.float8_e4m3fn
     return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
 
 
@@ -55,8 +74,27 @@ fn get_amd_bf8_dtype() -> DType:
     """Gets the appropriate BF8 dtype for the current AMD GPU architecture.
 
     Returns:
-        `DType.float8_e5m2` for CDNA4+ GPUs, `DType.float8_e5m2fnuz` for older AMD GPUs.
+        `DType.float8_e5m2` for CDNA4+ and RDNA4+ GPUs, `DType.float8_e5m2fnuz` for CDNA1-3.
+
+    Constraints:
+        RDNA3 and earlier do not support native BF8 and will cause a compile-time error.
     """
+
+    @parameter
+    if _is_amd_rdna():
+
+        @parameter
+        if _is_amd_rdna4():
+            return DType.float8_e5m2
+        else:
+            constrained[
+                False,
+                (
+                    "BF8 operations require RDNA4 or newer. RDNA3 and earlier"
+                    " do not support native BF8."
+                ),
+            ]()
+            return DType.float8_e5m2
     return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
 
 
@@ -116,6 +154,29 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
     RDNA4 additional operations:
         - F32 = FP8 * FP8 + F32 (16x16x32 shape, native hardware support)
+
+    FP8 support by generation:
+        - RDNA4: Native FP8/BF8 via llvm.amdgcn.wmma.f32.16x16x32.fp8
+          - Supports E4M3 (float8_e4m3fn) and E5M2 (float8_e5m2) formats
+          - Hardware V_DOT4 instructions for 4-element dot products
+          - NEG must be zero for A/B matrices in WMMA operations
+
+    RDNA4 FP8/BF8 native support:
+        - Native hardware support for 8-bit float operations
+        - E4M3 formats (float8_e4m3fn, float8_e4m3fnuz) map to FP8
+        - E5M2 formats (float8_e5m2, float8_e5m2fnuz) map to BF8
+        - Supports all combinations: FP8×FP8, BF8×BF8, FP8×BF8, BF8×FP8
+        - Each combination has a specific WMMA intrinsic
+
+    Hardware intrinsics used:
+        - llvm.amdgcn.wmma.f32.16x16x16.f16 (FP16)
+        - llvm.amdgcn.wmma.f32.16x16x16.bf16 (BF16)
+        - llvm.amdgcn.wmma.i32.16x16x16.iu8 (INT8/UINT8, RDNA3+)
+        - llvm.amdgcn.wmma.i32.16x16x16.iu4 (UINT4, RDNA3+)
+        - llvm.amdgcn.wmma.f32.16x16x16.fp8.fp8 (E4M3×E4M3, RDNA4 only)
+        - llvm.amdgcn.wmma.f32.16x16x16.bf8.bf8 (E5M2×E5M2, RDNA4 only)
+        - llvm.amdgcn.wmma.f32.16x16x16.fp8.bf8 (E4M3×E5M2, RDNA4 only)
+        - llvm.amdgcn.wmma.f32.16x16x16.bf8.fp8 (E5M2×E4M3, RDNA4 only)
 
     Args:
         d: Output accumulator SIMD vector (modified in-place).
@@ -190,19 +251,48 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 _unsupported_mma_op(d, a, b, c)
                 return ""
-        elif a.dtype in [
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
-        ] or b.dtype in [
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
-        ]:
-            _unsupported_mma_op(d, a, b, c)
-            return ""
+        elif (
+            a.dtype.is_float8()
+            and b.dtype.is_float8()
+            and c.dtype is DType.float32
+            and d.dtype is DType.float32
+        ):
+
+            @parameter
+            if _is_amd_rdna4():
+                # E4M3 formats map to fp8, E5M2 formats map to bf8
+                alias a_is_e4m3 = a.dtype in [
+                    DType.float8_e4m3fn,
+                    DType.float8_e4m3fnuz,
+                ]
+                alias a_is_e5m2 = a.dtype in [
+                    DType.float8_e5m2,
+                    DType.float8_e5m2fnuz,
+                ]
+                alias b_is_e4m3 = b.dtype in [
+                    DType.float8_e4m3fn,
+                    DType.float8_e4m3fnuz,
+                ]
+                alias b_is_e5m2 = b.dtype in [
+                    DType.float8_e5m2,
+                    DType.float8_e5m2fnuz,
+                ]
+
+                @parameter
+                if a_is_e4m3 and b_is_e4m3:
+                    return "llvm.amdgcn.wmma.f32.16x16x16.fp8.fp8"
+                elif a_is_e5m2 and b_is_e5m2:
+                    return "llvm.amdgcn.wmma.f32.16x16x16.bf8.bf8"
+                elif a_is_e4m3 and b_is_e5m2:
+                    return "llvm.amdgcn.wmma.f32.16x16x16.fp8.bf8"
+                elif a_is_e5m2 and b_is_e4m3:
+                    return "llvm.amdgcn.wmma.f32.16x16x16.bf8.fp8"
+                else:
+                    _unsupported_mma_op(d, a, b, c)
+                    return ""
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
