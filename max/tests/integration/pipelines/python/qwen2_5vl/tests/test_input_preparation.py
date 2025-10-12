@@ -28,6 +28,7 @@ import numpy as np
 import pytest
 from max.interfaces import (
     RequestID,
+    SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
@@ -710,3 +711,106 @@ async def test_qwen_input_preparation__position_ids_after_reset_with_image(
             "This indicates a bug in the vision position ID handling after context reset."
         ),
     )
+
+
+def test_qwen_text_only_decoder_posids_increment_on_first_decode(
+    mocker: MockerFixture,
+) -> None:
+    """Test decoder position IDs increment correctly from prefill to first decode step.
+
+    This test verifies the fix for an off-by-one error in computing decoder position IDs
+    during text-only token generation (commit a52fa38ed1).
+
+    Verify the key invariant: "first decode position ID equals last prefill
+    position ID + 1" for text-only inputs.
+
+    TEST STRUCTURE:
+    ---------------
+    1. Prefill phase: Process a text-only prompt of length L
+    2. First decode phase: Generate position IDs for single token (L+1)
+    3. Assert: decode_position_ids[0] == prefill_position_ids[-1] + 1
+    """
+    # Create mock model and text-only context.
+    model = create_mock_qwen_model(mocker)
+
+    # Create a text-only prompt of length L=33.
+    L = 33
+    tokens = np.arange(L, dtype=np.int32)
+
+    # Create initial decoder position IDs for prefill (3D RoPE: temporal, height, width).
+    # For text-only inputs, all 3 dimensions have identical position IDs.
+    initial_position_ids = np.arange(L, dtype=np.int32)
+    decoder_position_ids_3d = np.tile(initial_position_ids, (3, 1))
+
+    # Create a minimal TextAndVisionContext for text-only input.
+    ctx = TextAndVisionContext(
+        request_id=RequestID("test-posid-increment"),
+        tokens=tokens,
+        max_length=L + 8,
+        eos_token_ids=set([2]),
+        sampling_params=SamplingParams(max_new_tokens=2),
+        images=[],  # text-only
+        vision_token_ids=[],  # text-only
+        extra_model_args={
+            # Use arbitrary rope_delta; test must not depend on its value.
+            "rope_delta": np.array(0, dtype=np.int32),
+            # Initial decoder position IDs for the prefill phase.
+            "decoder_position_ids": decoder_position_ids_3d,
+            # Other required fields for Qwen2.5VL.
+            "spatial_merge_size": np.array(2, dtype=np.int32),
+            "image_token_id": np.array(151652, dtype=np.int32),
+        },
+    )
+
+    # Verify initial state: prefill phase (start_idx=0, active range covers all tokens).
+    assert ctx.start_idx == 0
+    assert ctx.active_idx == L
+    assert ctx.end_idx == L
+
+    # Build inputs for prefill phase.
+    dummy_kv_inputs = Mock(spec=KVCacheInputs)
+
+    prefill_inputs = model.prepare_initial_token_inputs(
+        context_batch=[ctx],
+        kv_cache_inputs=dummy_kv_inputs,
+        return_n_logits=1,
+    )
+
+    # Extract prefill position IDs (shape: (3, L) for 3D RoPE).
+    prefill_posids = prefill_inputs.position_ids.to_numpy()
+    assert prefill_posids.shape == (3, L), (
+        f"Expected prefill position IDs shape (3, {L}), got {prefill_posids.shape}"
+    )
+
+    # Get the last prefill position ID (same for all 3 RoPE dimensions in text-only)
+    last_prefill = prefill_posids[0, -1]
+
+    # Simulate first decode step (single-token generation).
+    # Mimic the pipeline's next iteration: move to decode phase with single active token.
+    ctx.set_token_indices(start_idx=L, active_idx=L + 1, end_idx=L + 1)
+
+    step1_inputs = model.prepare_initial_token_inputs(
+        context_batch=[ctx],
+        kv_cache_inputs=dummy_kv_inputs,
+        return_n_logits=1,
+    )
+
+    # Extract decode position IDs (shape: (3, 1) for single token).
+    step1_posids = step1_inputs.position_ids.to_numpy()
+    assert step1_posids.shape == (3, 1), (
+        f"Expected decode position IDs shape (3, 1), got {step1_posids.shape}"
+    )
+
+    # Verify decode position ID = last prefill ID + 1.
+    expected = last_prefill + 1
+
+    # All 3 RoPE dimensions should have identical position IDs for text-only.
+    for dim in range(3):
+        actual = step1_posids[dim, 0]
+        assert actual == expected, (
+            f"Decode position ID mismatch in dimension {dim}! "
+            f"Expected {expected} (last_prefill + 1 = {last_prefill} + 1), "
+            f"but got {actual}. "
+            f"This indicates the off-by-one bug: position IDs are not incrementing "
+            f"correctly from prefill to decode phase."
+        )
