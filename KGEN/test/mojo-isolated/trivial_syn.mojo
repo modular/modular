@@ -38,7 +38,7 @@ struct C[X: ImplicitlyCopyable & Movable, Y: ImplicitlyCopyable & Movable](
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::AnyType" {
     # CHECK-NEXT:    kgen.witness "__del__"
-    # CHECK-NEXT:    kgen.witness "__del__is_trivial" : !Bool = {{.*}}{_mlir_value: i1 = cond(
+    # CHECK-NEXT:    kgen.witness "__del__is_trivial" : !Bool = cond(
     # CHECK-SAME:      #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::AnyType", "__del__is_trivial">,
     # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "stdlib::builtin::stubs::AnyType", "__del__is_trivial">,
     # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::AnyType", "__del__is_trivial">)
@@ -46,7 +46,7 @@ struct C[X: ImplicitlyCopyable & Movable, Y: ImplicitlyCopyable & Movable](
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Copyable" {
     # CHECK-NEXT:      kgen.witness "__copyinit__"
     # CHECK-NEXT:      kgen.witness "copy"
-    # CHECK-NEXT:      kgen.witness "__copyinit__is_trivial" : !Bool = {{.*}}{_mlir_value: i1 = cond(
+    # CHECK-NEXT:      kgen.witness "__copyinit__is_trivial" : !Bool = cond(
     # CHECK-SAME:      #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::Copyable", "__copyinit__is_trivial">,
     # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "stdlib::builtin::stubs::Copyable", "__copyinit__is_trivial">,
     # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::Copyable", "__copyinit__is_trivial">)
@@ -56,7 +56,7 @@ struct C[X: ImplicitlyCopyable & Movable, Y: ImplicitlyCopyable & Movable](
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Movable" {
     # CHECK-NEXT:    kgen.witness "__moveinit__"
-    # CHECK-NEXT:    kgen.witness "__moveinit__is_trivial" : !Bool = {{.*}}{_mlir_value: i1 = cond(
+    # CHECK-NEXT:    kgen.witness "__moveinit__is_trivial" : !Bool = cond(
     # CHECK-SAME:      #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::Movable", "__moveinit__is_trivial">,
     # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "stdlib::builtin::stubs::Movable", "__moveinit__is_trivial">,
     # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::Movable", "__moveinit__is_trivial">)
@@ -67,9 +67,9 @@ struct StructMLIRTypeOnly(ImplicitlyCopyable & Movable):
     var x: __mlir_type.index
     var y: __mlir_type.index
 
-    # CHECK-DAG: lit.alias.decl __del__is_trivial: i1 = <1>
-    # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: i1 = <1>
-    # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: i1 = <1>
+    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:i1 1}>
+    # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: !Bool = <{:i1 1}>
+    # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: !Bool = <{:i1 1}>
 
 
 # MOCO-2396:
@@ -84,15 +84,17 @@ struct NotTrivial(Copyable, Movable):
     fn __del__(deinit self):
         pass
 
-    # CHECK-DAG: lit.alias.decl __del__is_trivial: i1 = <0>
-    # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: i1 = <0>
-    # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: i1 = <0>
+    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:i1 0}>
+    # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: !Bool = <{:i1 0}>
+    # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: !Bool = <{:i1 0}>
 
 
 # CHECK-LABEL: lit.struct.decl @Wrapper
 struct Wrapper(Copyable, Movable):
     var value: NotTrivial
 
-    # CHECK-DAG: lit.alias.decl __del__is_trivial: i1 = <#kgen.get_witness<:!{{.*}} !NotTrivial, "{{.*}}", "__del__is_trivial">>
-    # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: i1 = <#kgen.get_witness<:!{{.*}} !NotTrivial, "{{.*}}", "__moveinit__is_trivial">>
-    # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: i1 = <#kgen.get_witness<:!{{.*}} !NotTrivial, "{{.*}}", "__copyinit__is_trivial">>
+    # Should be parser-folded.
+
+    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:i1 0}>
+    # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: !Bool = <{:i1 0}>
+    # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: !Bool = <{:i1 0}>

@@ -31,6 +31,19 @@ from docs_package import documented_method_defined_in_init
 alias AliasType = __mlir_type.`!kgen.type`
 """This is an alias doc."""
 
+# This is needed by the compiler to synthesize trivial bit.
+struct Bool:
+  """This is doc for Bool."""
+
+    @implicit
+    fn __init__(out self, value: __mlir_type.i1):
+      """ Bool init with mlir.i1.
+
+      Args:
+        value: Bit in mlir.i1.
+      """
+      pass
+
 struct Struct:
   """This is a struct doc."""
 

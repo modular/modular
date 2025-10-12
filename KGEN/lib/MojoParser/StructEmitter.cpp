@@ -1068,8 +1068,10 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   // NOTE: we have to first synthesize the bit to `i1` (instead of `Bool`) to
   // avoid signature resolving `Bool::__init__`s, the implicit conversion will
   // be taken care of when body resolve conformanceOp.
-  auto emitI1Attr = [&](bool v) -> TypedAttr {
-    return BoolAttr::get(getContext(), v);
+  auto emitBoolAttr = [&](BoolAttr v) -> TypedAttr {
+    SyntheticNode synthNode(structDecl.getLoc());
+    return emitter.emitBool({v, synthNode}, EC_OperatorOperandValue)
+        .getIfPValue();
   };
 
   // This emits an "and" as a PValue expression, maintaining the type of lhs/rhs
@@ -1092,7 +1094,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
 
   // If has a user provided implementation, consider them as non-trivial.
   if (!decls.front()->getCursor().isInvalid())
-    return emitI1Attr(false);
+    return emitBoolAttr(BoolAttr::get(emitter.getContext(), false));
 
   // We have a synthesize __del__/__moveinit__/__copyinit__ function, in this
   // case all the fields have to conform to AnyType/Movable/Copyable or it will
@@ -1111,7 +1113,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
       StringAttr::get(getContext(), Twine(spFnInfo.name) + "is_trivial");
   auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
 
-  TypedAttr ret = emitI1Attr(true);
+  TypedAttr ret = emitBoolAttr(BoolAttr::get(emitter.getContext(), true));
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     // TODO: Add a nicer accessor.
     auto fieldEntries = structDecl.lookupInCurrentScope(fieldOp.getNameAttr());
