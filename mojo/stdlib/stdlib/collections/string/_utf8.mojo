@@ -277,12 +277,7 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    return (
-        b.ge(0b1000_0000).cast[DType.uint8]()
-        + b.ge(0b1100_0000).cast[DType.uint8]()
-        + b.ge(0b1110_0000).cast[DType.uint8]()
-        + b.ge(0b1111_0000).cast[DType.uint8]()
-    )
+    return count_leading_zeros(~b | 0b0000_1111)
 
 
 @always_inline
