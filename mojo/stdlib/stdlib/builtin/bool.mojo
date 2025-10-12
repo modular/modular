@@ -140,6 +140,14 @@ struct Bool(
     """The maximum value of a Bool."""
 
     # ===-------------------------------------------------------------------===#
+    # Trivial bits for special functions.
+    # ===-------------------------------------------------------------------===#
+
+    alias __del__is_trivial: Bool = True
+    alias __moveinit__is_trivial: Bool = True
+    alias __copyinit__is_trivial: Bool = True
+
+    # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
