@@ -15,8 +15,8 @@ from math.math import _Expable, exp
 from random import randn_float64, seed
 from sys import CompilationTarget
 
-from test_utils import libm_call, TestSuite
-from testing import assert_almost_equal, assert_equal
+from test_utils import libm_call
+from testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_exp_bfloat16():
@@ -109,14 +109,4 @@ def test_exapble_trait():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_exp_bfloat16]()
-    suite.test[test_exp_float16]()
-    suite.test[test_exp_float32]()
-    suite.test[test_exp_float64]()
-    suite.test[test_exp_libm[DType.float32]]()
-    suite.test[test_exp_libm[DType.float64]]()
-    suite.test[test_exapble_trait]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

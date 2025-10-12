@@ -396,7 +396,7 @@ def accuracy_test():
     deltas.zero()
 
     for i in range(0x3000_0000, 0x42B0_0000, 1):
-        var f = bitcast[DType.float32, 1](SIMD[DType.uint32, 1](i))
+        var f = bitcast[DType.float32, 1](UInt32(i))
 
         var r1 = exp_mojo_opt3(f)
         var r2 = exp_libm(f)

@@ -239,6 +239,8 @@ fn test_tile_and_distribute():
                 print("----fragments-data[", th_i, "]----")
                 print(tile_2x2)
 
+    storage.free()
+
 
 # CHECK-LABEL: test_tile_and_vectorize
 fn test_tile_and_vectorize():
@@ -459,6 +461,8 @@ fn test_tile_and_vectorize():
             print("----vectorized-matrix----")
             print(tensor_v_8x2)
 
+    storage.free()
+
 
 # CHECK-LABEL: test_copy_from
 fn test_copy_from():
@@ -492,6 +496,9 @@ fn test_copy_from():
     print(dst_tensor)
     dst_tensor.copy_from(src_tensor)
     print(dst_tensor)
+
+    src_tensor.ptr.free()
+    dst_tensor.ptr.free()
 
 
 # CHECK-LABEL: test_linspace_fill
@@ -556,6 +563,8 @@ fn test_linspace_fill():
     print(src_tensor_copy)
     print(src_tensor.ptr == src_tensor_copy.ptr)
 
+    src_tensor.ptr.free()
+
 
 # CHECK-LABEL: test_random_fill
 fn test_random_fill():
@@ -587,7 +596,7 @@ fn test_random_fill():
         var diff = rebind[Float32](src_tensor[i]) - mean
         variance += diff * diff
     variance = sqrt(variance / src_tensor.runtime_layout.size())
-
+    src_tensor.ptr.free()
     # Check that the mean value is close to 0.5 and variance is more than 0.1
     # CHECK: ----mean-variance----
     # CHECK: True

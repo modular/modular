@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
-from typing import Union
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
@@ -36,6 +35,6 @@ async def ping() -> Response:
 @router.post("/invocations", response_model=None)
 async def invocations(
     request: Request,
-) -> Union[CreateChatCompletionResponse, EventSourceResponse]:
+) -> CreateChatCompletionResponse | EventSourceResponse:
     """proxy to /v1/chat/completions"""
     return await openai_create_chat_completion(request)

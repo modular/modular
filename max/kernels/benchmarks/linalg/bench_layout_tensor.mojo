@@ -50,10 +50,10 @@ struct Matrix[rows: Int, cols: Int]:
         rand(data, rows * cols)
         return Self(data)
 
-    fn __getitem__(self, y: Int, x: Int) -> SIMD[dtype, 1]:
+    fn __getitem__(self, y: Int, x: Int) -> Scalar[dtype]:
         return self.load(y, x)
 
-    fn __setitem__(mut self, y: Int, x: Int, val: SIMD[dtype, 1]):
+    fn __setitem__(mut self, y: Int, x: Int, val: Scalar[dtype]):
         self.store(y, x, val)
 
     fn load[nelts: Int = 1](self, y: Int, x: Int) -> SIMD[dtype, nelts]:
@@ -385,7 +385,7 @@ fn test_all() raises:
     C.data.free()
 
 
-fn main() raises:
+def main():
     test_all()
     print("CPU Results\n")
 

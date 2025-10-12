@@ -167,6 +167,13 @@ fn test[
 
     ctx.synchronize()
 
+    # Skip equality check if N or K are 0 (causes error in vendor_blas).
+    if N == 0 or K == 0:
+        return
+    if not has_nvidia_gpu_accelerator() and M == 0:
+        # AMD doesn't support matmul with M=0
+        return
+
     for i in range(B):
         var c_ptr = c_device_ref.data + (i * M * N)
         var a_ptr = a_device.data + (i * M * K)
@@ -245,6 +252,27 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
+        # Test zero-dimension edge cases
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(0), dynamic(2), dynamic(2), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(0), dynamic(2), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(2), dynamic(0), dynamic(2))
+
+        test[
+            DType.bfloat16,
+            transpose_b=False,
+        ](ctx, dynamic(2), dynamic(2), dynamic(2), dynamic(0))
+
         # tests naive kernels
         test[
             DType.bfloat16,

@@ -14,19 +14,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Union
 
 from max.nn.kv_cache import KVTransferEngineMetadata
 from max.serve.kvcache_agent.dispatcher_v2 import (
     DispatcherClientV2,
     DispatcherServerV2,
 )
-from max.serve.scheduler.base import PrefillRequest, PrefillResponse, RequestID
+from max.serve.scheduler.base import (
+    CancelRequest,
+    PrefillRequest,
+    PrefillResponse,
+)
 
 logger = logging.getLogger("max.serve")
 
-RequestType = Union[PrefillRequest, KVTransferEngineMetadata, RequestID]
-ReplyType = Union[PrefillResponse, KVTransferEngineMetadata]
+RequestType = PrefillRequest | KVTransferEngineMetadata | CancelRequest
+ReplyType = PrefillResponse | KVTransferEngineMetadata
 
 
 class PrefillDispatcherServerV2(DispatcherServerV2[RequestType, ReplyType]):

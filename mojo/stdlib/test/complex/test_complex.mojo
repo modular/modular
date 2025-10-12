@@ -15,7 +15,7 @@ import math
 
 from complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
 from testing import assert_almost_equal, assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_init():
@@ -107,14 +107,4 @@ def test_exp():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_init]()
-    suite.test[test_conj]()
-    suite.test[test_math]()
-    suite.test[test_abs]()
-    suite.test[test_complex_str]()
-    suite.test[test_fma]()
-    suite.test[test_exp]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

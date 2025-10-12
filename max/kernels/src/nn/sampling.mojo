@@ -63,7 +63,7 @@ fn apply_penalties_to_logits[
         var frequency_penalty_val = frequency_penalty[batch_id][0]
         # skip padding tokens
         if token >= 0:
-            var count = rebind[Scalar[DType.int32]](
+            var count = rebind[Int32](
                 compressed_frequency_data[idx[0], 1]
             ).cast[logit_type]()
 
@@ -128,7 +128,9 @@ fn update_frequency_data_kernel[
 
     # search if the new token is already in the frequency data
     for scan_idx in range(num_scans):
-        var tok_idx = tok_start + (tid + scan_idx * block_size) * simd_width
+        var tok_idx = tok_start + (tid + UInt(scan_idx * block_size)) * UInt(
+            simd_width
+        )
 
         var val = SIMD[DType.int32, simd_width](0)
 

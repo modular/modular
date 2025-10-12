@@ -12,7 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from python import PythonObject
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_properties():
@@ -242,25 +248,4 @@ def test_is_power_of_two():
 
 
 def main():
-    test_properties()
-    test_add()
-    test_sub()
-    test_div()
-    test_pow()
-    test_ceil()
-    test_floor()
-    test_round()
-    test_trunc()
-    test_floordiv()
-    test_mod()
-    test_divmod()
-    test_abs()
-    test_string_conversion()
-    test_int_representation()
-    test_indexer()
-    test_bool()
-    test_decimal_digit_count()
-    test_comparison()
-    test_int_uint()
-    test_float_conversion()
-    test_is_power_of_two()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -244,7 +244,6 @@ def _parse_compressed_tensors_float8_config(
     ignored_modules_prefix: str = "model.",
 ) -> Float8Config:
     """Parses a Float8Config in the compressed-tensors format."""
-
     # This function specifically handles "compressed-tensors" style.
     # It assumes hf_quant_config and its structure are present.
 
@@ -435,8 +434,10 @@ def parse_float8_config(
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> Float8Config | None:
-    """Parses Float8Config from HuggingFace config by dispatching to
-    format-specific parsers.
+    """Parses Float8Config from HuggingFace config by dispatching to format-specific parsers.
+
+    Dispatches to the appropriate format-specific parser based on the
+    quantization method in the HuggingFace config.
     """
     if dtype != DType.float8_e4m3fn:
         return None

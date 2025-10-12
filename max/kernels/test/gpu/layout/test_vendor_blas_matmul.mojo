@@ -127,7 +127,7 @@ fn test_matmul[input_types: List[DType]]() raises:
             test_matmul[input_type, 512, 2560, 512](ctx)
 
 
-fn main() raises:
+def main():
     @parameter
     if has_amd_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()

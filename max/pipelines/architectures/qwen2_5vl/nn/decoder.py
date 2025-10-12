@@ -20,8 +20,7 @@ from __future__ import annotations
 
 import functools
 import math
-from collections.abc import Iterable, Sequence
-from typing import Callable
+from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import (
@@ -51,17 +50,14 @@ from max.nn.kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Shardable
 from max.nn.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
+    merge_multimodal_embeddings_with_gather,
 )
 from max.pipelines.architectures.internvl.internvl import distribute_value
 from max.pipelines.architectures.llama3.model_config import Llama3Config
@@ -413,7 +409,7 @@ class Qwen25VLDecoderTransformerBlock(Module):
         ]
         attn_outs = self.allreduce(attn_out, signal_buffers)
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
 
         # Apply post attention layer norm to each shard
         norm_outs = forward_sharded_layers(
@@ -423,7 +419,7 @@ class Qwen25VLDecoderTransformerBlock(Module):
 
         mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -552,7 +548,8 @@ class Qwen25VLDecoder(Module):
         tokens: TensorValueLike,
         return_n_logits: TensorValue,
         image_embeddings: list[TensorValue],
-        image_token_indices: list[TensorValue],
+        scatter_indices: list[TensorValue],
+        gather_indices: list[TensorValue],
         position_ids: TensorValue,
         mrope_section: list[int],
         kv_collections: list[PagedCacheValues],
@@ -565,13 +562,18 @@ class Qwen25VLDecoder(Module):
         # Let the kernel handle the no-image embeddings case.
         # And use the first device's image embeddings since they're replicated.
         h = [
-            merge_multimodal_embeddings(
+            merge_multimodal_embeddings_with_gather(
                 inputs_embeds=h_device,
                 multimodal_embeddings=img_embed,
-                image_token_indices=img_tok_indices,
+                scatter_indices=scatter_indices,
+                gather_indices=gather_indices,
             )
-            for h_device, img_embed, img_tok_indices in zip(
-                h, image_embeddings, image_token_indices
+            for h_device, img_embed, scatter_indices, gather_indices in zip(
+                h,
+                image_embeddings,
+                scatter_indices,
+                gather_indices,
+                strict=True,
             )
         ]
 
@@ -598,7 +600,7 @@ class Qwen25VLDecoder(Module):
         assert h is not None and len(h) == len(last_token_indices)
         last_token_h = [
             ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices)
+            for h_device, indices in zip(h, last_token_indices, strict=True)
         ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
@@ -636,7 +638,9 @@ class Qwen25VLDecoder(Module):
             # Gather, normalize, and get logits
             variable_tokens = [
                 self.norm_shards[i](ops.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(zip(h, last_indices))
+                for i, (h_device, indices) in enumerate(
+                    zip(h, last_indices, strict=True)
+                )
             ]
             logits = ops.cast(
                 self.lm_head(variable_tokens, signal_buffers)[0], DType.float32

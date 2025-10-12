@@ -50,7 +50,7 @@ fn next_power_of_two_int_v3(val: Int) -> Int:
     return Int(
         mlir_value=v.le(1)
         .select(1, 1 << (bit_width_of[Int]() - count_leading_zeros(v - 1)))
-        .__index__()
+        .__mlir_index__()
     )
 
 
@@ -73,7 +73,7 @@ fn next_power_of_two_uint_v2(val: UInt) -> UInt:
     return UInt(
         mlir_value=v.eq(0)
         .select(1, 1 << (bit_width_of[UInt]() - count_leading_zeros(v - 1)))
-        .__index__()
+        .__mlir_index__()
     )
 
 

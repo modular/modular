@@ -32,19 +32,19 @@ def test_get_batch_from_row_offsets():
     prefix_sums.tensor[9] = 900
 
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 100),
+        get_batch_from_row_offsets(prefix_sums.to_layout_tensor(), 100),
         1,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 0),
+        get_batch_from_row_offsets(prefix_sums.to_layout_tensor(), 0),
         0,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 899),
+        get_batch_from_row_offsets(prefix_sums.to_layout_tensor(), 899),
         8,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 555),
+        get_batch_from_row_offsets(prefix_sums.to_layout_tensor(), 555),
         5,
     )
 

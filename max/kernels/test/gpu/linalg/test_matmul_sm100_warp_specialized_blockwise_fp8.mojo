@@ -360,7 +360,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             for mma_m_scale in range(1, 3):
 
                 @parameter
-                for mma_n_scale in range(4, 17, 4):
+                for mma_n_scale in [2, 4, 6, 8, 10, 12, 16]:
                     alias block_tile_shape = Index(
                         64 * mma_m_scale, 8 * mma_n_scale, BK
                     )
@@ -413,7 +413,7 @@ def main():
         for mma_m_scale in range(1, 3):
 
             @parameter
-            for mma_n_scale in range(4, 17, 4):
+            for mma_n_scale in [2, 4, 6, 8, 10, 12, 16]:
                 alias block_tile_shape = Index(
                     64 * mma_m_scale, 8 * mma_n_scale, BK
                 )
@@ -473,8 +473,8 @@ def main():
                 ](
                     ctx,
                     dynamic(1000),
+                    static[32768](),
                     static[512](),
-                    static[512 + 128](),
                 )
 
                 _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -505,8 +505,8 @@ def main():
                 ](
                     ctx,
                     dynamic(500),
-                    static[2048](),
-                    static[4096](),
+                    static[24576](),
+                    static[1536](),
                 )
 
                 _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -521,8 +521,8 @@ def main():
                 ](
                     ctx,
                     dynamic(1024),
-                    static[256](),
-                    static[128](),
+                    static[1536](),
+                    static[7168](),
                 )
 
                 _ = test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[

@@ -16,7 +16,7 @@ from io.write import Writable, Writer, _hex_digits_to_hex_chars, _write_hex
 from memory.memory import memset_zero
 from testing import assert_equal
 
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 @fieldwise_init
@@ -155,20 +155,4 @@ def test_closure_capturing(mut writer: Some[Writer & Writable]):
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_writer_of_string]()
-    suite.test[test_string_write_seq]()
-    suite.test[test_stringable_based_on_format]()
-    suite.test[test_write_int_padded]()
-    suite.test[test_hex_digits_to_hex_chars]()
-    suite.test[test_write_hex]()
-    suite.test[test_closure_non_capturing]()
-
-    def run_test_closure_capturing():
-        var writer = String()
-        test_closure_capturing(writer)
-
-    suite.test[run_test_closure_capturing]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

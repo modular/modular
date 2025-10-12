@@ -65,7 +65,7 @@ fn mandelbrot_kernel_SIMD[
     return iters
 
 
-fn main() raises:
+def main():
     var matrix = Matrix[int_type, rows, cols]()
 
     @parameter

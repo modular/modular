@@ -23,10 +23,11 @@ import sys
 from dataclasses import MISSING, dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, get_type_hints
+from typing import Any, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
 from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
@@ -59,13 +60,13 @@ class PipelineConfig(MAXConfig):
     default.
     """
 
-    max_length: Optional[int] = None
+    max_length: int | None = None
     """Maximum sequence length of the model."""
 
     pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
     """Whether the pipeline should serve both a prefill or decode role or both."""
 
-    max_batch_size: Optional[int] = None
+    max_batch_size: int | None = None
     """Maximum batch size to execute with the model.
     When not specified (None), we determine this value dynamically. For users
     launching in a server scenario, the expectation is that this value should be
@@ -76,10 +77,10 @@ class PipelineConfig(MAXConfig):
     """Maximum cache size to reserve for a single context encoding batch.
     The actual limit is the lesser of this and `max_batch_size`."""
 
-    max_queue_size_tg: Optional[int] = None
+    max_queue_size_tg: int | None = None
     """Maximum number of requests in decode queue. By default, this is max-batch-size."""
 
-    min_batch_size_tg: Optional[int] = None
+    min_batch_size_tg: int | None = None
     """Specifies a soft floor on the decode batch size.
 
     If the TG batch size is larger than this value, the scheduler will continue to
@@ -105,6 +106,12 @@ class PipelineConfig(MAXConfig):
     you know what you are doing.
     """
 
+    experimental_background_queue: bool = False
+    """When enabled, offloads queue draining to a background thread for improved performance.
+
+    This is an experimental flag. Use with caution.
+    """
+
     enable_chunked_prefill: bool = True
     """Enable chunked prefill to split context encoding requests into multiple chunks
     based on 'prefill_chunk_size'."""
@@ -128,7 +135,7 @@ class PipelineConfig(MAXConfig):
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
 
-    chat_template: Optional[Path] = None
+    chat_template: Path | None = None
     """Optional custom chat template to override the one shipped with the
     HuggingFace model config. Can be either:
     - A Path pointing to a file containing the template
@@ -155,13 +162,22 @@ class PipelineConfig(MAXConfig):
     Each module must expose an `ARCHITECTURES` list of architectures to register.
     """
 
+    zmq_endpoint_base: str = field(default_factory=generate_zmq_ipc_path)
+    """The prefix for the ZMQ endpoints used for IPC. This prefix ensures that the
+    ZMQ endpoints are unique across multiple MAX Serve instances running on the
+    same host. This should be randomly generated when the PipelineConfig is created.
+    Ex:
+    - lora_request_zmq_endpoint: f"{zmq_endpoint_base}-lora_request"
+    - lora_response_zmq_endpoint: f"{zmq_endpoint_base}-lora_response"
+    """
+
     force: bool = field(default=False)
     """Skip validation of user provided flags against the architecture's required arguments."""
 
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
-    _draft_model_config: Optional[MAXModelConfig] = None
+    _draft_model_config: MAXModelConfig | None = None
     """The draft model config."""
 
     _sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
@@ -170,7 +186,7 @@ class PipelineConfig(MAXConfig):
     _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
     """The profiling config."""
 
-    _lora_config: Optional[LoRAConfig] = None
+    _lora_config: LoRAConfig | None = None
     """The LoRA config."""
 
     _config_file_section_name: str = "pipeline_config"
@@ -261,11 +277,11 @@ class PipelineConfig(MAXConfig):
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
         config_mappings = [
+            # NOTE: _model_config must come before _sampling_config so that
+            # SamplingConfig can use generation_config from the model
+            "_model_config",
             "_sampling_config",
             "_profiling_config",
-            # TODO(zheng): Remove this once backward compatibility is no
-            # longer needed for MAXModelConfig.
-            "_model_config",
         ]
 
         for config_name in config_mappings:
@@ -332,11 +348,21 @@ class PipelineConfig(MAXConfig):
                     **kv_cache_kwargs
                 )
 
-        elif config_name == "_sampling_config" and (
-            self.enable_echo or self._draft_model_config
-        ):
-            sampling_config = config_class(**matched_kwargs)
-            sampling_config.enable_variable_logits = True
+        elif config_name == "_sampling_config":
+            if hasattr(self, "_model_config") and self._model_config:
+                assert isinstance(self._model_config, MAXModelConfig)
+                assert hasattr(
+                    config_class, "from_generation_config_sampling_defaults"
+                )
+                sampling_config = config_class.from_generation_config_sampling_defaults(
+                    sampling_params_defaults=self._model_config.sampling_params_defaults,
+                    **matched_kwargs,
+                )
+            else:
+                sampling_config = config_class(**matched_kwargs)
+
+            if self.enable_echo or self._draft_model_config:
+                sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
             setattr(self, config_name, config_class(**matched_kwargs))
@@ -378,7 +404,7 @@ class PipelineConfig(MAXConfig):
 
         self.resolve()
 
-    def retrieve_chat_template(self) -> Optional[str]:
+    def retrieve_chat_template(self) -> str | None:
         # Read the file content
         if self.chat_template is None:
             return None
@@ -461,8 +487,9 @@ class PipelineConfig(MAXConfig):
         for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
-                msg = f"Custom module spec contains too many colons: {module_spec}"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"Custom module spec contains too many colons: {module_spec}"
+                )
             elif len(module_parts) == 2:
                 module_path, module_name = module_parts
             else:
@@ -472,14 +499,16 @@ class PipelineConfig(MAXConfig):
             try:
                 module = importlib.import_module(module_name)
             except Exception as e:
-                msg = f"Failed to import custom model from: {module_spec}"
-                raise ValueError(msg) from e
+                raise ValueError(
+                    f"Failed to import custom model from: {module_spec}"
+                ) from e
 
             if not module.ARCHITECTURES or not isinstance(
                 module.ARCHITECTURES, list
             ):
-                msg = f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
+                )
 
             for arch in module.ARCHITECTURES:
                 PIPELINE_REGISTRY.register(arch, allow_override=True)
@@ -619,19 +648,22 @@ class PipelineConfig(MAXConfig):
         )
 
         if not draft_arch:
-            msg = "MAX-Optimized architecture not found for `draft_model`"
-            raise ValueError(msg)
+            raise ValueError(
+                "MAX-Optimized architecture not found for `draft_model`"
+            )
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model_config.huggingface_model_repo
         )
         if not target_arch:
-            msg = "MAX-Optimized architecture not found for target model (`model_path`)"
-            raise ValueError(msg)
+            raise ValueError(
+                "MAX-Optimized architecture not found for target model (`model_path`)"
+            )
 
         if draft_arch != target_arch:
-            msg = f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
-            raise ValueError(msg)
+            raise ValueError(
+                f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
+            )
 
         # Validate that their tokenizers are identical.
         draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
@@ -643,8 +675,9 @@ class PipelineConfig(MAXConfig):
 
         # Compare Vocabularies
         if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
-            msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
-            raise ValueError(msg)
+            raise ValueError(
+                f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+            )
 
         # Compare Tokenizer Configuration
         if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
@@ -654,20 +687,24 @@ class PipelineConfig(MAXConfig):
                 draft_tokenizer._tokenizer.__dict__
                 != target_tokenizer._tokenizer.__dict__
             ):
-                msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                )
         else:
             if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
-                msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                )
 
         if self.enable_echo:
-            msg = "enable_echo not currently supported with speculative decoding enabled"
-            raise ValueError(msg)
+            raise ValueError(
+                "enable_echo not currently supported with speculative decoding enabled"
+            )
 
         if self.sampling_config.enable_structured_output:
-            msg = "structured outputs not currently supported with speculative decoding enabled"
-            raise ValueError(msg)
+            raise ValueError(
+                "structured outputs not currently supported with speculative decoding enabled"
+            )
 
         if (
             self.model_config.kv_cache_config.enable_prefix_caching
@@ -696,11 +733,10 @@ class PipelineConfig(MAXConfig):
 
         # If nothing is provided, we should not update any more params.
         if not arch:
-            msg = (
+            raise ValueError(
                 f"MAX-optimized architecture not available for '{model_config.model_path}'. "
                 "Please file a request at https://modul.ar/request to add this model architecture to MAX."
             )
-            raise ValueError(msg)
 
         # Validate required arguments
         if not self.force:
@@ -710,12 +746,11 @@ class PipelineConfig(MAXConfig):
         if self._lora_config and self._lora_config.enable_lora:
             # Check if the architecture is Llama3 (LlamaForCausalLM)
             if arch.name != "LlamaForCausalLM":
-                msg = (
+                raise ValueError(
                     f"LoRA is not currently supported for architecture '{arch.name}'. "
                     f"LoRA support is currently only available for Llama-3.x models (LlamaForCausalLM architecture). "
                     f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
                 )
-                raise ValueError(msg)
 
         # TODO(E2EOPT-28): remove this constraint.
         # Gemma has a MHA head size of 256.
@@ -742,8 +777,9 @@ class PipelineConfig(MAXConfig):
 
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:
-            msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
-            raise ValueError(msg)
+            raise ValueError(
+                f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
+            )
 
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
             supported_encodings=arch.supported_encodings,
@@ -761,7 +797,7 @@ class PipelineConfig(MAXConfig):
         return state
 
     @property
-    def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
+    def graph_quantization_encoding(self) -> QuantizationEncoding | None:
         """Converts the CLI encoding to a MAX graph quantization encoding.
 
         Returns:
@@ -806,7 +842,9 @@ class PipelineConfig(MAXConfig):
             quantization_encoding_str = f"{quantization_encoding_str} (cast from {self.model_config._applied_dtype_cast_from})"
 
         # Helper function to log kvcache config details
-        def _log_kvcache_details(config: KVCacheConfig, indent: str = "    "):
+        def _log_kvcache_details(
+            config: KVCacheConfig, indent: str = "    "
+        ) -> None:
             logger.info(
                 f"{indent}cache_strategy         : {config.cache_strategy}"
             )
@@ -980,6 +1018,7 @@ class PipelineConfig(MAXConfig):
             "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
             "ce_delay_ms": "Duration of scheduler sleep prior to starting a prefill batch. This is an experimental flag solely for the TTS scheduler. Default is 0.0.",
             "enable_prioritize_first_decode": "When enabled, the scheduler will always run a TG batch immediately after a CE batch, with the same requests. This may be useful for decreasing time-to-first-chunk latency. This is an experimental flag solely for the TTS scheduler. Default is false.",
+            "experimental_background_queue": "When enabled, offloads queue draining to a background thread for improved performance. This is an experimental flag. Default is false.",
             "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `prefill-chunk-size`. Default is true.",
             "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Default is false.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is -1 which specifies a default value based on configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding models).",
@@ -996,7 +1035,7 @@ class PipelineConfig(MAXConfig):
         return self._model_config
 
     @property
-    def draft_model_config(self) -> Optional[MAXModelConfig]:
+    def draft_model_config(self) -> MAXModelConfig | None:
         return self._draft_model_config
 
     @property
@@ -1008,7 +1047,7 @@ class PipelineConfig(MAXConfig):
         return self._profiling_config
 
     @property
-    def lora_config(self) -> Optional[LoRAConfig]:
+    def lora_config(self) -> LoRAConfig | None:
         return self._lora_config
 
 

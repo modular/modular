@@ -138,27 +138,27 @@ fn _shuffle_amd_helper[
             dst_lane * 4, bitcast[DType.int32, 1](val)
         )
         return bitcast[dtype, simd_width](result_packed)
-
-    constrained[simd_width == 1, "Unsupported simd width"]()
-
-    @parameter
-    if dtype is DType.bool:
-        return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
-            dtype
-        ]()
-    elif dtype.bit_width() == 16:
-        var val_splatted = SIMD[dtype, 2](val._refine[new_size=1]())
-        return _shuffle_amd_helper(dst_lane, val_splatted)[0]
-    elif dtype.bit_width() == 64:
-        var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
-        var val_half1, val_half2 = val_bitcast.deinterleave()
-        var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
-        var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
-        var result = shuffle1.interleave(shuffle2)
-        return bitcast[dtype, simd_width](result)
     else:
-        constrained[False, "unhandled shuffle dtype"]()
-        return 0
+        constrained[simd_width == 1, "Unsupported simd width"]()
+
+        @parameter
+        if dtype is DType.bool:
+            return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
+                dtype
+            ]()
+        elif dtype.bit_width() == 16:
+            var val_splatted = SIMD[dtype, 2](val._refine[new_size=1]())
+            return _shuffle_amd_helper(dst_lane, val_splatted)[0]
+        elif dtype.bit_width() == 64:
+            var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
+            var val_half1, val_half2 = val_bitcast.deinterleave()
+            var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
+            var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
+            var result = shuffle1.interleave(shuffle2)
+            return bitcast[dtype, simd_width](result)
+        else:
+            constrained[False, "unhandled shuffle dtype"]()
+            return 0
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1187,7 +1187,7 @@ fn broadcast(val: UInt) -> UInt:
 
 
 @always_inline
-fn _vote_nvidia_helper(vote: Bool) -> SIMD[DType.uint32, 1]:
+fn _vote_nvidia_helper(vote: Bool) -> UInt32:
     return llvm_intrinsic[
         "llvm.nvvm.vote.ballot.sync",
         UInt32,

@@ -58,7 +58,7 @@ fn memcpy_or_fuse[
 ) raises:
     @parameter
     if not epilogue_fn:
-        memcpy(dest_data.offset(out_byte_offset), src_data, n)
+        memcpy(dest=dest_data.offset(out_byte_offset), src=src_data, count=n)
     else:
         alias func = epilogue_fn.value()
         alias simd_width = simd_width_of[dtype]()
@@ -675,7 +675,7 @@ fn concat[
             _concat_gpu[dtype, epilogue_fn](
                 # This is safe since `output` being an arg will keep the origin alive
                 # for the duration of this call.
-                output.origin_cast[True, MutableAnyOrigin](),
+                output.as_any_origin(),
                 axis,
                 inputs,
                 context.get_device_context(),
@@ -695,7 +695,7 @@ fn _concat_inner_most_single_dim[
         LayoutTensor[dtype, inputs_layout, MutableAnyOrigin], num_inputs
     ],
 ):
-    var idx = block_idx.x * block_size + thread_idx.x
+    var idx = block_idx.x * UInt(block_size) + thread_idx.x
     var index = _get_start_indices_of_nth_subvolume_uint[1](
         UInt(idx), output.runtime_layout.shape.value
     )
@@ -944,8 +944,8 @@ fn _fused_concat_inner_most_single_dim[
 ):
     alias num_inputs = input_shapes.size
 
-    var idx = block_idx.x * block_size + thread_idx.x
-    if idx >= product(input_shapes[0], rank):
+    var idx = block_idx.x * UInt(block_size) + thread_idx.x
+    if idx >= UInt(product(input_shapes[0], rank)):
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
@@ -1115,6 +1115,6 @@ fn fused_concat[
             return _fused_concat_gpu[rank, dtype, input_fn, output_0_fn](
                 axis,
                 input_shapes,
-                output.origin_cast[True, MutableAnyOrigin](),
+                output.as_any_origin(),
                 ctx.get_device_context(),
             )

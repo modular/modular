@@ -77,21 +77,21 @@ fn moe_create_indices_kernel[
     var num_tokens: Int = Int(topk_ids.runtime_layout.shape[0])
     var num_tokens_padded: Int = Int(indices_padded.runtime_layout.shape[0])
     var num_tokens_per_thread = ceildiv(num_tokens_padded, num_threads)
-    var thd_tok_idx = thread_idx.x * num_tokens_per_thread
+    var thd_tok_idx = thread_idx.x * UInt(num_tokens_per_thread)
 
     # first copy topk_ids to topk_ids_padded and fill indices_padded
     for tok_id in range(num_tokens_per_thread):
-        var i = thd_tok_idx + tok_id
-        if i < num_tokens:
+        var i = thd_tok_idx + UInt(tok_id)
+        if i < UInt(num_tokens):
             indices_padded[i] = i
             topk_ids_padded[i] = rebind[Scalar[input_type]](topk_ids[i])
-        elif i < num_tokens_padded:
+        elif i < UInt(num_tokens_padded):
             indices_padded[i] = Scalar[indices_type].MAX_FINITE
             topk_ids_padded[i] = Scalar[input_type].MAX_FINITE
         else:
             pass
 
-    # use Bitonic sort algorithm
+    # Use Bitonic sort algorithm to sort expert IDs and their corresponding token indices.
     @always_inline
     fn bitonic_sort_step[
         indices_layout: Layout, input_layout: Layout
@@ -107,29 +107,56 @@ fn moe_create_indices_kernel[
         stage: Int,
         i: Int,
     ) -> None:
+        """Perform one step of bitonic sort.
+
+        Bitonic sort works by comparing elements at distance 'step' apart and
+        swapping them based on the direction of the current stage.
+
+        Parameters:
+            indices_layout: Layout of the indices tensor.
+            input_layout: Layout of the input tensor.
+
+        Args:
+            indices: Token indices to be sorted alongside input values.
+            input: Expert IDs to sort.
+            n: Total number of elements.
+            step: Distance between elements to compare.
+            stage: Current stage size (power of 2), determines sort direction.
+            i: Index of the current element.
+        """
         if i >= n:
             return
 
+        # Calculate partner index using XOR - determines the element to compare with
         var partner = i ^ step
 
+        # Compare if partner is greater than current index to avoid redundant comparisons
         if partner > i and partner < n:
             var cmp_val = input[i] > input[partner]
 
-            # Determine if we are in ascending or descending part of bitonic merge.
+            # Determine sort direction for this part of the bitonic sequence
+            # (i & stage) == 0 should be in ascending order
+            # (i & stage) != 0 should be in descending order
             var bitonic_merge_direction = (i & stage) == 0
 
+            # Swap if elements are in wrong order for current direction
             if cmp_val == bitonic_merge_direction:
                 swap(input[i], input[partner])
                 swap(indices[i], indices[partner])
 
+    # Synchronize all threads before starting sort
     barrier()
+
+    # Bitonic sort main loop: build bitonic sequences of increasing sizes
+    # Starting from stage=2 (pairs), double the stage size each iteration
     var stage = 2
-    # Iterate through increasing sequence lengths
     while stage <= num_tokens_padded:
+        # For each stage, perform multiple merge steps
+        # Start with step = stage/2 and halve it each iteration
         var step = stage // 2
         while step > 0:
             for tok_id in range(num_tokens_per_thread):
-                var i = thd_tok_idx + tok_id
+                var i = thd_tok_idx + UInt(tok_id)
                 bitonic_sort_step(
                     indices_padded,
                     topk_ids_padded,
@@ -146,15 +173,15 @@ fn moe_create_indices_kernel[
     var num_experts = Int(expert_start_indices.runtime_layout.shape[0])
     var num_experts_per_thread = ceildiv(num_experts, num_threads)
     for i in range(num_experts_per_thread):
-        var expert_id = thread_idx.x * num_experts_per_thread + i
-        if expert_id < num_experts:
+        var expert_id = thread_idx.x * UInt(num_experts_per_thread) + UInt(i)
+        if expert_id < UInt(num_experts):
             expert_start_indices[expert_id] = Scalar[indices_type].MAX_FINITE
     barrier()
 
     # check if this is the start of a new expert
     for tok_id in range(num_tokens_per_thread):
-        var i = thd_tok_idx + tok_id
-        if i < num_tokens:
+        var i = thd_tok_idx + UInt(tok_id)
+        if i < UInt(num_tokens):
             # copy results back to token_expert_order
             token_expert_order[i] = indices_padded[i]
 
@@ -237,12 +264,18 @@ fn moe_create_indices_bucket_sort_kernel[
     ],
     topk_ids: LayoutTensor[input_type, topk_ids_layout, MutableAnyOrigin],
 ):
-    """
-    The main goal of this kernel is to group tokens that use the same expert together.
-    This allows for efficent batching when used by other kernels such as grouped matmul.
+    """Create indices for MoE routing using bucket sort algorithm.
 
-    topk_ids: a 1D tensor of expert ids, the index of each expert_id cooresponds to a token.
-    For example if topk_ids is [1, 0, 1, 3, 4, 2], then the cooresponding tokens are [0, 1, 2, 3, 4, 5]
+    The main goal of this kernel is to group tokens that use the same expert together.
+    This allows for efficient batching when used by other kernels such as grouped matmul.
+
+    This is a GPU-optimized bucket sort implementation that uses:
+    - Warp-level voting to count matching tokens
+    - Shared memory for temporary storage
+    - Atomic operations for thread-safe global memory updates
+
+    topk_ids: a 1D tensor of expert ids, the index of each expert_id corresponds to a token.
+    For example if topk_ids is [1, 0, 1, 3, 4, 2], then the corresponding tokens are [0, 1, 2, 3, 4, 5]
 
     token_expert_order: a 1D tensor of tokens grouped together by expert id.
     Using the previous topk_ids, the token expert order could be [0, 2, 1, 3, 4, 5]
@@ -272,6 +305,7 @@ fn moe_create_indices_bucket_sort_kernel[
     ]()
     alias mask_type = _uint_type_of_width[num_threads]()
 
+    # Allocate shared memory for temporary storage of matching token indices
     alias SmemVectorType = LayoutTensor[
         DType.uint32,
         Layout.row_major(1, expected_count),
@@ -285,18 +319,20 @@ fn moe_create_indices_bucket_sort_kernel[
     alias token_expert_order_length = token_expert_order.layout.size()
     alias width = simd_width_of[input_type]()
 
-    # each block is responsible for one expert
+    # Each GPU block is responsible for processing one expert
     var expert = block_idx.x
 
     var reads_per_iteration = num_threads * width
     var topk_ids_length = topk_ids.dim(1)
     var topk_ids_length_rounded = align_up(topk_ids_length, reads_per_iteration)
 
+    # Track how many tokens match this expert
     var total_writes: UInt64 = 0
 
-    var start_idx = thread_idx.x * width
+    var start_idx = thread_idx.x * UInt(width)
 
-    # vectorized loads from gmem
+    # Vectorized scan of expert IDs from global memory
+    # Each thread loads 'width' expert IDs and checks which match this block's expert
     for idx in range(start_idx, topk_ids_length_rounded, reads_per_iteration):
         var g_vector: SIMD[input_type, width]
 
@@ -305,6 +341,9 @@ fn moe_create_indices_bucket_sort_kernel[
         else:
             g_vector = SIMD[input_type, width](expert + 1)
 
+        # Use warp-level voting to efficiently count matching tokens
+        # All threads in the warp vote, and we count how many threads
+        # before us also voted true to determine our write offset
         @parameter
         for i in range(width):
             var expert_id = g_vector[i]
@@ -321,22 +360,27 @@ fn moe_create_indices_bucket_sort_kernel[
             var writes = pop_count(mask)
             total_writes += writes
 
+            # Count how many threads with lower IDs also matched
+            # This gives us our write position in shared memory
             var preceding_mask = mask & ((UInt64(1) << thread_idx.x) - 1)
             offset += pop_count(preceding_mask)
 
+            # If this token matches, store its index in shared memory
             if state:
                 smem[0, offset] = idx + i
 
-    # the rest that can't be vectorized are loaded normally from gmem
-    start_idx = (topk_ids_length // width) * width + thread_idx.x
+    # Handle remainder elements that couldn't be vectorized
+    start_idx = UInt((topk_ids_length // width) * width + thread_idx.x)
 
     var expert_id = (
-        topk_ids[0, start_idx] if start_idx < topk_ids_length else expert + 1
+        topk_ids[0, start_idx] if start_idx
+        < UInt(topk_ids_length) else expert + 1
     )
     var state = expert_id == expert
 
     var offset = total_writes
 
+    # Use same warp voting technique for remainder elements
     var mask = UInt64(warp.vote[mask_type](state))
     var writes = pop_count(mask)
     total_writes += writes
@@ -347,31 +391,35 @@ fn moe_create_indices_bucket_sort_kernel[
     if state:
         smem[0, offset] = start_idx
 
-    # copy back to token_expert_order
+    # Copy results from shared memory back to global memory
     if total_writes > 0:
         var expert_idx_and_offsets: UInt32 = 0
 
-        # in order to write back to gmem we need to know the current avilable offset
+        # in order to write back to gmem we need to know the current available offset
         # so we use atomics to get the next available offset
 
         if thread_idx.x == 0:
-            # we atomically update the offset and expert index with one update by adding to the offset using the last 24 bits
-            # and the expert index using the upper 8 bits
+            # Pack expert index (8 bits) and offset (24 bits) into single atomic update
+            # Upper 8 bits: expert counter (which expert slot to use)
+            # Lower 24 bits: offset in token_expert_order array
             expert_idx_and_offsets = Atomic.fetch_add(
                 lock.ptr, UInt32(total_writes) | 0x01000000
             )
 
+        # Broadcast the atomic result to all threads in the warp
         expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
         var expert_idx = expert_idx_and_offsets >> 24
         var g_offset = expert_idx_and_offsets & 0x00FFFFFF
 
-        # add expert_id to expert_ids, this signals this exper is being used
+        # Record which expert is active at this index
+        # this signals this expert is being used
         expert_ids[expert_idx] = expert
 
-        # NOTE: expert_start_indices must be zero initialized otherwise the first offset will not be zero
-        # add starting index for the next expert, to expert_start_indices
+        # Store the ending index for this expert (start of next expert)
+        # NOTE: expert_start_indices must be zero-initialized for this to work correctly
         expert_start_indices[expert_idx + 1] = g_offset + UInt32(total_writes)
 
+        # First expert always starts at index 0
         if expert_idx == 0:
             expert_start_indices[expert_idx] = 0
 
@@ -379,7 +427,7 @@ fn moe_create_indices_bucket_sort_kernel[
             Int(total_writes), reads_per_iteration
         )
 
-        start_idx = thread_idx.x * width
+        start_idx = thread_idx.x * UInt(width)
 
         for smem_idx in range(
             start_idx, total_writes_rounded, reads_per_iteration
@@ -400,7 +448,7 @@ fn moe_create_indices_bucket_sort_kernel[
 
         g_offset += start_idx
 
-        if thread_idx.x < Int(total_writes - start_idx):
+        if thread_idx.x < UInt(Int(total_writes - start_idx)):
             token_expert_order[Int(g_offset + thread_idx.x)] = smem[
                 0, start_idx + thread_idx.x
             ]
@@ -460,7 +508,7 @@ fn moe_create_indices[
             DType.uint32
         ](2).enqueue_fill(0)
         cuda_ctx.enqueue_copy[DType.uint32](
-            rebind[UnsafePointer[Scalar[DType.uint32]]](expert_usage_stats.ptr),
+            rebind[UnsafePointer[UInt32]](expert_usage_stats.ptr),
             expert_usage_stats_host,
         )
 

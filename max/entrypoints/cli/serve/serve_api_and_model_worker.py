@@ -17,7 +17,7 @@
 import logging
 import signal
 import sys
-from typing import Any, Optional
+from typing import Any
 
 import uvloop
 from max.interfaces import PipelineTask
@@ -39,7 +39,7 @@ from uvicorn import Server
 logger = logging.getLogger("max.entrypoints")
 
 # Global reference to server for graceful shutdown
-_server_instance: Optional[Server] = None
+_server_instance: Server | None = None
 
 
 def sigterm_handler(sig: int, frame: Any) -> None:
@@ -69,7 +69,7 @@ def serve_api_server_and_model_worker(
 ) -> None:
     global _server_instance
 
-    override_architecture: Optional[str] = None
+    override_architecture: str | None = None
     # TODO: This is a workaround to support embeddings generation until the
     # changes to tie pipelines to tasks is complete. This will be removed.
     if (

@@ -27,7 +27,6 @@ from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
-from .splitk import warp_specialize_gemm_with_multicasting_splitk
 
 alias MAX_M = Int.MAX
 
@@ -767,6 +766,51 @@ fn matmul_dispatch_sm90_fp8[
 # ===----------------------------------------------------------------------=== #
 # BF16 and FP32 Dispatch
 # ===----------------------------------------------------------------------=== #
+
+
+fn _get_miscellaneous_list[
+    size_factor: Int, mma_k: Int, BK: Int
+]() -> List[TuningConfigSM90]:
+    return List(
+        TuningConfigSM90(
+            M=128,
+            N=1536,
+            K=4096,
+            mma_shape=IndexList[3](64, 32, mma_k),
+            block_tile_shape=Index(64, 32, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=8,
+            num_consumer=1,
+            partitioned_multicast=False,
+            grid_shape=Index(H100.sm_count, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+        ),
+        TuningConfigSM90(
+            M=128,
+            N=4096,
+            K=1536,
+            mma_shape=IndexList[3](64, 32, mma_k),
+            block_tile_shape=Index(128, 32, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=8,
+            num_consumer=2,
+            partitioned_multicast=False,
+            grid_shape=Index(H100.sm_count, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+        ),
+        TuningConfigSM90(
+            M=128,
+            N=1536,
+            K=4608,
+            mma_shape=IndexList[3](64, 32, mma_k),
+            block_tile_shape=Index(64, 32, BK),
+            cluster_shape=Index(1, 1, 1),
+            num_pipeline_stages=8,
+            num_consumer=1,
+            partitioned_multicast=False,
+            schedule=MatmulSchedule.NONE,
+        ),
+    )
 
 
 fn _get_internvl_list[
@@ -2224,8 +2268,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ](
                     block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, BK),
                     cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
-                    num_pipeline_stages=NUM_PIPELINE_STAGES,
-                    num_consumer=NUM_CONSUMER,
+                    num_pipeline_stages=UInt(NUM_PIPELINE_STAGES),
+                    num_consumer=UInt(NUM_CONSUMER),
                     partitioned_multicast=PARTITIONED_MULTICAST,
                     pdl_level=pdl_level,
                     mma_shape=Index(64, WGMMA_N, 16),
@@ -2256,13 +2300,13 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ](
                     block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, BK),
                     cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
-                    num_pipeline_stages=NUM_PIPELINE_STAGES,
-                    num_consumer=NUM_CONSUMER,
+                    num_pipeline_stages=UInt(NUM_PIPELINE_STAGES),
+                    num_consumer=UInt(NUM_CONSUMER),
                     partitioned_multicast=PARTITIONED_MULTICAST,
                     pdl_level=pdl_level,
                     mma_shape=Index(64, WGMMA_N, 16),
                 )
-                warp_specialize_gemm_with_multicasting_splitk[
+                warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -2302,6 +2346,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
     alias gemma_3_27b_list = _get_gemma_3_27b_list[size_factor, mma_k, BK]()
     alias gemma_3_27b_table = Table(gemma_3_27b_list, "gemma_3_27b")
 
+    alias miscellaneous_list = _get_miscellaneous_list[size_factor, mma_k, BK]()
+    alias miscellaneous_table = Table(miscellaneous_list, "miscellaneous")
+
     @parameter
     @always_inline("nodebug")
     fn _dispatch[entry: TuningConfigSM90]() raises:
@@ -2331,11 +2378,13 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ctx,
             )
         else:
-            warp_specialize_gemm_with_multicasting_splitk[
+            warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
+                schedule = entry.schedule,
+                grid_shape = entry.grid_shape,
                 splits = entry.splits.value(),
                 raster_order = entry.raster_order.value(),
             ](
@@ -2384,6 +2433,16 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @always_inline
     fn rule_eq_nk(x: TuningConfigSM90) -> Bool:
         return x.K == static_K and x.N == static_N
+
+    @parameter
+    if a_is_bfloat16_or_float32 and (
+        (static_N == 1536 and static_K == 4096)
+        or (static_N == 4096 and static_K == 1536)
+        or (static_N == 1536 and static_K == 4608)
+    ):
+        alias nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
+        if _search[miscellaneous_table, domain=nk_idx_list]() == DISPATCH_HIT:
+            return DISPATCH_HIT
 
     # Internvl 2xH100 shapes
     @parameter

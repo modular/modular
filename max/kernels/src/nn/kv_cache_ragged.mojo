@@ -30,6 +30,7 @@ from kv_cache.types import (
 from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
+from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
@@ -585,7 +586,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
 
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
@@ -729,7 +738,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
 
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
@@ -901,7 +918,15 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
 
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
@@ -1019,6 +1044,44 @@ fn _qmatmul_common[
     ](c_nd, hidden_state, weight, context)
 
 
+@always_inline
+fn _matmul_blockwise_scaled_fp8_common[
+    output_dtype: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType, //,
+    *,
+    target: StaticString,
+    scales_granularity_mnk: IndexList[3],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    hidden_state: NDBuffer[a_type, 2, *_],
+    weight: NDBuffer[b_type, 2, _, _],
+    input_scale: NDBuffer[a_scales_type, 2, _, _],
+    weight_scale: NDBuffer[b_scales_type, 2, _, _],
+    context: DeviceContext,
+) raises:
+    constrained[
+        is_gpu[target](), "Blockwise scaled fp8 matmul only works on GPU."
+    ]()
+
+    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
+    alias N = weight.shape.get[0]()
+    var c_nd: NDBuffer[output_dtype, 2, MutableAnyOrigin, DimList(Dim(), N)]
+
+    c_nd = {
+        UnsafePointer[Scalar[output_dtype]](),
+        IndexList[2](TOTAL_SEQ_LEN, N),
+    }
+
+    naive_blockwise_scaled_fp8_matmul[
+        transpose_b=True,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        scales_granularity_mnk=scales_granularity_mnk,
+    ](c_nd, hidden_state, weight, input_scale, weight_scale, context)
+
+
 # ===-----------------------------------------------------------------------===#
 # Unfused KV cache matmul (ragged)
 # ===-----------------------------------------------------------------------===#
@@ -1026,8 +1089,7 @@ fn _qmatmul_common[
 
 fn kv_matmul_ragged_paged[
     dtype: DType,
-    num_heads: Int,
-    head_dim: Int,
+    params: KVCacheStaticParams,
     page_size: Int, //,
     target: StaticString,
 ](
@@ -1036,9 +1098,7 @@ fn kv_matmul_ragged_paged[
     weight: NDBuffer[dtype, 2, _, _],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        params,
         page_size,
     ],
     layer_idx: UInt32,
@@ -1192,7 +1252,15 @@ fn _matmul_kv_cache_ragged_impl[
         global_token_idx = idx[0]
 
         batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -1239,8 +1307,7 @@ fn _matmul_kv_cache_ragged_impl[
 
 fn k_matmul_ragged_paged[
     dtype: DType,
-    num_heads: Int,
-    head_dim: Int,
+    params: KVCacheStaticParams,
     page_size: Int, //,
     target: StaticString,
 ](
@@ -1249,9 +1316,7 @@ fn k_matmul_ragged_paged[
     weight: NDBuffer[dtype, 2, *_],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        params,
         page_size,
     ],
     layer_idx: UInt32,
@@ -1391,7 +1456,15 @@ fn _matmul_k_cache_ragged_impl[
         global_token_idx = idx[0]
 
         batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -1412,6 +1485,179 @@ fn _matmul_k_cache_ragged_impl[
     )
 
 
+fn k_matmul_ragged_paged_scale[
+    dtype: DType,
+    weight_dtype: DType,
+    scale_dtype: DType,
+    target: StaticString,
+    scales_granularity_mnk: IndexList[3],
+](
+    hidden_state: NDBuffer[dtype, 2, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[weight_dtype, 2, _, _],
+    input_scale: NDBuffer[scale_dtype, 2, _, _],
+    weight_scale: NDBuffer[scale_dtype, 2, _, _],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    ctx: DeviceContextPtr,
+) raises:
+    """Performs a matmul, writing the output into a mutable
+    PagedKVCacheCollection object.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        input_scale: Scale to be multiplied to the input Tensor.
+        weight_scale: Scale to be multiplied to the weight Tensor.
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("hidden_state", hidden_state),
+            trace_arg("weight", weight),
+            trace_arg("input_scale", input_scale),
+            trace_arg("weight_scale", weight_scale),
+            "layer_idx=" + String(layer_idx),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.k_matmul.ragged.paged.scale.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
+    ):
+        constrained[
+            is_gpu[target](), "Blockwise scaled fp8 matmul only works on GPU."
+        ]()
+        var layer_idx_cast = Int(layer_idx)
+        var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+
+        return _matmul_k_cache_ragged_scale_impl[
+            target=target,
+            scales_granularity_mnk=scales_granularity_mnk,
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            input_scale,
+            weight_scale,
+            k_cache,
+            ctx.get_device_context(),
+        )
+
+
+@always_inline
+fn _matmul_k_cache_ragged_scale_impl[
+    dtype: DType,
+    weight_dtype: DType,
+    scale_dtype: DType, //,
+    cache_t: KVCacheT,
+    *,
+    target: StaticString,
+    scales_granularity_mnk: IndexList[3],
+](
+    hidden_state: NDBuffer[dtype, 2, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, _, _],
+    weight: NDBuffer[weight_dtype, 2, _, _],
+    input_scale: NDBuffer[scale_dtype, 2, _, _],
+    weight_scale: NDBuffer[scale_dtype, 2, _, _],
+    k_cache: cache_t,
+    ctx: DeviceContext,
+) raises:
+    """Helper for performing matmul with custom KVCacheT dtypes.
+
+    Currently assumes block size scaling.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size)
+        input_scale: Scale to be multiplied to the input Tensor.
+        weight_scale: Scale to be multiplied to the weight Tensor.
+        k_cache: The historical KVCacheT for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        ctx: Pointer containing the runtime context for the target device.
+    """
+    if hidden_state.num_elements() == 0:
+        # Nothing to do.
+        return
+
+    alias kv_params = cache_t.kv_params
+    alias N: UInt = UInt(weight.shape.get[0]())
+    alias K: UInt = UInt(weight.shape.get[1]())
+
+    var batch_size = input_row_offsets.dim[0]() - 1
+
+    @parameter
+    @__copy_capture(input_scale, weight_scale, batch_size)
+    @always_inline
+    fn write_to_cache[
+        dtype: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype, width],):
+        alias kv_type = cache_t.dtype
+
+        constrained[
+            kv_type == dtype,
+            "Mismatch in dtype between hidden state and KV tensors",
+        ]()
+
+        # Token index in the "ragged" combined sequence dimension.
+        var global_token_idx = idx[0]
+
+        var batch_idx = get_batch_from_row_offsets(
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
+        )
+        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+
+        var h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+
+        var cache_length = k_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+        k_cache.store(
+            batch_idx,
+            h_idx,
+            cache_token_idx,
+            hd_idx,
+            rebind[SIMD[kv_type, width]](val),
+        )
+
+    constrained[
+        weight_dtype == dtype,
+        "Mismatch in dtype between weight and QKV tensors",
+    ]()
+    var new_weight = rebind[
+        NDBuffer[
+            dtype, weight.rank, weight.origin, weight.shape, weight.strides
+        ]
+    ](weight)
+    _matmul_blockwise_scaled_fp8_common[
+        output_dtype = cache_t.dtype,
+        target=target,
+        elementwise_lambda_fn=write_to_cache,
+        scales_granularity_mnk=scales_granularity_mnk,
+    ](hidden_state, new_weight, input_scale, weight_scale, ctx)
+
+
 # ===-----------------------------------------------------------------------===#
 # Unfused gguf quantized QKV cache matmul (ragged)
 # ===-----------------------------------------------------------------------===#
@@ -1419,8 +1665,7 @@ fn _matmul_k_cache_ragged_impl[
 
 fn unfused_qkv_matmul_ragged_paged_gguf_quantized[
     dtype: DType,
-    num_heads: Int,
-    head_dim: Int,
+    params: KVCacheStaticParams,
     page_size: Int, //,
     quantization_encoding_q: StaticString,
     quantization_encoding_k: StaticString,
@@ -1433,9 +1678,7 @@ fn unfused_qkv_matmul_ragged_paged_gguf_quantized[
     v_weight: NDBuffer[DType.uint8, 2, _, _],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        params,
         page_size,
     ],
     layer_idx: UInt32,
@@ -1637,7 +1880,15 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
         global_token_idx = idx[0]
 
         batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, global_token_idx
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            global_token_idx,
         )
         token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
@@ -1685,7 +1936,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
     # The CPU matmul codepath uses the C buffer as a workspace
     # even if an epilogue is provided, here we just allocate
     # something to ensure we don't segfault.
-    var c_ptr = UnsafePointer[Scalar[DType.float32]].alloc(TOTAL_SEQ_LEN * N)
+    var c_ptr = UnsafePointer[Float32].alloc(TOTAL_SEQ_LEN * N)
 
     c_nd = {c_ptr, IndexList[2](TOTAL_SEQ_LEN, N)}
 
@@ -1789,28 +2040,101 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged[
                 target=target,
                 mrope_section=mrope_section,
             ](
-                q_proj,
-                input_row_offsets,
+                LayoutTensor[
+                    q_proj.dtype, Layout.row_major[q_proj.rank](q_proj.shape)
+                ](
+                    q_proj.data,
+                    RuntimeLayout[
+                        Layout.row_major[q_proj.rank](q_proj.shape)
+                    ].row_major(q_proj.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    input_row_offsets.dtype,
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    ),
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[input_row_offsets.rank](
+                            input_row_offsets.shape
+                        )
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
                 kv_collection,
-                freqs_cis,
-                OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
-                    position_ids
+                LayoutTensor[
+                    freqs_cis.type,
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+                ](
+                    freqs_cis.data,
+                    RuntimeLayout[
+                        Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                    ].row_major(freqs_cis.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    position_ids.dtype, Layout.row_major[2](), MutableAnyOrigin
+                ](
+                    position_ids.data,
+                    RuntimeLayout[Layout.row_major[2]()].row_major(
+                        position_ids.get_shape().canonicalize()
+                    ),
                 ),
                 layer_idx,
-                output,
+                LayoutTensor[
+                    output.dtype, Layout.row_major[output.rank](output.shape)
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout.row_major[output.rank](output.shape)
+                    ].row_major(output.get_shape().canonicalize()),
+                ),
                 dev_ctx,
             )
         else:
             fused_qk_rope_ragged[
                 kv_collection.CacheType, interleaved=interleaved, target=target
             ](
-                q_proj,
-                input_row_offsets,
+                LayoutTensor[
+                    q_proj.dtype, Layout.row_major[q_proj.rank](q_proj.shape)
+                ](
+                    q_proj.data,
+                    RuntimeLayout[
+                        Layout.row_major[q_proj.rank](q_proj.shape)
+                    ].row_major(q_proj.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    input_row_offsets.dtype,
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    ),
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[input_row_offsets.rank](
+                            input_row_offsets.shape
+                        )
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
                 kv_collection,
-                freqs_cis,
+                LayoutTensor[
+                    freqs_cis.type,
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+                ](
+                    freqs_cis.data,
+                    RuntimeLayout[
+                        Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                    ].row_major(freqs_cis.get_shape().canonicalize()),
+                ),
                 None,
                 layer_idx,
-                output,
+                LayoutTensor[
+                    output.dtype, Layout.row_major[output.rank](output.shape)
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout.row_major[output.rank](output.shape)
+                    ].row_major(output.get_shape().canonicalize()),
+                ),
                 dev_ctx,
             )
 
@@ -1881,28 +2205,101 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
                 target=target,
                 mrope_section=mrope_section,
             ](
-                q_proj,
-                input_row_offsets,
+                LayoutTensor[
+                    q_proj.dtype, Layout.row_major[q_proj.rank](q_proj.shape)
+                ](
+                    q_proj.data,
+                    RuntimeLayout[
+                        Layout.row_major[q_proj.rank](q_proj.shape)
+                    ].row_major(q_proj.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    input_row_offsets.dtype,
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    ),
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[input_row_offsets.rank](
+                            input_row_offsets.shape
+                        )
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
                 kv_collection,
-                freqs_cis,
-                OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]](
-                    position_ids
+                LayoutTensor[
+                    freqs_cis.type,
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+                ](
+                    freqs_cis.data,
+                    RuntimeLayout[
+                        Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                    ].row_major(freqs_cis.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    position_ids.dtype, Layout.row_major[2](), MutableAnyOrigin
+                ](
+                    position_ids.data,
+                    RuntimeLayout[Layout.row_major[2]()].row_major(
+                        position_ids.get_shape().canonicalize()
+                    ),
                 ),
                 layer_idx,
-                output,
+                LayoutTensor[
+                    output.dtype, Layout.row_major[output.rank](output.shape)
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout.row_major[output.rank](output.shape)
+                    ].row_major(output.get_shape().canonicalize()),
+                ),
                 dev_ctx,
             )
         else:
             fused_qk_rope_ragged[
                 kv_collection.CacheType, interleaved=interleaved, target=target
             ](
-                q_proj,
-                input_row_offsets,
+                LayoutTensor[
+                    q_proj.dtype, Layout.row_major[q_proj.rank](q_proj.shape)
+                ](
+                    q_proj.data,
+                    RuntimeLayout[
+                        Layout.row_major[q_proj.rank](q_proj.shape)
+                    ].row_major(q_proj.get_shape().canonicalize()),
+                ),
+                LayoutTensor[
+                    input_row_offsets.dtype,
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    ),
+                ](
+                    input_row_offsets.data,
+                    RuntimeLayout[
+                        Layout.row_major[input_row_offsets.rank](
+                            input_row_offsets.shape
+                        )
+                    ].row_major(input_row_offsets.get_shape().canonicalize()),
+                ),
                 kv_collection,
-                freqs_cis,
+                LayoutTensor[
+                    freqs_cis.type,
+                    Layout.row_major[freqs_cis.rank](freqs_cis.shape),
+                ](
+                    freqs_cis.data,
+                    RuntimeLayout[
+                        Layout.row_major[freqs_cis.rank](freqs_cis.shape)
+                    ].row_major(freqs_cis.get_shape().canonicalize()),
+                ),
                 None,
                 layer_idx,
-                output,
+                LayoutTensor[
+                    output.dtype, Layout.row_major[output.rank](output.shape)
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout.row_major[output.rank](output.shape)
+                    ].row_major(output.get_shape().canonicalize()),
+                ),
                 dev_ctx,
             )
 
@@ -2007,27 +2404,28 @@ fn _flash_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
+            var sink_weights_lt: OptionalReg[
+                LayoutTensor[
+                    dtype,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ]
+            ] = None
+            if sink_weights:
+                var sw = sink_weights.value()
+                sink_weights_lt = sink_weights_lt.T(
+                    sw.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(sw))
+                    ),
+                )
+
             @parameter
             if is_cpu[target]():
                 alias q_layout = Layout.row_major[q.rank](q.shape)
                 alias output_layout = Layout.row_major[output.rank](
                     output.shape
                 )
-                var sink_weights_lt: OptionalReg[
-                    LayoutTensor[
-                        dtype,
-                        Layout.row_major(UNKNOWN_VALUE),
-                        MutableAnyOrigin,
-                    ]
-                ] = None
-                if sink_weights:
-                    var sw = sink_weights.value()
-                    sink_weights_lt = sink_weights_lt.T(
-                        sw.data,
-                        RuntimeLayout[
-                            Layout.row_major(UNKNOWN_VALUE)
-                        ].row_major(IndexList[1](len(sw))),
-                    )
                 return flash_attention_kv_cache_cpu(
                     LayoutTensor[q.type, q_layout](
                         q.data,
@@ -2056,8 +2454,34 @@ fn _flash_attention_dispatch[
                 gpu_flash_attention[
                     use_score_mod=use_score_mod, ragged=True, sink=sink
                 ](
-                    output,
-                    q,
+                    LayoutTensor[
+                        output.type,
+                        Layout(
+                            IntTuple(output.shape), IntTuple(output.strides)
+                        ),
+                    ](
+                        output.data,
+                        RuntimeLayout[
+                            Layout(
+                                IntTuple(output.shape), IntTuple(output.strides)
+                            )
+                        ](
+                            output.get_shape().canonicalize(),
+                            output.get_strides().canonicalize(),
+                        ),
+                    ),
+                    LayoutTensor[
+                        q.type,
+                        Layout(IntTuple(q.shape), IntTuple(q.strides)),
+                    ](
+                        q.data,
+                        RuntimeLayout[
+                            Layout(IntTuple(q.shape), IntTuple(q.strides))
+                        ](
+                            q.get_shape().canonicalize(),
+                            q.get_strides().canonicalize(),
+                        ),
+                    ),
                     k,
                     v,
                     mask,
@@ -2065,7 +2489,7 @@ fn _flash_attention_dispatch[
                     input_row_offsets,
                     scale,
                     context.get_device_context(),
-                    sink_weights=sink_weights,
+                    sink_weights=sink_weights_lt,
                 )
 
         unswitch[call_flash_attention](Bool(sink_weights))
@@ -2230,7 +2654,7 @@ fn _flare_mla_decode_kv_cache_ragged[
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        scale: The scaled factor in scaled-dot product attention. Usually rsqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
         context: Pointer containing the runtime context for the target device.
@@ -2390,7 +2814,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
-        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        scale: The scaled factor in scaled-dot product attention. Usually rsqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (total_seq_len, num_heads, kv_head_size).
         softmax_info: NDBuffer with shape (total_seq_len, num_heads, 2).
@@ -2632,8 +3056,30 @@ fn _cross_attention_dispatch[
             gpu_flash_attention[
                 use_score_mod=use_score_mod, ragged=True, sink=False
             ](
-                output,
-                q,
+                LayoutTensor[
+                    output.type,
+                    Layout(IntTuple(output.shape), IntTuple(output.strides)),
+                ](
+                    output.data,
+                    RuntimeLayout[
+                        Layout(IntTuple(output.shape), IntTuple(output.strides))
+                    ](
+                        output.get_shape().canonicalize(),
+                        output.get_strides().canonicalize(),
+                    ),
+                ),
+                LayoutTensor[
+                    q.type,
+                    Layout(IntTuple(q.shape), IntTuple(q.strides)),
+                ](
+                    q.data,
+                    RuntimeLayout[
+                        Layout(IntTuple(q.shape), IntTuple(q.strides))
+                    ](
+                        q.get_shape().canonicalize(),
+                        q.get_strides().canonicalize(),
+                    ),
+                ),
                 k,
                 v,
                 mask,
@@ -2642,8 +3088,15 @@ fn _cross_attention_dispatch[
                 scale,
                 context.get_device_context(),
                 Int(q_max_seq_len),
-                OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-                    kv_input_row_offsets
+                LayoutTensor[
+                    kv_input_row_offsets.type,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ](
+                    kv_input_row_offsets.data,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        IndexList[1](len(kv_input_row_offsets))
+                    ),
                 ),
                 None,
             )
@@ -2781,7 +3234,15 @@ fn generic_kv_cache_radd_dispatch[
         # we could be slicing the batch, so we need to add the offset to get the actual index in the flattened batch
         var corrected_token_idx = idx[0] + input_row_offsets[0]
         var batch_idx = get_batch_from_row_offsets(
-            input_row_offsets, Int(corrected_token_idx)
+            LayoutTensor[
+                DType.uint32, Layout.row_major[1](input_row_offsets.shape)
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[1](input_row_offsets.shape)
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            Int(corrected_token_idx),
         )
 
         # we also need to add the batch offset to get the actual index in the flattened batch
@@ -2836,7 +3297,8 @@ fn generic_kv_cache_radd_dispatch[
 
 
 fn kv_cache_store_ragged[
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    input_row_offsets_layout: Layout, //,
     target: StaticString,
     input_fn: fn[width: Int, alignment: Int] (
         idx: IndexList[3]
@@ -2844,11 +3306,21 @@ fn kv_cache_store_ragged[
 ](
     cache: cache_t,
     input_shape: IndexList[3],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, input_row_offsets_layout, MutableAnyOrigin
+    ],
     context: Optional[DeviceContext],
 ) raises:
+    constrained[
+        input_row_offsets.layout.rank() == 1,
+        (
+            "Expected input_row_offsets to be a 1D tensor of shape `(batch_size"
+            " + 1,)`"
+        ),
+    ]()
+
     @parameter
-    @__copy_capture(input_row_offsets, cache)
+    @__copy_capture(cache)
     fn write_to_cache[
         width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
@@ -2857,10 +3329,10 @@ fn kv_cache_store_ragged[
         )
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, idx[0])
         var token_idx = Int(idx[0] - input_row_offsets[batch_idx])
-        var h_idx, hd_idx = divmod(UInt(idx[1]), cache_t.kv_params.head_size)
+        var h_idx = idx[1]
+        var hd_idx = idx[2]
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
-
         cache.store(
             batch_idx,
             h_idx,

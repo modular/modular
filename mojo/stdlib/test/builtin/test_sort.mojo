@@ -23,7 +23,7 @@ from builtin.sort import (
     _stable_sort,
 )
 from test_utils import CopyCounter
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 fn random_numbers[
@@ -106,7 +106,7 @@ fn test_sort_small_5() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort0():
+def test_sort0():
     var list = List[Int]()
 
     sort(list)
@@ -682,36 +682,11 @@ def test_ensure_no_copies():
     verify_list(list)
 
 
-def main():
-    test_sort_small_3()
-    test_sort_small_5()
-    test_sort0()
-    test_sort2()
-    test_sort3()
-    test_sort3_dupe_elements()
-    test_sort4()
-    test_sort5()
-    test_sort_reverse()
-    test_sort_semi_random()
-    test_sort9()
-    test_sort103()
-    test_sort_any_103()
-    test_quick_sort_repeated_val()
-
-    test_sort_stress()
-    test_stable_sort_stress()
-
-    test_sort_custom()
-
+def test_partition():
     test_partition_top_k(7, 5)
     test_partition_top_k(11, 2)
     test_partition_top_k(4, 1)
 
-    test_sort_string_small_list()
-    test_sort_string_big_list()
-    test_sort_strings()
-    test_sort_comparamble_elements_list()
-    test_sort_empty_comparable_elements_list()
 
-    test_sort_scalar()
-    test_ensure_no_copies()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

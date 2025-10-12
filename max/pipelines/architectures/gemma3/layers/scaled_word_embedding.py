@@ -14,7 +14,6 @@
 """Scaled Word Embedding."""
 
 from collections.abc import Iterable
-from typing import Optional
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
@@ -34,8 +33,8 @@ class ScaledWordEmbedding(VocabParallelEmbedding):
         hidden_dim: int,
         dtype: DType,
         devices: list[DeviceRef],
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        name: Optional[str] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        name: str | None = None,
         embed_scale: float = 1.0,
     ) -> None:
         """Initializes the embedding layer with the given arguments.

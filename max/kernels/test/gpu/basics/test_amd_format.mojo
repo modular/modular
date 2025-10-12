@@ -33,7 +33,11 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         if len_bytes == 0:
             return
         # Continue writing to buffer
-        memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
+        memcpy(
+            dest=self.data.unsafe_ptr() + self.pos,
+            src=bytes.unsafe_ptr(),
+            count=len_bytes,
+        )
         self.pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):

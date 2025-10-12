@@ -159,5 +159,5 @@ fn test_conv1d_register_tiling() raises:
     assert_equal(SIMD[type, simd_size](0), actual)
 
 
-fn main() raises:
+def main():
     test_conv1d_register_tiling()

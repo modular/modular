@@ -12,7 +12,6 @@ _WHEELS = [
 ]
 
 PYTHON_VERSIONS = [
-    "39",
     "310",
     "311",
     "312",
@@ -116,8 +115,8 @@ pycross_wheel_library(
 
 py_binary(
     name = "mblack",
-    srcs = ["@@//bazel/lint:mblack-wrapper.py"],
-    main = "@@//bazel/lint:mblack-wrapper.py",
+    srcs = ["@@//bazel:mblack-main.py"],
+    main = "@@//bazel:mblack-main.py",
     visibility = ["//visibility:public"],
     deps = [
         ":mblack-lib",

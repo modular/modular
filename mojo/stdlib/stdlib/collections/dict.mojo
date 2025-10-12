@@ -268,8 +268,8 @@ struct _DictValueIter[
         ref entry_ref = self.iter.__next_ref__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
-        return UnsafePointer(to=entry_ref.value).origin_cast[
-            target_origin = MutableOrigin.cast_from[origin]
+        return UnsafePointer(to=entry_ref.value).unsafe_origin_cast[
+            MutableOrigin.cast_from[origin]
         ]()[]
 
     @always_inline
@@ -367,19 +367,19 @@ struct _DictIndex(Movable):
         if reserved <= 128:
             var data = self.data.bitcast[Int8]()
             var new_data = index.data.bitcast[Int8]()
-            memcpy(new_data, data, reserved)
+            memcpy(dest=new_data, src=data, count=reserved)
         elif reserved <= 2**16 - 2:
             var data = self.data.bitcast[Int16]()
             var new_data = index.data.bitcast[Int16]()
-            memcpy(new_data, data, reserved)
+            memcpy(dest=new_data, src=data, count=reserved)
         elif reserved <= 2**32 - 2:
             var data = self.data.bitcast[Int32]()
             var new_data = index.data.bitcast[Int32]()
-            memcpy(new_data, data, reserved)
+            memcpy(dest=new_data, src=data, count=reserved)
         else:
             var data = self.data.bitcast[Int64]()
             var new_data = index.data.bitcast[Int64]()
-            memcpy(new_data, data, reserved)
+            memcpy(dest=new_data, src=data, count=reserved)
         return index^
 
     fn get_index(self, reserved: Int, slot: UInt64) -> Int:

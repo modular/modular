@@ -113,8 +113,9 @@ class MemoryEstimator:
 
         if is_draft_model:
             if not model_config.quantization_encoding:
-                msg = "quantization_encoding must be provided for draft model"
-                raise ValueError(msg)
+                raise ValueError(
+                    "quantization_encoding must be provided for draft model"
+                )
 
             kv_cache_size = self._calculate_kv_cache_size(
                 pipeline_model,
@@ -136,8 +137,9 @@ class MemoryEstimator:
             )
 
         if not model_config.quantization_encoding:
-            msg = "quantization_encoding must be provided in pipeline_config"
-            raise ValueError(msg)
+            raise ValueError(
+                "quantization_encoding must be provided in pipeline_config"
+            )
 
         if not user_provided_max_batch_size:
             pipeline_config.max_batch_size = self._infer_optimal_batch_size(
@@ -203,7 +205,7 @@ class MemoryEstimator:
 
         vram_usage_limit_scale = 0.95
 
-        if isinstance(free_memory, (int, float)):
+        if isinstance(free_memory, int | float):
             if int(total_size) > int(free_memory):
                 self._raise_oom_error(
                     pipeline_config,
@@ -250,8 +252,9 @@ class MemoryEstimator:
 
         model_config = pipeline_config.model_config
         if not model_config.quantization_encoding:
-            msg = "quantization_encoding must be provided in pipeline_config"
-            raise ValueError(msg)
+            raise ValueError(
+                "quantization_encoding must be provided in pipeline_config"
+            )
 
         while not found_valid_max_length:
             inferred_max_length = (lower + upper) // 2
@@ -328,10 +331,9 @@ class MemoryEstimator:
             pipeline_config.max_batch_size = inferred_max_batch_size
 
             if not model_config.quantization_encoding:
-                msg = (
+                raise ValueError(
                     "quantization_encoding must be provided in pipeline_config"
                 )
-                raise ValueError(msg)
 
             kv_cache_size = self._calculate_kv_cache_size(
                 pipeline_model,

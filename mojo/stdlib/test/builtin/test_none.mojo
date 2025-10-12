@@ -11,14 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
-
-
-def main():
-    test_str()
-    test_repr()
-    test_format_to()
-    test_type_from_none()
+from testing import assert_equal, TestSuite
 
 
 def test_str():
@@ -71,3 +64,7 @@ def test_type_from_none():
     #
     #   But, interestingly, this does not fail?
     var _obj2: FromNone = None
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

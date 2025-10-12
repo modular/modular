@@ -526,7 +526,7 @@ Arguments](https://peps.python.org/pep-3102/).
 ## Overloaded functions
 
 All function declarations must specify argument types, so if you want a
-want a function to work with different data types, you need to implement
+function to work with different data types, you need to implement
 separate versions of the function that each specify different argument types.
 This is called "overloading" a function.
 
@@ -578,7 +578,7 @@ fn foo(name: MyString):
     print("MyString")
 
 fn call_foo():
-    alias string: StringLiteral = "Hello"
+    alias string = "Hello"
     # foo(string) # error: ambiguous call to 'foo' ... This call is ambiguous because two `foo` functions match it
     foo(MyString(string))
 ```

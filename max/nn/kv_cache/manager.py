@@ -17,10 +17,9 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, TypeVar, overload
+from typing import Any, TypeGuard, TypeVar, overload
 
 from max.driver import Tensor
-from typing_extensions import TypeGuard
 
 _T = TypeVar("_T")
 

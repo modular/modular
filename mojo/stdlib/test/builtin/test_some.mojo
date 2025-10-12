@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 @fieldwise_init
@@ -66,7 +66,4 @@ def test_closure():
 
 
 def main():
-    test_some_arg()
-    test_some_param()
-    test_some_return()
-    test_closure()
+    TestSuite.discover_tests[__functions_in_module()]().run()

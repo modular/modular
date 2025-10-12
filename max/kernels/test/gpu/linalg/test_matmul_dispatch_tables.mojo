@@ -17,6 +17,6 @@ from linalg.matmul.gpu.sm90.dispatch import (
 )
 
 
-fn main() raises:
+def main():
     constrained[llama_8b_fp8_table.check()]()
     constrained[llama_405b_fp8_table.check()]()

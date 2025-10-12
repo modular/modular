@@ -5,10 +5,10 @@ package(default_visibility = ["//visibility:public"])
 mojo_library(
     name = "shmem",
     srcs = glob(["**/*.mojo"]),
-    additional_compiler_inputs = ["@libnvshmem_device_bc"],
+    additional_compiler_inputs = ["@nvshmem_prebuilt//:device"],
     copts = [
         "--bitcode-libs",
-        "$(location @libnvshmem_device_bc)",
+        "$(location @nvshmem_prebuilt//:device)",
     ],
     visibility = ["//visibility:public"],
     deps = [

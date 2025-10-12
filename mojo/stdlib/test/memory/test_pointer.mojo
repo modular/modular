@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_equal, assert_not_equal, assert_true
 
 
@@ -74,12 +74,4 @@ def test_get_immutable() -> Int:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_copy_reference_explicitly]()
-    suite.test[test_equality]()
-    suite.test[test_str]()
-    suite.test[test_pointer_to]()
-    suite.test[test_merge]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

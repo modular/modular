@@ -19,14 +19,16 @@ import os
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from huggingface_hub import constants as hf_hub_constants
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
+from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
+from transformers.generation import GenerationConfig
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
 from .hf_utils import (
@@ -84,14 +86,14 @@ class MAXModelConfig(MAXModelConfigBase):
     See post_init for more details on how this is done.
     """
 
-    served_model_name: Optional[str] = None
+    served_model_name: str | None = None
     """Optional override for client-facing model name. Defaults to model_path."""
 
     weight_path: list[Path] = field(default_factory=list)
     """Optional path or url of the model weights to use."""
 
     # TODO(zheng): Move this under QuantizationConfig.
-    quantization_encoding: Optional[SupportedEncoding] = None
+    quantization_encoding: SupportedEncoding | None = None
     """Weight encoding type."""
 
     allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = False
@@ -119,7 +121,7 @@ class MAXModelConfig(MAXModelConfigBase):
     vision_config_overrides: dict[str, Any] = field(default_factory=dict)
     """Model-specific vision configuration overrides. For example, for InternVL: {"max_dynamic_patch": 24}"""
 
-    rope_type: Optional[RopeType] = None
+    rope_type: RopeType | None = None
     """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
     use_subgraphs: bool = True
@@ -129,21 +131,21 @@ class MAXModelConfig(MAXModelConfigBase):
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
 
-    _applied_dtype_cast_from: Optional[SupportedEncoding] = None
+    _applied_dtype_cast_from: SupportedEncoding | None = None
     """Property to track the dtype that safetensor weights were casted from. None means no casting was applied. This should only be set by internal code."""
 
-    _applied_dtype_cast_to: Optional[SupportedEncoding] = None
+    _applied_dtype_cast_to: SupportedEncoding | None = None
     """Property to track the dtype that safetensor weights were casted to. None means no casting was applied. This should only be set by internal code."""
 
-    _huggingface_config: Optional[AutoConfig] = None
+    _huggingface_config: AutoConfig | None = None
     """Hugging Face config. This should only be set by internal code."""
 
-    _weights_repo_id: Optional[str] = None
+    _weights_repo_id: str | None = None
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
     # TODO(zheng): Refactor QuantizationConfig to be a MAXConfig subclass that
     # also autopopulates default values.
-    _quant_config: Optional[QuantizationConfig] = None
+    _quant_config: QuantizationConfig | None = None
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
 
     _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
@@ -196,9 +198,10 @@ class MAXModelConfig(MAXModelConfigBase):
         # Validate that the device_specs provided are available
         if not devices_exist(self.device_specs):
             available_devices = scan_available_devices()
-            msg = f"device specs provided ({self.device_specs}) do not exist."
-            msg += f"\navailable devices: {available_devices}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"device specs provided ({self.device_specs}) do not exist.\n"
+                f"available devices: {available_devices}"
+            )
 
         self.weight_path, self._weights_repo_id = WeightPathParser.parse(
             self.model_path, self.weight_path
@@ -234,7 +237,7 @@ class MAXModelConfig(MAXModelConfigBase):
         return self.model_path
 
     @property
-    def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
+    def graph_quantization_encoding(self) -> QuantizationEncoding | None:
         """Converts the CLI encoding to a MAX Graph quantization encoding.
 
         Returns:
@@ -353,6 +356,49 @@ class MAXModelConfig(MAXModelConfigBase):
                 )
             )
         return self._huggingface_config
+
+    @cached_property
+    def generation_config(self) -> GenerationConfig:
+        """Retrieve the HuggingFace GenerationConfig for this model.
+
+        This property lazily loads the GenerationConfig from the model repository
+        and caches it to avoid repeated remote fetches.
+
+        Returns:
+            The GenerationConfig for the model, containing generation parameters
+            like max_length, temperature, top_p, etc. If loading fails, returns
+            a default GenerationConfig.
+        """
+        try:
+            return GenerationConfig.from_pretrained(
+                self.huggingface_model_repo.repo_id,
+                trust_remote_code=self.huggingface_model_repo.trust_remote_code,
+                revision=self.huggingface_model_repo.revision,
+            )
+        except Exception as e:
+            # This has no material unexpected impact on the user, so we log at debug.
+            logger.debug(
+                f"Failed to load generation_config from {self.model_name}: {e}. "
+                "Using default GenerationConfig."
+            )
+            return GenerationConfig()
+
+    @cached_property
+    def sampling_params_defaults(
+        self,
+    ) -> SamplingParamsGenerationConfigDefaults:
+        defaults = {}
+        for (
+            field_name,
+            field_value,
+        ) in self.generation_config.to_diff_dict().items():
+            if (
+                field_name
+                in SamplingParamsGenerationConfigDefaults.__dataclass_fields__
+            ):
+                defaults[field_name] = field_value
+
+        return SamplingParamsGenerationConfigDefaults(**defaults)
 
     def validate_multi_gpu_supported(self, multi_gpu_supported: bool) -> None:
         """Validates that the model architecture supports multi-GPU inference.
@@ -479,7 +525,7 @@ class MAXModelConfig(MAXModelConfigBase):
         self.quantization_encoding = to_encoding
 
     def _validate_and_resolve_with_given_quantization_encoding(
-        self, weights_format: Optional[WeightsFormat]
+        self, weights_format: WeightsFormat | None
     ) -> None:
         """
         Helper function to validate the quantization encoding when it is provided by the user.
@@ -511,8 +557,9 @@ class MAXModelConfig(MAXModelConfigBase):
                     )
                 # For cases where they do not match but with allow_safetensors_weights_fp32_bf6_bidirectional_cast set to False, we raise an error.
                 elif file_encoding != self.quantization_encoding:
-                    msg = f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
-                    raise ValueError(msg)
+                    raise ValueError(
+                        f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
+                    )
         else:
             if self.allow_safetensors_weights_fp32_bf6_bidirectional_cast:
                 # Check if the repo only has one quantization_encoding.
@@ -545,12 +592,13 @@ class MAXModelConfig(MAXModelConfigBase):
                     encoding=self.quantization_encoding
                 )
                 if not weight_files:
-                    msg = f"quantization_encoding '{self.quantization_encoding}' is not supported by the repo '{self.huggingface_weight_repo.repo_id}'"
-                    raise ValueError(msg)
+                    raise ValueError(
+                        f"quantization_encoding '{self.quantization_encoding}' is not supported by the repo '{self.huggingface_weight_repo.repo_id}'"
+                    )
 
     def _validate_and_resolve_without_given_quantization_encoding(
         self,
-        weights_format: Optional[WeightsFormat],
+        weights_format: WeightsFormat | None,
         default_encoding: SupportedEncoding,
     ) -> None:
         """
@@ -565,8 +613,9 @@ class MAXModelConfig(MAXModelConfigBase):
             if os.path.exists(self.weight_path[0]):
                 # Not currently supported. Infer encoding from local path.
                 if self.weight_path[0].suffix == ".safetensors":
-                    msg = "If a local safetensors file is provided, please provide a quantization_encoding."
-                    raise ValueError(msg)
+                    raise ValueError(
+                        "If a local safetensors file is provided, please provide a quantization_encoding."
+                    )
 
                 if encoding := SupportedEncoding.parse_from_file_name(
                     str(self.weight_path[0])
@@ -583,8 +632,9 @@ class MAXModelConfig(MAXModelConfigBase):
                     logger.debug(msg)
                     self.quantization_encoding = encoding
                 else:
-                    msg = f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explicitly."
-                    raise ValueError(msg)
+                    raise ValueError(
+                        f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explicitly."
+                    )
         else:
             # Check if the repo only has one quantization_encoding.
             supported_encodings = (
@@ -594,7 +644,10 @@ class MAXModelConfig(MAXModelConfigBase):
                 msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
                 logger.debug(msg)
                 self.quantization_encoding = supported_encodings[0]
-            elif self.default_device_spec.device_type != "cpu":
+            elif (
+                self.default_device_spec.device_type != "cpu"
+                and len(supported_encodings) > 1
+            ):
                 # TODO(AITLIB-137): replace this with more full featured logic.
                 # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
                 if SupportedEncoding.float8_e4m3fn in supported_encodings:
@@ -635,15 +688,13 @@ class MAXModelConfig(MAXModelConfigBase):
         # devices.
         for device_spec in self.device_specs:
             if not self.quantization_encoding.supported_on(device_spec):
-                msg = (
+                raise ValueError(
                     f"The encoding '{self.quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
                     f"You have two options to resolve this:\n"
                     f"1. Use a different device\n"
                     f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in supported_encodings_list)})\n\n"
                     f"Please use the --help flag for more information."
                 )
-
-                raise ValueError(msg)
 
     def _resolve_weight_path(
         self, default_weights_format: WeightsFormat
@@ -681,8 +732,9 @@ class MAXModelConfig(MAXModelConfigBase):
                 self.weight_path = next(iter(weight_files.values()))
 
         if not self.weight_path:
-            msg = f"compatible weights cannot be found for '{self.quantization_encoding}', in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
-            raise ValueError(msg)
+            raise ValueError(
+                f"compatible weights cannot be found for '{self.quantization_encoding}', in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
+            )
 
     def _resolve_kv_cache_strategy(
         self,
@@ -746,12 +798,11 @@ class MAXModelConfig(MAXModelConfigBase):
             elif repo.repo_type == RepoType.online:
                 # Verify that it exists on Huggingface.
                 if not repo.file_exists(path_str):
-                    msg = (
+                    raise ValueError(
                         f"weight_path: '{path_str}' does not exist locally or in cache,"
                         f" and '{repo.repo_id}/{path_str}' does"
                         " not exist on HuggingFace."
                     )
-                    raise ValueError(msg)
             else:
                 raise RuntimeError(
                     f"unexpected repository type: {repo.repo_type}"
@@ -829,7 +880,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 revision=repo.revision,
             )
             if cached_result and not isinstance(
-                cached_result, (str, os.PathLike)
+                cached_result, str | os.PathLike
             ):
                 # Handle cached non-existent result, which is a special sentinel value.
                 raise FileNotFoundError(

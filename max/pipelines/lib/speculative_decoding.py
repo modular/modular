@@ -34,6 +34,8 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
+    PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
@@ -57,7 +59,6 @@ from .pipeline import (
     ModelInputs,
     ModelOutputs,
     PipelineModel,
-    TextGenerationPipelineType,
     upper_bounded_default,
 )
 from .ragged_token_merger import ragged_token_merger
@@ -146,7 +147,7 @@ class SpeculativeDecodingMetrics:
 
 @final
 class SpeculativeDecodingTextGenerationPipeline(
-    TextGenerationPipelineType[TextContext],
+    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     GenerateMixin[TextContext, TextGenerationRequest],
 ):
     """Generalized token generator pipeline with speculative decoding."""
@@ -388,8 +389,9 @@ class SpeculativeDecodingTextGenerationPipeline(
             self.pipeline_config, target_config
         )
         if draft_seq_len != target_seq_len:
-            msg = f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
-            raise ValueError(msg)
+            raise ValueError(
+                f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
+            )
 
         self._ragged_token_merger = target_session.load(
             ragged_token_merger(
@@ -689,7 +691,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     def execute(
         self,
         inputs: TextGenerationInputs[TextContext],
-    ) -> dict[RequestID, TextGenerationOutput]:
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
         # Flatten our batch for consistent indexing.
@@ -795,7 +797,7 @@ class SpeculativeDecodingTextGenerationPipeline(
 
         for idx, rejected_token_idx in enumerate(first_rejected_tokens):
             context = context_batch[idx]
-            rejected_token_idx = rejected_token_idx.item()
+            rejected_token_idx = rejected_token_idx.item()  # type: ignore
 
             context.bump_token_indices(
                 active_idx=-num_draft_tokens_generated,
@@ -829,7 +831,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             total_draft_generated,
             total_draft_accepted,
             total_bonus_used,
-            acceptance_lengths,
+            acceptance_lengths,  # type: ignore
         )
 
     def build_response(

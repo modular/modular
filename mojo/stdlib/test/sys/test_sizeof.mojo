@@ -14,9 +14,10 @@
 from sys import size_of
 
 from testing import assert_equal
+from testing import TestSuite
 
 
-def main():
+def test_size_of_dtypes():
     assert_equal(size_of[DType.int8](), 1)
     assert_equal(size_of[DType.int16](), 2)
     assert_equal(size_of[DType.int32](), 4)
@@ -32,3 +33,7 @@ def main():
     assert_equal(size_of[DType.bfloat16](), 2)
     assert_equal(size_of[DType.float16](), 2)
     assert_equal(size_of[DType.invalid](), 0)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

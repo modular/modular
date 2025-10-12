@@ -646,7 +646,7 @@ struct List[T: Copyable & Movable](
 
         @parameter
         if T.__moveinit__is_trivial:
-            memcpy(new_data, self._data, len(self))
+            memcpy(dest=new_data, src=self._data, count=len(self))
         else:
             for i in range(len(self)):
                 (new_data + i).init_pointee_move_from(self._data + i)
@@ -717,7 +717,7 @@ struct List[T: Copyable & Movable](
 
         @parameter
         if T.__moveinit__is_trivial:
-            memcpy(dest_ptr, src_ptr, other_len)
+            memcpy(dest=dest_ptr, src=src_ptr, count=other_len)
         else:
             for _ in range(other_len):
                 dest_ptr.init_pointee_move_from(src_ptr)
@@ -749,7 +749,11 @@ struct List[T: Copyable & Movable](
 
         @parameter
         if T.__copyinit__is_trivial:
-            memcpy(self.unsafe_ptr() + i, elements.unsafe_ptr(), elements_len)
+            memcpy(
+                dest=self.unsafe_ptr() + i,
+                src=elements.unsafe_ptr(),
+                count=elements_len,
+            )
         else:
             for elt in elements:
                 UnsafePointer(to=self[i]).init_pointee_copy(elt)
@@ -797,7 +801,7 @@ struct List[T: Copyable & Movable](
         debug_assert(count <= value.size, "count must be <= value.size")
         self.reserve(self._len + count)
         var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
-        memcpy(self._unsafe_next_uninit_ptr(), v_ptr, count)
+        memcpy(dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count)
         self._len += count
 
     fn extend[
@@ -815,7 +819,11 @@ struct List[T: Copyable & Movable](
             If there is no capacity left, resizes to `len(self) + len(value)`.
         """
         self.reserve(self._len + len(value))
-        memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
+        memcpy(
+            dest=self._unsafe_next_uninit_ptr(),
+            src=value.unsafe_ptr(),
+            count=len(value),
+        )
         self._len += len(value)
 
     fn pop(mut self, i: Int = -1) -> T:
@@ -1066,7 +1074,7 @@ struct List[T: Copyable & Movable](
         while length > 1:
             var half = length >> 1
             length -= half
-            cursor += UInt(Int(b[cursor + half - 1] < needle) * half)
+            cursor += UInt(Int(b[cursor + UInt(half) - 1] < needle) * half)
 
         return Optional(cursor) if b[cursor] == needle else None
 
@@ -1231,8 +1239,8 @@ struct List[T: Copyable & Movable](
                 " [0, len(List)-1]"
             ),
         )
-        if elt_idx_1 != elt_idx_2:
-            swap((self._data + elt_idx_1)[], (self._data + elt_idx_2)[])
+        var ptr = self._data
+        ptr.offset(elt_idx_1).swap_pointees(ptr.offset(elt_idx_2))
 
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
@@ -1248,9 +1256,11 @@ struct List[T: Copyable & Movable](
         Returns:
             The pointer to the underlying memory.
         """
-        return self._data.origin_cast[origin.mut, origin]().address_space_cast[
-            address_space
-        ]()
+        return (
+            self._data.unsafe_mut_cast[origin.mut]()
+            .unsafe_origin_cast[origin]()
+            .address_space_cast[address_space]()
+        )
 
     @always_inline
     fn _unsafe_next_uninit_ptr(

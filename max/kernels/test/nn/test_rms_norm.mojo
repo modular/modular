@@ -34,7 +34,7 @@ fn compute_rms[
     DType.float32
 ]:
     constrained[data.rank == 1, "data.rank must be 1"]()
-    var sum_of_squares = Scalar[DType.float32]()
+    var sum_of_squares = Float32()
     for i in range(size):
         var d = data.ptr[i].cast[DType.float32]()
         sum_of_squares += d * d

@@ -13,13 +13,12 @@
 
 from collections import OptionalReg
 from math import ceildiv, exp, iota
-from sys import align_of, simd_width_of, size_of
+from sys import align_of, simd_width_of, size_of, env_get_bool
 
 import gpu.warp as warp
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from bit import log2_floor
-from buffer.dimlist import DimList
 from builtin.sort import _quicksort
 from gpu import (
     WARP_SIZE,
@@ -32,7 +31,7 @@ from gpu import (
     warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
@@ -566,7 +565,7 @@ fn _top_k_sampling[
 
     # Sample from the top K elements
     for batch in range(internal_bs):
-        var temperature_val = Scalar[DType.float32](1.0)
+        var temperature_val = Float32(1.0)
         if temperature:
             temperature_val = temperature.value()[batch][0]
 
@@ -784,11 +783,16 @@ fn _block_reduce_topk[
 
     # Load warp results into final warp for block-level reduction
     var block_accum = TopK_2[T, largest]()
-    var thread_in_final_warp = thread_idx.x < UInt(block_dim.x // WARP_SIZE)
+    var thread_in_final_warp = thread_idx.x < UInt(
+        block_dim.x // UInt(WARP_SIZE)
+    )
     if thread_in_final_warp:
-        var p_idx = p_sram[lane_id() * p_width]  # loaded value is a scalar
+        var p_idx = p_sram[
+            lane_id() * UInt(p_width)
+        ]  # loaded value is a scalar
         block_accum = TopK_2[T, largest](
-            p=Int(p_idx), u=u_sram[lane_id() * u_width]  # Convert back to int
+            p=Int(p_idx),
+            u=u_sram[lane_id() * UInt(u_width)],  # Convert back to int
         )
     else:
         # Initialize unused threads with dummy values
@@ -799,12 +803,12 @@ fn _block_reduce_topk[
     return _warp_reduce_topk[T, largest](block_accum)
 
 
-fn _topk_stage1[
+fn _topk_stage1_old[
     T: DType,
     out_idx_type: DType,
     largest: Bool = True,
 ](
-    K: UnsafePointer[Scalar[DType.int64]],
+    K: UnsafePointer[Int64],
     max_k: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
@@ -844,12 +848,12 @@ fn _topk_stage1[
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id = bid // num_blocks_per_input
-    block_lane = bid % num_blocks_per_input
+    batch_id = bid // UInt(num_blocks_per_input)
+    block_lane = bid % UInt(num_blocks_per_input)
 
-    _in_buffer = in_buffer + batch_id * num_elements
+    _in_buffer = in_buffer + batch_id * UInt(num_elements)
 
-    # # Allocate shared memory for the values and indices
+    # Allocate shared memory for the values and indices
     var topk_sram = external_memory[
         TopK_2[T, largest],
         address_space = AddressSpace.SHARED,
@@ -859,15 +863,10 @@ fn _topk_stage1[
     with PDL():
         # Pack the topk_vals and topk_idxs into shared memory
         var block_offset = block_lane * block_size
-        var stride = block_size * num_blocks_per_input
+        var stride = block_size * UInt(num_blocks_per_input)
         topk_sram[tid] = TopK_2[T, largest]()
-        var global_tid = (
-            block_idx.x % num_blocks_per_input * block_dim.x + thread_idx.x
-        )
-        var batch_id = block_idx.x // num_blocks_per_input
-        if global_tid < num_elements:
-            topk_sram[tid].insert(_in_buffer[global_tid], global_tid)
-
+        for i in range(tid + block_offset, num_elements, stride):
+            topk_sram[tid].insert(_in_buffer[i], i)
         barrier()
         var k_batch = max_k
         if K:
@@ -883,10 +882,10 @@ fn _topk_stage1[
             if tid == 0:
                 # Store the local top-K values and indices in global memory
                 var vector_idx = total.p
-                local_topk_vals[bid * max_k + k] = total.u
-                local_topk_idxs[bid * max_k + k] = Scalar[DType.int](
-                    vector_idx
-                ).cast[out_idx_type]()
+                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
+                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
+                    DType.int
+                ](vector_idx).cast[out_idx_type]()
 
                 # Remove the found maximum from consideration in the next iteration
                 var orig_tid = (vector_idx - block_offset) % stride
@@ -897,10 +896,124 @@ fn _topk_stage1[
         # Fill remaining positions with sentinel values for unused elements
         if tid == 0:
             for remaining_k in range(k_batch, max_k):
-                local_topk_vals[bid * max_k + remaining_k] = _topk_dead_val[
-                    T, largest
-                ]()
-                local_topk_idxs[bid * max_k + remaining_k] = Scalar[
+                local_topk_vals[
+                    bid * UInt(max_k) + UInt(remaining_k)
+                ] = _topk_dead_val[T, largest]()
+                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
+                    out_idx_type
+                ](-1)
+
+
+fn _topk_stage1[
+    T: DType,
+    out_idx_type: DType,
+    largest: Bool = True,
+](
+    K: UnsafePointer[Int64],
+    max_k: Int,
+    num_elements: Int,
+    num_blocks_per_input: Int,
+    in_buffer: UnsafePointer[Scalar[T]],
+    in_buffer_tmp: UnsafePointer[Scalar[T]],
+    local_topk_vals: UnsafePointer[
+        Scalar[T]
+    ],  # Output buffer of size num_blocks_per_input * max_k
+    local_topk_idxs: UnsafePointer[
+        Scalar[out_idx_type]
+    ],  # Output buffer of size num_blocks_per_input * max_k
+):
+    """
+    Computes the Top-K elements within each block.
+
+    This kernel function is the first stage of a two-stage Top-K algorithm.
+    Each thread block processes a portion of the input data and finds its local top-K elements.
+    The local top-K results are stored in global memory for further processing in stage 2.
+
+    Parameters:
+        T: Data type of the elements.
+        out_idx_type: DType - The data dtype of the output indices.
+        largest: Bool - Whether to find the maximum or minimum value.
+
+    Args:
+        K: Number of top elements to select per block. Varies for each batch element.
+        max_k: Largest number of top elements to keep for each batch element.
+        num_elements: Size of last dimension of input buffer (vocab size).
+        num_blocks_per_input: Number of blocks used to process the input data.
+        in_buffer: Input buffer containing the elements to process.
+        in_buffer_tmp: Temporary input buffer to store the elements to process.
+        local_topk_vals: Output buffer to store the local top-K values.
+        local_topk_idxs: Output buffer to store the indices of local top-K elements.
+
+    Note:
+        The output buffers (local_topk_vals and local_topk_idxs) should be of size num_blocks_per_input * max_k.
+    """
+    tid = thread_idx.x
+    bid = block_idx.x
+    block_size = block_dim.x
+
+    batch_id = bid // UInt(num_blocks_per_input)
+    block_lane = bid % UInt(num_blocks_per_input)
+
+    var block_offset = block_lane * block_size
+    var stride = block_size * UInt(num_blocks_per_input)
+
+    _in_buffer = in_buffer + batch_id * UInt(num_elements)
+    _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
+
+    # Copy input values to temp buffer
+    for i in range(tid + block_offset, num_elements, stride):
+        _in_buffer_tmp[i] = _in_buffer[i]
+
+    var k_batch = max_k
+    if K:
+        k_batch = Int(K[batch_id])
+
+    # Allocate shared memory for the values and indices
+    var topk_sram = external_memory[
+        TopK_2[T, largest],
+        address_space = AddressSpace.SHARED,
+        alignment = align_of[TopK_2[T, largest]](),
+    ]()
+
+    with PDL():
+        # Prepare for K iterations to find the local top-K elements
+        for k in range(k_batch):
+            topk_sram[tid] = TopK_2[T, largest]()
+
+            # Pack the topk_vals and topk_idxs into shared memory
+            for i in range(tid + block_offset, num_elements, stride):
+                var val = _in_buffer_tmp[i]
+                topk_sram[tid].insert(val, i)
+
+            barrier()
+
+            # Initialize each thread with its own TopK_2 value and index
+            var partial = topk_sram[tid]
+
+            # Perform block-level reduction to find the maximum TopK_2
+            var total = _block_reduce_topk[T, largest](partial)
+
+            if tid == 0:
+                # Store the local top-K values and indices in global memory
+                var vector_idx = total.p
+                local_topk_vals[bid * UInt(max_k) + UInt(k)] = total.u
+                local_topk_idxs[bid * UInt(max_k) + UInt(k)] = Scalar[
+                    DType.int
+                ](vector_idx).cast[out_idx_type]()
+
+                if total.p >= 0:
+                    # Remove the found maximum from consideration in the next iteration
+                    _in_buffer_tmp[total.p] = _topk_dead_val[T, largest]()
+
+            barrier()
+
+        # Fill remaining positions with sentinel values for unused elements
+        if tid == 0:
+            for remaining_k in range(k_batch, max_k):
+                local_topk_vals[
+                    bid * UInt(max_k) + UInt(remaining_k)
+                ] = _topk_dead_val[T, largest]()
+                local_topk_idxs[bid * UInt(max_k) + UInt(remaining_k)] = Scalar[
                     out_idx_type
                 ](-1)
 
@@ -917,7 +1030,7 @@ fn _topk_stage2[
     sampling: Bool = True,
     largest: Bool = True,
 ](
-    K: UnsafePointer[Scalar[DType.int64]],
+    K: UnsafePointer[Int64],
     max_k: Int,
     num_blocks_per_input: Int,
     local_topk_vals: UnsafePointer[
@@ -932,9 +1045,9 @@ fn _topk_stage2[
     global_topk_idxs: UnsafePointer[
         Scalar[out_idx_type]
     ],  # sampling ? sampled token : Output array of size K
-    temperature: UnsafePointer[Scalar[DType.float32]],
-    top_p: UnsafePointer[Scalar[DType.float32]],
-    seed: UnsafePointer[Scalar[DType.uint64]],
+    temperature: UnsafePointer[Float32],
+    top_p: UnsafePointer[Float32],
+    seed: UnsafePointer[UInt64],
 ):
     """
     Computes the global Top-K elements from the local Top-K results produced by stage 1.
@@ -970,50 +1083,61 @@ fn _topk_stage2[
     var batch_id = block_idx.x
     # assert (block_idx.x == 0)
     # assert (grid_dim.x == 1)
-    var batch_i_topk_vals = global_topk_vals + batch_id * max_k
-    var batch_i_topk_idxs = global_topk_idxs + batch_id * (
+    var batch_i_topk_vals = global_topk_vals + batch_id * UInt(max_k)
+    var batch_i_topk_idxs = global_topk_idxs + batch_id * UInt(
         1 if sampling else max_k
     )
-    var _local_topk_vals = local_topk_vals + batch_id * num_elem_reduced
-    var _local_topk_idxs = local_topk_idxs + batch_id * num_elem_reduced
+    var _local_topk_vals = local_topk_vals + batch_id * UInt(num_elem_reduced)
+    var _local_topk_idxs = local_topk_idxs + batch_id * UInt(num_elem_reduced)
+
+    # Allocate shared memory for values and indices
+    var num_e_rounded = ceildiv(num_elem_reduced, WARP_SIZE) * WARP_SIZE
+    var vals_smem_size = num_e_rounded
+    var vals_sram = external_memory[
+        Scalar[T],
+        address_space = AddressSpace.SHARED,
+        alignment = align_of[Scalar[T]](),
+    ]()
+    var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
     # These values are only read from in the sampling case.
-    var s_id = external_memory[
-        Int,
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[DType.int](),
-    ]()
     var s_val2 = UnsafePointer[Scalar[T], address_space = AddressSpace.SHARED]()
+    var s_id = UnsafePointer[Int, address_space = AddressSpace.SHARED]()
 
     with PDL():
         # Handle the case where stage 1 is executed with a single block
         var k_batch = max_k
         if K:
             k_batch = Int(K[batch_id])
-
-        # Handle single block case
-        @parameter
-        if not sampling:
-            if num_blocks_per_input == 1:
-                if tid < UInt(k_batch):
-                    batch_i_topk_vals[tid] = _local_topk_vals[tid]
-                    # cast to out_idx_type
-                    batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
-                elif tid >= UInt(k_batch) and tid < UInt(max_k):
-                    # Fill unused positions with sentinel values
-                    batch_i_topk_vals[tid] = _topk_dead_val[T, largest]()
-                    batch_i_topk_idxs[tid] = Scalar[out_idx_type](-1)
-                return
+        if num_blocks_per_input == 1 and not sampling:
+            if tid < UInt(k_batch):
+                batch_i_topk_vals[tid] = _local_topk_vals[tid]
+                # cast to out_idx_type
+                batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
+            elif tid >= UInt(k_batch) and tid < UInt(max_k):
+                # Fill unused positions with sentinel values
+                batch_i_topk_vals[tid] = _topk_dead_val[T, largest]()
+                batch_i_topk_idxs[tid] = Scalar[out_idx_type](-1)
+            return
 
         @parameter
         if sampling:
-            s_val2 = (s_id + k_batch).bitcast[Scalar[T]]()
+            # Storing the top-K logits in shmem for sampling
+            s_id = (idxs_sram + vals_smem_size).bitcast[Int]()
+            # The 2* below is for warp align safety
+            s_val2 = (s_id + 2 * k_batch).bitcast[Scalar[T]]()
 
         var s_sum = stack_allocation[
             1, Scalar[T], address_space = AddressSpace.SHARED
         ]()
         s_sum[0] = Scalar[T](0)
         var max_logit = Scalar[T](0)
+
+        # Cache local top-K results from stage 1 into shared memory
+        for i in range(tid, num_elem_reduced, block_dim.x):
+            vals_sram[i] = _local_topk_vals[i]
+            idxs_sram[i] = i
+        barrier()
 
         for k in range(max_k):
             if k >= k_batch:
@@ -1034,8 +1158,9 @@ fn _topk_stage2[
             var partial = TopK_2[T, largest]()
             # TODO: unroll this
             for i in range(tid, num_elem_reduced, block_dim.x):
-                partial.insert(_local_topk_vals[i], i)
+                partial.insert(vals_sram[i], i)
 
+            barrier()
             # Perform block-level reduction to find the maximum TopK_2
             var total: TopK_2[T, largest] = _block_reduce_topk[T, largest](
                 partial
@@ -1048,13 +1173,15 @@ fn _topk_stage2[
                     if k == 0:
                         max_logit = total.u
 
-                _local_topk_vals[total.p] = _topk_dead_val[T, largest]()
+                # Remove the found maximum from consideration in the next iteration
+                idxs_sram[total.p] = -1
+                vals_sram[total.p] = _topk_dead_val[T, largest]()
 
                 @parameter
                 if sampling:
                     batch_i_topk_vals[k] = total.u
                     s_id[k] = total.p
-                    var temp_val = Scalar[DType.float32](1.0)
+                    var temp_val = Float32(1.0)
                     if temperature:
                         temp_val = temperature[batch_id]
                     total.u = exp(
@@ -1199,10 +1326,6 @@ fn _topk_gpu[
         input_buf.rank == out_idxs.rank, "input.rank must match out_idx.rank"
     ]()
 
-    # Early check for sampling shared memory limit
-    if sampling and max_k >= 4096:
-        raise Error("k_batch exceeds shared memory limit for sampling")
-
     # Use largest number of threads per block
     var batch_size = (
         input_buf.runtime_layout.shape.value.canonicalize()[0] if input_buf.rank
@@ -1210,101 +1333,143 @@ fn _topk_gpu[
     )
     var N = input_buf.runtime_layout.shape.value.canonicalize()[1]
 
+    # Define the number of blocks per grid
+    var num_blocks_per_input_: Int = ceildiv(
+        N, block_size
+    ) if not num_blocks_per_input else num_blocks_per_input.value()
     # Calculate largest num bytes of shmem for each stage
     if block_size % WARP_SIZE != 0:
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
 
+    var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
+
     # Define grid and block dimensions for stage 1
-    # Use maximum possible threads per block
-    # Each thread handles 1 element to ensure correctness given the current implementation.
-    # See KERN-2033 for details.
-    var block_dim_stage1 = Dim(ceildiv(min(1024, N), WARP_SIZE) * WARP_SIZE)
-    var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_dim_stage1.x())
-    # Define the number of blocks per grid
-    # TODO: Note: This overrides the num_blocks_per_input argument.
-    var num_blocks_per_input_: Int = ceildiv(N, block_dim_stage1.x())
     var grid_dim_stage1 = Dim(num_blocks_per_input_ * batch_size)
+    var block_dim_stage1 = Dim(block_size)
 
     # Handle optional k parameter
-    var k_ptr: UnsafePointer[Scalar[DType.int64]]
+    var k_ptr: UnsafePointer[Int64]
     if k:
-        k_ptr = rebind[UnsafePointer[Scalar[DType.int64]]](k.value().ptr)
+        k_ptr = rebind[UnsafePointer[Int64]](k.value().ptr)
     else:
-        k_ptr = UnsafePointer[Scalar[DType.int64]]()  # null pointer
+        k_ptr = UnsafePointer[Int64]()  # null pointer
+
+    var k_size = k.value().size() if k else 0
+    var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
 
     # Enqueue the first kernel (stage 1)
-    ctx.enqueue_function[_topk_stage1[dtype, out_idx_type, largest]](
-        k_ptr,
-        max_k,
-        N,
-        num_blocks_per_input_,
-        input_buf.ptr,
-        device_local_topk_vals.ptr,
-        device_local_topk_idxs.ptr,
-        grid_dim=grid_dim_stage1,
-        block_dim=block_dim_stage1,
-        shared_mem_bytes=shared_mem_bytes_1,
-        attributes=pdl_launch_attributes(),
-    )
-
-    # Calculate shared memory size for stage 2 (index and value)
-    var shared_mem_bytes_2 = max_k * (
-        size_of[DType.int]() + size_of[Scalar[dtype]]()
-    )
-    shared_mem_bytes_2 = Int(ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE)
+    @parameter
+    if env_get_bool["USE_OLD_TOP_K_KERNEL", False]():
+        alias kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
+        ctx.enqueue_function_checked[kernel_1, kernel_1](
+            k_device,
+            max_k,
+            N,
+            num_blocks_per_input_,
+            input_buf.to_device_buffer(ctx),
+            device_local_topk_vals.to_device_buffer(ctx),
+            device_local_topk_idxs.to_device_buffer(ctx),
+            grid_dim=grid_dim_stage1,
+            block_dim=block_dim_stage1,
+            shared_mem_bytes=shared_mem_bytes_1,
+            attributes=pdl_launch_attributes(),
+        )
+    else:
+        var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
+        alias kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
+        ctx.enqueue_function_checked[kernel_1, kernel_1](
+            k_device,
+            max_k,
+            N,
+            num_blocks_per_input_,
+            input_buf.to_device_buffer(ctx),
+            input_buf_tmp,
+            device_local_topk_vals.to_device_buffer(ctx),
+            device_local_topk_idxs.to_device_buffer(ctx),
+            grid_dim=grid_dim_stage1,
+            block_dim=block_dim_stage1,
+            shared_mem_bytes=shared_mem_bytes_1,
+            attributes=pdl_launch_attributes(),
+        )
+        _ = input_buf_tmp^
 
     var num_elem_reduced = (
         ceildiv(num_blocks_per_input_ * max_k, WARP_SIZE) * WARP_SIZE
     )
+    var num_bytes_sample_cache = max_k * (
+        size_of[Scalar[dtype]]() + 2 * size_of[DType.int]()
+    )
+    var shared_mem_bytes_2 = (
+        num_elem_reduced * (size_of[Scalar[dtype]]() + size_of[DType.int]())
+        + num_bytes_sample_cache
+    )
+    shared_mem_bytes_2 = Int(
+        ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
+    )  # align to warp size
 
     # Define grid and block dimensions for stage 2
     var grid_dim_stage2 = Dim(
         batch_size
     )  # Single block since num_elements_stage2 is small
-    # TODO: Depending on (optional) user input this may be suboptimal.
-    var optimal_num_threads = min(block_size, num_elem_reduced)
-    var block_dim_stage2 = Dim(
-        ceildiv(optimal_num_threads, WARP_SIZE) * WARP_SIZE
-    )
+    var block_dim_stage2 = Dim(block_size)
 
     # Handle optional temperature parameter
-    var temp_ptr: UnsafePointer[Scalar[DType.float32]]
+    var temp_ptr: UnsafePointer[Float32]
     if temperature:
-        temp_ptr = rebind[UnsafePointer[Scalar[DType.float32]]](
-            temperature.value().ptr
-        )
+        temp_ptr = rebind[UnsafePointer[Float32]](temperature.value().ptr)
     else:
-        temp_ptr = UnsafePointer[Scalar[DType.float32]]()  # null pointer
+        temp_ptr = UnsafePointer[Float32]()  # null pointer
+    var temp_size = temperature.value().size() if temperature else 0
 
     # Handle optional top_p parameter
-    var top_p_ptr: UnsafePointer[Scalar[DType.float32]]
+    var top_p_ptr: UnsafePointer[Float32]
     if top_p:
-        top_p_ptr = rebind[UnsafePointer[Scalar[DType.float32]]](
-            top_p.value().ptr
-        )
+        top_p_ptr = rebind[UnsafePointer[Float32]](top_p.value().ptr)
     else:
-        top_p_ptr = UnsafePointer[Scalar[DType.float32]]()  # null pointer
+        top_p_ptr = UnsafePointer[Float32]()  # null pointer
+    var top_p_size = top_p.value().size() if top_p else 0
 
     # Handle optional seed parameter
-    var seed_ptr: UnsafePointer[Scalar[DType.uint64]]
+    var seed_ptr: UnsafePointer[UInt64]
     if seed:
-        seed_ptr = rebind[UnsafePointer[Scalar[DType.uint64]]](seed.value().ptr)
+        seed_ptr = rebind[UnsafePointer[UInt64]](seed.value().ptr)
     else:
-        seed_ptr = UnsafePointer[Scalar[DType.uint64]]()  # null pointer
+        seed_ptr = UnsafePointer[UInt64]()  # null pointer
+    var seed_size = seed.value().size() if seed else 0
+
+    var temp_device = DeviceBuffer[DType.float32](
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.float32]]](temp_ptr),
+        temp_size,
+        owning=False,
+    )
+    var top_p_device = DeviceBuffer[DType.float32](
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.float32]]](top_p_ptr),
+        top_p_size,
+        owning=False,
+    )
+    var seed_device = DeviceBuffer[DType.uint64](
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.uint64]]](seed_ptr),
+        seed_size,
+        owning=False,
+    )
 
     # Enqueue the second kernel (stage 2)
-    ctx.enqueue_function[_topk_stage2[dtype, out_idx_type, sampling, largest]](
-        k_ptr,
+    alias kernel_2 = _topk_stage2[dtype, out_idx_type, sampling, largest]
+    ctx.enqueue_function_checked[kernel_2, kernel_2](
+        k_device,
         max_k,
         num_blocks_per_input_,
-        device_local_topk_vals.ptr,
-        device_local_topk_idxs.ptr,
-        out_vals.ptr,
-        out_idxs.ptr,
-        temp_ptr,
-        top_p_ptr,
-        seed_ptr,
+        device_local_topk_vals.to_device_buffer(ctx),
+        device_local_topk_idxs.to_device_buffer(ctx),
+        out_vals.to_device_buffer(ctx),
+        out_idxs.to_device_buffer(ctx),
+        temp_device,
+        top_p_device,
+        seed_device,
         grid_dim=grid_dim_stage2,
         block_dim=block_dim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
@@ -1490,12 +1655,10 @@ fn topk_gpu[
         internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
         internal_out_vals = reshape(out_vals, internal_out_vals_shape)
 
-    # Use maximum possible threads per block
-    # Each thread handles 1 element to ensure correctness given the current implementation.
-    # See KERN-2033 for details.
-    var block_dim_stage1 = ceildiv(min(1024, N), WARP_SIZE) * WARP_SIZE
-    # TODO: Note: This overrides the num_blocks_per_input argument.
-    var num_blocks_per_input_: Int = ceildiv(N, block_dim_stage1)
+    # Calculate the number of blocks per input
+    var num_blocks_per_input_ = min(
+        ceildiv(N, block_size_), 8
+    ) if not num_blocks_per_input else num_blocks_per_input.value()
 
     # Define shape for the kernel's internal cache buffers
     var internal_cache_shape = IndexList[2](

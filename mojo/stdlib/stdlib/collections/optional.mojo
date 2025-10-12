@@ -36,6 +36,9 @@ from os import abort
 
 from utils import Variant
 
+from builtin.device_passable import DevicePassable
+from compile import get_type_name
+
 
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
@@ -49,7 +52,7 @@ struct _NoneType(ImplicitlyCopyable, Movable):
 
 
 struct Optional[T: Copyable & Movable](
-    Boolable, Defaultable, ImplicitlyCopyable, Movable
+    Boolable, Defaultable, ImplicitlyCopyable, Iterable, Iterator, Movable
 ):
     """A type modeling a value which may or may not be present.
 
@@ -78,6 +81,13 @@ struct Optional[T: Copyable & Movable](
     print(d)  # prints 2
     ```
     """
+
+    # Iterator aliases
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+
+    alias Element = T
 
     # Fields
     # _NoneType comes first so its index is 0.
@@ -225,6 +235,29 @@ struct Optional[T: Copyable & Movable](
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
+
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        """Iterate over the Optional's possibly contained value.
+
+        Optionals act as a collection of size 0 or 1.
+        """
+        return self.copy()
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        """Return true if the Optional has a value."""
+        return self.__bool__()
+
+    @always_inline
+    fn __next__(mut self) -> Self.Element:
+        """Return the contained value of the Optional."""
+        return self.take()
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        """Return the bounds of the Optional, which is 0 or 1."""
+        var len = 1 if self else 0
+        return (len, {len})
 
     fn __bool__(self) -> Bool:
         """Return true if the Optional has a value.
@@ -447,7 +480,7 @@ struct Optional[T: Copyable & Movable](
 
 
 @register_passable("trivial")
-struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
+struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register
@@ -460,6 +493,19 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
     # Fields
     alias _mlir_type = __mlir_type[`!kgen.variant<`, T, `, i1>`]
     var _value: Self._mlir_type
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return String("OptionalReg[", get_type_name[T](), "]")
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

@@ -700,7 +700,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len = self.byte_length()
         var result = String(unsafe_uninit_length=UInt(len))
-        memcpy(result.unsafe_ptr_mut(), self.unsafe_ptr(), len)
+        memcpy(dest=result.unsafe_ptr_mut(), src=self.unsafe_ptr(), count=len)
         return result^
 
     fn __repr__(self) -> String:
@@ -846,7 +846,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @doc_private
     fn __init__(
-        out self: StringSlice[MutableAnyOrigin],
+        out self: StringSlice[ImmutableAnyOrigin],
         *,
         unsafe_borrowed_obj: PythonObject,
     ) raises:
@@ -1167,7 +1167,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             A StringSlice merged with the other origin.
         """
         return {
-            ptr = self.unsafe_ptr().origin_cast[result.mut, result.origin](),
+            ptr = self.unsafe_ptr()
+            .unsafe_mut_cast[result.mut]()
+            .unsafe_origin_cast[result.origin](),
             length = UInt(len(self)),
         }
 
@@ -2700,7 +2702,7 @@ fn _split[
     out output: List[__type_of(src_str).Immutable],
 ):
     alias S = __type_of(src_str).Immutable
-    var ptr = src_str.unsafe_ptr().origin_cast[False]()
+    var ptr = src_str.unsafe_ptr().as_immutable()
     var sep_len = sep.byte_length()
     if sep_len == 0:
         var iterator = src_str.codepoint_slices()
@@ -2761,7 +2763,7 @@ fn _split[
     var lhs = 0
     var rhs: Int
     var items = 0
-    var ptr = src_str.unsafe_ptr().origin_cast[False]()
+    var ptr = src_str.unsafe_ptr().as_immutable()
 
     @always_inline("nodebug")
     fn _build_slice(p: __type_of(ptr), start: Int, end: Int) -> S:

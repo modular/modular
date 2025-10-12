@@ -195,7 +195,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         self.unsafe_ptr().init_pointee_move(value^)
 
     @always_inline
-    fn assume_initialized(ref self) -> ref [self] Self.ElementType:
+    fn assume_initialized(ref self) -> ref [self._array] Self.ElementType:
         """Returns a reference to the internal value.
 
         Calling this method assumes that the memory is initialized.
@@ -206,7 +206,11 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         return self.unsafe_ptr()[]
 
     @always_inline
-    fn unsafe_ptr(self) -> UnsafePointer[Self.ElementType]:
+    fn unsafe_ptr[
+        mut: Bool, origin: Origin[mut], //
+    ](ref [origin]self) -> UnsafePointer[
+        Self.ElementType, mut=mut, origin = __origin_of(self._array)
+    ]:
         """Get a pointer to the underlying element.
 
         Note that this method does not assumes that the memory is initialized

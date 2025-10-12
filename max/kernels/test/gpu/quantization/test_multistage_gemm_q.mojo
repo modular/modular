@@ -87,8 +87,8 @@ fn repack_Q4_0_for_sm8x[
     var tid: UInt = thread_idx.x
     var warp_id: UInt = tid // WARP_SIZE
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % num_warps_x)
-    var warp_y: UInt = UInt(warp_id // num_warps_x)
+    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
+    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -105,7 +105,7 @@ fn repack_Q4_0_for_sm8x[
     @parameter
     fn convert_bytes_to_bf16[
         scales_type: DType
-    ](input_bytes: SIMD[DType.uint8, _]) -> SIMD[scales_type, 1]:
+    ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
         var f32_values = bitcast[DType.float16, 1](input_bytes).cast[
             DType.float32
         ]()
@@ -135,7 +135,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[DType.uint8, 1]](),
+        alignment = align_of[UInt8](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -273,8 +273,8 @@ fn create_ref_b[
     var warp_id: UInt = tid // WARP_SIZE
     var lane_id: UInt = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
-    var warp_x: UInt = UInt(warp_id // num_k_warps)
-    var warp_y: UInt = UInt(warp_id % num_k_warps)
+    var warp_x: UInt = UInt(warp_id // UInt(num_k_warps))
+    var warp_y: UInt = UInt(warp_id % UInt(num_k_warps))
 
     alias group_bytes = group_size // 2 + 2
     alias N = Int(b_q_layout.shape[0])
@@ -335,9 +335,7 @@ fn create_ref_b[
     var vec = bitcast[DType.int32, 4](warp_q_tile.vectorize[1, 4]()[0, lane_id])
 
     @always_inline
-    fn int4tobf16(
-        i4: Int32, scale: SIMD[DType.bfloat16, 1]
-    ) -> SIMD[DType.bfloat16, 2]:
+    fn int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[DType.bfloat16, 2]:
         alias MASK: Int32 = 0x000F000F
         alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
         alias lut: Int32 = (0xF0 & 0xCC) | 0xAA

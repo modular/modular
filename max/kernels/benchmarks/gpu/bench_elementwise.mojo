@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from math import align_up, erf, exp, isqrt, log, sin, sqrt, tanh
+from math import align_up, erf, exp, rsqrt, log, sin, sqrt, tanh
 from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
 from sys.intrinsics import strided_load
 
@@ -241,7 +241,7 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
     return t
 
 
-fn main() raises:
+def main():
     var op = arg_parse("op", "sqrt")
     alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
     alias rank = env_get_int["rank", 3]()
@@ -272,15 +272,15 @@ fn main() raises:
                 emulate_graph_compiler = emulate_graph_compiler != 0,
             ](m, "sqrt", dims, name=dims_str, ctx=ctx)
 
-        elif op == "isqrt":
+        elif op == "rsqrt":
             run_elementwise[
                 dtype,
-                isqrt,
+                rsqrt,
                 use_aligned_memory = aligned_memory_config != 0,
                 emulate_graph_compiler = emulate_graph_compiler != 0,
             ](
                 m,
-                "isqrt",
+                "rsqrt",
                 dims,
                 name=dims_str,
                 ctx=ctx,

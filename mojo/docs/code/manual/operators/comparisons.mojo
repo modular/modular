@@ -31,8 +31,8 @@ def main():
     print("simd6.gt(0.5):", simd7)
 
     # Scalar (size-1 SIMD) comparison works with operators
-    var float1: Float16 = 12.345  # SIMD[DType.float16, 1]
-    var float2: Float32 = 0.5  # SIMD[DType.float32, 1]
+    var float1: Float16 = 12.345  # Scalar[DType.float16]
+    var float2: Float32 = 0.5  # Scalar[DType.float32]
     result = Float32(float1) > float2  # Result is Bool
     print("Float32(float1) > float2:", result)
 
@@ -55,8 +55,8 @@ def main():
 
     # Scalar comparisons with Bool-returning operators
     print("\n--- Scalar comparisons ---")
-    scalar1 = SIMD[DType.int32, 1](5)
-    scalar2 = SIMD[DType.int32, 1](3)
+    scalar1 = Scalar[DType.int32](5)
+    scalar2 = Scalar[DType.int32](3)
     print("scalar1 > scalar2:", scalar1 > scalar2)
     print("scalar1 < scalar2:", scalar1 < scalar2)
     print("scalar1 >= scalar2:", scalar1 >= scalar2)

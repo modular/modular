@@ -48,7 +48,7 @@ def test_fold(
     """Padding by nothing does not change the type."""
     # Create valid input shape from input values.
     L = 1
-    for n, (o, k) in enumerate(zip(output_size, kernel_size)):
+    for n, (o, k) in enumerate(zip(output_size, kernel_size, strict=True)):
         L_d = int(
             (o + 2 * padding[n] - dilation[n] * (k - 1) - 1) // stride[n] + 1
         )
@@ -102,7 +102,7 @@ def test_fold_invalid_inputs(
     """Padding by nothing does not change the type."""
     # Create valid input shape from input values.
     L = 1
-    for n, (o, k) in enumerate(zip(output_size, kernel_size)):
+    for n, (o, k) in enumerate(zip(output_size, kernel_size, strict=True)):
         L_d = int(
             (o + 2 * padding[n] - dilation[n] * (k - 1) - 1) // stride[n] + 1
         )

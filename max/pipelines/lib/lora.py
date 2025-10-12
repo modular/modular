@@ -22,7 +22,7 @@ import re
 from collections import OrderedDict
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -33,7 +33,12 @@ from max.graph.type import DeviceRef, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.graph.weights.weights import _cast_to_dtype
-from max.interfaces import InputContext, LoRAStatus, LoRAType
+from max.interfaces import (
+    LoRAStatus,
+    LoRAType,
+    RequestID,
+    TextGenerationContextType,
+)
 from max.interfaces.pipeline import (
     Pipeline,
     PipelineInputsType,
@@ -49,8 +54,6 @@ from .lora_request_processor import LoRARequestProcessor
 logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
-
-T = TypeVar("T", bound=InputContext)
 
 
 class LoRALRUCache:
@@ -331,11 +334,10 @@ class LoRAModel:
         if unsupported_modules:
             supported_list = ", ".join(sorted(supported_modules))
             unsupported_list = ", ".join(unsupported_modules)
-            msg = (
+            raise ValueError(
                 f"LoRA adapter contains unsupported target modules: {unsupported_list}. "
                 f"Currently supported modules are: {supported_list}."
             )
-            raise ValueError(msg)
 
     def _normalize_lora_key(self, key: str) -> str:
         """
@@ -476,16 +478,17 @@ class LoRAManager:
         config: LoRAConfig,
         base_model_path: str,
         base_dtype: DType,
+        zmq_endpoint_base: str,
     ):
         """
         Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
         Args:
+            config (LoRAConfig): The LoRA config.
             base_model_path (str): The name/path of the base model.
             base_dtype (DType): The base model dtype.
             max_num_loras (int): The maximum number of LoRA models to manage concurrently.
-            max_lora_rank (int): The maximum rank of all LoRAs loadable on the server.
-            lora_paths: (list[str]): An optional list of local LoRAs to load on initialization.
+            zmq_endpoint_base (str): The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
         """
         self.base_model_path = base_model_path
         self.base_dtype = base_dtype
@@ -497,11 +500,7 @@ class LoRAManager:
             max_size=self.max_num_loras
         )
 
-        self._request_processor = LoRARequestProcessor(
-            self,
-            config.lora_request_endpoint,
-            config.lora_response_endpoint,
-        )
+        self._request_processor = LoRARequestProcessor(self, zmq_endpoint_base)
 
         if config.lora_paths:
             self._load_adapters(config.lora_paths)
@@ -541,7 +540,7 @@ class LoRAManager:
 
     def get_lora_graph_inputs(
         self,
-        context_batch: Sequence[T],
+        context_batch: Sequence[TextGenerationContextType],
         input_row_offsets: npt.NDArray[np.integer[Any]],
         device: Device,
     ) -> tuple[Tensor, ...]:
@@ -835,11 +834,11 @@ class LoRAManager:
         for lora, slot in self._active_loras.values():
             if lora_weight := lora.get(key):
                 if LoRAType.A.value in key:
-                    weight_np[slot, : lora.rank, :] = lora_weight.data
+                    weight_np[slot, : lora.rank, :] = lora_weight.data  # type: ignore
                 elif LoRAType.B.value in key:
-                    weight_np[slot, :, : lora.rank] = lora_weight.data
+                    weight_np[slot, :, : lora.rank] = lora_weight.data  # type: ignore
                 elif LoRAType.BIAS.value in key:
-                    weight_np[slot, :] = lora_weight.data
+                    weight_np[slot, :] = lora_weight.data  # type: ignore
 
         # cast from fp32 -> target dtype
         # if target dtype is bfloat16, this technically returns a float16 np.ndarray
@@ -962,7 +961,9 @@ class LoRAManager:
                     lora_ids, lora_ranks, lora_grouped_offsets
                 )
 
-    def sort_lora_batch(self, context_batch: dict[str, T]) -> dict[str, T]:
+    def sort_lora_batch(
+        self, context_batch: dict[RequestID, TextGenerationContextType]
+    ) -> dict[RequestID, TextGenerationContextType]:
         """
         Sorts the LoRA batch by LRU cache id.
 

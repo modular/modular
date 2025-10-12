@@ -18,6 +18,7 @@ from typing import Literal
 
 from ...experimental import random
 from ...experimental.tensor import Tensor
+from ...graph import Dim, DimLike
 from .module import Module
 
 
@@ -34,6 +35,7 @@ class Linear(Module):
     .. code-block:: python
 
         from max.nn.module_v3 import Linear
+        from max.experimental.tensor import Tensor
 
         model = Linear(5, 10)
 
@@ -48,9 +50,11 @@ class Linear(Module):
     # By convention weight is stored transposed
     # ie. weight.shape == [out_dim, in_dim]
     weight: Tensor
+    """The weight :obj:`~max.experimental.tensor.Tensor` for the linear transformation."""
     bias: Tensor | Literal[0]
+    """The bias :obj:`~max.experimental.tensor.Tensor` for the linear transformation (or 0 if bias is disabled)."""
 
-    def __init__(self, in_dim: int, out_dim: int, *, bias: bool = True):
+    def __init__(self, in_dim: DimLike, out_dim: DimLike, *, bias: bool = True):
         """Constructs a random linear transformation of the given dimensions.
 
         Args:
@@ -63,12 +67,12 @@ class Linear(Module):
         self.bias = random.normal([out_dim]) if bias else 0
 
     @property
-    def in_dim(self):
+    def in_dim(self) -> Dim:
         """The input dimension for the transformation."""
         return self.weight.shape[1]
 
     @property
-    def out_dim(self):
+    def out_dim(self) -> Dim:
         """The output dimension for the transformation."""
         return self.weight.shape[0]
 

@@ -30,25 +30,25 @@ SEEDS: MutableMapping[Graph, TensorValue] = weakref.WeakKeyDictionary()
 SeedType = TensorType(DType.int64, [], device=DeviceRef.CPU())
 
 
-def _rotate_seed(seed: TensorValue):
+def _rotate_seed(seed: TensorValue):  # noqa: ANN202
     # Let's just get some different random numbers
     # from the initial seed for now.
     return seed + 1
 
 
 def assert_scalar(value: TensorValueLike) -> None:
-    if isinstance(value, (np.ndarray, TensorValue)) and value.shape:
+    if isinstance(value, np.ndarray | TensorValue) and value.shape:
         raise ValueError("Expected a scalar value")
 
 
-def _next_seed():
+def _next_seed():  # noqa: ANN202
     graph = Graph.current
     seed = _peek_seed()
     SEEDS[graph] = _rotate_seed(seed)
     return seed
 
 
-def _peek_seed():
+def _peek_seed():  # noqa: ANN202
     graph = Graph.current
     try:
         return SEEDS[graph]

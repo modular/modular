@@ -13,9 +13,10 @@
 
 
 from gpu import barrier
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
+from gpu.host.compile import _compile_code
 from gpu.id import thread_idx
-from gpu.memory import AddressSpace
+from gpu.memory import AddressSpace, CacheOperation
 from layout import *
 from layout._fillers import arange
 from layout._utils import load_to_simd
@@ -24,8 +25,9 @@ from layout.layout_tensor import (
     copy_dram_to_local,
     copy_dram_to_sram,
 )
-
+from sys import simd_width_of
 from utils import IndexList
+from benchmark import keep
 
 
 fn copy_dram_to_sram_buffer_load_kernel[
@@ -87,9 +89,7 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
 
     alias thread_layout = Layout.row_major(4, 2)
     alias layout = Layout.row_major(4, 16)
-    var stack = InlineArray[Scalar[DType.bfloat16], layout.size()](
-        uninitialized=True
-    )
+    var stack = InlineArray[BFloat16, layout.size()](uninitialized=True)
     var input_tensor = LayoutTensor[DType.bfloat16, layout](stack)
     arange(input_tensor)
     var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
@@ -183,7 +183,7 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: tid = 15 reg = [0.0, 0.0, 0.0, 0.0]
     alias thread_layout = Layout.row_major(4, 4)
     alias input_layout = Layout.row_major(4, 16)
-    var input_stack = InlineArray[Scalar[DType.bfloat16], input_layout.size()](
+    var input_stack = InlineArray[BFloat16, input_layout.size()](
         uninitialized=True
     )
     var input_tensor = LayoutTensor[DType.bfloat16, input_layout](input_stack)
@@ -205,7 +205,45 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     _ = device_tensor^
 
 
-fn main() raises:
+fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
+    fn kernel[cache_policy: CacheOperation](ptr: UnsafePointer[BFloat16]):
+        alias simd_width = simd_width_of[DType.bfloat16]()
+        var global_tensor = LayoutTensor[
+            DType.bfloat16,
+            Layout.row_major(16, 128),
+        ](ptr)
+        var local_tensor = LayoutTensor[
+            DType.bfloat16,
+            Layout.row_major(16, 8),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+
+        alias thread_layout = Layout.row_major(16, 16)
+        copy_dram_to_local[
+            src_thread_layout=thread_layout,
+            cache_policy=cache_policy,
+        ](
+            local_tensor.vectorize[1, simd_width](),
+            global_tensor.vectorize[1, simd_width](),
+            global_tensor,
+        )
+        keep(local_tensor)
+
+    alias MI355X_TARGET = get_gpu_target["mi355x"]()
+    # CHECK: === test_codegen_copy_dram_to_local_streaming_workgroup
+    # CHECK: buffer_load_dwordx4 v[0:3], v0, s[0:3], 0 offen sc0 nt
+    print("=== test_codegen_copy_dram_to_local_streaming_workgroup")
+    print(
+        _compile_code[
+            kernel[CacheOperation.STREAMING | CacheOperation.WORKGROUP],
+            target=MI355X_TARGET,
+        ]()
+    )
+
+
+def main():
     with DeviceContext() as ctx:
         run_copy_dram_to_sram_buffer_load_tests(ctx)
         run_copy_dram_to_local_buffer_load_tests(ctx)
+        test_codegen_copy_dram_to_local(ctx)

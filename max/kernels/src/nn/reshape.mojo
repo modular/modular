@@ -11,58 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from layout import Layout, LayoutTensor, RuntimeLayout
 from register import register_internal
 
 from utils.index import IndexList
-
-
-# Reshape assumes inputs are contiguous. It should always be fused last and
-# a non-contiguous tensor cannot be fused *into* this as input.
-@always_inline
-fn reshape[
-    rank: Int,
-    dtype: DType, //,
-    output_rank: Int,
-    single_thread_blocking_override: Bool = True,
-](
-    input: NDBuffer[dtype, rank, *_, **_],
-    new_shape: IndexList[output_rank],
-) -> NDBuffer[dtype, output_rank, input.origin]:
-    var stride_tuple: __type_of(new_shape) = {}
-    var stride: Int = 1
-
-    # Create contiguous strides.
-    @parameter
-    for i in reversed(range(output_rank)):
-        # Start from the back so we can accumulate the strides.
-        stride_tuple[i] = stride
-        stride *= new_shape[i]
-
-    # Return the a view with the new shape.
-    return NDBuffer[dtype, output_rank, address_space = input.address_space](
-        input.data, new_shape, stride_tuple
-    )
-
-
-@register_internal("ndbuffer_reshape")
-@always_inline
-fn ndbuffer_reshape[
-    rank: Int,
-    output_rank: Int,
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: NDBuffer[dtype, rank],
-    new_shape: IndexList[output_rank],
-) -> NDBuffer[
-    dtype, output_rank, input.origin
-]:
-    return reshape[
-        output_rank,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](input, new_shape)
 
 
 # Reshape assumes inputs are contiguous. It should always be fused last and
@@ -102,7 +54,7 @@ fn reshape[
     )
 
 
-@register_internal("ndbuffer_reshape")
+@register_internal("layout_tensor_reshape")
 @always_inline
 fn layout_tensor_reshape[
     output_rank: Int,

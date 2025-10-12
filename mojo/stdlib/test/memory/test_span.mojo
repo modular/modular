@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_equal, assert_raises, assert_true
 
 
@@ -309,7 +309,7 @@ def test_apply():
         # twice only even numbers
         twice = items.copy()
         span = Span(twice)
-        span.apply[func = _twice[D], where = _where[D]]()
+        span.apply[func = _twice[D], cond = _where[D]]()
         for i, item in enumerate(items):
             if item % 2 == 0:
                 assert_true(span[i] == item * 2)
@@ -351,27 +351,4 @@ def test_unsafe_subspan():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_span_list_int]()
-    suite.test[test_span_list_str]()
-    suite.test[test_span_array_int]()
-    suite.test[test_span_array_str]()
-    suite.test[test_indexing]()
-    suite.test[test_span_slice]()
-    suite.test[test_equality]()
-    suite.test[test_bool]()
-    suite.test[test_contains]()
-    suite.test[test_fill]()
-    suite.test[test_ref]()
-    suite.test[test_reversed]()
-    suite.test[test_swap_elements]()
-    suite.test[test_merge]()
-    suite.test[test_span_to_string]()
-    suite.test[test_span_repr]()
-    suite.test[test_reverse]()
-    suite.test[test_apply]()
-    suite.test[test_count_func]()
-    suite.test[test_unsafe_subspan]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

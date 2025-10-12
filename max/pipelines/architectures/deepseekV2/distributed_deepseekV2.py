@@ -26,7 +26,7 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.attention.multi_latent_attention import (
-    DistributedLatentAttentionWithRope,
+    TensorParallelLatentAttentionWithRope,
 )
 from max.nn.moe import MoE
 from max.nn.rotary_embedding import (
@@ -77,7 +77,7 @@ class DistributedDeepseekV2(DistributedTransformer):
         layers = [
             DistributedTransformerBlock(
                 devices=config.devices,
-                attention=DistributedLatentAttentionWithRope(
+                attention=TensorParallelLatentAttentionWithRope(
                     rope=rope,
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,

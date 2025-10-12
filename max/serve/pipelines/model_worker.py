@@ -20,13 +20,19 @@ import os
 import signal
 import sys
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, Callable
+from typing import Any
 
 import uvloop
-from max.interfaces import Pipeline, PipelinesFactory
-from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.interfaces import (
+    Pipeline,
+    PipelineInputsType,
+    PipelineOutputType,
+    PipelinesFactory,
+)
+from max.nn.kv_cache.paged_cache import ResetPrefixCacheBackend
+from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_cuda_oom
@@ -98,7 +104,7 @@ class ModelWorker:
     @traced
     async def run(
         pc: ProcessControl,
-        model_factory: PipelinesFactory,
+        model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
         metric_client_factory: Callable[
@@ -138,6 +144,17 @@ class ModelWorker:
                 scheduler_zmq_configs,
             )
 
+            # Retrieve Paged Manager.
+            paged_cache = get_paged_manager(pipeline)
+            reset_prefix_cache_backend: ResetPrefixCacheBackend | None = None
+            if (
+                paged_cache is not None
+                and pipeline_config.zmq_endpoint_base is not None
+            ):
+                reset_prefix_cache_backend = ResetPrefixCacheBackend(
+                    pipeline_config.zmq_endpoint_base
+                )
+
             # Maybe retrieve LoRA manager.
             lora_manager = None
             pipeline_model = get_pipeline_model(pipeline)
@@ -157,6 +174,13 @@ class ModelWorker:
                     # Checks for new LoRA requests and processes them.
                     if lora_manager is not None:
                         lora_manager.process_lora_requests()
+                    # Check for request to reset prefix cache.
+                    if (
+                        reset_prefix_cache_backend is not None
+                        and reset_prefix_cache_backend.should_reset_prefix_cache()
+                    ):
+                        assert paged_cache is not None
+                        paged_cache.reset_prefix_cache()
                     # This method must terminate in a reasonable amount of time
                     # so that the ProcessMonitor heartbeat is periodically run.
                     progress = scheduler.run_iteration()
@@ -170,10 +194,7 @@ class ModelWorker:
                     if wrapped_error is not e:
                         # It was a CUDA OOM error, raise the wrapped version with helpful message
                         raise wrapped_error from e
-                    else:
-                        # Not OOM, handle normally
-                        logger.exception("An error occurred during scheduling")
-                        raise e
+                    raise e
 
         logger.debug("Stopped model worker!")
 
@@ -181,7 +202,7 @@ class ModelWorker:
     @traced
     def __call__(
         pc: ProcessControl,
-        model_factory: PipelinesFactory,
+        model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
         metric_client_factory: Callable[
@@ -215,16 +236,12 @@ class ModelWorker:
                 )
             )
         except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            logger.exception(
-                "Encountered an error in ModelWorker.run %s", e, stack_info=True
-            )
+            pass  # suppress noisy stack traces for user abort
 
 
 @asynccontextmanager
 async def start_model_worker(
-    model_factory: PipelinesFactory,
+    model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,

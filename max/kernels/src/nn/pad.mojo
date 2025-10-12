@@ -144,7 +144,7 @@ fn pad_constant[
         dtype, input_layout, address_space = AddressSpace.GENERIC, **_
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
-    constant: SIMD[constant_type, 1],
+    constant: Scalar[constant_type],
 ):
     """
     Fill `output` with values from `input`, and edges padded with `constant`
@@ -453,7 +453,9 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
             var post_pad_start_ptr = non_pad_start_ptr.offset(self.non_pad)
             var input_start_ptr = input.offset(self.input_offset)
             _fill(pre_pad_start_ptr, constant, self.pre_pad)
-            memcpy(non_pad_start_ptr, input_start_ptr, self.non_pad)
+            memcpy(
+                dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad
+            )
             _fill(post_pad_start_ptr, constant, self.post_pad)
 
 
@@ -594,7 +596,9 @@ fn _memcpy_regions_fast[
                 copy_from * output_axis_stride
             )
 
-            memcpy(copy_to_ptr, copy_from_ptr, output_axis_stride)
+            memcpy(
+                dest=copy_to_ptr, src=copy_from_ptr, count=output_axis_stride
+            )
             copy_to += -1 if pre_copy else +1
 
     if non_pad == 1:
@@ -670,7 +674,7 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         # no more dimensions to recurse, copy from input to unpadded region
         var non_pad_start_ptr = output.offset(output_offset + self.pre_pad)
         var input_start_ptr = input.offset(input_offset)
-        memcpy(non_pad_start_ptr, input_start_ptr, self.non_pad)
+        memcpy(dest=non_pad_start_ptr, src=input_start_ptr, count=self.non_pad)
 
     @always_inline
     fn memcpy_regions(

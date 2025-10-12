@@ -43,6 +43,8 @@ struct _GPUAddressSpace(
     """Constant address space."""
     alias LOCAL = AddressSpace(5)
     """Local address space."""
+    alias SHARED_CLUSTER = AddressSpace(7)
+    """Shared cluster address space."""
 
     @always_inline("builtin")
     fn __init__(out self, value: Int):

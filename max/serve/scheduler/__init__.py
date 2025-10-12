@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import TypeVar, cast
+from typing import cast
 
 from max.interfaces import (
-    EmbeddingsGenerationContextType,
-    InputContext,
+    EmbeddingsContext,
     MAXPullQueue,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
-    RequestID,
     Scheduler,
+    TextGenerationInputs,
+    TextGenerationOutput,
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
@@ -30,7 +30,6 @@ from max.pipelines.lib import (
     EmbeddingsPipelineType,
     PipelineConfig,
     PipelineRole,
-    TextGenerationPipelineType,
 )
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -42,28 +41,22 @@ from .audio_generation_scheduler import (
     AudioGenerationScheduler,
     AudioGenerationSchedulerConfig,
 )
-from .base import PrefillRequest, PrefillResponse
+from .base import CancelRequest, PrefillRequest, PrefillResponse
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
-from .lora_scheduler_utils import (
-    can_allocate_lora_request,
-    is_active_lora,
-    is_lora,
-)
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 
 __all__ = [
     "AudioGenerationScheduler",
     "AudioGenerationSchedulerConfig",
+    "CancelRequest",
     "EmbeddingsScheduler",
     "EmbeddingsSchedulerConfig",
     "PrefillRequest",
     "PrefillResponse",
     "load_scheduler",
 ]
-
-T = TypeVar("T", bound=InputContext)
 
 
 def load_scheduler(
@@ -87,11 +80,12 @@ def load_scheduler(
             scheduler_config=embeddings_scheduler_config,
             pipeline=emb_pipeline,
             request_queue=cast(
-                MAXPullQueue[EmbeddingsGenerationContextType],
+                MAXPullQueue[EmbeddingsContext],
                 request_queue,
             ),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
+            offload_queue_draining=pipeline_config.experimental_background_queue,
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "speech_lm_pipeline")
@@ -125,10 +119,14 @@ def load_scheduler(
             response_queue=response_queue,
             cancel_queue=cancel_queue,
             paged_manager=paged_manager,
+            offload_queue_draining=pipeline_config.experimental_background_queue,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
+        text_pipeline = cast(
+            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+            pipeline,
+        )
         return load_text_generation_scheduler(
             text_pipeline,
             pipeline_config,
@@ -138,7 +136,10 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
         assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
+        text_pipeline = cast(
+            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+            pipeline,
+        )
         return load_decode_scheduler(
             text_pipeline,
             pipeline_config,
@@ -149,7 +150,10 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
         assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(TextGenerationPipelineType[TextContext], pipeline)
+        text_pipeline = cast(
+            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+            pipeline,
+        )
         return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:
         raise ValueError(

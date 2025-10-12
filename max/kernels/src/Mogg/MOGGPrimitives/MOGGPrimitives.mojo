@@ -112,7 +112,7 @@ fn create_index_async(value: Int, async_ptr: OpaquePointer):
 @register_internal("builtin.create_si64_async")
 @no_inline
 @export
-fn create_si64_async(value: Scalar[DType.int64], async_ptr: OpaquePointer):
+fn create_si64_async(value: Int64, async_ptr: OpaquePointer):
     external_call["KGEN_CompilerRT_CreateAsync_int64t", NoneType](
         value, async_ptr
     )
@@ -461,6 +461,7 @@ fn mogg_tensor_init[
     static_shape: DimList,
     static_stride: DimList,
     alignment: Int,
+    exclusive: Bool,
 ](ptr: OpaquePointer, shape: IndexList[rank]) -> ManagedTensorSlice[
     io_spec = IOSpec[mut, input](),
     static_spec = StaticTensorSpec[dtype, rank](
@@ -468,7 +469,7 @@ fn mogg_tensor_init[
         static_stride,
         alignment,
         AddressSpace.GENERIC,
-        True,
+        exclusive,
         None,
         None,
         None,
@@ -479,7 +480,7 @@ fn mogg_tensor_init[
         static_stride,
         alignment,
         AddressSpace.GENERIC,
-        True,
+        exclusive,
         None,
         None,
         None,
@@ -503,9 +504,9 @@ fn mogg_async_ready(async_ptr: OpaquePointer):
 
 @register_internal("mgp.assert")
 @no_inline
-fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: UInt) raises:
+fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: Int) raises:
     if not cond:
-        raise Error(pack_string_res(msg_ptr, msg_len))
+        raise Error(pack_string_res(msg_ptr, UInt(msg_len)))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -792,7 +793,7 @@ fn mgp_buffer_device_to_device[
             ),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
-        memcpy(dst_buf.data, src_buf.data, src_buf.size())
+        memcpy(dest=dst_buf.data, src=src_buf.data, count=src_buf.size())
     else:
         raise Error(
             "mgp.buffer.device_to_device can be scheduled between same device"
@@ -947,11 +948,11 @@ fn mgp_debug_tensor_print[
     buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     shape: IndexList[spec_rank],
     label_ptr: UnsafePointer[Byte],
-    label_len: UInt,
+    label_len: Int,
 ) raises:
     external_call["KGEN_CompilerRT_DebugTensorPrint", NoneType](
         label_ptr,
-        label_len,
+        UInt(label_len),
         dtype,
         UnsafePointer(to=shape.data),
         spec_rank,

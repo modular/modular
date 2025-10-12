@@ -14,7 +14,7 @@
 from sys import simd_width_of, size_of
 
 from memory import AddressSpace, memcmp, memcpy, memset, memset_zero
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import (
     assert_almost_equal,
     assert_equal,
@@ -45,7 +45,7 @@ def test_memcpy():
     # UnsafePointer test
     pair2.lo = 0
     pair2.hi = 0
-    memcpy(dest, src, 1)
+    memcpy(dest=dest, src=src, count=1)
 
     assert_equal(pair2.lo, 1)
     assert_equal(pair2.hi, 2)
@@ -60,7 +60,7 @@ def test_memcpy():
             buf[i] = src[i] = 2
             dst[i] = 0
 
-        memcpy(dst, src, size)
+        memcpy(dest=dst, src=src, count=size)
         var err = memcmp(dst, buf, size)
 
         assert_equal(err, 0)
@@ -92,7 +92,7 @@ def test_memcpy_dtype():
     assert_equal(b[2], -1)
     assert_equal(b[3], -1)
 
-    memcpy(b, a, 4)
+    memcpy(dest=b, src=a, count=4)
 
     assert_equal(b[0], 0)
     assert_equal(b[1], 1)
@@ -185,8 +185,11 @@ def test_memcmp_simd():
     c = memcmp(p2, p1, length)
     assert_equal(c, -1, "[..., 0, 120, 90] is smaller than [..., 120, 100]")
 
+    p1.free()
+    p2.free()
 
-def test_memcmp_extensive[
+
+def _test_memcmp_extensive[
     dtype: DType, extermes: StaticString = ""
 ](count: Int):
     var ptr1 = UnsafePointer[Scalar[dtype]].alloc(count)
@@ -249,28 +252,32 @@ def test_memcmp_extensive[
 
 
 def test_memcmp_extensive():
-    test_memcmp_extensive[DType.int8](1)
-    test_memcmp_extensive[DType.int8](3)
+    _test_memcmp_extensive[DType.int8](1)
+    _test_memcmp_extensive[DType.int8](3)
 
-    test_memcmp_extensive[DType.int](3)
-    test_memcmp_extensive[DType.int](simd_width_of[Int]())
-    test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]())
-    test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() + 1)
-    test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() - 1)
+    _test_memcmp_extensive[DType.int](3)
+    _test_memcmp_extensive[DType.int](simd_width_of[Int]())
+    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]())
+    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() + 1)
+    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() - 1)
 
-    test_memcmp_extensive[DType.float32](3)
-    test_memcmp_extensive[DType.float32](simd_width_of[DType.float32]())
-    test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]())
-    test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]() + 1)
-    test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]() - 1)
+    _test_memcmp_extensive[DType.float32](3)
+    _test_memcmp_extensive[DType.float32](simd_width_of[DType.float32]())
+    _test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]())
+    _test_memcmp_extensive[DType.float32](
+        4 * simd_width_of[DType.float32]() + 1
+    )
+    _test_memcmp_extensive[DType.float32](
+        4 * simd_width_of[DType.float32]() - 1
+    )
 
-    test_memcmp_extensive[DType.float32, "nan"](3)
-    test_memcmp_extensive[DType.float32, "nan"](99)
-    test_memcmp_extensive[DType.float32, "nan"](254)
+    _test_memcmp_extensive[DType.float32, "nan"](3)
+    _test_memcmp_extensive[DType.float32, "nan"](99)
+    _test_memcmp_extensive[DType.float32, "nan"](254)
 
-    test_memcmp_extensive[DType.float32, "inf"](3)
-    test_memcmp_extensive[DType.float32, "inf"](99)
-    test_memcmp_extensive[DType.float32, "inf"](254)
+    _test_memcmp_extensive[DType.float32, "inf"](3)
+    _test_memcmp_extensive[DType.float32, "inf"](99)
+    _test_memcmp_extensive[DType.float32, "inf"](254)
 
 
 def test_memcmp_simd_boundary():
@@ -767,34 +774,8 @@ def test_indexing():
     assert_equal(ptr[Int(2)], 2)
     assert_equal(ptr[1], 1)
 
+    ptr.free()
+
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_memcpy]()
-    suite.test[test_memcpy_dtype]()
-    suite.test[test_memcmp]()
-    suite.test[test_memcmp_non_multiple_of_int32]()
-    suite.test[test_memcmp_overflow]()
-    suite.test[test_memcmp_simd]()
-    suite.test[test_memcmp_extensive]()
-    suite.test[test_memcmp_simd_boundary]()
-    suite.test[test_memcmp_simd_overlap]()
-    suite.test[test_memcmp_simd_index_finding]()
-    suite.test[test_memcmp_simd_signed_overflow]()
-    suite.test[test_memcmp_simd_alignment]()
-    suite.test[test_memcmp_simd_width_edge_cases]()
-    suite.test[test_memcmp_simd_zero_bytes]()
-    suite.test[test_memset]()
-    suite.test[test_pointer_explicit_copy]()
-    suite.test[test_dtypepointer_string]()
-    suite.test[test_pointer_refitem]()
-    suite.test[test_pointer_refitem_string]()
-    suite.test[test_pointer_refitem_pair]()
-    suite.test[test_pointer_string]()
-    suite.test[test_address_space_str]()
-    suite.test[test_dtypepointer_gather]()
-    suite.test[test_dtypepointer_scatter]()
-    suite.test[test_indexing]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

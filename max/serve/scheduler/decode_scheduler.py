@@ -21,25 +21,30 @@ from collections import OrderedDict
 from max.interfaces import (
     MAXPullQueue,
     MAXPushQueue,
+    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.interfaces.queue import drain_queue
+from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
-    XferReqData,
+    TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
-from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import (
+    CancelRequest,
+    PrefillRequest,
+    PrefillResponse,
+)
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
@@ -59,7 +64,9 @@ logger = logging.getLogger("max.serve")
 class DecodeScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: TextGenerationPipelineType[TextContext],
+        pipeline: Pipeline[
+            TextGenerationInputs[TextContext], TextGenerationOutput
+        ],
         scheduler_config: TokenGenerationSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
@@ -69,6 +76,7 @@ class DecodeScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         dispatcher: DecodeDispatcherClientV2,
+        offload_queue_draining: bool = False,
     ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
@@ -85,12 +93,16 @@ class DecodeScheduler(Scheduler):
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
         self.prefill_reqs: dict[RequestID, TextContext] = {}
-        self.inflight_transfers: dict[RequestID, XferReqData] = {}
+        self.inflight_transfers: dict[RequestID, TransferReqData] = {}
 
         # Create Transfer Engine
+        if self.paged_manager.num_replicas > 1:
+            raise ValueError(
+                "DecodeScheduler does not support data parallelism"
+            )
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager.device_tensors,
+            tensors=self.paged_manager._replica_managers[0].device_tensors,
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
@@ -103,6 +115,21 @@ class DecodeScheduler(Scheduler):
         # None corresponds to the default destination address.
         # TODO: delete the default destination address.
         self.remote_endpoints: set[str | None] = set()
+
+        # We are parameterizing the offload of queue draining to allow for
+        # the use case where we want to drain the queue in the main thread.
+        # This is useful for debugging and testing purposes.
+        self._queue_drainer: (
+            BackgroundQueueDrainer[TextContext | TextAndVisionContext] | None
+        ) = None
+        if offload_queue_draining:
+            # Initialize the background queue drainer
+            self._queue_drainer = BackgroundQueueDrainer[
+                TextContext | TextAndVisionContext
+            ](
+                self.request_queue,
+                max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
+            )
 
     @traced
     def handle_transfer_engine_response(
@@ -171,8 +198,16 @@ class DecodeScheduler(Scheduler):
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        new_contexts = drain_queue(self.request_queue)
-        for context in new_contexts:
+        if self._queue_drainer is not None:
+            self._queue_drainer.start_draining()
+            items = self._queue_drainer.retrieve_items()
+        else:
+            items = drain_queue(
+                self.request_queue,
+                max_items=self.scheduler_config.max_batch_size_tg * 2,
+            )
+
+        for context in items:
             self.pending_reqs[context.request_id] = context
 
         while (
@@ -204,11 +239,11 @@ class DecodeScheduler(Scheduler):
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.paged_manager.block_manager.get_req_blocks(req_id)
+            dst_idxs = self.paged_manager.get_req_blocks(req_id)
             self.prefill_reqs[req_id] = context
             self.send_prefill_request(req_id, context, dst_idxs)
 
-    def _handle_cancelled_requests(self):
+    def _handle_cancelled_requests(self) -> None:
         while True:
             try:
                 for request_id in self.cancel_queue.get_nowait():
@@ -227,7 +262,9 @@ class DecodeScheduler(Scheduler):
                         del self.prefill_reqs[request_id]
 
                         # Send a cancel request to the prefill node
-                        self.dispatcher.send_request_nowait(request_id)
+                        self.dispatcher.send_request_nowait(
+                            CancelRequest(id=request_id)
+                        )
 
                         # Send the cancelled result back to the response q
                         self.response_queue.put_nowait(
@@ -367,7 +404,7 @@ class DecodeScheduler(Scheduler):
 
 
 def load_decode_scheduler(
-    pipeline: TextGenerationPipelineType[TextContext],
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
@@ -400,4 +437,5 @@ def load_decode_scheduler(
             bind_addr=settings.dispatcher_config.transport_config.bind_address,
             default_dest_addr=settings.dispatcher_config.transport_config.default_destination_address,
         ),
+        offload_queue_draining=pipeline_config.experimental_background_queue,
     )

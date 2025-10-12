@@ -26,11 +26,11 @@ fn kernel_wrapper[
         dtype, simd_width
     ],
 ](device_ptr: UnsafePointer[Scalar[dtype]]):
-    var val = device_ptr.load[width=simd_width](thread_idx.x * simd_width)
+    var val = device_ptr.load[width=simd_width](thread_idx.x * UInt(simd_width))
     var result = kernel_fn(val)
     barrier()
 
-    device_ptr.store(thread_idx.x * simd_width, result)
+    device_ptr.store(thread_idx.x * UInt(simd_width), result)
 
 
 fn _kernel_launch_helper[
@@ -402,7 +402,7 @@ fn test_lane_group_reduce_fp16_packed(ctx: DeviceContext) raises:
     _lane_group_reduce_launch_helper[DType.float16, 2, 4, 8](ctx)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_shuffle_idx_fp32(ctx)
         test_shuffle_idx_bf16(ctx)

@@ -20,8 +20,9 @@ from typing import (
     Any,
     Generic,
     Protocol,
+    TypeAlias,
+    TypeGuard,
     TypeVar,
-    Union,
     cast,
     runtime_checkable,
 )
@@ -32,7 +33,6 @@ from max._core import Value as _Value
 from max._core.dialects import mo
 from max.driver import DLPackArray
 from max.dtype import DType
-from typing_extensions import TypeAlias, TypeGuard
 
 from . import ops
 from .dim import Dim, DimLike
@@ -131,8 +131,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, BufferValue):
             return self
 
-        msg = f"Value is not a BufferValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not a BufferValue, was '{type(self).__name__}'"
+        )
 
     @property
     def tensor(self) -> TensorValue:
@@ -143,8 +144,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, TensorValue):
             return self
 
-        msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not a TensorValue, was '{type(self).__name__}'"
+        )
 
     @property
     def opaque(self) -> _OpaqueValue:
@@ -155,8 +157,9 @@ class Value(Generic[MlirType]):
         if isinstance(self, _OpaqueValue):
             return self
 
-        msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
-        raise TypeError(msg)
+        raise TypeError(
+            f"Value is not an _OpaqueValue, was '{type(self).__name__}'"
+        )
 
     @property
     def type(self) -> Type[MlirType]:
@@ -1242,13 +1245,14 @@ class HasBufferValue(Protocol):
     def __buffervalue__(self) -> BufferValue: ...
 
 
-Numeric = Union[int, float, np.integer[Any], np.floating[Any], DLPackArray]
-Scalar = Union[int, float, np.integer[Any], np.floating[Any], Dim]
-StrongTensorValueLike = Union[
-    _Value[mo.TensorType], TensorValue, Shape, Dim, HasTensorValue
-]
-TensorValueLike = Union[StrongTensorValueLike, Numeric]
-BufferValueLike = Union[BufferValue, HasBufferValue]
+Numeric = int | float | np.integer[Any] | np.floating[Any] | DLPackArray
+Scalar = int | float | np.integer[Any] | np.floating[Any] | Dim
+StrongTensorValueLike = (
+    _Value[mo.TensorType] | TensorValue | Shape | Dim | HasTensorValue
+)
+
+TensorValueLike = StrongTensorValueLike | Numeric
+BufferValueLike = BufferValue | HasBufferValue
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
@@ -1267,7 +1271,7 @@ def _is_scalar(obj: Any) -> TypeGuard[Scalar]:
 
 
 def _is_strong_tensor_value_like(obj: Any) -> TypeGuard[StrongTensorValueLike]:
-    return isinstance(obj, (TensorValue, Shape, Dim, HasTensorValue)) or (
+    return isinstance(obj, TensorValue | Shape | Dim | HasTensorValue) or (
         isinstance(obj, _Value) and isinstance(obj.type, mo.TensorType)
     )
 

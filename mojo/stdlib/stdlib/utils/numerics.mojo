@@ -203,7 +203,7 @@ struct FPUtils[
         Returns:
             An floating-point representation of the Int.
         """
-        return bitcast[dtype, 1](SIMD[Self.integral_type, 1](value))
+        return bitcast[dtype, 1](Scalar[Self.integral_type](value))
 
     @staticmethod
     @always_inline
@@ -973,8 +973,8 @@ fn nextafter[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["nextafterf", SIMD[result_type, 1]](
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["nextafterf", Scalar[result_type]](
             arg0, arg1
         )
 
@@ -982,8 +982,8 @@ fn nextafter[
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["nextafter", SIMD[result_type, 1]](
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["nextafter", Scalar[result_type]](
             arg0, arg1
         )
 
@@ -993,5 +993,5 @@ fn nextafter[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](arg0, arg1)
-    return _simd_apply[_float32_dispatch, dtype, width](arg0, arg1)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
+    return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)

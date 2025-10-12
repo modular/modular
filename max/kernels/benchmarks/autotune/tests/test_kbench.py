@@ -39,7 +39,7 @@ def _invoke_cli(
     cli: Command,
     test_cases: list[str],
     exit_code: int = os.EX_OK,
-):
+) -> None:
     os_env = os.environ.copy()
     for _, test_cmd in enumerate(test_cases):
         try:
@@ -52,7 +52,7 @@ def _invoke_cli(
             )
 
 
-def test_kbench():
+def test_kbench() -> None:
     _invoke_cli(
         kbench_cli,
         test_cases=[
@@ -87,7 +87,7 @@ def test_kbench():
     pd.testing.assert_series_equal(df["spec"], baseline_df["spec"])
 
 
-def test_kbench_cache():
+def test_kbench_cache() -> None:
     print("here")
     _invoke_cli(
         kbench_cli,
@@ -98,7 +98,7 @@ def test_kbench_cache():
     )
 
 
-def test_kplot():
+def test_kplot() -> None:
     _invoke_cli(
         kplot_cli,
         test_cases=[
@@ -120,7 +120,7 @@ def test_kplot():
         assert p.exists()
 
 
-def test_kprofile():
+def test_kprofile() -> None:
     _invoke_cli(
         kprofile_cli,
         test_cases=[

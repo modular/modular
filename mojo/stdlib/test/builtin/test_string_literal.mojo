@@ -13,7 +13,13 @@
 
 from sys.ffi import c_char
 
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_add():
@@ -236,6 +242,7 @@ def test_iter():
             assert_equal(String(c), "n")
         elif i == 2:
             assert_equal(String(c), "e")
+        i += 1
 
 
 def test_layout():
@@ -344,27 +351,4 @@ def test_float_conversion():
 
 
 def main():
-    test_add()
-    test_mul()
-    test_equality()
-    test_len()
-    test_bool()
-    test_find()
-    test_rfind()
-    test_comparison_operators()
-    test_count()
-    test_indexing()
-    test_intable()
-    test_isdigit()
-    test_islower()
-    test_isupper()
-    test_layout()
-    test_lower_upper()
-    test_repr()
-    test_rjust()
-    test_ljust()
-    test_center()
-    test_startswith()
-    test_endswith()
-    test_strip()
-    test_float_conversion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

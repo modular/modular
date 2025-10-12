@@ -97,7 +97,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         ]()
         self.allocated_bytes = capacity << 3
         self.keys = UnsafePointer[UInt8].alloc(self.allocated_bytes)
-        self.keys_end = UnsafePointer[SIMD[KeyEndType, 1]].alloc(capacity)
+        self.keys_end = UnsafePointer[Scalar[KeyEndType]].alloc(capacity)
         self.count = 0
         self.capacity = capacity
 
@@ -106,9 +106,9 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = existing.count
         self.capacity = existing.capacity
         self.keys = UnsafePointer[UInt8].alloc(self.allocated_bytes)
-        memcpy(self.keys, existing.keys, self.allocated_bytes)
+        memcpy(dest=self.keys, src=existing.keys, count=self.allocated_bytes)
         self.keys_end = UnsafePointer[Scalar[KeyEndType]].alloc(self.capacity)
-        memcpy(self.keys_end, existing.keys_end, self.capacity)
+        memcpy(dest=self.keys_end, src=existing.keys_end, count=self.capacity)
 
     fn __del__(deinit self):
         self.keys.free()
@@ -127,22 +127,20 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
         if needs_realocation:
             var keys = UnsafePointer[UInt8].alloc(self.allocated_bytes)
-            memcpy(keys, self.keys, Int(prev_end))
+            memcpy(dest=keys, src=self.keys, count=Int(prev_end))
             self.keys.free()
             self.keys = keys
 
         memcpy(
-            self.keys.offset(prev_end),
-            UnsafePointer(key.unsafe_ptr()),
-            key_length,
+            dest=self.keys.offset(prev_end),
+            src=UnsafePointer(key.unsafe_ptr()),
+            count=key_length,
         )
         var count = self.count + 1
         if count >= self.capacity:
             var new_capacity = self.capacity + (self.capacity >> 1)
-            var keys_end = UnsafePointer[SIMD[KeyEndType, 1]].alloc(
-                new_capacity
-            )
-            memcpy(keys_end, self.keys_end, self.capacity)
+            var keys_end = UnsafePointer[Scalar[KeyEndType]].alloc(new_capacity)
+            memcpy(dest=keys_end, src=self.keys_end, count=self.capacity)
             self.keys_end.free()
             self.keys_end = keys_end
             self.capacity = new_capacity
@@ -251,19 +249,31 @@ struct StringDict[
             self.key_hashes = UnsafePointer[Scalar[KeyCountType]].alloc(
                 self.capacity
             )
-            memcpy(self.key_hashes, existing.key_hashes, self.capacity)
+            memcpy(
+                dest=self.key_hashes,
+                src=existing.key_hashes,
+                count=self.capacity,
+            )
         else:
             self.key_hashes = UnsafePointer[Scalar[KeyCountType]].alloc(0)
         self.values = existing.values.copy()
         self.slot_to_index = UnsafePointer[Scalar[KeyCountType]].alloc(
             self.capacity
         )
-        memcpy(self.slot_to_index, existing.slot_to_index, self.capacity)
+        memcpy(
+            dest=self.slot_to_index,
+            src=existing.slot_to_index,
+            count=self.capacity,
+        )
 
         @parameter
         if destructive:
             self.deleted_mask = UnsafePointer[UInt8].alloc(self.capacity >> 3)
-            memcpy(self.deleted_mask, existing.deleted_mask, self.capacity >> 3)
+            memcpy(
+                dest=self.deleted_mask,
+                src=existing.deleted_mask,
+                count=self.capacity >> 3,
+            )
         else:
             self.deleted_mask = UnsafePointer[UInt8].alloc(0)
 
@@ -297,7 +307,7 @@ struct StringDict[
                 self.values.append(value.copy())
                 self.count += 1
                 self.slot_to_index.store(
-                    slot, SIMD[KeyCountType, 1](self.keys.count)
+                    slot, Scalar[KeyCountType](self.keys.count)
                 )
                 return
 
@@ -376,7 +386,11 @@ struct StringDict[
         if destructive:
             var deleted_mask = UnsafePointer[UInt8].alloc(mask_capacity)
             memset_zero(deleted_mask, mask_capacity)
-            memcpy(deleted_mask, self.deleted_mask, old_capacity >> 3)
+            memcpy(
+                dest=deleted_mask,
+                src=self.deleted_mask,
+                count=old_capacity >> 3,
+            )
             self.deleted_mask.free()
             self.deleted_mask = deleted_mask
 
@@ -384,7 +398,7 @@ struct StringDict[
         for i in range(old_capacity):
             if old_slot_to_index[i] == 0:
                 continue
-            var key_hash = SIMD[KeyCountType, 1](0)
+            var key_hash = Scalar[KeyCountType](0)
 
             @parameter
             if caching_hashes:

@@ -17,6 +17,7 @@ from sys.info import simd_width_of
 from algorithm import elementwise
 from buffer import NDBuffer
 from testing import assert_almost_equal
+from testing import TestSuite
 
 from utils.index import IndexList
 
@@ -50,4 +51,4 @@ def test_elementwise_1d():
 
 
 def main():
-    test_elementwise_1d()
+    TestSuite.discover_tests[__functions_in_module()]().run()

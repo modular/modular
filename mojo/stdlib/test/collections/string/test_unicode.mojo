@@ -14,7 +14,7 @@
 from collections.string._unicode import _get_uppercase_mapping
 
 from testing import assert_equal
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_uppercase_conversion():
@@ -45,6 +45,4 @@ def test_uppercase_conversion():
 
 
 def main():
-    var suite = TestSuite()
-    suite.test[test_uppercase_conversion]()
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

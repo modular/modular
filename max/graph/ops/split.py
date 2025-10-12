@@ -66,7 +66,7 @@ def split(
     if any(size < 0 for size in sizes):
         raise ValueError(f"Split sizes must be positive: {sizes=}")
 
-    def split_type(dim: int):
+    def split_type(dim: int):  # noqa: ANN202
         shape = Shape(x.shape)
         shape[axis] = Dim(dim)
         return TensorType(x.dtype, shape, x.device)

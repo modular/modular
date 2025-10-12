@@ -50,5 +50,5 @@ fn test_mixed_tuple_codegen_memory() raises:
     assert_true("st.global.b32 \t[%rd3+4], %rd1" in nvidia_asm)
 
 
-fn main() raises:
+def main():
     test_mixed_tuple_codegen_memory()

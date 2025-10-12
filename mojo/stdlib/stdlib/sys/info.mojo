@@ -362,15 +362,6 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         """
         return Self._os() in ["darwin", "macosx"]
 
-    @staticmethod
-    fn is_windows() -> Bool:
-        """Returns True if the host operating system is Windows.
-
-        Returns:
-            True if the host operating system is Windows and False otherwise.
-        """
-        return Self._os() == "windows"
-
 
 fn platform_map[
     T: Copyable & Movable, //,
@@ -378,7 +369,6 @@ fn platform_map[
     *,
     linux: Optional[T] = None,
     macos: Optional[T] = None,
-    windows: Optional[T] = None,
 ]() -> T:
     """Helper for defining a compile time value depending
     on the current compilation target, raising a compilation
@@ -395,7 +385,6 @@ fn platform_map[
         operation: The operation to show in the compilation error.
         linux: Optional support for linux targets.
         macos: Optional support for macos targets.
-        windows: Optional support for windows targets.
     """
 
     @parameter
@@ -403,8 +392,6 @@ fn platform_map[
         return macos.value().copy()
     elif CompilationTarget.is_linux() and linux:
         return linux.value().copy()
-    elif CompilationTarget.is_windows() and windows:
-        return windows.value().copy()
     else:
         return CompilationTarget.unsupported_target_error[
             T, operation=operation
@@ -487,6 +474,11 @@ fn _is_sm_101x() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_sm_110x() -> Bool:
+    return is_nvidia_gpu["sm_110"]() or is_nvidia_gpu["sm_110a"]()
+
+
+@always_inline("nodebug")
 fn _is_sm_120x() -> Bool:
     return is_nvidia_gpu["sm_120"]() or is_nvidia_gpu["sm_120a"]()
 
@@ -508,7 +500,12 @@ fn _is_sm_9x_or_newer() -> Bool:
 
 @always_inline("nodebug")
 fn _is_sm_100x_or_newer() -> Bool:
-    return _is_sm_100x() or _is_sm_120x_or_newer()
+    return _is_sm_100x() or _is_sm_110x_or_newer()
+
+
+@always_inline("nodebug")
+fn _is_sm_110x_or_newer() -> Bool:
+    return _is_sm_110x() or _is_sm_120x_or_newer()
 
 
 @always_inline("nodebug")
@@ -615,7 +612,7 @@ fn _cdna_version() -> Int:
 @always_inline("nodebug")
 fn _cdna_3_or_newer() -> Bool:
     @parameter
-    if is_amd_gpu():
+    if _is_amd_cdna():
         return _cdna_version() >= 3
     return False
 
@@ -623,7 +620,7 @@ fn _cdna_3_or_newer() -> Bool:
 @always_inline("nodebug")
 fn _cdna_4_or_newer() -> Bool:
     @parameter
-    if is_amd_gpu():
+    if _is_amd_cdna():
         return _cdna_version() >= 4
     return False
 
@@ -759,12 +756,6 @@ fn simd_bit_width[target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@deprecated("Use `sys.simd_bit_width()` instead.")
-@always_inline("nodebug")
-fn simdbitwidth[target: _TargetType = _current_target()]() -> Int:
-    return simd_bit_width[target]()
-
-
 @always_inline("nodebug")
 fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size (in bytes) of the specified target.
@@ -777,12 +768,6 @@ fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     """
     alias CHAR_BIT = 8
     return simd_bit_width[target]() // CHAR_BIT
-
-
-@deprecated("Use `sys.simd_byte_width()` instead.")
-@always_inline("nodebug")
-fn simdbytewidth[target: _TargetType = _current_target()]() -> Int:
-    return simd_byte_width[target]()
 
 
 @always_inline("nodebug")
@@ -830,12 +815,6 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@deprecated("Use `sys.size_of()` instead.")
-@always_inline("nodebug")
-fn sizeof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
-    return size_of[type, target]()
-
-
 @always_inline("nodebug")
 fn size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the dtype.
@@ -856,12 +835,6 @@ fn size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
             `> : index`,
         ]
     )
-
-
-@deprecated("Use `sys.size_of()` instead.")
-@always_inline("nodebug")
-fn sizeof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
-    return size_of[dtype, target]()
 
 
 @always_inline("nodebug")
@@ -893,12 +866,6 @@ fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@deprecated("Use `sys.align_of()` instead.")
-@always_inline("nodebug")
-fn alignof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
-    return align_of[type, target]()
-
-
 @always_inline("nodebug")
 fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the dtype.
@@ -921,12 +888,6 @@ fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@deprecated("Use `sys.align_of()` instead.")
-@always_inline("nodebug")
-fn alignof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
-    return align_of[dtype, target]()
-
-
 @always_inline("nodebug")
 fn bit_width_of[
     type: AnyTrivialRegType, target: _TargetType = _current_target()
@@ -944,14 +905,6 @@ fn bit_width_of[
     return CHAR_BIT * size_of[type, target=target]()
 
 
-@deprecated("Use `sys.bit_width_of()` instead.")
-@always_inline("nodebug")
-fn bitwidthof[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
-]() -> Int:
-    return bit_width_of[type, target]()
-
-
 @always_inline("nodebug")
 fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bits) of the dtype.
@@ -964,12 +917,6 @@ fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
         The size of the dtype in bits.
     """
     return bit_width_of[Scalar[dtype]._mlir_type, target=target]()
-
-
-@deprecated("Use `sys.bit_width_of()` instead.")
-@always_inline("nodebug")
-fn bitwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
-    return bit_width_of[dtype, target]()
 
 
 @always_inline("nodebug")
@@ -986,14 +933,6 @@ fn simd_width_of[
         The vector size of the type on the host system.
     """
     return simd_bit_width[target]() // bit_width_of[type, target]()
-
-
-@deprecated("Use `sys.simd_width_of()` instead.")
-@always_inline("nodebug")
-fn simdwidthof[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
-]() -> Int:
-    return simd_width_of[type, target]()
 
 
 @always_inline("nodebug")

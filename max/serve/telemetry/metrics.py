@@ -17,10 +17,10 @@ import abc
 import functools
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Union, get_args
+from typing import get_args
 
 from max.serve.config import MetricLevel, Settings
 from opentelemetry import context
@@ -52,22 +52,24 @@ logger = logging.getLogger("max.serve")
 _meter = get_meter_provider().get_meter("modular")
 
 
-NumberType = Union[float, int]
-OtelAttributes = Optional[dict[str, str]]
+NumberType = float | int
+OtelAttributes = dict[str, str] | None
 
 # API_PROXIES the "types" of measurements we make from a meter
 # SDK instruments are the "types" that actually do recording
-API_PROXIES = Union[
-    api_instrument._ProxyCounter,
-    api_instrument._ProxyHistogram,
-    api_instrument._ProxyUpDownCounter,
-]
-SDK_INSTRUMENTS = Union[
-    sdk_instrument._Counter,
-    sdk_instrument._Histogram,
-    sdk_instrument._UpDownCounter,
-]
-SupportedInstruments = Union[API_PROXIES, SDK_INSTRUMENTS]
+API_PROXIES = (
+    api_instrument._ProxyCounter
+    | api_instrument._ProxyHistogram
+    | api_instrument._ProxyUpDownCounter
+)
+
+SDK_INSTRUMENTS = (
+    sdk_instrument._Counter
+    | sdk_instrument._Histogram
+    | sdk_instrument._UpDownCounter
+)
+
+SupportedInstruments = API_PROXIES | SDK_INSTRUMENTS
 
 
 # Sorry for the type ignores, OTEL goes out of its way to obscure its types.
@@ -171,7 +173,7 @@ class MaxMeasurement:
 
     instrument_name: str
     value: NumberType
-    attributes: Optional[OtelAttributes] = None
+    attributes: OtelAttributes | None = None
     time_unix_nano: int = field(default_factory=time.time_ns)
 
     def commit(self) -> None:

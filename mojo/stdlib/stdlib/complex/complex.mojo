@@ -23,8 +23,10 @@ import math
 from math.math import _Expable
 from sys import llvm_intrinsic
 
-alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
-alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
+alias ComplexScalar = ComplexSIMD[size=1]
+"""Represents a scalar complex value."""
+alias ComplexFloat32 = ComplexScalar[DType.float32]
+alias ComplexFloat64 = ComplexScalar[DType.float64]
 
 
 # ===-----------------------------------------------------------------------===#

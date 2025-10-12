@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from python.python import Python, PythonObject
-from testing import assert_equal, assert_raises, assert_true
+from testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
-fn test_execute_python_string(mut python: Python) -> String:
+fn _test_execute_python_string(mut python: Python) -> String:
     try:
         _ = Python.evaluate("print('evaluated by PyRunString')")
         return String(Python.evaluate("'a' + 'b'"))
@@ -23,7 +23,7 @@ fn test_execute_python_string(mut python: Python) -> String:
         return String(e)
 
 
-fn test_local_import(mut python: Python) -> String:
+fn _test_local_import(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
@@ -35,7 +35,7 @@ fn test_local_import(mut python: Python) -> String:
         return String(e)
 
 
-fn test_dynamic_import(mut python: Python, times: Int = 1) -> String:
+fn _test_dynamic_import(mut python: Python, times: Int = 1) -> String:
     alias INLINE_MODULE = """
 called_already = False
 def hello(name):
@@ -54,7 +54,7 @@ def hello(name):
         return String(e)
 
 
-fn test_call(mut python: Python) -> String:
+fn _test_call(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         return String(
@@ -98,25 +98,31 @@ def test_str_conversion():
     assert_true(py_str == PythonObject("123"))
 
 
-def main():
+def test_imports():
     var python = Python()
-    assert_equal(test_local_import(python), "orange")
+    assert_equal(_test_local_import(python), "orange")
 
     # Test twice to ensure that the module state is fresh.
-    assert_equal(test_dynamic_import(python), "Hello world!")
-    assert_equal(test_dynamic_import(python), "Hello world!")
+    assert_equal(_test_dynamic_import(python), "Hello world!")
+    assert_equal(_test_dynamic_import(python), "Hello world!")
 
     # Test with two calls to ensure that the state is persistent.
-    assert_equal(test_dynamic_import(python, times=2), "Again?")
+    assert_equal(_test_dynamic_import(python, times=2), "Again?")
 
+
+def test_call():
+    var python = Python()
     assert_equal(
-        test_call(python),
+        _test_call(python),
         (
             "carrot ('bread', 'rice') fruit=pear {'protein': 'fish', 'cake':"
             " 'yes'}"
         ),
     )
 
+
+def test_object_properties():
+    var python = Python()
     var obj: PythonObject = [1, 2.4, True, "False"]
     assert_equal(String(obj), "[1, 2.4, True, 'False']")
 
@@ -126,8 +132,8 @@ def main():
     obj = None
     assert_equal(String(obj), "None")
 
-    assert_equal(test_execute_python_string(python), "ab")
+    assert_equal(_test_execute_python_string(python), "ab")
 
-    test_int_conversion()
-    test_float_conversion()
-    test_str_conversion()
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

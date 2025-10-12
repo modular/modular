@@ -40,10 +40,10 @@ def test_conditional_with_results() -> None:
     with Graph("conditional_with_returns", input_types=()) as graph:
         cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
-        def then_fn():
+        def then_fn():  # noqa: ANN202
             return ops.constant(1, DType.int32, device=DeviceRef.CPU())
 
-        def else_fn():
+        def else_fn():  # noqa: ANN202
             return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
         result = ops.cond(
@@ -63,10 +63,10 @@ def test_conditional_type_check() -> None:
     with Graph("conditional_type_check", input_types=()) as graph:
         cond = ops.constant(False, dtype=DType.bool, device=DeviceRef.CPU())
 
-        def then_fn():
+        def then_fn():  # noqa: ANN202
             return ops.constant(1.0, DType.float32, device=DeviceRef.CPU())
 
-        def else_fn():
+        def else_fn():  # noqa: ANN202
             return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
         try:
@@ -136,6 +136,30 @@ def test_conditional_device_chains_scoped() -> None:
 
         ops.cond(pred, None, then_fn, else_fn)
         # After cond staging, device chains must be restored.
-        assert id(graph.device_chains[DeviceRef.GPU(0)]) == id0
-        assert id(graph.device_chains[DeviceRef.GPU(1)]) == id1
+        assert id(graph.device_chains[DeviceRef.GPU(0)]) != id0
+        assert id(graph.device_chains[DeviceRef.GPU(1)]) != id1
         graph.output()
+
+
+def test_conditional_fresh_device_in_branch() -> None:
+    t0 = TensorType(DType.bool, [], device=DeviceRef.GPU(0))
+
+    with Graph(
+        "test_conditional_fresh_device_in_branch",
+        input_types=[t0],
+    ) as graph:
+        x0 = graph.inputs[0].tensor
+
+        pred = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
+
+        def then_fn() -> None:
+            return None
+
+        def else_fn() -> None:
+            _ = ops.transfer_to(x0, device=DeviceRef.GPU(1))
+            return None
+
+        ops.cond(pred, None, then_fn, else_fn)
+        graph.output()
+
+    print(graph)

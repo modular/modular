@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import external_call
-from gpu.host.device_context import _CharPtr, _checked, _DeviceContextPtr
+from gpu.host.device_context import _ConstCharPtr, _checked, _DeviceContextPtr
 
 
 struct _MTLDevice:
@@ -32,7 +32,7 @@ fn metal_device(ctx: DeviceContext) raises -> MTLDevice:
     _checked(
         external_call[
             "AsyncRT_DeviceContext_metal_device",
-            _CharPtr,
+            _ConstCharPtr,
             UnsafePointer[MTLDevice],
             _DeviceContextPtr,
         ](

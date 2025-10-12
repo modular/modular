@@ -17,8 +17,10 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max.profiler import traced
 
 
+@traced
 def mrope_pos_ids_3d(
     grid_thw: npt.NDArray[np.integer[Any]], spatial_merge_size: int
 ) -> npt.NDArray[np.integer[Any]]:
@@ -27,24 +29,24 @@ def mrope_pos_ids_3d(
 
     for t, h, w in grid_thw:
         hpos_ids = np.arange(h).reshape(h, 1)
-        hpos_ids = np.tile(hpos_ids, (1, w))
-        hpos_ids = hpos_ids.reshape(
+        hpos_ids = np.tile(hpos_ids, (1, w))  # type: ignore
+        hpos_ids = hpos_ids.reshape(  # type: ignore
             h // spatial_merge_size,
             spatial_merge_size,
             w // spatial_merge_size,
             spatial_merge_size,
         )
-        hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3)).flatten()
+        hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3)).flatten()  # type: ignore
 
         wpos_ids = np.arange(w).reshape(1, w)
-        wpos_ids = np.tile(wpos_ids, (h, 1))
-        wpos_ids = wpos_ids.reshape(
+        wpos_ids = np.tile(wpos_ids, (h, 1))  # type: ignore
+        wpos_ids = wpos_ids.reshape(  # type: ignore
             h // spatial_merge_size,
             spatial_merge_size,
             w // spatial_merge_size,
             spatial_merge_size,
         )
-        wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3)).flatten()
+        wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3)).flatten()  # type: ignore
 
         pos_ids.append(
             np.stack([hpos_ids, wpos_ids], axis=-1).repeat(t, axis=0)
@@ -52,6 +54,7 @@ def mrope_pos_ids_3d(
     return np.concatenate(pos_ids, axis=0)
 
 
+@traced
 def get_window_index(
     grid_thw: npt.NDArray[np.integer[Any]],
     window_size: int,
@@ -133,6 +136,7 @@ def get_window_index(
     return np.concatenate(window_index, axis=0), np.array(cu_window_seqlens)
 
 
+@traced
 def get_seqlens(
     grid_thw: npt.NDArray[np.integer[Any]],
     cu_win_seqlens: npt.NDArray[np.integer[Any]],
@@ -177,6 +181,7 @@ def get_seqlens(
     )
 
 
+@traced
 def get_rope_index(
     spatial_merge_size: int,
     image_token_id: int,
@@ -231,7 +236,7 @@ def get_rope_index(
 
         for i, input_ids_row in enumerate(total_input_ids):
             # Extract valid input_ids using the attention_mask.
-            input_ids_row = input_ids_row[attention_mask[i] == 1]
+            input_ids_row = input_ids_row[attention_mask[i] == 1]  # type: ignore
             vision_start_indices = np.where(
                 input_ids_row == vision_start_token_id
             )[0]
@@ -342,13 +347,13 @@ def get_rope_index(
         if attention_mask is not None:
             position_ids = np.cumsum(attention_mask, axis=-1) - 1
             position_ids[attention_mask == 0] = 1
-            position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))
-            max_position_ids = position_ids.max(axis=1, keepdims=True).max(
-                axis=-1, keepdims=True
-            )
+            position_ids = np.tile(position_ids[np.newaxis, ...], (3, 1, 1))  # type: ignore
+            # Max across rope dimensions (axis=0) and sequence (axis=-1) to get (batch_size,)
+            # This matches the logic in the image branch where we compute per-batch deltas
+            max_position_ids = position_ids.max(axis=(0, -1))
             mrope_position_deltas_array = (
                 max_position_ids + 1 - attention_mask.shape[-1]
-            )
+            ).reshape(-1, 1)
         else:
             position_ids = np.tile(
                 np.arange(input_ids.shape[1])[np.newaxis, np.newaxis, :],

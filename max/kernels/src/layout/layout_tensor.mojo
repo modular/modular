@@ -30,11 +30,11 @@ from algorithm import vectorize
 from bit import log2_floor
 from builtin.device_passable import DevicePassable
 from builtin.dtype import _unsigned_integral_type_of
-from gpu.host import DeviceBuffer, HostBuffer
+from gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_dim, block_idx, lane_id, thread_idx
 from gpu.intrinsics import AMDBufferResource
-from gpu.memory import CacheEviction, Fill, async_copy
+from gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
@@ -305,7 +305,7 @@ struct LayoutTensor[
     from layout import Layout, LayoutTensor
 
     # Create tensor on CPU using InlineArray to allocate storage space.
-    var storage = InlineArray[Scalar[DType.float32], 5 * 4](uninitialized=True)
+    var storage = InlineArray[Float32, 5 * 4](uninitialized=True)
     var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5, 4)](storage)
     ```
     """
@@ -782,7 +782,9 @@ struct LayoutTensor[
             A tensor merged with the specified `other_type`.
         """
         return {
-            self.ptr.origin_cast[result.mut, result.origin](),
+            self.ptr.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
+                result.origin
+            ](),
             self.runtime_layout,
             self.runtime_element_layout,
         }
@@ -847,6 +849,12 @@ struct LayoutTensor[
         alignment=alignment,
     ]
 
+    alias MutableAnyType = Self.OriginCastType[True, MutableAnyOrigin]
+
+    @deprecated(
+        "`origin_cast` is no longer supported for `LayoutTensor`. Use the safer"
+        " `as_any_origin`, `as_immutable` or binding the mutability instead."
+    )
     @always_inline("nodebug")
     fn origin_cast[
         target_mut: Bool = Self.mut,
@@ -866,10 +874,70 @@ struct LayoutTensor[
             origin.
         """
         return Self.OriginCastType[target_mut, target_origin](
-            self.ptr.origin_cast[target_mut, target_origin](),
+            self.ptr.unsafe_mut_cast[target_mut]().unsafe_origin_cast[
+                target_origin
+            ](),
             self.runtime_layout,
             self.runtime_element_layout,
         )
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: LayoutTensor[mut=True, *_, **_],
+    ) -> __type_of(self).OriginCastType[True, MutableAnyOrigin]:
+        """Casts the origin of the mutable `LayoutTensor` to `MutableAnyOrigin`.
+
+        Returns:
+            A pointer with the origin set to `MutableAnyOrigin`.
+
+        This requires the tensor to already be mutable as casting mutability
+        is inherently very unsafe.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
+        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the tensor.
+        """
+        return {
+            self.ptr.as_any_origin(),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: LayoutTensor[mut=False, *_, **_],
+    ) -> __type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
+        """Casts the origin of the immutable `LayoutTensor` to `ImmutableAnyOrigin`.
+
+        Returns:
+            A tensor with the origin set to `ImmutableAnyOrigin`.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the tensor.
+        """
+        return {
+            self.ptr.as_any_origin(),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
+
+    @doc_private
+    fn as_any_origin(
+        self: LayoutTensor[*_, **_],
+        out result: __type_of(self).OriginCastType[False, ImmutableAnyOrigin],
+    ):
+        constrained[
+            False,
+            (
+                "A LayoutTensor with unbound mutability cannot be cast to"
+                " 'AnyOrigin'. Consider using `as_immutable` or binding the"
+                " mutability explicitly before calling this function."
+            ),
+        ]()
+        result = abort[__type_of(result)]()
 
     alias AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -889,7 +957,7 @@ struct LayoutTensor[
     fn address_space_cast[
         target_address_space: AddressSpace = Self.address_space,
     ](self) -> Self.AddressSpaceCastType[target_address_space]:
-        """Changes the origin or mutability of a pointer.
+        """Changes the address space of the `LayoutTensor`.
 
         Parameters:
             target_address_space: The new address space.
@@ -907,34 +975,18 @@ struct LayoutTensor[
     @always_inline
     fn get_immutable(
         self,
-    ) -> LayoutTensor[
-        dtype,
-        layout,
-        ImmutableOrigin.cast_from[origin],
-        address_space=address_space,
-        element_layout=element_layout,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
-        masked=masked,
-        alignment=alignment,
-    ]:
+    ) -> Self.OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
         """
         Return an immutable version of this tensor.
 
         Returns:
             A `LayoutTensor` covering the same elements, but without mutability.
         """
-        return LayoutTensor[
-            dtype,
-            layout,
-            ImmutableOrigin.cast_from[origin],
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ](self.ptr, self.runtime_layout, self.runtime_element_layout)
+        return {
+            self.ptr.as_immutable(),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
@@ -1745,11 +1797,14 @@ struct LayoutTensor[
         fn exp_func(val: Self.element_type) -> Self.element_type:
             return exp(val)
 
-        return (
+        return {
             self._stack_copy()
             ._elementwise_unary[exp_func]()
-            .origin_cast[mut, origin]()
-        )
+            .ptr.unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin](),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
 
     @always_inline("nodebug")
     fn _load_offset(
@@ -1946,7 +2001,8 @@ struct LayoutTensor[
         - The elements are loaded according to the tensor's stride configuration.
         """
         constrained[self.rank == coords.size]()
-        constrained[Int(self.layout.stride[self.rank - 1]) == 1]()
+        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
+
         var idx = self.runtime_layout(
             RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
         )
@@ -1984,6 +2040,38 @@ struct LayoutTensor[
         """
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
             self.ptr.offset(self._offset(m, n))
+        )
+
+    @always_inline
+    fn prefetch(self, coords: IndexList):
+        """Prefetch tensor data at the specified coordinates into cache.
+
+        Issues a software prefetch hint to the processor to load the data at
+        coords into the cache hierarchy. This can improve performance
+        by reducing memory latency for subsequent accesses to the same location.
+
+        Args:
+            coords: The indices.
+
+        Performance:
+
+        - Prefetching is a performance hint and does not guarantee data will be
+            cached.
+        - Most effective when issued sufficiently ahead of the actual data
+            access.
+        - Uses high locality prefetch to the data cache, optimized for data that
+            will be accessed multiple times.
+        - Can reduce memory access latency by 50-90% when used correctly.
+
+        Notes:
+
+        - Excessive prefetching can pollute the cache and degrade performance.
+        - Most beneficial for predictable access patterns that would otherwise
+            cause cache misses.
+        - No operation is performed on the prefetched data.
+        """
+        prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
+            self.ptr.offset(self._offset(coords))
         )
 
     @always_inline("nodebug")
@@ -2099,7 +2187,7 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
         constrained[self.rank == coords.size]()
-        constrained[Int(self.layout.stride[self.rank - 1]) == 1]()
+        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
 
         var idx = self.runtime_layout(
             RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
@@ -2254,6 +2342,27 @@ struct LayoutTensor[
         masked=masked,
         alignment=alignment,
     ]
+
+    @always_inline
+    fn to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[dtype]:
+        """Convert the tensor to a `DeviceBuffer`.
+
+        Args:
+            ctx: The device context to use.
+
+        Returns:
+            A `DeviceBuffer` containing the tensor's data.
+        """
+        constrained[
+            address_space == address_space.GENERIC,
+            "DeviceBuffer is only used on GENERIC address space",
+        ]()
+        return DeviceBuffer[dtype](
+            ctx,
+            rebind[UnsafePointer[Scalar[dtype]]](self.ptr),
+            self.size(),
+            owning=False,
+        )
 
     @always_inline("nodebug")
     fn _stack_copy(
@@ -2876,6 +2985,11 @@ struct LayoutTensor[
         """
         return self.tile[tile_size, simd_width_of[Self.dtype]()](tile_idx)
 
+    alias CornerCoordsType = IndexList[
+        len(flatten(Self.layout.shape)),
+        element_type = Self.layout_int_type,
+    ]
+
     @always_inline
     fn tile_with_offset[
         *tile_sizes: Int,
@@ -2883,11 +2997,8 @@ struct LayoutTensor[
         self,
         *tile_coords: Int,
     ) -> Tuple[
-        self.TileType[*tile_sizes],
-        IndexList[
-            len(flatten(self.layout.shape)),
-            element_type = Self.layout_int_type,
-        ],
+        Self.TileType[*tile_sizes],
+        Self.CornerCoordsType,
         Scalar[Self.linear_idx_type],
     ]:
         """Similar to `tile`, but also returns the corner coordinates of the
@@ -3373,7 +3484,9 @@ struct LayoutTensor[
         for i in range(Self.rank):
             alias thread_stride_i = Int(thread_stride[i])
             alias thread_shape_i = Int(thread_shape[i])
-            var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
+            var tile_idx = (thread_id // UInt(thread_stride_i)) % UInt(
+                thread_shape_i
+            )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
             var bound_i = Int((tile_shape_i - 1) * thread_shape_i + tile_idx)
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
@@ -3603,7 +3716,7 @@ struct LayoutTensor[
                     mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
-                offset += thread_coord_i * fragments_stride_i
+                offset += thread_coord_i * UInt(fragments_stride_i)
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -3788,7 +3901,7 @@ struct LayoutTensor[
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
-                offset += thread_coord_i * fragments_stride_i
+                offset += thread_coord_i * UInt(fragments_stride_i)
 
             # Swizzling applies to the index of elements rather than scalars because
             # the former is the unit in distribution.
@@ -6020,7 +6133,7 @@ fn cp_async_mn_major[
         desc_shape1 // simd_size,
     )
 
-    warp_id = thread_idx.x // gpu_memory.WARP_SIZE
+    warp_id = thread_idx.x // UInt(gpu_memory.WARP_SIZE)
 
     @parameter
     for tile_id_per_warp in range(num_tiles_per_warp):
@@ -6031,7 +6144,7 @@ fn cp_async_mn_major[
         )
         dst_tile = LayoutTensor[
             dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
-        ](dst.ptr + tile_id * desc_size)
+        ](dst.ptr + tile_id * UInt(desc_size))
 
         copy_dram_to_sram_async[
             thread_layout_per_warp,
@@ -6967,6 +7080,7 @@ fn _copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor,
     src: LayoutTensor,
@@ -7016,7 +7130,9 @@ fn _copy_dram_to_local[
                 alias dst_frag_idx = Layout.col_major(M, N)([i, j])
                 alias src_frag_idx = Int32(src_fragments.layout([i, j]))
                 dst[dst_frag_idx, 0] = rebind[dst.element_type](
-                    buffer.load[src.dtype, simd_width](
+                    buffer.load[
+                        src.dtype, simd_width, cache_policy=cache_policy
+                    ](
                         src_frag_offset,
                         scalar_offset=src_frag_idx,
                     )
@@ -7026,7 +7142,9 @@ fn _copy_dram_to_local[
         offset_helper(offset.value())
     else:
         var base_ptr = buffer.get_base_ptr()
-        offset_helper(UInt((Int(src.ptr) - base_ptr)) // size_of[src.dtype]())
+        offset_helper(
+            UInt(UInt((Int(src.ptr) - base_ptr)) // UInt(size_of[src.dtype]()))
+        )
 
 
 @always_inline("nodebug")
@@ -7035,6 +7153,7 @@ fn copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
     dst: LayoutTensor,
     src: LayoutTensor,
@@ -7065,6 +7184,8 @@ fn copy_dram_to_local[
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
         block_dim_count: The number of dimensions in the thread block.
+        cache_policy: The cache policy to use for the copy operation.
+            Defaults to `CacheOperation.ALWAYS`.
 
     Args:
         dst: The destination tensor in register memory (LOCAL address space).
@@ -7085,7 +7206,11 @@ fn copy_dram_to_local[
     var buffer = make_amd_buffer_resource(src_base)
 
     _copy_dram_to_local[
-        src_thread_layout, num_threads, thread_scope, block_dim_count
+        src_thread_layout,
+        num_threads,
+        thread_scope,
+        block_dim_count,
+        cache_policy,
     ](dst, src, buffer, offset)
 
 
@@ -7095,6 +7220,7 @@ fn _copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](dst: LayoutTensor, src_iter: LayoutTensorIter, buffer: AMDBufferResource):
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     var src_tensor = src_iter[].vectorize[
@@ -7102,7 +7228,11 @@ fn _copy_dram_to_local[
     ]()
 
     _copy_dram_to_local[
-        src_thread_layout, num_threads, thread_scope, block_dim_count
+        src_thread_layout,
+        num_threads,
+        thread_scope,
+        block_dim_count,
+        cache_policy,
     ](dst, src_tensor, buffer, UInt(src_iter.offset))
 
 
@@ -7112,6 +7242,7 @@ fn copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](dst: LayoutTensor, src_iter: LayoutTensorIter, bounds: UInt32):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
@@ -7132,6 +7263,8 @@ fn copy_dram_to_local[
             while `WARP` scope restricts operations to threads within the same
             warp. Defaults to `ThreadScope.BLOCK`.
         block_dim_count: The number of dimensions in the thread block.
+        cache_policy: The cache policy to use for the copy operation.
+            Defaults to `CacheOperation.ALWAYS`.
 
     Args:
         dst: The destination tensor in register memory (LOCAL address space).
@@ -7153,7 +7286,11 @@ fn copy_dram_to_local[
     var buffer = make_amd_buffer_resource(src_iter, Int(bounds))
 
     _copy_dram_to_local[
-        src_thread_layout, num_threads, thread_scope, block_dim_count
+        src_thread_layout,
+        num_threads,
+        thread_scope,
+        block_dim_count,
+        cache_policy,
     ](dst, src_iter, buffer)
 
 

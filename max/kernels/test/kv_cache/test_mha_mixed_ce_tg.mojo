@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isqrt
+from math import ceildiv, rsqrt
 from random import random_ui64
 
 from buffer import Dim, DimList
@@ -117,9 +117,9 @@ def execute_ragged_flash_attention():
         )
 
         memcpy(
-            mixed_ce_offset,
-            true_ce_offset,
-            mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
+            dest=mixed_ce_offset,
+            src=true_ce_offset,
+            count=mixed_ce_prompt_len * num_q_heads * kv_params.head_size,
         )
 
     # initialize reference output
@@ -186,7 +186,7 @@ def execute_ragged_flash_attention():
         true_ce_kv_collection.get_key_cache(layer_idx),
         true_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         true_ce_output.to_layout_tensor(),
     )
 
@@ -199,7 +199,7 @@ def execute_ragged_flash_attention():
         mixed_ce_kv_collection.get_key_cache(layer_idx),
         mixed_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         mixed_ce_output.to_layout_tensor(),
     )
 

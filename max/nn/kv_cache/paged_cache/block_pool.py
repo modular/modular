@@ -211,6 +211,20 @@ class BlockPool:
         """Get the number of free blocks."""
         return self.free_block_queue.free_blocks
 
+    def reset_prefix_cache(self) -> None:
+        """Reset the prefix cache."""
+        blocks_to_purge = []
+        for hash, block in self.hash_to_committed_block.items():
+            assert block.block_hash is not None
+            if block.ref_cnt > 0:
+                continue
+            block.block_hash = None
+            blocks_to_purge.append(hash)
+        # Delete separately to avoid modifying the dictionary size while iterating
+        for hash in blocks_to_purge:
+            del self.hash_to_committed_block[hash]
+        logger.info(f"Purged {len(blocks_to_purge)} blocks from prefix cache")
+
     @traced
     def assert_runtime_invariants(self, active_bids: list[int]) -> None:
         """If runtime checks are enabled, assert that the runtime checks are

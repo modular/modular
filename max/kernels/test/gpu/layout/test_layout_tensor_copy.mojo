@@ -1182,7 +1182,7 @@ def run_copy_local_to_sram_tests_bfloat16_simd_size_21(ctx: DeviceContext):
     ](ctx)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         run_async_copy_tests(ctx)
         run_swizzle_copy_tests(ctx)

@@ -22,7 +22,7 @@ bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
 bazel_dep(name = "rules_pycross", version = "0.8.0")
-bazel_dep(name = "rules_python", version = "1.5.1")
+bazel_dep(name = "rules_python", version = "1.6.3")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
@@ -39,6 +39,11 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 archive_override(
     module_name = "rules_mojo",
     integrity = "sha256-fOkBbbvPAZmBji2zJ7KSXxpvCgxSTi6buwMJal4zOEE=",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/modular/rules_mojo/pull/63
+        "//bazel/public-patches:rules_mojo_mi355.patch",
+    ],
     strip_prefix = "rules_mojo-ffd2636629835c1f1287dcf6846251e088eec1d8",
     urls = [
         "https://github.com/modular/rules_mojo/archive/ffd2636629835c1f1287dcf6846251e088eec1d8.tar.gz",
@@ -169,7 +174,6 @@ single_version_override(
 DEFAULT_PYTHON_VERSION = "3.12"
 
 PYTHON_VERSIONS = [
-    "3_9",
     "3_10",
     "3_11",
     "3_12",
@@ -185,7 +189,7 @@ python.defaults(python_version = DEFAULT_PYTHON_VERSION)
 ]
 
 # Only the lowest version is used explicitly, everything else is indirect
-use_repo(python, "python_3_9")
+use_repo(python, "python_" + PYTHON_VERSIONS[0])
 
 environments = use_extension("@rules_pycross//pycross/extensions:environments.bzl", "environments")
 environments.create_for_python_toolchains(
@@ -236,20 +240,46 @@ RUFF_VERSION = "0.11.13"
     ]
 ]
 
-NVSHMEM_VERSION = "3.3.9_cuda12"
-
 http_archive(
-    name = "libnvshmem_device_bc",
+    name = "nvshmem_prebuilt",
     build_file_content = """
+package(default_visibility = ["//visibility:public"])
+
+# This is the device-side bitcode that is linked into shmem.mojopkg.
 filegroup(
-    name = "libnvshmem_device_bc",
+    name = "device",
     srcs = ["lib/libnvshmem_device.bc"],
-    visibility = ["//visibility:public"],
+)
+
+# For linking the nvshmem hostlibs when compiling Mojo binaries from bazel
+cc_library(
+    name = "hostlibs",
+    srcs = glob(["lib/*.so*"]),
+)
+
+# This has three purposes:
+#  - copy the libs to python wheel `site-packages/modular/lib` folder
+#  - relink and copy the libs to conda package `lib` folder
+#  - enable `bmojo` to dlopen the libs from `bazel-bin/external/+http_archive+nvshmem_prebuilt`
+genrule(
+    name = "hostlibs_data",
+    srcs = glob(["lib/*.so*"]),
+    outs = [
+        "libnvshmem_host.so.3",
+        "nvshmem_bootstrap_mpi.so.3",
+        "nvshmem_transport_ibrc.so.3",
+        "nvshmem_transport_ibgda.so.3",
+    ],
+    cmd = '''
+        # Copy all lib/*.so* files from our prebuilt tar
+        for src in $(SRCS); do
+            cp -L $$src $(@D)
+        done
+    ''',
 )
 """,
-    sha256 = "72a788ef5723a30d8882b193f0a513f454ecaee3ab5a225a5c43db79d433ef66",
-    strip_prefix = "libnvshmem-linux-x86_64-{}-archive".format(NVSHMEM_VERSION),
-    urls = ["https://developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/libnvshmem-linux-x86_64-{}-archive.tar.xz".format(NVSHMEM_VERSION)],
+    sha256 = "8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
@@ -272,6 +302,7 @@ mojo.gpu_toolchains(
         "RTX 4090": "rtx4090",
         "NVIDIA GeForce RTX 3090": "rtx3090",
         "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
+        "NVIDIA GeForce GTX 970": "gtx970",
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
@@ -298,6 +329,7 @@ mojo.gpu_toolchains(
         "mi325": "amdgpu:gfx942",
         "mi355": "amdgpu:gfx950",
         "rtx3090": "nvidia:86",
+        "gtx970": "nvidia:52",
         "gtx1080ti": "nvidia:61",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",

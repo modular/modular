@@ -18,13 +18,17 @@ import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 
-from max.interfaces import RequestID, TextGenerationInputs
-from max.nn.kv_cache import MultiPagedKVCacheManager, PagedKVCacheManager
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import (
     LoRAManager,
     PipelineConfig,
-    TextGenerationPipelineType,
 )
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
@@ -67,23 +71,28 @@ class TokenGenerationSchedulerConfig:
 
     def __post_init__(self) -> None:
         if self.max_batch_size_tg <= 0:
-            msg = f"`max_batch_size_tg` must be greater than 0, found {self.max_batch_size_tg}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"`max_batch_size_tg` must be greater than 0, found {self.max_batch_size_tg}"
+            )
         if self.max_batch_size_ce <= 0:
-            msg = f"`max_batch_size_ce` must be greater than 0, found {self.max_batch_size_ce}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"`max_batch_size_ce` must be greater than 0, found {self.max_batch_size_ce}"
+            )
         if self.target_tokens_per_batch_ce <= 0:
-            msg = f"`target_tokens_per_batch_ce` must be greater than 0, found {self.target_tokens_per_batch_ce}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"`target_tokens_per_batch_ce` must be greater than 0, found {self.target_tokens_per_batch_ce}"
+            )
         if (
             self.enable_chunked_prefill
             and self.target_tokens_per_batch_ce is None
         ):
-            msg = "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
-            raise ValueError(msg)
+            raise ValueError(
+                "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
+            )
         if self.max_forward_steps_tg <= 0:
-            msg = f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
-            raise ValueError(msg)
+            raise ValueError(
+                f"`max_forward_steps_tg` must be greater than 0, found {self.max_forward_steps_tg}"
+            )
 
     @classmethod
     def from_pipeline_config(
@@ -108,7 +117,9 @@ class TextBatchConstructor:
     def __init__(
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
-        pipeline: TextGenerationPipelineType[TextContext],
+        pipeline: Pipeline[
+            TextGenerationInputs[TextContext], TextGenerationOutput
+        ],
         paged_cache: PagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -199,6 +210,7 @@ class TextBatchConstructor:
 
         return True
 
+    @traced
     def _create_tg_batch(self) -> TextGenerationInputs[TextContext]:
         """Creates a non empty token generation batch"""
 
@@ -319,17 +331,17 @@ class TextBatchConstructor:
         page_size = self.paged_cache.page_size
         total_num_blocks = self.paged_cache.total_num_pages
         max_seq_len = total_num_blocks * page_size
-        msg = (
+        raise RuntimeError(
             f"Insufficient KV pages to run token generation on a single request with {current_len} tokens.\n"
             f"The KVCache has {total_num_blocks} pages with page size {page_size}. This is only enough to support {max_seq_len} tokens.\n"
             "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         )
-        raise RuntimeError(msg)
 
+    @traced
     def _try_create_ce_batch(self) -> TextGenerationInputs[TextContext]:
         """Try to create a context encoding batch"""
 
-        ce_batch: dict[str, TextContext] = {}
+        ce_batch: dict[RequestID, TextContext] = {}
         input_tokens = 0
 
         if self.scheduler_config.enable_in_flight_batching and self.tg_reqs:
@@ -372,17 +384,10 @@ class TextBatchConstructor:
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
-                    if isinstance(self.paged_cache, MultiPagedKVCacheManager):
-                        replica_idx = self.paged_cache.get_or_recommend_replica(
-                            ctx
-                        )
-                        self.paged_cache.external_claim_for_replica(
-                            replica_idx, req_id
-                        )
-                    else:
-                        self.paged_cache.external_claim(req_id)
-
-            orig_prompt_length = ctx.active_length
+                    replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
+                    self.paged_cache.external_claim(
+                        req_id, replica_idx=replica_idx
+                    )
 
             if self.paged_cache is not None:
                 # Attempt to schedule the request.
@@ -417,6 +422,7 @@ class TextBatchConstructor:
             num_steps=1,
         )
 
+    @traced
     def construct_batch(self) -> TextGenerationInputs[TextContext]:
         if self._should_schedule_ce():
             ce_batch = self._try_create_ce_batch()

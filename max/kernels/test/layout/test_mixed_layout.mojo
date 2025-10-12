@@ -17,7 +17,7 @@ from layout.int_tuple import IntTuple
 from testing import assert_equal, assert_true
 
 
-fn main() raises:
+def main():
     test_size_cosize()
     test_crd2idx()
     test_row_major()

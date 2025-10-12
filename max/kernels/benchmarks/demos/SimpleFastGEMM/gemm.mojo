@@ -168,7 +168,7 @@ fn gemm(
                         )
 
 
-fn main() raises:
+def main():
     var m = align_up(1024, MR)
     var n = align_up(1024, NR)
     var k: Int = 1024

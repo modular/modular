@@ -177,7 +177,7 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
             return False
 
         for i in range(1, byte_type):
-            var idx = offset + i
+            var idx = offset + UInt(i)
             if idx >= length or not _is_utf8_continuation_byte(ptr[idx]):
                 return False
 

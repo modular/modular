@@ -99,9 +99,9 @@ fn llvm_intrinsic[
 # is assumed not to alias any Mojo-derived pointer. DO NOT proliferate usage of
 # this function!
 fn _unsafe_aliasing_address_to_pointer[
-    dtype: DType
-](var addr: Scalar[DType.int]) -> UnsafePointer[Scalar[dtype]]:
-    return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
+    T: AnyType
+](var addr: Int) -> UnsafePointer[T]:
+    return UnsafePointer(to=addr).bitcast[UnsafePointer[T]]()[]
 
 
 @always_inline("nodebug")
@@ -157,9 +157,9 @@ fn gather[
 
     @parameter
     if size == 1:
-        return _unsafe_aliasing_address_to_pointer[dtype](base[0]).load[
-            invariant=invariant
-        ]() if mask else passthrough[0]
+        return _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+            Int(base[0])
+        ).load[invariant=invariant]() if mask else passthrough[0]
 
     @parameter
     if is_gpu() and invariant:
@@ -167,8 +167,8 @@ fn gather[
 
         @parameter
         for i in range(size):
-            result[i] = _unsafe_aliasing_address_to_pointer[dtype](
-                base[i]
+            result[i] = _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+                Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
 
@@ -251,7 +251,9 @@ fn scatter[
     @parameter
     if size == 1:
         if mask:
-            var ptr = _unsafe_aliasing_address_to_pointer[dtype](base[0])
+            var ptr = _unsafe_aliasing_address_to_pointer[Scalar[dtype]](
+                Int(base[0])
+            )
             ptr.store(value[0])
         return
     llvm_intrinsic["llvm.masked.scatter", NoneType](
@@ -793,7 +795,7 @@ struct _RegisterPackType[*a: AnyTrivialRegType]:
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index = i.__index__()](
+        return __mlir_op.`kgen.pack.extract`[index = i.__mlir_index__()](
             self.storage
         )
 
@@ -911,8 +913,8 @@ fn lane_id() -> UInt:
         )
 
     elif is_amd_gpu():
-        alias none = Scalar[DType.int32](-1)
-        alias zero = Scalar[DType.int32](0)
+        alias none = Int32(-1)
+        alias zero = Int32(0)
         var t = llvm_intrinsic[
             "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
         ](none, zero)
@@ -921,6 +923,17 @@ fn lane_id() -> UInt:
                 llvm_intrinsic[
                     "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
                 ](none, t).cast[DType.uint32]()
+            )
+        )
+
+    elif is_apple_gpu():
+        return UInt(
+            Int(
+                llvm_intrinsic[
+                    "llvm.air.thread_index_in_simdgroup",
+                    Int32,
+                    has_side_effect=False,
+                ]().cast[DType.uint32]()
             )
         )
 
@@ -1275,6 +1288,19 @@ struct _GridDim(Defaultable):
                     return 2
 
             return _get_gcn_idx[_get_offset(), DType.uint32]()
+        elif is_apple_gpu():
+            alias intrinsic_name = "llvm.air.threads_per_grid." + dim
+            var gridDim = UInt(
+                Int(
+                    llvm_intrinsic[
+                        intrinsic_name, Int32, has_side_effect=False
+                    ]()
+                )
+            )
+            # Metal passes grid dimention as a gridDim.dim * blockDim.dim.
+            # To make things compatible with NVidia and AMDGPU, divide result
+            # by block_dim.dim
+            return gridDim // block_dim.__getattr__[dim]()
         else:
             return CompilationTarget.unsupported_target_error[
                 UInt,

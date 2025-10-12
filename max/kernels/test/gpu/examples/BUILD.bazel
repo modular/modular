@@ -14,7 +14,7 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_kernel_10.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),  # FIXME: MOCO-2366
+    }),  # FIXME: GEX-2578
     "test_stencil2d.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

@@ -14,18 +14,19 @@
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __call_location, _SourceLocation
+from testing import TestSuite
 
 from utils import IndexList
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> String:
-    return loc.prefix(String("AssertionError: ", msg))
+fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> Error:
+    return Error(loc.prefix(String("AssertionError: ", msg)))
 
 
 fn _assert_equal_error(
     lhs: String, rhs: String, msg: String, loc: _SourceLocation
-) -> String:
+) -> Error:
     var err = (
         "`left == right` comparison failed:\n   left: "
         + lhs
@@ -133,6 +134,4 @@ def test_print_sep():
 
 
 def main():
-    test_print()
-    test_print_end()
-    test_print_sep()
+    TestSuite.discover_tests[__functions_in_module()]().run()

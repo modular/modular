@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Callable, cast
+from collections.abc import Callable
+from typing import cast
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
@@ -69,7 +70,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             dtype: DType of the QKV and output projection weights.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
-                `DistributedAttentionWithRope` to use all devices during
+                `TensorParallelAttentionWithRope` to use all devices during
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             stacked_qkv: Whether the weights are stacked together.
@@ -179,7 +180,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
 
         return out
 
-    def fused_qkv_lora(
+    def fused_qkv_lora(  # noqa: ANN201
         self,
         x: TensorValue,
         kv_collection: PagedCacheValues,

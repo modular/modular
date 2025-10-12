@@ -15,6 +15,7 @@ from sys import simd_bit_width
 from sys.info import CompilationTarget
 
 from testing import assert_equal, assert_false, assert_true
+from testing import TestSuite
 
 
 def test_arch_query():
@@ -26,4 +27,4 @@ def test_arch_query():
 
 
 def main():
-    test_arch_query()
+    TestSuite.discover_tests[__functions_in_module()]().run()

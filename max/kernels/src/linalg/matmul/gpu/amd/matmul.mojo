@@ -57,6 +57,7 @@ from .._multistage_gemm_gpu import (
     warp_split_k_reduction,
     WarpSplitKReductionSMem,
 )
+from itertools import product
 
 
 struct MmaOpAMD[
@@ -136,12 +137,12 @@ struct MmaOpAMD[
         Self.tensor_core_mma.mma_op.load_a[swizzle=swizzle](
             a_smem_tiles,
             self.a_reg_tile(k_tile_idx).vectorize(),
-            k_tile_idx,
+            UInt(k_tile_idx),
         )
         Self.tensor_core_mma.mma_op.load_b[swizzle=swizzle](
             b_smem_tiles,
             self.b_reg_tile(k_tile_idx).vectorize(),
-            k_tile_idx,
+            UInt(k_tile_idx),
         )
 
     @always_inline
@@ -411,7 +412,7 @@ fn gemm_kernel_amd[
 
         alias num_repeats_col = BK // k_tile_size
         alias outer_block_size = num_repeats_col * inner_block_size
-        alias num_repeats_row = config.num_threads() // outer_block_size
+        alias num_repeats_row = config.num_threads() // UInt(outer_block_size)
 
         alias tiler_layout = Layout.row_major(
             num_repeats_row,
@@ -519,7 +520,9 @@ fn gemm_kernel_amd[
     @parameter
     fn schedule_loop_body():
         alias threads_per_row = BK // simd_width
-        alias rows_per_thread_block = config.num_threads() // threads_per_row
+        alias rows_per_thread_block = config.num_threads() // UInt(
+            threads_per_row
+        )
         alias a_loads_per_thread = BM // rows_per_thread_block
         alias b_loads_per_thread = BN // rows_per_thread_block
 
@@ -662,7 +665,7 @@ fn gemm_kernel_amd[
     @parameter
     if num_warps_k > 1:
         warp_split_k_reduction[
-            BM, BN, config.num_threads() // num_warps_k, num_warps_k
+            BM, BN, config.num_threads() // UInt(num_warps_k), num_warps_k
         ](warp_k, mma_op.out_reg_tile, reduction_smem.ptr)
 
         if warp_k != 0:
@@ -700,8 +703,8 @@ fn gemm_kernel_amd[
         ]().distribute[output_thread_layout](lane_id())
 
         # Warp tile coordinates
-        var warp_tile_m = block_idx.y * BM + warp_m * WM
-        var warp_tile_n = block_idx.x * BN + warp_n * WN
+        var warp_tile_m = block_idx.y * UInt(BM) + UInt(warp_m * WM)
+        var warp_tile_n = block_idx.x * UInt(BN) + UInt(warp_n * WN)
 
         # Write output fragments
         write_output_fragments[
@@ -782,35 +785,30 @@ fn write_output_fragments[
     alias frag_width = c_gmem_fragment.layout.shape[1].value()
 
     @parameter
-    for frag_m in range(frag_height):
+    for frag_m, frag_n in product(range(frag_height), range(frag_width)):
+        if frag_m < max_valid_frag_m and frag_n < max_valid_frag_n:
+            # Load result vector, cast to output tensor data type
+            var result_vec = c_reg_fragment[frag_m, frag_n, 0].cast[c_type]()
 
-        @parameter
-        for frag_n in range(frag_width):
-            if frag_m < max_valid_frag_m and frag_n < max_valid_frag_n:
-                # Load result vector, cast to output tensor data type
-                var result_vec = c_reg_fragment[frag_m, frag_n, 0].cast[
-                    c_type
+            @parameter
+            if elementwise_lambda_fn:
+                # Apply custom elementwise operation to each output element
+                constrained[
+                    elementwise_lambda_fn is not None,
+                    "elementwise_lambda_fn is not valid",
                 ]()
+                alias epilogue_fn = elementwise_lambda_fn.value()
 
-                @parameter
-                if elementwise_lambda_fn:
-                    # Apply custom elementwise operation to each output element
-                    constrained[
-                        elementwise_lambda_fn is not None,
-                        "elementwise_lambda_fn is not valid",
-                    ]()
-                    alias epilogue_fn = elementwise_lambda_fn.value()
+                # Compute global coordinates
+                var m = thread_tile_m + frag_m * MMA_M
+                var n = thread_tile_n + frag_n * MMA_N
 
-                    # Compute global coordinates
-                    var m = thread_tile_m + frag_m * MMA_M
-                    var n = thread_tile_n + frag_n * MMA_N
-
-                    epilogue_fn[
-                        alignment = align_of[SIMD[c_type, c_frag_size]]()
-                    ]((m, n), result_vec)
-                else:
-                    # Store output fragment
-                    # FIXME: why do we need to rebind to c_gmem_fragment.element_type?
-                    c_gmem_fragment[frag_m, frag_n] = rebind[
-                        c_gmem_fragment.element_type
-                    ](result_vec)
+                epilogue_fn[alignment = align_of[SIMD[c_type, c_frag_size]]()](
+                    (m, n), result_vec
+                )
+            else:
+                # Store output fragment
+                # FIXME: why do we need to rebind to c_gmem_fragment.element_type?
+                c_gmem_fragment[frag_m, frag_n] = rebind[
+                    c_gmem_fragment.element_type
+                ](result_vec)

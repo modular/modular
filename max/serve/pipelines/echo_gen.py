@@ -13,12 +13,13 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Union, cast
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
@@ -27,7 +28,6 @@ from max.interfaces import (
     TextGenerationRequestMessage,
 )
 from max.pipelines.core import TextContext
-from max.pipelines.lib.pipeline import TextGenerationPipelineType
 
 
 @dataclass
@@ -54,7 +54,7 @@ class EchoPipelineTokenizer(
 
     async def encode(
         self,
-        prompt: Union[str, Sequence[int]],
+        prompt: str | Sequence[int],
         add_special_tokens: bool = False,
     ) -> npt.NDArray[np.integer[Any]]:
         """Encode the prompt into token IDs.
@@ -92,7 +92,7 @@ class EchoPipelineTokenizer(
         """Creates a new TextContext for echo generation."""
 
         # Extract prompt from request
-        prompt: Union[str, Sequence[int]]
+        prompt: str | Sequence[int]
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages is not None:
@@ -133,12 +133,14 @@ class EchoPipelineTokenizer(
 
 
 @dataclass
-class EchoTokenGenerator(TextGenerationPipelineType[TextContext]):
+class EchoTokenGenerator(
+    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput]
+):
     """Token generator that echoes the prompt tokens in their original order."""
 
     def __init__(self) -> None:
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
-        self._echo_indices: dict[str, int] = {}
+        self._echo_indices: dict[RequestID, int] = {}
 
     def execute(
         self,

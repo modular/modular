@@ -31,6 +31,7 @@ def main():
         or accelerator_arch == "nvidia:100a"
         # AMD
         or accelerator_arch == "amdgpu:gfx942"
+        or accelerator_arch == "amdgpu:gfx950"
         or accelerator_arch == "amdgpu:gfx1101"
         or accelerator_arch == "amdgpu:gfx1102"
         or accelerator_arch == "amdgpu:gfx1103"

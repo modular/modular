@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Rejection Sampler custom ops."""
 
-from typing import Optional
-
 import numpy as np
 from max import nn
 from max.dtype import DType
@@ -22,7 +20,7 @@ from max.nn.kernels import topk_fused_sampling
 
 
 def _multinomial(
-    probs: TensorValue, residual_rand: Optional[TensorValue] = None
+    probs: TensorValue, residual_rand: TensorValue | None = None
 ) -> TensorValue:
     # Generate exponential random numbers (equivalent to torch.empty_like(probs).exponential_(1.0))
     # For exponential distribution with rate=1, we use: -log(uniform_random)
@@ -198,7 +196,7 @@ class RejectionSamplerWithResiduals(nn.Module):
         target_logits: TensorValue,
         draft_tokens: TensorValue,
         batch_draft_logits: TensorValue,
-        rejection_rand: Optional[TensorValue] = None,
+        rejection_rand: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         target_logits_reshaped = ops.rebind(
             target_logits,
@@ -335,8 +333,8 @@ class RejectionSamplerWithResiduals(nn.Module):
         target_logits: TensorValue,
         target_logit_offsets: TensorValue,
         all_draft_logits: TensorValue,
-        rejection_rand: Optional[TensorValue] = None,
-        residual_rand: Optional[TensorValue] = None,
+        rejection_rand: TensorValue | None = None,
+        residual_rand: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         batch_draft_logits = ops.permute(
             all_draft_logits,

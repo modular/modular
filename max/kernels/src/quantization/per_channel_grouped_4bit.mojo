@@ -51,7 +51,7 @@ fn calculate_symmetric_vector[
     input_dtype: DType, simd_width: Int, output_bits: Int
 ](data: SIMD[input_dtype, simd_width]) -> (
     SIMD[DType.uint8, simd_width],
-    SIMD[input_dtype, 1],
+    Scalar[input_dtype],
 ):
     """
     Symmetrically quantizes the given SIMD vector `data` with input type
@@ -215,7 +215,7 @@ struct Q4sym[
             DType.uint16
         ]()
         upcast_bytes[1] = upcast_bytes[1] << 8
-        var final_result: SIMD[DType.uint16, 1] = upcast_bytes.reduce_add()
+        var final_result: UInt16 = upcast_bytes.reduce_add()
         var scale_decoded = bitcast[DType.float16, 1](final_result)
         return scale_decoded
 
@@ -333,7 +333,7 @@ struct Q4sym[
                 var src_ptr = UnsafePointer(to=encoded_data).address_space_cast[
                     output_ptr.address_space
                 ]()
-                memcpy(output_ptr, src_ptr, 1)
+                memcpy(dest=output_ptr, src=src_ptr, count=1)
                 _ = encoded_data^
 
     @staticmethod
@@ -390,9 +390,9 @@ struct Q4sym[
                 var flat_index_input = input_inner_dim * i + j
                 var encoded = Q4sym[group_size, float_dtype]()
                 memcpy(
-                    UnsafePointer(to=encoded),
-                    base_block_ptr + flat_index_input,
-                    1,
+                    dest=UnsafePointer(to=encoded),
+                    src=base_block_ptr + flat_index_input,
+                    count=1,
                 )
 
                 var flat_index_output = output_inner_dim * i + j * group_size

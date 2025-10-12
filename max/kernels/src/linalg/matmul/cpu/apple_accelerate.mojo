@@ -66,8 +66,8 @@ alias LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate
 # ===-----------------------------------------------------------------------===#
 
 
-fn _on_error_msg() -> String:
-    return String(
+fn _on_error_msg() -> Error:
+    return Error(
         (
             "Cannot find the Apple Accelerate libraries. Please make sure that "
             "the XCode package is installed and that the library path is "
@@ -406,8 +406,8 @@ fn apple_matmul[
 
             elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
         return
-
-    constrained[False, "unsupported type in apple accelerate"]()
+    else:
+        constrained[False, "unsupported type in apple accelerate"]()
 
 
 # apple_matmul used by all matmuls except apple_batched_matmul
@@ -426,8 +426,8 @@ fn apple_matmul[
         ](cblas_gemm, c, a, b)
 
         return
-
-    constrained[False, "unsupported type in apple accelerate"]()
+    else:
+        constrained[False, "unsupported type in apple accelerate"]()
 
 
 # ===-----------------------------------------------------------------------===#

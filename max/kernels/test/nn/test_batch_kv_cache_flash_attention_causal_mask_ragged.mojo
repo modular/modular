@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import isqrt
+from math import rsqrt
 from random import random_ui64, seed
 
 from buffer import Dim, DimList
@@ -100,9 +100,9 @@ def execute_ragged_flash_attention[
             IndexList[3](ragged_start_idx, 0, 0)
         )
         memcpy(
-            padded_ptr,
-            ragged_ptr,
-            unpadded_seq_len * num_q_heads * kv_params.head_size,
+            dest=padded_ptr,
+            src=ragged_ptr,
+            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
         )
 
     # initialize reference output
@@ -168,7 +168,7 @@ def execute_ragged_flash_attention[
         k_cache,
         v_cache,
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         test_output.to_layout_tensor(),
     )
     # padded execution
@@ -177,7 +177,7 @@ def execute_ragged_flash_attention[
         k_cache,
         v_cache,
         CausalMask(),
-        isqrt(Float32(kv_params.head_size)),
+        rsqrt(Float32(kv_params.head_size)),
         ref_output.to_layout_tensor(),
     )
 

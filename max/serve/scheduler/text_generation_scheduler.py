@@ -14,23 +14,23 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Union
 
 from max.interfaces import (
     MAXPullQueue,
     MAXPushQueue,
+    Pipeline,
     RequestID,
     Scheduler,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    drain_queue,
 )
+from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
-from max.profiler import Tracer
+from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
 from .data_parallelism_utils import split_by_replica_idx
@@ -52,14 +52,17 @@ class TokenGenerationScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
-        pipeline: TextGenerationPipelineType[TextContext],
+        pipeline: Pipeline[
+            TextGenerationInputs[TextContext], TextGenerationOutput
+        ],
         *,
-        request_queue: MAXPullQueue[Union[TextContext, TextAndVisionContext]],
+        request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager | None = None,
+        offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -75,11 +78,47 @@ class TokenGenerationScheduler(Scheduler):
         )
         self.scheduler_logger = SchedulerLogger()
 
+        # We are parameterizing the offload of queue draining to allow for
+        # the use case where we want to drain the queue in the main thread.
+        # This is useful for debugging and testing purposes.
+        self._queue_drainer: (
+            BackgroundQueueDrainer[TextContext | TextAndVisionContext] | None
+        ) = None
+        if offload_queue_draining:
+            # I am setting this to drain at max batch size ce * 2, to ensure we do not drain
+            # forever, but have more than enough to form full batches.
+            self._queue_drainer = BackgroundQueueDrainer[
+                TextContext | TextAndVisionContext
+            ](
+                self.request_queue,
+                max_items_per_drain=self.scheduler_config.max_batch_size_ce * 2,
+            )
+
+    @traced
     def _retrieve_pending_requests(self) -> None:
-        new_contexts = drain_queue(self.request_queue)
-        for context in new_contexts:
+        """
+        Initiates retrieval of pending requests from the request queue.
+
+        If a background retrieval task is already running, this method returns immediately.
+        Otherwise, it submits a background task to drain the request queue and processes
+        any contexts that have already been retrieved and are pending.
+
+        This method is responsible for ensuring that new requests are continuously
+        fetched and made available for batching and scheduling.
+        """
+        if self._queue_drainer is not None:
+            self._queue_drainer.start_draining()
+            items = self._queue_drainer.retrieve_items()
+        else:
+            items = drain_queue(
+                self.request_queue,
+                max_items=self.scheduler_config.max_batch_size_ce * 2,
+            )
+
+        for context in items:
             self.batch_constructor.ce_reqs[context.request_id] = context
 
+    @traced
     def run_iteration(self) -> SchedulerProgress:
         """The Scheduler routine that creates batches and schedules them on GPU
 
@@ -133,23 +172,22 @@ class TokenGenerationScheduler(Scheduler):
 
         # TODO(E2EOPT-399): Add proper data parallelism support. Currently
         # this naively splits the batch onto different devices.
-        split_by_replica_idx(
-            inputs,
-            self.scheduler_config.data_parallel_degree,
-            self.batch_constructor.paged_cache,
-        )
+        if self.batch_constructor.paged_cache is not None:
+            split_by_replica_idx(
+                inputs,
+                self.scheduler_config.data_parallel_degree,
+                self.batch_constructor.paged_cache,
+            )
 
         # execute the batch
         responses = self.pipeline.execute(inputs)
 
-        # Process each batch (usually just one unless using data parallelism)
-        for executed_batch in inputs.batches:
-            # If there is a chunked request, we put it back into the request queue
-            add_newly_encoded_reqs_to_tg_batch(
-                executed_batch,
-                responses,
-                self.batch_constructor,
-            )
+        # If there is a chunked request, we put it back into the request queue
+        add_newly_encoded_reqs_to_tg_batch(
+            inputs.batch,
+            responses,
+            self.batch_constructor,
+        )
 
         # remove terminated requests from the batch
         num_terminated_reqs = release_terminated_requests(
@@ -171,9 +209,9 @@ class TokenGenerationScheduler(Scheduler):
 
 
 def load_text_generation_scheduler(
-    pipeline: TextGenerationPipelineType[TextContext],
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[Union[TextContext, TextAndVisionContext]],
+    request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],
@@ -195,4 +233,5 @@ def load_text_generation_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
+        offload_queue_draining=pipeline_config.experimental_background_queue,
     )

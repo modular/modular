@@ -14,6 +14,7 @@
 from algorithm import map
 from buffer import NDBuffer
 from testing import assert_equal
+from testing import TestSuite
 
 
 def test_map():
@@ -48,4 +49,4 @@ def test_map():
 
 
 def main():
-    test_map()
+    TestSuite.discover_tests[__functions_in_module()]().run()

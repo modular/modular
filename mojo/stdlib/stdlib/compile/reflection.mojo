@@ -15,7 +15,7 @@ from sys.info import _current_target, _TargetType
 
 
 fn get_linkage_name[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyType, //,
     target: _TargetType,
     func: func_type,
 ]() -> StaticString:
@@ -40,7 +40,7 @@ fn get_linkage_name[
 
 
 fn get_linkage_name[
-    func_type: AnyTrivialRegType, //,
+    func_type: AnyType, //,
     func: func_type,
 ]() -> StaticString:
     """Returns `func` symbol name.

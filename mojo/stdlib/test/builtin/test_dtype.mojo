@@ -13,7 +13,7 @@
 
 from sys import size_of
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 alias uint_dtypes = [
     DType.uint8,
@@ -138,11 +138,4 @@ def test_get_dtype():
 
 
 def main():
-    test_equality()
-    test_stringable()
-    test_representable()
-    test_is_xxx()
-    test_key_element()
-    test_size_of()
-    test_from_str()
-    test_get_dtype()
+    TestSuite.discover_tests[__functions_in_module()]().run()

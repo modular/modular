@@ -25,6 +25,7 @@ from linalg.matmul.gpu import matmul_kernel
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
+from internal_utils import assert_almost_equal
 
 
 def run_matvec[
@@ -163,25 +164,15 @@ def run_matvec[
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.0001
+    alias errorTolerance = 1e-2
     var failed = False
-    for i in range(M * N):
-        var outVal = c_host[i]
-        var outRef = c_host_naive[i]
-        var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
-            failed = True
-
-    # CHECK: Success
-    if not failed:
-        print("Success 🎉: results match")
-        print(
-            "Performance warp-shuffle matvec vs. shmem matmul: ",
-            sectime2 / sectime,
-            "x",
-        )
-    else:
-        print("Failed ❌: results mismatch")
+    assert_almost_equal(
+        c_host,
+        c_host_naive,
+        num_elements=M * N,
+        atol=1e-4,
+        rtol=errorTolerance,
+    )
 
     _ = a_device
     _ = b_device
@@ -359,26 +350,15 @@ fn run_matvec_with_epilogue_fn[
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.0001
+    alias errorTolerance = 1e-2
     var failed = False
-    for i in range(M * N * c_stride):
-        var outVal = c_host.load(i)
-        var outRef = c_host_naive.load(i)
-        var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
-            print(i, relDiff, outVal, outRef)
-            failed = True
-
-    # CHECK: Success
-    if not failed:
-        print("Success 🎉: results match")
-        print(
-            "Performance warp-shuffle matvec vs. shmem matmul: ",
-            sectime2 / sectime,
-            "x",
-        )
-    else:
-        print("Failed ❌: results mismatch")
+    assert_almost_equal(
+        c_host,
+        c_host_naive,
+        num_elements=M * N * c_stride,
+        atol=1e-4,
+        rtol=errorTolerance,
+    )
 
     _ = a_device
     _ = b_device

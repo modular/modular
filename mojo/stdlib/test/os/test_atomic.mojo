@@ -13,7 +13,13 @@
 
 from os.atomic import Atomic, Consistency, fence
 
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
+from testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
 
 
 def test_consistency_equality_comparable():
@@ -140,13 +146,4 @@ def test_comptime_compare_exchange():
 
 
 def main():
-    test_consistency_equality_comparable()
-    test_consistency_representable()
-    test_consistency_stringable()
-    test_atomic[DType.int32]()
-    test_atomic[DType.float64]()
-    test_compare_exchange[DType.int32]()
-    test_compare_exchange[DType.float64]()
-    test_comptime_atomic()
-    test_comptime_fence()
-    test_comptime_compare_exchange()
+    TestSuite.discover_tests[__functions_in_module()]().run()

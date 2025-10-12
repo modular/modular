@@ -622,6 +622,10 @@ fn threadfence[scope: Scope = Scope.GPU]():
         scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
         "invalid threadfence scope",
     ]()
+    constrained[
+        is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
+    ]()
+
     alias suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
@@ -896,9 +900,7 @@ struct AMDBufferResource:
         ]()
 
         self.desc = SIMD[DType.uint32, 4](0)
-        var address = bitcast[DType.uint32, 2](
-            SIMD[DType.uint64, 1](Int(gds_ptr))
-        )
+        var address = bitcast[DType.uint32, 2](UInt64(Int(gds_ptr)))
         self.desc[0] = address[0]
         # assuming 0 stride currently
         self.desc[1] = address[1]
@@ -1100,6 +1102,10 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
         return 0x10  # SC=10, NT=0
     elif cache_policy is CacheOperation.VOLATILE:
         return 0x11  # SC=11, NT=0
+    elif cache_policy is CacheOperation.WORKGROUP | CacheOperation.STREAMING:
+        return 0x03  # SC=01, NT=1
+    elif cache_policy is CacheOperation.GLOBAL | CacheOperation.STREAMING:
+        return 0x12  # SC=10, NT=1
     else:
         # Default to ALWAYS for unknown/unsupported operations
         return 0x00

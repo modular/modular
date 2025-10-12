@@ -18,7 +18,7 @@ from layout.int_tuple import IntTuple
 from testing import assert_equal, assert_true
 
 
-fn main() raises:
+def main():
     test_distribute()
     test_tile()
 
@@ -26,7 +26,7 @@ fn main() raises:
 fn test_distribute() raises:
     alias thread_layout = make_row_major(MixedTuple(Idx[2](), Idx[2]()))
 
-    var ptr = InlineArray[Scalar[DType.uint32], 16](fill=-1).unsafe_ptr()
+    var ptr = InlineArray[UInt32, 16](fill=-1).unsafe_ptr()
 
     alias data_layout_shape = MixedTuple[ComptimeInt[4], ComptimeInt[4]]
     alias data_layout_stride = MixedTuple[ComptimeInt[4], ComptimeInt[1]]
@@ -81,7 +81,7 @@ fn test_distribute() raises:
 
 fn test_tile() raises:
     # Create a 4x4 tensor with row-major layout
-    var data = InlineArray[Scalar[DType.uint32], 16](fill=0)
+    var data = InlineArray[UInt32, 16](fill=0)
     var ptr = data.unsafe_ptr()
 
     var layout_tensor = MixedLayoutTensor[dtype = DType.uint32](

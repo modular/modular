@@ -64,7 +64,7 @@ fn debug_assert[
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
-](*messages: *Ts, location: Optional[_SourceLocation] = None):
+](*messages: *Ts):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -145,7 +145,6 @@ fn debug_assert[
     Args:
         messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
             arguments to convert to a `String` message.
-        location: The location of the error (defaults to `__call_location`).
     """
 
     @parameter
@@ -161,9 +160,7 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(
-            message.data, message.pos, location.or_else(__call_location())
-        )
+        _debug_assert_msg(message.data, message.pos, __call_location())
 
 
 @always_inline
@@ -172,7 +169,7 @@ fn debug_assert[
     *Ts: Writable,
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
-](cond: Bool, *messages: *Ts, location: Optional[_SourceLocation] = None):
+](cond: Bool, *messages: *Ts):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -256,7 +253,6 @@ fn debug_assert[
         cond: The bool value to assert.
         messages: A set of [`Writable`](/mojo/stdlib/utils/write/Writable/)
             arguments to convert to a `String` message.
-        location: The location of the error (defaults to `__call_location`).
     """
 
     @parameter
@@ -272,9 +268,7 @@ fn debug_assert[
 
         message.nul_terminate()
 
-        _debug_assert_msg(
-            message.data, message.pos, location.or_else(__call_location())
-        )
+        _debug_assert_msg(message.data, message.pos, __call_location())
 
     elif _use_compiler_assume:
         assume(cond)
@@ -285,12 +279,7 @@ fn debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
-](
-    cond: Bool,
-    message: StringLiteral,
-    *,
-    location: Optional[_SourceLocation] = None,
-):
+](cond: Bool, message: StringLiteral):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -371,7 +360,6 @@ fn debug_assert[
     Args:
         cond: The bool value to assert.
         message: A static string message.
-        location: The location of the error (defaults to `__call_location`).
     """
 
     @parameter
@@ -381,7 +369,7 @@ fn debug_assert[
         _debug_assert_msg(
             message.unsafe_cstr_ptr().bitcast[Byte](),
             len(message) + 1,  # include null terminator
-            location.or_else(__call_location()),
+            __call_location(),
         )
     elif _use_compiler_assume:
         assume(cond)
@@ -389,7 +377,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[Byte], length: Int, loc: _SourceLocation
+    message: UnsafePointer[Byte, mut=False], length: Int, loc: _SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 

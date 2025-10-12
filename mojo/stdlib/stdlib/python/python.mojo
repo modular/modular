@@ -58,9 +58,11 @@ fn _get_python_interface() raises -> Pointer[CPython, StaticConstantOrigin]:
     """
 
     var ptr = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
-    var ptr2 = UnsafePointer(to=ptr[].cpython).origin_cast[
-        False, StaticConstantOrigin
-    ]()
+    var ptr2 = (
+        UnsafePointer(to=ptr[].cpython)
+        .as_immutable()
+        .unsafe_origin_cast[StaticConstantOrigin]()
+    )
     return Pointer(to=ptr2[])
 
 
@@ -379,6 +381,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             var val = entry.value.copy().to_python_object()
             var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
             cpy.Py_DecRef(key)
+            _ = val
             if errno == -1:
                 raise cpy.unsafe_get_error()
 
@@ -437,13 +440,15 @@ struct Python(Defaultable, ImplicitlyCopyable):
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(tuples)):
-            var key_obj = tuples[i][0].copy().to_python_object()
-            var val_obj = tuples[i][1].copy().to_python_object()
-            var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
+            var key = tuples[i][0].copy().to_python_object()
+            var val = tuples[i][1].copy().to_python_object()
+            var errno = cpython.PyDict_SetItem(
+                dict_obj_ptr, key._obj_ptr, val._obj_ptr
             )
-            if result == -1:
-                raise cpython.get_error()
+            _ = key
+            _ = val
+            if errno == -1:
+                raise cpython.unsafe_get_error()
 
         return PythonObject(from_owned=dict_obj_ptr)
 
@@ -467,8 +472,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         for i in range(len(values)):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
@@ -494,8 +499,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @always_inline
@@ -539,8 +544,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @always_inline
@@ -564,7 +569,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @no_inline
     fn as_string_slice(
         self, str_obj: PythonObject
-    ) -> StringSlice[MutableAnyOrigin]:
+    ) -> StringSlice[ImmutableAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:

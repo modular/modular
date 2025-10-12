@@ -92,7 +92,7 @@ def _initialize_ragged_inputs[
             ragged_ptr = hidden_state_ragged_host.tensor._offset(
                 IndexList[2](ragged_start_idx + s, 0)
             )
-            memcpy(padded_ptr, ragged_ptr, hidden_size)
+            memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
 
     hidden_state_padded_device = hidden_state_padded_host.copy_to_device(ctx)
 
@@ -603,7 +603,8 @@ def generic_execute_fused_qkv_cache_ragged[
             2,
             DimList(
                 Dim(),
-                (kv_params.num_heads * 2 + num_q_heads) * kv_params.head_size,
+                (kv_params.num_heads * 2 + UInt(num_q_heads))
+                * kv_params.head_size,
             ),
         ],
         DeviceNDBuffer[

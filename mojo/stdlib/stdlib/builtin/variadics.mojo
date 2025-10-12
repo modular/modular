@@ -306,7 +306,10 @@ struct VariadicListMem[
         @parameter
         if is_owned:
             for i in reversed(range(len(self))):
-                UnsafePointer(to=self[i]).destroy_pointee()
+                # Safety: We own the elements in this list.
+                UnsafePointer(to=self[i]).unsafe_mut_cast[
+                    True
+                ]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn (idx: Int, var elt: element_type) capturing
@@ -494,7 +497,10 @@ struct VariadicPack[
 
             @parameter
             for i in reversed(range(Self.__len__())):
-                UnsafePointer(to=self[i]).destroy_pointee()
+                # Safety: We own the elements in this pack.
+                UnsafePointer(to=self[i]).unsafe_mut_cast[
+                    True
+                ]().destroy_pointee()
 
     fn consume_elements[
         elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing
@@ -561,7 +567,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index = index.__index__()
+            index = index.__mlir_index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 

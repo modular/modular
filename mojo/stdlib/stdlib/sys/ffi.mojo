@@ -95,8 +95,6 @@ fn _get_max_path() -> Int:
         return 4096
     elif CompilationTarget.is_macos():
         return 1024
-    elif CompilationTarget.is_windows():
-        return 260
     # Default POSIX limit
     else:
         return 256
@@ -111,9 +109,6 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
     ):
         # LP64
         return DType.uint64 if unsigned else DType.int64
-    elif is_64bit() and CompilationTarget.is_windows():
-        # LLP64
-        return DType.uint32 if unsigned else DType.int32
     else:
         constrained[False, "size of C `long` is unknown on this target"]()
         return abort[DType]()
@@ -124,9 +119,7 @@ fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
 
     @parameter
     if is_64bit() and (
-        CompilationTarget.is_macos()
-        or CompilationTarget.is_linux()
-        or CompilationTarget.is_windows()
+        CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
         # On a 64-bit CPU, `long long` is *always* 64 bits in every OS's data
         # model.
@@ -221,8 +214,6 @@ struct DLHandle(Boolable, Copyable, Movable):
         """
         self = Self._dlopen(UnsafePointer[c_char](), flags)
 
-    # TODO(#15590): Implement support for windows and remove the always_inline.
-    @always_inline
     fn __init__[
         PathLike: os.PathLike, //
     ](out self, path: PathLike, flags: Int = DEFAULT_RTLD) raises:
@@ -244,18 +235,14 @@ struct DLHandle(Boolable, Copyable, Movable):
     fn _dlopen(
         file: UnsafePointer[c_char, mut=False, origin=_], flags: Int
     ) raises -> DLHandle:
-        @parameter
-        if not CompilationTarget.is_windows():
-            var handle = dlopen(file, flags)
-            if handle == OpaquePointer():
-                var error_message = dlerror()
-                raise Error(
-                    "dlopen failed: ",
-                    StringSlice(unsafe_from_utf8_ptr=error_message),
-                )
-            return DLHandle(handle)
-        else:
-            return DLHandle(OpaquePointer())
+        var handle = dlopen(file, flags)
+        if handle == OpaquePointer():
+            var error_message = dlerror()
+            raise Error(
+                "dlopen failed: ",
+                StringSlice(unsafe_from_utf8_ptr=error_message),
+            )
+        return DLHandle(handle)
 
     fn check_symbol(self, var name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
@@ -266,11 +253,6 @@ struct DLHandle(Boolable, Copyable, Movable):
         Returns:
             `True` if the symbol exists.
         """
-        constrained[
-            not CompilationTarget.is_windows(),
-            "Checking dynamic library symbol is not supported on Windows",
-        ]()
-
         var opaque_function_ptr: OpaquePointer = dlsym(
             self.handle,
             name.unsafe_cstr_ptr(),
@@ -278,16 +260,11 @@ struct DLHandle(Boolable, Copyable, Movable):
 
         return Bool(opaque_function_ptr)
 
-    # TODO(#15590): Implement support for windows and remove the always_inline.
-    @always_inline
     fn close(mut self):
         """Delete the DLHandle object unloading the associated dynamic library.
         """
-
-        @parameter
-        if not CompilationTarget.is_windows():
-            _ = dlclose(self.handle)
-            self.handle = OpaquePointer()
+        _ = dlclose(self.handle)
+        self.handle = OpaquePointer()
 
     fn __bool__(self) -> Bool:
         """Checks if the handle is valid.
@@ -297,8 +274,6 @@ struct DLHandle(Boolable, Copyable, Movable):
         """
         return self.handle.__bool__()
 
-    # TODO(#15590): Implement support for windows and remove the always_inline.
-    @always_inline
     fn get_function[
         result_type: AnyTrivialRegType
     ](self, var name: String) -> result_type:
@@ -397,12 +372,6 @@ struct DLHandle(Boolable, Copyable, Movable):
             A pointer to the symbol.
         """
         debug_assert(self.handle, "Dylib handle is null")
-
-        @parameter
-        if CompilationTarget.is_windows():
-            return abort[UnsafePointer[result_type]](
-                "get_symbol isn't supported on windows"
-            )
 
         # To check for `dlsym()` results that are _validly_ NULL, we do the
         # dance described in https://man7.org/linux/man-pages/man3/dlsym.3.html:
@@ -639,7 +608,7 @@ struct _Global[
     StorageType: Movable, //,
     name: StaticString,
     init_fn: fn () -> StorageType,
-    on_error_msg: Optional[fn () -> String] = None,
+    on_error_msg: Optional[fn () -> Error] = None,
 ](Defaultable):
     alias ResultType = UnsafePointer[StorageType]
 

@@ -18,7 +18,6 @@ import os
 
 # Import the base BERT model - RoBERTa inherits from BERT
 import sys
-from typing import Optional
 
 from max.driver import Device
 from max.engine import InferenceSession
@@ -47,7 +46,7 @@ class RobertaPipelineModel(BertPipelineModel):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
         # Auto-select RoBERTa adapter if not provided

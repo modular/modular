@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 def test_none_end_folds():
@@ -135,8 +135,4 @@ def test_slice_indices():
 
 
 def main():
-    test_none_end_folds()
-    test_sliceable()
-    test_slice_stringable()
-    test_slice_eq()
-    test_slice_indices()
+    TestSuite.discover_tests[__functions_in_module()]().run()

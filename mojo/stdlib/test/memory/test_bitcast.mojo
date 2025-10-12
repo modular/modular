@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import bitcast, pack_bits
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_equal
 
 
@@ -29,7 +29,7 @@ def test_bitcast():
 
 
 def test_pack_bits():
-    alias b1 = SIMD[DType.bool, 1](True)
+    alias b1 = Scalar[DType.bool](True)
     assert_equal(pack_bits(b1).cast[DType.bool](), b1)
     assert_equal(pack_bits(b1).cast[DType.uint8](), UInt8(0b0000_0001))
 
@@ -53,9 +53,4 @@ def test_pack_bits():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_bitcast]()
-    suite.test[test_pack_bits]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

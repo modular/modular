@@ -92,5 +92,5 @@ fn test_gpu_print_formattable() raises:
         ctx.synchronize()
 
 
-fn main() raises:
+def main():
     test_gpu_print_formattable()

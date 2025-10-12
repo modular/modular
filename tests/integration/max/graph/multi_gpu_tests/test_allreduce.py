@@ -113,7 +113,7 @@ def test_allreduce_execution() -> None:
     output = compiled.execute(*input_tensors, *signals.buffers())
 
     # Check Executed Graph
-    for out_tensor, device in zip(output, devices):
+    for out_tensor, device in zip(output, devices, strict=True):
         assert isinstance(out_tensor, Tensor)
         assert out_tensor.device == device
         assert np.allclose(out_np, out_tensor.to(host).to_numpy())
@@ -154,7 +154,7 @@ class AllreduceAdd(Module):
         ]
 
         # Elementwise add that should fuse into allreduce's epilogue.
-        return [x + y for x, y in zip(results, biases)]
+        return [x + y for x, y in zip(results, biases, strict=True)]
 
 
 @pytest.mark.parametrize("num_gpus", [1, 2, 4])

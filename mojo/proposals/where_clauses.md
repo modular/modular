@@ -4,7 +4,11 @@
 Status: Proposed, agreement to explore but not committed, not implemented.
 
 **Sept 17, 2025**
-Status: Updated, implementation has been scoped out and prioritized.
+Status: Updated to include param decl constraints, and renamed to "where".
+Implementation has been scoped out and prioritized.
+
+**Oct 1, 2025**
+Status: Updated to remove the error message field. Implementation in progress.
 
 This document explores adding “where” clauses to Mojo, a major missing
 feature that will allow more safety, expressivity, and APIs that work better
@@ -139,8 +143,8 @@ also use inline constraints on type parameters for structs:
 
 ```mojo
 struct SIMD[
-  dtype: DType where dtype is not DType.invalid, "simd type cannot be DType.invalid",
-  size: Int where size.is_power_of_two(), "simd width must be power of 2",
+  dtype: DType where dtype is not DType.invalid,
+  size: Int where size.is_power_of_two(),
 ]:
   ...
 ```
@@ -166,26 +170,7 @@ struct SIMD[dtype: DType, size: Int]:
       <actual code>
 ```
 
-In both forms, a constraint takes a boolean expression and an optional string
-message (printed when overload resolution fails to find any candidate).
-
-Why the optional string? I would like misuse of these conditions to be more
-clear for users, e.g.:
-
-```mojo
-var x : SIMD[f32, 17]
-        ^ error: simd width must be power of 2
-        ^ note: '(size & size-1) == 0' condition failed
-```
-
-Rather than the default, which would have to be something like:
-
-```mojo
-var x : SIMD[f32, 17]
-        ^ error: '(size & size-1) == 0' condition failed
-```
-
-which isn’t as helpful.
+In both forms, a constraint takes a boolean expression.
 
 Notice how this puts the constraints where they belong - put the constraints
 for the SIMD type as a whole on the struct, and put the constraints for the
@@ -212,12 +197,12 @@ resolution.
 
 ### Part #1: Inline Parameter Constraints
 
-We extend parameter parsing and binding to accept and record `where` constraints
-on parameters. These constraints are evaluated at parameter binding time and are
-immediately added to the local invariant set so that subsequent parameters can
-assume them. We store these constraints alongside the parameter declaration
-(e.g., as a list of `TypedAttr` + `StringAttr`), and thread them into
-the current context used by later parameters and nested regions.
+We extend parameter parsing and binding to accept and record `where`
+constraints on parameters. These constraints are evaluated at parameter binding
+time and are immediately added to the local invariant set so that subsequent
+parameters can assume them. We store these constraints alongside the parameter
+declaration (e.g., as a list of `TypedAttr`), and thread them into the current
+context used by later parameters and nested regions.
 
 ### Part #2: Function/Method Constraints
 
@@ -253,9 +238,9 @@ a.is_prime()` canonicalizes to `a.is_prime()` because the trivially redundant
 subexpressions.
 
 How do we store this? Method and struct requirements should be stored as a new
-list of `TypedAttr` + `StringAttr` on both function and struct declarations.
-This ensures they’re serialized to modules etc. This is parser time only
-behavior, so these do not need to be lowered to KGEN or later.
+list of `TypedAttr` on both function and struct declarations. This ensures
+they’re serialized to modules etc. This is parser time only behavior, so these
+do not need to be lowered to KGEN or later.
 
 ### Part #3: Contextual Invariants
 
@@ -317,14 +302,14 @@ the requisite symbolic manipulation at the KGEN level ([in June
 and we can make other new specific cases fancier as needed.
 
 In the case of a rejection, we can do a bit more digging for better error
-message quality: we can figure out which clause is failing and emit the
-optional string that it corresponds to. For example, if we have something like
-`SIMD[f32, 17]` and the following definition:
+message quality: we can figure out which clause is failing and report the
+failed constraint. For example, if we have something like `SIMD[f32, 17]` and
+the following definition:
 
 ```mojo
 struct SIMD[
-    dtype: DType where dtype is not DType.invalid, "simd type cannot be DType.invalid",
-    size: Int where size.is_power_of_two(), "simd width must be power of 2",
+    dtype: DType where dtype is not DType.invalid,
+    size: Int where size.is_power_of_two(),
 ]:
 ```
 
@@ -334,8 +319,7 @@ The logical way for the compiler to check this is to build up a big conjunction
 much lower level) and then fold it and fail the whole expression - we want
 overload checking to be efficient, because it is normal for some overload set
 candidates to fail without the expression type checker failing overall.
-However, if the whole set fails, we want to print the right string error
-message of the first failing condition and the expression it corresponded to.
+However, if the whole set fails, we want to report the first failing condition.
 This can be done by adding a new failure kind to `OverloadFitness` which error
 emission uses.
 

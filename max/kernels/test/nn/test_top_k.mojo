@@ -108,7 +108,7 @@ fn test_case_sampling[
         batch_size = input_shape[0]
     else:
         batch_size = input_shape[0] * input_shape[1]
-    var temperature_ptr = UnsafePointer[Scalar[DType.float32]].alloc(batch_size)
+    var temperature_ptr = UnsafePointer[Float32].alloc(batch_size)
     for i in range(batch_size):
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
@@ -120,7 +120,7 @@ fn test_case_sampling[
         )
     )
 
-    var seed_ptr = UnsafePointer[Scalar[DType.uint64]].alloc(batch_size)
+    var seed_ptr = UnsafePointer[UInt64].alloc(batch_size)
     for i in range(batch_size):
         seed_ptr[i] = 12
     var seed_buf = OptionalReg(
@@ -147,6 +147,12 @@ fn test_case_sampling[
         print(out_idxs.ptr[i], end="")
         print(",", end="")
     print("")
+
+    input_ptr.free()
+    output_vals_ptr.free()
+    output_idxs_ptr.free()
+    temperature_ptr.free()
+    seed_ptr.free()
 
 
 fn test_case[
@@ -189,7 +195,7 @@ fn test_case[
     print("")
 
 
-fn main() raises:
+def main():
     seed(1)
 
     @parameter

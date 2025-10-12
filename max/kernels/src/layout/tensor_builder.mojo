@@ -178,6 +178,7 @@ struct LayoutTensorBuild[
         """
         self.runtime_layout = {}
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn row_major[
         *shapes: Int
     ](
@@ -200,6 +201,7 @@ struct LayoutTensorBuild[
         """
         return {}
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn row_major(
         self,
         shape0: ValueOrUnknown,
@@ -226,6 +228,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn row_major(
         self,
         shape0: ValueOrUnknown,
@@ -256,6 +259,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn row_major(
         self,
         shape0: ValueOrUnknown,
@@ -290,6 +294,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn row_major(
         self,
         shape0: ValueOrUnknown,
@@ -330,6 +335,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn col_major[
         *shapes: Int
     ](
@@ -352,6 +358,7 @@ struct LayoutTensorBuild[
         """
         return {}
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn col_major(
         self,
         shape0: ValueOrUnknown,
@@ -378,6 +385,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn col_major(
         self,
         shape0: ValueOrUnknown,
@@ -408,6 +416,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn col_major(
         self,
         shape0: ValueOrUnknown,
@@ -442,6 +451,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn col_major(
         self,
         shape0: ValueOrUnknown,
@@ -482,6 +492,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn layout[
         shape0: Int
     ](
@@ -503,6 +514,7 @@ struct LayoutTensorBuild[
         """
         return {}
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn layout[
         rank: Int, shape: IndexList[rank], stride: IndexList[rank]
     ](
@@ -526,6 +538,7 @@ struct LayoutTensorBuild[
         """
         return {}
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn layout[
         rank: Int
     ](
@@ -563,6 +576,7 @@ struct LayoutTensorBuild[
             )
         }
 
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn layout(
         self,
         shape0: ValueOrUnknown,
@@ -590,6 +604,7 @@ struct LayoutTensorBuild[
         }
 
     @always_inline
+    @deprecated("Use `LayoutTensor` with `address_space` parameter directly.")
     fn shared(
         self,
         out res: LayoutTensorBuild[

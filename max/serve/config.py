@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 from enum import Enum, IntEnum
 from pathlib import Path
-from typing import Optional, Union
 
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
@@ -126,22 +125,22 @@ class Settings(BaseSettings):
     )
 
     # Telemetry and logging configuration
-    logs_console_level: Union[str, None] = Field(
+    logs_console_level: str | None = Field(
         default="INFO",
         description="Logging level",
         alias="MAX_SERVE_LOGS_CONSOLE_LEVEL",
     )
-    logs_otlp_level: Union[str, None] = Field(
+    logs_otlp_level: str | None = Field(
         default=None,
         description="OTLP log level",
         alias="MAX_SERVE_LOGS_OTLP_LEVEL",
     )
-    logs_file_level: Union[str, None] = Field(
+    logs_file_level: str | None = Field(
         default=None,
         description="File log level",
         alias="MAX_SERVE_LOGS_FILE_LEVEL",
     )
-    logs_file_path: Union[str, None] = Field(
+    logs_file_path: str | None = Field(
         default=None,
         description="Logs file path",
         alias="MAX_SERVE_LOGS_FILE_PATH",
@@ -151,7 +150,7 @@ class Settings(BaseSettings):
         description="Structured logging for deployed services",
         alias="MODULAR_STRUCTURED_LOGGING",
     )
-    logs_enable_components: Union[str, None] = Field(
+    logs_enable_components: str | None = Field(
         default=None,
         description="Comma separated list of additional components to enable for logging",
         alias="MAX_SERVE_LOGS_ENABLE_COMPONENTS",
@@ -204,15 +203,13 @@ class Settings(BaseSettings):
     )
 
     @field_validator("metric_level", mode="before")
-    def validate_metric_level(
-        cls, value: Union[str, MetricLevel]
-    ) -> MetricLevel:
+    def validate_metric_level(cls, value: str | MetricLevel) -> MetricLevel:
         # Support string values ("BASIC") even though Metric is an IntEnum
         if isinstance(value, str):
             return MetricLevel[value]
         return value
 
-    transaction_recording_file: Optional[Path] = Field(
+    transaction_recording_file: Path | None = Field(
         default=None,
         description="File to record all HTTP transactions to",
         alias="MAX_SERVE_TRANSACTION_RECORDING_FILE",
@@ -220,8 +217,8 @@ class Settings(BaseSettings):
 
     @field_validator("transaction_recording_file", mode="after")
     def validate_transaction_recording_file(
-        cls, path: Optional[Path]
-    ) -> Optional[Path]:
+        cls, path: Path | None
+    ) -> Path | None:
         if path is None:
             return None
         if not path.name.endswith(".rec.jsonl"):
@@ -248,7 +245,7 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_DISPATCHER_CONFIG",
     )
 
-    log_prefix: Optional[str] = Field(
+    log_prefix: str | None = Field(
         default=None,
         description="Prefix to prepend to all log messages for this service instance.",
         alias="MAX_SERVE_LOG_PREFIX",

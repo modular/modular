@@ -1068,8 +1068,6 @@ fn _index_printf_format() -> StaticString:
     @parameter
     if bit_width_of[Int]() == 32:
         return "%d"
-    elif CompilationTarget.is_windows():
-        return "%lld"
     else:
         return "%ld"
 
@@ -1093,19 +1091,9 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     elif dtype is DType.int32:
         return "%i"
     elif dtype is DType.int64:
-
-        @parameter
-        if CompilationTarget.is_windows():
-            return "%lld"
-        else:
-            return "%ld"
+        return "%ld"
     elif dtype is DType.uint64:
-
-        @parameter
-        if CompilationTarget.is_windows():
-            return "%llu"
-        else:
-            return "%lu"
+        return "%lu"
 
     elif dtype.is_floating_point():
         return "%.17g"

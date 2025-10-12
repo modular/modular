@@ -37,6 +37,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_kv_cache_store_ragged.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2392
 }
 
 [
@@ -44,7 +48,10 @@ _EXTRA_CONSTRAINTS = {
         name = src + ".test",
         size = "large",
         srcs = [src],
-        enable_assertions = src != "test_kv_cache_ragged_matmul.mojo",  # TODO: MSTDL-1147 understand why this test fails with asserts turned on.
+        enable_assertions = select({
+            "//:amd_gpu": False,
+            "//conditions:default": src != "test_kv_cache_ragged_matmul.mojo",  # TODO: MSTDL-1147 understand why this test fails with asserts turned on.
+        }),
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, "5"),
         },

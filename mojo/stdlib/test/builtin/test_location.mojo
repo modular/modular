@@ -18,7 +18,7 @@ from builtin._location import (
     __source_location,
     _SourceLocation,
 )
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, TestSuite
 
 
 fn check_source_loc(line: Int, col: Int, source_loc: _SourceLocation) raises:
@@ -246,8 +246,5 @@ fn test_source_location_struct() raises:
     assert_equal(String(source_loc), "/path/to/some_file.mojo:50:60")
 
 
-fn main() raises:
-    test_source_location_struct()
-    test_builtin_source_loc()
-    test_parameter_context()
-    test_builtin_call_loc()
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

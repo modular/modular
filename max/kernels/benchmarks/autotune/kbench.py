@@ -476,7 +476,7 @@ class Spec:
         return spec
 
     @staticmethod
-    def parse_params(param_list: list[str]):
+    def parse_params(param_list: list[str]):  # noqa: ANN205
         """
         Parse the parameters as (key,value) dictionary.
         The parameters can be defined as follows:
@@ -615,7 +615,7 @@ class Spec:
             # default values for empty mesh
             self.mesh = [SpecInstance("", Path("./"))]
 
-    def setup_mesh(self):
+    def setup_mesh(self):  # noqa: ANN201
         """
         Setup a mesh (cartesian product) of all values for all params. For example,
         if we have 2 set of params M=[64,256] and N=[A,B,C], the mesh will include
@@ -738,13 +738,13 @@ class Spec:
         return "\n".join(rs)
 
 
-def _get_tmp_path(file_path):  # noqa: ANN001
+def _get_tmp_path(file_path):  # noqa: ANN001, ANN202
     base = os.path.basename(file_path).split(".")[0]
     tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
     return Path(tf)
 
 
-def _get_core_count():
+def _get_core_count():  # noqa: ANN202
     try:
         # The 'os.sched_getaffinity' method is only available on some Unix platforms
         return len(os.sched_getaffinity(0))  # type: ignore[attr-defined, unused-ignore]
@@ -840,7 +840,7 @@ class Scheduler:
         self.progress = progress
 
     @staticmethod
-    def kbench_mkdir(output_dir):  # noqa: ANN001
+    def kbench_mkdir(output_dir):  # noqa: ANN001, ANN205
         """Run the following command:
         `rm -rf {output_dir} && mkdir -p {output_dir}`
         """
@@ -913,7 +913,7 @@ class Scheduler:
         bi.build_elapsed_time = build_elapsed_time
         return bi
 
-    def build_all(self):
+    def build_all(self):  # noqa: ANN201
         """
         Build all unique items scheduled by the scheduler.
         """
@@ -1067,7 +1067,7 @@ class Scheduler:
 
     # Retrieve, sort, and pick top choices
     @staticmethod
-    def get_valid_specs(bi_list: list[BuildItem], spec: Spec):
+    def get_valid_specs(bi_list: list[BuildItem], spec: Spec):  # noqa: ANN205
         valid_specs: list[pd.DataFrame] = []
         invalid_specs: list[int] = []
 
@@ -1108,7 +1108,7 @@ class Scheduler:
         t_build_total: float = 0.0,
         t_elapsed_total: float = 0.0,
         verbose: bool = False,
-    ):
+    ) -> None:
         output_lines = []
         output_dict: dict[str, Any] = {}
 
@@ -1413,7 +1413,7 @@ def run(
 
 
 @functools.cache
-def get_nvidia_smi():
+def get_nvidia_smi():  # noqa: ANN201
     return shutil.which("nvidia-smi")
 
 
@@ -1467,7 +1467,7 @@ class FileGlobArg:
         return len(self._files)
 
 
-def set_build_opts(
+def set_build_opts(  # noqa: ANN201
     debug_level=None,  # noqa: ANN001
     optimization_level=None,  # noqa: ANN001
     use_experimental_kernels=None,  # noqa: ANN001

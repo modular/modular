@@ -13,8 +13,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -39,7 +37,7 @@ class Mistral3Model(MistralModel):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         huggingface_config = huggingface_config.text_config

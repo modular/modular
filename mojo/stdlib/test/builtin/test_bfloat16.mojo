@@ -14,7 +14,7 @@
 from random import randn_float64
 from sys import CompilationTarget
 
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_methods():
@@ -82,8 +82,4 @@ def check_float64_values():
 
 
 def main():
-    check_float64_values()
-
-    test_methods()
-
-    test_bf_primitives()
+    TestSuite.discover_tests[__functions_in_module()]().run()

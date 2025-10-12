@@ -25,21 +25,22 @@ the beginning: `0.25.6`. This is necessary because we started publishing `mojo`
 packages on pypi.org and it's important that we don't publish a package greater
 than 1.0 yet.
 
-Temporarily, this means you need to add `<1.0.0` to the version if you want a
-nightly build. For example:
+Shortly after the 0.25.6 release, we "yanked" all Conda packages that are
+greater than 1.0 so they won't be installed unless you explicitly specify the
+version. So you'll still get the latest version like this:
 
 ```sh
-pixi add "mojo<1.0.0"
+pixi add mojo
 ```
 
-If you want a specific version, this still works as expected:
+And if you want an older version, just specify the version like this:
 
 ```sh
-pixi add "mojo=0.25.6"
+pixi add "mojo==25.5"
 ```
 
-We'll soon "yank" all past packages that are greater than 1.0 so they won't be
-installed unless explicitly specified.
+However, if you're installing `mojo` as a Python package with `pip` or
+`uv`, the oldest version available is `0.25.6`.
 
 :::
 
@@ -668,9 +669,7 @@ installed unless explicitly specified.
   For more information, see the [Mojo install guide](/mojo/manual/install).
 
 - In preparation for a future Mojo 1.0, the `mojo` and `mojo-compiler` packages
-  now have a `0.` prefixed to the version. Until the previous nightly packages
-  and 25.5 on Conda have been removed or yanked, we recommend specifying
-  `<1.0.0` as the version for these packages.
+  have a `0.` prefixed to the version.
 
 ### ❌ Removed {#25-6-removed}
 
@@ -7216,7 +7215,7 @@ experience without dedicated sugar.
       fn __eq__(self, other: Self) -> Bool:
           return self.s == other.s
 
-  fn main() raises:
+  def main():
       var d = Dict[StringKey, Int]()
       d["cats"] = 1
       d["dogs"] = 2

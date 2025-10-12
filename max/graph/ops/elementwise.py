@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Elementwise ops."""
 
-from typing import Callable
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.mlir.dialects import rmo
@@ -51,7 +51,7 @@ def _accum_type(x: TensorValue, preferred_type: DType = DType.float32) -> DType:
 # Note: Keep alphabetized.
 
 
-def _elementwise_binary(op):  # noqa: ANN001
+def _elementwise_binary(op):  # noqa: ANN001, ANN202
     def elementwise_op(
         lhs: TensorValueLike, rhs: TensorValueLike
     ) -> TensorValue:
@@ -568,7 +568,7 @@ Raises:
 # Note: Keep alphabetized.
 
 
-def _elementwise_unary(op):  # noqa: ANN001
+def _elementwise_unary(op):  # noqa: ANN001, ANN202
     def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)
         return Graph.current._add_op(op, x._mlir_value.type, x)[0].tensor
@@ -689,7 +689,7 @@ Raises:
 """
 
 
-def _gelu_quick(x: TensorValue):
+def _gelu_quick(x: TensorValue):  # noqa: ANN202
     """
     Computes the elementwise quick gelu of a symbolic tensor.
 
@@ -717,7 +717,7 @@ def _gelu_quick(x: TensorValue):
     return (x_cast * sigmoid(x_cast * 1.702)).cast(x.dtype)
 
 
-def _gelu_tanh(x: TensorValue):
+def _gelu_tanh(x: TensorValue):  # noqa: ANN202
     """
     Computes the elementwise gelu of a symbolic tensor.
 
@@ -743,7 +743,7 @@ def _gelu_tanh(x: TensorValue):
     ).cast(x.dtype)
 
 
-def gelu(x: TensorValue, approximate: str = "none"):
+def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
     """
     Computes the elementwise gelu of a symbolic tensor.
 
@@ -903,7 +903,7 @@ Raises:
 """
 
 
-def silu(x: TensorValue):
+def silu(x: TensorValue):  # noqa: ANN201
     """
     Computes the elementwise silu of a symbolic tensor.
 

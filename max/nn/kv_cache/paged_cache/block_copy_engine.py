@@ -76,7 +76,7 @@ class BlockCopyEngine:
 
         # Copy block from host to each of the devices
         for device_tensor, host_tensor in zip(
-            self.device_tensors, self.host_tensors
+            self.device_tensors, self.host_tensors, strict=True
         ):
             device_tensor[dst, :, :, :, :, :].inplace_copy_from(
                 host_tensor[src, :, :, :, :, :]
@@ -90,7 +90,7 @@ class BlockCopyEngine:
 
         # Copy the data from one device to the host.
         for i, (device_tensor, host_tensor) in enumerate(
-            zip(self.device_tensors, self.host_tensors)
+            zip(self.device_tensors, self.host_tensors, strict=True)
         ):
             src_block = device_tensor[src, :, :, :, :, :]
             dst_block = host_tensor[dst, :, :, :, :, :]
@@ -111,6 +111,6 @@ class BlockCopyEngine:
             return
         assert self.main_streams is not None
         for main_stream, d2h_auxiliary_stream in zip(
-            self.main_streams, self.d2h_auxiliary_streams
+            self.main_streams, self.d2h_auxiliary_streams, strict=True
         ):
             main_stream.wait_for(d2h_auxiliary_stream)

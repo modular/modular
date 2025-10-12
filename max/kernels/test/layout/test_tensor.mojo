@@ -2008,7 +2008,7 @@ fn test_merge():
     print(a)
 
 
-fn main() raises:
+def main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()

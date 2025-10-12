@@ -10,10 +10,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides traits and utilities for iteration.
+
+This module defines the core iteration protocol for Mojo through the `Iterable`
+and `Iterator` traits. Types that conform to these traits can be used with
+`for` loops and iteration utilities like `enumerate()`, `zip()`, and `map()`.
+
+The iteration protocol consists of two key traits:
+
+- `Iterable`: Types that can be converted into an iterator
+- `Iterator`: Types that can produce a sequence of values
+
+Examples:
+
+```mojo
+from iter import enumerate, zip, map
+
+# Enumerate with index
+var items = ["a", "b", "c"]
+for index, value in enumerate(items):
+    print(index, value)
+
+# Zip multiple iterables
+var numbers = [1, 2, 3]
+var letters = ["x", "y", "z"]
+for num, letter in zip(numbers, letters):
+    print(num, letter)
+
+# Map a function over an iterable
+fn square(x: Int) -> Int:
+    return x * x
+var values = [1, 2, 3, 4]
+for squared in map[square](values):
+    print(squared)
+```
+"""
+
+
+# ===-----------------------------------------------------------------------===#
+# Iterable
+# ===-----------------------------------------------------------------------===#
 
 
 trait Iterable:
-    """The `Iterator` trait describes a type that can be turned into an
+    """The `Iterable` trait describes a type that can be turned into an
     iterator.
     """
 
@@ -22,7 +62,17 @@ trait Iterable:
     ]: Iterator
 
     fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        """Returns an iterator over the elements of this iterable.
+
+        Returns:
+            An iterator over the elements.
+        """
         ...
+
+
+# ===-----------------------------------------------------------------------===#
+# Iterator
+# ===-----------------------------------------------------------------------===#
 
 
 trait Iterator(Copyable, Movable):
@@ -33,26 +83,39 @@ trait Iterator(Copyable, Movable):
     alias Element: Copyable & Movable
 
     fn __has_next__(self) -> Bool:
+        """Checks if there are more elements in the iterator.
+
+        Returns:
+            True if there are more elements, False otherwise.
+        """
         ...
 
     fn __next__(mut self) -> Self.Element:
+        """Returns the next element from the iterator.
+
+        Returns:
+            The next element.
+        """
         ...
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         """Returns bounds `[lower, upper]` for the remaining iterator length.
 
-        Returns a tuple where the first element is the lower bound and the second
-        is an optional upper bound (`None` means unknown or `upper > Int.MAX`).
         This helps collections pre-allocate memory when constructed from iterators.
-
         The default implementation returns `(0, None)`.
 
-        ### Safety
+        Returns:
+            A tuple where the first element is the lower bound and the second
+            is an optional upper bound (`None` means unknown or `upper > Int.MAX`).
+
+        Safety:
+
         If the upper bound is not None, implementations must ensure that `lower <= upper`.
         The bounds are hints only - iterators may not comply with them. Never omit safety
         checks when using `bounds` to build collections.
 
-        Example:
+        Examples:
+
         ```mojo
         fn to_int_list[I: Iterable](iter: I) -> List[Int]:
             var lower, _upper = iter.bounds()
@@ -71,6 +134,17 @@ fn iter[
 ](ref iterable: IterableType) -> IterableType.IteratorType[
     __origin_of(iterable)
 ]:
+    """Constructs an iterator from an iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to construct the iterator from.
+
+    Returns:
+        An iterator for the given iterable.
+    """
     return iterable.__iter__()
 
 
@@ -78,14 +152,30 @@ fn iter[
 fn next[
     IteratorType: Iterator
 ](mut iterator: IteratorType) -> IteratorType.Element:
+    """Advances the iterator and returns the next element.
+
+    Parameters:
+        IteratorType: The type of the iterator.
+
+    Args:
+        iterator: The iterator to advance.
+
+    Returns:
+        The next element from the iterator.
+    """
     return iterator.__next__()
+
+
+# ===-----------------------------------------------------------------------===#
+# enumerate
+# ===-----------------------------------------------------------------------===#
 
 
 struct _Enumerate[InnerIteratorType: Iterator](
     Copyable, Iterable, Iterator, Movable
 ):
-    """The `enumerate` function returns an iterator that yields tuples of the
-    index and the element of the original iterator.
+    """An iterator that yields tuples of the index and the element of the
+    original iterator.
     """
 
     alias Element = Tuple[Int, InnerIteratorType.Element]
@@ -120,14 +210,20 @@ fn enumerate[
 ](ref iterable: IterableType, *, start: Int = 0) -> _Enumerate[
     IterableType.IteratorType[__origin_of(iterable)]
 ]:
-    """The `enumerate` function returns an iterator that yields tuples of the
-    index and the element of the original iterator.
+    """Returns an iterator that yields tuples of the index and the element of
+    the original iterator.
+
+    Parameters:
+        IterableType: The type of the iterable.
 
     Args:
         iterable: An iterable object (e.g., list, string, etc.).
         start: The starting index for enumeration (default is 0).
 
-    Example:
+    Returns:
+        An enumerate iterator that yields tuples of `(index, element)`.
+
+    Examples:
 
     ```mojo
     var l = ["hey", "hi", "hello"]
@@ -138,18 +234,9 @@ fn enumerate[
     return _Enumerate(iter(iterable), start=start)
 
 
-fn _zip_bounds(*bounds: Tuple[Int, Optional[Int]]) -> Tuple[Int, Optional[Int]]:
-    var zip_lower = Int.MAX
-    var zip_upper = Optional[Int](None)
-
-    # TODO: This can probably be optimized with some SIMD reduce_min/max algorithm.
-    for bound in bounds:
-        var lower, upper = bound
-        zip_lower = min(zip_lower, lower)
-        if upper:
-            zip_upper = min(zip_upper.or_else(Int.MAX), upper.value())
-
-    return (zip_lower, zip_upper)
+# ===-----------------------------------------------------------------------===#
+# zip
+# ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
@@ -177,7 +264,7 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         return next(self._inner_a), next(self._inner_b)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _zip_bounds(self._inner_a.bounds(), self._inner_b.bounds())
+        return _min_bounds(self._inner_a.bounds(), self._inner_b.bounds())
 
 
 @fieldwise_init
@@ -214,7 +301,7 @@ struct _Zip3[
         return next(self._inner_a), next(self._inner_b), next(self._inner_c)
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _zip_bounds(
+        return _min_bounds(
             self._inner_a.bounds(),
             self._inner_b.bounds(),
             self._inner_c.bounds(),
@@ -271,7 +358,7 @@ struct _Zip4[
         )
 
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _zip_bounds(
+        return _min_bounds(
             self._inner_a.bounds(),
             self._inner_b.bounds(),
             self._inner_c.bounds(),
@@ -286,10 +373,22 @@ fn zip[
     IterableTypeA.IteratorType[__origin_of(iterable_a)],
     IterableTypeB.IteratorType[__origin_of(iterable_b)],
 ]:
-    """Returns an iterator that yields tuples of the
-    elements of the original iterables.
+    """Returns an iterator that yields tuples of the elements of the original
+    iterables.
 
-    # Examples
+    Parameters:
+        IterableTypeA: The type of the first iterable.
+        IterableTypeB: The type of the second iterable.
+
+    Args:
+        iterable_a: The first iterable.
+        iterable_b: The second iterable.
+
+    Returns:
+        A zip iterator that yields tuples of elements from both iterables.
+
+    Examples:
+
     ```mojo
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
@@ -312,10 +411,24 @@ fn zip[
     IterableTypeB.IteratorType[__origin_of(iterable_b)],
     IterableTypeC.IteratorType[__origin_of(iterable_c)],
 ]:
-    """Returns an iterator that yields tuples of the
-    elements of the original iterables.
+    """Returns an iterator that yields tuples of the elements of the original
+    iterables.
 
-    # Examples
+    Parameters:
+        IterableTypeA: The type of the first iterable.
+        IterableTypeB: The type of the second iterable.
+        IterableTypeC: The type of the third iterable.
+
+    Args:
+        iterable_a: The first iterable.
+        iterable_b: The second iterable.
+        iterable_c: The third iterable.
+
+    Returns:
+        A zip iterator that yields tuples of elements from all three iterables.
+
+    Examples:
+
     ```mojo
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
@@ -344,10 +457,26 @@ fn zip[
     IterableTypeC.IteratorType[__origin_of(iterable_c)],
     IterableTypeD.IteratorType[__origin_of(iterable_d)],
 ]:
-    """Returns an iterator that yields tuples of the
-    elements of the original iterables.
+    """Returns an iterator that yields tuples of the elements of the original
+    iterables.
 
-    # Examples
+    Parameters:
+        IterableTypeA: The type of the first iterable.
+        IterableTypeB: The type of the second iterable.
+        IterableTypeC: The type of the third iterable.
+        IterableTypeD: The type of the fourth iterable.
+
+    Args:
+        iterable_a: The first iterable.
+        iterable_b: The second iterable.
+        iterable_c: The third iterable.
+        iterable_d: The fourth iterable.
+
+    Returns:
+        A zip iterator that yields tuples of elements from all four iterables.
+
+    Examples:
+
     ```mojo
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
@@ -360,6 +489,11 @@ fn zip[
     return _Zip4(
         iter(iterable_a), iter(iterable_b), iter(iterable_c), iter(iterable_d)
     )
+
+
+# ===-----------------------------------------------------------------------===#
+# map
+# ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
@@ -400,10 +534,24 @@ fn map[
 ](ref [origin]iterable: IterableType) -> _MapIterator[
     OutputType=ResultType, function=function
 ]:
-    """Returns an iterator applies `func` to each
-    element of the input iterable.
+    """Returns an iterator that applies `function` to each element of the input
+    iterable.
 
-    ### Examples
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+        ResultType: The return type of the function.
+        function: The function to apply to each element.
+
+    Args:
+        iterable: The iterable to map over.
+
+    Returns:
+        A map iterator that yields the results of applying `function` to each
+        element.
+
+    Examples:
+
     ```mojo
     var l = [1, 2, 3]
     fn add_one(x: Int) -> Int:
@@ -419,3 +567,21 @@ fn map[
     ```
     """
     return {iter(iterable)}
+
+
+# ===-----------------------------------------------------------------------===#
+# utilities
+# ===-----------------------------------------------------------------------===#
+
+
+fn _min_bounds(*bounds: Tuple[Int, Optional[Int]]) -> Tuple[Int, Optional[Int]]:
+    var res_lower = Int.MAX
+    var res_upper = Optional[Int](None)
+
+    for bound in bounds:
+        var lower, upper = bound
+        res_lower = min(res_lower, lower)
+        if upper:
+            res_upper = min(res_upper.or_else(Int.MAX), upper.value())
+
+    return (res_lower, res_upper)

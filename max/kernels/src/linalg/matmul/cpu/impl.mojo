@@ -639,9 +639,16 @@ fn _matmul_cpu_impl[
             ](
                 alg,
                 c,
-                a_packed if use_i8mm else a.origin_cast[
+                a_packed if use_i8mm else __type_of(a).OriginCastType[
                     True, MutableAnyOrigin
-                ](),
+                ](
+                    # TODO: This is VERY unsafe. `a` may not be mutable which could
+                    # result in undefined behavior. `a` and all dependents of this
+                    # function should have their mutability explicitly specified.
+                    a.data.unsafe_mut_cast[True]().as_any_origin(),
+                    a.dynamic_shape,
+                    a.dynamic_stride,
+                ),
                 b,
                 GemmShape(sub_matmul_config.shape),
                 GemmShape(sub_matmul_config.offset),

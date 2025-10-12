@@ -213,7 +213,7 @@ fn load_matrix_a_amd[
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float32, 1]:
+) -> Float32:
     """Loads a tile of matrix A from memory to registers for AMD FP32 tensor core operations.
 
     Parameters:
@@ -293,7 +293,7 @@ fn load_matrix_a_amd[
         # Implies 4, 16 block.
         var thread_x = lane & 3
         var thread_y = lane >> 2
-        var batchStrideA = grid_dim.x * m * ldm
+        var batchStrideA = grid_dim.x * UInt(m) * UInt(ldm)
         var a = SIMD[DType.float16, 4]()
 
         @parameter
@@ -362,7 +362,7 @@ fn load_matrix_a_amd[
         # Implies 4, 16 block.
         var thread_x = lane & 3
         var thread_y = lane >> 2
-        var batchStrideA = grid_dim.x * m * ldm
+        var batchStrideA = grid_dim.x * UInt(m) * UInt(ldm)
         var a = SIMD[DType.bfloat16, 4]()
 
         @parameter
@@ -535,7 +535,7 @@ fn load_matrix_b_amd[
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float32, 1]:
+) -> Float32:
     """Loads a tile of matrix B from memory to registers for AMD FP32 tensor core operations.
 
     Parameters:
@@ -629,7 +629,7 @@ fn load_matrix_b_amd[
                 tile_col
                 + thread_x
                 + (tile_row + i) * ldm
-                + thread_y * batchStrideB
+                + thread_y * UInt(batchStrideB)
             )
             b[i] = b_ptr[b_idx]
 
@@ -706,7 +706,7 @@ fn load_matrix_b_amd[
                 tile_col
                 + thread_x
                 + (tile_row + i) * ldm
-                + thread_y * batchStrideB
+                + thread_y * UInt(batchStrideB)
             )
             b[i] = b_ptr[b_idx]
 
@@ -805,7 +805,7 @@ fn _store_matrix_d_amd[
         # Implies 4, 16 block.
         var thread_x = lane & 3
         var thread_y = lane >> 2
-        var batchStrideD = grid_dim.x * m * ldm
+        var batchStrideD = grid_dim.x * UInt(m) * UInt(ldm)
 
         @parameter
         for i in range(4):

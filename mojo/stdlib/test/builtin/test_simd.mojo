@@ -16,7 +16,13 @@ from sys.info import CompilationTarget, is_64bit
 
 from bit import count_leading_zeros
 from builtin.simd import _modf
-from testing import assert_almost_equal, assert_equal, assert_false, assert_true
+from testing import (
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_true,
+    TestSuite,
+)
 
 from utils import StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
@@ -54,6 +60,41 @@ def test_cast():
     )
     assert_equal(Float16(33.0).cast[DType.float32]().cast[DType.float16](), 33)
     assert_equal(Float64(33.0).cast[DType.float32]().cast[DType.float16](), 33)
+
+    # Test with a number right on the boundary of 32 bit and 64 bit, to make
+    # sure the compiler can cast between the platform dependent types.
+    alias u1 = Scalar[DType.uint](4294967296)
+    alias i1 = Scalar[DType.int](4294967296)
+    alias uc1 = i1.cast[DType.uint]()
+    alias ic1 = u1.cast[DType.int]()
+    assert_equal(uc1, u1)
+    assert_equal(ic1, i1)
+
+    @parameter
+    if is_64bit():
+        assert_equal(
+            Scalar[DType.uint](18446744073709551615).cast[DType.int](),
+            Scalar[DType.int](-1),
+        )
+
+        alias u2 = Scalar[DType.uint](18446744073709551615)
+        alias i2 = Scalar[DType.int](-1)
+        alias uc2 = i2.cast[DType.uint]()
+        alias ic2 = u2.cast[DType.int]()
+        assert_equal(uc2, u2)
+        assert_equal(ic2, i2)
+    else:
+        assert_equal(
+            Scalar[DType.uint](4294967295).cast[DType.int](),
+            Scalar[DType.int](-1),
+        )
+
+        alias u3 = Scalar[DType.uint](4294967295)
+        alias i3 = Scalar[DType.int](-1)
+        alias uc3 = i3.cast[DType.uint]()
+        alias ic3 = u3.cast[DType.int]()
+        assert_equal(uc3, u3)
+        assert_equal(ic3, i3)
 
 
 def test_list_literal_ctor():
@@ -129,18 +170,10 @@ def test_from_bits():
     var float32_from_bits = SIMD[DType.float32, 4](from_bits=uint32_bits)
 
     # These bit patterns represent 1.0, 2.0, 3.0, 4.0 in IEEE 754 float32
-    assert_almost_equal(
-        float32_from_bits[0], SIMD[DType.float32, 1](1.0), atol=1e-6
-    )
-    assert_almost_equal(
-        float32_from_bits[1], SIMD[DType.float32, 1](2.0), atol=1e-6
-    )
-    assert_almost_equal(
-        float32_from_bits[2], SIMD[DType.float32, 1](3.0), atol=1e-6
-    )
-    assert_almost_equal(
-        float32_from_bits[3], SIMD[DType.float32, 1](4.0), atol=1e-6
-    )
+    assert_almost_equal(float32_from_bits[0], Float32(1.0), atol=1e-6)
+    assert_almost_equal(float32_from_bits[1], Float32(2.0), atol=1e-6)
+    assert_almost_equal(float32_from_bits[2], Float32(3.0), atol=1e-6)
+    assert_almost_equal(float32_from_bits[3], Float32(4.0), atol=1e-6)
 
     # Test with int64 -> float64
     var uint64_bits = SIMD[DType.uint64, 2](
@@ -148,12 +181,8 @@ def test_from_bits():
     )
     var float64_from_bits = SIMD[DType.float64, 2](from_bits=uint64_bits)
 
-    assert_almost_equal(
-        float64_from_bits[0], SIMD[DType.float64, 1](1.0), atol=1e-15
-    )
-    assert_almost_equal(
-        float64_from_bits[1], SIMD[DType.float64, 1](2.0), atol=1e-15
-    )
+    assert_almost_equal(float64_from_bits[0], Float64(1.0), atol=1e-15)
+    assert_almost_equal(float64_from_bits[1], Float64(2.0), atol=1e-15)
 
     # Test with int32 -> int32 (identity)
     var int32_bits = SIMD[DType.int32, 4](42, -42, 100, -100)
@@ -404,8 +433,8 @@ def test_issue_30237():
 def test_bool():
     assert_true(Scalar[DType.bool](True).__bool__())
     assert_false(Scalar[DType.bool](False).__bool__())
-    assert_true(Scalar[DType.int32](5).__bool__())
-    assert_false(Scalar[DType.int32](0).__bool__())
+    assert_true(Int32(5).__bool__())
+    assert_false(Int32(0).__bool__())
     assert_true(Float32(5.0).__bool__())
     assert_false(Float32(0.0).__bool__())
 
@@ -452,8 +481,7 @@ def test_len():
     var i3 = I32(-1, 0, 1, 3)
     assert_equal(4, i3.__len__())
 
-    alias I8 = SIMD[DType.int8, 1]
-    var i4 = I8(1)
+    var i4 = Int8(1)
     assert_equal(1, i4.__len__())
 
     alias UI64 = SIMD[DType.uint64, 16]
@@ -1127,10 +1155,10 @@ def test_insert():
     )
 
     assert_equal(
-        SIMD[DType.int, 4](0, 1, 2, 3).insert[offset=1](
+        SIMD[DType.int, 4](0, 1, 2, 3).insert[offset=2](
             SIMD[DType.int, 2](9, 6)
         ),
-        SIMD[DType.int, 4](0, 9, 6, 3),
+        SIMD[DType.int, 4](0, 1, 9, 6),
     )
 
     assert_equal(
@@ -1141,10 +1169,10 @@ def test_insert():
     )
 
     assert_equal(
-        SIMD[DType.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=3](
+        SIMD[DType.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=0](
             SIMD[DType.uint, 4](9, 6, 3, 7)
         ),
-        SIMD[DType.uint, 8](0, 1, 2, 9, 6, 3, 7, 8),
+        SIMD[DType.uint, 8](9, 6, 3, 7, 5, 6, 7, 8),
     )
 
 
@@ -1318,7 +1346,7 @@ def test_reduce():
         alias X8 = SIMD[dtype, 8]
         alias X4 = SIMD[dtype, 4]
         alias X2 = SIMD[dtype, 2]
-        alias X1 = SIMD[dtype, 1]
+        alias X1 = Scalar[dtype]
         var x8: X8
         var x4: X4
         var x2: X2
@@ -1472,7 +1500,7 @@ def test_reduce():
             )
             var x4b = SIMD[DType.bool, 4](False, False, False, True)
             var x2b = SIMD[DType.bool, 2](False, False)
-            var x1b = SIMD[DType.bool, 1](False)
+            var x1b = Scalar[DType.bool](False)
             assert_equal(x8b.reduce_and(), x1b)
             assert_equal(x4b.reduce_and(), x1b)
             assert_equal(x2b.reduce_and(), x1b)
@@ -1491,7 +1519,7 @@ def test_reduce():
             )
             x4b = SIMD[DType.bool, 4](False, True, True, True)
             x2b = SIMD[DType.bool, 2](True, True)
-            x1b = SIMD[DType.bool, 1](True)
+            x1b = Scalar[DType.bool](True)
             assert_equal(x8b.reduce_or(), x1b)
             assert_equal(x4b.reduce_or(), x1b)
             assert_equal(x2b.reduce_or(), x1b)
@@ -2341,7 +2369,7 @@ def test_slice():
 
     # Test with scalar (width 1)
     var slice1_5 = simd8.slice[1, offset=5]()
-    var expected1_5 = SIMD[DType.int32, 1](6)
+    var expected1_5 = Int32(6)
     assert_equal(slice1_5, expected1_5)
 
 
@@ -2369,63 +2397,51 @@ def test_reduce_bitwise_ops():
     var all_ones = SIMD[DType.uint8, 4](0xFF, 0xFF, 0xFF, 0xFF)
     var mixed_bits = SIMD[DType.uint8, 4](0xFF, 0xF0, 0x0F, 0xFF)
 
-    assert_equal(all_ones.reduce_and(), SIMD[DType.uint8, 1](0xFF))
+    assert_equal(all_ones.reduce_and(), UInt8(0xFF))
     assert_equal(
-        mixed_bits.reduce_and(), SIMD[DType.uint8, 1](0x00)
+        mixed_bits.reduce_and(), UInt8(0x00)
     )  # 0xFF & 0xF0 & 0x0F & 0xFF = 0x00
 
     # Test reduce_or
     var all_zeros = SIMD[DType.uint8, 4](0x00, 0x00, 0x00, 0x00)
     var some_bits = SIMD[DType.uint8, 4](0x01, 0x02, 0x04, 0x08)
 
-    assert_equal(all_zeros.reduce_or(), SIMD[DType.uint8, 1](0x00))
+    assert_equal(all_zeros.reduce_or(), UInt8(0x00))
     assert_equal(
-        some_bits.reduce_or(), SIMD[DType.uint8, 1](0x0F)
+        some_bits.reduce_or(), UInt8(0x0F)
     )  # 0x01 | 0x02 | 0x04 | 0x08 = 0x0F
 
     # Test with larger vectors
     var large_and = SIMD[DType.uint16, 8](
         0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF
     )
-    assert_equal(large_and.reduce_and(), SIMD[DType.uint16, 1](0xFFFF))
+    assert_equal(large_and.reduce_and(), UInt16(0xFFFF))
 
     var pattern_or = SIMD[DType.uint16, 8](
         0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080
     )
-    assert_equal(pattern_or.reduce_or(), SIMD[DType.uint16, 1](0x00FF))
+    assert_equal(pattern_or.reduce_or(), UInt16(0x00FF))
 
 
 def test_float_literal_init():
     # Test initialization from FloatLiteral
     var float_simd = SIMD[DType.float32, 4](3.14159)
-    assert_almost_equal(
-        float_simd[0], SIMD[DType.float32, 1](3.14159), atol=1e-5
-    )
-    assert_almost_equal(
-        float_simd[1], SIMD[DType.float32, 1](3.14159), atol=1e-5
-    )
-    assert_almost_equal(
-        float_simd[2], SIMD[DType.float32, 1](3.14159), atol=1e-5
-    )
-    assert_almost_equal(
-        float_simd[3], SIMD[DType.float32, 1](3.14159), atol=1e-5
-    )
+    assert_almost_equal(float_simd[0], Float32(3.14159), atol=1e-5)
+    assert_almost_equal(float_simd[1], Float32(3.14159), atol=1e-5)
+    assert_almost_equal(float_simd[2], Float32(3.14159), atol=1e-5)
+    assert_almost_equal(float_simd[3], Float32(3.14159), atol=1e-5)
 
     # Test with double precision
     var double_simd = SIMD[DType.float64, 2](2.718281828459045)
-    assert_almost_equal(
-        double_simd[0], SIMD[DType.float64, 1](2.718281828459045), atol=1e-15
-    )
-    assert_almost_equal(
-        double_simd[1], SIMD[DType.float64, 1](2.718281828459045), atol=1e-15
-    )
+    assert_almost_equal(double_simd[0], Float64(2.718281828459045), atol=1e-15)
+    assert_almost_equal(double_simd[1], Float64(2.718281828459045), atol=1e-15)
 
     # Test with various float types
     var f16_simd = SIMD[DType.float16, 4](1.5)
     # Note: float16 has limited precision
     assert_almost_equal(
-        SIMD[DType.float32, 1](Float32(f16_simd[0])),
-        SIMD[DType.float32, 1](1.5),
+        Float32(Float32(f16_simd[0])),
+        Float32(1.5),
         atol=1e-3,
     )
 
@@ -2458,11 +2474,25 @@ def test_int_literal_init():
         assert_equal(Index(-9223372036854775809), Index(9223372036854775807))
         assert_equal(UIndex(0), UIndex(18446744073709551616))
         assert_equal(UIndex(-1), UIndex(18446744073709551615))
+
+        alias i1 = Index(-9223372036854775808)
+        alias i2 = Index(9223372036854775808)
+        assert_equal(i1, i2)
+        alias ui1 = UIndex(-1)
+        alias ui2 = UIndex(18446744073709551615)
+        assert_equal(ui1, ui2)
     else:
         assert_equal(Index(-2147483648), Index(2147483648))
         assert_equal(Index(-2147483649), Index(2147483647))
         assert_equal(UIndex(0), UIndex(4294967296))
         assert_equal(UIndex(-1), UIndex(4294967295))
+
+        alias i1 = Index(-2147483648)
+        alias i2 = Index(2147483648)
+        assert_equal(i1, i2)
+        alias ui1 = UIndex(-1)
+        alias ui2 = UIndex(4294967295)
+        assert_equal(ui1, ui2)
 
 
 def test_bool_init():
@@ -2484,76 +2514,5 @@ def test_bool_init():
 
 
 def main():
-    test_abs()
-    test_add()
-    test_cast()
-    test_cast_init()
-    test_list_literal_ctor()
-    test_from_bits()
-    test_to_bits()
-    test_from_to_bits_roundtrip()
-    test_ceil()
-    test_convert_simd_to_string()
-    test_simd_repr()
-    test_deinterleave()
-    test_div()
-    test_extract()
-    test_floor()
-    test_floordiv()
-    test_from_bytes_as_bytes()
-    test_vector_from_bytes_as_bytes()
-    test_iadd()
-    test_indexing()
-    test_init_from_index()
-    test_insert()
-    test_interleave()
-    test_issue_1625()
-    test_issue_20421()
-    test_issue_30237()
-    test_isub()
-    test_join()
-    test_len()
-    test_limits()
-    test_clamp()
-    test_mod()
-    test_pow()
-    test_powf()
-    test_rpow()
-    test_radd()
-    test_reduce()
-    test_reduce_bit_count()
-    test_rfloordiv()
-    test_rmod()
-    test_rotate()
-    test_round()
-    test_rsub()
-    test_shift()
-    test_shuffle()
-    test_shuffle_dynamic_size_4_uint8()
-    test_shuffle_dynamic_size_8_uint8()
-    test_shuffle_dynamic_size_16_uint8()
-    test_shuffle_dynamic_size_32_uint8()
-    test_shuffle_dynamic_size_64_uint8()
-    test_shuffle_dynamic_size_32_float()
-    test_simd_variadic()
-    test_sub()
-    test_trunc()
-    test_bool()
-    test_truthy()
-    test_modf()
-    test_split()
-    test_contains()
-    test_comparison()
-    test_float_conversion()
-    test_reversed()
-    test_large_int_types()
-    test_is_power_of_two()
-    test_comptime()
-    test_fma()
-    test_slice()
-    test_hash()
-    test_reduce_bitwise_ops()
-    test_float_literal_init()
-    test_int_literal_init()
-    test_bool_init()
+    TestSuite.discover_tests[__functions_in_module()]().run()
     # TODO: add tests for __and__, __or__, and comparison operators

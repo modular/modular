@@ -42,11 +42,6 @@ from ..os import sep
 # ===----------------------------------------------------------------------=== #
 # Utilities
 # ===----------------------------------------------------------------------=== #
-fn _constrain_unix():
-    constrained[
-        not CompilationTarget.is_windows(),
-        "operating system must be Linux or macOS",
-    ]()
 
 
 @always_inline
@@ -77,28 +72,24 @@ fn _get_lstat_st_mode(var path: String) raises -> Int:
 
 
 fn _user_home_path(path: String) -> String:
-    @parameter
-    if CompilationTarget.is_windows():
-        return getenv("USERPROFILE")
+    var user_end = path.find(sep, 1)
+    if user_end < 0:
+        user_end = len(path)
+    # Special POSIX syntax for ~[user-name]/path
+    if len(path) > 1 and user_end > 1:
+        try:
+            return pwd.getpwnam(path[1:user_end]).pw_dir
+        except:
+            return ""
     else:
-        var user_end = path.find(sep, 1)
-        if user_end < 0:
-            user_end = len(path)
-        # Special POSIX syntax for ~[user-name]/path
-        if len(path) > 1 and user_end > 1:
+        var user_home = getenv("HOME")
+        # Fallback to password database if `HOME` not set
+        if not user_home:
             try:
-                return pwd.getpwnam(path[1:user_end]).pw_dir
+                user_home = pwd.getpwuid(getuid()).pw_dir
             except:
                 return ""
-        else:
-            var user_home = getenv("HOME")
-            # Fallback to password database if `HOME` not set
-            if not user_home:
-                try:
-                    user_home = pwd.getpwuid(getuid()).pw_dir
-                except:
-                    return ""
-            return user_home
+        return user_home
 
 
 fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
@@ -151,7 +142,6 @@ fn isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
         True if the path is a directory or a link to a directory and
         False otherwise.
     """
-    _constrain_unix()
     var fspath = path.__fspath__()
     try:
         var st_mode = _get_stat_st_mode(fspath)
@@ -179,7 +169,6 @@ fn isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         Returns True if the path is a regular file.
     """
-    _constrain_unix()
     var fspath = path.__fspath__()
     try:
         var st_mode = _get_stat_st_mode(fspath)
@@ -206,7 +195,6 @@ fn islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         True if the path is a link to a directory and False otherwise.
     """
-    _constrain_unix()
     try:
         return S_ISLNK(_get_lstat_st_mode(path.__fspath__()))
     except:
@@ -277,34 +265,21 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     Returns:
         A String of the resolved path.
     """
-    # Leave room for initializing the refcount into the header.
-    alias capacity = MAX_PATH + String.REF_COUNT_SIZE
-    var ptr = UnsafePointer[c_char].alloc(capacity)
+    var string = String(capacity=MAX_PATH)
 
-    # Initialize the Atomic refcount into the header.
-    __get_address_as_uninit_lvalue(
-        ptr.bitcast[Atomic[DType.int]]().address
-    ) = Atomic[DType.int](1)
-
-    # Offset the pointer to after the refcount.
     var returned_path_ptr = libc_realpath(
         path.__fspath__().unsafe_ptr().bitcast[c_char](),
-        ptr + String.REF_COUNT_SIZE,
+        string._ptr_or_data.bitcast[Int8](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())
 
-    # Caller is responsible for freeing the pointer, safe to store in String.
-    var string = String()
-    # Store the already offset pointer, pointing the the first char.
-    var byte_ptr = returned_path_ptr.bitcast[Byte]()
-    string._ptr_or_data = byte_ptr
-    string._len_or_data = _unsafe_strlen(byte_ptr)
-    # capacity >> 3 can only be lower, so will realloc safely if required
-    string._capacity_or_data = UInt(capacity >> 3)
-    string._set_ref_counted()
+    # We wrote the data directly into the String buffer
+    # now we need to figure out the length
+    string.set_byte_length(_unsafe_strlen(string._ptr_or_data))
+    string._set_nul_terminated()
 
-    return string
+    return string^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -324,7 +299,6 @@ fn exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         Returns True if the path exists and is not a broken symbolic link.
     """
-    _constrain_unix()
     try:
         _ = _get_stat_st_mode(path.__fspath__())
         return True
@@ -349,7 +323,6 @@ fn lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         Returns True if the path exists or is a broken symbolic link.
     """
-    _constrain_unix()
     try:
         _ = _get_lstat_st_mode(path.__fspath__())
         return True
@@ -395,7 +368,6 @@ fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         Return `True` if path is an absolute path name.
     """
-    _constrain_unix()
     return path.__fspath__().startswith(sep)
 
 
@@ -569,10 +541,6 @@ fn split_extension[
     Returns:
         A tuple containing two strings: (root, extension).
     """
-
-    @parameter
-    if CompilationTarget.is_windows():
-        return _split_extension(path.__fspath__(), "\\", "/", ".")
     return _split_extension(path.__fspath__(), sep, "", ".")
 
 

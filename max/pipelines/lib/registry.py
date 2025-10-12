@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Union, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -53,7 +54,7 @@ from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
-PipelineTypes = Union[
+PipelineTypes = Union[  # noqa: UP007 (This breaks a mypy check, unsure why)
     TextGenerationPipeline[TextContext],
     EmbeddingsPipeline,
     AudioGeneratorPipeline,
@@ -83,8 +84,9 @@ def get_pipeline_for_task(
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
     else:
-        msg = f"PipelineTask ({task}) does not have supported Pipeline"
-        raise ValueError(msg)
+        raise ValueError(
+            f"PipelineTask ({task}) does not have supported Pipeline"
+        )
 
 
 @dataclass(frozen=False)
@@ -171,7 +173,24 @@ class SupportedArchitecture:
     context_validators: list[
         Callable[[TextContext | TextAndVisionContext], None]
     ] = field(default_factory=list)
-    """A list of callable context validators for the architecture."""
+    """A list of callable validators that verify context inputs before model execution.
+
+    These validators are called during context creation to ensure inputs meet
+    model-specific requirements. Validators should raise `InputError` for invalid
+    inputs, providing early error detection before expensive model operations.
+
+    .. code-block:: python
+
+        def validate_single_image(context: TextContext | TextAndVisionContext) -> None:
+            if isinstance(context, TextAndVisionContext):
+                if context.pixel_values and len(context.pixel_values) > 1:
+                    raise InputError(f"Model supports only 1 image, got {len(context.pixel_values)}")
+
+        my_architecture = SupportedArchitecture(
+            # ... other fields ...
+            context_validators=[validate_single_image],
+        )
+    """
 
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
@@ -198,8 +217,9 @@ class PipelineRegistry:
         """Add new architecture to registry."""
         if architecture.name in self.architectures:
             if not allow_override:
-                msg = f"Refusing to override existing architecture for '{architecture.name}'"
-                raise ValueError(msg)
+                raise ValueError(
+                    f"Refusing to override existing architecture for '{architecture.name}'"
+                )
             logger.warning(
                 f"Overriding existing architecture for '{architecture.name}'"
             )
@@ -208,7 +228,7 @@ class PipelineRegistry:
 
     def retrieve_architecture(
         self, huggingface_repo: HuggingFaceRepo
-    ) -> Optional[SupportedArchitecture]:
+    ) -> SupportedArchitecture | None:
         # Retrieve model architecture names
         hf_config = self.get_active_huggingface_config(
             huggingface_repo=huggingface_repo
@@ -446,8 +466,9 @@ class PipelineRegistry:
         )
 
         if tokenizer.eos is None:
-            msg = "tokenizer.eos value is None, tokenizer configuration is incomplete."
-            raise ValueError(msg)
+            raise ValueError(
+                "tokenizer.eos value is None, tokenizer configuration is incomplete."
+            )
 
         return tokenizer, pipeline_factory
 

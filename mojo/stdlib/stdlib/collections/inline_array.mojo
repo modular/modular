@@ -245,10 +245,14 @@ struct InlineArray[
         self = Self(storage=elems^)
 
     @always_inline
-    fn __init__(
+    fn __init__[
+        origin: MutableOrigin, //,
+    ](
         out self,
         *,
-        var storage: VariadicListMem[Self.ElementType, _],
+        var storage: VariadicListMem[
+            Self.ElementType, origin=origin, is_owned=True
+        ],
     ):
         """Construct an array from a low-level internal representation.
 
@@ -272,7 +276,10 @@ struct InlineArray[
         # Move each element into the array storage.
         @parameter
         for i in range(size):
-            ptr.init_pointee_move_from(UnsafePointer(to=storage[i]))
+            # Safety: We own the elements in the variadic list.
+            ptr.init_pointee_move_from(
+                UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
+            )
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
@@ -518,7 +525,7 @@ struct InlineArray[
         return (
             UnsafePointer(to=self._array)
             .bitcast[Self.ElementType]()
-            .origin_cast[origin.mut, origin]()
+            .unsafe_origin_cast[origin]()
             .address_space_cast[address_space]()
         )
 

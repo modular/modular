@@ -1,7 +1,7 @@
 [project]
 name = "bazel-pyproject"
 version = "0"
-requires-python = ">=3.9" # NOTE: Must be kept in sync with other global settings
+requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settings
 dependencies = [
   "editdistance",
   "absl-py",
@@ -11,6 +11,7 @@ dependencies = [
   "async-asgi-testclient",
   "boto3",
   "click>=8.1",
+  "codeowners",
   "datasets",
   "device-smi",
   "docutils",
@@ -83,7 +84,7 @@ dependencies = [
   "tokenicer",
   "tomli",
   "tqdm",
-  "transformers>=4.55.2", # v4.47.0 and v4.49.0 introduced changes that break our torch.compile backend.
+  "transformers>=4.57",
   "tokenizers",
   "typing-extensions",
   "uvloop>=0.21.0",
@@ -148,6 +149,7 @@ amd = [
   "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
@@ -163,6 +165,7 @@ cpu = [
   "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
@@ -180,6 +183,7 @@ nvidia = [
   "lm-eval[api,ifeval,math]>=0.4.7",
   "mteb",
   "optimum",
+  "peft", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",

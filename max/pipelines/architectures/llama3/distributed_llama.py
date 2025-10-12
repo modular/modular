@@ -24,12 +24,12 @@ from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     MLP,
     ColumnParallelLinear,
-    DistributedAttentionWithRope,
     DistributedTransformer,
     DistributedTransformerBlock,
     Linear,
     RMSNorm,
     Signals,
+    TensorParallelAttentionWithRope,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
@@ -121,7 +121,7 @@ class DistributedLlama3(DistributedTransformer):
 
             layers.append(
                 DistributedTransformerBlock(
-                    attention=DistributedAttentionWithRope(
+                    attention=TensorParallelAttentionWithRope(
                         stacked_qkv=config.stacked_qkv,
                         scale=config.attention_multiplier,
                         clip_qkv=config.clip_qkv,

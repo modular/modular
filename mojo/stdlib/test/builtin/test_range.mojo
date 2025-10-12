@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
@@ -342,35 +342,4 @@ def test_range_iterable():
 
 
 def main():
-    test_range_len()
-    test_range_len_uint()
-    test_range_len_uint_maxuint()
-    test_range_len_uint_empty()
-
-    test_range_int_bounds()
-    test_range_uint_bounds()
-    test_larger_than_int_max_bounds()
-
-    alias dtypes = [
-        DType.int8,
-        DType.int16,
-        DType.int32,
-        DType.int64,
-        DType.uint8,
-        DType.uint16,
-        DType.uint32,
-        DType.uint64,
-    ]
-
-    @parameter
-    for dtype in dtypes:
-        test_range_len_scalar[dtype]()
-        test_range_scalar_bounds[dtype]()
-
-    test_range_getitem()
-    test_range_getitem_uint()
-    test_range_reversed()
-    test_indexing()
-    test_range_bounds()
-    test_range_compile_time()
-    test_range_iterable()
+    TestSuite.discover_tests[__functions_in_module()]().run()

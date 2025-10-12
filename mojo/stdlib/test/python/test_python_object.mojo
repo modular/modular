@@ -20,6 +20,7 @@ from testing import (
     assert_false,
     assert_raises,
     assert_true,
+    TestSuite,
 )
 
 
@@ -755,36 +756,25 @@ def test_error_handling():
         _ = none_obj + one
 
 
-def main():
-    # initializing Python instance calls init_python
+def test_with_python_dunder_methods():
     var python = Python()
-
     test_dunder_methods(python)
-    test_inplace_dunder_methods(python)
-    test_num_conversion()
-    test_boolean_operations()
-    test_string_conversions(python)
-    test_len()
-    test_is()
-    test_iter()
-    test_setitem()
-    test_dict()
-    test_set()
-    test_none()
-    test_nested_object()
-    test_getitem_raises()
-    test_setitem_raises()
-    test_py_slice()
-    test_contains_dunder()
-    test_python_mojo_object_operations()
-    test_conversion_to_simd()
 
-    test_hash()
-    test_call_with_kwargs()
-    test_attribute_access()
-    test_copy()
+
+def test_with_python_inplace_dunder_methods():
+    var python = Python()
+    test_inplace_dunder_methods(python)
+
+
+def test_with_python_string_conversions():
+    var python = Python()
+    test_string_conversions(python)
+
+
+def test_with_python_eval_and_evaluate():
+    var python = Python()
     test_python_eval_and_evaluate(python)
-    test_python_module_operations()
-    test_python_type_functions()
-    test_advanced_slicing()
-    test_error_handling()
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

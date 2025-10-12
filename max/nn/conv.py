@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional, Union
 
 import max.driver as md
 from max.dtype import DType
@@ -71,7 +70,7 @@ class Conv2d(Module, Shardable):
     num_groups: int
     """Number of blocked connections from input channels to output channels."""
 
-    bias: Union[Weight, None] = None
+    bias: Weight | None = None
     """The optional bias vector stored on CPU with shape (out_channels,).
     Model init moves the bias to :obj:`device` if present."""
 
@@ -82,18 +81,18 @@ class Conv2d(Module, Shardable):
 
     def __init__(
         self,
-        kernel_size: Union[int, tuple[int, int]],
+        kernel_size: int | tuple[int, int],
         in_channels: int,
         out_channels: int,
         dtype: DType,
-        stride: Union[int, tuple[int, int]] = 1,
-        padding: Union[int, tuple[int, int], tuple[int, int, int, int]] = 0,
-        dilation: Union[int, tuple[int, int]] = 1,
+        stride: int | tuple[int, int] = 1,
+        padding: int | tuple[int, int] | tuple[int, int, int, int] = 0,
+        dilation: int | tuple[int, int] = 1,
         num_groups: int = 1,
-        device: Union[DeviceRef, None] = None,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
-        name: Union[str, None] = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the Conv2d layer with weights and optional bias.
 
@@ -234,7 +233,7 @@ class Conv2d(Module, Shardable):
 
         shards = []
         for idx, (device, filter_shard) in enumerate(
-            zip(devices, sharded_filters)
+            zip(devices, sharded_filters, strict=True)
         ):
             # Create new Conv2d with same configuration.
             sharded = Conv2d(
@@ -321,11 +320,11 @@ class Conv2dV1(Layer):
     """
 
     filter: TensorValueLike
-    bias: Optional[TensorValueLike] = None
+    bias: TensorValueLike | None = None
 
-    stride: Union[int, tuple[int, int]] = (1, 1)
-    padding: Union[int, tuple[int, int, int, int]] = (0, 0, 0, 0)
-    dilation: Union[int, tuple[int, int]] = (1, 1)
+    stride: int | tuple[int, int] = (1, 1)
+    padding: int | tuple[int, int, int, int] = (0, 0, 0, 0)
+    dilation: int | tuple[int, int] = (1, 1)
     groups: int = 1
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -372,7 +371,7 @@ class Conv1DV1(Layer):
     """
 
     filter: TensorValueLike  # [kernel_size, in_channels, out_channels]
-    bias: Optional[TensorValueLike] = None
+    bias: TensorValueLike | None = None
 
     stride: int = 1
     padding: int = 0
@@ -432,7 +431,7 @@ class Conv1D(Module):
             )
     """
 
-    device: Union[DeviceRef, None]
+    device: DeviceRef | None
     """The device where matrix operations are performed."""
 
     filter: Weight
@@ -451,7 +450,7 @@ class Conv1D(Module):
     num_groups: int
     """Number of blocked connections from input channels to output channels."""
 
-    bias: Union[Weight, None] = None
+    bias: Weight | None = None
     """The optional bias vector stored on CPU with shape (out_channels,).
     Model init moves the bias to :obj:`device` if present."""
 
@@ -470,10 +469,10 @@ class Conv1D(Module):
         padding: int = 0,
         dilation: int = 1,
         num_groups: int = 1,
-        device: Union[DeviceRef, None] = None,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
-        name: Union[str, None] = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the Conv1D layer with weights and optional bias.
 
@@ -611,10 +610,10 @@ class Conv3DV1(Layer):
     """
 
     filter: TensorValueLike  # [depth, height, width, in_channels / num_groups, out_channels]
-    bias: Optional[TensorValueLike] = None  # [out_channels]
+    bias: TensorValueLike | None = None  # [out_channels]
 
-    stride: Union[int, tuple[int, int, int]] = (1, 1, 1)
-    padding: Union[int, tuple[int, int, int, int, int, int]] = (
+    stride: int | tuple[int, int, int] = (1, 1, 1)
+    padding: int | tuple[int, int, int, int, int, int] = (
         0,
         0,
         0,
@@ -622,7 +621,7 @@ class Conv3DV1(Layer):
         0,
         0,
     )
-    dilation: Union[int, tuple[int, int, int]] = (1, 1, 1)
+    dilation: int | tuple[int, int, int] = (1, 1, 1)
     groups: int = 1
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
@@ -689,7 +688,7 @@ class Conv3D(Module):
             )
     """
 
-    device: Union[DeviceRef, None]
+    device: DeviceRef | None
     """The device where matrix operations are performed."""
 
     filter: Weight
@@ -708,7 +707,7 @@ class Conv3D(Module):
     num_groups: int
     """Number of blocked connections from input channels to output channels."""
 
-    bias: Union[Weight, None] = None
+    bias: Weight | None = None
     """The optional bias vector stored on CPU with shape (out_channels,).
     Model init moves the bias to :obj:`device` if present."""
 
@@ -725,14 +724,14 @@ class Conv3D(Module):
         in_channels: int,
         out_channels: int,
         dtype: DType,
-        stride: Union[int, tuple[int, int, int]] = 1,
-        padding: Union[int, tuple[int, int, int, int, int, int]] = 0,
-        dilation: Union[int, tuple[int, int, int]] = 1,
+        stride: int | tuple[int, int, int] = 1,
+        padding: int | tuple[int, int, int, int, int, int] = 0,
+        dilation: int | tuple[int, int, int] = 1,
         num_groups: int = 1,
-        device: Union[DeviceRef, None] = None,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
-        name: Union[str, None] = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the Conv3D layer with weights and optional bias.
 

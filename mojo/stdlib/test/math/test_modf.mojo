@@ -13,7 +13,7 @@
 
 from math import modf
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_almost_equal, assert_equal
 
 
@@ -48,8 +48,4 @@ def test_modf():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_modf]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

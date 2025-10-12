@@ -26,7 +26,7 @@ from math import (
     fma,
     gcd,
     iota,
-    isqrt,
+    rsqrt,
     log,
     log1p,
     sin,
@@ -74,7 +74,12 @@ from linalg.fp8_quantization import (
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
+    batched_quantize_dynamic_scaled_fp8,
 )
+from linalg.grouped_matmul_sm100_blockwise_fp8 import (
+    grouped_matmul_dynamic_scaled_fp8,
+)
+from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
@@ -164,6 +169,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
+    k_matmul_ragged_paged_scale,
     kv_cache_store_ragged,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
@@ -760,7 +766,7 @@ struct Isqrt(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return isqrt(x)
+        return rsqrt(x)
 
 
 @compiler.register("mo.select")
@@ -1035,23 +1041,11 @@ struct ScatterND:
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        scatter_nd[
-            output_ndbuffer.type,
-            indices_ndbuffer.type,
-            output_ndbuffer.rank,
-            indices_ndbuffer.rank,
-            updates_ndbuffer.rank,
-            False,
-            target,
-        ](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
-            output_ndbuffer,
+        scatter_nd[output.dtype, indices.dtype, False, target,](
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            updates.to_layout_tensor(),
+            output.to_layout_tensor(),
             context=ctx,
         )
 
@@ -1061,10 +1055,12 @@ struct ScatterND:
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=False](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape[single_thread_blocking_override=False](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+            )
         )
 
 
@@ -1080,12 +1076,6 @@ struct ScatterNDAdd:
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-
         @always_inline
         @parameter
         fn reduce_fn[
@@ -1096,20 +1086,17 @@ struct ScatterNDAdd:
             return lhs + rhs
 
         scatter_nd_generator[
-            output_ndbuffer.type,
-            indices_ndbuffer.type,
-            output_ndbuffer.rank,
-            indices_ndbuffer.rank,
-            updates_ndbuffer.rank,
+            output.dtype,
+            indices.dtype,
             False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
         ](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
-            output_ndbuffer,
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            updates.to_layout_tensor(),
+            output.to_layout_tensor(),
             context=ctx,
         )
 
@@ -1119,10 +1106,12 @@ struct ScatterNDAdd:
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=False](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape[single_thread_blocking_override=False](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+            )
         )
 
 
@@ -1138,12 +1127,6 @@ struct ScatterNDMul:
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-
         @always_inline
         @parameter
         fn reduce_fn[
@@ -1154,20 +1137,17 @@ struct ScatterNDMul:
             return lhs * rhs
 
         scatter_nd_generator[
-            output_ndbuffer.type,
-            indices_ndbuffer.type,
-            output_ndbuffer.rank,
-            indices_ndbuffer.rank,
-            updates_ndbuffer.rank,
+            output.dtype,
+            indices.dtype,
             False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
         ](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
-            output_ndbuffer,
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            updates.to_layout_tensor(),
+            output.to_layout_tensor(),
             context=ctx,
         )
 
@@ -1177,10 +1157,12 @@ struct ScatterNDMul:
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=False](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape[single_thread_blocking_override=False](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+            )
         )
 
 
@@ -1196,12 +1178,6 @@ struct ScatterNDMin:
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-
         @always_inline
         @parameter
         fn reduce_fn[
@@ -1212,20 +1188,17 @@ struct ScatterNDMin:
             return min(lhs, rhs)
 
         scatter_nd_generator[
-            output_ndbuffer.type,
-            indices_ndbuffer.type,
-            output_ndbuffer.rank,
-            indices_ndbuffer.rank,
-            updates_ndbuffer.rank,
+            output.dtype,
+            indices.dtype,
             False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
         ](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
-            output_ndbuffer,
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            updates.to_layout_tensor(),
+            output.to_layout_tensor(),
             context=ctx,
         )
 
@@ -1235,10 +1208,12 @@ struct ScatterNDMin:
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=False](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape[single_thread_blocking_override=False](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+            )
         )
 
 
@@ -1254,12 +1229,6 @@ struct ScatterNDMax:
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-
         @always_inline
         @parameter
         fn reduce_fn[
@@ -1270,20 +1239,17 @@ struct ScatterNDMax:
             return max(lhs, rhs)
 
         scatter_nd_generator[
-            output_ndbuffer.type,
-            indices_ndbuffer.type,
-            output_ndbuffer.rank,
-            indices_ndbuffer.rank,
-            updates_ndbuffer.rank,
+            output.dtype,
+            indices.dtype,
             False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
         ](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
-            output_ndbuffer,
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            updates.to_layout_tensor(),
+            output.to_layout_tensor(),
             context=ctx,
         )
 
@@ -1293,10 +1259,12 @@ struct ScatterNDMax:
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=False](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape[single_thread_blocking_override=False](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+            )
         )
 
 
@@ -1363,11 +1331,13 @@ struct Scatter:
         indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+                Int(axis),
+            )
         )
 
 
@@ -1408,11 +1378,13 @@ struct ScatterAdd:
         indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+                Int(axis),
+            )
         )
 
 
@@ -1453,11 +1425,13 @@ struct ScatterMax:
         indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+                Int(axis),
+            )
         )
 
 
@@ -1498,11 +1472,13 @@ struct ScatterMin:
         indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+                Int(axis),
+            )
         )
 
 
@@ -1543,11 +1519,13 @@ struct ScatterMul:
         indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                updates.to_layout_tensor(),
+                indices.to_layout_tensor(),
+                Int(axis),
+            )
         )
 
 
@@ -3123,16 +3101,14 @@ struct GatherND:
         indices: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             gather_nd[batch_dims=batchDims, target=target](
-                data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
+                data.to_layout_tensor(),
+                indices.to_layout_tensor(),
+                output.to_layout_tensor(),
+                ctx,
             )
 
     @staticmethod
@@ -3149,8 +3125,8 @@ struct GatherND:
             output_rank=output_rank,
             single_thread_blocking_override=False,
         ](
-            managed_tensor_slice_to_ndbuffer(data),
-            managed_tensor_slice_to_ndbuffer(indices),
+            data.to_layout_tensor(),
+            indices.to_layout_tensor(),
         )
 
 
@@ -3163,7 +3139,7 @@ struct Gather:
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype = output.dtype, *_],
-        indices: InputTensor,
+        indices: FusedInputTensor,
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -3226,8 +3202,8 @@ struct Gather:
             output_rank=output_rank,
             single_thread_blocking_override=True,
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(indices),
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
             Int(axis),
         )
 
@@ -3240,11 +3216,6 @@ struct GatherSum:
         input: InputTensor[dtype = output.dtype, *_],
         indices: InputTensor[dtype = DType.int32, *_],
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-
         fn add[
             dtype: DType, simd_width: Int
         ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
@@ -3253,7 +3224,10 @@ struct GatherSum:
             return x + y
 
         gather_reduce[output.dtype, 0, 1, simd_width_of[output.dtype](), add](
-            output_ndbuffer, input_ndbuffer, indices_ndbuffer, 0
+            output.to_layout_tensor(),
+            input.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            0,
         )
 
 
@@ -3982,11 +3956,9 @@ struct ResizeBicubic:
         size: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        # Get input and output dimensions from tensors
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_buffer = managed_tensor_slice_to_ndbuffer(input)
-
-        resize_bicubic[target](output_buffer, input_buffer, ctx)
+        resize_bicubic[dtype=dtype, target=target](
+            output.to_layout_tensor(), input.to_layout_tensor(), ctx
+        )
 
     @staticmethod
     fn shape[
@@ -4243,9 +4215,6 @@ struct Softmax:
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        # shape should be the same between the two inputs
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
@@ -4260,12 +4229,11 @@ struct Softmax:
             output.dtype,
             simd_width_of[output.dtype](),
             output.rank,
-            output_ndbuffer.shape,
             input_fn,
             target,
         ](
             output.shape(),
-            output_ndbuffer,
+            output.to_layout_tensor(),
             output.rank - 1,
             context=ctx,
         )
@@ -4298,10 +4266,14 @@ struct LogSoftmax:
             output.dtype,
             simd_width_of[output.dtype](),
             output.rank,
-            output_ndbuffer.shape,
             input_fn,
             target,
-        ](output.shape(), output_ndbuffer, output.rank - 1, context=ctx)
+        ](
+            output.shape(),
+            output.to_layout_tensor(),
+            output.rank - 1,
+            context=ctx,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4717,14 +4689,18 @@ struct Conv:
             pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
             pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
 
+        alias input_shape = input._static_shape.at[
+            input.rank - 1
+        ]()  # input C, NHWC
+        alias filter_shape = filter._static_shape.at[
+            filter.rank - 2
+        ]()  # filter C, RSCF or FRSCf
         alias conv_attr = ConvInfoStatic[input.rank - 2](
-            static_padding,
-            static_strides,
-            static_dilations,
-            input._static_shape.at[input.rank - 1](),  # input C, NHWC
-            filter._static_shape.at[
-                filter.rank - 2
-            ](),  # filter C, RSCF or FRSCf
+            IntTuple(static_padding),
+            IntTuple(static_strides),
+            IntTuple(static_dilations),
+            input_shape.get() if input_shape else UNKNOWN_VALUE,
+            filter_shape.get() if filter_shape else UNKNOWN_VALUE,
         )
 
         alias filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
@@ -5117,7 +5093,7 @@ struct MaskedFlashAttentionGPU:
         k: InputTensor[rank=rank],
         v: InputTensor[rank=rank],
         mask: InputTensor,
-        scale: Scalar[dtype = DType.float32],
+        scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         """`masked_flash_attention_gpu` is a hand-fused operator which does
@@ -5166,18 +5142,12 @@ struct MaskedFlashAttentionGPU:
         """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
-        var mask_buffer = managed_tensor_slice_to_ndbuffer(mask)
-
         flash_attention(
-            output_buffer,
-            q_buffer,
-            k_buffer,
-            v_buffer,
-            mask_buffer,
+            output.to_layout_tensor(),
+            q.to_layout_tensor(),
+            k.to_layout_tensor(),
+            v.to_layout_tensor(),
+            mask.to_layout_tensor(),
             scale,
             context=ctx,
         )
@@ -5242,14 +5212,14 @@ struct FlashAttentionGPU:
         """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
 
-        alias num_kv_heads = k_buffer.shape.get[
-            2
-        ]() if k_buffer.shape.has_value[2]() else -1
+        alias num_kv_heads = Int(
+            k_buffer.layout.shape[2]
+        ) if k_buffer.layout.shape != UNKNOWN_VALUE else -1
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
@@ -5300,10 +5270,10 @@ struct PaddedFlashAttentionGPU:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
 
         alias valid_length_t = ManagedTensorSlice[
             IOUnknown,
@@ -5311,9 +5281,9 @@ struct PaddedFlashAttentionGPU:
         ]
         _valid_length = rebind[valid_length_t](valid_length)
 
-        alias num_kv_heads = k_buffer.shape.get[
-            2
-        ]() if k_buffer.shape.has_value[2]() else -1
+        alias num_kv_heads = Int(
+            k_buffer.layout.shape[2]
+        ) if k_buffer.layout.shape[2] != UNKNOWN_VALUE else -1
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
@@ -5375,10 +5345,10 @@ struct RaggedFlashAttentionGPU:
         """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
 
         alias input_row_offsets_t = ManagedTensorSlice[
             IOUnknown,
@@ -5386,9 +5356,9 @@ struct RaggedFlashAttentionGPU:
         ]
         _input_row_offsets = rebind[input_row_offsets_t](input_row_offsets)
 
-        alias num_kv_heads = k_buffer.shape.get[
-            1
-        ]() if k_buffer.shape.has_value[1]() else -1
+        alias num_kv_heads = Int(
+            k_buffer.layout.shape[1]
+        ) if k_buffer.layout.shape[1] != UNKNOWN_VALUE else -1
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
@@ -5405,7 +5375,7 @@ struct RaggedFlashAttentionGPU:
                 k_buffer,
                 v_buffer,
                 _input_row_offsets,
-                managed_tensor_slice_to_ndbuffer(q_max_seq_len),
+                q_max_seq_len.to_layout_tensor(),
                 mask,
                 score_mod,
                 scale,
@@ -6691,6 +6661,10 @@ struct Struct_mla_decode_ragged_paged:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
+        constrained[
+            kv_blocks.static_spec.shape.get[1]() == 1,
+            "Only support only_k=True for MLA decompress",
+        ]()
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -6852,6 +6826,13 @@ struct Struct_mla_prefill_ragged_plan:
         buffer_tok_size: UInt32,
         context: DeviceContextPtr,
     ) raises:
+        constrained[
+            kv_blocks.static_spec.shape.get[1]() == 1,
+            (
+                "Expected is_mla=True for MLA decompress, but found both k and"
+                " v dimensions."
+            ),
+        ]()
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -7056,6 +7037,102 @@ struct Struct_grouped_matmul_ragged:
         )
 
 
+@compiler.register("mo.grouped.matmul.dynamic.scaled.fp8")
+struct Struct_grouped_matmul_dynamic_scaled_fp8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType, //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2],
+        a: InputTensor[dtype=a_type, rank=2],
+        b: InputTensor[dtype=b_type, rank=3],
+        a_scales: InputTensor[dtype=a_scales_type, rank=2],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3],
+        expert_start_indices: InputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: InputTensor[dtype = DType.int32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            (
+                "grouped dynamic scaled matmul only support GPUs with native"
+                " FP8 support"
+            ),
+        ]()
+        cuda_ctx = context.get_device_context()
+        grouped_matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(a_scales),
+            managed_tensor_slice_to_ndbuffer(b_scales),
+            managed_tensor_slice_to_ndbuffer(expert_start_indices),
+            managed_tensor_slice_to_ndbuffer(expert_ids),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.batched.matmul.dynamic.scaled.fp8")
+struct Struct_batched_matmul_dynamic_scaled_fp8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType, //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=3],
+        a: InputTensor[dtype=a_type, rank=3],
+        b: InputTensor[dtype=b_type, rank=3],
+        a_scales: InputTensor[dtype=a_scales_type, rank=3],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3],
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            (
+                "batched dynamic scaled matmul only support GPUs with native"
+                " FP8 support"
+            ),
+        ]()
+        cuda_ctx = context.get_device_context()
+        batched_matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(a_scales),
+            managed_tensor_slice_to_ndbuffer(b_scales),
+            cuda_ctx,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # KV Cache Store
 #
@@ -7114,7 +7191,7 @@ struct Struct_kv_cache_store_paged:
         kv_cache_store_ragged[input_fn=input_fn, target=target](
             cache,
             inputs.shape(),
-            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            input_row_offsets.to_layout_tensor(),
             cuda_ctx,
         )
 
@@ -7442,12 +7519,12 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             per_head_norm=per_head_norm,
         ](
             kv_collection,
-            managed_tensor_slice_to_ndbuffer(gamma),
+            gamma.to_layout_tensor(),
             epsilon,
             weight_offset,
             layer_idx,
             total_seq_len,
-            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            input_row_offsets.to_layout_tensor(),
             context,
         )
 
@@ -7475,7 +7552,7 @@ fn print_kv_cache_paged_generic_kernel_api[
     @parameter
     if is_gpu[target]():
         print_kv_cache_paged_generic_gpu[target](
-            managed_tensor_slice_to_ndbuffer(valid_lengths),
+            valid_lengths.to_layout_tensor(),
             kv_collection,
             layer_idx,
             True,
@@ -7483,7 +7560,7 @@ fn print_kv_cache_paged_generic_kernel_api[
         )
     elif is_cpu[target]():
         print_kv_cache_paged_generic_cpu[target](
-            managed_tensor_slice_to_ndbuffer(valid_lengths),
+            valid_lengths.to_layout_tensor(),
             kv_collection,
             layer_idx,
             is_print_compact[0],
@@ -7601,6 +7678,53 @@ struct Struct_k_matmul_ragged_paged:
             managed_tensor_slice_to_ndbuffer(hidden_state),
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
             managed_tensor_slice_to_ndbuffer(weight),
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("mo.k_matmul.ragged.paged.scale")
+struct Struct_k_matmul_ragged_paged_scale:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        scale_dtype: DType, //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        target: StaticString,
+    ](
+        hidden_state: InputTensor[dtype=dtype, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        weight: InputTensor[dtype=dtype, rank=2],
+        input_scale: InputTensor[dtype=scale_dtype, rank=2],
+        weight_scale: InputTensor[dtype=scale_dtype, rank=2],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        k_matmul_ragged_paged_scale[
+            target=target,
+            scales_granularity_mnk = IndexList[3](
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+        ](
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
+            managed_tensor_slice_to_ndbuffer(input_scale),
+            managed_tensor_slice_to_ndbuffer(weight_scale),
             kv_collection,
             layer_idx,
             ctx,
@@ -8237,18 +8361,10 @@ struct IndexTensor:
         indices: InputTensor[dtype=indices_type, rank=indices_rank],
         ctx: DeviceContextPtr,
     ) raises:
-        index_tensor[
-            dtype,
-            indices_type,
-            data_rank,
-            indices_rank,
-            output_rank,
-            batch_dims,
-            target=target,
-        ](
-            managed_tensor_slice_to_ndbuffer(data),
-            managed_tensor_slice_to_ndbuffer(indices),
-            managed_tensor_slice_to_ndbuffer(output),
+        index_tensor[dtype, indices_type, batch_dims, target=target,](
+            data.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            output.to_layout_tensor(),
             ctx,
         )
 
@@ -8292,7 +8408,7 @@ struct AdvancedIndexingGetItem:
         @parameter
         fn indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
             constrained[
                 indices_index < num_index_tensors, "tensor index out of bounds"
             ]()
@@ -8308,7 +8424,7 @@ struct AdvancedIndexingGetItem:
             input_tensor_fn=input_tensor_fn,
             indices_fn=indices_fn,
         ](
-            managed_tensor_slice_to_ndbuffer(out_tensor),
+            out_tensor.to_layout_tensor(),
             input_tensor.strides(),
             ctx,
         )
@@ -8366,7 +8482,7 @@ struct AdvancedIndexingSetItemInplace:
         @parameter
         fn indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
             constrained[
                 indices_index < num_index_tensors, "tensor index out of bounds"
             ]()
@@ -8381,7 +8497,7 @@ struct AdvancedIndexingSetItemInplace:
             updates_tensor_fn=updates_tensor_fn,
             indices_fn=indices_fn,
         ](
-            managed_tensor_slice_to_ndbuffer(input_tensor),
+            input_tensor.to_layout_tensor(),
             indices[0].shape(),
             updates.strides(),
             ctx,
@@ -8539,6 +8655,34 @@ struct QuantizeDynamicScaledFloat8:
         )
 
 
+@compiler.register("mo.batched.quantize.dynamic.scaled.fp8")
+struct BatchedQuantizeDynamicScaledFloat8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType, //,
+        group_size_or_per_token: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=3],
+        scales: OutputTensor[dtype=scales_type, rank=3],
+        input: InputTensor[dtype=input_type, rank=3],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        batched_quantize_dynamic_scaled_fp8[group_size_or_per_token](
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(scales),
+            managed_tensor_slice_to_ndbuffer(input),
+            scale_ub,
+            ctx.get_device_context(),
+        )
+
+
 @compiler.register("mo.matmul_dynamic_scaled_fp8")
 struct MatmulDynamicScaledFloat8:
     @always_inline
@@ -8656,13 +8800,13 @@ struct MergeRaggedTensors:
         b_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        merge_ragged_tensors[target=target](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(output_row_offsets),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(a_row_offsets),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(b_row_offsets),
+        merge_ragged_tensors[rank=rank, target=target](
+            output.to_layout_tensor(),
+            output_row_offsets.to_layout_tensor(),
+            a.to_layout_tensor(),
+            a_row_offsets.to_layout_tensor(),
+            b.to_layout_tensor(),
+            b_row_offsets.to_layout_tensor(),
             ctx,
         )
 

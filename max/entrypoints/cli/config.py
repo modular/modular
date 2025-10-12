@@ -20,13 +20,14 @@ import functools
 import inspect
 import json
 import pathlib
+from collections.abc import Callable
 from dataclasses import MISSING, Field, fields
 from enum import Enum
 from pathlib import Path
+from types import UnionType
 from typing import (
     Any,
-    Callable,
-    Optional,
+    TypeGuard,
     TypeVar,
     Union,
     get_args,
@@ -45,7 +46,7 @@ from max.pipelines.lib import (
     ProfilingConfig,
     SamplingConfig,
 )
-from typing_extensions import ParamSpec, TypeGuard
+from typing_extensions import ParamSpec
 
 from .device_options import DevicesOptionType
 
@@ -74,20 +75,21 @@ class JSONType(click.ParamType):
             self.fail(f"Invalid JSON: {e}", param, ctx)
 
 
-def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
+def get_interior_type(type_hint: type | str | Any) -> type[Any]:
     interior_args = set(get_args(type_hint)) - set([type(None)])
     if len(interior_args) > 1:
-        msg = (
+        raise ValueError(
             "Parsing does not currently supported Union type, with more than"
             f" one non-None type: {type_hint}"
         )
-        raise ValueError(msg)
 
     return get_args(type_hint)[0]
 
 
-def is_optional(type_hint: Union[type, str, Any]) -> bool:
-    return get_origin(type_hint) is Union and type(None) in get_args(type_hint)
+def is_optional(type_hint: type | str | Any) -> bool:
+    return get_origin(type_hint) in (Union, UnionType) and type(
+        None
+    ) in get_args(type_hint)
 
 
 def is_flag(field_type: Any) -> bool:
@@ -112,11 +114,10 @@ def validate_field_type(field_type: Any) -> bool:
         if get_origin(valid_type) is None and inspect.isclass(test_type):
             if issubclass(test_type, valid_type):
                 return True
-    msg = f"type '{test_type}' not supported in config."
-    raise ValueError(msg)
+    raise ValueError(f"type '{test_type}' not supported in config.")
 
 
-def get_field_type(field_type: Any):
+def get_field_type(field_type: Any):  # noqa: ANN201
     validate_field_type(field_type)
 
     # Get underlying core field type, is Optional or list.
@@ -184,7 +185,7 @@ def create_click_option(
 
 
 def config_to_flag(
-    cls: type[MAXConfig], prefix: Optional[str] = None
+    cls: type[MAXConfig], prefix: str | None = None
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     options = []
     if hasattr(cls, "help"):

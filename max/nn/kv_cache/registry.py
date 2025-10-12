@@ -20,11 +20,44 @@ from max.engine import InferenceSession
 
 from .cache_params import KVCacheParams, KVCacheStrategy
 from .paged_cache import PagedKVCacheManager
-from .paged_cache.multi_cache_manager import MultiPagedKVCacheManager
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
     KVCacheStrategy.PAGED: PagedKVCacheManager,
 }
+
+
+def validate_kv_manager_params(
+    params: KVCacheParams,
+    max_batch_size: int | None,
+    available_cache_memory: int | None = None,
+    page_size: int | None = 512,
+) -> None:
+    if params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(f"cache type: {params.cache_strategy} not supported.")
+
+    if max_batch_size is None:
+        raise ValueError(
+            "Missing required argument max_batch_size for KVCacheStrategy.PAGED"
+        )
+
+    if max_batch_size <= 0:
+        raise ValueError("max_batch_size must be greater than 0")
+
+    if page_size is None:
+        raise ValueError(
+            "Missing required argument page_size for KVCacheStrategy.PAGED"
+        )
+
+    # TODO(KERN-1308) remove this validation as we generalize page_size
+    if page_size % 128 != 0 or page_size < 128:
+        raise ValueError(
+            "Page size must be a multiple of 128 and at least 128."
+        )
+
+    if available_cache_memory is None:
+        raise ValueError(
+            "Missing required argument available_cache_memory for KVCacheStrategy.PAGED"
+        )
 
 
 def load_kv_manager(
@@ -37,49 +70,26 @@ def load_kv_manager(
     available_cache_memory: int | None = None,
     page_size: int | None = 512,
 ) -> PagedKVCacheManager:
-    assert max_batch_size is not None, "Expected max_batch_size to be set"
-    assert max_batch_size > 0, "max_batch_size must be greater than 0"
-    if params.cache_strategy == KVCacheStrategy.PAGED:
-        if page_size is None:
-            msg = (
-                "Missing required argument page_size for KVCacheStrategy.PAGED"
-            )
-            raise ValueError(msg)
-
-        # TODO(KERN-1308) remove this validation as we generalize page_size
-        if page_size % 128 != 0 or page_size < 128:
-            msg = "Page size must be a multiple of 128 and at least 128."
-            raise ValueError(msg)
-
-        if available_cache_memory is None:
-            msg = "Missing required argument available_cache_memory for KVCacheStrategy.PAGED"
-            raise ValueError(msg)
-
-        if params.data_parallel_degree > 1 and len(devices) > 1:
-            return MultiPagedKVCacheManager(
-                params=params,
-                max_batch_size=max_batch_size,
-                max_seq_len=max_seq_len,
-                num_layers=num_layers,
-                devices=devices,
-                session=session,
-                cache_memory=available_cache_memory,
-                page_size=page_size,
-            )
-
-        return PagedKVCacheManager(
-            params=params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            num_layers=num_layers,
-            devices=devices,
-            session=session,
-            cache_memory=available_cache_memory,
-            page_size=page_size,
-        )
-    else:
-        msg = f"cache type: {params.cache_strategy} not supported."
-        raise ValueError(msg)
+    validate_kv_manager_params(
+        params=params,
+        max_batch_size=max_batch_size,
+        available_cache_memory=available_cache_memory,
+        page_size=page_size,
+    )
+    # We know these are non-null because of above validation
+    assert max_batch_size is not None
+    assert available_cache_memory is not None
+    assert page_size is not None
+    return PagedKVCacheManager(
+        params=params,
+        max_batch_size=max_batch_size,
+        max_seq_len=max_seq_len,
+        num_layers=num_layers,
+        devices=devices,
+        session=session,
+        available_cache_memory=available_cache_memory,
+        page_size=page_size,
+    )
 
 
 def estimate_kv_cache_size(
@@ -94,8 +104,7 @@ def estimate_kv_cache_size(
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
     if params.cache_strategy not in CACHE_MANAGER_REGISTRY:
-        msg = f"cache type: {params.cache_strategy} not supported."
-        raise ValueError(msg)
+        raise ValueError(f"cache type: {params.cache_strategy} not supported.")
 
     return CACHE_MANAGER_REGISTRY[params.cache_strategy].estimated_memory_size(
         params=params,

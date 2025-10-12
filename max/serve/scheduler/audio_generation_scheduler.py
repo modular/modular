@@ -30,8 +30,8 @@ from max.interfaces import (
     RequestID,
     Scheduler,
     SchedulerResult,
-    drain_queue,
 )
+from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
 from max.pipelines.lib import LoRAManager
@@ -227,6 +227,7 @@ class AudioGenerationScheduler(Scheduler):
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager,
+        offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -260,8 +261,26 @@ class AudioGenerationScheduler(Scheduler):
 
         self._prev_num_steps = 0
 
+        # Initialize the background queue drainer
+        self._queue_drainer: BackgroundQueueDrainer[TTSContext] | None = None
+        if offload_queue_draining:
+            self._queue_drainer = BackgroundQueueDrainer[TTSContext](
+                self.request_queue,
+                max_items_per_drain=self.scheduler_config.max_batch_size_tg * 2,
+            )
+
     def _retrieve_pending_requests(self) -> None:
-        self.pending_reqs.extend(drain_queue(self.request_queue))
+        if self._queue_drainer is not None:
+            self._queue_drainer.start_draining()
+            items = self._queue_drainer.retrieve_items()
+        else:
+            items = drain_queue(
+                self.request_queue,
+                max_items=self.scheduler_config.max_batch_size_tg * 2,
+            )
+
+        for context in items:
+            self.pending_reqs.append(context)
 
     def _create_tg_batch(
         self,
@@ -332,6 +351,9 @@ class AudioGenerationScheduler(Scheduler):
             ):
                 deferred_lora_requests.append(req_data)
                 continue
+
+            if not self.paged_manager.contains(req_id):
+                self.paged_manager.external_claim(req_id)
 
             # Prefetch here for CE so that we query prefix cache
             if not self.paged_manager.maybe_reserve(req_data, num_steps=1):

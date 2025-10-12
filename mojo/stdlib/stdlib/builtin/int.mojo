@@ -48,7 +48,7 @@ trait Indexer:
     types like `UInt` to not have to be converted to an `Int` first.
     """
 
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -64,7 +64,7 @@ trait Indexer:
 
 @always_inline("nodebug")
 fn index[T: Indexer](idx: T, /) -> Int:
-    """Returns the value of `__index__` for the given value.
+    """Returns the value of `__mlir_index__` for the given value.
 
     Parameters:
         T: A type conforming to the `Indexer` trait.
@@ -75,7 +75,7 @@ fn index[T: Indexer](idx: T, /) -> Int:
     Returns:
         An `__mlir_type` representing the index value.
     """
-    return Int(mlir_value=idx.__index__())
+    return Int(mlir_value=idx.__mlir_index__())
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1016,7 +1016,7 @@ struct Int(
         return self.__bool__()
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

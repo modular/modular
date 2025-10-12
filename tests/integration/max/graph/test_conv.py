@@ -13,8 +13,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Callable
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import pytest
@@ -30,7 +29,7 @@ from modular_graph_test import modular_graph_test
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
-def torch_conv2d(
+def torch_conv2d(  # noqa: ANN201
     x: TensorValue,
     filter: TensorValue,
     stride: tuple[int, int] = (1, 1),

@@ -21,5 +21,6 @@ benchmark_config:
   num_prompts: 1000
   random_input_len: 40
   random_output_len: 150
+  random_image_count: 1
   random_image_size: 512,512
   random_coefficient_of_variation: 0.1,0.6

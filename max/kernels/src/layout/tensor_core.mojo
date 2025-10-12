@@ -845,7 +845,9 @@ struct TensorCore[
         alias simd_size = simd_width_of[warp_tile.dtype]()
         alias num_frags = fragments.shape[0]()
 
-        var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
+        var swizzle_offset = (
+            mma_tile_coord_k * UInt(shape[2]) // UInt(simd_size)
+        )
 
         @parameter
         for i in range(num_frags):
@@ -967,7 +969,9 @@ struct TensorCore[
 
             @parameter
             if in_type is DType.float32:
-                var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
+                var swizzle_offset = (
+                    mma_tile_coord_k * UInt(shape[2]) // UInt(simd_size)
+                )
 
                 @parameter
                 for i in range(0, num_frags, 2):
@@ -992,7 +996,9 @@ struct TensorCore[
                     ),
                 ]()
 
-                var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
+                var swizzle_offset = (
+                    mma_tile_coord_k * UInt(shape[2]) // UInt(simd_size)
+                )
 
                 @parameter
                 for i in range(0, num_frags, 2):
@@ -1060,14 +1066,14 @@ struct TensorCore[
                 @parameter
                 if WN == 32:  # 32 is the min in practice.
                     var mma_tile_shifted = __type_of(mma_tile)(
-                        mma_tile.ptr - warp_tile_coord_n * WN
+                        mma_tile.ptr - warp_tile_coord_n * UInt(WN)
                     )
 
                     @parameter
                     for i in range(0, num_frags, 2):
-                        var swizzle_offset = (
-                            i + warp_tile_coord_n * WN // simd_size
-                        )
+                        var swizzle_offset = i + warp_tile_coord_n * UInt(
+                            WN
+                        ) // UInt(simd_size)
                         var vec = _load_matrix_frag[
                             swizzle=swizzle, transposed=True
                         ](mma_tile_shifted, Int(swizzle_offset))
@@ -1146,9 +1152,7 @@ struct TensorCore[
         alias repack_tile = Index(64, 16)
 
         @always_inline
-        fn int4tobf16(
-            i4: Int32, scale: SIMD[DType.bfloat16, 1]
-        ) -> SIMD[DType.bfloat16, 2]:
+        fn int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[DType.bfloat16, 2]:
             alias MASK: Int32 = 0x000F000F
             alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 
@@ -1174,7 +1178,7 @@ struct TensorCore[
         ](0, Int(mma_tile_coord_k))
 
         var vec = bitcast[DType.int32, 4](
-            mma_tile.vectorize[1, 4]()[0, Int(thread_idx.x % WARP_SIZE)]
+            mma_tile.vectorize[1, 4]()[0, Int(thread_idx.x % UInt(WARP_SIZE))]
         )
 
         @parameter
@@ -1312,10 +1316,9 @@ fn _load_matrix_frag[
         swizzle.value() if swizzle else Swizzle(0, 0, 1),
     )
 
-    var lane_offset = (
-        eval_composed[ldmatrix_layout](UInt(Int(lane)), UInt(offset))
-        * simd_size
-    )
+    var lane_offset = eval_composed[ldmatrix_layout](
+        UInt(Int(lane)), UInt(offset)
+    ) * UInt(simd_size)
 
     return ld_matrix[res.size, transpose=transposed](
         mma_tile.ptr.offset(lane_offset)

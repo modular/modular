@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Optional, Union
 
 # This is only imported internally if gguf is available
 import gguf  # type: ignore
@@ -120,10 +119,10 @@ class GGUFWeights(Weights):
 
     def __init__(
         self,
-        source: Union[PathLike[str], gguf.GGUFReader],
-        tensors: Optional[dict[str, gguf.ReaderTensor]] = None,
+        source: PathLike[str] | gguf.GGUFReader,
+        tensors: dict[str, gguf.ReaderTensor] | None = None,
         prefix: str = "",
-        allocated: Optional[dict[str, DLPackArray]] = None,
+        allocated: dict[str, DLPackArray] | None = None,
     ) -> None:
         """Creates a GGUF weights reader.
 
@@ -148,7 +147,7 @@ class GGUFWeights(Weights):
         """The current weight name or prefix."""
         return self._prefix
 
-    def items(self):
+    def items(self):  # noqa: ANN201
         """Iterate through all allocable weights that start with the prefix."""
         for name in self._tensors:
             if name.startswith(self._prefix):
@@ -251,9 +250,9 @@ class GGUFWeights(Weights):
 
     def allocate(
         self,
-        dtype: Optional[DType] = None,
-        shape: Optional[ShapeLike] = None,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
+        dtype: DType | None = None,
+        shape: ShapeLike | None = None,
+        quantization_encoding: QuantizationEncoding | None = None,
         device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
         """Creates and optionally validates a new Weight."""
@@ -275,17 +274,15 @@ class GGUFWeights(Weights):
                 )
 
         if shape is not None and weight_unpacked_shape != expected_shape:
-            msg = (
+            raise ValueError(
                 f"Value provided to weight '{self.name}' had different shape"
                 f" (expected={expected_shape}, actual={weight_unpacked_shape})"
             )
-            raise ValueError(msg)
         if dtype is not None and weight.dtype != dtype:
-            msg = (
+            raise ValueError(
                 f"Value provided to weight '{self.name}' had different dtype"
                 f" (expected={dtype}, actual={weight.dtype})"
             )
-            raise ValueError(msg)
 
         # GGUF checkpoints can be mixed precision, so we don't check if the
         # quantization encoding matches exactly.

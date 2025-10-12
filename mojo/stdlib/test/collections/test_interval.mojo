@@ -14,7 +14,7 @@
 from collections.interval import Interval, IntervalElement, IntervalTree
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_interval():
@@ -199,10 +199,4 @@ def test_interval_tree():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_interval]()
-    suite.test[test_interval_floating]()
-    suite.test[test_interval_tree]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

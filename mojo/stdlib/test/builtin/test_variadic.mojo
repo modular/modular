@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 fn test_iterator() raises:
@@ -30,4 +30,4 @@ fn test_iterator() raises:
 
 
 def main():
-    test_iterator()
+    TestSuite.discover_tests[__functions_in_module()]().run()

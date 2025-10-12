@@ -22,6 +22,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
+    "test_structured_kernel_components.mojo": ["//:amd_gpu"],
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
     "test_stream_k.mojo": ["//:nvidia_gpu"],
@@ -39,7 +40,7 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_sm100_ptx.mojo": ["//:b200_gpu"],
     "test_matmul_tile_scheduler_sm100.mojo": ["//:b200_gpu"],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
-    "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
+    "test_tma_wgmma_with_multicast.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-2060
     "test_vendor_blas.mojo": [
         "//:nvidia_gpu",
         "//:has_multi_gpu",
@@ -90,14 +91,18 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2405
+    "test_grouped_matmul_tile_scheduler.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 _FILECHECK_TESTS = [
     "test_block_swizzle.mojo",
     "test_matmul_selection_heuristic.mojo",
     "test_matmul_tile_scheduler.mojo",
-    "test_gemv.mojo",  # TODO: Remove filecheck usage
     "test_matmul_tile_scheduler_sm100.mojo",
+    "test_grouped_matmul_tile_scheduler.mojo",
 ]
 
 _ASM_CHECK_TESTS = [

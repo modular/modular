@@ -234,6 +234,52 @@ fn _has_native_f8_support() -> Bool:
 
 
 # ===----------------------------------------------------------------------=== #
+# FastMathFlag
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+@register_passable
+struct FastMathFlag(ImplicitlyCopyable):
+    var _value: UInt8
+
+    alias NONE = Self(0)
+    alias NNAN = Self(1)
+    alias NINF = Self(2)
+    alias NSZ = Self(3)
+    alias ARCP = Self(4)
+    alias CONTRACT = Self(5)
+    alias AFN = Self(6)
+    alias REASSOC = Self(7)
+    alias FAST = Self(8)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn _mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
+        if self is FastMathFlag.NONE:
+            return __mlir_attr.`#pop<fmf none>`
+        if self is FastMathFlag.NNAN:
+            return __mlir_attr.`#pop<fmf nnan>`
+        if self is FastMathFlag.NINF:
+            return __mlir_attr.`#pop<fmf ninf>`
+        if self is FastMathFlag.NSZ:
+            return __mlir_attr.`#pop<fmf nsz>`
+        if self is FastMathFlag.ARCP:
+            return __mlir_attr.`#pop<fmf arcp>`
+        if self is FastMathFlag.CONTRACT:
+            return __mlir_attr.`#pop<fmf contract>`
+        if self is FastMathFlag.AFN:
+            return __mlir_attr.`#pop<fmf afn>`
+        if self is FastMathFlag.REASSOC:
+            return __mlir_attr.`#pop<fmf reassoc>`
+        if self is FastMathFlag.FAST:
+            return __mlir_attr.`#pop<fmf fast>`
+
+        return __mlir_attr.`#pop<fmf none>`
+
+
+# ===----------------------------------------------------------------------=== #
 # SIMD
 # ===----------------------------------------------------------------------=== #
 
@@ -1834,7 +1880,7 @@ struct SIMD[dtype: DType, size: Int](
             return Int(self._refine[new_size=1]().cast[DType.int]()._mlir_value)
 
     @always_inline("nodebug")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:
@@ -2286,7 +2332,11 @@ struct SIMD[dtype: DType, size: Int](
 
         var ptr = UnsafePointer(to=value)
         var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
-        memcpy(array.unsafe_ptr(), ptr.bitcast[Byte](), size_of[Self]())
+        memcpy(
+            dest=array.unsafe_ptr(),
+            src=ptr.bitcast[Byte](),
+            count=size_of[Self](),
+        )
         return array^
 
     fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:
@@ -2322,7 +2372,9 @@ struct SIMD[dtype: DType, size: Int](
 
     # TODO: Move to global function.
     @always_inline("nodebug")
-    fn fma(self, multiplier: Self, accumulator: Self) -> Self:
+    fn fma[
+        flag: FastMathFlag = FastMathFlag.CONTRACT
+    ](self, multiplier: Self, accumulator: Self) -> Self:
         """Performs a fused multiply-add operation, i.e.
         `self*multiplier + accumulator`.
 
@@ -2337,9 +2389,11 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
 
         return Self(
-            mlir_value=__mlir_op.`pop.fma`[
-                fastmathFlags = __mlir_attr.`#pop<fmf contract>`
-            ](self._mlir_value, multiplier._mlir_value, accumulator._mlir_value)
+            mlir_value=__mlir_op.`pop.fma`[fastmathFlags = flag._mlir_attr()](
+                self._mlir_value,
+                multiplier._mlir_value,
+                accumulator._mlir_value,
+            )
         )
 
     @always_inline("nodebug")
@@ -2606,7 +2660,8 @@ struct SIMD[dtype: DType, size: Int](
         `offset + input_width` have been replaced with the elements in `value`.
 
         Parameters:
-            offset: The offset to insert at.
+            offset: The offset to insert at. This must be a multiple of value's
+                    size.
 
         Args:
             value: The value to be inserted.
@@ -2615,6 +2670,11 @@ struct SIMD[dtype: DType, size: Int](
             A new vector whose elements at `self[offset:offset+input_width]`
             contain the values of `value`.
         """
+        constrained[
+            offset % value.size == 0,
+            "offset must be a multiple of the subvector's size",
+        ]()
+
         alias input_width = value.size
         constrained[
             0 <= offset < input_width + offset <= size,
@@ -2627,20 +2687,6 @@ struct SIMD[dtype: DType, size: Int](
                 input_width == 1, "the input width must be 1 if the size is 1"
             ]()
             return value[0]
-
-        # You cannot insert into a SIMD value at positions that are not a
-        # multiple of the SIMD width via the `llvm.vector.insert` intrinsic,
-        # so resort to a for loop. Note that this can be made more intelligent
-        # by dividing the problem into the offset, offset+val, val+input_width
-        # where val is a value to align the offset to the simdwidth.
-        @parameter
-        if offset % simd_width_of[dtype]():
-            var res = self
-
-            @parameter
-            for i in range(input_width):
-                res[i + offset] = value[i]
-            return res
 
         return llvm_intrinsic[
             "llvm.vector.insert", Self, has_side_effect=False
@@ -3244,7 +3290,18 @@ fn _pow[
 
     @parameter
     if exp.dtype.is_floating_point() and base.dtype is exp.dtype:
-        return _powf(base, exp)
+
+        @parameter
+        if is_apple_gpu():
+            return llvm_intrinsic[
+                "llvm.air.pow",
+                __type_of(base),
+                __type_of(base),
+                __type_of(exp),
+                has_side_effect=False,
+            ](base, exp)
+        else:
+            return _powf(base, exp)
     elif exp.dtype.is_integral():
         # Common cases
         if all(exp.eq(2)):
@@ -3425,7 +3482,7 @@ fn _convert_float8_to_f32[
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
             return _convert_float8_to_f32_scalar[result_dtype](val)
 
-        return _simd_apply[wrapper_fn, DType.float32, size](val)
+        return _simd_apply[wrapper_fn, result_dtype = DType.float32](val)
 
 
 @always_inline
@@ -3480,7 +3537,7 @@ fn _convert_f32_to_float8[
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
             return _convert_f32_to_float8_scalar[result_dtype](val)
 
-        return _simd_apply[wrapper_fn, target, size](val)
+        return _simd_apply[wrapper_fn, result_dtype=target](val)
 
 
 @always_inline
@@ -3628,7 +3685,7 @@ fn _convert_f32_to_float8_ue8m0[
             for i in range(0, size, 2):
                 var f8x2_f32x2 = inlined_assembly[
                     asm_prefix + " $0, $1, $2;",
-                    Scalar[DType.uint16],
+                    UInt16,
                     constraints="=h,f,f",
                     has_side_effect=False,
                 ](val[i + 1], val[i])
@@ -3638,7 +3695,7 @@ fn _convert_f32_to_float8_ue8m0[
         else:
             var f8x2_f32x2 = inlined_assembly[
                 asm_prefix + " $0, $1, $2;",
-                Scalar[DType.uint16],
+                UInt16,
                 constraints="=h,f,f",
                 has_side_effect=False,
             ](Float32(0.0), val[0])
@@ -3653,7 +3710,7 @@ fn _convert_f32_to_float8_ue8m0[
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
             return _convert_f32_to_float8_ue8m0_scalar[result_dtype](val)
 
-        return _simd_apply[wrapper_fn, target, size](val)
+        return _simd_apply[wrapper_fn, result_dtype=target](val)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3691,7 +3748,7 @@ fn _bfloat16_to_f32[
             val._refine[DType.bfloat16](),
         )._refine[result_dtype]()
 
-    return _simd_apply[wrapper_fn, DType.float32, size](val)
+    return _simd_apply[wrapper_fn, result_dtype = DType.float32](val)
 
 
 alias _f32_bf16_mantissa_diff = (
@@ -3722,20 +3779,22 @@ fn _f32_to_bfloat16[
 
 @always_inline
 fn _simd_apply[
+    input_dtype: DType,
+    simd_width: Int, //,
     func: fn[input_dtype: DType, result_dtype: DType] (
         Scalar[input_dtype]
     ) capturing -> Scalar[result_dtype],
-    result_dtype: DType,
-    simd_width: Int,
-](x: SIMD[_, simd_width]) -> SIMD[result_dtype, simd_width]:
+    *,
+    result_dtype: DType = input_dtype,
+](x: SIMD[input_dtype, simd_width]) -> SIMD[result_dtype, simd_width]:
     """Returns a value whose elements corresponds to applying `func` to each
     element in the vector.
 
     Parameter:
-      simd_width: Width of the input and output SIMD vectors.
       input_dtype: Type of the input to func.
-      result_dtype: Result type of func.
+      simd_width: Width of the input and output SIMD vectors.
       func: Function to apply to the SIMD vector.
+      result_dtype: Result type of func.
 
     Args:
       x: the input value.
@@ -3747,18 +3806,19 @@ fn _simd_apply[
 
     @parameter
     for i in range(simd_width):
-        result[i] = func[x.dtype, result_dtype](x[i])
+        result[i] = func[input_dtype, result_dtype](x[i])
 
     return result
 
 
 @always_inline
 fn _simd_apply[
+    simd_width: Int, //,
     func: fn[lhs_dtype: DType, rhs_dtype: DType, result_dtype: DType] (
         Scalar[lhs_dtype], Scalar[rhs_dtype]
     ) capturing -> Scalar[result_dtype],
+    *,
     result_dtype: DType,
-    simd_width: Int,
 ](x: SIMD[_, simd_width], y: SIMD[_, simd_width]) -> SIMD[
     result_dtype, simd_width
 ]:
@@ -3767,9 +3827,8 @@ fn _simd_apply[
 
     Parameter:
       simd_width: Width of the input and output SIMD vectors.
-      input_dtype: Type of the input to func.
-      result_dtype: Result type of func.
       func: Function to apply to the SIMD vector.
+      result_dtype: Result type of func.
 
     Args:
       x: the lhs input value.

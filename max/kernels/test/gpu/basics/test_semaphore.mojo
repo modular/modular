@@ -39,7 +39,7 @@ fn test_named_barrier_semaphore_equal_kernel(
 fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_equal")
 
-    var a_host = UnsafePointer[Scalar[DType.int32]].alloc(NUM_BLOCKS)
+    var a_host = UnsafePointer[Int32].alloc(NUM_BLOCKS)
 
     var locks_data = ctx.enqueue_create_buffer[DType.int32](1)
     var shared_data = ctx.enqueue_create_buffer[DType.int32](NUM_BLOCKS)
@@ -83,7 +83,7 @@ fn test_named_barrier_semaphore_less_than_kernel(
 fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_less_than")
 
-    var a_host = UnsafePointer[Scalar[DType.int32]].alloc(NUM_BLOCKS)
+    var a_host = UnsafePointer[Int32].alloc(NUM_BLOCKS)
 
     var locks_data = ctx.enqueue_create_buffer[DType.int32](1)
     var shared_data = ctx.enqueue_create_buffer[DType.int32](NUM_BLOCKS)

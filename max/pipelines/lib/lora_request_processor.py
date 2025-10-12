@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING
 
 from max.interfaces import RequestID
 from max.interfaces.lora import (
+    LORA_REQUEST_ENDPOINT,
+    LORA_RESPONSE_ENDPOINT,
     LoRAOperation,
     LoRARequest,
     LoRAResponse,
@@ -45,8 +47,7 @@ class LoRARequestProcessor:
     def __init__(
         self,
         manager: LoRAManager,
-        zmq_request_endpoint: str,
-        zmq_response_endpoint: str,
+        zmq_endpoint_base: str,
     ):
         """
         Initialize the LoRA request processor.
@@ -57,16 +58,16 @@ class LoRARequestProcessor:
         self.manager = manager
 
         self._request_socket = ZmqPullSocket[tuple[RequestID, LoRARequest]](
-            endpoint=zmq_request_endpoint,
+            endpoint=f"{zmq_endpoint_base}-{LORA_REQUEST_ENDPOINT}",
             payload_type=tuple[RequestID, LoRARequest],
         )
 
         self._response_socket = ZmqPushSocket[tuple[RequestID, LoRAResponse]](
-            endpoint=zmq_response_endpoint,
+            endpoint=f"{zmq_endpoint_base}-{LORA_RESPONSE_ENDPOINT}",
             payload_type=tuple[RequestID, LoRAResponse],
         )
 
-    def process_lora_requests(self):
+    def process_lora_requests(self) -> None:
         """Check for new LoRA requests and processes them."""
         while True:
             try:

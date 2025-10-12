@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
-def main():
-    test_rebind_register()
-    print()
-    test_rebind_memory()
+from testing import TestSuite
 
 
 # ===----------------------------------------------------------------------=== #
@@ -76,3 +72,7 @@ def test_rebind_memory():
 
     # CHECK-NEXT: done
     print("done")
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

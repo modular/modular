@@ -15,7 +15,7 @@ from base64 import b16decode, b16encode, b64decode, b64encode
 
 
 from testing import assert_equal, assert_raises
-from test_utils import TestSuite
+from testing import TestSuite
 
 
 def test_b64encode():
@@ -107,11 +107,4 @@ def test_b16decode():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_b64encode]()
-    suite.test[test_b64decode]()
-    suite.test[test_b16encode]()
-    suite.test[test_b16decode]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

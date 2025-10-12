@@ -15,6 +15,7 @@ from algorithm import vectorize
 from buffer import NDBuffer
 from memory import memcmp
 from testing import assert_equal
+from testing import TestSuite
 
 
 def test_vectorize():
@@ -113,6 +114,4 @@ def test_vectorize_size_param():
 
 
 def main():
-    test_vectorize()
-    test_vectorize_unroll()
-    test_vectorize_size_param()
+    TestSuite.discover_tests[__functions_in_module()]().run()

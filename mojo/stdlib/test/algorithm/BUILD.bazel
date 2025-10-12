@@ -45,6 +45,11 @@ _DISABLED_ASSERTIONS = [
             "full",
         ],
         enable_assertions = src not in _DISABLED_ASSERTIONS,
+        # This target times out while building on ASAN, see MOCO-2428.
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src == "test_sorting_network.mojo" else [],
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

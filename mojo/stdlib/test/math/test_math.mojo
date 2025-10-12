@@ -14,12 +14,16 @@
 from math import (
     align_down,
     align_up,
+    acos,
+    asin,
     atanh,
+    cbrt,
     ceil,
     ceildiv,
     clamp,
     copysign,
     cos,
+    erfc,
     exp2,
     factorial,
     floor,
@@ -27,7 +31,7 @@ from math import (
     gcd,
     iota,
     isclose,
-    isqrt,
+    rsqrt,
     lcm,
     log,
     log1p,
@@ -36,10 +40,12 @@ from math import (
     sqrt,
     trunc,
     ulp,
+    pi,
 )
+from math.math import _call_libm
 from sys import CompilationTarget
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
 from utils.numerics import inf, isinf, isnan, nan, neg_inf
@@ -48,11 +54,41 @@ from utils.numerics import inf, isinf, isnan, nan, neg_inf
 fn test_sin() raises:
     assert_almost_equal(sin(Float32(1.0)), 0.841470956802)
 
+    alias s_45 = sin(pi / 4)
+    assert_almost_equal(s_45, 0.7071067811865475)
+
+    alias s_30 = sin(pi / 6)
+    assert_almost_equal(s_30, 0.5)
+
+    alias s_60 = sin(pi / 3)
+    assert_almost_equal(s_60, 0.8660254037844387)
+
+    # Compare the compile time values against the runtime values to make sure
+    # they align.
+    assert_almost_equal(s_45, sin(pi / 4))
+    assert_almost_equal(s_30, sin(pi / 6))
+    assert_almost_equal(s_60, sin(pi / 3))
+
 
 fn test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
 
     assert_equal(cos(BFloat16(2.0)), -0.416015625)
+
+    alias c_45 = cos(pi / 4)
+    assert_almost_equal(c_45, 0.7071067811865476)
+
+    alias c_30 = cos(pi / 6)
+    assert_almost_equal(c_30, 0.8660254037844386)
+
+    alias c_60 = cos(pi / 3)
+    assert_almost_equal(c_60, 0.4999999999999999)
+
+    # Compare the compile time values against the runtime values to make sure
+    # they align.
+    assert_almost_equal(c_45, cos(pi / 4))
+    assert_almost_equal(c_30, cos(pi / 6))
+    assert_almost_equal(c_60, cos(pi / 3))
 
 
 fn test_factorial() raises:
@@ -299,16 +335,16 @@ def test_sqrt():
     assert_almost_equal(s2_f64[3], 0.86602)
 
 
-def test_isqrt():
+def test_rsqrt():
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0) + 1
 
-    var s1_f32 = isqrt(f32x4)
+    var s1_f32 = rsqrt(f32x4)
     assert_equal(s1_f32[0], 1.0)
     assert_almost_equal(s1_f32[1], 0.81649)
     assert_almost_equal(s1_f32[2], 0.70710)
     assert_almost_equal(s1_f32[3], 0.63245)
 
-    var s2_f32 = isqrt(0.5 * f32x4)
+    var s2_f32 = rsqrt(0.5 * f32x4)
     assert_almost_equal(s2_f32[0], 1.41421)
     assert_almost_equal(s2_f32[1], 1.15470)
     assert_equal(s2_f32[2], 1.0)
@@ -316,13 +352,13 @@ def test_isqrt():
 
     var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0) + 1
 
-    var s1_f64 = isqrt(f64x4)
+    var s1_f64 = rsqrt(f64x4)
     assert_equal(s1_f64[0], 1.0)
     assert_almost_equal(s1_f64[1], 0.81649)
     assert_almost_equal(s1_f64[2], 0.70710)
     assert_almost_equal(s1_f64[3], 0.63245)
 
-    var s2_f64 = isqrt(0.5 * f64x4)
+    var s2_f64 = rsqrt(0.5 * f64x4)
     assert_almost_equal(s2_f64[0], 1.41421)
     assert_almost_equal(s2_f64[1], 1.15470)
     assert_equal(s2_f64[2], 1.0)
@@ -651,32 +687,48 @@ def test_atanh():
     )
 
 
+def test_asin():
+    alias n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            asin(val),
+            _call_libm["asin"](val),
+            msg=String("mismatch for the value = ", val),
+        )
+
+
+def test_erfc():
+    alias n = 10_000
+    for i in range(n):
+        var val = Float32(i) / (n * Float32(2) / 10) - 10
+        assert_almost_equal(
+            erfc(val),
+            _call_libm["erfc"](val),
+        )
+
+
+def test_cbrt():
+    alias n = 1_0000
+    for i in range(n):
+        var val = Float32(i) / (n * Float32(2) / 10) - 10
+        assert_almost_equal(
+            cbrt(val),
+            _call_libm["cbrt"](val),
+            msg=String("mismatch for the value = ", val, " at index = ", i),
+        )
+
+
+def test_acos():
+    alias n = 1_000
+    for i in range(n):
+        var val = Float32(i) / (n * 2) - 1
+        assert_almost_equal(
+            acos(val),
+            _call_libm["acos"](val),
+            msg=String("mismatch for the value = ", val),
+        )
+
+
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_sin]()
-    suite.test[test_cos]()
-    suite.test[test_factorial]()
-    suite.test[test_copysign]()
-    suite.test[test_isclose]()
-    suite.test[test_ceil]()
-    suite.test[test_floor]()
-    suite.test[test_trunc]()
-    suite.test[test_exp2]()
-    suite.test[test_iota]()
-    suite.test[test_sqrt]()
-    suite.test[test_isqrt]()
-    suite.test[test_frexp]()
-    suite.test[test_log]()
-    suite.test[test_log2]()
-    suite.test[test_log1p]()
-    suite.test[test_gcd]()
-    suite.test[test_lcm]()
-    suite.test[test_ulp]()
-    suite.test[test_ceildiv]()
-    suite.test[test_align_down]()
-    suite.test[test_align_up]()
-    suite.test[test_clamp]()
-    suite.test[test_atanh]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

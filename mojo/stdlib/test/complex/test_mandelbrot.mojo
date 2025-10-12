@@ -16,12 +16,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from complex import ComplexFloat32, ComplexSIMD
+from complex import ComplexScalar, ComplexFloat32, ComplexSIMD
 from testing import assert_equal
 
 # NOTE: This is commented out because TestSuite is part of `test_utils` which
 # is not packaged with the stdlib.
-# from test_utils import TestSuite
+# from testing import TestSuite
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
@@ -54,7 +54,7 @@ def test_mandelbrot_iter():
     assert_equal(mandelbrot_iter(50, 50), 2)
     assert_equal(mandelbrot_iter(100, 100), 3)
 
-    var z = ComplexSIMD[DType.int32, 1](re=Int32(3), im=Int32(4))
+    var z = ComplexScalar[DType.int32](re=Int32(3), im=Int32(4))
     assert_equal(z.squared_norm(), 25)
 
 

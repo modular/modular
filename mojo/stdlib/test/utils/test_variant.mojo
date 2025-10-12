@@ -15,7 +15,7 @@ from os import abort
 from sys.ffi import _Global
 
 from test_utils import MoveCopyCounter, ObservableDel
-from testing import assert_equal, assert_false, assert_true
+from testing import TestSuite, assert_equal, assert_false, assert_true
 
 from utils import Variant
 
@@ -185,13 +185,4 @@ def test_is_type_supported():
 
 
 def main():
-    test_basic()
-    test_get_returns_mutable_reference()
-    test_copy()
-    test_explicit_copy()
-    test_move()
-    test_del()
-    test_take_doesnt_call_deleter()
-    test_set_calls_deleter()
-    test_replace()
-    test_is_type_supported()
+    TestSuite.discover_tests[__functions_in_module()]().run()

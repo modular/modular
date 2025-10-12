@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isqrt
+from math import rsqrt
 
 from layout import (
     UNKNOWN_VALUE,
@@ -114,7 +114,7 @@ fn run_layer_norm_cpu[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = (

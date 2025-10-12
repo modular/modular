@@ -13,7 +13,7 @@
 
 from collections import Deque
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 def test_reversed_list():
@@ -141,5 +141,4 @@ def test_reversed_dict():
 
 
 def main():
-    test_reversed_dict()
-    test_reversed_list()
+    TestSuite.discover_tests[__functions_in_module()]().run()

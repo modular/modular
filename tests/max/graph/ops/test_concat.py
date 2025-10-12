@@ -29,7 +29,7 @@ shared_tensor_types = st.shared(
 MAX_CONCAT_SIZE = 100
 
 
-def with_dim(shape: Shape, axis: int, dim: StaticDim):
+def with_dim(shape: Shape, axis: int, dim: StaticDim):  # noqa: ANN201
     shape = Shape(shape)
     shape[axis] = dim
     return shape
@@ -152,7 +152,9 @@ def test_concat__mismatched_dims(
     assume(
         not all(
             d1 == d2
-            for i, (d1, d2) in enumerate(zip(type_a.shape, type_b.shape))
+            for i, (d1, d2) in enumerate(
+                zip(type_a.shape, type_b.shape, strict=True)
+            )
             if i != (axis if axis >= 0 else axis + type_a.rank)
         )
     )

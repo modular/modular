@@ -90,7 +90,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
             assert_equal(host_buf[i], i)
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         test_convert_asm()
         # Only support 2xFP32 -> 2xBF16 conversion via ptx.

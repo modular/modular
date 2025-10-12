@@ -18,10 +18,10 @@ import functools
 import logging
 import queue
 import sys
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import TracebackType
-from typing import Callable, NoReturn
+from typing import NoReturn
 
 from max.serve.config import MetricLevel, Settings
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient

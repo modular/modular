@@ -34,7 +34,7 @@ def __exclude_env(key: str) -> bool:
     return key.startswith("BASH_FUNC") or key == "MODULAR_PYTEST_DEBUG"
 
 
-def __set_torch_memory_limit():
+def __set_torch_memory_limit() -> None:
     if size := os.getenv("MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE"):
         if size == "0":
             return
@@ -67,7 +67,7 @@ def __set_torch_memory_limit():
         )
 
 
-def run():
+def run():  # noqa: ANN201
     # Allow opt-out of using $TEST_TMPDIR for HF_HOME for performance reasons in
     # special cases
     if os.environ.get("HF_ESCAPES_SANDBOX") != "1":

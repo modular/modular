@@ -38,7 +38,6 @@ from .lib.pipeline import (
     ModelOutputs,
     PipelineModel,
     TextGenerationPipeline,
-    TextGenerationPipelineType,
     upper_bounded_default,
 )
 from .lib.profiling_config import ProfilingConfig
@@ -87,7 +86,6 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
-    "TextGenerationPipelineType",
     "TextTokenizer",
     "download_weight_files",
     "upper_bounded_default",

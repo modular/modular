@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib import default_comp_time_hasher
 from math import align_up
 from sys import argv, size_of
 
@@ -191,7 +190,9 @@ fn test_ptx[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages: UInt = smem_leftover // producer_consumer_smem_per_stage
+    alias max_pipeline_stages: UInt = UInt(
+        smem_leftover // producer_consumer_smem_per_stage
+    )
 
     constrained[
         max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"

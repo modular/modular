@@ -22,6 +22,7 @@ from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     BatchLogitsProcessor,
     PipelineTokenizer,
+    RequestID,
     TextGenerationOutput,
 )
 from max.nn.kv_cache import KVCacheInputsSequence
@@ -57,10 +58,10 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
     @traced
     def next_speech_token(
         self,
-        batch: dict[str, TTSContext],
+        batch: dict[RequestID, TTSContext],
         num_steps: int,
-        tokens_to_generate: dict[str, int],
-    ) -> dict[str, TextGenerationOutput]:
+        tokens_to_generate: dict[RequestID, int],
+    ) -> dict[RequestID, TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
@@ -157,7 +158,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         num_steps = i + 1
 
         # Prepare the response, pruning away completed requests as we go.
-        res: dict[str, TextGenerationOutput] = {}
+        res: dict[RequestID, TextGenerationOutput] = {}
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
             num_valid_tokens = min(num_steps, tokens_to_generate[request_id])

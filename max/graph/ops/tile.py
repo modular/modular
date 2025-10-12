@@ -45,7 +45,9 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
     if any(count.dim <= 0 for count in repeats if isinstance(count, StaticDim)):
         raise ValueError(f"Repeats must all be positive: {repeats=}")
 
-    output_dims = [dim * count for dim, count in zip(shape, repeats)]
+    output_dims = [
+        dim * count for dim, count in zip(shape, repeats, strict=True)
+    ]
 
     # TODO(GEX-2056): Add support for GPU kernel for tile and remove manual transfers
     original_device = x.type.device

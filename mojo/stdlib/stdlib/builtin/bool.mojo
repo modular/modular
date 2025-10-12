@@ -207,7 +207,7 @@ struct Bool(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: SIMD[DType.bool, 1]):
+    fn __init__(out self, value: Scalar[DType.bool]):
         """Convert a scalar SIMD value to a Bool.
 
         Args:
@@ -299,7 +299,7 @@ struct Bool(
         return self.__int__()
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

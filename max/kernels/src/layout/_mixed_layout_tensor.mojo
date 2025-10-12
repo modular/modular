@@ -42,12 +42,12 @@ struct MixedLayoutTensor[
 
     fn __getitem__[
         index_type: MixedTupleLike
-    ](self, arg: index_type) -> SIMD[dtype, 1]:
+    ](self, arg: index_type) -> Scalar[dtype]:
         return self.ptr[self.layout(arg)]
 
     fn __setitem__[
         index_type: MixedTupleLike
-    ](self, arg: index_type, value: SIMD[dtype, 1]):
+    ](self, arg: index_type, value: Scalar[dtype]):
         self.ptr[self.layout(arg)] = value
 
 

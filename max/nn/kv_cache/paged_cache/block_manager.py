@@ -30,7 +30,11 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from max.interfaces import RequestID, TextGenerationContext
+from max.interfaces import (
+    RequestID,
+    TextGenerationContext,
+    VLMTextGenerationContext,
+)
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -42,6 +46,10 @@ from .block_pool import BlockPool
 from .block_utils import KVCacheBlock, hash_request_tokens
 
 logger = logging.getLogger("max.pipelines")
+
+
+class InsufficientBlocksError(Exception):
+    pass
 
 
 @dataclass
@@ -84,7 +92,7 @@ class BlockManager:
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
     ) -> None:
-        # The number of tokens in a single page.
+        self.total_num_blocks = total_num_blocks
         self.block_size = block_size
 
         # Whether to enable prefix caching.
@@ -185,8 +193,14 @@ class BlockManager:
         unhashed_tokens = ctx.tokens[
             len(hashes) * self.block_size : ctx.current_length
         ]
+
+        images = ctx.images if isinstance(ctx, VLMTextGenerationContext) else []
         new_hashes = hash_request_tokens(
-            unhashed_tokens, self.block_size, parent_hash_value
+            token_ids=unhashed_tokens,
+            block_size=self.block_size,
+            parent_hash=parent_hash_value,
+            prefix_length=len(hashes) * self.block_size,
+            images=images,
         )
         hashes.extend(new_hashes)
 
@@ -229,16 +243,14 @@ class BlockManager:
             new_committed_idx = (
                 prev_committed_idx + len(prefix_cache_blocks) * self.block_size
             )
-            # Update BlockManager's committed index and advance context start.
+            # Update BlockManager's committed index and advance ctx start_idx
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
             ctx.set_token_indices(start_idx=new_committed_idx)
             assert ctx.start_idx == new_committed_idx
 
             # Check that the cached_idx has increased.
             assert ctx.start_idx > orig_start_idx
-            orig_start_idx = ctx.start_idx
 
-    @traced
     def _get_full_blocks_from_device_prefix_cache(
         self,
         desired_hashes: list[int],
@@ -353,7 +365,7 @@ class BlockManager:
         This increments the committed_idx.
 
         Args:
-            ctx: Request InputContext.
+            ctx: TextGenerationContext.
         """
 
         req_blocks = self.req_to_blocks[ctx.request_id]
@@ -428,9 +440,23 @@ class BlockManager:
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
 
         Raises:
-            RuntimeError: If there are insufficient free blocks to satisfy the allocation.
+            InsufficientBlocksError: If there are insufficient free blocks to satisfy the allocation.
+            RuntimeError: If the request has a prompt length that exceeds the total capacity of the KVCache.
             AssertionError: If the current blocks cannot accommodate the completed tokens.
         """
+
+        # It is impossible to schedule this request, even if it was the only req
+        # and could use the entire KV cache.
+        # This should literally never happen unless the user sets an absurdly
+        # large max seq len or the KV cache is very small.
+        total_kv_slots = self.total_num_blocks * self.block_size
+        if ctx.current_length > total_kv_slots:
+            raise RuntimeError(
+                f"Insufficient KV pages for a single request with {ctx.current_length} tokens.\n"
+                f"The KVCache has {self.total_num_blocks} blocks with block size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
+                "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
+            )
+
         # Update metrics.
         self._metrics.input_tokens += ctx.active_length
 
@@ -450,7 +476,7 @@ class BlockManager:
 
         # Check that we have enough free blocks to allocate the new blocks.
         if num_new_blocks > len(self.device_block_pool.free_block_queue):
-            raise RuntimeError(
+            raise InsufficientBlocksError(
                 f"Cannot get {num_new_blocks} free blocks from the free block queue (only {len(self.device_block_pool.free_block_queue)} available)"
             )
 
@@ -524,6 +550,13 @@ class BlockManager:
         """Get the block ids for a request."""
         return [block.bid for block in self.req_to_blocks[request_id]]
 
+    @traced
+    def reset_prefix_cache(self) -> None:
+        """Reset the prefix cache."""
+        self.device_block_pool.reset_prefix_cache()
+        if self.host_block_pool is not None:
+            self.host_block_pool.reset_prefix_cache()
+
     @property
     def metrics(self) -> KVCacheMetrics:
         return copy.copy(self._metrics)
@@ -566,5 +599,5 @@ class BlockManager:
         assert num_committed == num_committed_blocks
 
         # Check that the req block hashes are consistent with req blocks
-        for hash_value, block in zip(req_hashes, req_blocks):
+        for hash_value, block in zip(req_hashes, req_blocks, strict=False):
             assert block.block_hash is None or block.block_hash == hash_value

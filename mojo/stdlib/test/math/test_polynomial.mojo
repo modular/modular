@@ -13,7 +13,7 @@
 
 from math.polynomial import _horner_evaluate, polynomial_evaluate
 
-from test_utils import TestSuite
+from testing import TestSuite
 from testing import assert_equal
 
 
@@ -58,11 +58,4 @@ def test_polynomial_evaluate_degree10():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_polynomial_evaluate_degree1]()
-    suite.test[test_polynomial_evaluate_degree3]()
-    suite.test[test_polynomial_evaluate_degree4]()
-    suite.test[test_polynomial_evaluate_degree10]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

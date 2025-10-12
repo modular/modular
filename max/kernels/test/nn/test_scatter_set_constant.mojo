@@ -18,13 +18,13 @@ from runtime.asyncrt import DeviceContextPtr
 
 fn test_scatter_set_constant() raises:
     # TODO not sure why this doesn't work with InlineArray?
-    var data_ptr = UnsafePointer[Float32].alloc(3 * 3)
-    var data = LayoutTensor[
-        DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
-    ](data_ptr,).fill(0.0)
+    var data_stack = InlineArray[Float32, 9](uninitialized=True)
+    var data = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
+        data_stack
+    ).fill(0.0)
 
     var indices = LayoutTensor[DType.int32, Layout.row_major(4, 2)](
-        InlineArray[Scalar[DType.int32], 4 * 2](uninitialized=True),
+        InlineArray[Int32, 4 * 2](uninitialized=True),
     )
 
     indices[0, 0] = 0
@@ -37,10 +37,10 @@ fn test_scatter_set_constant() raises:
     indices[3, 1] = 0
 
     var fill_value: Float32 = 5.0
-    var expected_output_ptr = UnsafePointer[Float32].alloc(3 * 3)
-    var expected_output = LayoutTensor[
-        DType.float32, Layout.row_major(3, 3), MutableAnyOrigin
-    ](expected_output_ptr,).fill(0.0)
+    var expected_output_stack = InlineArray[Float32, 3 * 3](uninitialized=True)
+    var expected_output = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
+        expected_output_stack
+    ).fill(0.0)
 
     expected_output[0, 1] = 5.0
     expected_output[1, 2] = 5.0
@@ -54,13 +54,17 @@ fn test_scatter_set_constant() raises:
     for i in range(3):
         for j in range(3):
             if data[i, j] != expected_output[i, j]:
-                raise "data[" + String(i) + ", " + String(j) + "] = " + String(
-                    data[i, j]
-                ) + " != " + String(expected_output[i, j])
+                raise Error(
+                    "data[",
+                    i,
+                    ", ",
+                    j,
+                    "] = ",
+                    data[i, j],
+                    " != ",
+                    expected_output[i, j],
+                )
 
-    data_ptr.free()
-    expected_output_ptr.free()
 
-
-fn main() raises:
+def main():
     test_scatter_set_constant()

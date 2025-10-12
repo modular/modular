@@ -75,6 +75,8 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
     attention_bias: bool = False
     attention_dropout: float = 0.0
 
+    graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
+
     def __post_init__(self):
         if self.hidden_act != "silu":
             raise ValueError(
@@ -130,4 +132,5 @@ class DeepseekV2Config(MAXModelConfig, DeepseekV2ConfigBase):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
+            is_mla=True,
         )

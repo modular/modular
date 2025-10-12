@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+import copy
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from max.dtype import DType
 
@@ -37,10 +39,11 @@ class KVCacheParams:
     head_dim: int
     enable_prefix_caching: bool = False
     enable_kvcache_swapping_to_host: bool = False
-    host_kvcache_swap_space_gb: Optional[float] = None
+    host_kvcache_swap_space_gb: float | None = None
     cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED
-    page_size: Optional[int] = None
+    page_size: int | None = None
     n_devices: int = 1
+    is_mla: bool = False
 
     data_parallel_degree: int = 1
 
@@ -49,9 +52,21 @@ class KVCacheParams:
 
     def __post_init__(self):
         if self.data_parallel_degree > 1:
+            if self.n_devices < self.data_parallel_degree:
+                raise ValueError(
+                    f"Data parallelism degree ({self.data_parallel_degree}) cannot be greater than the number of devices ({self.n_devices})"
+                )
+            if self.data_parallel_degree < self.n_devices:
+                raise ValueError(
+                    f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
+                )
             self.n_kv_heads_per_device = self.n_kv_heads
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
+            if self.n_kv_heads % self.n_devices != 0:
+                raise ValueError(
+                    f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+                )
             self.n_kv_heads_per_device = max(
                 self.n_kv_heads // self.n_devices, 1
             )
@@ -105,3 +120,11 @@ class KVCacheParams:
             "n_kv_heads",
             "head_dim",
         )
+
+    def copy_as_dp_1(self) -> KVCacheParams:
+        """Create a copy of the KVCacheParams as if data parallelism is disabled."""
+        cloned = copy.deepcopy(self)
+        assert cloned.n_devices % self.data_parallel_degree == 0
+        cloned.n_devices //= self.data_parallel_degree
+        cloned.data_parallel_degree = 1
+        return cloned

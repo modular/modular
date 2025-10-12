@@ -63,23 +63,23 @@ fn test_simd_f32_to_ue8m0():
     i += 1
     f32_simd[i] = bitcast[DType.float32, 1]((exp << 23) + mantissa + 1)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](0.0)
+    f32_simd[i] = Float32(0.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](1.0)
+    f32_simd[i] = Float32(1.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](4.0)
+    f32_simd[i] = Float32(4.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](4096.0)
+    f32_simd[i] = Float32(4096.0)
     i += 1
     f32_simd[i] = -inf[DType.float32]()
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-0.0)
+    f32_simd[i] = Float32(-0.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-4096.0)
+    f32_simd[i] = Float32(-4096.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-4.0)
+    f32_simd[i] = Float32(-4.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-1.0)
+    f32_simd[i] = Float32(-1.0)
     i += 1
     f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x7F000000))
     i += 1
@@ -149,23 +149,23 @@ fn test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     i += 1
     f32_simd[i] = bitcast[DType.float32, 1]((exp << 23) + mantissa + 1)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](0.0)
+    f32_simd[i] = Float32(0.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](1.0)
+    f32_simd[i] = Float32(1.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](4.0)
+    f32_simd[i] = Float32(4.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](4096.0)
+    f32_simd[i] = Float32(4096.0)
     i += 1
     f32_simd[i] = -inf[DType.float32]()
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-0.0)
+    f32_simd[i] = Float32(-0.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-4096.0)
+    f32_simd[i] = Float32(-4096.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-4.0)
+    f32_simd[i] = Float32(-4.0)
     i += 1
-    f32_simd[i] = Scalar[DType.float32](-1.0)
+    f32_simd[i] = Float32(-1.0)
     i += 1
     f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x7F000000))
     i += 1
@@ -177,7 +177,7 @@ fn test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn main() raises:
+def main():
     test_simd_f32_to_ue8m0()
 
     with DeviceContext() as ctx:

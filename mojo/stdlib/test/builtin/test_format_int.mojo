@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.format_int import _format_int
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 fn test_format_int() raises:
@@ -164,12 +164,4 @@ def test_different_prefix():
 
 
 def main():
-    test_format_int()
-    test_hex()
-    test_bin_scalar()
-    test_bin_int()
-    test_bin_bool()
-    test_intable()
-    test_oct_scalar()
-    test_oct_bool()
-    test_oct_int()
+    TestSuite.discover_tests[__functions_in_module()]().run()

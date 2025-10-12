@@ -47,7 +47,7 @@ fn bitcast[
     ```mojo
     from memory import bitcast
 
-    u32 = SIMD[DType.uint32, 1](4631)
+    u32 = UInt32(4631)
     u8x4 = bitcast[DType.uint8, 4](u32)
     print(u32, u8x4) # 4631 [23, 18, 0, 0]
     ```

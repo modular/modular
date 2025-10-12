@@ -19,6 +19,7 @@ from hashlib.hasher import Hasher
 from math import CeilDivable
 
 from builtin.math import Absable, DivModable
+from builtin.device_passable import DevicePassable
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -31,6 +32,7 @@ struct UInt(
     CeilDivable,
     Comparable,
     Defaultable,
+    DevicePassable,
     DivModable,
     Hashable,
     ImplicitlyCopyable,
@@ -68,14 +70,43 @@ struct UInt(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = UInt(DType.int.bit_width())
+    alias BITWIDTH = UInt(DType.uint.bit_width())
     """The bit width of the integer type."""
 
-    alias MAX = UInt((1 << Self.BITWIDTH) - 1)
+    alias MAX = UInt(Scalar[DType.uint].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = UInt(0)
+    alias MIN = UInt(Scalar[DType.uint].MIN)
     """Returns the minimum value of type."""
+
+    alias device_type: AnyTrivialRegType = Self
+    """UInt is remapped to the same type when passed to accelerator devices."""
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """
+        Gets this type's name, for use in error messages when handing arguments
+        to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return "UInt"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """
+        Gets device_type's name, for use in error messages when handing
+        arguments to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return Self.get_type_name()
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -138,7 +169,7 @@ struct UInt(
         Args:
             value: The init value.
         """
-        self = UInt(mlir_value=value.__index__())
+        self = UInt(mlir_value=value.__mlir_index__())
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -709,7 +740,7 @@ struct UInt(
         return self != 0
 
     @always_inline("builtin")
-    fn __index__(self) -> __mlir_type.index:
+    fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
 
         Returns:

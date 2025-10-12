@@ -116,7 +116,7 @@ fn _allgather_p2p_kernel[
     alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * BLOCK_SIZE
+    var stride = grid_dim.x * UInt(BLOCK_SIZE)
     var my_sig: UnsafePointer[Signal] = rank_sigs[my_rank]
 
     # Synchronize before reading.

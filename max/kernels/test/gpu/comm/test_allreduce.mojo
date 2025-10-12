@@ -267,15 +267,15 @@ def allreduce_naive_test() -> None:
     # Allocate input/output buffers and initialize inputs
     var in_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var host_ptrs = List[UnsafePointer[Scalar[DType.float32]]](capacity=ngpus)
+    var host_ptrs = List[UnsafePointer[Float32]](capacity=ngpus)
 
     for i in range(ngpus):
         in_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
         out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
-        var h = UnsafePointer[Scalar[DType.float32]].alloc(length)
+        var h = UnsafePointer[Float32].alloc(length)
         host_ptrs.append(h)
         var h_nd = NDBuffer[DType.float32, 1](h, DimList(length))
-        h_nd.fill(Scalar[DType.float32](i + 1))
+        h_nd.fill(Float32(i + 1))
         ctxs[i].enqueue_copy(in_dev[i], host_ptrs[i])
 
     # Wrap as NDBuffers for the kernel API
@@ -333,7 +333,7 @@ def allreduce_naive_test() -> None:
     for i in range(ngpus):
         ctxs[i].synchronize()
 
-    var expected = Scalar[DType.float32](0)
+    var expected = Float32(0)
     for i in range(ngpus):
         expected += i + 1
         ctxs[i].enqueue_copy(host_ptrs[i], out_dev[i])

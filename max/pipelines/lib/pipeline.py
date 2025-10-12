@@ -28,9 +28,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
-    Optional,
     Protocol,
-    TypeVar,
     runtime_checkable,
 )
 
@@ -51,15 +49,16 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import (
+    BaseContextType,
     BatchLogitsProcessor,
     GenerationStatus,
-    InputContext,
     LogProbabilities,
     Pipeline,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
     RequestType,
+    TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
@@ -68,14 +67,12 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
-    MultiPagedKVCacheManager,
     PagedKVCacheManager,
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, PreTrainedTokenizerFast
-from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -174,10 +171,7 @@ class ModelOutputs:
     """Offsets to access variable length logits for each sequence."""
 
 
-T = TypeVar("T", bound=InputContext)
-
-
-class PipelineModel(ABC, Generic[T]):
+class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
 
     _MAX_DEFAULT_BATCH_SIZE = 4096
@@ -195,7 +189,7 @@ class PipelineModel(ABC, Generic[T]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter],
+        adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
     ) -> None:
         self.pipeline_config = pipeline_config
@@ -222,6 +216,7 @@ class PipelineModel(ABC, Generic[T]):
                 pipeline_config.lora_config,
                 pipeline_config.model_config.model_name,
                 self.dtype,
+                pipeline_config.zmq_endpoint_base,
             )
             if pipeline_config.lora_config
             else None
@@ -261,12 +256,11 @@ class PipelineModel(ABC, Generic[T]):
                             default=pipeline_config.max_length,
                         )
                     except ValueError as e:
-                        msg = (
+                        raise ValueError(
                             "Unable to infer max_length for Mistral, the provided "
                             f"max_length ({pipeline_config.max_length}) exceeds the "
                             f"model's max_seq_len ({huggingface_config.max_seq_len})."
-                        )
-                        raise ValueError(msg) from e
+                        ) from e
 
         Args:
             pipeline_config: Configuration for the pipeline.
@@ -378,7 +372,7 @@ class PipelineModel(ABC, Generic[T]):
     @abstractmethod
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[T],
+        context_batch: Sequence[BaseContextType],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
@@ -520,7 +514,9 @@ class BatchInfo:
 
 
 @runtime_checkable
-class _TextGenerationProtocol(Protocol, Generic[T, RequestType]):
+class _TextGenerationProtocol(
+    Protocol, Generic[TextGenerationContextType, RequestType]
+):
     @property
     def kv_managers(self) -> list[PagedKVCacheManager]: ...
 
@@ -530,18 +526,21 @@ class _TextGenerationProtocol(Protocol, Generic[T, RequestType]):
     @property
     def tokenizer(
         self,
-    ) -> PipelineTokenizer[T, npt.NDArray[np.integer[Any]], RequestType]: ...
+    ) -> PipelineTokenizer[
+        TextGenerationContextType, npt.NDArray[np.integer[Any]], RequestType
+    ]: ...
 
     def execute(
         self,
-        inputs: TextGenerationInputs[T],
+        inputs: TextGenerationInputs[TextGenerationContextType],
     ) -> PipelineOutputsDict[TextGenerationOutput]: ...
 
     def release(self, request_id: RequestID) -> None: ...
 
 
 class GenerateMixin(
-    _TextGenerationProtocol[T, RequestType], Generic[T, RequestType]
+    _TextGenerationProtocol[TextGenerationContextType, RequestType],
+    Generic[TextGenerationContextType, RequestType],
 ):
     def generate(
         self, prompts: RequestType | list[RequestType]
@@ -574,7 +573,7 @@ class GenerateMixin(
         if not isinstance(prompts, list):
             prompts = [prompts]
 
-        context_batch: list[T] = []
+        context_batch: list[TextGenerationContextType] = []
         for prompt in prompts:
             context = await self.tokenizer.new_context(prompt)
             context_batch.append(context)
@@ -586,40 +585,28 @@ class GenerateMixin(
 
         # Create inputs to the model. If data parallelism is enabled, group them
         # by replica.
-        batches: list[dict[RequestID, T]] = []
+        batches: list[dict[RequestID, TextGenerationContextType]] = []
         batch_to_replica_idx: dict[RequestID, int] = {}
-        if data_parallel_degree > 1:
-            if len(kv_managers) > 1:
-                # We don't support speculative decoding when data parallelism is
-                # enabled, because the KV cache managers might place the same
-                # context on different devices/replicas.
-                raise ValueError(
-                    "Having multiple KV managers (e.g. when using"
-                    " speculative decoding) is not supported when data "
-                    "parallelism is enabled."
-                )
-            kv_manager = kv_managers[0]
-            assert isinstance(
-                kv_manager,
-                MultiPagedKVCacheManager,
+        if data_parallel_degree > 1 and len(kv_managers) > 1:
+            # We don't support speculative decoding when data parallelism is
+            # enabled, because the KV cache managers might place the same
+            # context on different devices/replicas.
+            raise ValueError(
+                "Having multiple KV managers (e.g. when using"
+                " speculative decoding) is not supported when data "
+                "parallelism is enabled."
             )
-            batches = [{} for _ in range(data_parallel_degree)]
-            for context in context_batch:
-                replica_idx = kv_manager.get_or_recommend_replica(context)
-                kv_manager.external_claim_for_replica(
-                    replica_idx, context.request_id
-                )
-                batches[replica_idx][context.request_id] = context
-                batch_to_replica_idx[context.request_id] = replica_idx
-        else:
-            batches = [
-                {context.request_id: context for context in context_batch}
-            ]
-            for context in context_batch:
-                for kv_manager in self.kv_managers:
-                    kv_manager.external_claim(context.request_id)
-                batches[0][context.request_id] = context
-                batch_to_replica_idx[context.request_id] = 0
+
+        batches = [{} for _ in range(data_parallel_degree)]
+        for context in context_batch:
+            req_id = context.request_id
+            # Use whatever replica the main models KVCache recommends.
+            replica_idx = kv_managers[0].get_or_recommend_replica(context)
+            # Claim the slot for all kv_managers (eg: main + draft model)
+            for kv_manager in self.kv_managers:
+                kv_manager.external_claim(req_id, replica_idx=replica_idx)
+            batches[replica_idx][req_id] = context
+            batch_to_replica_idx[req_id] = replica_idx
         inputs = TextGenerationInputs(
             batches=batches,
             num_steps=self.pipeline_config.max_num_steps,
@@ -659,27 +646,24 @@ class GenerateMixin(
                     self.release(request_id)
 
 
-TextGenerationPipelineType: TypeAlias = Pipeline[
-    TextGenerationInputs[T], TextGenerationOutput
-]
-
-
 class TextGenerationPipeline(
-    TextGenerationPipelineType[T],
-    GenerateMixin[T, TextGenerationRequest],
-    Generic[T],
+    Pipeline[
+        TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
+    ],
+    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
+    Generic[TextGenerationContextType],
 ):
     """Generalized token generator pipeline."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[T]],
+        pipeline_model: type[PipelineModel[TextGenerationContextType]],
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
-            T,
+            TextGenerationContextType,
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
@@ -816,7 +800,7 @@ class TextGenerationPipeline(
     def tokenizer(
         self,
     ) -> PipelineTokenizer[
-        T,
+        TextGenerationContextType,
         npt.NDArray[np.integer[Any]],
         TextGenerationRequest,
     ]:
@@ -831,7 +815,7 @@ class TextGenerationPipeline(
     def calculate_num_steps(
         self,
         num_steps: int,
-        context: T,
+        context: TextGenerationContextType,
     ) -> int:
         max_seq_len = self._pipeline_model.max_seq_len
         num_available_steps = context.compute_num_available_steps(max_seq_len)
@@ -846,7 +830,7 @@ class TextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[list[T]],
+        batches: list[list[TextGenerationContextType]],
         num_steps: int,
     ) -> tuple[ModelInputs, int, npt.NDArray[np.int32] | None]:
         tracer: Tracer = Tracer("prepare_batch")
@@ -866,8 +850,9 @@ class TextGenerationPipeline(
                 # Initialize a matcher if needed
                 if context.json_schema and context.matcher is None:
                     if not self._pipeline_config.sampling_config.enable_structured_output:
-                        msg = "json_schema provided but constrained decoding is not enabled."
-                        raise ValueError(msg)
+                        raise ValueError(
+                            "json_schema provided but constrained decoding is not enabled."
+                        )
 
                     try:
                         serialized_grammar = LLMatcher.grammar_from_json_schema(
@@ -896,21 +881,9 @@ class TextGenerationPipeline(
                 if not self._pipeline_model.kv_manager.contains(
                     context.request_id
                 ):
-                    if (
-                        self._pipeline_config.model_config.data_parallel_degree
-                        > 1
-                    ):
-                        assert isinstance(
-                            self._pipeline_model.kv_manager,
-                            MultiPagedKVCacheManager,
-                        )
-                        self._pipeline_model.kv_manager.external_claim_for_replica(
-                            replica_idx, context.request_id
-                        )
-                    else:
-                        self._pipeline_model.kv_manager.external_claim(
-                            context.request_id
-                        )
+                    self._pipeline_model.kv_manager.external_claim(
+                        context.request_id, replica_idx=replica_idx
+                    )
 
                 # Update num_steps.
                 num_steps = self.calculate_num_steps(num_steps, context)
@@ -943,7 +916,9 @@ class TextGenerationPipeline(
         )
 
     @traced
-    def _maybe_sort_loras(self, batch: dict[str, T]):
+    def _maybe_sort_loras(
+        self, batch: dict[RequestID, TextGenerationContextType]
+    ) -> dict[RequestID, TextGenerationContextType]:
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
         to be adjacent to each other.
@@ -953,7 +928,9 @@ class TextGenerationPipeline(
 
         return self._pipeline_model._lora_manager.sort_lora_batch(batch)
 
-    def _record_batch_info(self, contexts: Iterable[T], num_steps: int) -> None:
+    def _record_batch_info(
+        self, contexts: Iterable[TextGenerationContextType], num_steps: int
+    ) -> None:
         """
         Records batch information for the current inference step.
 
@@ -986,7 +963,7 @@ class TextGenerationPipeline(
     @traced
     def execute(
         self,
-        inputs: TextGenerationInputs[T],
+        inputs: TextGenerationInputs[TextGenerationContextType],
     ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
@@ -1036,9 +1013,19 @@ class TextGenerationPipeline(
             tracer.push(f"step_{i}")
 
             # Execute the model and get next tokens.
-            model_outputs = self._pipeline_model.execute(
-                model_inputs=curr_step_inputs
-            )
+            try:
+                model_outputs = self._pipeline_model.execute(
+                    model_inputs=curr_step_inputs
+                )
+            except Exception:
+                batch_size = len(context_batch)
+                cache_tokens = sum(ctx.start_idx for ctx in context_batch)
+                input_tokens = sum(ctx.active_length for ctx in context_batch)
+                logger.error(
+                    "Encountered an exception while executing batch: "
+                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
+                )
+                raise  # re-raise the original exception
 
             # Sample next token.
             tracer.next("sample_next_token")

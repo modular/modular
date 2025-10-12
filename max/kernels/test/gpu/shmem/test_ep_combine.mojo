@@ -29,8 +29,9 @@ from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from shmem import *
+from shmem._mpi import MPI_Finalize
 from shmem.ep_comm import (
-    EPMsgConfig,
+    BF16TokenFormat,
     combine_cb_kernel,
     combine_kernel,
     dispatch_cb_kernel,
@@ -89,22 +90,22 @@ fn legalize_topk_ids[
 
 
 fn test_combine[
-    input_type: DType,
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
     n_ranks: Int,
     n_tokens_per_rank: Int,
 ](ctx: DeviceContext, my_rank: Int) raises:
+    alias input_type = DType.bfloat16
     alias gpu_target = get_gpu_target()
     alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
     alias gpu_alignment = align_of[
         SIMD[DType.uint8, gpu_simd_width], target=gpu_target
     ]()
-    alias msg_config = EPMsgConfig(
-        input_type, hidden_size, top_k, gpu_alignment
-    )
-    alias msg_bytes = msg_config.msg_size()
+    alias token_fmt_type = BF16TokenFormat[
+        output_layout = Layout(), hidden_size, top_k, gpu_alignment
+    ]
+    alias msg_bytes = token_fmt_type.msg_size()
     alias combine_msg_bytes = size_of[input_type]() * hidden_size
     alias n_local_experts = n_experts // n_ranks
 
@@ -125,12 +126,12 @@ fn test_combine[
         )
 
     var send_buf = shmem_malloc[DType.uint8](
-        top_k * n_tokens_per_rank * msg_bytes
+        UInt(top_k * n_tokens_per_rank * msg_bytes)
     )
     var recv_buf = shmem_malloc[DType.uint8](
-        n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
+        UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
     )
-    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
+    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
@@ -226,6 +227,10 @@ fn test_combine[
         ),
     )
 
+    var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
+        output_tensor.origin_cast[True, MutableAnyOrigin]()
+    )
+
     alias hw_info = ctx.default_device_info
 
     alias dispatch = dispatch_kernel[
@@ -237,14 +242,13 @@ fn test_combine[
         n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
         n_experts,
         n_ranks,
-        msg_bytes,
         n_tokens_per_rank,
+        token_fmt_type,
     ]
     var func = ctx.compile_function[dispatch]()
     shmem_module_init(func)
 
     alias dispatch_cb = dispatch_cb_kernel[
-        input_type,
         hw_info.max_thread_block_size,
         output_layout,
         row_offsets_layout,
@@ -252,11 +256,10 @@ fn test_combine[
         src_token_info_layout,
         hw_info.sm_count,
         1,
-        top_k,
         n_experts,
         n_ranks,
-        msg_bytes,
         n_tokens_per_rank,
+        __type_of(format_handler),
     ]
     var func_cb = ctx.compile_function[dispatch_cb]()
 
@@ -314,7 +317,7 @@ fn test_combine[
         )
         ctx.enqueue_function(
             func_cb,
-            output_tensor,
+            format_handler,
             row_offsets_tensor,
             expert_ids_tensor,
             src_token_info_tensor,
@@ -449,7 +452,7 @@ fn test_combine[
     shmem_free(recv_count)
 
 
-fn main() raises:
+def main():
     alias test_gpu_counts = (8,)
 
     @parameter
@@ -458,17 +461,12 @@ fn main() raises:
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 
-        shmem_init()
-        var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
-
-        with DeviceContext(device_id=Int(mype_node)) as ctx:
+        with SHMEMContext() as shmem_ctx:
+            var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
             test_combine[
-                input_type = DType.bfloat16,
                 hidden_size=7168,
                 top_k=8,
                 n_experts = min(num_gpus * 32, 256),
                 n_ranks=num_gpus,
                 n_tokens_per_rank=128,
-            ](ctx, Int(mype_node))
-
-        shmem_finalize()
+            ](shmem_ctx.get_device_context(), Int(mype_node))

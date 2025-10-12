@@ -23,6 +23,7 @@ from sys import (
     CompilationTarget,
     bit_width_of,
     is_amd_gpu,
+    is_apple_gpu,
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
@@ -208,9 +209,7 @@ fn _sqrt_nvvm(x: SIMD, out res: __type_of(x)):
 
     @parameter
     for i in range(x.size):
-        res[i] = llvm_intrinsic[
-            instruction, Scalar[x.dtype], has_side_effect=False
-        ](x[i])
+        res[i] = _llvm_unary_fn[instruction](x[i])
 
 
 @always_inline
@@ -250,8 +249,10 @@ fn sqrt[
         if dtype in (DType.float16, DType.bfloat16):
             return _sqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
         return _sqrt_nvvm(x)
+    elif is_apple_gpu():
+        return _llvm_unary_fn["llvm.air.sqrt"](x)
 
-    return llvm_intrinsic["llvm.sqrt", __type_of(x), has_side_effect=False](x)
+    return _llvm_unary_fn["llvm.sqrt"](x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -260,7 +261,7 @@ fn sqrt[
 
 
 @always_inline
-fn _isqrt_nvvm(x: SIMD, out res: __type_of(x)):
+fn _rsqrt_nvvm(x: SIMD, out res: __type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
@@ -270,13 +271,11 @@ fn _isqrt_nvvm(x: SIMD, out res: __type_of(x)):
 
     @parameter
     for i in range(x.size):
-        res[i] = llvm_intrinsic[
-            instruction, Scalar[x.dtype], has_side_effect=False
-        ](x[i])
+        res[i] = _llvm_unary_fn[instruction](x[i])
 
 
 @always_inline
-fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
+fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Performs elementwise reciprocal square root on a SIMD vector.
 
     Parameters:
@@ -296,9 +295,9 @@ fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 
         @parameter
         if dtype in (DType.float16, DType.bfloat16):
-            return _isqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
+            return _rsqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
 
-        return _isqrt_nvvm(x)
+        return _rsqrt_nvvm(x)
     elif is_amd_gpu():
 
         @parameter
@@ -307,7 +306,9 @@ fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
                 String("llvm.amdgcn.rsq.", _get_amdgcn_type_suffix[dtype]())
             ](x)
 
-        return isqrt(x.cast[DType.float32]()).cast[dtype]()
+        return rsqrt(x.cast[DType.float32]()).cast[dtype]()
+    elif is_apple_gpu():
+        return _llvm_unary_fn["llvm.air.rsqrt"](x)
 
     return 1 / sqrt(x)
 
@@ -328,9 +329,7 @@ fn _recip_nvvm(x: SIMD, out res: __type_of(x)):
 
     @parameter
     for i in range(x.size):
-        res[i] = llvm_intrinsic[
-            instruction, Scalar[x.dtype], has_side_effect=False
-        ](x[i])
+        res[i] = _llvm_unary_fn[instruction](x[i])
 
 
 @always_inline
@@ -429,6 +428,10 @@ fn exp2[
         return _call_amdgcn_intrinsic[
             String("llvm.amdgcn.exp2.", _get_amdgcn_type_suffix[dtype]())
         ](x)
+
+    @parameter
+    if is_apple_gpu() and dtype in (DType.float16, DType.float32):
+        return _llvm_unary_fn["llvm.air.exp2"](x)
 
     @parameter
     if dtype is DType.float32:
@@ -820,19 +823,21 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """
 
     @parameter
-    if is_nvidia_gpu():
-        alias ln2 = 0.69314718055966295651160180568695068359375
+    if size_of[dtype]() < size_of[DType.float32]():
+        return log(x.cast[DType.float32]()).cast[dtype]()
 
-        @parameter
-        if size_of[dtype]() < size_of[DType.float32]():
-            return log(x.cast[DType.float32]()).cast[dtype]()
-        elif dtype is DType.float32:
-            return (
-                _call_ptx_intrinsic[
-                    instruction="lg2.approx.f32", constraints="=f,f"
-                ](x)
-                * ln2
-            )
+    if is_compile_time():
+        return _log_base[27](x)
+
+    @parameter
+    if is_nvidia_gpu() and dtype is DType.float32:
+        alias ln2 = 0.69314718055966295651160180568695068359375
+        return (
+            _call_ptx_intrinsic[
+                instruction="lg2.approx.f32", constraints="=f,f"
+            ](x)
+            * ln2
+        )
 
     return _log_base[27](x)
 
@@ -857,18 +862,24 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         Vector containing result of performing log base 2 on x.
     """
 
-    if not is_compile_time():
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]() and not (
+        is_amd_gpu() and dtype is DType.float16
+    ):
+        return log2(x.cast[DType.float32]()).cast[dtype]()
 
-        @parameter
-        if is_nvidia_gpu():
+    if is_compile_time():
+        return _log_base[2](x)
 
-            @parameter
-            if size_of[dtype]() < size_of[DType.float32]():
-                return log2(x.cast[DType.float32]()).cast[dtype]()
-            elif dtype is DType.float32:
-                return _call_ptx_intrinsic[
-                    instruction="lg2.approx.f32", constraints="=f,f"
-                ](x)
+    @parameter
+    if is_nvidia_gpu() and dtype is DType.float32:
+        return _call_ptx_intrinsic[
+            instruction="lg2.approx.f32", constraints="=f,f"
+        ](x)
+    elif is_amd_gpu() and dtype in (DType.float32, DType.float16):
+        return _call_amdgcn_intrinsic[
+            String("llvm.amdgcn.log.", _get_amdgcn_type_suffix[dtype]())
+        ](x)
 
     return _log_base[2](x)
 
@@ -1388,7 +1399,63 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `acos` of the input.
     """
-    return _call_libm["acos"](x)
+
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]():
+        return acos(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float64:
+        return _llvm_unary_fn["llvm.acos"](x)
+
+    # For F32 types, use the Remez approximation found in Sleef with range
+    # splitting to improve accuracy.
+
+    # Determine which approximation method to use based on domain.
+    var x_abs = clamp(abs(x), 0, 1)
+    var directed_polynomial_mask = x_abs.lt(0.5)
+
+    # Compute x² for polynomial evaluation
+    # Small domain: x² = x²
+    # Large domain: x² = (1 - |x|) / 2 for identity transformation
+    var x_squared = directed_polynomial_mask.select(x * x, (1.0 - x_abs) * 0.5)
+
+    # Compute d for evaluation
+    # Small domain: d = |x|
+    # Large domain: d = sqrt((1-|x|)/2) using the identity
+    var d = directed_polynomial_mask.select(abs(x), sqrt(x_squared))
+
+    # Special case: handle |x| = 1 to avoid numerical instability
+    d = x_abs.eq(1).select(__type_of(x)(0.0), d)
+
+    # Evaluate Remez polynomial using Horner's method
+    # Coefficients derived to minimize maximum absolute error
+    var poly = polynomial_evaluate[
+        List[Scalar[x.dtype]](
+            0.1666677296e0,
+            0.7495029271e-1,
+            0.4547423869e-1,
+            0.2424046025e-1,
+            0.4197454825e-1,
+        )
+    ](x_squared)
+
+    # Final polynomial term: poly * x² * d
+    poly *= x_squared * d
+
+    # Small domain: compute π/2 - asin(x) where asin(x) = d + poly with sign.
+    var y = (pi / 2.0) - (copysign(d, x) + copysign(poly, x))
+
+    # Large domain: compute 2 * asin(sqrt((1-|x|)/2)) = 2 * (d + poly)
+    var d_plus_poly = d + poly
+
+    # Select result based on domain
+    var result = directed_polynomial_mask.select(y, 2 * d_plus_poly)
+
+    # Large domain with negative x: apply π - result transformation.
+    return (~directed_polynomial_mask & x.lt(0)).select(pi - result, result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1412,7 +1479,57 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `asin` of the input.
     """
-    return _call_libm["asin"](x)
+
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]():
+        return asin(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float64:
+        return _llvm_unary_fn["llvm.asin"](x)
+
+    # For F32 types, use the Remez approximation found in Sleef with range
+    # splitting to improve accuracy.
+
+    # Domain split to use a different approximation outside the domain of
+    # -0.5 <= x <= 0.5
+    var x_abs = abs(x)
+    var directed_polynomial_mask = x_abs.lt(0.5)
+
+    # Compute d² for polynomial evaluation:
+    #  - For |x| < 0.5: d² = x²
+    #  - For |x| >= 0.5: d² = (1 - |x|) / 2  (for identity transformation)
+    var d2 = directed_polynomial_mask.select(x * x, (1 - x_abs) * 0.5)
+
+    # Compute d for evaluation:
+    # - For |x| < 0.5: d = |x|
+    # - For |x| >= 0.5: d = sqrt((1-|x|)/2)
+    #   (using identity: asin(d) = π/2 - 2*asin(sqrt((1-d)/2)))
+    var d = directed_polynomial_mask.select(x_abs, sqrt(d2))
+
+    # Evaluate Remez polynomial approximation using Horner's method
+    # This approximates the series: asin(x)/x ≈ 1 + x²/6 + 3x⁴/40 + ...
+    var poly = polynomial_evaluate[
+        List[Scalar[x.dtype]](
+            0.1666677296e0,
+            0.7495029271e-1,
+            0.4547423869e-1,
+            0.2424046025e-1,
+            0.4197454825e-1,
+        )
+    ](d2)
+
+    # Final polynomial evaluation: poly*x*x² + x = x*(poly*x² + 1)
+    poly = poly.fma(d * d2, d)
+
+    # Compute final result based on domain:
+    # - For |x| < 0.5: result = poly  (direct approximation)
+    # - For |x| >= 0.5: result = π/2 - 2*poly  (using identity)
+    var result = directed_polynomial_mask.select(poly, pi / 2 - 2 * poly)
+
+    return copysign(result, x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1468,15 +1585,15 @@ fn atan2[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["atan2f", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["atan2f", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["atan2", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["atan2", Scalar[result_type]](arg0, arg1)
 
     constrained[
         dtype.is_floating_point(), "input type must be floating point"
@@ -1484,9 +1601,9 @@ fn atan2[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](y, x)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](y, x)
     else:
-        return _simd_apply[_float32_dispatch, dtype, width](y, x)
+        return _simd_apply[_float32_dispatch, result_dtype=dtype](y, x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1514,21 +1631,21 @@ fn cos[
     """
 
     @parameter
-    if is_nvidia_gpu() and size_of[dtype]() <= size_of[DType.float32]():
+    if size_of[dtype]() < size_of[DType.float32]():
+        return cos(x.cast[DType.float32]()).cast[dtype]()
 
-        @parameter
-        if size_of[dtype]() < size_of[DType.float32]():
-            return cos(x.cast[DType.float32]()).cast[dtype]()
+    if is_compile_time():
+        return _llvm_unary_fn["llvm.cos"](x)
 
+    @parameter
+    if is_nvidia_gpu() and dtype is DType.float32:
         return _call_ptx_intrinsic[
             instruction="cos.approx.ftz.f32", constraints="=f,f"
         ](x)
-    elif is_amd_gpu():
-        return llvm_intrinsic["llvm.cos", __type_of(x), has_side_effect=False](
-            x
-        )
+    elif is_apple_gpu():
+        return _llvm_unary_fn["llvm.air.cos"](x)
     else:
-        return _call_libm["cos"](x)
+        return _llvm_unary_fn["llvm.cos"](x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1556,21 +1673,21 @@ fn sin[
     """
 
     @parameter
-    if is_nvidia_gpu() and size_of[dtype]() <= size_of[DType.float32]():
+    if size_of[dtype]() < size_of[DType.float32]():
+        return sin(x.cast[DType.float32]()).cast[dtype]()
 
-        @parameter
-        if size_of[dtype]() < size_of[DType.float32]():
-            return sin(x.cast[DType.float32]()).cast[dtype]()
+    if is_compile_time():
+        return _llvm_unary_fn["llvm.sin"](x)
 
+    @parameter
+    if is_nvidia_gpu() and dtype is DType.float32:
         return _call_ptx_intrinsic[
             instruction="sin.approx.ftz.f32", constraints="=f,f"
         ](x)
-    elif is_amd_gpu():
-        return llvm_intrinsic["llvm.sin", __type_of(x), has_side_effect=False](
-            x
-        )
+    elif is_apple_gpu():
+        return _llvm_unary_fn["llvm.air.sin"](x)
     else:
-        return _call_libm["sin"](x)
+        return _llvm_unary_fn["llvm.sin"](x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1837,9 +1954,7 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
                 * log10_2
             )
     elif is_amd_gpu():
-        return llvm_intrinsic[
-            "llvm.log10", __type_of(x), has_side_effect=False
-        ](x)
+        return _llvm_unary_fn["llvm.log10"](x)
 
     return _call_libm["log10"](x)
 
@@ -1948,6 +2063,168 @@ fn logb[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
+fn _ilogb[
+    width: Int
+](x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
+    """Extract binary exponent from floating-point number.
+
+    Args:
+        x: Input floating-point value.
+
+    Returns:
+        Integer binary exponent of x.
+    """
+
+    @always_inline
+    fn extract(x: SIMD[DType.float32, width]) -> SIMD[DType.int32, width]:
+        """Internal helper function to extract binary exponent from float.
+
+        Args:
+            x: Input floating-point value (assumed positive).
+
+        Returns:
+            Unbiased binary exponent as integer.
+        """
+        # Check if d is subnormal (very small, < 2^-64 ≈ 5.421010862427522e-20)
+        var is_subnormal_mask = x.lt(5.421010862427522e-20)
+        var d = is_subnormal_mask.select(
+            x * 1.8446744073709552e19,  # Scale by 2^64
+            x,
+        )
+
+        # Extract exponent bits from IEEE 754 representation
+        # Step 1: Reinterpret float as 32-bit integer
+        var bits = rebind[SIMD[DType.int32, width]](d._to_bits_signed())
+
+        # Step 2: Right shift by 23 to move exponent to lower bits
+        # This moves bits [30:23] to positions [7:0]
+        var exponent_bits = (bits >> 23) & 0xFF  # Mask to get 8 bits
+
+        # Step 3: Remove bias to get true exponent
+        # IEEE 754 bias for single precision is 127 (0x7f)
+        # If subnormal path was taken, also subtract 64 to compensate for scaling
+
+        return is_subnormal_mask.select(
+            exponent_bits - (64 + 0x7F),  # Remove bias and scaling offset
+            exponent_bits - 0x7F,  # Remove bias only
+        )
+
+    alias FP_ILOGB0 = (-2147483647 - 1)
+    alias FP_ILOGBNAN = 2147483647
+
+    # Extract the binary exponent from |x|
+    # For x = m × 2^e where m ∈ [1, 2), this returns e
+    var e = extract(abs(x))
+
+    @parameter
+    for i in range(width):
+        var d = x[i]
+
+        # Special case: ilogb(±0) returns FP_ILOGB0
+        if d == 0.0:
+            e[i] = FP_ILOGB0
+
+        # Special case: ilogb(NaN) returns FP_ILOGBNAN
+        if isnan(d):
+            e[i] = FP_ILOGBNAN
+
+        # Special case: ilogb(±∞) returns Int32.MAX
+        if isinf(d):
+            e[i] = Int32.MAX
+
+    return e
+
+
+fn _cbrtf(x: Float32) -> Float32:
+    """Compute the cube root of a 32-bit floating-point number.
+
+    This function implements an efficient algorithm for computing the cube root (∛x)
+    of a single-precision floating-point value. The algorithm works by:
+
+    1. Extracting the binary exponent `e` from the input `x` such that x = 2^e * mantissa.
+    2. Normalizing the input by scaling `x` by 2^(-e) to obtain a mantissa in [0.5, 1).
+    3. Dividing the exponent `e` by 3 to obtain the cube root exponent, and computing the remainder.
+    4. Applying a correction factor based on the remainder to improve accuracy.
+    5. Reconstructing the result by scaling the cube root of the mantissa by 2^(e/3) and the correction factor.
+
+    Args:
+        x: Input value (Float32) for which to compute the cube root.
+
+    Returns:
+        The cube root of `x` as a Float32.
+    """
+    # Initialize correction factor q (may be adjusted based on exponent remainder)
+    var q = Float32(1.0)
+
+    # Extract exponent e such that x = 2^e * mantissa
+    # Add 1 to exponent for normalization purposes
+    var e = _ilogb(abs(x)) + 1  # Get binary exponent
+
+    # Normalize input: scale x by 2^(-e) to get mantissa in [0.5, 1)
+    var d = ldexp(x, -e)
+
+    # Compute exponent division by 3 with remainder
+    # We need to split e into: e = 3*qu + re where re ∈ {0, 1, 2}
+    # Add offset 6144 to ensure positive values for easier integer division
+    var t = Float32(e) + 6144.0
+    var qu = Int(t / 3.0)  # Quotient: e // 3
+    var re = Int(t - Float32(qu) * 3.0)  # Remainder: e % 3
+
+    alias CBRT_2 = 1.2599210498948731647672106
+    alias CBRT_4 = 1.5874010519681994747517056
+
+    # Apply correction factors based on remainder
+    # If e % 3 == 1: need to multiply by 2^(1/3) = cbrt(2)
+    if re == 1:
+        q = CBRT_2
+    # If e % 3 == 2: need to multiply by 2^(2/3) = cbrt(4)
+    elif re == 2:
+        q = CBRT_4
+
+    # Scale q by 2^(qu - 2048) to reconstruct proper exponent
+    # Subtract 2048 to compensate for the 6144 offset used earlier
+    q = ldexp(q, qu - 2048)
+
+    # Apply sign to correction factor (cube root preserves sign)
+    q = copysign(q, x)
+
+    # Work with absolute value for polynomial approximation
+    d = abs(d)
+
+    # Polynomial approximation for cbrt(d) where d ∈ [0.5, 1)
+    # Using Horner's method for efficient evaluation
+    var poly = polynomial_evaluate[
+        List[Scalar[x.dtype]](
+            2.2241256237030029296875,
+            -3.8095417022705078125,
+            5.898262500762939453125,
+            -5.532182216644287109375,
+            2.8208892345428466796875,
+            -0.601564466953277587890625,
+        )
+    ](d)
+
+    # Newton-Raphson refinement step
+    # Formula: y_new = y - (y³ - d) / (3y²)
+    # Rearranged as: y_new = (2y³ + d) / (3y²)
+    var y = d * poly * poly  # d * (poly ** 2), where poly ≈ cbrt(d)
+
+    # Apply Newton iteration: y = y - (2/3) * y * (y*x - 1)
+    # This refines the approximation
+    y = y - (2.0 / 3.0) * y * (y * poly - 1.0)
+
+    # Multiply by the correction factor q to get final result
+    y = y * q
+
+    # Handle special cases
+    if isinf(x):
+        y = copysign(Float32.MAX, x)  # cbrt(±∞) = ±∞
+    if x == 0.0:
+        y = copysign(Float32(0.0), x)  # cbrt(±0) = ±0
+
+    return y
+
+
 fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `cbrt` of the inputs.
 
@@ -1964,7 +2241,23 @@ fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `cbrt` of the input.
     """
-    return _call_libm["cbrt"](x)
+
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]():
+        return cbrt(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float64:
+        return _call_libm["cbrt"](x)
+
+    var result = SIMD[DType.float32, width]()
+
+    for i in range(width):
+        result[i] = _cbrtf(rebind[Float32](x[i]))
+
+    return rebind[__type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1997,15 +2290,15 @@ fn hypot[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["hypotf", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["hypotf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["hypot", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["hypot", Scalar[result_type]](arg0, arg1)
 
     constrained[
         dtype.is_floating_point(), "input type must be floating point"
@@ -2013,13 +2306,137 @@ fn hypot[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](arg0, arg1)
-    return _simd_apply[_float32_dispatch, dtype, width](arg0, arg1)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
+    return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
 
 
 # ===----------------------------------------------------------------------=== #
 # erfc
 # ===----------------------------------------------------------------------=== #
+
+
+fn _erfcf(x: Float32) -> Float32:
+    """Fast single-precision complementary error function (erfc) approximation.
+
+    The complementary error function is defined as:
+    erfc(x) = 1 - erf(x) = (2/√π) ∫[x,∞] e^(-t²) dt
+
+    Uses domain splitting with different rational approximations for accuracy:
+    - Domain 1: |x| < 1.0  - Direct polynomial for erfc
+    - Domain 2: 1.0 ≤ |x| < 2.2 - Polynomial approximation
+    - Domain 3: 2.2 ≤ |x| < 4.3 - Scaled rational approximation with 1/x
+    - Domain 4: 4.3 ≤ |x| < 10.1 - Further scaled rational approximation
+    - Domain 5: |x| ≥ 10.1 - Returns 0 (underflow)
+
+    Each domain uses optimized polynomial coefficients to minimize error.
+
+
+    Args:
+        x: Input value, any real number.
+
+    Returns:
+        Complementary error function erfc(x), range [0, 2].
+    """
+
+    # Handle NaN input
+    if isnan(x):
+        return x
+
+    # Save original input for sign handling
+    var s = x
+
+    # Work with absolute value for domain classification
+    var a = abs(x)
+
+    # Domain classification based on input magnitude
+    var o0 = a < 1.0  # Small values: direct approximation
+    var o1 = a < 2.2  # Medium-small values
+    var o2 = a < 4.3  # Medium values
+    var o3 = a < 10.1  # Medium-large values
+    # o3 false means a >= 10.1: very large values (return 0)
+
+    # Choose transformation: u = a for small values, u = 1/a for large values
+    # This improves numerical stability in different regions
+    var u: Float32
+    if o1:
+        u = a  # Direct evaluation for a < 2.2
+    else:
+        u = 1.0 / a  # Use reciprocal for a >= 2.2
+
+    # Coefficients are domain-specific for optimal accuracy
+    alias coeffs0: List[Float32] = [
+        -0.112837917790537404939545770596e1,
+        -0.636619483208481931303752546439e0,
+        -0.102775359343930288081655368891e0,
+        0.1914106123e-1,
+        0.1795156277e-3,
+        -0.1665703603e-2,
+        0.6000166177e-3,
+        -0.8638041618e-4,
+    ]
+    alias coeffs1: List[Float32] = [
+        -0.112855987376668622084547028949e1,
+        -0.635609463574589034216723775292e0,
+        -0.105247583459338632253369014063e0,
+        0.2260518074e-1,
+        -0.2851036377e-2,
+        0.6002851478e-5,
+        0.5749821503e-4,
+        -0.6236977242e-5,
+    ]
+    alias coeffs2: List[Float32] = [
+        -0.572319781150472949561786101080e0,
+        -0.134450203224533979217859332703e-2,
+        -0.482365310333045318680618892669e0,
+        -0.1328857988e0,
+        0.1249150872e1,
+        -0.1816803217e1,
+        0.1288077235e1,
+        -0.3869504035e0,
+    ]
+    alias coeffs3: List[Float32] = [
+        -0.572364030327966044425932623525e0,
+        -0.471199543422848492080722832666e-4,
+        -0.498961546254537647970305302739e0,
+        -0.1262947265e-1,
+        0.7155663371e0,
+        -0.3667259514e0,
+        -0.9454904199e0,
+        0.1115344167e1,
+    ]
+
+    # Evaluate polynomial using Horner's method
+    var d: Float32
+    if o0:
+        d = polynomial_evaluate[coeffs0](u)
+    elif o1:
+        d = polynomial_evaluate[coeffs1](u)
+    elif o2:
+        d = polynomial_evaluate[coeffs2](u)
+    else:
+        d = polynomial_evaluate[coeffs3](u)
+
+    # Compute argument for exponential
+    # For small a: x = d * a (using original a value)
+    # For large a: x = -a² + d
+    var exp_arg = d * a if o1 else (-a * a) + d
+
+    # Compute exponential: exp(exp_arg)
+    var result = exp(exp_arg)
+
+    # For large a, multiply by u = 1/a
+    if not o1:
+        result *= u
+
+    # Return 0 for very large values (a >= 10.1)
+    if not o3:
+        result = 0.0
+
+    # Apply symmetry: erfc(-x) = 2 - erfc(x)
+    if s < 0:
+        result = 2.0 - result
+
+    return result
 
 
 fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
@@ -2038,7 +2455,22 @@ fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `erfc` of the input.
     """
-    return _call_libm["erfc"](x)
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    @parameter
+    if size_of[dtype]() < size_of[DType.float32]():
+        return erfc(x.cast[DType.float32]()).cast[dtype]()
+    elif dtype is DType.float64:
+        return _call_libm["erfc"](x)
+
+    var result = SIMD[DType.float32, width]()
+
+    for i in range(width):
+        result[i] = _erfcf(rebind[Float32](x[i]))
+
+    return rebind[__type_of(x)](result)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2120,8 +2552,8 @@ fn remainder[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["remainderf", SIMD[result_type, 1]](
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["remainderf", Scalar[result_type]](
             arg0, arg1
         )
 
@@ -2129,8 +2561,8 @@ fn remainder[
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["remainder", SIMD[result_type, 1]](
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["remainder", Scalar[result_type]](
             arg0, arg1
         )
 
@@ -2140,8 +2572,8 @@ fn remainder[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](x, y)
-    return _simd_apply[_float32_dispatch, dtype, width](x, y)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](x, y)
+    return _simd_apply[_float32_dispatch, result_dtype=dtype](x, y)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2273,15 +2705,15 @@ fn scalb[
     @parameter
     fn _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["scalbf", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["scalbf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
     @parameter
     fn _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: SIMD[lhs_type, 1], arg1: SIMD[rhs_type, 1]) -> SIMD[result_type, 1]:
-        return _external_call_const["scalb", SIMD[result_type, 1]](arg0, arg1)
+    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
+        return _external_call_const["scalb", Scalar[result_type]](arg0, arg1)
 
     constrained[
         dtype.is_floating_point(), "input type must be floating point"
@@ -2289,8 +2721,8 @@ fn scalb[
 
     @parameter
     if dtype is DType.float64:
-        return _simd_apply[_float64_dispatch, dtype, width](arg0, arg1)
-    return _simd_apply[_float32_dispatch, dtype, width](arg0, arg1)
+        return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
+    return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2635,6 +3067,15 @@ fn clamp[
 
 
 @always_inline("nodebug")
+fn _llvm_unary_fn[
+    dtype: DType,
+    width: Int, //,
+    fn_name: StaticString,
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    return llvm_intrinsic[fn_name, __type_of(x), has_side_effect=False](x)
+
+
+@always_inline("nodebug")
 fn _call_libm[
     dtype: DType,
     width: Int, //,
@@ -2644,8 +3085,7 @@ fn _call_libm[
         dtype.is_floating_point(), "argument type must be floating point"
     ]()
     constrained[
-        not is_nvidia_gpu(),
-        "the libm operation is not available on the CUDA target",
+        not is_gpu(), "libm operations are only available on CPU targets"
     ]()
 
     @parameter
@@ -2782,9 +3222,7 @@ fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: __type_of(x)):
 
     @parameter
     for i in range(x.size):
-        res[i] = llvm_intrinsic[intrin, Scalar[x.dtype], has_side_effect=False](
-            x[i]
-        )
+        res[i] = _llvm_unary_fn[intrin](x[i])
 
 
 @always_inline

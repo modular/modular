@@ -26,16 +26,14 @@ from internal_utils import (
 )
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul.gpu.sm90.splitk import (
-    warp_specialize_gemm_with_multicasting_splitk,
-)
+from linalg.matmul.gpu.sm90.matmul import warp_specialize_gemm_with_multicasting
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from linalg.utils_gpu import MatmulConfig
 
 from utils.index import Index, IndexList
 
 
-fn test_warp_specialize_gemm_with_multicasting_splitk[
+fn test_warp_specialize_gemm_with_multicasting[
     block_tile_shape: IndexList[3],
     a_type: DType,
     b_type: DType,
@@ -154,7 +152,7 @@ fn test_warp_specialize_gemm_with_multicasting_splitk[
         partitioned_multicast=partitioned_multicast,
     )
 
-    warp_specialize_gemm_with_multicasting_splitk[
+    warp_specialize_gemm_with_multicasting[
         transpose_b=transpose_b,
         config=matmul_config,
         use_tma_store=use_tma_store,
@@ -214,14 +212,14 @@ fn test_warp_specialize_gemm_with_multicasting_splitk[
     _ = b_device
 
 
-fn main() raises:
+def main():
     with DeviceContext() as ctx:
         # NOTE: please note that cublaslt handle should be used for fp8-e4m3fn and cublas handle for bfloat16
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests
         # otherwise we will get unhandled exception error.
 
         print("FLOAT8 GEMM TESTS")
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -232,7 +230,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(33), static[2304](), static[2048]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -243,7 +241,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(64), static[384](), static[512]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -254,7 +252,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(64), static[384](), static[512]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 80, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -265,7 +263,7 @@ fn main() raises:
             splits=4,
         ](ctx, dynamic(64), static[2560](), static[8192]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -281,7 +279,7 @@ fn main() raises:
             static[8192](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -296,7 +294,7 @@ fn main() raises:
             static[2048](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 112, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -311,7 +309,7 @@ fn main() raises:
             static[4096](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -322,7 +320,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(199), static[512](), static[1024]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -333,7 +331,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(200), static[256](), static[256]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -343,7 +341,7 @@ fn main() raises:
             num_pipeline_stages=2,
             splits=2,
         ](ctx, dynamic(257), static[384](), static[256]())
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -353,7 +351,7 @@ fn main() raises:
             num_pipeline_stages=2,
             splits=2,
         ](ctx, dynamic(257), static[384](), static[256]())
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -364,7 +362,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(257), static[384](), static[256]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -374,7 +372,7 @@ fn main() raises:
             num_pipeline_stages=2,
             splits=2,
         ](ctx, dynamic(255), static[384](), static[256]())
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -384,7 +382,7 @@ fn main() raises:
             num_pipeline_stages=2,
             splits=2,
         ](ctx, dynamic(255), static[384](), static[256]())
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -395,7 +393,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(255), static[384](), static[256]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -405,7 +403,7 @@ fn main() raises:
             num_pipeline_stages=2,
             splits=2,
         ](ctx, dynamic(129), static[512](), static[256]())
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -415,7 +413,7 @@ fn main() raises:
             num_pipeline_stages=2,
             splits=2,
         ](ctx, dynamic(129), static[512](), static[256]())
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -426,7 +424,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(129), static[512](), static[256]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -436,7 +434,7 @@ fn main() raises:
             num_pipeline_stages=2,
             splits=2,
         ](ctx, dynamic(127), static[512](), static[256]())
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -446,7 +444,7 @@ fn main() raises:
             num_pipeline_stages=2,
             splits=2,
         ](ctx, dynamic(127), static[512](), static[256]())
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 128),
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
@@ -458,7 +456,7 @@ fn main() raises:
         ](ctx, dynamic(127), static[512](), static[256]())
 
         print("BFLOAT16 GEMM TESTS")
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 128, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -469,7 +467,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(64), static[384](), static[512]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 80, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -480,7 +478,7 @@ fn main() raises:
             splits=4,
         ](ctx, dynamic(64), static[2560](), static[8192]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 128, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -495,7 +493,7 @@ fn main() raises:
             static[8192](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 80, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -510,7 +508,7 @@ fn main() raises:
             static[8192](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 256, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -526,7 +524,7 @@ fn main() raises:
             static[8192](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 80, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -542,7 +540,7 @@ fn main() raises:
             static[8192](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 128, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -558,7 +556,7 @@ fn main() raises:
             static[2048](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 128, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -569,7 +567,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(64), static[384](), static[512]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 128, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -580,7 +578,7 @@ fn main() raises:
             splits=2,
         ](ctx, dynamic(64), static[384](), static[512]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 80, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -591,7 +589,7 @@ fn main() raises:
             splits=4,
         ](ctx, dynamic(64), static[2560](), static[8192]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(64, 80, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -602,7 +600,7 @@ fn main() raises:
             splits=4,
         ](ctx, dynamic(64), static[2560](), static[8192]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 256, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -612,7 +610,7 @@ fn main() raises:
             splits=4,
         ](ctx, dynamic(8192), static[8192](), static[2048]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 256, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -622,7 +620,7 @@ fn main() raises:
             splits=4,
         ](ctx, dynamic(4096), static[8192](), static[2048]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 256, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -633,7 +631,7 @@ fn main() raises:
             splits=4,
         ](ctx, dynamic(4096), static[8192](), static[2048]())
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 256, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -648,7 +646,7 @@ fn main() raises:
             static[8192](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 256, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -662,7 +660,7 @@ fn main() raises:
             static[7168](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 256, 64),
             DType.bfloat16,
             DType.bfloat16,
@@ -677,7 +675,7 @@ fn main() raises:
             static[7168](),
         )
 
-        test_warp_specialize_gemm_with_multicasting_splitk[
+        test_warp_specialize_gemm_with_multicasting[
             Index(128, 256, 64),
             DType.bfloat16,
             DType.bfloat16,

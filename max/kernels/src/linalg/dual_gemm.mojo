@@ -252,7 +252,7 @@ fn multistage_dual_mma[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // (2 * MMA_N)
     constrained[
-        num_k_mmas % (2 * k_group_size) == 0,
+        num_k_mmas % UInt(2 * k_group_size) == 0,
         "num_k_mmas must be an integer multiple of 2*k_group_size",
     ]()
     constrained[num_n_mmas % 2 == 0]()
@@ -504,7 +504,7 @@ fn multistage_dual_gemm_kernel[
 
     var tid = thread_idx.x
     var ln_id = lane_id()
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
@@ -529,7 +529,7 @@ fn multistage_dual_gemm_kernel[
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]()
-    alias a_smem_size = num_pipeline_stages * BM * BK
+    alias a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
     var a_smem_iter = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
@@ -543,7 +543,7 @@ fn multistage_dual_gemm_kernel[
 
     # There is one pre-allocated shared buffer. Explicitly offset B after at A's end.
     var b_smem = (a_smem + a_smem_size).bitcast[Scalar[b_type]]()
-    alias b_smem_size = num_pipeline_stages * BK * BN // 2
+    alias b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN) // 2
     alias BD_0 = BN // 2 if transpose_b else BK
     alias BD_1 = BK if transpose_b else BN // 2
     alias b_smem_layout = Layout.row_major(BD_0, BD_1)
@@ -661,7 +661,7 @@ fn multistage_dual_gemm_kernel[
             Layout.row_major(WM, HWN),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
+        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * UInt(WM) * UInt(HWN))
 
         copy_local_to_shared[
             thread_layout = Layout.row_major(8, 4),
@@ -1260,9 +1260,9 @@ fn dual_gemv_kernel[
                     )
 
     # Warps are arranged along K.
-    alias k_warp_num = num_threads // WARP_SIZE
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
-    var lane_id = tid % WARP_SIZE
+    alias k_warp_num = num_threads // UInt(WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var lane_id = tid % UInt(WARP_SIZE)
     var shmem = stack_allocation[
         Int(k_warp_num * tile_m * tile_n),
         s_type,

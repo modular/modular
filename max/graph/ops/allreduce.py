@@ -50,11 +50,10 @@ def sum(
     inputs = list(inputs)
     signal_buffers = list(signal_buffers)
     if len(inputs) != len(signal_buffers):
-        msg = (
+        raise ValueError(
             f"expected number of inputs ({len(inputs)}) and number of "
             f"signal buffers ({len(signal_buffers)}) to match"
         )
-        raise ValueError(msg)
 
     shape = None
     devices = []
@@ -63,23 +62,20 @@ def sum(
         if not shape:
             shape = input.shape
         if input.shape != shape:
-            msg = (
+            raise ValueError(
                 "allreduce.sum operation must have the same shape across all"
                 " input tensors."
             )
-            raise ValueError(msg)
         if not input.device:
-            msg = (
+            raise ValueError(
                 f"allreduce.sum operation input = {input} needs to have an"
                 " explicit device."
             )
-            raise ValueError(msg)
         if input.device in devices:
-            msg = (
+            raise ValueError(
                 "allreduce.sum operation must have unique devices across its"
                 " input tensors."
             )
-            raise ValueError(msg)
         devices.append(input.device)
 
     # Per-device execution model:
@@ -88,7 +84,7 @@ def sum(
     # Do not merge device chains.
     results = []
     graph = Graph.current
-    for input_tensor, device in zip(inputs, devices):
+    for input_tensor, device in zip(inputs, devices, strict=True):
         in_chain = graph.device_chains[device]
         # Each op takes all inputs but only produces output for its device.
         (result, out_chain), _ = Graph.current._add_op_get_op_with_results(
@@ -131,7 +127,7 @@ def matmul_allreduce(
     *results, out_chain = Graph.current._add_op_generated(
         mo.DistributedMatmulAllreduceOp,
         # Types for 2 outputs: chain, list of tensors
-        [infer_out_type(a, b) for a, b in zip(inputs, weights)],
+        [infer_out_type(a, b) for a, b in zip(inputs, weights, strict=True)],
         _ChainType(),
         list(inputs),
         list(weights),

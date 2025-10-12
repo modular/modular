@@ -55,7 +55,11 @@ from transformers.models.auto.configuration_auto import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
-from .tokenizer import IMAGE_CONTEXT_TOKEN_ID, InternVLImageConfig
+from .tokenizer import (
+    IMAGE_NDIMS,
+    InternVLImageConfig,
+    _get_image_context_token_id,
+)
 from .weight_adapters import (
     convert_internvl_language_model_state_dict,
     convert_internvl_vision_model_state_dict,
@@ -183,7 +187,7 @@ def assert_image_embeddings_invariant(
 ) -> None:
     # Check for shape mismatch that causes scatter_nd OOB access.
     for i, (embed, indices) in enumerate(
-        zip(image_embeddings, image_token_indices)
+        zip(image_embeddings, image_token_indices, strict=True)
     ):
         embed_count = embed.shape[0]
         indices_count = indices.shape[0]
@@ -224,8 +228,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        self._check_supported_version(huggingface_config)
-
         super().__init__(
             pipeline_config,
             session,
@@ -251,32 +253,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Initialize vision stacker for optimized parallel stacking.
         self._stacker = _VisionStacker()
-
-    @staticmethod
-    def _check_supported_version(huggingface_config: AutoConfig) -> None:
-        """Check if the InternVL model version is supported.
-
-        InternVL3.5+ models are not currently supported.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Raises:
-            NotImplementedError: If the model is InternVL3.5 or later.
-        """
-        model_name = getattr(huggingface_config, "_name_or_path", "")
-
-        model_name_lower = model_name.lower()
-        if (
-            "internvl3.5" in model_name_lower
-            or "internvl3-5" in model_name_lower
-            or "internvl3_5" in model_name_lower
-        ):
-            raise NotImplementedError(
-                f"InternVL3.5+ models are not currently supported. "
-                f"Model '{model_name}' appears to be InternVL3.5 or later. "
-                f"Please use InternVL3 models (e.g., OpenGVLab/InternVL3-8B-Instruct) instead."
-            )
 
     @staticmethod
     def calculate_max_seq_len(
@@ -682,9 +658,11 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         with Graph(
             "internvl_language", input_types=self._language_graph_input_types()
         ) as graph:
-            # Build language model architecture.
+            image_context_token_id = _get_image_context_token_id(
+                self.huggingface_config
+            )
             language_model = InternVLLanguageModel(
-                config, IMAGE_CONTEXT_TOKEN_ID
+                config, image_context_token_id
             )
             language_model.load_state_dict(
                 state_dict=state_dict,
@@ -745,11 +723,18 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         images = []
         for context in context_batch:
             if context.needs_vision_encoding:
-                # context.pixel_values is a list of numpy arrays containing pre-extracted patches
-                # TODO(MODELS-638): Support multiple images per request
-                image = context.pixel_values[
-                    0
-                ]  # Shape: [num_patches, height_patches, width_patches, channels, patch_size, patch_size]
+                # TODO(MODELS-638): Support multiple images per request for InternVL
+                next_images = context.next_images
+                if len(next_images) != 1:
+                    raise ValueError(
+                        "InternVL only supports one image per request"
+                    )
+                image = next_images[0].pixel_values
+
+                if len(image.shape) != IMAGE_NDIMS:
+                    raise ValueError(
+                        "InternVL vision model expects image shape to be [num_patches, height_patches, width_patches, channels, patch_size, patch_size]"
+                    )
 
                 # Each image patch group needs to be processed separately by the vision model
                 # So we add each patch group as a separate "batch" item
@@ -919,11 +904,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
-
-        # Mark that vision encoding is complete for all contexts in the batch.
-        # This prevents re-encoding on subsequent calls.
-        for ctx in context_batch:
-            ctx.needs_vision_encoding = False
 
         return InternVLInputs(
             input_ids=input_ids,

@@ -82,7 +82,7 @@ fn test_leaky_relu():
     var simd_val = iota[DType.float32, 4]()
 
     # Test with negative slope of 0.01
-    var slope_001 = SIMD[DType.float32, 1](0.01)
+    var slope_001 = Float32(0.01)
 
     # CHECK: [0.0, 1.0, 2.0, 3.0]
     print(leaky_relu(simd_val, slope_001))
@@ -93,7 +93,7 @@ fn test_leaky_relu():
     print(leaky_relu(simd_val - 2, slope_001))
 
     # Test with different slope (0.1)
-    var slope_01 = SIMD[DType.float32, 1](0.1)
+    var slope_01 = Float32(0.1)
 
     # For negative values: [-2, -1, 0, 1] with slope 0.1
     # Expected: [-0.2, -0.1, 0.0, 1.0]

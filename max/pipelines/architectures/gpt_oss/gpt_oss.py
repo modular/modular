@@ -175,7 +175,7 @@ class GptOssTextModel(Module):
         if h:
             last_token_h = [
                 ops.gather(h_device, indices, axis=0)
-                for h_device, indices in zip(h, last_token_indices)
+                for h_device, indices in zip(h, last_token_indices, strict=True)
             ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.

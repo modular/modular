@@ -12,7 +12,6 @@ _PLATFORM_CONSTRAINTS = {
     "test_aarch64_target.mojo": ["@platforms//os:macos"],  # TODO (17471): Not all aarch64 have neon, so we need to guard against that, for now just require Apple Silicon.
     "test_linux_target.mojo": ["@platforms//os:linux"],
     "test_macos_target.mojo": ["@platforms//os:macos"],
-    "test_windows_target.mojo": ["@platforms//:incompatible"],
 }
 
 _MOJO_COMPILE_OPTS = {

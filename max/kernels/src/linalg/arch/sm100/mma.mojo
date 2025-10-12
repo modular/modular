@@ -123,7 +123,7 @@ struct MmaOpSM100_SS[
             #             o x o o
             #             o x o o
             self.mask = (
-                dim0_mask << (block_id_in_cluster.y * cluster_shape[0])
+                dim0_mask << (block_id_in_cluster.y * UInt(cluster_shape[0]))
             ) | (dim1_mask << block_id_in_cluster.x)
 
             # Include peer cta's row

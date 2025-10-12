@@ -254,7 +254,9 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
         )
 
         var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
-        memcpy(res_ptr + res_offset, v_ptr, nb_of_elements_to_store)
+        memcpy(
+            dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
+        )
         res_offset += nb_of_elements_to_store
         input_index += input_simd_width
 

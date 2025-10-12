@@ -15,7 +15,7 @@ from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simd_width_of
-
+from sys import align_of, size_of
 import gpu.block
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
@@ -223,6 +223,127 @@ fn quantize_fp8_kernel[
             )
 
 
+@always_inline
+fn batched_quantize_dynamic_scaled_fp8[
+    out_dtype: DType,
+    in_dtype: DType,
+    scales_dtype: DType, //,
+    group_size_or_per_token: Int,
+](
+    scaled_output: NDBuffer[mut=True, out_dtype, 3, MutableAnyOrigin],
+    scales: NDBuffer[mut=True, scales_dtype, 3, MutableAnyOrigin],
+    input: NDBuffer[in_dtype, 3, *_],
+    scale_ub: Float32,
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        scales_dtype in (DType.bfloat16, DType.float16, DType.float32),
+        "scales dtype should be bfloat16, float16 or float32",
+    ]()
+    constrained[
+        out_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz),
+        "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
+    ]()
+
+    alias group_size = input.shape.get[
+        2
+    ]() if group_size_or_per_token == -1 else group_size_or_per_token
+    alias n_groups = input.shape.get[2]() // group_size
+    var batch_size = input.dim[0]()
+    alias simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
+    alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    alias warps_per_block = min(
+        ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
+    )
+
+    alias kernel = batched_quantize_fp8_kernel[
+        out_dtype,
+        scales_dtype,
+        in_dtype,
+        warps_per_block,
+        group_size,
+    ]
+
+    # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
+    # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
+    var expected_input: NDBuffer[in_dtype, 3, MutableAnyOrigin] = input
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        scaled_output,
+        scales,
+        expected_input,
+        scale_ub.cast[scales_dtype](),
+        grid_dim=(input.dim[1](), n_groups, batch_size),
+        block_dim=warps_per_block * WARP_SIZE,
+        attributes=pdl_launch_attributes(),
+    )
+
+
+fn batched_quantize_fp8_kernel[
+    out_type: DType,
+    scales_type: DType,
+    in_type: DType,
+    warps_per_block: Int,
+    group_size: Int,
+](
+    output: NDBuffer[mut=True, out_type, 3, MutableAnyOrigin],
+    scales: NDBuffer[mut=True, scales_type, 3, MutableAnyOrigin],
+    input: NDBuffer[in_type, 3, MutableAnyOrigin],
+    scale_ub: Scalar[scales_type],
+):
+    alias simd_width = simd_width_of[in_type]()
+    alias num_threads = warps_per_block * WARP_SIZE
+    alias use_warp_tiling = group_size <= num_threads * simd_width
+    alias fp8_max = Scalar[out_type].MAX_FINITE
+
+    var input_vec = SIMD[in_type, simd_width](0)
+    var thread_max = Scalar[in_type](0)
+
+    var tid = thread_idx.x
+    var row = Int(block_idx.x)
+    var group_idx = Int(block_idx.y)
+    var batch_idx = Int(block_idx.z)
+
+    with PDL():
+        for i in range(tid, group_size // simd_width, num_threads):
+            var idx: Int = i * simd_width + group_idx * group_size
+            input_vec = input.load[width=simd_width](batch_idx, row, idx)
+            thread_max = max(thread_max, abs(input_vec).reduce_max())
+
+        var group_max = block.max[block_size=num_threads, broadcast=True](
+            thread_max
+        )
+
+        var scale_factor = (
+            min(group_max.cast[scales_type](), scale_ub)
+            / fp8_max.cast[scales_type]()
+        )
+
+        if tid == 0:
+            scales.store[width=1](
+                IndexList[3](batch_idx, group_idx, row), scale_factor
+            )
+
+        for i in range(tid, group_size // simd_width, num_threads):
+            var idx: Int = i * simd_width + group_idx * group_size
+
+            @parameter
+            if use_warp_tiling:
+                pass
+            else:
+                input_vec = input.load[width=simd_width](batch_idx, row, idx)
+
+            var output_vec = input_vec.cast[scales_type]() / scale_factor
+
+            output_vec = max(
+                SIMD[scales_type, simd_width](-fp8_max),
+                min(SIMD[scales_type, simd_width](fp8_max), output_vec),
+            )
+            output.store[width=simd_width](
+                IndexList[3](batch_idx, row, idx), output_vec.cast[out_type]()
+            )
+
+
 ########################################################
 # scaled fp8 matmul
 ########################################################
@@ -238,9 +359,6 @@ fn matmul_dynamic_scaled_fp8[
     input_scale_granularity: StaticString,
     weight_scale_granularity: StaticString,
     transpose_b: Bool = False,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
@@ -299,42 +417,87 @@ fn matmul_dynamic_scaled_fp8[
         input_scale_granularity == "colwise"
         and weight_scale_granularity == "rowwise"
     ) or (input_scale_granularity == weight_scale_granularity == "tensor"):
-        # create a dummy buffer to instruct the matmul kernel to output values
-        # in the correct dtype
-        var c_dummy = NDBuffer[
-            DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
-        ](
-            UnsafePointer[Scalar[DType.float32]](),
-            IndexList[2](M, N),
-        )
 
         @parameter
-        @__copy_capture(c, a, b, a_scales, b_scales)
-        @always_inline
-        fn scaled_output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]):
-            var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
-            var b_scale: SIMD[dtype, width]
+        if ctx.default_device_info is B200:
 
             @parameter
-            if transpose_b:
-                b_scale = b_scales.load[width=width](idx[1], 0).cast[dtype]()
-            else:
-                b_scale = b_scales.load[width=width](0, idx[1]).cast[dtype]()
+            @always_inline
+            @__copy_capture(a_scales, b_scales)
+            fn scale_compute_lambda_fn[
+                _dtype: DType,
+                width: Int,
+                *,
+                alignment: Int = align_of[SIMD[_dtype, width]](),
+            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+                _dtype, width
+            ]:
+                var a_scale = a_scales.load[width=1](0, idx[0]).cast[
+                    DType.float32
+                ]()
+                var b_scale: SIMD[DType.float32, width]
 
-            var scaled_val = val * a_scale * b_scale
+                @parameter
+                if transpose_b:
+                    b_scale = b_scales.load[width=width](idx[1], 0).cast[
+                        DType.float32
+                    ]()
+                else:
+                    b_scale = b_scales.load[width=width](0, idx[1]).cast[
+                        DType.float32
+                    ]()
 
-            c.store[width=width, alignment=alignment](
-                idx, scaled_val.cast[c_type]()
+                var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
+                return scaled_val.cast[_dtype]()
+
+            matmul[
+                target=target,
+                transpose_b=transpose_b,
+                elementwise_compute_lambda_fn=scale_compute_lambda_fn,
+                _trace_description=_trace_string,
+            ](c, a, b, Optional[DeviceContext](ctx))
+
+        else:
+            # create a dummy buffer to instruct the matmul kernel to output values
+            # in the correct dtype
+            var c_dummy = NDBuffer[
+                DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)
+            ](
+                UnsafePointer[Scalar[DType.float32]](),
+                IndexList[2](M, N),
             )
 
-        matmul[
-            target=target,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=scaled_output_fn,
-            _trace_description=_trace_string,
-        ](c_dummy, a, b, Optional[DeviceContext](ctx))
+            @parameter
+            @__copy_capture(c, a, b, a_scales, b_scales)
+            @always_inline
+            fn scaled_output_fn[
+                dtype: DType, width: Int, *, alignment: Int = 1
+            ](idx: IndexList[2], val: SIMD[dtype, width]):
+                var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
+                var b_scale: SIMD[dtype, width]
+
+                @parameter
+                if transpose_b:
+                    b_scale = b_scales.load[width=width](idx[1], 0).cast[
+                        dtype
+                    ]()
+                else:
+                    b_scale = b_scales.load[width=width](0, idx[1]).cast[
+                        dtype
+                    ]()
+
+                var scaled_val = val * a_scale * b_scale
+
+                c.store[width=width, alignment=alignment](
+                    idx, scaled_val.cast[c_type]()
+                )
+
+            matmul[
+                target=target,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=scaled_output_fn,
+                _trace_description=_trace_string,
+            ](c_dummy, a, b, Optional[DeviceContext](ctx))
 
     elif (
         input_scale_granularity == "block"
@@ -641,7 +804,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     a_scale_layout: Layout,
     b_scale_layout: Layout,
     a_offsets_layout: Layout,
-    expert_ids_layout: Layout,
+    expert_ids_layout: Layout, //,
     *,
     BLOCK_DIM_N: Int = 32,
     BLOCK_DIM_M: Int = 16,
@@ -696,7 +859,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         c,
         a,
         b,

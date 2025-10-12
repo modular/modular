@@ -188,7 +188,7 @@ struct hipblasLtMatmulDescAttributes_t:
 struct hipblasLtMatmulLayoutAttribute_t:
     var _value: Int32
     alias BATCH_COUNT = Self(0)
-    alias STRIDED_BATCH_COUNT = Self(1)
+    alias STRIDED_BATCH_OFFSET = Self(1)
     alias TYPE = Self(2)
     alias ORDER = Self(3)
     alias ROWS = Self(4)
@@ -236,10 +236,10 @@ struct hipblasLtMatmulHeuristicResult_t(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 alias HIPBLASLT_LIBRARY_PATHS = List[Path](
-    "libhipblaslt.so",
     "libhipblaslt.so.0",
-    "/opt/rocm/lib/libhipblaslt.so",
+    "libhipblaslt.so.1",
     "/opt/rocm/lib/libhipblaslt.so.0",
+    "/opt/rocm/lib/libhipblaslt.so.1",
 )
 
 alias HIPBLASLT_LIBRARY = _Global["HIPBLASLT_LIBRARY", _init_dylib]

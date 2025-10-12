@@ -21,10 +21,44 @@ what we publish.
 
 ### Language enhancements
 
-Literals now have a default type. For example, you can now bind
-[1,2,3] to T in a call to a function defined as
- fn zip[T: Iterable](impl:T) because it will default to the
- standard library's List type.
+- Literals now have a default type. For example, you can now bind `[1,2,3]` to
+  `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
+  it will default to the standard library's List type.
+
+- Mojo now has a `__functions_in_module` experimental intrinsic that allows
+  reflection over the functions declared in the module where it is called. For
+  example:
+
+  ```mojo
+  fn foo(): pass
+
+  def bar(x: Int): pass
+
+  def main():
+    alias funcs = __functions_in_module()
+    # equivalent to:
+    alias same_funcs = Tuple(foo, bar)
+  ```
+
+  The intrinsic is currently limited for use from within `main`.
+
+- The `@implicit` decorator now accepts an optional `deprecated` keyword
+  argument. This can be used to phase out implicit conversions instead of just
+  removing the decorator (which can result in another, unintended implicit
+  conversion path). For example, the compiler now warns about the following:
+
+  ```mojo
+  struct MyStuff:
+    @implicit(deprecated=True)
+    fn __init__(out self, value: Int):
+      pass
+
+  fn deprecated_implicit_conversion():
+    # warning: deprecated implicit conversion from 'IntLiteral[1]' to 'MyStuff'
+    _: MyStuff = 1
+
+    _ = MyStuff(1)  # this is okay, because the conversion is already explicit.
+  ```
 
 ### Language changes
 
@@ -34,8 +68,39 @@ Literals now have a default type. For example, you can now bind
 
 - The deprecated `DType.index` is now removed in favor of the `DType.int`.
 
+- `math.isqrt` has been renamed to `rsqrt` since it performs reciprocal square
+  root functionality.
+
+- Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
+  when the pointers may potentially alias each other.
+
+- `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
+
+- The `math` package now has a mojo native implementation of `acos`, `asin`,
+  `cbrt`, and `erfc`.
+
+- Added support for NVIDIA GeForce GTX 970.
+
+- Added support for NVIDIA Jetson Thor.
+
+- `Optional` now conforms to `Iterable` and `Iterator` acting as a collection of
+  size 1 or 0.
+
+- `origin_cast` for `LayoutTensor`, `NDBuffer` and `UnsafePointer` has been
+  deprecated. `LayoutTensor` and `NDBuffer` now supports a safer
+  `as_any_origin()` origin casting. `UnsafePointer` has the same
+  safe alternative and in addition, it has an additional safe `as_immutable`
+  casting function and explicitly unsafe `unsafe_mut_cast` and
+  `unsafe_origin_cast` casting function.
+
 ### Tooling changes
+
+- Error messages now preserve symbolic calls to `always_inline("builtin")`
+  functions rather than inlining them into the error message.
 
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- The `math.cos` and `math.sin` function can now be evaluated at compile time
+  (fixes #5111).

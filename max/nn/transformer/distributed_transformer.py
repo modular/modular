@@ -13,9 +13,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from itertools import islice
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from max.dtype import DType
 from max.graph import (
@@ -81,7 +81,7 @@ def forward_sharded_layers(
     assert len(xs) == len(layers), (
         f"Number of layers ({len(layers)}) must match number of inputs ({len(xs)})"
     )
-    return [layer(x) for layer, x in zip(layers, xs)]
+    return [layer(x) for layer, x in zip(layers, xs, strict=True)]
 
 
 class DistributedTransformerBlock(Module):
@@ -160,7 +160,7 @@ class DistributedTransformerBlock(Module):
             input_row_offsets=input_row_offsets,
         )
 
-        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
 
         # Apply post attention layer norm to each shard
         norm_outs = forward_sharded_layers(
@@ -183,7 +183,7 @@ class DistributedTransformerBlock(Module):
                 signal_buffers,
             )
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -242,6 +242,13 @@ class DistributedTransformer(Module):
         freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
 
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+
+        kv_cache_arguments = [
+            [kv_collection.kv_blocks for kv_collection in kv_collections],
+            [kv_collection.cache_lengths for kv_collection in kv_collections],
+            [kv_collection.lookup_table for kv_collection in kv_collections],
+            [kv_collection.max_lengths for kv_collection in kv_collections],
+        ]
 
         if self.use_subgraphs:
             subgraph_input_types: Sequence[Type[Any] | list[Type[Any]]] = [
@@ -319,7 +326,7 @@ class DistributedTransformer(Module):
                         ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                         h,
                         signal_buffers,
-                        kv_collections,
+                        *kv_cache_arguments,
                         freqs_cis=freqs_cis,
                         input_row_offsets=input_row_offsets_,
                     )
@@ -329,7 +336,7 @@ class DistributedTransformer(Module):
                     ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                     h,
                     signal_buffers,
-                    kv_collections,
+                    *kv_cache_arguments,
                     freqs_cis=freqs_cis,
                     input_row_offsets=input_row_offsets_,
                 )

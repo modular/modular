@@ -18,6 +18,7 @@ from algorithm.functional import (
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from testing import assert_equal, assert_true
+from testing import TestSuite
 
 from utils.index import IndexList
 
@@ -124,6 +125,4 @@ def test_indices_conversion():
 
 
 def main():
-    test_elementwise()
-    test_elementwise_implicit_runtime()
-    test_indices_conversion()
+    TestSuite.discover_tests[__functions_in_module()]().run()

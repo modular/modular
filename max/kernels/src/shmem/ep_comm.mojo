@@ -56,31 +56,135 @@ alias RtTuple_4 = RuntimeTuple[
 alias EP_DATA_READY_FLAG = 1 << 10
 
 
-@fieldwise_init
 @register_passable("trivial")
-struct EPMsgConfig:
-    var dtype: DType
-    var hid_dim: Int
-    var top_k: Int
-    var alignment: Int
+trait TokenFormat:
+    alias hid_dim: Int
+    alias top_k: Int
+    alias alignment: Int
 
-    fn token_size(self) -> Int:
-        return align_up(self.hid_dim * self.dtype.size_of(), self.alignment)
+    @always_inline
+    @staticmethod
+    fn token_size() -> Int:
+        "Returns the size of the (quantized) token in bytes."
+        ...
 
-    fn src_info_size(self) -> Int:
-        return align_up(size_of[Int32](), self.alignment)
+    @always_inline
+    @staticmethod
+    fn src_info_size() -> Int:
+        "Returns the size of the source info in bytes. Currently, source info is a single int32 that stores a token's index in the original rank."
+        return align_up(size_of[Int32](), Self.alignment)
 
-    fn topk_info_size(self) -> Int:
-        return align_up(size_of[UInt16]() * self.top_k, self.alignment)
+    @always_inline
+    @staticmethod
+    fn topk_info_size() -> Int:
+        "Returns the size of the top-k info in bytes. Currently, top-k info is an array of uint16 that stores a token's top-k expert IDs."
+        return align_up(size_of[UInt16]() * Self.top_k, Self.alignment)
 
-    fn msg_size(self) -> Int:
-        return self.token_size() + self.src_info_size() + self.topk_info_size()
+    @always_inline
+    @staticmethod
+    fn msg_size() -> Int:
+        "Returns the size of the message in bytes."
+        return Self.token_size() + Self.src_info_size() + Self.topk_info_size()
 
-    fn src_info_offset(self) -> Int:
-        return self.token_size()
+    @always_inline
+    @staticmethod
+    fn src_info_offset() -> Int:
+        "Returns the offset of the source info in the message."
+        return Self.token_size()
 
-    fn topk_info_offset(self) -> Int:
-        return self.token_size() + self.src_info_size()
+    @always_inline
+    @staticmethod
+    fn topk_info_offset() -> Int:
+        "Returns the offset of the top-k info in the message."
+        return Self.token_size() + Self.src_info_size()
+
+    @always_inline
+    @staticmethod
+    fn copy_token_to_send_buf[
+        src_type: DType
+    ](
+        buf_p: UnsafePointer[UInt8],
+        src_p: UnsafePointer[Scalar[src_type]],
+        block_size: UInt,
+    ) -> None:
+        "Copy the token to the send buffer. This function needs to be called by all threads in the block."
+        ...
+
+    @always_inline
+    fn copy_msg_to_output_tensor(
+        self,
+        buf_p: UnsafePointer[UInt8],
+        token_index: Int,
+    ) -> None:
+        "Copy the message to the output tensor. This function needs to be called by all threads in a warp."
+        ...
+
+
+@register_passable("trivial")
+struct BF16TokenFormat[
+    output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int
+](TokenFormat):
+    alias hid_dim = _hid_dim
+    alias top_k = _top_k
+    alias alignment = _alignment
+
+    alias TensorType = LayoutTensor[
+        DType.bfloat16, output_layout, MutableAnyOrigin
+    ]
+    var output_tokens: Self.TensorType
+
+    @always_inline
+    fn __init__(out self, output_tokens: Self.TensorType):
+        self.output_tokens = output_tokens
+
+    @always_inline
+    @staticmethod
+    fn token_size() -> Int:
+        return align_up(Self.hid_dim * DType.bfloat16.size_of(), Self.alignment)
+
+    @always_inline
+    @staticmethod
+    fn copy_token_to_send_buf[
+        src_type: DType
+    ](
+        buf_p: UnsafePointer[UInt8],
+        src_p: UnsafePointer[Scalar[src_type]],
+        block_size: UInt,
+    ) -> None:
+        alias src_width = simd_width_of[src_type]()
+        alias byte_width = src_width * size_of[BFloat16]()
+
+        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
+            var loaded_vec = src_p.load[
+                width=src_width, alignment = Self.alignment, invariant=True
+            ](i * src_width).cast[DType.bfloat16]()
+
+            buf_p.store[width=byte_width, alignment = Self.alignment](
+                i * byte_width, bitcast[DType.uint8, byte_width](loaded_vec)
+            )
+
+    @always_inline
+    fn copy_msg_to_output_tensor(
+        self,
+        buf_p: UnsafePointer[UInt8],
+        token_index: Int,
+    ) -> None:
+        alias bf16_width = simd_width_of[DType.bfloat16]()
+        alias byte_width = bf16_width * size_of[BFloat16]()
+        for i in range(lane_id(), Self.hid_dim // bf16_width, WARP_SIZE):
+            self.output_tokens.aligned_store[width=bf16_width](
+                token_index,
+                i * bf16_width,
+                bitcast[DType.bfloat16, bf16_width](
+                    buf_p.load[
+                        width=byte_width,
+                        invariant=True,
+                        alignment = Self.alignment,
+                    ](
+                        i * byte_width,
+                    )
+                ),
+            )
 
 
 @__llvm_metadata(
@@ -95,8 +199,8 @@ fn dispatch_kernel[
     n_aux_sms: Int,
     n_experts: Int,
     n_ranks: Int,
-    msg_bytes: Int,
     max_tokens_per_rank: Int,
+    token_fmt_type: TokenFormat,
 ](
     input_tokens: LayoutTensor[
         input_type, input_tokens_layout, ImmutableAnyOrigin
@@ -124,8 +228,9 @@ fn dispatch_kernel[
             for each expert, and for signaling the completion of the communication.
         n_experts: The total number of experts in the model.
         n_ranks: The number of all devices participating in the communication.
-        msg_bytes: This is the total number of bytes we need to send for each token.
         max_tokens_per_rank: The maximum number of tokens per rank.
+        token_fmt_type: Type conforming to TokenFormat trait that defines the
+            token encoding scheme.
 
     Args:
         input_tokens: The input tokens to be dispatched.
@@ -152,21 +257,9 @@ fn dispatch_kernel[
         + String(n_warps),
     ]()
 
-    alias src_simd_width = simd_width_of[input_type]()
-    alias byte_simd_width = simd_width_of[DType.uint8]()
-
     alias top_k = topk_ids.shape[1]()
     alias hid_dim = input_tokens.shape[1]()
-    alias msg_config = EPMsgConfig(
-        input_type,
-        hid_dim,
-        top_k,
-        align_of[SIMD[DType.uint8, byte_simd_width]](),
-    )
-    constrained[
-        msg_bytes == msg_config.msg_size(),
-        "EP dispatch: input shape doesn't match message size.",
-    ]()
+    alias msg_bytes = token_fmt_type.msg_size()
 
     var send_buf_layout = RuntimeLayout[
         Layout.row_major(max_tokens_per_rank, msg_bytes),
@@ -202,8 +295,8 @@ fn dispatch_kernel[
     # The auxiliary SMs are used for counting counting the number of tokens
     # that need to be sent to each expert. It also monitors the completion of
     # the communication for each expert.
-    if block_idx.x < n_aux_sms:
-        var expert_idx: Int32 = block_idx.x * n_warps + warp_id()
+    if block_idx.x < UInt(n_aux_sms):
+        var expert_idx: Int32 = block_idx.x * UInt(n_warps) + warp_id()
         var expert_count: Int32 = 0
 
         if expert_idx < n_experts:
@@ -250,24 +343,19 @@ fn dispatch_kernel[
     # first be copied to the send buffer (so the NIC can see it), and then be sent
     # to the remote device.
     else:
-        for token_idx in range(block_idx.x - n_aux_sms, num_tokens, n_comm_sms):
+        for token_idx in range(
+            block_idx.x - UInt(n_aux_sms), num_tokens, n_comm_sms
+        ):
             # First, all threads in the block copy the input token to the send buffer.
-            alias _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
             var curr_send_buf_ptr = send_buf_p.offset(
                 send_buf_layout(RtTuple_2(token_idx, 0))
             )
-
-            for i in range(tid, hid_dim // src_simd_width, num_threads):
-                curr_send_buf_ptr.store[
-                    width=byte_simd_width, alignment=_align
-                ](
-                    i * byte_simd_width,
-                    bitcast[DType.uint8, byte_simd_width](
-                        input_tokens.aligned_load[src_simd_width](
-                            token_idx, i * src_simd_width
-                        )
-                    ),
-                )
+            var input_tensor_ptr = input_tokens.ptr.offset(
+                input_tokens._offset(token_idx, 0)
+            )
+            token_fmt_type.copy_token_to_send_buf(
+                curr_send_buf_ptr, input_tensor_ptr, UInt(num_threads)
+            )
 
             if tid < UInt(top_k):
                 # Store all the top-k expert IDs in current token's message.
@@ -279,7 +367,8 @@ fn dispatch_kernel[
                     width = size_of[UInt16](),
                     alignment = align_of[DType.uint16](),
                 ](
-                    msg_config.topk_info_offset() + tid * size_of[UInt16](),
+                    token_fmt_type.topk_info_offset()
+                    + tid * UInt(size_of[UInt16]()),
                     bitcast[DType.uint8, size_of[UInt16]()](UInt16(top_k_idx)),
                 )
 
@@ -289,7 +378,7 @@ fn dispatch_kernel[
                         width = size_of[Int32](),
                         alignment = align_of[DType.int32](),
                     ](
-                        msg_config.src_info_offset(),
+                        token_fmt_type.src_info_offset(),
                         bitcast[DType.uint8, size_of[Int32]()](
                             Int32(token_idx)
                         ),
@@ -304,14 +393,14 @@ fn dispatch_kernel[
             # is selected by the warp ID using round-robin. We can then control the RC
             # for each expert by using the correct warp.
             alias n_rc_groups = n_warps // n_local_experts
-            var rc_group_id = warp_id() // n_local_experts
+            var rc_group_id = warp_id() // UInt(n_local_experts)
             var rc_map_offset: Int32 = (
-                block_idx.x * n_warps + warp_id()
-            ) % n_local_experts
+                block_idx.x * UInt(n_warps) + warp_id()
+            ) % UInt(n_local_experts)
 
             # If the RC group ID is greater than the number of RC groups, we skip the
             # communication.
-            if rc_group_id >= n_rc_groups:
+            if rc_group_id >= UInt(n_rc_groups):
                 continue
 
             for i in range(rc_group_id, top_k, n_rc_groups):
@@ -341,7 +430,7 @@ fn dispatch_kernel[
                     shmem_put_nbi[kind = SHMEMScope.warp](
                         dst_recv_buf_ptr,
                         curr_send_buf_ptr,
-                        msg_bytes,
+                        UInt(msg_bytes),
                         dst_rank,
                     )
                     syncwarp()
@@ -357,7 +446,6 @@ fn dispatch_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
 fn dispatch_cb_kernel[
-    output_type: DType,
     num_threads: Int,
     output_tokens_layout: Layout,
     row_offsets_layout: Layout,
@@ -365,15 +453,12 @@ fn dispatch_cb_kernel[
     src_info_layout: Layout,
     n_sms: Int,
     n_aux_sms: Int,
-    top_k: Int,
     n_experts: Int,
     n_ranks: Int,
-    msg_bytes: Int,
     max_tokens_per_rank: Int,
+    token_fmt_type: TokenFormat,
 ](
-    output_tokens: LayoutTensor[
-        output_type, output_tokens_layout, MutableAnyOrigin
-    ],
+    format_handler: token_fmt_type,
     row_offsets: LayoutTensor[
         DType.uint32, row_offsets_layout, MutableAnyOrigin
     ],
@@ -393,7 +478,6 @@ fn dispatch_cb_kernel[
     the output tensor using a ragged representation.
 
     Parameters:
-        output_type: The type of the output tokens.
         num_threads: The number of threads in the block.
         output_tokens_layout: The layout of the output tokens.
         row_offsets_layout: The layout of the row offsets.
@@ -401,14 +485,15 @@ fn dispatch_cb_kernel[
         src_info_layout: The layout of the source token info.
         n_sms: The total number of SMs in the device.
         n_aux_sms: The number of auxiliary SMs in the device.
-        top_k: The number of selected experts per token.
         n_experts: The number of experts in the device.
         n_ranks: The number of ranks.
-        msg_bytes: The number of bytes in the message for each token.
         max_tokens_per_rank: The maximum number of tokens per rank.
+        token_fmt_type: Type conforming to TokenFormat trait that defines the
+            token encoding scheme.
 
     Args:
-        output_tokens: The tensor to store the output tokens.
+        format_handler: Instance of token_fmt_type that performs token decoding
+            and manages output tensor writes.
         row_offsets: The row offsets to be updated. Will be consumed by the
             `grouped_matmul` kernel.
         expert_ids: The expert IDs to be updated. Will be consumed by the
@@ -429,19 +514,9 @@ fn dispatch_cb_kernel[
     alias n_warps = num_threads // WARP_SIZE
     alias n_comm_sms = n_sms - n_aux_sms
 
-    alias hid_dim = output_tokens.shape[1]()
-    alias dst_simd_width = simd_width_of[output_type]()
-    alias byte_simd_width = simd_width_of[DType.uint8]()
-    alias msg_config = EPMsgConfig(
-        output_type,
-        hid_dim,
-        top_k,
-        align_of[SIMD[DType.uint8, byte_simd_width]](),
-    )
-    constrained[
-        msg_bytes == msg_config.msg_size(),
-        "EP dispatch: input shape doesn't match message size.",
-    ]()
+    alias top_k = token_fmt_type.top_k
+    alias hid_dim = token_fmt_type.hid_dim
+    alias msg_bytes = token_fmt_type.msg_size()
     constrained[
         n_local_experts <= n_warps,
         "EP dispatch: local experts per device should be less than "
@@ -469,7 +544,7 @@ fn dispatch_cb_kernel[
     # The first SM is used for checking if any of a local expert has received
     # tokens from all the remote ranks. It will also calculate the offset where
     # the tokens start in the output tensor.
-    if block_idx.x < n_aux_sms:
+    if block_idx.x < UInt(n_aux_sms):
         var shared_mem = stack_allocation[
             1, DType.uint32, address_space = AddressSpace.SHARED
         ]()
@@ -478,7 +553,7 @@ fn dispatch_cb_kernel[
         barrier()
 
         var local_expert_id = warp_id()
-        if local_expert_id >= n_local_experts:
+        if local_expert_id >= UInt(n_local_experts):
             return
 
         alias scan_round = ceildiv(n_ranks, WARP_SIZE)
@@ -492,12 +567,12 @@ fn dispatch_cb_kernel[
         # to get the offset where each rank ends in the output tensor.
         @parameter
         for round_i in range(scan_round):
-            var target_rank = lane_id() + round_i * WARP_SIZE
+            var target_rank = lane_id() + UInt(round_i * WARP_SIZE)
             var expert_rank_offset = recv_count_layout(
                 RtTuple_2(Int(local_expert_id), Int(target_rank))
             )
 
-            if target_rank < n_ranks:
+            if target_rank < UInt(n_ranks):
                 var target_count_ptr = recv_count_p.offset(expert_rank_offset)
                 var token_count = load_acquire[scope = Scope.GPU](
                     target_count_ptr
@@ -537,12 +612,12 @@ fn dispatch_cb_kernel[
 
         @parameter
         for round_i in range(scan_round):
-            var target_rank = lane_id() + round_i * WARP_SIZE
+            var target_rank = lane_id() + UInt(round_i * WARP_SIZE)
             var expert_rank_offset = recv_count_layout(
                 RtTuple_2(Int(local_expert_id), Int(target_rank))
             )
 
-            if target_rank < n_ranks:
+            if target_rank < UInt(n_ranks):
                 atomic_counter.store(
                     expert_rank_offset * 2,
                     Int32(
@@ -570,15 +645,17 @@ fn dispatch_cb_kernel[
         alias wg_size = n_warps // n_wg_per_sm
         alias wg_threads = wg_size * WARP_SIZE
 
-        var wg_idx = warp_id() // wg_size
-        var global_wg_idx = (block_idx.x - n_aux_sms) * n_wg_per_sm + wg_idx
-        var warp_id_in_wg = warp_id() % wg_size
+        var wg_idx = warp_id() // UInt(wg_size)
+        var global_wg_idx = (block_idx.x - UInt(n_aux_sms)) * UInt(
+            n_wg_per_sm
+        ) + wg_idx
+        var warp_id_in_wg = warp_id() % UInt(wg_size)
 
-        if wg_idx >= n_wg_per_sm or global_wg_idx >= n_experts:
+        if wg_idx >= UInt(n_wg_per_sm) or global_wg_idx >= UInt(n_experts):
             return
 
-        var local_expert_id = global_wg_idx % n_local_experts
-        var target_rank = global_wg_idx // n_local_experts
+        var local_expert_id = global_wg_idx % UInt(n_local_experts)
+        var target_rank = global_wg_idx // UInt(n_local_experts)
         var expert_rank_offset = recv_count_layout(
             RtTuple_2(Int(local_expert_id), Int(target_rank))
         )
@@ -595,7 +672,6 @@ fn dispatch_cb_kernel[
         output_offset -= token_count
 
         for token_idx in range(warp_id_in_wg, token_count, wg_size):
-            alias _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
             var token_pos = Int(token_idx + output_offset)
             var recv_buf_ptr = recv_buf_p.offset(
                 recv_buf_layout(
@@ -608,27 +684,14 @@ fn dispatch_cb_kernel[
                 )
             )
 
-            for i in range(lane_id(), hid_dim // dst_simd_width, WARP_SIZE):
-                output_tokens.aligned_store[width=dst_simd_width](
-                    token_pos,
-                    i * dst_simd_width,
-                    bitcast[output_type, dst_simd_width](
-                        recv_buf_ptr.load[
-                            width=byte_simd_width,
-                            invariant=True,
-                            alignment=_align,
-                        ](
-                            i * byte_simd_width,
-                        )
-                    ),
-                )
+            format_handler.copy_msg_to_output_tensor(recv_buf_ptr, token_pos)
 
             if lane_id() < UInt(top_k):
                 # Load top-k expert IDs from the token's message.
                 var src_topk_idx = bitcast[DType.uint16, 1](
                     recv_buf_ptr.load[width = size_of[UInt16]()](
-                        msg_config.topk_info_offset()
-                        + lane_id() * size_of[UInt16](),
+                        token_fmt_type.topk_info_offset()
+                        + lane_id() * UInt(size_of[UInt16]()),
                     )
                 )
                 var global_expert_idx = (
@@ -638,7 +701,7 @@ fn dispatch_cb_kernel[
                     # Store the source token index and the top-k id.
                     var src_idx = bitcast[DType.int32, 1](
                         recv_buf_ptr.load[width = size_of[Int32]()](
-                            msg_config.src_info_offset()
+                            token_fmt_type.src_info_offset()
                         )
                     )
 
@@ -809,18 +872,24 @@ fn combine_kernel[
             var dst_recv_buf_ptr = recv_buf_p.offset(
                 recv_buf_layout(RtTuple_3(Int(src_idx), Int(src_topk_idx), 0))
             )
-            if warp_id() < n_local_experts and local_expert_id == rc_map_offset:
+            if (
+                warp_id() < UInt(n_local_experts)
+                and local_expert_id == rc_map_offset
+            ):
                 shmem_put_nbi[kind = SHMEMScope.warp](
                     dst_recv_buf_ptr,
                     curr_send_buf_ptr,
-                    msg_bytes,
+                    UInt(msg_bytes),
                     target_rank,
                 )
         barrier()
 
         # Once all the tokens for the current expert and rank have been sent,
         # signal the completion of the communication.
-        if warp_id() < n_local_experts and local_expert_id == rc_map_offset:
+        if (
+            warp_id() < UInt(n_local_experts)
+            and local_expert_id == rc_map_offset
+        ):
             if lane_id() == 0:
                 var global_expert_idx = (
                     my_rank * n_local_experts + local_expert_id

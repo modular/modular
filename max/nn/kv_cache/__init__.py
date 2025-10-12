@@ -12,25 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import KVCacheParams, KVCacheStrategy
-from .manager import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    RaggedKVCacheInputs,
-)
+from .manager import KVCacheInputs, KVCacheInputsSequence, RaggedKVCacheInputs
 from .paged_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
-    MultiPagedKVCacheManager,
     PagedCacheInputSymbols,
     PagedCacheValues,
     PagedKVCacheManager,
-    XferReqData,
+    TPPagedKVCacheManager,
+    TransferReqData,
     available_port,
 )
 from .registry import (
     estimate_kv_cache_size,
     infer_optimal_batch_size,
     load_kv_manager,
+    validate_kv_manager_params,
 )
 from .utils import build_max_lengths_tensor
 
@@ -41,15 +38,16 @@ __all__ = [
     "KVCacheStrategy",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
-    "MultiPagedKVCacheManager",
     "PagedCacheInputSymbols",
     "PagedCacheValues",
     "PagedKVCacheManager",
     "RaggedKVCacheInputs",
-    "XferReqData",
+    "TPPagedKVCacheManager",
+    "TransferReqData",
     "available_port",
     "build_max_lengths_tensor",
     "estimate_kv_cache_size",
     "infer_optimal_batch_size",
     "load_kv_manager",
+    "validate_kv_manager_params",
 ]

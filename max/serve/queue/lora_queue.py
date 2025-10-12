@@ -23,6 +23,7 @@ import queue
 from collections.abc import Generator
 
 from max.interfaces import LoRARequest, LoRAResponse, RequestID
+from max.interfaces.lora import LORA_REQUEST_ENDPOINT, LORA_RESPONSE_ENDPOINT
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
@@ -33,15 +34,14 @@ class LoRAQueue:
 
     def __init__(
         self,
-        request_zmq_endpoint: str,
-        response_zmq_endpoint: str,
+        zmq_endpoint_base: str,
     ):
         self._request_socket = ZmqPushSocket[tuple[RequestID, LoRARequest]](
-            endpoint=request_zmq_endpoint,
+            endpoint=f"{zmq_endpoint_base}-{LORA_REQUEST_ENDPOINT}",
             payload_type=tuple[RequestID, LoRARequest],
         )
         self._response_socket = ZmqPullSocket[tuple[RequestID, LoRAResponse]](
-            endpoint=response_zmq_endpoint,
+            endpoint=f"{zmq_endpoint_base}-{LORA_RESPONSE_ENDPOINT}",
             payload_type=tuple[RequestID, LoRAResponse],
         )
 

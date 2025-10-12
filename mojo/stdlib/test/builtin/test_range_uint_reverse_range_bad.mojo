@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from testing import TestSuite
+
 
 # CHECK: test_range_uint_bad_step_size
 def test_range_uint_bad_step_size():
@@ -21,4 +23,4 @@ def test_range_uint_bad_step_size():
 
 
 def main():
-    test_range_uint_bad_step_size()
+    TestSuite.discover_tests[__functions_in_module()]().run()

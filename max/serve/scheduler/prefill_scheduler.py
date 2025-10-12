@@ -17,20 +17,32 @@ import queue
 import time
 import uuid
 
-from max.interfaces import RequestID, Scheduler, TextGenerationInputs
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    Scheduler,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
-    XferReqData,
+    TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipelineType
+from max.pipelines.lib import (
+    PipelineConfig,
+)
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.queue.zmq_queue import ClientIdentity
-from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import (
+    CancelRequest,
+    PrefillRequest,
+    PrefillResponse,
+)
 from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
 from max.serve.scheduler.text_batch_constructor import (
     TextBatchConstructor,
@@ -46,26 +58,33 @@ logger = logging.getLogger("max.serve")
 class PrefillScheduler(Scheduler):
     def __init__(
         self,
-        pipeline: TextGenerationPipelineType[TextContext],
+        pipeline: Pipeline[
+            TextGenerationInputs[TextContext], TextGenerationOutput
+        ],
         scheduler_config: TokenGenerationSchedulerConfig,
         paged_cache: PagedKVCacheManager,
         dispatcher: PrefillDispatcherServerV2,
     ) -> None:
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
+        if paged_cache.num_replicas > 1:
+            raise ValueError(
+                "PrefillScheduler does not support data parallelism"
+            )
         self.paged_cache = paged_cache
         # Initialize Scheduler state.
         self.active_transfers: dict[
-            str, tuple[TextAndVisionContext | TextContext, XferReqData]
+            RequestID,
+            tuple[TextAndVisionContext | TextContext, TransferReqData],
         ] = {}
         self.request_id_to_reply_context: dict[
-            str, tuple[ClientIdentity, str, list[int]]
+            RequestID, tuple[ClientIdentity, str, list[int]]
         ] = {}
 
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
-            tensors=paged_cache.device_tensors,
+            tensors=paged_cache._replica_managers[0].device_tensors,
             total_num_pages=paged_cache.total_num_pages,
         )
 
@@ -80,9 +99,9 @@ class PrefillScheduler(Scheduler):
         self.dispatcher = dispatcher
 
     @traced
-    def handle_cancel_request(self, message: RequestID) -> None:
+    def handle_cancel_request(self, message: CancelRequest) -> None:
         """Handles a cancel request by adding the request ID to the set of outstanding cancelled requests."""
-        self.outstanding_cancelled_requests.add(message)
+        self.outstanding_cancelled_requests.add(message.id)
 
     @traced
     def handle_transfer_engine_request(
@@ -171,7 +190,7 @@ class PrefillScheduler(Scheduler):
             ]
 
             # Retrieve source block ids.
-            src_idxs = self.paged_cache.block_manager.get_req_blocks(
+            src_idxs = self.paged_cache.get_req_blocks(
                 context.request_id,
             )
             assert len(src_idxs) == len(dst_idxs)
@@ -184,12 +203,12 @@ class PrefillScheduler(Scheduler):
 
             # Initiate the KV transfer
             logger.debug("initiating transfer from prefill worker.")
-            xfer_data = self.transfer_engine.initiate_send_xfer(
+            transfer_data = self.transfer_engine.initiate_send_transfer(
                 remote_metadata,
                 src_idxs,
                 dst_idxs,
             )
-            self.active_transfers[req_id] = (context, xfer_data)
+            self.active_transfers[req_id] = (context, transfer_data)
 
             assert not context.needs_ce, (
                 f"Invalid Context: Expected needs_ce to be False. Found: {context}"
@@ -201,7 +220,7 @@ class PrefillScheduler(Scheduler):
                 PrefillResponse(
                     id=req_id,
                     generated_token_id=context.last_generated_token,
-                    transfer_metadata=xfer_data,
+                    transfer_metadata=transfer_data,
                 ),
                 identity,
             )
@@ -226,7 +245,7 @@ class PrefillScheduler(Scheduler):
                 request, identity = self.dispatcher.recv_request_nowait()
             except queue.Empty:
                 break
-            if isinstance(request, RequestID):
+            if isinstance(request, CancelRequest):
                 self.handle_cancel_request(request)
             elif isinstance(request, KVTransferEngineMetadata):
                 self.handle_transfer_engine_request(request, identity)
@@ -271,7 +290,7 @@ class PrefillScheduler(Scheduler):
 
 
 def load_prefill_scheduler(
-    pipeline: TextGenerationPipelineType[TextContext],
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     pipeline_config: PipelineConfig,
     settings: Settings,
 ) -> PrefillScheduler:

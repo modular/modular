@@ -62,12 +62,12 @@ def causal_attention_mask_2d_from_imgs(
     block_start_idx = np.cumsum(np.concatenate(([0], num_patches_list[:-1])))
 
     # TODO(KERN-782): This should be -inf but softmax saturates with NaNs.
-    for start, end in zip(block_start_idx, block_end_idx):
+    for start, end in zip(block_start_idx, block_end_idx, strict=True):
         fill_matrix[int(start) : int(end), int(start) : int(end)] = 0
 
     # Expand the mask dimensions to match the expected input shape
-    fill_matrix = np.expand_dims(fill_matrix, axis=(0, 1))  # Add two new axes
-    fill_matrix = np.broadcast_to(
+    fill_matrix = np.expand_dims(fill_matrix, axis=(0, 1))  # type: ignore  # Add two new axes
+    fill_matrix = np.broadcast_to(  # type: ignore
         fill_matrix, (batch_size, 1, seq_len, seq_len)
     )
     return fill_matrix
@@ -108,13 +108,14 @@ def causal_attention_mask_2d(
 
     # For each block, set the diagonal region corresponding to that block to 0.
     # This allows patches within the same block to attend to each other.
-    for start, end in zip(block_start_idx, block_end_idx):
+    for start, end in zip(block_start_idx, block_end_idx, strict=True):
         fill_matrix[int(start) : int(end), int(start) : int(end)] = 0
 
     # Expand the mask dimensions to match the expected transformer input shape.
-    fill_matrix = np.expand_dims(fill_matrix, axis=(0, 1))  # Add two new axes
+    fill_matrix = np.expand_dims(fill_matrix, axis=(0, 1))  # type: ignore  # Add two new axes
     fill_matrix = np.broadcast_to(
-        fill_matrix, (int(patch_embeds.shape[0]), 1, seq_len, seq_len)
+        fill_matrix,
+        (int(patch_embeds.shape[0]), 1, seq_len, seq_len),  # type: ignore
     )
     return fill_matrix
 

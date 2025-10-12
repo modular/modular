@@ -18,18 +18,18 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import uuid
 from collections.abc import Iterable
 from typing import Any
 
 import requests
 from max.interfaces import (
-    InputContext,
     LogitsProcessor,
     Pipeline,
     PipelineTokenizer,
     ProcessorInputs,
+    RequestID,
     SamplingParams,
+    TextGenerationContext,
     TextGenerationRequest,
 )
 from max.pipelines import (
@@ -62,14 +62,16 @@ class TrackMetrics:
 
 async def stream_text_to_console(
     pipeline: Pipeline[Any, Any],
-    tokenizer: PipelineTokenizer[InputContext, Any, TextGenerationRequest],
+    tokenizer: PipelineTokenizer[
+        TextGenerationContext, Any, TextGenerationRequest
+    ],
     prompt: str,
     images: list[bytes] | None,
     sampling_params: SamplingParams,
     metrics: TextGenerationMetrics | None = None,
     print_tokens: bool = True,
 ) -> None:
-    assert isinstance(tokenizer, (TextTokenizer, TextAndVisionTokenizer))
+    assert isinstance(tokenizer, TextTokenizer | TextAndVisionTokenizer)
     logits_processors: list[LogitsProcessor] = []
     if metrics:
         logits_processors.append(TrackMetrics(metrics))
@@ -79,7 +81,7 @@ async def stream_text_to_console(
     )
 
     request = TextGenerationRequest(
-        request_id=str(uuid.uuid4()),
+        request_id=RequestID(),
         prompt=prompt,
         images=images,
         model_name=MODEL_NAME,

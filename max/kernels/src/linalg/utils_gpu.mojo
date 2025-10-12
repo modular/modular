@@ -191,7 +191,7 @@ struct MatmulConfig[
             self.num_warps_m()
             * self.num_warps_n()
             * self.num_warp_k_partitions
-            * WARP_SIZE
+            * UInt(WARP_SIZE)
         )
 
     fn shared_mem_usage(self) -> Int:
@@ -489,7 +489,7 @@ fn create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(num_blocks)
+    var host_ptr = UnsafePointer[UInt32].alloc(num_blocks)
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -521,7 +521,7 @@ fn create_hilbert_lut(
             s <<= 1
 
         if hx < UInt32(grid_x) and hy < UInt32(grid_y):
-            host_ptr[seen] = Scalar[DType.uint32]((hy << 16) | hx)  # pack (y,x)
+            host_ptr[seen] = UInt32((hy << 16) | hx)  # pack (y,x)
             seen += 1
         d += 1
 
@@ -544,7 +544,7 @@ fn get_hilbert_lut_with_cache(
     ](key_str.unsafe_cstr_ptr(), key_str.byte_length())
 
     if cached_ptr:
-        var device_ptr = cached_ptr.bitcast[Scalar[DType.uint32]]()
+        var device_ptr = cached_ptr.bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
         return DeviceBuffer[DType.uint32](

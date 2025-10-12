@@ -10,10 +10,18 @@ modular_py_test(
         ["**/*.py"],
         exclude = _MULTI_VERSION_TEST_SRCS,
     ),
-    data = ["//SDK/lib/API/python/tests/graph/testdata"],
-    env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
+    data = [
+        "//SDK/integration-test:test_user_op",
+        "//SDK/lib/API/python/tests/graph/testdata",
+    ],
+    env = {
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
+        "MODULAR_PATH": ".",
+        "TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata",
+    },
     imports = ["."],
     mojo_deps = [
+        "//SDK/integration-test:test_user_op",
         "@mojo//:stdlib",
     ],
     deps = [
@@ -35,16 +43,13 @@ modular_multi_py_version_test(
     ],
     data = ["//SDK/lib/API/python/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
-    exclude = ["3.13"],  # numpy issues
     imports = ["."],
     deps = [
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/graph",
         "//SDK/lib/API/python/max/nn",
-        requirement("gguf"),
         requirement("hypothesis"),
         requirement("numpy"),
-        requirement("torch"),
     ],
 )

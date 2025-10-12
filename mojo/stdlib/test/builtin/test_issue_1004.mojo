@@ -12,15 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 # Test for https://github.com/modular/modular/issues/1004
 
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 
 fn foo(x: String) raises:
     raise Error("Failed on: " + x)
 
 
-def main():
+def test_issue_1004():
     try:
         foo("Hello")
     except e:
         assert_equal(String(e), "Failed on: Hello")
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %t
 
-from os import getenv, listdir, setenv
+from testing import assert_equal
+from shmem import *
+from shmem._nvshmem import *
+from pathlib import cwd, Path
 from os.path import dirname
 from pathlib import Path, cwd
 from subprocess import run
@@ -31,25 +31,31 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
+    print("GPU mype:", mype, "peer:", peer)
 
+    # Send this PE ID to a peer
     shmem_p(destination, mype, peer)
 
 
-def main():
-    var ctx = SHMEMContext()
-    var destination = ctx.enqueue_create_buffer[DType.int32](1)
+def simple_shift(ctx: SHMEMContext):
+    # Set up buffers to test devices are communicating with the correct IDs
+    var target_device = ctx.enqueue_create_buffer[DType.int32](1)
+    var target_host = ctx.enqueue_create_host_buffer[DType.int32](1)
 
     ctx.enqueue_function[simple_shift_kernel](
-        destination.unsafe_ptr(), grid_dim=1, block_dim=1
+        target_device, grid_dim=1, block_dim=1
     )
-
     ctx.barrier_all()
 
-    var msg = Int32(0)
-    destination.enqueue_copy_to(UnsafePointer(to=msg))
-
+    target_device.enqueue_copy_to(target_host)
     ctx.synchronize()
 
+    # Get the mype and npes across all nodes to test communication
     var mype = shmem_my_pe()
-    print("PE:", mype, "received message:", msg)
-    assert_equal(msg, (mype + 1) % shmem_n_pes())
+    var npes = shmem_n_pes()
+    var peer = (mype + npes - 1) % npes
+    assert_equal(target_host[0], peer)
+
+
+def main():
+    shmem_launch[simple_shift]()

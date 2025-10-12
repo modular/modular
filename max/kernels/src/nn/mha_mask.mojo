@@ -15,9 +15,10 @@ from collections import OptionalReg
 from math import iota
 from sys import is_nvidia_gpu
 
-from buffer import DimList, NDBuffer
+from layout import LayoutTensor, Layout, UNKNOWN_VALUE
 
 from utils.index import IndexList
+from builtin.device_passable import DevicePassable
 
 # ===-----------------------------------------------------------------------===#
 # MaskName
@@ -110,7 +111,7 @@ struct TileMaskStatus(
 
 
 @register_passable("trivial")
-trait MHAMask(Copyable):
+trait MHAMask(Copyable, DevicePassable):
     """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
     """
 
@@ -174,6 +175,19 @@ struct CausalMask(ImplicitlyCopyable, MHAMask, Movable):
     alias mask_out_of_bound: Bool = is_nvidia_gpu()
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = False
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "CausalMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -260,6 +274,19 @@ struct NullMask(ImplicitlyCopyable, MHAMask, Movable):
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = False
 
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "NullMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
     @always_inline
     fn mask[
         dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
@@ -316,6 +343,19 @@ struct ChunkedMask[local_window_size: Int](
     alias mask_out_of_bound: Bool = True
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = True
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "ChunkedMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -431,6 +471,19 @@ struct SlidingWindowCausalMask[window_size: Int](
     alias mask_safe_out_of_bounds: Bool = True
     alias check_mask_during_decoding: Bool = True
 
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "SlidingWindowCausalMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
+
     @always_inline
     fn mask[
         dtype: DType,
@@ -536,7 +589,7 @@ struct SlidingWindowCausalMask[window_size: Int](
 
 
 @register_passable("trivial")
-struct MaterializedMask[dtype_: DType, rank_: Int, shape_: DimList](
+struct MaterializedMask[dtype_: DType, layout_: Layout](
     ImplicitlyCopyable, MHAMask, Movable
 ):
     """Mask that's backed by a materialized tensor."""
@@ -546,22 +599,45 @@ struct MaterializedMask[dtype_: DType, rank_: Int, shape_: DimList](
     alias mask_safe_out_of_bounds: Bool = False
     alias check_mask_during_decoding: Bool = True
 
-    alias MaskType = NDBuffer[dtype_, rank_, MutableAnyOrigin, shape_]
+    alias MaskType = LayoutTensor[dtype_, layout_, MutableAnyOrigin]
     var mask_tensor: Self.MaskType
-    var start_pos: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
+    var start_pos: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
+    ]
     var is_multiple_of_2: Bool
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "MaterializedMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     fn __init__(
         out self,
         mask_tensor: Self.MaskType,
         start_pos: OptionalReg[
-            NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+            LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            ]
         ] = None,
     ):
-        constrained[rank_ in (3, 4), "Expected rank 3 or 4 for mask tensor"]()
+        constrained[
+            layout_.rank() in (3, 4), "Expected rank 3 or 4 for mask tensor"
+        ]()
         self.mask_tensor = mask_tensor
         self.start_pos = start_pos
-        self.is_multiple_of_2 = self.mask_tensor.dim[rank_ - 1]() % 2 == 0
+        self.is_multiple_of_2 = (
+            self.mask_tensor.dim[layout_.rank() - 1]() % 2 == 0
+        )
 
     @always_inline
     fn get_start_pos(self, batch_idx: Int) -> Int:
@@ -569,8 +645,8 @@ struct MaterializedMask[dtype_: DType, rank_: Int, shape_: DimList](
             return Int(self.start_pos.value()[batch_idx])
         else:
             return (
-                self.mask_tensor.dim[rank_ - 1]()
-                - self.mask_tensor.dim[rank_ - 2]()
+                self.mask_tensor.dim[layout_.rank() - 1]()
+                - self.mask_tensor.dim[layout_.rank() - 2]()
             )
 
     @always_inline
@@ -584,13 +660,15 @@ struct MaterializedMask[dtype_: DType, rank_: Int, shape_: DimList](
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        alias IndexListType = IndexList[rank_, element_type=element_type]
+        alias IndexListType = IndexList[
+            layout_.rank(), element_type=element_type
+        ]
         var adjusted_coord: IndexListType
 
         var start_pos = self.get_start_pos(coord[0])
 
         @parameter
-        if rank_ == 3:
+        if layout_.rank() == 3:
             adjusted_coord = IndexListType(
                 coord[0], coord[2] - start_pos, coord[3]
             )
@@ -600,22 +678,26 @@ struct MaterializedMask[dtype_: DType, rank_: Int, shape_: DimList](
             )
 
         var retval = SIMD[dtype, width](MASK_VALUE)
-        if adjusted_coord[rank_ - 2] < self.mask_tensor.dim[rank_ - 2]():
+        alias rank = layout_.rank()
+        if adjusted_coord[rank - 2] < self.mask_tensor.dim[rank - 2]():
             if (
-                adjusted_coord[rank_ - 1] + width
-                <= self.mask_tensor.dim[rank_ - 1]()
+                adjusted_coord[rank - 1] + width
+                <= self.mask_tensor.dim[rank - 1]()
                 and self.is_multiple_of_2
             ):
                 retval = self.mask_tensor.load[width=width](
-                    adjusted_coord
+                    adjusted_coord.canonicalize()
                 ).cast[dtype]()
-            elif adjusted_coord[rank_ - 1] < self.mask_tensor.dim[rank_ - 1]():
+            elif adjusted_coord[rank - 1] < self.mask_tensor.dim[rank - 1]():
                 for i in range(
-                    min(width, self.mask_tensor.dim[rank_ - 1]() - coord[3])
+                    min(
+                        width,
+                        self.mask_tensor.dim[rank - 1]() - coord[3],
+                    )
                 ):
-                    adjusted_coord[rank_ - 1] = coord[3] + i
+                    adjusted_coord[rank - 1] = coord[3] + i
                     retval[i] = self.mask_tensor.load[width=1](
-                        adjusted_coord
+                        adjusted_coord.canonicalize()
                     ).cast[dtype]()
 
         return score_vec + retval
@@ -649,6 +731,19 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     alias mask_out_of_bound: Bool = T.mask_out_of_bound or S.mask_out_of_bound
     alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
     alias check_mask_during_decoding: Bool = T.check_mask_during_decoding and S.check_mask_during_decoding
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "AndMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -700,6 +795,19 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     alias mask_out_of_bound: Bool = T.mask_out_of_bound and S.mask_out_of_bound
     alias mask_safe_out_of_bounds: Bool = T.mask_safe_out_of_bounds and S.mask_safe_out_of_bounds
     alias check_mask_during_decoding: Bool = T.check_mask_during_decoding or S.check_mask_during_decoding
+
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "OrMask"
+
+    @staticmethod
+    fn get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @always_inline
     fn mask[
