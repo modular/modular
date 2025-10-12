@@ -56,6 +56,7 @@ from .shmem_api import (
     shmem_barrier_all_on_stream,
     shmem_finalize,
     shmem_init,
+    shmem_init_thread,
     shmem_module_init,
     shmem_team_t,
 )
@@ -112,12 +113,20 @@ fn shmem_launch[func: fn (ctx: SHMEMContext) raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
-    fn shmem_error_wrapper(mype_node: Int) capturing:
+    fn shmem_error_wrapper(device_id_node: Int) capturing:
         try:
-            with SHMEMContext(mype_node, npes_node) as shmem_ctx:
+            var ctx = DeviceContext(device_id=device_id_node)
+            with SHMEMContext(ctx) as shmem_ctx:
                 func(shmem_ctx)
         except e:
-            abort(String("SHMEM failure on mype_node: ", mype_node, ": ", e))
+            abort(
+                String(
+                    "SHMEM failure on local device id: ",
+                    device_id_node,
+                    ": ",
+                    e,
+                )
+            )
 
     # Same number of tasks as worker threads
     parallelize[shmem_error_wrapper](npes_node, npes_node)
@@ -191,7 +200,7 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
         )
         self._thread_per_gpu = False
 
-    fn __init__(out self, mype_node: Int, npes_node: Int) raises:
+    fn __init__(out self, ctx: DeviceContext) raises:
         """Initializes a device context with SHMEM support, using one thread
         per GPU.
 
@@ -209,8 +218,9 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
             has_nvidia_gpu_accelerator(),
             "SHMEMContext is currently only available on NVIDIA GPUs",
         ]()
-        self._ctx = shmem_init(mype_node, npes_node)
 
+        shmem_init_thread(ctx)
+        self._ctx = ctx
         # Store main stream to avoid retrieving it in each collective launch.
         self._main_stream = self._ctx.stream()
 

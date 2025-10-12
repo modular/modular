@@ -94,6 +94,7 @@ from ._nvshmem import (
     nvshmemx_cumodule_finalize,
     nvshmemx_hostlib_finalize,
     nvshmemx_init,
+    nvshmemx_init_thread,
     nvshmemx_init_status,
     nvshmemx_signal_op,
 )
@@ -182,16 +183,17 @@ fn shmem_init() raises:
         ]()
 
 
-fn shmem_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
-    """Modular specific initialization that enables launching one GPU per thread.
-    You must provide the `mype_node` (Processing Element ID) and `npes_node`
-    (Number of processing elements) for the single node.
-
-    It returns a `DeviceContext` which is ready for `SHMEM` operations.
+fn shmem_init_thread(
+    ctx: DeviceContext, number_of_devices_node: Int = -1
+) raises:
+    """Modular-specific init that enables initializing SHMEM on one GPU per
+    thread.
 
     Arguments:
-        mype_node: (my) (p)rocessing (e)lement ID on this (node)
-        npes_node: (n)umber of (p)rocessing (e)lements on this (node)
+        ctx: the `DeviceContext` to associate with this thread
+        number_of_devices_node: the number of devices participating on this node,
+            by default this will use ctx.number_of_devices() to use all
+            available GPUs.
 
     Raises:
         If SHMEM initialization fails.
@@ -199,10 +201,10 @@ fn shmem_init(mype_node: Int, npes_node: Int) raises -> DeviceContext:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmemx_init(mype_node, npes_node)
+        nvshmemx_init_thread(ctx, number_of_devices_node)
     else:
-        return CompilationTarget.unsupported_target_error[
-            DeviceContext, operation="shmem_init"
+        CompilationTarget.unsupported_target_error[
+            operation="shmem_init_thread"
         ]()
 
 
@@ -256,8 +258,9 @@ fn shmem_my_pe() -> c_int:
     if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         return nvshmem_my_pe()
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_my_pe",]()
-        return {}
+        return CompilationTarget.unsupported_target_error[
+            c_int, operation="shmem_my_pe"
+        ]()
 
 
 fn shmem_n_pes() -> c_int:
@@ -272,8 +275,7 @@ fn shmem_n_pes() -> c_int:
         return nvshmem_n_pes()
     else:
         return CompilationTarget.unsupported_target_error[
-            c_int,
-            operation="shmem_n_pes",
+            c_int, operation="shmem_n_pes"
         ]()
 
 
@@ -352,8 +354,9 @@ fn shmem_calloc[
     if has_nvidia_gpu_accelerator():
         return nvshmem_calloc[dtype](count, size)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_calloc"]()
-        return {}
+        return CompilationTarget.unsupported_target_error[
+            UnsafePointer[Scalar[dtype]], operation="shmem_calloc"
+        ]()
 
 
 fn shmem_free[dtype: DType](ptr: UnsafePointer[Scalar[dtype]]):
@@ -413,10 +416,9 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
     if has_nvidia_gpu_accelerator():
         return Int(nvshmem_team_my_pe(c_int(team)))
     else:
-        CompilationTarget.unsupported_target_error[
-            operation="shmem_team_my_pe",
+        return CompilationTarget.unsupported_target_error[
+            c_int, operation="shmem_team_my_pe"
         ]()
-        return 0
 
 
 # ===----------------------------------------------------------------------=== #
@@ -507,8 +509,9 @@ fn shmem_g[
     if is_nvidia_gpu():
         return nvshmem_g(source, pe)
     else:
-        CompilationTarget.unsupported_target_error[operation="shmem_g"]()
-        return 0
+        return CompilationTarget.unsupported_target_error[
+            Scalar[dtype], operation="shmem_g"
+        ]()
 
 
 fn shmem_put[

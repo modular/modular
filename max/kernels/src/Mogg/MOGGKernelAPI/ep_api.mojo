@@ -28,7 +28,7 @@ from tensor_internal.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 
-from shmem import shmem_init, shmem_malloc, shmem_module_init
+from shmem import shmem_init_thread, shmem_module_init, shmem_malloc
 from shmem.ep_comm import (
     BF16TokenFormat,
     dispatch_kernel,
@@ -127,7 +127,7 @@ struct Struct_ep_init:
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
         # Initialize the SHMEM library for this GPU
-        _ = shmem_init(Int(gpu_ctx.id()), n_gpus_per_node)
+        shmem_init_thread(gpu_ctx, n_gpus_per_node)
 
         # Allocate SHMEM buffers for dispatch phase
         var dispatch_send_p = shmem_malloc[DType.uint8](
