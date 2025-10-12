@@ -1061,7 +1061,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     temp_position_ids = temp_position_ids.reshape(1, 1, -1)
                     temp_position_ids = np.tile(temp_position_ids, (3, 1, 1))
                     delta = (
-                        ctx.current_length
+                        # Offset by the number of previous tokens (start_idx).
+                        ctx.start_idx
                         + ctx.extra_model_args["rope_delta"].item()
                     )
                     temp_position_ids = temp_position_ids + delta
