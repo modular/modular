@@ -20,7 +20,7 @@ readonly config=$(find $BUILD_WORKSPACE_DIRECTORY -name .markdownlint.yaml -path
 
 if [[ -n "${FAST:-}" ]]; then
     cd "$BUILD_WORKSPACE_DIRECTORY"
-    paths=$(git diff --name-only $(git merge-base --fork-point origin/main) -- '*.md' '*.mdx' ':!:third-party/*')
+    paths=$(git diff --name-only $(git merge-base origin/main HEAD) -- '*.md' '*.mdx' ':!:third-party/*')
     if [ ! -n "$paths" ]; then
         # markdownlint will just print help if no input paths, short circuit here
         exit 0

@@ -24,7 +24,7 @@ if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
 
 def get_changed_files() -> list[str]:
     merge_base_result = subprocess.run(
-        ["git", "merge-base", "--fork-point", "origin/main"],
+        ["git", "merge-base", "origin/main", "HEAD"],
         capture_output=True,
     )
     merge_base = merge_base_result.stdout.decode().rstrip("\n")
