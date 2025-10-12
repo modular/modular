@@ -896,8 +896,8 @@ def test_ascii_aliases():
     assert_true("'" in String.PUNCTUATION)
 
     var text = "I love my Mom and Dad so much!!!\n"
-    for char in text:
-        assert_true(char in String.PRINTABLE)
+    for cp in text.codepoint_slices():
+        assert_true(cp in String.PRINTABLE)
 
 
 def test_rstrip():
