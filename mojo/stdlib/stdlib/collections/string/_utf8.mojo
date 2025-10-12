@@ -173,7 +173,7 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
         if byte_type == 0:
             offset += 1
             continue
-        elif byte_type == 1:
+        elif byte_type == 1 or byte_type > 4:
             return False
 
         for i in range(1, byte_type):
@@ -183,15 +183,15 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
 
         # special unicode ranges
         var b1 = ptr[offset + 1]
-        if byte_type == 2 and b0 < UInt8(0b1100_0010):
+        if byte_type == 2 and b0 < 0b1100_0010:
             return False
-        elif b0 == 0xE0 and b1 < UInt8(0xA0):
+        elif b0 == 0xE0 and b1 < 0xA0:
             return False
-        elif b0 == 0xED and b1 > UInt8(0x9F):
+        elif b0 == 0xED and b1 > 0x9F:
             return False
-        elif b0 == 0xF0 and b1 < UInt8(0x90):
+        elif b0 == 0xF0 and b1 < 0x90:
             return False
-        elif b0 == 0xF4 and b1 > UInt8(0x8F):
+        elif b0 == 0xF4 and b1 > 0x8F:
             return False
 
         offset += UInt(byte_type)
@@ -277,12 +277,7 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    return (
-        b.ge(0b1000_0000).cast[DType.uint8]()
-        + b.ge(0b1100_0000).cast[DType.uint8]()
-        + b.ge(0b1110_0000).cast[DType.uint8]()
-        + b.ge(0b1111_0000).cast[DType.uint8]()
-    )
+    return count_leading_zeros(~b)
 
 
 @always_inline

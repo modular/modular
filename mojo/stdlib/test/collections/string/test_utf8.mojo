@@ -27,6 +27,10 @@ from testing import TestSuite
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
 
+# NOTE: since the biggest unicode codepoint is 0x10FFFF then the biggest
+# first byte that a utf-8 sequence can have is 0b1111_0100 (0xF4)
+alias BIGGEST_UTF8_FIRST_BYTE = Byte(0b1111_0100)
+
 alias GOOD_SEQUENCES = [
     List("a".as_bytes()),
     List("\xc3\xb1".as_bytes()),
@@ -295,7 +299,7 @@ def test_utf8_byte_type():
         assert_equal(_utf8_byte_type(i), 2)
     for i in range(UInt8(0b1110_0000), UInt8(0b1111_0000)):
         assert_equal(_utf8_byte_type(i), 3)
-    for i in range(UInt8(0b1111_0000), UInt8(0b1111_1111)):
+    for i in range(UInt8(0b1111_0000), BIGGEST_UTF8_FIRST_BYTE):
         assert_equal(_utf8_byte_type(i), 4)
 
 
