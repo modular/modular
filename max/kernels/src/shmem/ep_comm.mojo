@@ -187,6 +187,159 @@ struct BF16TokenFormat[
             )
 
 
+@register_passable("trivial")
+struct BlockwiseFP8TokenFormat[
+    fp8_dtype: DType,
+    scales_dtype: DType,
+    output_layout: Layout,
+    scales_layout: Layout, //,
+    _hid_dim: Int,
+    _top_k: Int,
+    _alignment: Int,
+](TokenFormat):
+    alias hid_dim = _hid_dim
+    alias top_k = _top_k
+    alias alignment = _alignment
+
+    alias TensorType = LayoutTensor[fp8_dtype, output_layout, MutableAnyOrigin]
+    alias ScalesTensorType = LayoutTensor[
+        scales_dtype, scales_layout, MutableAnyOrigin
+    ]
+    var output_tokens: Self.TensorType
+    var output_scales: Self.ScalesTensorType
+
+    alias group_size = 128
+
+    @always_inline
+    fn __init__(
+        out self,
+        output_tokens: Self.TensorType,
+        output_scales: Self.ScalesTensorType,
+    ):
+        self.output_tokens = output_tokens
+        self.output_scales = output_scales
+
+    @always_inline
+    @staticmethod
+    fn fp8_quant_size() -> Int:
+        return align_up(Self.hid_dim * Self.fp8_dtype.size_of(), Self.alignment)
+
+    @always_inline
+    @staticmethod
+    fn scales_size() -> Int:
+        constrained[
+            Self.hid_dim % Self.group_size == 0,
+            "hid_dim must be divisible by 128",
+        ]()
+        return align_up(
+            Self.hid_dim // Self.group_size * Self.scales_dtype.size_of(),
+            Self.alignment,
+        )
+
+    @always_inline
+    @staticmethod
+    fn token_size() -> Int:
+        return Self.fp8_quant_size() + Self.scales_size()
+
+    @always_inline
+    @staticmethod
+    fn scales_offset() -> Int:
+        return Self.fp8_quant_size()
+
+    @always_inline
+    @staticmethod
+    fn copy_token_to_send_buf[
+        src_type: DType
+    ](
+        buf_p: UnsafePointer[UInt8],
+        src_p: UnsafePointer[Scalar[src_type]],
+        block_size: UInt,
+    ) -> None:
+        alias src_width = simd_width_of[src_type]()
+        alias byte_width = src_width * Self.fp8_dtype.size_of()
+
+        alias fp8_max = Scalar[Self.fp8_dtype].MAX_FINITE
+        alias fp8_max_t = Scalar[Self.fp8_dtype].MAX_FINITE.cast[
+            Self.scales_dtype
+        ]()
+
+        alias n_threads_per_group = Self.group_size // src_width
+        constrained[
+            WARP_SIZE % n_threads_per_group == 0,
+            "Each warp must process a multiple of quantization groups",
+        ]()
+
+        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
+            var loaded_vec = src_p.load[
+                width=src_width, alignment = Self.alignment, invariant=True
+            ](i * src_width).cast[Self.scales_dtype]()
+            var thread_max = abs(loaded_vec).reduce_max()
+            var group_max = warp.lane_group_max_and_broadcast[
+                n_threads_per_group
+            ](thread_max)
+
+            # 1e-4 is taken from DeepEP.
+            var scale_factor = max(group_max, 1e-4) / fp8_max_t
+            var output_vec = loaded_vec / scale_factor
+            output_vec = output_vec.clamp(-fp8_max_t, fp8_max_t)
+
+            buf_p.store[width=byte_width, alignment=byte_width](
+                i * byte_width,
+                bitcast[DType.uint8, byte_width](
+                    output_vec.cast[Self.fp8_dtype]()
+                ),
+            )
+
+            # The first thread in each group stores the scale factor.
+            alias scale_bytes = Self.scales_dtype.size_of()
+            if lane_id() % n_threads_per_group == 0:
+                scale_idx = i * src_width // Self.group_size
+                buf_p.store[width=scale_bytes, alignment=scale_bytes](
+                    Self.scales_offset() + scale_idx * scale_bytes,
+                    bitcast[DType.uint8, scale_bytes](scale_factor),
+                )
+
+    @always_inline
+    fn copy_msg_to_output_tensor(
+        self,
+        buf_p: UnsafePointer[UInt8],
+        token_index: Int,
+    ) -> None:
+        # First we copy the FP8 quants.
+        alias fp8_width = simd_width_of[Self.fp8_dtype]()
+        for i in range(lane_id(), Self.hid_dim // fp8_width, WARP_SIZE):
+            self.output_tokens.aligned_store[width=fp8_width](
+                token_index,
+                i * fp8_width,
+                bitcast[Self.fp8_dtype, fp8_width](
+                    buf_p.load[
+                        width=fp8_width,
+                        invariant=True,
+                        alignment = Self.alignment,
+                    ](
+                        i * fp8_width,
+                    )
+                ),
+            )
+
+        # Unlike the output tensor, the scales tensor is stored in a transposed way.
+        alias scale_bytes = Self.scales_dtype.size_of()
+        for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
+            self.output_scales.store(
+                i,
+                token_index,
+                bitcast[Self.scales_dtype, 1](
+                    buf_p.load[
+                        width=scale_bytes,
+                        invariant=True,
+                        alignment=scale_bytes,
+                    ](
+                        Self.scales_offset() + i * scale_bytes,
+                    )
+                ),
+            )
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
