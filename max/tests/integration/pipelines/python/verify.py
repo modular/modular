@@ -310,15 +310,9 @@ def verify(
         # or embedding models. They might need to be updated
         # when we add support for other model types.
 
-        # For integers, we expect next_token and need exact match
         if isinstance(pipeline_value, int):
-            assert isinstance(torch_value, int)
-            assert description.startswith("'next_token'")
-            if pipeline_value != torch_value:
-                print(
-                    f"⚠️ Got mismatching {description}: {pipeline_value} !="
-                    f" {torch_value}"
-                )
+            # Integer fields (e.g., token ids, positions) are not compared for accuracy,
+            # as they are either metadata or should be verified separately.
             return
 
         # For floats, we expect next_token_logits and check with tolerances

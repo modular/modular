@@ -1267,6 +1267,22 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # upstream modeling_deepsek.py uses a deprecated transformers function
         use_cache=False,
     ),
+    "deepseek-v3-small-random": GenericOracle(
+        model_path="kathywu95/deepseek-v3-small-random",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": False,
+        },
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "deepseek-v3-small-random-fp8": GenericOracle(
+        model_path="kathywu95/deepseek-v3-small-random-fp8",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": False,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "llasa-8b": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={

@@ -1038,6 +1038,27 @@ PIPELINES = {
             kl_div_threshold=2.6e-01,
         ),
     ),
+    "kathywu95/deepseek-v3-small-random-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only", "no-h100"],  # B200 only
+        run=_make_pipeline_runner(
+            pipeline="deepseek-v3-small-random",
+            encoding="bfloat16",
+            cos_dist_threshold=9.4e-03,
+            kl_div_threshold=2.7e-2,
+        ),
+    ),
+    # TODO(MODELS-788): Support FP8 in DeepSeekV3 pipeline
+    # "kathywu95/deepseek-v3-small-random-bfloat16-fp8": PipelineDef(
+    #     compatible_with=[DeviceKind.GPU],
+    #     tags=["nvidia-only", "no-h100"],  # B200 only
+    #     run=_make_pipeline_runner(
+    #         pipeline="deepseek-v3-small-random-fp8",
+    #         encoding="float8_e4m3fn",
+    #         cos_dist_threshold=9.4e-03,
+    #         kl_div_threshold=2.7e-2,
+    #     ),
+    # ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(

@@ -322,14 +322,30 @@ def compare_text_generation(
         expected_steps = len(expected_values)
 
         assert actual_steps <= expected_steps
+        short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
 
         for step in range(actual_steps):
             inference_results = values[step]
             expected_results = expected_values[step]
 
+            inference_next_token = inference_results["next_token"]
+            expected_next_token = expected_results["next_token"]
+            if inference_next_token != expected_next_token:
+                inference_logits = inference_results["logits"]
+                expected_logits = expected_results["logits"]
+                print(
+                    f"⚠️ Got mismatching next_token: {inference_next_token} !="
+                    f" {expected_next_token} on step={step} for the prompt='{short}'"
+                )
+                print(
+                    f"Logits for generated token {inference_next_token}: {inference_logits[inference_next_token]} (inference) vs {expected_logits[inference_next_token]} (reference)"
+                )
+                print(
+                    f"Logits for expected token {expected_next_token}: {inference_logits[expected_next_token]} (inference) vs {expected_logits[expected_next_token]} (reference)"
+                )
+
             for key, value in inference_results.items():
                 expected_value = expected_results[key]
-                short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
                 description = f"'{key}' on step={step} for the prompt='{short}'"
                 if compare_fn:
                     compare_fn(value, expected_value, description)
