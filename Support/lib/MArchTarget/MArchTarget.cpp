@@ -19,8 +19,8 @@ M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOptLevel optLevel) {
   std::string targetFeatures = getHostCPUFeatures();
 
   std::string errorMessage;
-  const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(hostTriple, errorMessage);
+  const llvm::Target *target = llvm::TargetRegistry::lookupTarget(
+      llvm::Triple(hostTriple), errorMessage);
   if (!target)
     return Error("no target exists for '" + hostTriple + "': " + errorMessage);
 
