@@ -32,17 +32,17 @@ strip_prefix = _strip_prefix
 # Deps that aren't open source so we need to remap to pull from the wheel instead.
 _DEPS_FROM_WHEEL = [
     "//max",
-    "//max/_core_mojo",
-    "//max/driver",
-    "//max/dtype",
-    "//max/engine",
-    "//max/experimental",
-    "//max/interfaces",
-    "//max/mlir",
-    "//max/profiler",
-    "//max/support",
-    "//max/torch",
-    "//max:_core",
+    "//max/python/max/_core_mojo",
+    "//max/python/max/driver",
+    "//max/python/max/dtype",
+    "//max/python/max/engine",
+    "//max/python/max/experimental",
+    "//max/python/max/interfaces",
+    "//max/python/max/mlir",
+    "//max/python/max/profiler",
+    "//max/python/max/support",
+    "//max/python/max/torch",
+    "//max/python/max:_core",
 ]
 
 def _is_internal_reference(dep):
@@ -76,7 +76,7 @@ def _rewrite_deps(deps):
             replaced_dep = dep.replace("//SDK/lib/API/python/max/benchmark", "//benchmark")
             new_deps.append(replaced_dep)
         elif dep.startswith("//SDK/lib/API/python/"):
-            replaced_dep = dep.replace("//SDK/lib/API/python/", "//")
+            replaced_dep = dep.replace("//SDK/lib/API/python/", "//max/python/")
             if replaced_dep in _DEPS_FROM_WHEEL:
                 replaced_dep = "@modular_wheel//:wheel"
             if replaced_dep not in new_deps:
