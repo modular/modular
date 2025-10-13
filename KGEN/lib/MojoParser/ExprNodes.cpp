@@ -175,6 +175,10 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
     if (!indexVal)
       return "";
 
+    // Strip all sugar off of the value - many types and attributes will not
+    // tolerate this.
+    indexVal = getCanonicalAttr(indexVal.get());
+
     // If this is a wrapper for a type, print it as such.
     if (isa<TraitType>(indexVal.getType())) {
       // values of trait type are printed in a kgen compatible way, e.g.
@@ -226,6 +230,9 @@ buildAttrCtorDeferredAttrFromMLIRAttr(const SubscriptNode &node,
     auto indexVal = emitter.emitExprPValue(expr, EC_MLIRMagic);
     if (!indexVal)
       return {};
+    // Strip all sugar off of the value - many types and attributes will not
+    // tolerate it.
+    indexVal = getCanonicalAttr(indexVal.get());
 
     strings.push_back(ToStringDeferredAttr::get(indexVal.get(), elideType));
   }
@@ -1901,7 +1908,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   assert(memberDecls.size() == 1 && "only methods may be overloaded");
   ASTDecl &memberDecl = *memberDecls[0];
 
-  // Parameters form a meta-value.
+  // References to an AliasDecl form a PValue.
   if (auto aliasDeclOpParam =
           dyn_cast_or_null<AliasDeclOp>(memberDecl.getIfOperation())) {
     // Handle accessing an alias in a struct or an extension.
@@ -2057,6 +2064,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     Value value = emitter.emitExprSRValue(argument.expr, EC_MLIRMagic);
     if (!value)
       return {};
+    // We strip sugar types off all arguments, so they don't interfere with
+    // operator invariants.
+    value = emitter.emitRebindOpIfNeeded(
+        value, getCanonicalType(value.getType()), argument.expr->getLoc());
     opOperands.push_back(value);
   }
 
@@ -2080,6 +2091,9 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         emitter.emitError(call.getLoc(), "unknown _type value");
         return {};
       }
+      // Strip any sugar from the type specifier. Ops may have verifiers that
+      // restrict the result type to something unsugared.
+      value = getCanonicalAttr(value);
 
       auto pushTypeToState = [&](TypedAttr type,
                                  const Twine &message) -> LogicalResult {
