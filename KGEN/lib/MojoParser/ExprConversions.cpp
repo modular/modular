@@ -1367,11 +1367,9 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (canZeroCostConvert(rvType, requiredType, shared))
     return true;
 
-  // Origins and origin sets can convert between each other.
-  // FIXME: This seems wrong, why isn't it checking for inclusion and
-  // compatibility??
-  if ((isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) ||
-      (isa<OriginSetType>(rvType) && isa<OriginType>(requiredType)))
+  // Origin values can convert into an OriginSet by becoming a member of the
+  // set.  OriginSet is a singleton type, the value carries the origins.
+  if (isa<OriginType>(rvType) && isa<OriginSetType>(requiredType))
     return true;
 
   // Check to see if we already cached this convertibility check.
