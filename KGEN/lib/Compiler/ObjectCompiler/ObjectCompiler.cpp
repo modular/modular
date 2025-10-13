@@ -1642,12 +1642,24 @@ static void setupMetalModule(llvm::Module &module, llvm::TargetMachine &tm,
   module.setTargetTriple(llvm::Triple(originalTriple));
 }
 
+// Helper function to get nicer error message when `xcrun metal` command failed.
+static std::string getPrettyMetallibError(StringRef metalCompilerErrorMessage) {
+  if (metalCompilerErrorMessage.contains("is using language version ") ||
+      metalCompilerErrorMessage.contains("air version set to"))
+    return "Please make sure Xcode version is at least 16.0 and macOS is at "
+           "least 15.0.\nIf after update you still see compilation error, "
+           "please submit a bug report.";
+  return "Metal Compiler failed to compile metallib. Please submit a bug "
+         "report.";
+}
+
 static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
                                              CompilationOptions options) {
   // Helper function to remove created temporary files if compilation failed.
   auto cleanupFiles = [](ArrayRef<llvm::SmallString<256>> filesToRemove) {
     for (const auto &file : filesToRemove)
-      llvm::sys::fs::remove(file);
+      if (!file.empty())
+        llvm::sys::fs::remove(file);
   };
 
   // Step 1: Write AIR bitcode using Metal bitcode writer
@@ -1707,13 +1719,32 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
   }
 
   std::string errorMsg;
+  llvm::SmallString<256> metallibErrorFile;
+  if (llvm::sys::fs::createTemporaryFile("metallib_error", "log",
+                                         metallibErrorFile)) {
+    // It's not necessary to have this file, especially
+    // if we assume most of the times metal will succeed in compilation.
+    metallibErrorFile = "";
+  }
   int result = llvm::sys::ExecuteAndWait(
       metallibArgs[0], metallibArgs, /*env=*/std::nullopt,
-      /*redirects=*/{},
+      /*redirects=*/
+      {/*stdin=*/std::nullopt, /*stdout=*/std::nullopt,
+       /*stderr=*/metallibErrorFile.empty()
+           ? std::nullopt
+           : std::make_optional(metallibErrorFile)},
       /*secondsToWait=*/60, /*memoryLimit=*/0, &errorMsg);
 
   if (result != 0) {
-    cleanupFiles({airTempFile, metallibTempFile});
+    if (!metallibErrorFile.empty()) {
+      auto metallibErrorBuffer = llvm::MemoryBuffer::getFile(metallibErrorFile);
+      if (metallibErrorBuffer) {
+        cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
+        return Error(
+            getPrettyMetallibError(metallibErrorBuffer.get()->getBuffer()));
+      }
+    }
+    cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
     return Error("xcrun metallib compilation failed with code " +
                  llvm::Twine(result).str() + ": " + errorMsg);
   }
@@ -1721,13 +1752,13 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
   // Read the compiled metallib back
   auto metallibBuffer = llvm::MemoryBuffer::getFile(metallibTempFile);
   if (!metallibBuffer) {
-    cleanupFiles({airTempFile, metallibTempFile});
+    cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
     return Error("Failed to read metallib file: " +
                  metallibBuffer.getError().message());
   }
   if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".metallib",
                                       *metallibBuffer.get()))) {
-    cleanupFiles({airTempFile, metallibTempFile});
+    cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
     return Error("failed to save metallib to saveTempsPrefix");
   }
 
@@ -1737,7 +1768,7 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
   (*buf) << (*metallibBuffer)->getBuffer();
 
   // Clean up temporary files
-  cleanupFiles({airTempFile, metallibTempFile});
+  cleanupFiles({airTempFile, metallibTempFile, metallibErrorFile});
 
   return buf;
 }
