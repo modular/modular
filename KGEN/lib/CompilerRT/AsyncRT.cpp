@@ -234,6 +234,21 @@ KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_AsyncRT_CreateAsync_Error(
+    AsyncRTWrapper<AnyAsyncValueRef> async, const char *messagePtr,
+    size_t messageLen) {
+  StringRef errorMsg(messagePtr, messageLen);
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
+  AnyAsyncValueRef &value = unwrap(async);
+  EncodedDiagnostic diagnostic{Twine(errorMsg),
+                               UnknownLocationDecoder::getEncodedLocation()};
+  if (value.getPointer() && value.getPointer()->isIndirect())
+    value.copy().setToError(std::move(diagnostic));
+  else
+    value = value.createError(runtime, std::move(diagnostic));
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsync_bool(bool data,
                                  AsyncRTWrapper<AnyAsyncValueRef> async) {
   Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
