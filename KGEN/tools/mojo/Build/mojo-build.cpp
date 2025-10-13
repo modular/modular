@@ -243,12 +243,6 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
 
   std::unique_ptr<ObjectCompiler> objectCompiler = objectCompilerOr.takeValue();
 
-  // Extract and set bitcode libraries from the module before compilation.
-  if (auto arrayAttr =
-          module->getOperation()->getAttrOfType<LLVMBitcodeLibArrayAttr>(
-              LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName()))
-    arrayAttr.externalize(objectCompiler->getBitcodeLibs());
-
   // Generate a symbol table and an export map for the module post-compile.
   SymbolTable symtab(*module);
   switch (outputType) {

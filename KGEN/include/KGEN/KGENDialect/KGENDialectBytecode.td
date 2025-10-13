@@ -262,13 +262,13 @@ def ConstraintAttr : DialectAttribute<(attr
   ConcreteAttribute<"LocationAttr">:$loc
 )>;
 
-def LLVMBitcodeLibAttr : DialectAttribute<(attr
-  ConcreteAttribute<"BoolAttr">:$used,
-  Attribute:$library
+def PackagedLLVMBitcodeLibAttr : DialectAttribute<(attr
+  ConcreteAttribute<"StringAttr">:$packageName,
+  ConcreteAttribute<"DenseResourceElementsAttr">:$resource
 )>;
 
 def LLVMBitcodeLibArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"LLVMBitcodeLibAttr">:$value
+  ConcreteAttrArray<"Attribute">:$value
 )>;
 
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
@@ -305,7 +305,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ExportKindAttr,
     LinkDependencyArrayAttr,
     TailKindAttr,
-    LLVMBitcodeLibAttr,
+    PackagedLLVMBitcodeLibAttr,
     LLVMBitcodeLibArrayAttr
   ];
 }

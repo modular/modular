@@ -202,16 +202,22 @@ kgen.generator @closureSymbol(){
   constraint2 = #kgen.constraint<ge(a, 4), loc("test.mojo":15:10)>
 } : () -> ()
 
-// CHECK: llvm_bitcode_lib_unused = #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
-// CHECK-SAME: llvm_bitcode_lib_used = #kgen.llvm.bitcode.lib<used = true, library = "/opt/libs/math.bc">
-// CHECK-SAME: llvm_bitcode_libs = #kgen<llvm.bitcode.libs[<used = false, library = "/path/to/lib1.bc">, <used = true, library = "/path/to/lib2.bc">]>
+// CHECK: llvm_bitcode_lib_packaged = #kgen.llvm.bitcode.packaged<"mypackage", dense_resource<bitcode_1> : tensor<100xui8>>
+// CHECK-SAME: llvm_bitcode_libs = #kgen<llvm.bitcode.libs["/path/to/lib1.bc", #kgen.llvm.bitcode.packaged<"pkg", dense_resource<bitcode_1> : tensor<200xui8>>]>
 // CHECK-SAME: llvm_bitcode_libs_empty = #kgen<llvm.bitcode.libs[]>
 "some.op"() {
-  llvm_bitcode_lib_unused = #kgen<llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">>,
-  llvm_bitcode_lib_used = #kgen<llvm.bitcode.lib<used = true, library = "/opt/libs/math.bc">>,
+  llvm_bitcode_lib_packaged = #kgen.llvm.bitcode.packaged<"mypackage", dense_resource<bitcode_1> : tensor<100xui8>>,
   llvm_bitcode_libs = #kgen<llvm.bitcode.libs[
-    #kgen<llvm.bitcode.lib<used = false, library = "/path/to/lib1.bc">>,
-    #kgen<llvm.bitcode.lib<used = true, library = "/path/to/lib2.bc">>
+    "/path/to/lib1.bc",
+    #kgen.llvm.bitcode.packaged<"pkg", dense_resource<bitcode_1> : tensor<200xui8>>
   ]>,
   llvm_bitcode_libs_empty = #kgen<llvm.bitcode.libs[]>
 } : () -> ()
+
+{-#
+  dialect_resources: {
+    builtin: {
+      bitcode_1: "0x0100000000000000"
+    }
+  }
+#-}
