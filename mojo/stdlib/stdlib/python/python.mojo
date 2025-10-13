@@ -122,7 +122,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     fn evaluate(
         var expr: String,
         file: Bool = False,
-        name: StringSlice[StaticConstantOrigin] = "__main__",
+        name: StaticString = "__main__",
     ) raises -> PythonObject:
         """Executes the given Python code.
 
@@ -134,14 +134,10 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             `PythonObject` containing the result of the evaluation.
         """
-        ref cpython = Self().cpython()
-        # PyImport_AddModule returns a read-only reference.
-        var module = PythonObject(
-            from_borrowed=cpython.PyImport_AddModule(name)
-        )
-        var dict_obj = PythonObject(
-            from_borrowed=cpython.PyModule_GetDict(module._obj_ptr)
-        )
+        ref cpy = Self().cpython()
+
+        var mod = PythonObject(from_borrowed=cpy.PyImport_AddModule(name))
+        var dict_ptr = cpy.PyModule_GetDict(mod._obj_ptr)
         if file:
             # We compile the code as provided and execute in the module
             # context. Note that this may be an existing module if the provided
@@ -151,38 +147,33 @@ struct Python(Defaultable, ImplicitlyCopyable):
             # The Py_file_input is the code passed to the parsed to indicate
             # the initial state: this is essentially whether it is expecting
             # to compile an expression, a file or statements (e.g. repl).
-            var code_obj_ptr = cpython.Py_CompileString(
+            var code_ptr = cpy.Py_CompileString(
                 expr^, "<evaluate>", Py_file_input
             )
-            if not code_obj_ptr:
-                raise cpython.get_error()
-            var code = PythonObject(from_owned=code_obj_ptr)
-
+            if not code_ptr:
+                raise cpy.unsafe_get_error()
             # For this evaluation, we pass the dictionary both as the globals
             # and the locals. This is because the globals is defined as the
             # dictionary for the module scope, and locals is defined as the
             # dictionary for the *current* scope. Since we are executing at
             # the module scope for this eval, they should be the same object.
-            var result_ptr = cpython.PyEval_EvalCode(
-                code._obj_ptr, dict_obj._obj_ptr, dict_obj._obj_ptr
-            )
-            if not result_ptr:
-                raise cpython.get_error()
-
-            var result = PythonObject(from_owned=result_ptr)
-            _ = result^
-            _ = code^
-            return module
+            var res_ptr = cpy.PyEval_EvalCode(code_ptr, dict_ptr, dict_ptr)
+            cpy.Py_DecRef(code_ptr)
+            if not res_ptr:
+                raise cpy.unsafe_get_error()
+            cpy.Py_DecRef(res_ptr)
+            return mod
         else:
             # We use the result of evaluating the expression directly, and allow
             # all the globals/locals to be discarded. See above re: why the same
             # dictionary is being used here for both globals and locals.
-            var result = cpython.PyRun_String(
-                expr^, Py_eval_input, dict_obj._obj_ptr, dict_obj._obj_ptr
+            var res_ptr = cpy.PyRun_String(
+                expr^, Py_eval_input, dict_ptr, dict_ptr
             )
-            if not result:
-                raise cpython.get_error()
-            return PythonObject(from_owned=result)
+            _ = mod^
+            if not res_ptr:
+                raise cpy.unsafe_get_error()
+            return PythonObject(from_owned=res_ptr)
 
     @staticmethod
     fn add_to_path(dir_path: StringSlice) raises:
