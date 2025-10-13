@@ -399,12 +399,10 @@ static ElaboratorCompileOffloadRetType compileOffloads(
            DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
       result;
 
-  // Extract the initial bitcode library data from the original module.
-  SmallVector<std::pair<bool, Attribute>> currentBitcodeLibs;
-  if (auto bitcodeLibArrayAttr =
-          theModule->getAttrOfType<LLVMBitcodeLibArrayAttr>(
-              LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName()))
-    bitcodeLibArrayAttr.externalize(currentBitcodeLibs);
+  // Get the bitcode library attribute from the module.
+  LLVMBitcodeLibArrayAttr bitcodeLibsAttr =
+      theModule->getAttrOfType<LLVMBitcodeLibArrayAttr>(
+          LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName());
 
   // Compiling offload for different targets.
   // This loop cannot be parallelized since different targets may need
@@ -441,6 +439,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       // Override the target.
       eraseTargetInfo(*module);
       setTargetInfo(*module, target);
+
+      // Copy bitcode libraries attribute to the standalone module.
+      if (bitcodeLibsAttr)
+        (*module)->setAttr(LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName(),
+                           bitcodeLibsAttr);
+
       SymbolTable slicedSymtab(*module);
 
       // Collect SymbolConstantAttr names to rename.
@@ -522,10 +526,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       std::unique_ptr<ObjectCompiler> compiler = compilerOr.takeValue();
 
-      // Set the current bitcode libraries on the ObjectCompiler.
-      if (!currentBitcodeLibs.empty())
-        compiler->getBitcodeLibs() = currentBitcodeLibs;
-
       // Initialize the target machine.
       auto tmOr = createTargetMachine(compilationOptions, /*isJIT=*/false);
       if (tmOr.isError())
@@ -592,11 +592,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if (compiledKernelsOr.isError())
         return compiledKernelsOr.takeError();
 
-      // Extract the updated bitcode libraries from ObjectCompiler for the
-      // next iteration.
-      if (!compiler->getBitcodeLibs().empty())
-        currentBitcodeLibs = compiler->getBitcodeLibs();
-
       OpBuilder b(theModule);
       for (auto idAndKernels : *compiledKernelsOr) {
         uint64_t kernelID = idAndKernels.first;
@@ -639,18 +634,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         return resetResult.takeError();
       }
     }
-  }
-
-  // Set the final updated bitcode library data back on the original module.
-  if (!currentBitcodeLibs.empty()) {
-    SmallVector<LLVMBitcodeLibAttr> finalLibAttrs;
-    for (const auto &[used, library] : currentBitcodeLibs)
-      finalLibAttrs.push_back(LLVMBitcodeLibAttr::get(used, library));
-
-    LLVMBitcodeLibArrayAttr finalArrayAttr =
-        LLVMBitcodeLibArrayAttr::get(theModule->getContext(), finalLibAttrs);
-    theModule->setAttr(LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName(),
-                       finalArrayAttr);
   }
 
   return result;

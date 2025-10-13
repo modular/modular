@@ -310,21 +310,26 @@ writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, StringRef bitcodeFile) {
 }
 
 static ErrorOrSuccess
-internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr,
-                       ModuleOp module) {
-  SmallVector<LLVMBitcodeLibAttr> bitcodeAttrs;
+internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr, ModuleOp module,
+                       StringRef packageName) {
+  SmallVector<Attribute> bitcodeAttrs;
 
-  for (const LLVMBitcodeLibAttr &bitcodeLibAttr : bitcodeLibsAttr.getValue()) {
-    if (auto stringAttr = dyn_cast<StringAttr>(bitcodeLibAttr.getLibrary())) {
+  for (Attribute attr : bitcodeLibsAttr.getValue()) {
+    if (auto stringAttr = dyn_cast<StringAttr>(attr)) {
+      // Load bitcode from file path and create PackagedLLVMBitcodeLibAttr
       DenseResourceElementsAttr bitcodeAttr = writeLLVMBitcodeToDenseAttr(
           module.getContext(), stringAttr.getValue());
       if (!bitcodeAttr)
         return Error("failed to load bitcode library: " +
                      stringAttr.getValue());
-      // An internalized bitcode library is always used.
-      bitcodeAttrs.push_back(LLVMBitcodeLibAttr::get(true, bitcodeAttr));
-    } else {
-      bitcodeAttrs.push_back(bitcodeLibAttr);
+
+      StringAttr pkgNameAttr =
+          StringAttr::get(module.getContext(), packageName);
+      bitcodeAttrs.push_back(
+          PackagedLLVMBitcodeLibAttr::get(pkgNameAttr, bitcodeAttr));
+    } else if (auto packagedAttr = dyn_cast<PackagedLLVMBitcodeLibAttr>(attr)) {
+      // Already packaged, keep as-is
+      bitcodeAttrs.push_back(packagedAttr);
     }
   }
 
@@ -511,8 +516,8 @@ static int package(const State &subcommandState) {
     if (auto bitcodeLibArrayAttr =
             (*module)->getOperation()->getAttrOfType<LLVMBitcodeLibArrayAttr>(
                 LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName())) {
-      ErrorOrSuccess res =
-          internalizeBitcodeLibs(bitcodeLibArrayAttr, **module);
+      ErrorOrSuccess res = internalizeBitcodeLibs(bitcodeLibArrayAttr, **module,
+                                                  packageArgs.name);
       if (failed(res))
         return state.reportError(res.getError());
     }

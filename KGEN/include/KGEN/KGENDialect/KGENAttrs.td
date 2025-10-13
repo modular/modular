@@ -1733,45 +1733,41 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LLVMBitcodeLibAttr
+// PackagedLLVMBitcodeLibAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_LLVMBitcodeLibAttr : KGENAttr<"LLVMBitcodeLib", "llvm.bitcode.lib"> {
-  let summary = "LLVM bitcode library attribute.";
+def KGEN_PackagedLLVMBitcodeLibAttr : KGENAttr<"PackagedLLVMBitcodeLib",
+                                               "llvm.bitcode.packaged"> {
+  let summary = "A Packaged LLVM bitcode library.";
   let description = [{
-    The `#kgen.llvm.bitcode.lib` attribute represents a single LLVM bitcode
-    library with usage tracking. It contains:
-    - `used`: A boolean flag indicating whether this library was used
-    - `library`: The actual bitcode library, which can be either:
-      - StringAttr: For bitcode libraries passed via command line
-      - DenseResourceElementsAttr: For bitcode libraries from packages
+    The `#kgen.llvm.bitcode.packaged` attribute represents a Packaged LLVM
+    bitcode library. It contains:
+    - `packageName`: A string attribute indicating the name of the package.
+    - `resource`: The actual bitcode library embedded as a
+                  DenseResourceElementsAttr.
 
     Example:
     ```mlir
-    #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
-    #kgen.llvm.bitcode.lib<used = true, library = dense_resource<data> : ...>
+    #kgen.llvm.bitcode.packaged<
+      packageName = "lib", resource = dense_resource<data> : ...
+    >
     ```
   }];
 
-  let parameters = (ins "BoolAttr":$used, "Attribute":$library);
+  let parameters = (
+    ins "StringAttr":$packageName,
+    "DenseResourceElementsAttr":$resource
+  );
 
   let assemblyFormat =
-    "`<` `used` `=` $used `,` `library` `=` $library `>`";
+    "`<` $packageName `,` $resource `>`";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "bool":$used,
-                                        "Attribute":$library), [{
-      return $_get(library.getContext(),
-                   BoolAttr::get(library.getContext(), used),
-                   library);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "BoolAttr":$used,
-                                        "Attribute":$library), [{
-      return $_get(used.getContext(), used, library);
+    AttrBuilderWithInferredContext<(ins
+        "StringAttr":$packageName, "DenseResourceElementsAttr":$resource), [{
+      return $_get(packageName.getContext(), packageName, resource);
     }]>
   ];
-
-  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1779,13 +1775,16 @@ def KGEN_LLVMBitcodeLibAttr : KGENAttr<"LLVMBitcodeLib", "llvm.bitcode.lib"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_LLVMBitcodeLibArrayAttr : ArrayOfAttr<KGENDialect,
-  "LLVMBitcodeLibArray", "llvm.bitcode.libs", "LLVMBitcodeLibAttr"> {
+  "LLVMBitcodeLibArray", "llvm.bitcode.libs", "Attribute"> {
   let summary = "Array of LLVM bitcode library attributes.";
   let description = [{
     The `#kgen.llvm.bitcode.libs` attribute represents an array of LLVM
     bitcode libraries, each with their own usage tracking. This is typically
     attached to ModuleOp to store all bitcode libraries that should be
     linked during compilation.
+    A bitcode library can either be:
+    - StringAttr: For bitcode libraries passed via command line
+    - PackagedLLVMBitcodeLibAttr: For bitcode libraries from packages
   }];
 
   let extraClassDeclaration = [{
@@ -1794,11 +1793,8 @@ def KGEN_LLVMBitcodeLibArrayAttr : ArrayOfAttr<KGENDialect,
     static llvm::StringLiteral getBitcodeLibsAttrName() {
       return "kgen.llvm.bitcode.libs";
     }
-
-    /// Populate the given vector with this array attribute in native format.
-    void externalize
-      (llvm::SmallVector<std::pair<bool, mlir::Attribute>> &result) const;
   }];
+  let genVerifyDecl = 1;
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
