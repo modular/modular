@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 from max.entrypoints.cli import DevicesOptionType
@@ -41,14 +42,20 @@ def run_layer_verification(  # noqa: ANN201
         input_injection: Whether to inject PyTorch inputs into MAX layers during capture.
     """
 
-    # Use working directory if provided, otherwise default to current directory with model_outputs
+    # Create timestamped export directory
     if export_path is None:
-        export_path = Path.cwd() / "layer_verification_output"
+        export_path = (
+            Path.cwd()
+            / "layer_verification_output"
+            / f"{pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
 
+    # Create export directory
     export_path.mkdir(parents=True, exist_ok=True)
 
     # Use layer_data_path if provided, otherwise fall back to export_path
     if layer_data_path is None:
+        assert export_path is not None
         layer_data_path = export_path
 
     layer_data_path.mkdir(parents=True, exist_ok=True)

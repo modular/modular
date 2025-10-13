@@ -30,8 +30,8 @@ from verify_layers.pipelines import PipelineRunner
     "--export-path",
     "export_path",
     type=click.Path(path_type=Path),
-    help="Export directory for all output files and results",
-    default="layer_verification_output",
+    help="Base export directory for outputs. A timestamped subdirectory will be created for each run if not provided",
+    default=None,
 )
 @click.option(
     "--save-layers",
@@ -51,9 +51,6 @@ def main(
 
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
-
-    # Ensure working directory exists
-    export_path.mkdir(parents=True, exist_ok=True)
 
     # Create layer data path based on save_layers option
     if save_layers:
