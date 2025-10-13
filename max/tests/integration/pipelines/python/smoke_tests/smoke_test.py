@@ -282,8 +282,8 @@ def smoke_test(framework: str, model: str, output_file: Path | None) -> None:
 
     # TODO Refactor this to a model list/matrix specifying type of model
     is_vision_model = any(
-        keyword in model
-        for keyword in ("qwen2.5-vl", "vision", "internvl", "idefics")
+        kw in model
+        for kw in ("qwen2.5-vl", "vision", "internvl", "idefics", "pixtral")
     )
     task = "chartqa" if is_vision_model else "gsm8k_cot_llama"
 
