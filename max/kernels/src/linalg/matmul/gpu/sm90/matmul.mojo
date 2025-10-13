@@ -431,7 +431,6 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         alias kernel = matmul_kernel[].run_unaligned[
             c_tma_op.desc_layout,
             c_tma_op.layout,
-            pipeline_stages = config.num_pipeline_stages,
         ]
 
         ctx.enqueue_function[kernel](
