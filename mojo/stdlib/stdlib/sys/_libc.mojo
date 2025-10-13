@@ -27,7 +27,14 @@ from sys.ffi import c_char, c_int, c_size_t, get_errno
 
 @always_inline
 fn free(ptr: UnsafePointer[NoneType, mut=True, **_]):
-    external_call["free", NoneType](ptr)
+    # manually construct the call to free and attach the
+    # correct attributes
+    __mlir_op.`pop.external_call`[
+        func = __mlir_attr[`"free" : !kgen.string`],
+        _type=None,
+        argAttrs = __mlir_attr.`[{llvm.allocptr}]`,
+        funcAttrs = __mlir_attr.`[["allockind", "4"], ["alloc-family", "malloc"]]`,
+    ](ptr)
 
 
 @always_inline
