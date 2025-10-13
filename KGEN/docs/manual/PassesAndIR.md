@@ -91,12 +91,12 @@ a constant value.
 dialects further below.)
 
 Mojo has several dialects:
-[`kgen`](KGEN/include/KGEN/KGENDialect),
-[`lit`](KGEN/include/KGEN/LITDialect),
-[`pop`](KGEN/include/KGEN/POPDialect),
-[`hlcf`](KGEN/include/KGEN/HLCFDialect),
-[`interp`](KGEN/include/KGEN/Interpreter/InterpreterDialect.td) and
-[`co`](https://github.com/modularml/modular/tree/main/KGEN/include/KGEN/CODialect).
+[`kgen`](../../../KGEN/include/KGEN/KGENDialect),
+[`lit`](../../../KGEN/include/KGEN/LITDialect),
+[`pop`](../../../KGEN/include/KGEN/POPDialect),
+[`hlcf`](../../../KGEN/include/KGEN/HLCFDialect),
+[`interp`](../../../KGEN/include/KGEN/Interpreter/InterpreterDialect.td) and
+[`co`](../../../KGEN/include/KGEN/CODialect).
 
 Mojo compiler also uses upstream dialects:
 [`index`](https://github.com/llvm/llvm-project/tree/main/mlir/include/mlir/Dialect/Index),
@@ -104,7 +104,7 @@ Mojo compiler also uses upstream dialects:
 [`nvvm`](https://mlir.llvm.org/docs/Dialects/NVVMDialect),
 and [`rocdl`](https://mlir.llvm.org/docs/Dialects/ROCDLDialect/).
 
-[`lit`](KGEN/include/KGEN/LITDialect) is a high-level
+[`lit`](../../../KGEN/include/KGEN/LITDialect) is a high-level
 dialect to reflect what's most close to
 a logical mojo program. It is the IR the parser and
 type-checker (semantics check) are working on.
@@ -114,26 +114,26 @@ but currently reflects how “lit” Mojo is 🔥.
 Historical reason is because Mojo parser level IR used to be
 called lightning (LIT). Mojo doesn't have an AST).
 
-[`kgen`](KGEN/include/KGEN/KGENDialect) defines the
+[`kgen`](../../../KGEN/include/KGEN/KGENDialect) defines the
 canonical IR for mojo program after semantics check
 which can describe both parametric and
 concretized (parameters substituted with concrete values) IR.
 The dialect defines the mojo parameters as mlir attributes as well as
 types, and operations to represent the whole program.
 
-[`pop`](KGEN/include/KGEN/POPDialect), which stands
+[`pop`](../../../KGEN/include/KGEN/POPDialect), which stands
 for “parametric operations”, are parameterized,
 target-independent dialect used to represent more algorithm level operations,
 attributes and types,
 such as `pop.variadic.xxx`, `!pop.array`, `!pop.simd`, etc.
 
-[`hlcf`](KGEN/include/KGEN/HLCFDialect) is the dialect to describe higher-level
+[`hlcf`](../../../KGEN/include/KGEN/HLCFDialect) is the dialect to describe higher-level
 control flow in the form of IR instead of something the compiler has to extract
 from the IR (e.g. CFG is an analysis in LLVM).
 `hlcf` is non-parametric and target independent, and it exists in both
 pre-elaboration and post-elaboration IR.
 
-[`interp`](KGEN/include/KGEN/Interpreter/InterpreterDialect.td)
+[`interp`](../../../KGEN/include/KGEN/Interpreter/InterpreterDialect.td)
 dialect implements attributes and utilities for communicating with the
 interpreter in MLIR. The interpreter is a significant part of the elaborator
 where we substitute parameters with concrete values. `interp` is mostly
