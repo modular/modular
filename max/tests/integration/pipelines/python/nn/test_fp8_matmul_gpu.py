@@ -417,11 +417,13 @@ def test_linear_gpu(
         input_scale_spec=Float8InputScaleSpec(
             granularity=input_scale_granularity,
             origin=Float8ScaleOrigin.DYNAMIC,
-            dtype=DType.float8_e4m3fn,
+            dtype=DType.float32,
+            block_size=a_tile_size,
         ),
         weight_scale_spec=Float8WeightScaleSpec(
             granularity=weight_scale_granularity,
-            dtype=DType.float8_e4m3fn,
+            dtype=DType.float32,
+            block_size=b_tile_size,
         ),
     )
 
