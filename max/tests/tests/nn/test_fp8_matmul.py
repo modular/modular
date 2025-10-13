@@ -732,10 +732,12 @@ def test_grouped_dynamic_scaled_fp8_matmul_valid() -> None:
                 granularity=Float8ScaleGranularity.BLOCK,
                 origin=Float8ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
+                block_size=(1, 128),
             ),
             weight_scale_spec=Float8WeightScaleSpec(
                 granularity=Float8ScaleGranularity.BLOCK,
                 dtype=DType.float32,
+                block_size=(128, 128),
             ),
             out_type=DType.bfloat16,
         )
@@ -792,10 +794,12 @@ def test_grouped_dynamic_scaled_fp8_matmul_invalid() -> None:
                 granularity=Float8ScaleGranularity.BLOCK,
                 origin=Float8ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
+                block_size=(1, 128),
             ),
             weight_scale_spec=Float8WeightScaleSpec(
                 granularity=Float8ScaleGranularity.BLOCK,
                 dtype=DType.float32,
+                block_size=(128, 128),
             ),
             out_type=DType.bfloat16,
         )
@@ -917,10 +921,12 @@ def test_batched_dynamic_scaled_fp8_matmul_valid() -> None:
                 granularity=Float8ScaleGranularity.BLOCK,
                 origin=Float8ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
+                block_size=(1, 128),
             ),
             weight_scale_spec=Float8WeightScaleSpec(
                 granularity=Float8ScaleGranularity.BLOCK,
                 dtype=DType.float32,
+                block_size=(128, 128),
             ),
             out_type=DType.bfloat16,
         )
@@ -965,10 +971,12 @@ def test_batched_dynamic_scaled_fp8_matmul_invalid() -> None:
                 granularity=Float8ScaleGranularity.BLOCK,
                 origin=Float8ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
+                block_size=(1, 128),
             ),
             weight_scale_spec=Float8WeightScaleSpec(
                 granularity=Float8ScaleGranularity.BLOCK,
                 dtype=DType.float32,
+                block_size=(128, 128),
             ),
             out_type=DType.bfloat16,
         )

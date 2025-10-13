@@ -176,6 +176,65 @@ def test_linear_shard_with_float8_rowwise_scale() -> None:
             )  # 1024/2 = 512
 
 
+def test_linear_shard_with_float8_block_scale() -> None:
+    """Test Linear.shard() with float8 block-wise scaling."""
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
+        ],
+    ):
+        float8_config = Float8Config(
+            weight_scale=Float8WeightScaleSpec(
+                dtype=DType.float32,
+                granularity=Float8ScaleGranularity.BLOCK,
+                block_size=(128, 128),
+            ),
+            input_scale=Float8InputScaleSpec(
+                granularity=Float8ScaleGranularity.BLOCK,
+                dtype=DType.float32,
+                block_size=(1, 128),
+                origin=Float8ScaleOrigin.DYNAMIC,
+            ),
+            mlp_in_float8=set(),
+            attn_qkv_in_float8=set(),
+        )
+
+        linear = Linear(
+            in_dim=4096,
+            out_dim=1024,
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+            float8_config=float8_config,
+        )
+        # Check that the input scale is none.
+        assert linear.input_scale is None
+
+        # Check that the weight scale has the correct dimensions.
+        assert linear.weight_scale is not None
+        assert tuple(int(d) for d in linear.weight_scale.shape) == (8, 32)
+
+        linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
+
+        devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
+        shards = linear.shard(devices)
+        sharded = shards[0]
+
+        assert sharded.input_scale is None
+
+        assert sharded.weight_scale is not None
+        assert tuple(int(d) for d in sharded.weight_scale.shape) == (
+            4,  # New block dimension 8 / 2 = 4
+            32,
+        )  # Block-wise scale dimensions
+
+        with pytest.raises(
+            ValueError,
+            match=r"not divisible by the number of devices \(3\)",
+        ):
+            linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=3)
+
+
 def test_linear_sharding_strategy_property() -> None:
     """Test Linear sharding_strategy property getter/setter."""
     linear = Linear(
