@@ -1514,15 +1514,16 @@ def check_gpu_clock() -> None:
         ],
     )
 
-    # We check for persistence here as a proxy to check if setup-gpu-benchmarking
+    # We check for persistence here as a proxy to check if setup-gpu-clock.sh
     # has been run. This is not exact, but should cover most cases. Checking for
     # the clock frequency is more complicated since the frequencies changes per
     # GPU.
     if "Disabled" in output.decode("utf-8"):
         raise Exception(
-            "the clock frequency for the GPU is not locked, please use"
-            " `setup-gpu-benchmarking` to ensure that the frequencies and power"
-            " of the GPU are locked to get consistent benchmarking behavior."
+            "the clock frequency for the GPU is not locked, please run"
+            " `sudo utils/setup-gpu-clock.sh` to ensure the frequencies"
+            " and power of the GPU are locked to get consistent"
+            " benchmarking behavior."
         )
 
 
