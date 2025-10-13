@@ -497,6 +497,17 @@ fn mogg_async_ready(async_ptr: OpaquePointer):
     external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](async_ptr)
 
 
+@register_internal("mogg.async.error")
+@no_inline
+fn mogg_async_error(async_ptr: OpaquePointer, err: Error):
+    """Indicates to the C++ runtime that the kernel has failed."""
+    external_call["KGEN_CompilerRT_AsyncRT_CreateAsync_Error", NoneType](
+        async_ptr,
+        err.unsafe_cstr_ptr(),
+        err.byte_length(),
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 # MGP Common Primitives
 # ===-----------------------------------------------------------------------===#
