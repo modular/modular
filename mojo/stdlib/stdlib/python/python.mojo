@@ -226,12 +226,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The Python module.
         """
-        ref cpython = Python().cpython()
-        # Throw error if it occurred during initialization
-        cpython.check_init_error()
-        var module_ptr = cpython.PyImport_ImportModule(module^)
+        # Initialize the global interpreter and check for errors.
+        ref cpy = Self().cpython()
+        cpy.check_init_error()
+
+        var module_ptr = cpy.PyImport_ImportModule(module^)
         if not module_ptr:
-            raise cpython.get_error()
+            raise cpy.unsafe_get_error()
         return PythonObject(from_owned=module_ptr)
 
     @staticmethod
@@ -248,18 +249,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The Python module.
         """
-        # Initialize the global instance to the Python interpreter
-        # in case this is our first time.
+        # Initialize the global interpreter and check for errors.
+        ref cpy = Self().cpython()
+        cpy.check_init_error()
 
-        ref cpython = Python().cpython()
-
-        # This will throw an error if there are any errors during initialization.
-        cpython.check_init_error()
-
-        var module_ptr = cpython.PyModule_Create(name)
+        var module_ptr = cpy.PyModule_Create(name)
         if not module_ptr:
-            raise cpython.get_error()
-
+            raise cpy.unsafe_get_error()
         return PythonObject(from_owned=module_ptr)
 
     @staticmethod
