@@ -180,7 +180,7 @@ class TuningSpec:
     name: str = ""
     file: Path = Path("")
     params: list[dict] = field(default_factory=list)
-    pkl_path: Path = Path()
+    src_path: Path = Path()
     git_sha: str = ""
     datetime: str = ""
 
@@ -323,7 +323,7 @@ def profile_results(
         name=str(pkl_data.get("name", None)),
         file=Path(pkl_data.get("file", Path())),
         params=[spec],
-        pkl_path=pickle_path,
+        src_path=pickle_path,
         git_sha=str(pkl_data.get("git-revision", None)),
         datetime=str(pkl_data.get("datetime", None)),
     )
@@ -350,7 +350,21 @@ def yaml_to_tuning_spec(yaml_path: Path) -> list[TuningSpec]:
             name=s.name,
             file=s.file,
             params=[spec_to_dict(str(s))],
-            pkl_path=yaml_path,
+            src_path=yaml_path,
+            git_sha="",
+        )
+        tuning_specs.append(ts)
+    return tuning_specs
+
+
+def spec_to_tuning_spec(spec: Spec) -> list[TuningSpec]:
+    tuning_specs = []
+    for s in spec:
+        ts = TuningSpec(
+            name=s.name,
+            file=s.file,
+            params=[spec_to_dict(str(s))],
+            src_path=Path(),
             git_sha="",
         )
         tuning_specs.append(ts)
@@ -375,10 +389,6 @@ def diff_baseline(
 
     # Find the common pivots between all pkl's if none specified
     if not pivots:
-
-        def intersection(a: list, b: list):  # noqa: ANN202
-            return [x for x in a if x in b]
-
         _, pivots = extract_pivots(
             list(tune_df_base["spec"]), exclude=["name", "AUTOTUNING_MODE"]
         )
@@ -387,7 +397,7 @@ def diff_baseline(
             _, non_pivot_columns = extract_pivots(
                 list(pkl.tune_df["spec"]), exclude=["name", "AUTOTUNING_MODE"]
             )
-            pivots = intersection(pivots, non_pivot_columns)
+            pivots = list_intersection(pivots, non_pivot_columns)
 
     shape = "/".join([f"{p}={base_dict[p]}" for p in pivots])
     for i, f in enumerate(files[1:]):
@@ -437,7 +447,7 @@ def codegen_snippet(
     for idx, s in enumerate(specs):
         config_str = replace_vals_snippet(s.params[0], snippet_path)
         print(LINE)
-        details += [f"# Automatically generated from [{s.pkl_path}]"]
+        details += [f"# Automatically generated from [{s.src_path}]"]
         details += [f"# index: [{idx}]"]
         if s.datetime:
             details += [f"# date: [{s.datetime}]"]
@@ -556,6 +566,68 @@ def check_specs(
             "Found duplicates in specs! "
             "Make sure you pass each pkl once, or have specified valid pivots."
         )
+
+
+def list_intersection(a: list, b: list) -> list:
+    return [x for x in a if x in b]
+
+
+def merge_specs(
+    spec_list: list[Spec],
+    pivots: list[str] | None = None,
+    sort_pivots: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Merges a list of Spec objects into a single pandas DataFrame, aligning on specified pivot columns.
+
+    Args:
+        spec_list (list[Spec]): List of Spec objects to merge.
+        pivots (list[str] | None, optional): List of column names to use as pivots for merging. If None, uses the intersection of all columns in the DataFrames.
+        sort_pivots (list[str] | None, optional): List of column names to sort the merged DataFrame by. If None, uses the pivots.
+
+    Returns:
+        pd.DataFrame: Merged DataFrame containing the specified pivots and a 'spec' column with the corresponding Spec objects.
+    """
+    df_list = []
+    for spec in spec_list:
+        df_list += [specs_to_df([str(s) for s in spec])]
+
+    # limit to a subset of pivots, if not select them all
+    if not pivots:
+        pivots = list(df_list[0].columns)
+        for df in df_list[1:]:
+            pivots = list_intersection(pivots, list(df.columns))
+
+    # assert all pivots are present in columns of both
+    for df in df_list:
+        assert np.all([p in df.columns for p in pivots])
+
+    if not sort_pivots:
+        sort_pivots = pivots
+
+    assert set(sort_pivots).issubset(set(pivots))
+
+    for i, df in enumerate(df_list):
+        df = df[pivots]
+        df["spec"] = list(spec_list[i])
+        df_list[i] = df
+
+    # update df_list with overlapping values from other df's
+    for df in df_list[1:]:
+        df_list[0].update(df)
+
+    pivots_spec = pivots[:] + ["spec"]
+    # now concat the two and drop the duplicates by using common pivots
+    df_merged = pd.DataFrame(
+        pd.concat(df_list, ignore_index=True)
+        .drop_duplicates(pivots)
+        .reset_index(drop=True)[pivots_spec]
+    )
+
+    if sort_pivots:
+        df_merged = df_merged.sort_values(by=sort_pivots)
+    df_merged = df_merged.reset_index(drop=True)
+    return df_merged
 
 
 class ComplexParamList(click.Option):
@@ -733,6 +805,19 @@ help_str = "Profile kbench output pickle"
     multiple=True,
 )
 @click.option(
+    "--sort-pivots",
+    cls=ComplexParamList,
+    default=[],
+    help="Specify the pivots to sort values.",
+    multiple=True,
+)
+@click.option(
+    "--merge",
+    is_flag=True,
+    default=False,
+    help="Merge the first incoming pkl/yamls with the first one.",
+)
+@click.option(
     "--correlation",
     "-c",
     is_flag=True,
@@ -758,7 +843,9 @@ def cli(
     diff,  # noqa: ANN001
     metric,  # noqa: ANN001
     pivots,  # noqa: ANN001
-    correlation,  # noqa: ANN001
+    sort_pivots,  # noqa: ANN001
+    merge: bool,
+    correlation: bool,
     verbose,  # noqa: ANN001
 ) -> bool:
     if not verbose:
@@ -776,7 +863,22 @@ def cli(
 
     top_percentage = float(top) if top else 0
 
-    if diff:
+    # TODO: refactor profile, diff, merge, correlation into separate commands
+
+    if merge:
+        # All files should be .yaml
+        assert np.all([Path(path).suffix == ".yaml" for path in files])
+        spec_list = [Spec.load_yaml(Path(path)) for path in files]
+        merged_df = merge_specs(
+            spec_list, pivots=pivots, sort_pivots=sort_pivots
+        )
+        print(merged_df.to_string())
+        specs = spec_to_tuning_spec(merged_df["spec"])
+        print(specs)
+
+        codegen_yaml(specs, output_path=output_path)
+
+    elif diff:
         if head == -1:
             head = 1
         diff_baseline(
@@ -785,7 +887,6 @@ def cli(
     else:
         specs = []
         invalid_pkls = []
-        # for pkl_path in files:
         for path in files:
             suffix = Path(path).suffix
             if suffix == ".yaml":
