@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import click
+from generate_llm_logits import PIPELINE_ORACLES
 
 from verify_layers.constants import DeviceKind
 from verify_layers.pipelines import PipelineRunner
@@ -22,7 +23,13 @@ from verify_layers.pipelines import PipelineRunner
 @click.option(
     "--devices", "devices_str", help="Devices to run pipeline on", default="cpu"
 )
-@click.option("--pipeline", help="Pipeline to run", required=True)
+@click.option(
+    "--pipeline",
+    "pipeline_name",
+    type=click.Choice(sorted(list(PIPELINE_ORACLES.keys()))),
+    required=True,
+    help="Pipeline to run",
+)
 @click.option(
     "--encoding", help="Encoding to use for the pipeline", required=True
 )
