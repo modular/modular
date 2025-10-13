@@ -67,6 +67,18 @@ class Float8WeightScaleSpec:
     dtype: DType
     """The :obj:`DType` of the weight scale factor(s)."""
 
+    block_size: tuple[int, int] | None = None
+    """The :obj:`tuple[int, int]` of the block size for block-wise scaling."""
+
+    def __post_init__(self):
+        if self.granularity == Float8ScaleGranularity.BLOCK:
+            if self.block_size is None:
+                raise ValueError(
+                    "block_size must be specified for block-wise scaling"
+                )
+            if len(self.block_size) != 2:
+                raise ValueError("block_size must be a tuple of two integers")
+
     @property
     def is_tensor(self) -> bool:
         """Whether the weight scale granularity is per-tensor."""
@@ -103,6 +115,18 @@ class Float8InputScaleSpec:
 
     activation_scale_ub: float | None = None
     """An optional upper bound for dynamic activation scaling."""
+
+    block_size: tuple[int, int] | None = None
+    """The :obj:`tuple[int, int]` of the block size for block-wise scaling."""
+
+    def __post_init__(self):
+        if self.granularity == Float8ScaleGranularity.BLOCK:
+            if self.block_size is None:
+                raise ValueError(
+                    "block_size must be specified for block-wise scaling"
+                )
+            if len(self.block_size) != 2:
+                raise ValueError("block_size must be a tuple of two integers")
 
     @property
     def is_tensor(self) -> bool:
@@ -427,6 +451,63 @@ def _parse_fbgemm_float8_config(
     )
 
 
+def _parse_fp8_float8_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> Float8Config:
+    """Parses a Float8Config when quant_method="fp8"."""
+    if dtype != DType.float8_e4m3fn:
+        raise TypeError("`_parse_fp8_float8_config` only supports float8 dtype")
+
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+
+    # The quant method is checked by the caller.
+    assert hf_quant_config and hf_quant_config.get("quant_method") == "fp8"
+
+    if "activation_scheme" not in hf_quant_config:
+        raise ValueError("activation_scheme must be specified")
+    if hf_quant_config["activation_scheme"] != "dynamic":
+        raise ValueError("activation_scheme must be dynamic")
+    if "weight_block_size" not in hf_quant_config:
+        raise ValueError("weight_block_size must be specified")
+    if hf_quant_config["weight_block_size"] != [128, 128]:
+        raise ValueError("weight_block_size must be [128, 128]")
+
+    quant_method = hf_quant_config.get("quant_method")
+
+    weight_scale_dtype: DType | None = None
+    for weight_name, weight in state_dict.items():
+        if "weight_scale" not in weight_name:
+            continue
+        weight_scale_dtype = weight.dtype
+    if not weight_scale_dtype:
+        raise ValueError(
+            "could not find weight scale dtype for FP8 quantized weights"
+        )
+
+    input_spec = Float8InputScaleSpec(
+        granularity=Float8ScaleGranularity.BLOCK,
+        origin=Float8ScaleOrigin.DYNAMIC,
+        dtype=weight_scale_dtype,
+        block_size=(1, 128),
+    )
+    weight_spec = Float8WeightScaleSpec(
+        granularity=Float8ScaleGranularity.BLOCK,
+        dtype=weight_scale_dtype,
+        block_size=(128, 128),
+    )
+
+    return Float8Config(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_in_float8=set(),
+        attn_qkv_in_float8=set(),
+        embedding_output_dtype=DType.bfloat16,
+        quant_method=quant_method,
+    )
+
+
 def parse_float8_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -463,6 +544,8 @@ def parse_float8_config(
         return _parse_fbgemm_float8_config(
             huggingface_config, state_dict, dtype
         )
+    elif quant_method == "fp8":  # DeepSeekV3
+        return _parse_fp8_float8_config(huggingface_config, state_dict, dtype)
 
     raise ValueError(
         "FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "

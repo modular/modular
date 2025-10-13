@@ -23,7 +23,9 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
+from max.graph.weights import WeightData
 from max.nn import Signals
+from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
     KVCacheInputs,
     MultiPagedKVCacheManager,
@@ -72,7 +74,9 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 class DeepseekV3Model(DeepseekV2Model):
     """A DeepseekV3 model."""
 
-    def _create_model_config(self) -> DeepseekV3Config:
+    def _create_model_config(
+        self, state_dict: dict[str, WeightData]
+    ) -> DeepseekV3Config:
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
@@ -90,8 +94,31 @@ class DeepseekV3Model(DeepseekV2Model):
             cache_dtype=self.encoding.cache_dtype,
         )
 
+        dtype = self.encoding.dtype
+        if dtype == DType.float8_e4m3fn:
+            float8_config = parse_float8_config(config, state_dict, dtype)
+        else:
+            float8_config = None
+
+        norm_dtype = state_dict[
+            "layers.0.self_attn.kv_a_layernorm.weight"
+        ].dtype
+
+        if config.topk_method == "noaux_tc":
+            correction_bias_key = None
+            for k in state_dict:
+                if k.endswith("e_score_correction_bias"):
+                    correction_bias_key = k
+                    break
+            if correction_bias_key is None:
+                raise KeyError("Expected e_score_correction_bias in state_dict")
+            correction_bias_dtype = state_dict[correction_bias_key].dtype
+        else:
+            correction_bias_dtype = None
         return DeepseekV3Config(
             dtype=self.encoding.dtype,
+            norm_dtype=norm_dtype,
+            correction_bias_dtype=correction_bias_dtype,
             kv_params=kv_params,
             devices=[DeviceRef.from_device(dev) for dev in self.devices],
             vocab_size=config.vocab_size,
@@ -126,6 +153,7 @@ class DeepseekV3Model(DeepseekV2Model):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            float8_config=float8_config,
             graph_mode=graph_mode,
             data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
             use_subgraphs=self.pipeline_config.model_config.use_subgraphs,
@@ -154,9 +182,6 @@ class DeepseekV3Model(DeepseekV2Model):
 
         logger.info("Building DeepseekV3 model...")
         before = time.perf_counter()
-        # Create the model
-        config = self._create_model_config()
-        nn_model = DeepseekV3(config)
 
         if self.adapter:
             state_dict = self.adapter(
@@ -168,6 +193,9 @@ class DeepseekV3Model(DeepseekV2Model):
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
+        # Create the model
+        config = self._create_model_config(state_dict)
+        nn_model = DeepseekV3(config)
         nn_model.load_state_dict(state_dict, weight_alignment=1, strict=True)
 
         # Create the graph

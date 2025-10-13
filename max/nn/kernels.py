@@ -1355,6 +1355,59 @@ def flare_mla_prefill_plan(
     return results[0].tensor, results[1].tensor, results[2].tensor
 
 
+def k_cache_to_buffer(
+    kv_params: KVCacheParams,
+    buffer_row_offsets_1d: TensorValue,
+    cache_offsets_1d: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    buffer_length: TensorValue,
+    buffer_size: int,
+    weight_dim: int,
+) -> TensorValue:
+    """This kernel copies the key cache to a contiguous buffer.
+
+    Args:
+        kv_params: KVCacheParams
+        buffer_row_offsets_1d: Buffer row offsets
+        cache_offsets_1d: Cache offsets
+        kv_collection: KV collection
+        layer_idx: Layer index
+        buffer_length: Buffer length
+        buffer_size: Buffer size for storing the temporal results during
+            prefill, in unit of tokens.
+        weight_dim: Weight dimension
+
+    Returns:
+        A tensor of shape [buffer_size, weight_dim] containing the copied key
+        cache.
+    """
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for k_cache_to_buffer: {kv_params.cache_strategy}"
+        )
+
+    return ops.inplace_custom(
+        "mo.mla.k_cache_to_buffer.paged",
+        device=buffer_row_offsets_1d.device,
+        values=[
+            buffer_row_offsets_1d,
+            cache_offsets_1d,
+            *kv_collection,
+            layer_idx,
+            buffer_length,
+        ],
+        out_types=[
+            TensorType(
+                dtype=kv_params.dtype,
+                shape=[buffer_size, weight_dim],
+                device=buffer_row_offsets_1d.device,
+            ),
+        ],
+    )[0].tensor
+
+
 def flare_mla_decompress_k_cache(
     kv_params: KVCacheParams,
     buffer_row_offsets_1d: TensorValue,
@@ -2132,11 +2185,14 @@ def quantize_dynamic_scaled_float8(
     if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
         raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
 
-    group_size = (
-        group_size_or_per_token
-        if group_size_or_per_token != -1
-        else input.shape[1]
-    )
+    if group_size_or_per_token == -1:
+        if input_scale_spec.is_block or weight_scale_spec.is_block:
+            assert input_scale_spec.block_size is not None
+            group_size = input_scale_spec.block_size[1]
+        else:
+            group_size = int(input.shape[1])
+    else:
+        group_size = group_size_or_per_token
 
     a_scales_dim1 = input.shape[0]
     if input_scale_spec.is_block or weight_scale_spec.is_block:
@@ -2171,7 +2227,7 @@ def quantize_dynamic_scaled_float8(
             ),
         ],
         parameters={
-            "group_size_or_per_token": group_size_or_per_token,
+            "group_size_or_per_token": group_size,
         },
     )
 
@@ -2326,7 +2382,8 @@ def dynamic_scaled_matmul(
         # b_scale is of shape [ceildiv(N // BLOCK_SIZE), ceildiv(K // BLOCK_SIZE)]
         if a_scales.shape[0] != b_scales.shape[1]:
             raise ValueError(
-                "both a_scales and b_scales must have the same shape on the K dimension"
+                "both a_scales and b_scales must have the same shape on the K dimension."
+                f" got a_scales.shape={a_scales.shape} and b_scales.shape={b_scales.shape}"
             )
 
     else:

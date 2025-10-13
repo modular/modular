@@ -30,7 +30,10 @@ from kv_cache.types import (
 from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
+from linalg.fp8_quantization import (
+    naive_blockwise_scaled_fp8_matmul,
+    quantize_dynamic_scaled_fp8,
+)
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,

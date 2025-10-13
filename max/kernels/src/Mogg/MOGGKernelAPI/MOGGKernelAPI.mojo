@@ -178,6 +178,7 @@ from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import MHAMask
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
+from nn.mla import _k_cache_to_buffer
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
@@ -6917,6 +6918,46 @@ struct Struct_kv_cache_get_max_seq_len_paged:
         max_seq_len[0] = kv_collection.max_seq_length
 
 
+@compiler.register("mo.mla.k_cache_to_buffer.paged")
+struct KCacheToBuffer:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        k_latent_buffer: OutputTensor[dtype=dtype, rank=2],
+        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
+        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        buffer_length: Int32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            "mo.mla.k_cache_to_buffer is only supported on GPU",
+        ]()
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        var k = kv_collection.get_key_cache(Int(layer_idx))
+        _k_cache_to_buffer(
+            managed_tensor_slice_to_ndbuffer(buffer_row_offsets_1d),
+            managed_tensor_slice_to_ndbuffer(cache_offsets_1d),
+            k,
+            Int(buffer_length),
+            managed_tensor_slice_to_ndbuffer(k_latent_buffer),
+            context.get_device_context(),
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # Cross attention
 #
@@ -7690,7 +7731,8 @@ struct Struct_k_matmul_ragged_paged_scale:
     @staticmethod
     fn execute[
         dtype: DType,
-        scale_dtype: DType, //,
+        scale_dtype: DType,
+        kv_cache_t: DType, //,
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
@@ -7701,7 +7743,7 @@ struct Struct_k_matmul_ragged_paged_scale:
         weight: InputTensor[dtype=dtype, rank=2],
         input_scale: InputTensor[dtype=scale_dtype, rank=2],
         weight_scale: InputTensor[dtype=scale_dtype, rank=2],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=kv_cache_t, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],

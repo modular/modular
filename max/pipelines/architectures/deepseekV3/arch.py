@@ -32,6 +32,7 @@ deepseekV3_arch = SupportedArchitecture(
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,
