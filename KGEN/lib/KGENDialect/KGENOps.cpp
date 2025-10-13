@@ -1819,6 +1819,13 @@ DebugInfo::DISubprogramAttr ClosureInitOp::getSubprogramScope() {
   return {};
 }
 
+/// If 'value' is defined by one or more rebinds, look through them.
+Value RebindOp::strip(Value value) {
+  while (RebindOp rebind = dyn_cast_or_null<RebindOp>(value.getDefiningOp()))
+    value = rebind.getInput();
+  return value;
+}
+
 ///===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

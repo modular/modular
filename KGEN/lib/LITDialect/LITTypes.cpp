@@ -763,7 +763,7 @@ LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 RefType RefType::get(Type elementType, TypedAttr origin, TypedAttr addrSpace) {
-  assert(::isa<OriginType>(origin.getType()));
+  assert(::isa<OriginType>(SugarAttr::stripTopLevelSugar(origin.getType())));
   return get(origin.getContext(), elementType, origin, addrSpace);
 }
 

@@ -2559,6 +2559,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           POC::PtrBitcast, src, evaluator.getReboundType(bitcast.getType()));
   }
 
+  if (auto rebind = dyn_cast<RebindOp>(op)) {
+    if (auto src = findValue(rebind.getInput()))
+      return ParamOperatorAttr::getRebind(
+          src, evaluator.getReboundType(rebind.getType()));
+  }
+
   // FIXME(StringLiteral): Remove this operation.
   if (auto strSize = dyn_cast<POP::StringSizeOp>(op)) {
     if (auto str = findValue(strSize.getStr()))

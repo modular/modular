@@ -1217,6 +1217,11 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
   let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
 
   let hasFolder = 1;
+
+  let extraClassDeclaration = [{
+    /// If 'value' is defined by one or more rebinds, look through them.
+    static Value strip(Value value);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

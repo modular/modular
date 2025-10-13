@@ -493,6 +493,16 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     return success();
   }
 
+  // If one or the other is a rebind, look through it if just processing sugar.
+  if (actualOp && actualOp.getOpcode() == POC::Rebind &&
+      ASTType(actualOp.getType())
+          .isEqualCanon(actualOp.getOperand(0).getType()))
+    return matchParams(actualOp.getOperand(0), expectedAttr);
+  if (expectedOp && expectedOp.getOpcode() == POC::Rebind &&
+      ASTType(expectedOp.getType())
+          .isEqualCanon(expectedOp.getOperand(0).getType()))
+    return matchParams(actualAttr, expectedOp.getOperand(0));
+
   // If both parameters are GetWitnessAttrs, match up the insides.
   if (auto actualGetWitness = dyn_cast<GetWitnessAttr>(actualAttr)) {
     if (auto expectedGetWitness = dyn_cast<GetWitnessAttr>(expectedAttr)) {
@@ -685,6 +695,9 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 LogicalResult
 ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
                                               TypedAttr expected) {
+  actual = ParamOperatorAttr::stripRebind(actual);
+  expected = ParamOperatorAttr::stripRebind(expected);
+
   if (actual == expected)
     return success();
 

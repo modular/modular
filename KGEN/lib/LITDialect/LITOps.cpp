@@ -1266,7 +1266,8 @@ RefType RefStructGEROp::getReboundFieldType(RefType structRefTy,
 }
 
 RefType RefStructGEROp::getFieldType(RefType structRefTy, StructFieldOp field) {
-  auto structTy = cast<StructType>(structRefTy.getElementType());
+  auto structTy = cast<StructType>(
+      SugarAttr::stripTopLevelSugar(structRefTy.getElementType()));
   return getReboundFieldType(structRefTy, field.getNameAttr(),
                              field.getReboundType(structTy));
 }
@@ -1802,8 +1803,7 @@ LogicalResult RefPackCreateOp::verify() {
 /// guaranteed to succeed immediately during/after the parser, not later.
 Value RefPackCreateOp::findRefPackCreate(Value val) {
   // Strip off sugar casts.
-  while (RebindOp rebind = dyn_cast<RebindOp>(val.getDefiningOp()))
-    val = rebind.getInput();
+  val = RebindOp::strip(val);
 
   // This code grovels through the IR, looking for the standard pattern of:
   //
@@ -1848,7 +1848,7 @@ Value RefPackCreateOp::findRefPackCreate(Value val) {
       continue;
 
     // Make sure any change to the API forces this code to get updated.
-    return call.getOperand(0);
+    return RebindOp::strip(call.getOperand(0));
   }
 
   return {};
