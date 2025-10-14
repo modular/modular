@@ -52,3 +52,6 @@ You'll want some good tools for investigating and debugging.
 
 Check out [Parser Debugging](ParserDebugging.md)! A lot of those tricks are
 applicable to other passes as well.
+
+Check out [Post Parser Debugging](PostParserDebugging.md) for tools and tips to
+debug generated MLIR, LLVM IR, AIR or binary output.
