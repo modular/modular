@@ -851,36 +851,6 @@ struct LayoutTensor[
 
     alias MutableAnyType = Self.OriginCastType[True, MutableAnyOrigin]
 
-    @deprecated(
-        "`origin_cast` is no longer supported for `LayoutTensor`. Use the safer"
-        " `as_any_origin`, `as_immutable` or binding the mutability instead."
-    )
-    @always_inline("nodebug")
-    fn origin_cast[
-        target_mut: Bool = Self.mut,
-        target_origin: Origin[target_mut] = Origin[target_mut].cast_from[
-            Self.origin
-        ],
-    ](self) -> Self.OriginCastType[target_mut, target_origin]:
-        """Changes the origin or mutability of a pointer.
-
-        Parameters:
-            target_mut: Whether the origin is mutable.
-            target_origin: Origin of the destination pointer.
-
-        Returns:
-            A new `LayoutTensor` object with the same type and the same address,
-            as the original `LayoutTensor`, and the new specified mutability and
-            origin.
-        """
-        return Self.OriginCastType[target_mut, target_origin](
-            self.ptr.unsafe_mut_cast[target_mut]().unsafe_origin_cast[
-                target_origin
-            ](),
-            self.runtime_layout,
-            self.runtime_element_layout,
-        )
-
     @always_inline("nodebug")
     fn as_any_origin(
         self: LayoutTensor[mut=True, *_, **_],

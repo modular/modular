@@ -87,7 +87,7 @@ what we publish.
   size 1 or 0.
 
 - `origin_cast` for `LayoutTensor`, `NDBuffer` and `UnsafePointer` has been
-  deprecated. `LayoutTensor` and `NDBuffer` now supports a safer
+  deprecated and removed. `LayoutTensor` and `NDBuffer` now supports a safer
   `as_any_origin()` origin casting. `UnsafePointer` has the same
   safe alternative and in addition, it has an additional safe `as_immutable`
   casting function and explicitly unsafe `unsafe_mut_cast` and

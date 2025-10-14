@@ -1093,33 +1093,6 @@ struct UnsafePointer[
         origin=target_origin,
     ]
 
-    @deprecated(
-        "`origin_cast` is deprecated for `UnsafePointer`. Consider using the"
-        " safer `as_any_origin` or `as_immutable` instead. Or use"
-        " the explicit `unsafe_mut_cast` and `unsafe_origin_cast`."
-    )
-    @always_inline("builtin")
-    fn origin_cast[
-        target_mut: Bool,
-        target_origin: Origin[target_mut],
-    ](self) -> Self._OriginCastType[target_mut, target_origin]:
-        """Changes the origin or mutability of a pointer.
-
-        Parameters:
-            target_mut: Whether the origin is mutable.
-            target_origin: Origin of the destination pointer.
-
-        Returns:
-            A new UnsafePointer object with the same type and the same address,
-            as the original UnsafePointer and the new specified mutability and origin.
-        """
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type = UnsafePointer[
-                type,
-                address_space=address_space,
-            ]._mlir_type,
-        ](self.address)
-
     @always_inline("builtin")
     fn unsafe_mut_cast[
         target_mut: Bool
