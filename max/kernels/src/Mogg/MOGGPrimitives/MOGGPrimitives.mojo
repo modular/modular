@@ -451,6 +451,57 @@ fn mogg_async_unpack[T: AnyTrivialRegType](async_ptr: OpaquePointer) -> T:
     ).bitcast[T]()[0]
 
 
+struct MoggAsyncPackHelper:
+    """
+    Helper struct for packing various data types into an asynchronous context for MOGG operations.
+    Provides constructor overloads for different supported types.
+    """
+
+    fn __init__(out self, data: Int, async_ptr: OpaquePointer):
+        """
+        Packs an integer value into the asynchronous context.
+        Calls create_index_async to handle the packing.
+        """
+        create_index_async(data, async_ptr)
+
+    fn __init__(out self, data: Int64, async_ptr: OpaquePointer):
+        """
+        Packs a 64-bit integer value into the asynchronous context.
+        Calls create_si64_async to handle the packing.
+        """
+        create_si64_async(data, async_ptr)
+
+    fn __init__(out self, data: Bool, async_ptr: OpaquePointer):
+        """
+        Packs a boolean value into the asynchronous context.
+        Calls create_i1_async to handle the packing.
+        """
+        create_i1_async(data, async_ptr)
+
+    fn __init__[
+        spec_rank: Int
+    ](out self, data: IndexList[spec_rank], async_ptr: OpaquePointer):
+        """
+        Packs an IndexList of specified rank into the asynchronous context.
+        Calls create_tensor_spec_async to handle the packing.
+        """
+        create_tensor_spec_async(data, async_ptr)
+
+
+@register_internal("mogg.async.pack")
+@no_inline
+fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
+    """
+    Packs asynchronous data using the provided MoggAsyncPackHelper.
+
+    This function serves as an entry point for packing data into an asynchronous
+    reference. The actual packing logic is handled by the MoggAsyncPackHelper struct,
+    which provides specialized constructors for different data types. This function
+    itself is a no-op and exists to satisfy the internal registration mechanism.
+    """
+    return
+
+
 @register_internal("mogg.tensor.__init__")
 @no_inline
 fn mogg_tensor_init[
