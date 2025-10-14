@@ -748,11 +748,7 @@ fn lane_group_sum_and_broadcast[
     @parameter
     if (
         num_lanes == WARP_SIZE // stride
-        and stride
-        in (
-            16,
-            32,
-        )
+        and stride in (16, 32)
         and _cdna_4_or_newer()
     ):
         var out = _reduce_add(val, permlane_shuffle[32](val))
@@ -1045,11 +1041,7 @@ fn lane_group_max_and_broadcast[
     @parameter
     if (
         num_lanes == WARP_SIZE // stride
-        and stride
-        in (
-            16,
-            32,
-        )
+        and stride in (16, 32)
         and _cdna_4_or_newer()
     ):
         var out = _reduce_max(val, permlane_shuffle[32](val))
