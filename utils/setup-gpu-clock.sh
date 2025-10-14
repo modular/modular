@@ -13,8 +13,8 @@
 ##===----------------------------------------------------------------------===##
 
 if ! [ $(id -u) = 0 ]; then
-   echo "The script should be run as root." >&2
-   exit 1
+  echo "The script should be run as root." >&2
+  exit 1
 fi
 
 # Configures Nvidia GPU settings. These settings should persist
@@ -36,9 +36,11 @@ set_nvidia_gpu_config() {
 
 # Configures AMD GPUs. These settings are important for performance testing.
 set_amd_gpu_config() {
-	echo "set_amd_gpu_config: Setting AMD GPU config".
+  echo "set_amd_gpu_config: Setting AMD GPU config".
 
-	rocm-smi --setperfdeterminism 1900
+  if ! rocm-smi --setperfdeterminism 1900 2>&1; then
+    echo "Warning: rocm-smi command failed from setup-gpu-clock.sh" >&2
+  fi
 }
 
 
