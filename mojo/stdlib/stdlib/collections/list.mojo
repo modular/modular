@@ -19,7 +19,7 @@ These APIs are imported automatically, just like builtins.
 from collections._index_normalization import normalize_index
 from os import abort
 from sys import size_of
-from sys.intrinsics import _type_is_eq
+from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from memory import Pointer, memcpy
 
@@ -328,6 +328,21 @@ struct List[T: Copyable & Movable](
         self = Self(capacity=len(span))
         for value in span:
             self.append(value.copy())
+
+    fn __init__[
+        IterableType: Iterable
+    ](out self, iterable: IterableType) where _type_is_eq_parse_time[
+        T, IterableType.IteratorType[__origin_of(iterable)].Element
+    ]():
+        """Constructs a list from an iterable of values.
+
+        Args:
+            iterable: The iterable of values to populate the list with.
+        """
+        var lower, _ = iter(iterable).bounds()
+        self = Self(capacity=lower)
+        for value in iterable:
+            self.append(rebind[T](value).copy())
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):

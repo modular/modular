@@ -896,6 +896,17 @@ def test_list_init_span():
         assert_equal(val1, val2)
 
 
+def test_list_init_iter():
+    var l = [String("a"), "bb", "cc", "def"]
+    var it = iter(l)
+    var l2 = List[String](it)
+    assert_equal(len(l), len(l2))
+    assert_equal(l[0], l2[0])
+    assert_equal(l[1], l2[1])
+    assert_equal(l[2], l2[2])
+    assert_equal(l[3], l2[3])
+
+
 def test_indexing():
     var l = [1, 2, 3]
     assert_equal(l[Int(1)], 2)
