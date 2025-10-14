@@ -13,7 +13,6 @@ modular_nanobind_extension(
 
 modular_generate_stubfiles(
     name = "_core",
-    srcs = glob(["_core_types/*.py"]),
     additional_update_targets = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir.sync-stubfiles"],
     diff_test_failure_message = """
 A stubfile is out of sync with its generated counterpart.
@@ -37,6 +36,7 @@ When you modify a .cpp file in the _core/src directory, you can run
     pattern_file = ":patterns.nb",
     pyi_srcs = glob(["**/*.pyi"]),
     deps = [
+        "//SDK/lib/API/python/max/_core_types",
         "//SDK/lib/API/python/max/mlir",
         requirement("numpy"),
     ],
