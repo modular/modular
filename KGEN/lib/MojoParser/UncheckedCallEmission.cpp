@@ -412,7 +412,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
     // All the origins will have the same OriginType, indicating the
     // reference mutability that the callee expected.
-    OriginType commonOriginType = cast<OriginType>(refOrigins.back().getType());
+    OriginType commonOriginType =
+        OriginType::sugarCast(refOrigins.back().getType());
 
     // If there is more than one element, they probably have different
     // origins, and thus need to be rebound into a common union of them.
@@ -1289,7 +1290,7 @@ void ExclusivityChecker::checkOriginAccess(
     Value val, std::optional<ArgConvention> convention,
     std::optional<unsigned> argIdx, TypedAttr rawOrigin) {
   // Determine whether the access was immutable.
-  bool isImmut = cast<OriginType>(rawOrigin.getType()).isMutableKnown(false);
+  bool isImmut = OriginType::isMutableKnown(rawOrigin, false);
 
   // Look through immcasts to determine the accessed origin.
   TypedAttr origin = OriginMutCastAttr::strip(rawOrigin);
@@ -1440,7 +1441,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
 void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
                                        unsigned argIdx, TypedAttr origin,
                                        const OriginInfo &previousAccess) {
-  bool isImmut = cast<OriginType>(origin.getType()).isMutableKnown(false);
+  bool isImmut = OriginType::isMutableKnown(origin, false);
   InflightDiag diag = emitError(callExpr->getLoc());
 
   diag << "argument of ";

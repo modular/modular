@@ -77,9 +77,7 @@ void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
     }
   }
 
-  auto srcType =
-      ::cast<OriginType>(SugarAttr::stripTopLevelSugar(value.getType()));
-  TypedAttr mutability = srcType.isMutable();
+  TypedAttr mutability = OriginType::sugarCast(value.getType()).isMutable();
   if (auto boolAttr = dyn_cast<BoolAttr>(mutability)) {
     p << (boolAttr.getValue() ? "mut " : "imm ");
   } else {

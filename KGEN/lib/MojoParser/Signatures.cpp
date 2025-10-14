@@ -881,7 +881,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       // Strip off any type sugar from the parameter list.  We have to do this
       // because we don't maintain the Full Signature on the StructType or
       // function symbol, so cannot canonicalize it when rebuilding the type.
-      // FIXME: Preserve this sugar.
+      // FIXME(Sugar, MOCO-2584): Preserve this sugar.
       type = getCanonicalType(type);
 
       auto fnType = dyn_cast<FnTypeGeneratorType>(type);

@@ -968,7 +968,8 @@ RefType IREmitter::getCommonRefType(RefType ref1, RefType ref2) {
 
   auto l1 = OriginMutCastAttr::get(ref1.getOrigin(), isMutableAttr);
   auto l2 = OriginMutCastAttr::get(ref2.getOrigin(), isMutableAttr);
-  auto origin = OriginUnionAttr::get({l1, l2}, cast<OriginType>(l1.getType()));
+  auto origin =
+      OriginUnionAttr::get({l1, l2}, OriginType::sugarCast(l1.getType()));
   return RefType::get(eltType, origin, ref1.getAddressSpace());
 }
 

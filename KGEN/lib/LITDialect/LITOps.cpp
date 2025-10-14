@@ -1266,8 +1266,8 @@ RefType RefStructGEROp::getReboundFieldType(RefType structRefTy,
 }
 
 RefType RefStructGEROp::getFieldType(RefType structRefTy, StructFieldOp field) {
-  auto structTy = cast<StructType>(
-      SugarAttr::stripTopLevelSugar(structRefTy.getElementType()));
+  auto structTy =
+      cast<StructType>(SugarAttr::strip(structRefTy.getElementType()));
   return getReboundFieldType(structRefTy, field.getNameAttr(),
                              field.getReboundType(structTy));
 }

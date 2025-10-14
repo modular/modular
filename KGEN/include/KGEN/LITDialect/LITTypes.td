@@ -391,12 +391,16 @@ def LIT_OriginType : LITType<"Origin", "origin",
     /// Classify the mutability into Mutable/Immutable/Parametric.
     MutabilityClass getMutabilityClass();
 
+    /// Given a value of origin type, return true if the origin is known to have
+    /// the specified mutability.
+    static bool isMutableKnown(TypedAttr originValue, bool value);
+
     /// Remove any OriginMutCast and ._mlir_origin if present.
     static TypedAttr stripMutCastAndFieldExtract(TypedAttr origin);
 
     /// Given a possibly sugared type, get the canonical type and cast it to an
     /// OriginType.
-    static OriginType castCanonical(Type type);
+    static OriginType sugarCast(Type type);
   }];
 }
 

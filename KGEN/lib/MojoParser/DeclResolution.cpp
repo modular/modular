@@ -3120,6 +3120,18 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
     return failure();
   }
 
+#if 0
+  // Strip sugar off the field type, this is because we can't handle
+  // canonicalization of LITStructAttr's in complicated cases.
+  // FIXME(Sugar, MOCO-2584): Preserve this sugar.
+  auto canType = getCanonicalType(type);
+  if (canType != type) {
+    if (cast<StructDeclOp>(decl.getParentDecl()->getIfOperation())
+            .isRegisterPassable())
+      type = canType;
+  }
+#endif
+
   fieldOp.setType(type);
   rejectDecorators(decoratorExprs, decl, shared);
   shared.notifyListenerOnStructFieldDecl(decl, identifierLoc);

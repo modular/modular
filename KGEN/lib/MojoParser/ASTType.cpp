@@ -139,7 +139,7 @@ bool ASTType::isEqualCanon(ASTType other) const {
 /// canonicalize it.
 ASTType ASTType::stripTopLevelSugar() const {
   if (auto paramRef = dyn_cast_or_null<ParamType>(mlirType))
-    return ASTType(SugarAttr::stripTopLevelSugar(paramRef.getParam()));
+    return ASTType(SugarAttr::strip(paramRef.getParam()));
   return *this;
 }
 
@@ -170,12 +170,12 @@ bool ASTType::isEqualAllowingUnknownAttr(ASTType other,
 
 /// Return true if this is a None type.
 bool ASTType::isNoneType() const {
-  return isa<KGEN::NoneType>(stripTopLevelSugar().mlirType);
+  return isa<KGEN::NoneType>(stripTopLevelSugar());
 }
 
 /// Return true if this is a TypeCheckError type.
 bool ASTType::isTypeCheckErrorType() const {
-  return isa<TypeCheckErrorType>(stripTopLevelSugar().mlirType);
+  return isa<TypeCheckErrorType>(stripTopLevelSugar());
 }
 
 /// Return the nonmaterializable decorator target for the type, or null if there
@@ -387,14 +387,13 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
 /// if the current type isn't a reference.
 ///
 ASTType ASTType::getReferenceElementType() const {
-  return ASTType(cast<RefType>(stripTopLevelSugar().mlirType).getElementType());
+  return ASTType(cast<RefType>(stripTopLevelSugar()).getElementType());
 }
 
 /// Given a VariadicType, return the element as an ASTType.  This aborts if
 /// the current type isn't a VariadicType.
 ASTType ASTType::getVariadicElementType() const {
-  return ASTType(
-      cast<VariadicType>(stripTopLevelSugar().mlirType).getElementType());
+  return ASTType(cast<VariadicType>(stripTopLevelSugar()).getElementType());
 }
 
 /// Return the RefPackType that corresponds to the VariadicPack instance.
