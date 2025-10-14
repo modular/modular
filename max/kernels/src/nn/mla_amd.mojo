@@ -318,7 +318,7 @@ fn mla_prefill_single_batch_amd[
         and depth != 64
         # will deal with 64 later
     ) else IndexList[3](32, 32, 8)
-    alias cache_num_heads = num_heads // group
+    alias cache_num_heads = num_heads // UInt(group)
 
     alias fragment_layout = Layout.row_major(1, 16)
     alias fragment_layout_nested = Layout(
@@ -333,13 +333,13 @@ fn mla_prefill_single_batch_amd[
 
     alias WM = config.warp_m()
     alias WN = config.warp_n()
-    alias num_m_mmas = ceildiv(WM, mma_shape[0])
-    alias num_n_mmas = ceildiv(WN, mma_shape[1])
-    alias num_k_mmas2 = ceildiv(BK, mma_shape[2] * k_group_size)
+    alias num_m_mmas = ceildiv(WM, UInt(mma_shape[0]))
+    alias num_n_mmas = ceildiv(WN, UInt(mma_shape[1]))
+    alias num_k_mmas2 = ceildiv(BK, UInt(mma_shape[2] * k_group_size))
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     alias WN_O = depth
-    alias num_n_mmas_output = WN_O // mma_shape[1]
+    alias num_n_mmas_output = WN_O // UInt(mma_shape[1])
 
     var out_reg_tile = (
         LayoutTensor[
@@ -459,7 +459,7 @@ fn mla_prefill_single_batch_amd[
             k_rope.block_paged_ptr[BN](
                 batch_idx,
                 kv_tile_start_row + cache_start_pos,
-                Int(kv_head_idx // group),
+                Int(kv_head_idx // UInt(group)),
                 cache_depth - rope_depth,
             ),
             kv_tile_num_rows,
@@ -688,9 +688,9 @@ fn mla_prefill_single_batch_amd[
             for k_mma_idx in range(v_buffer.num_k_tiles):
                 tensor_core_mma.mma[swap_a_b=swap_a_b](
                     p_mma_tile_interleaved.tile[1, simd_width](0, k_mma_idx),
-                    v_buffer.mma_tile.tile[depth // mma_shape[0], simd_width](
-                        k_mma_idx, 0
-                    ),
+                    v_buffer.mma_tile.tile[
+                        depth // UInt(mma_shape[0]), simd_width
+                    ](k_mma_idx, 0),
                     out_reg_tile,
                 )
 
