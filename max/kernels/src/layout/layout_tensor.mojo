@@ -2390,7 +2390,8 @@ struct LayoutTensor[
 
         @parameter
         for i in range(len(t)):
-            st[i] = Int(t[i])
+            # Use product() to handle both scalar and nested tuples
+            st[i] = Int(product(t[i]))
         return st
 
     @staticmethod
