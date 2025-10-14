@@ -145,7 +145,9 @@ def main(log_level: str = "INFO") -> None:
     from max.entrypoints.cli.entrypoint import configure_cli_logging
 
     # Configure logging first, before any other initialization
-    configure_cli_logging(level=log_level)
+    configure_cli_logging(
+        level=log_level, log_prefix=os.getenv("MAX_SERVE_LOG_PREFIX")
+    )
     configure_telemetry()
 
 
