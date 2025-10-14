@@ -292,7 +292,7 @@ struct BlockwiseFP8TokenFormat[
 
             # The first thread in each group stores the scale factor.
             alias scale_bytes = Self.scales_dtype.size_of()
-            if lane_id() % n_threads_per_group == 0:
+            if lane_id() % UInt(n_threads_per_group) == 0:
                 scale_idx = i * src_width // Self.group_size
                 buf_p.store[width=scale_bytes, alignment=scale_bytes](
                     Self.scales_offset() + scale_idx * scale_bytes,

@@ -217,7 +217,7 @@ fn naive_epilogue_kernel[
 ](c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],):
     alias simd_size = simd_width_of[c_type]()
     alias alignment = align_of[SIMD[c_type, simd_size]]()
-    var n = global_idx.x * simd_size
+    var n = global_idx.x * UInt(simd_size)
     var m = global_idx.y
     alias N = c_shape.get[1]()
     var M = c.dim[0]()

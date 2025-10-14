@@ -93,6 +93,10 @@ what we publish.
   casting function and explicitly unsafe `unsafe_mut_cast` and
   `unsafe_origin_cast` casting function.
 
+- The `@implicit` decorator on `UInt.__init__(Int)` has been deprecated.
+  Conversion from `Int` to `UInt` should now be done explicitly using
+  `UInt(int_value)`.
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`

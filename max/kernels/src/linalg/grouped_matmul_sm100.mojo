@@ -196,13 +196,13 @@ fn load_AB[
     mma_mbar[stage].wait(phase)
 
     var a_gmem_slice_coord = (
-        peer_cta_coord[2] * a_tma_rows
+        peer_cta_coord[2] * UInt(a_tma_rows)
         + work_tile_coord[0]
         + expert_ids[Int(scheduler.current_group_idx)] * scheduler.M
     )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * b_tma_rows
-        + peer_cta_coord[0] * BN
+        peer_cta_coord[1] * UInt(b_tma_rows)
+        + peer_cta_coord[0] * UInt(BN)
         + work_tile_coord[1]
     )
 
@@ -210,10 +210,10 @@ fn load_AB[
     var b_smem_tile = b_smem.next(stage)[]
 
     var a_smem_slice = __type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+        a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
     var b_smem_slice = __type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+        b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
 
     if elect_one_sync():
@@ -346,7 +346,7 @@ fn stsm_helper[
     alias RLayout32Bits[layout: Layout] = RuntimeLayout[
         layout, element_type = DType.uint32, linear_idx_type = DType.uint32
     ]
-    var stsm_lane_offset: UInt32 = (lane & 15) * stride0 + (
+    var stsm_lane_offset: UInt32 = (lane & 15) * UInt(stride0) + (
         lane >> 4
     ) * 8 if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(lane)
 
@@ -555,7 +555,7 @@ fn shared_memory_epilogue[
         shared_memory_row_upper_half += UInt(distribute_rows)
         shared_memory_row_lower_half += UInt(distribute_rows)
 
-    named_barrier[num_output_warps * WARP_SIZE]()
+    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
 @always_inline
@@ -883,7 +883,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -929,7 +929,7 @@ fn multi_stage_store_C[
             )
 
             # Guard the write to shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
             @parameter
             if elementwise_compute_lambda_fn:
@@ -972,9 +972,11 @@ fn multi_stage_store_C[
         # var coord_n_mma_m128 = (
         #     work_tile_coord[1] * MMA_N + stage * stageN + BN * (warp_id // 2)
         # )
-        var coord_n_mma_m256 = work_tile_coord[1] + stage * stageN
+        var coord_n_mma_m256 = work_tile_coord[1] + UInt(stage * stageN)
         var coord_n_mma_m128 = (
-            work_tile_coord[1] + stage * stageN + BN * (warp_id // 2)
+            work_tile_coord[1]
+            + UInt(stage * stageN)
+            + UInt(BN * (warp_id // 2))
         )
 
         var coord_n = (
@@ -1002,7 +1004,7 @@ fn multi_stage_store_C[
                         c_tma_op.async_store(
                             c_smem_warp_tile,
                             (
-                                UInt(work_tile_coord[0] + i * 16),
+                                UInt(work_tile_coord[0] + UInt(i * 16)),
                                 UInt(coord_n),
                             ),
                         )
@@ -1047,7 +1049,7 @@ fn multi_stage_store_C[
             alias logical_c_layout = Layout.row_major(
                 chunk_num, stageN, vec_chunkM
             )
-            alias thread_num = num_output_warps * WARP_SIZE
+            alias thread_num = num_output_warps * UInt(WARP_SIZE)
             constrained[
                 logical_c_layout.size() % thread_num == 0,
                 "logical_c_layout.size() must be a multiple of thread_num. Got "
@@ -1090,7 +1092,7 @@ fn multi_stage_store_C[
         @parameter
         if stage > 0 or stage == num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[num_output_warps * UInt(WARP_SIZE)]()
 
 
 fn zero_output[
@@ -1131,7 +1133,7 @@ fn zero_output[
     var M = group_end_idx - coord[1]
     if UInt32(thread_idx.x) < min(row_thread_num, row_boundary):
         for i in range(min(M, output_tile_shape[0])):
-            (ptr + thread_idx.x * simd_size).store[alignment=alignment](
+            (ptr + thread_idx.x * UInt(simd_size)).store[alignment=alignment](
                 zero_vec
             )
             ptr += stride
@@ -1305,7 +1307,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     alias accum_type = get_accum_type[a_type]()
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = thread_idx.x // UInt(WARP_SIZE) == 0
     var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     var is_first_cta_in_cluster = block_rank_in_cluster() == 0
@@ -1377,8 +1379,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % cta_group),
-        UInt(rank_m // cta_group),
+        UInt(rank_m % UInt(cta_group)),
+        UInt(rank_m // UInt(cta_group)),
         rank_n,
     )  # v,m,n
 
@@ -1397,7 +1399,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     a_multicast_mask <<= rank_m
     b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * CLUSTER_M
+    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
