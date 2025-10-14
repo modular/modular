@@ -161,7 +161,8 @@ bool ASTType::isEqualAllowingUnknownAttr(ASTType other,
   assert(lhsParams.size() == rhsParams.size() &&
          "Type with the same decl should have consistent number of params");
   for (auto [lhsParam, rhsParam] : llvm::zip(lhsParams, rhsParams)) {
-    if (lhsParam != rhsParam && !isa<UnboundAttr>(lhsParam))
+    if (!isa<UnboundAttr>(lhsParam) &&
+        getCanonicalAttr(lhsParam) != getCanonicalAttr(rhsParam))
       return false;
   }
   return true;

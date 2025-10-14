@@ -1202,11 +1202,11 @@ bool RefPackAttr::isConstant() const {
 // SugarAttr
 //===----------------------------------------------------------------------===//
 
-/// Return true if the specified result doesn't need to be sugared with a
-/// SugarAttr when always_inline("builtin") is used.
+/// Return true if the specified result doesn't need to be sugared, because it
+/// is simple enough to be printed directly without sugar.
 ///
 /// This is designed to align with ASTPrinter.
-static bool canElideSugaredBuiltinApply(TypedAttr attr) {
+static bool canElideSugarFor(TypedAttr attr) {
   // If we folded this to a reference to another declaration, just use it.
   if (isa<ParamDeclRefAttr>(attr))
     return true;
@@ -1236,7 +1236,7 @@ static bool canElideSugaredBuiltinApply(TypedAttr attr) {
           return true;
       }
 
-      if (typeName == "AddressSpace" && canElideSugaredBuiltinApply(elt))
+      if (typeName == "AddressSpace" && canElideSugarFor(elt))
         return true;
     }
   }
@@ -1281,8 +1281,7 @@ TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
                          TypedAttr original) {
   // If we shouldn't maintain type sugar for this, then just return the
   // original.
-  if (kind == SugarKind::AlwaysInlineBuiltin &&
-      canElideSugaredBuiltinApply(original))
+  if (canElideSugarFor(original))
     return original;
 
   auto canonical = getCanonicalAttr(original);
@@ -1379,8 +1378,7 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
           auto canParam = cast<TypedAttr>(this->replaceImpl(param, depth));
           // The parameter values must line up with the declared types of the
           // generator, but need to be canonicalized within themselves.
-          if (canParam.getType() != param.getType())
-            canParam = ParamOperatorAttr::getRebind(canParam, param.getType());
+          canParam = ParamOperatorAttr::getRebind(canParam, param.getType());
           canBindings.push_back(canParam);
           changed |= canParam != param;
         }

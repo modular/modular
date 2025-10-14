@@ -247,11 +247,17 @@ LIT::StructType LIT::StructType::get(SymbolRefAttr name,
   // Parameters can have dependent values, and canonicalizing one parameter may
   // change the type of later ones, for example, canonicaling something of type
   // T[Sugar(1), value: Foo[Sugar(1))] -> T[1, value: Foo[1]].
+  //
+  // FIXME(MOCO-2584): We want to maintain sugar for parameter types, but we
+  // currently canonicalize them in the parser because we don't have the ability
+  // to recompute this.
 #endif
   SmallVector<TypedAttr> canParams;
   canParams.reserve(paramValues.size());
 
   // Canonicalize the parameter values, but don't change their ultimate type.
+  // FIXME(MOCO-2584): The types are canonicalized in the parser to remove the
+  // need to do this.
   for (auto param : paramValues) {
     canParams.push_back(getCanonicalAttr(param));
     anyDifferent |= canParams.back() != param;

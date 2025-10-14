@@ -2643,11 +2643,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       // new one replaced.
       SmallVector<std::tuple<StringAttr, TypedAttr>> fields;
       for (auto field : structOp.getFieldDecls()) {
-        TypedAttr fieldValue;
-        if (field.getName() == ger.getFieldAttr())
-          fieldValue = value;
-        else
-          fieldValue = LIT::StructExtractAttr::get(varEntry, field);
+        // Use StructExtractAttr::get to compute the adjusted field type
+        // (substituting in parameters etc) even for when we overwrite it.
+        TypedAttr fieldValue = LIT::StructExtractAttr::get(varEntry, field);
+        if (field.getNameAttr() == ger.getFieldAttr())
+          fieldValue =
+              ParamOperatorAttr::getRebind(value, fieldValue.getType());
         fields.push_back({field.getNameAttr(), fieldValue});
       }
       varEntry = LITStructAttr::get(fields, structType);
