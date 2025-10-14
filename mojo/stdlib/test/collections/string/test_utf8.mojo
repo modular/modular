@@ -300,4 +300,4 @@ def test_utf8_byte_type():
 
 
 def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    TestSuite.discover_tests[__functions_in_module()]().run(parallelized=True)

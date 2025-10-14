@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from algorithm import parallelize
 from math import ceil, floor
 from os import sep
+from runtime.asyncrt import parallelism_level
 from time import perf_counter_ns
 from utils._ansi import Color, Text
 
@@ -191,8 +193,11 @@ struct TestSuite(Movable):
         var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
         return e.__str__().replace("\n", replacement)
 
-    def run(deinit self):
+    fn run(deinit self, *, parallelized: Bool = False) raises:
         """Runs the test suite and prints the results to the console.
+
+        Args:
+            parallelized: Whether to parallelize the run.
 
         Raises:
             An error if a test in the test suite fails.
@@ -210,32 +215,32 @@ struct TestSuite(Movable):
         var passed = Text[Color.GREEN]("PASS")
         var failed = Text[Color.RED]("FAIL")
 
-        for test in self.tests:
-            var name = Text[Color.CYAN](test.name)
+        var runs = List[Error](length=n_tests, fill=Error())
+        var durations = List[Int](length=n_tests, fill=0)
+
+        @parameter
+        fn _run_test(i: Int):
             var start = perf_counter_ns()
             try:
-                test.test_fn()
-                var duration = perf_counter_ns() - start
-                runtime += duration
-                print(
-                    _Indent(passed, level=2),
-                    "[",
-                    _format_nsec(duration),
-                    "]",
-                    name,
-                )
+                self.tests[i].test_fn()
             except e:
+                runs.unsafe_set(i, e)
+            durations.unsafe_set(i, perf_counter_ns() - start)
+
+        parallelize[_run_test](
+            n_tests, parallelism_level() if parallelized else 1
+        )
+
+        for test, err, duration in zip(self.tests, runs, durations):
+            var name = Text[Color.CYAN](test.name)
+            var nsec = _format_nsec(duration)
+            runtime += duration
+            if not err:
+                print(_Indent(passed, level=2), "[", nsec, "]", name)
+            else:
                 failures += 1
-                var duration = perf_counter_ns() - start
-                runtime += duration
-                print(
-                    _Indent(failed, level=2),
-                    "[",
-                    _format_nsec(duration),
-                    "]",
-                    name,
-                )
-                print(_Indent(Self._format_error(e), level=Self._ErrorIndent))
+                print(_Indent(failed, level=2), "[", nsec, "]", name)
+                print(_Indent(Self._format_error(err), level=Self._ErrorIndent))
 
         print("--------")
         print(

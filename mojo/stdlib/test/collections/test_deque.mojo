@@ -1088,4 +1088,4 @@ def test_repr_wrap():
 
 
 def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    TestSuite.discover_tests[__functions_in_module()]().run(parallelized=True)
