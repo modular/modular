@@ -157,13 +157,13 @@ public:
   /// candidate that works with the specified parameter bindings and provided
   /// arguments.  If so, return the single entry that works.
   ///
-  /// NOTE: This can mutate the operand list, e.g. when calling a static method
-  /// that doesn't need a self value, and by emitting PValues when not in an
-  /// parameter context. The actual emission needs to use the updated argument
-  /// list.
-  ///
   /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
   /// return null.
+  ///
+  /// NOTE: This can mutate the operand list, e.g. when calling a static method
+  /// that doesn't need a self value, and by pre-emitting PValues when not in an
+  /// parameter context. The actual emission needs to use the updated argument
+  /// list.
   PValue filterOverloadSet(CallOperands &operands, bool emitDiagnosticOnFailure,
                            IREmitter &emitter) const;
 
