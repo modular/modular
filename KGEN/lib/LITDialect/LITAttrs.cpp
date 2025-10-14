@@ -665,7 +665,7 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
     return OriginUnionAttr::get(OriginType::get(ctx, /*mutable=*/false));
 
   auto getMut = [](TypedAttr origin) {
-    return OriginType::sugarCast(origin.getType()).getIsMutable();
+    return sugarCast<OriginType>(origin.getType()).getIsMutable();
   };
 
   // The resultant mutability is the worst case of the input mutabilities.
@@ -743,7 +743,7 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, Type type) {
   if (operand.getType() == type)
     return operand;
 
-  auto attr = get(operand, OriginType::sugarCast(type).isMutable());
+  auto attr = get(operand, sugarCast<OriginType>(type).isMutable());
   // Ensure sugar lines up correctly.
   return ParamOperatorAttr::getRebind(attr, type);
 }
@@ -791,7 +791,7 @@ TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
   }
 
   // The structOriginRef must have a OriginType, which we propagate.
-  auto structType = OriginType::sugarCast(structOrigin.getType());
+  auto structType = sugarCast<OriginType>(structOrigin.getType());
   return OriginFieldAttr::Base::get(structOrigin.getContext(), structOrigin,
                                     field, structType);
 }
