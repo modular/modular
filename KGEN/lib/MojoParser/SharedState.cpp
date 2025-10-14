@@ -2409,7 +2409,6 @@ struct BuiltinFunctionFolder {
       : shared(shared), evaluator(shared), doEmitError(doEmitError) {}
 
   // This helper handles emitting an error (or not) as needed.
-  // This helper handles emitting an error (or not) as needed.
   InflightDiag emitError(Location loc) {
     auto result = shared.emitError(loc) << "'@always_inline(\"builtin\")' ";
     if (!doEmitError) // Only emit an error if requested.
