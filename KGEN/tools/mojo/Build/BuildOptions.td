@@ -21,8 +21,8 @@ def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
   MetaVarName<"PATH">, HelpText<
     "Sets the path and filename for the executable output. By default, it "
-    "outputs the executable to the same location as the Mojo file, with the "
-    "same name and no extension."
+    "outputs the executable to the current directory, with the same name "
+    "and no extension."
   >>;
 
 defm emitted_file_type: CommandOptionWithValues<
