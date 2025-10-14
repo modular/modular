@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, isclose
 from random import randn
-from sys import argv
+from sys import argv, has_nvidia_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -788,7 +788,12 @@ fn test_prefill[
                 for d in range(kv_depth):
                     lhs = output_rank4[b, s, h, d]
                     rhs = output_ref[b, s, h, d]
-                    assert_almost_equal(lhs, rhs, atol=2e-2, rtol=2e-2)
+                    assert_almost_equal(
+                        lhs,
+                        rhs,
+                        atol=2e-2,
+                        rtol=2e-2 if has_nvidia_gpu_accelerator() else 3e-2,
+                    )
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -1115,7 +1120,12 @@ fn test_cascade_prefill[
             for d in range(kv_depth):
                 lhs = output[s, h, d]
                 rhs = output_ref[s, h, d]
-                assert_almost_equal(lhs, rhs, atol=2e-2, rtol=1e-3)
+                assert_almost_equal(
+                    lhs,
+                    rhs,
+                    atol=2e-2,
+                    rtol=1e-3,
+                )
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -1221,7 +1231,6 @@ fn test_mla_prefill[
         cache_num_heads=1,
         batch_size=batch_size,
     ](140, 140, ctx)
-
     test_prefill[
         DType.bfloat16,
         depth=192,
@@ -1231,6 +1240,33 @@ fn test_mla_prefill[
         cache_num_heads=1,
         batch_size=batch_size,
     ](140, 140, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](700, 700, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](701, 701, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](12, 12, ctx)
 
 
 fn test_mla_cascade_prefill[
@@ -1261,20 +1297,22 @@ fn test_mla_cascade_prefill[
 
 def main():
     with DeviceContext() as ctx:
-        # tests with mask tensor
-        test_decoding[27, 1, False, False](ctx, False)
 
-        # tests with casual mask
-        test_decoding[27, 1, False, True](ctx, False)
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            # tests with mask tensor
+            test_decoding[27, 1, False, False](ctx, False)
+
+            # tests with casual mask
+            test_decoding[27, 1, False, True](ctx, False)
+
+            # test mla cascade prefill
+            test_mla_cascade_prefill[2](ctx)
+            test_mla_cascade_prefill[0](ctx)
+            test_decoding[0, 1, False, False](ctx, False)
+            test_decoding[0, 1, False, True](ctx, False)
 
         # test mla prefill
         test_mla_prefill[2](ctx)
-
-        # test mla cascade prefill
-        test_mla_cascade_prefill[2](ctx)
-
         # Test with zero batch size
         test_mla_prefill[0](ctx)
-        test_mla_cascade_prefill[0](ctx)
-        test_decoding[0, 1, False, False](ctx, False)
-        test_decoding[0, 1, False, True](ctx, False)

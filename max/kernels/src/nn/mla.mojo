@@ -15,7 +15,17 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from sys import align_of, has_nvidia_gpu_accelerator, simd_width_of, size_of
+from sys import (
+    align_of,
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+    simd_width_of,
+    size_of,
+    is_nvidia_gpu,
+    is_amd_gpu,
+    CompilationTarget,
+)
+
 
 import gpu.warp as warp
 from algorithm.functional import (
@@ -87,6 +97,7 @@ from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
+from .mla_amd import mla_prefill_single_batch_amd
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -1271,12 +1282,18 @@ fn flare_mla_prefill[
         alias cache_depth = cache_t.kv_params.head_size
         alias q_depth = q_shape.get[rank - 1]()
 
+        alias num_keys_per_block = UInt(
+            64
+        ) if has_nvidia_gpu_accelerator() else UInt(
+            128
+        )  # BN = 64 for nvidia, 128 in the only supported BN for amd
+
         alias mha_config = MHAConfig(
             dtype,
             UInt(q_shape.get[rank - 2]()),  # num_heads
             UInt(k.shape.get[rank - 1]()),  # depth
-            num_keys_per_block=UInt(64),
-            WN=UInt(64),
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
 
@@ -1420,13 +1437,17 @@ fn flare_mla_prefill[
         alias kv_num_heads = k_rope.shape.get[2]()
         alias cache_depth = k_rope.shape.get[3]()
         alias q_depth = q_shape.get[rank - 1]()  # hard code for now
-
+        alias num_keys_per_block = UInt(
+            64
+        ) if has_nvidia_gpu_accelerator() else UInt(
+            128
+        )  # BN = 64 for nvidia, 128 in the only supported BN for amd
         alias mha_config = MHAConfig(
             dtype,
             UInt(q_shape.get[rank - 2]()),
             UInt(k.shape.get[rank - 1]()),
-            num_keys_per_block=UInt(64),
-            WN=UInt(64),
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
         )
 
@@ -1515,8 +1536,8 @@ fn flare_mla_prefill_dispatch[
     constrained[q_depth == q.shape.get[rank - 1]()]()
     constrained[num_heads == UInt(q.shape.get[rank - 2]())]()
     constrained[
-        has_nvidia_gpu_accelerator(),
-        "flareMLA_prefill currently only supports Nvidia GPUs.",
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        "flareMLA_prefill currently only supports Nvidia and AMD GPUs.",
     ]()
 
     var batch_size: Int = valid_length.dim[0]() - 1
@@ -1534,7 +1555,9 @@ fn flare_mla_prefill_dispatch[
     alias k_smem = BN * UInt(q_depth)
     alias v_smem = BN * depth
 
-    alias smem_use = (q_smem + k_smem + v_smem) * UInt(config.dtype.size_of())
+    alias smem_use = (q_smem + k_smem + v_smem) * UInt(
+        config.dtype.size_of()
+    ) if has_nvidia_gpu_accelerator() else 0
 
     var softmax_info_ptr = (
         softmax_info.value().data if softmax_info else UnsafePointer[
@@ -1709,33 +1732,59 @@ fn mla_prefill[
     o_batch_offset = start_of_seq * depth * config.num_heads
     softmax_info_offset = start_of_seq * 2 + total_seq_len * block_idx.y * 2
 
-    mla_prefill_single_batch[
-        config=config,
-        group=group,
-        q_depth=q_depth,
-        cache_depth=cache_depth,
-        use_score_mod=use_score_mod,
-        write_softmax_info=write_softmax_info,
-        use_cascade_attention=use_cascade_attention,
-    ](
-        q_ptr.offset(q_batch_offset),
-        k,
-        v,
-        k_rope,
-        output_ptr.offset(o_batch_offset),
-        softmax_info_accum_ptr.offset(softmax_info_offset),
-        prev_output_ptr.offset(o_batch_offset),
-        prev_softmax_info_accum_ptr.offset(softmax_info_offset),
-        scale,
-        seq_len,
-        max_seq_len,
-        start_pos,
-        cache_start_pos,
-        num_keys,
-        mask,
-        score_mod,
-        batch_idx,
-    )
+    @parameter
+    if is_nvidia_gpu():
+        mla_prefill_single_batch[
+            config=config,
+            group=group,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            use_score_mod=use_score_mod,
+            write_softmax_info=write_softmax_info,
+            use_cascade_attention=use_cascade_attention,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k,
+            v,
+            k_rope,
+            output_ptr.offset(o_batch_offset),
+            softmax_info_accum_ptr.offset(softmax_info_offset),
+            prev_output_ptr.offset(o_batch_offset),
+            prev_softmax_info_accum_ptr.offset(softmax_info_offset),
+            scale,
+            seq_len,
+            max_seq_len,
+            start_pos,
+            cache_start_pos,
+            num_keys,
+            mask,
+            score_mod,
+            batch_idx,
+        )
+    elif is_amd_gpu():
+        mla_prefill_single_batch_amd[
+            config=config,
+            group=group,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+        ](
+            output_ptr.offset(o_batch_offset),
+            q_ptr.offset(q_batch_offset),
+            k,
+            v,
+            k_rope,
+            seq_len,
+            max_seq_len,
+            scale,
+            batch_idx,
+            start_pos,
+            cache_start_pos,
+            mask,
+        )
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="mla_prefill_single_batch"
+        ]()
 
 
 @always_inline

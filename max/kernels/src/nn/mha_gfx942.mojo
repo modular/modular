@@ -850,6 +850,7 @@ fn _apply_mask[
     mask: mask_t,
     p_reg_vectorized: LayoutTensor[accum_type, **_],
     not_last_iter: Bool,
+    cache_start_pos: UInt32 = 0,
 ):
     alias output_frag_size = fragment_layout.size()
 
@@ -900,6 +901,7 @@ fn _apply_mask[
                 num_keys - 1
             ) if token_gen else mask_block_row + mask_frag_row
             var score_col = mask_frag_col
+            var score_col_with_cache_start_pos = score_col + cache_start_pos
             var score_row_with_start_pos = score_row + start_pos
 
             @parameter
@@ -917,7 +919,7 @@ fn _apply_mask[
                             Int(block_idx.z),
                             Int(q_head_idx),
                             Int(score_row_with_start_pos),
-                            Int(score_col + fragment_col),
+                            Int(score_col_with_cache_start_pos + fragment_col),
                         ),
                         p_reg_vectorized[mma_id, 0][j],
                     )
