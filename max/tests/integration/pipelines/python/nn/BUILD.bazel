@@ -154,7 +154,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        # TODO: GEX-2676
+        "manual",
+    ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
