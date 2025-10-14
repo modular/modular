@@ -602,7 +602,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
               &emitter.shared);
       auto diag = emitter.emitWarning(expr->getLoc(),
                                       "deprecated implicit conversion from '")
-                  << fromTyAsString << "' to '" << toTyAsString << "'";
+                  << fromTyAsString << "' to '" << toTyAsString << "'"
+                  << expr->getRange();
       diag.attachNote(selectedDecl->getLoc())
           << "'@implicit' constructor '"
           << toTyAsString + ".__init__' declared here";
