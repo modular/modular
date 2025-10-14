@@ -45,7 +45,7 @@ alias alias_Value = 10
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_construct",
 # CHECK:  "path": "/mojo_doc/#alias_construct",
-# CHECK:  "value": "IntTuple[__origin_of()](0, 1, 2, 3, 4)"
+# CHECK:  "value": "IntTuple(0, 1, 2, 3, 4)"
 alias alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 
