@@ -260,8 +260,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn add_functions(
-        module: PythonObject,
-        var functions: List[PyMethodDef],
+        module: PythonObject, var functions: List[PyMethodDef]
     ) raises:
         """Adds functions to a Python module object.
 
@@ -285,8 +284,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn _unsafe_add_functions(
-        module: PythonObject,
-        functions: UnsafePointer[PyMethodDef],
+        module: PythonObject, functions: UnsafePointer[PyMethodDef]
     ) raises:
         """Adds functions to a Python module object.
 
@@ -303,12 +301,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
         ref cpython = Python().cpython()
 
-        var result = cpython.PyModule_AddFunctions(
-            # Safety: `module` pointer lives long enough because its reference
-            #   argument.
-            module._obj_ptr,
-            functions,
-        )
+        # Safety: `module` pointer lives long enough because its reference
+        #   argument.
+        var result = cpython.PyModule_AddFunctions(module._obj_ptr, functions)
 
         if result != 0:
             raise cpython.get_error()
@@ -336,9 +331,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpython = Python().cpython()
 
         var result = cpython.PyModule_AddObjectRef(
-            module._obj_ptr,
-            name.unsafe_cstr_ptr(),
-            value._obj_ptr,
+            module._obj_ptr, name.unsafe_cstr_ptr(), value._obj_ptr
         )
 
         if result != 0:
@@ -347,32 +340,6 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    @doc_private
-    @staticmethod
-    fn _dict[
-        V: ConvertibleToPython & Copyable & Movable = PythonObject
-    ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
-        """Construct a Python dictionary from keyword arguments.
-
-        Return value: New reference.
-        """
-        ref cpy = Python().cpython()
-        var dict_obj = cpy.PyDict_New()
-
-        for entry in kwargs.items():
-            var key = cpy.PyUnicode_DecodeUTF8(entry.key.as_string_slice())
-            if not key:
-                raise cpy.unsafe_get_error()
-
-            var val = entry.value.copy().to_python_object()
-            var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
-            cpy.Py_DecRef(key)
-            _ = val
-            if errno == -1:
-                raise cpy.unsafe_get_error()
-
-        return dict_obj
 
     @staticmethod
     fn dict[
@@ -394,7 +361,24 @@ struct Python(Defaultable, ImplicitlyCopyable):
             On failure to construct the dictionary or convert the values to
             Python objects.
         """
-        return PythonObject(from_owned=Self._dict(kwargs))
+        ref cpython = Python().cpython()
+        var obj_ptr = cpython.PyDict_New()
+
+        for entry in kwargs.items():
+            var key = cpython.PyUnicode_DecodeUTF8(entry.key.as_string_slice())
+            if not key:
+                raise cpython.unsafe_get_error()
+
+            var val = entry.value.copy().to_python_object()
+            var err = cpython.PyDict_SetItem(obj_ptr, key, val._obj_ptr)
+            cpython.Py_DecRef(key)
+            _ = val
+            if err == -1:
+                # destroy the incorrectly built object to avoid a memory leak
+                _ = PythonObject(from_owned=obj_ptr)
+                raise cpython.get_error()
+
+        return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
     fn dict[
@@ -422,22 +406,24 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
 
         ref cpython = Python().cpython()
-        var dict_obj_ptr = cpython.PyDict_New()
-        if not dict_obj_ptr:
+        var obj_ptr = cpython.PyDict_New()
+        if not obj_ptr:
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(tuples)):
-            var key = tuples[i][0].copy().to_python_object()
-            var val = tuples[i][1].copy().to_python_object()
-            var errno = cpython.PyDict_SetItem(
-                dict_obj_ptr, key._obj_ptr, val._obj_ptr
+            var key = tuples[i][0].to_python_object()
+            var val = tuples[i][1].to_python_object()
+            var err = cpython.PyDict_SetItem(
+                obj_ptr, key._obj_ptr, val._obj_ptr
             )
             _ = key
             _ = val
-            if errno == -1:
-                raise cpython.unsafe_get_error()
+            if err == -1:
+                # destroy the incorrectly built object to avoid a memory leak
+                _ = PythonObject(from_owned=obj_ptr)
+                raise cpython.get_error()
 
-        return PythonObject(from_owned=dict_obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
     fn list[
@@ -456,41 +442,19 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
         ref cpython = Python().cpython()
         var obj_ptr = cpython.PyList_New(len(values))
+        if not obj_ptr:
+            raise cpython.get_error()
 
         for i in range(len(values)):
             var obj = values[i].copy().to_python_object()
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+            var err = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+            if err == -1:
+                # destroy the incorrectly built object to avoid a memory leak
+                _ = PythonObject(from_owned=obj_ptr)
+                raise cpython.get_error()
 
         return PythonObject(from_owned=obj_ptr)
 
-    @staticmethod
-    fn _list[
-        *Ts: ConvertibleToPython & Copyable
-    ](
-        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
-    ) raises -> PythonObject:
-        """Initialize the object from a list literal.
-
-        Parameters:
-            Ts: The list element types.
-
-        Args:
-            values: The values to initialize the list with.
-
-        Returns:
-            A PythonObject representing the list.
-        """
-        ref cpython = Python().cpython()
-        var obj_ptr = cpython.PyList_New(len(values))
-
-        @parameter
-        for i in range(len(VariadicList(Ts))):
-            var obj = values[i].copy().to_python_object()
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
-
-        return PythonObject(from_owned=obj_ptr)
-
-    @always_inline
     @staticmethod
     fn list[
         *Ts: ConvertibleToPython & Copyable
@@ -506,36 +470,22 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The constructed Python list.
         """
-        return Self._list(values)
-
-    @staticmethod
-    fn _tuple[
-        *Ts: ConvertibleToPython & Copyable
-    ](
-        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
-    ) raises -> PythonObject:
-        """Initialize the object from a tuple literal.
-
-        Parameters:
-            Ts: The tuple element types.
-
-        Args:
-            values: The values to initialize the tuple with.
-
-        Returns:
-            A PythonObject representing the tuple.
-        """
         ref cpython = Python().cpython()
-        var obj_ptr = cpython.PyTuple_New(len(values))
+        var obj_ptr = cpython.PyList_New(len(values))
+        if not obj_ptr:
+            raise cpython.get_error()
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj.steal_data())
+            var err = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+            if err == -1:
+                # destroy the incorrectly built object to avoid a memory leak
+                _ = PythonObject(from_owned=obj_ptr)
+                raise cpython.get_error()
 
         return PythonObject(from_owned=obj_ptr)
 
-    @always_inline
     @staticmethod
     fn tuple[
         *Ts: ConvertibleToPython & Copyable
@@ -551,7 +501,21 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The constructed Python tuple.
         """
-        return Self._tuple(values)
+        ref cpython = Python().cpython()
+        var obj_ptr = cpython.PyTuple_New(len(values))
+        if not obj_ptr:
+            raise cpython.get_error()
+
+        @parameter
+        for i in range(len(VariadicList(Ts))):
+            var obj = values[i].copy().to_python_object()
+            var err = cpython.PyTuple_SetItem(obj_ptr, i, obj.steal_data())
+            if err == -1:
+                # destroy the incorrectly built object to avoid a memory leak
+                _ = PythonObject(from_owned=obj_ptr)
+                raise cpython.get_error()
+
+        return PythonObject(from_owned=obj_ptr)
 
     @no_inline
     fn as_string_slice(
@@ -604,11 +568,11 @@ struct Python(Defaultable, ImplicitlyCopyable):
             An error if the conversion failed.
         """
         ref cpython = Python().cpython()
-        var py_str_ptr = cpython.PyObject_Str(obj._obj_ptr)
-        if not py_str_ptr:
+        var obj_ptr = cpython.PyObject_Str(obj._obj_ptr)
+        if not obj_ptr:
             raise cpython.get_error()
 
-        return PythonObject(from_owned=py_str_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
     fn int(obj: PythonObject) raises -> PythonObject:
@@ -625,11 +589,11 @@ struct Python(Defaultable, ImplicitlyCopyable):
             A PythonObject representing the result of the conversion to `int`.
         """
         ref cpython = Python().cpython()
-        var py_obj_ptr = cpython.PyNumber_Long(obj._obj_ptr)
-        if not py_obj_ptr:
+        var obj_ptr = cpython.PyNumber_Long(obj._obj_ptr)
+        if not obj_ptr:
             raise cpython.get_error()
 
-        return PythonObject(from_owned=py_obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
     fn float(obj: PythonObject) raises -> PythonObject:
@@ -646,11 +610,11 @@ struct Python(Defaultable, ImplicitlyCopyable):
         """
         ref cpython = Python().cpython()
 
-        var float_obj = cpython.PyNumber_Float(obj._obj_ptr)
-        if not float_obj:
+        var obj_ptr = cpython.PyNumber_Float(obj._obj_ptr)
+        if not obj_ptr:
             raise cpython.get_error()
 
-        return PythonObject(from_owned=float_obj)
+        return PythonObject(from_owned=obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Checked Conversions

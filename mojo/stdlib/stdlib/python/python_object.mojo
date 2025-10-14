@@ -366,24 +366,24 @@ struct PythonObject(
         """
         ref cpython = Python().cpython()
         var obj_ptr = cpython.PySet_New({})
-
         if not obj_ptr:
             raise cpython.get_error()
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            var result = cpython.PySet_Add(obj_ptr, obj.steal_data())
-            if result == -1:
+            var err = cpython.PySet_Add(obj_ptr, obj.steal_data())
+            if err == -1:
+                # destroy the incorrectly built object to avoid a memory leak
+                _ = PythonObject(from_owned=obj_ptr)
                 raise cpython.get_error()
 
         return PythonObject(from_owned=obj_ptr)
 
     fn __init__(
         out self,
-        var keys: List[PythonObject],
-        var values: List[PythonObject],
-        __dict_literal__: (),
+        keys: List[PythonObject],
+        values: List[PythonObject]__dict_literal__: (),
     ) raises:
         """Construct a Python dictionary from a list of keys and a list of values.
 
@@ -393,16 +393,20 @@ struct PythonObject(
             __dict_literal__: Tell Mojo to use this method for dict literals.
         """
         ref cpython = Python().cpython()
-        var dict_obj_ptr = cpython.PyDict_New()
+        var obj_ptr = cpython.PyDict_New()
+        if not obj_ptr:
+            raise cpython.get_error()
 
         for key, val in zip(keys, values):
             var errno = cpython.PyDict_SetItem(
-                dict_obj_ptr, key._obj_ptr, val._obj_ptr
+                obj_ptr, key._obj_ptr, val._obj_ptr
             )
             if errno == -1:
+                # destroy the incorrectly built object to avoid a memory leak
+                _ = PythonObject(from_owned=obj_ptr)
                 raise cpython.unsafe_get_error()
 
-        return PythonObject(from_owned=dict_obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     fn __copyinit__(out self, existing: Self):
         """Copy the object.
