@@ -32,9 +32,9 @@ from subprocess import Popen
 import click
 import requests
 
-DUMMY_1X1_IMAGE = (
+DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP8zwACTGCSAQANHQEDgslx/wAAAABJRU5ErkJggg=="
 )
 URL = "http://localhost:8000/v1/chat/completions"
 
@@ -55,7 +55,7 @@ def test_single_request(model: str, task: str) -> None:
                     },
                     {
                         "type": "image_url",
-                        "image_url": {"url": DUMMY_1X1_IMAGE},
+                        "image_url": {"url": DUMMY_2X2_IMAGE},
                     },
                 ],
             }
