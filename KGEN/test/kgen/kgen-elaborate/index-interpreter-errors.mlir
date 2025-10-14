@@ -10,8 +10,9 @@ kgen.generator @minus(%arg0: index, %arg1: index) -> index {
 }
 
 // CHECK-LABEL: kgen.func @callIt
+// expected-error @+1 {{function instantiation failed}}
 kgen.generator export @callIt() -> index {
-  // expected-error @below {{failed to compile-time evaluate function call}}
+  // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.declare value : index = <apply(:(index, index) -> index @minus, 4294967295, -4294967295)>
   %0 = kgen.param.constant: index = <value>
   kgen.return %0 : index

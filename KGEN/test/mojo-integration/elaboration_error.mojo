@@ -10,9 +10,10 @@
 from collections.string.string_slice import StaticString, _get_kgen_string
 
 
+# expected-error @+2{{function instantiation failed}}
 @export
 fn entry_method():
-    foo()  # expected-error {{call expansion failed}}
+    foo()  # expected-note {{call expansion failed}}
 
 
 @always_inline("nodebug")
@@ -32,14 +33,16 @@ fn baz():
     ]()  # expected-note {{constraint failed}}
 
 
+# expected-error @+2{{function instantiation failed}}
 @export
 fn test_no_params():
-    no_parameters()
+    no_parameters()  # expected-note {{call expansion failed}}
 
 
+# expected-note @+2{{function instantiation failed}}
 @no_inline
 fn no_parameters():
-    parametric[1]()  # expected-error {{call expansion failed}}
+    parametric[1]()  # expected-note {{call expansion failed}}
 
 
 @no_inline

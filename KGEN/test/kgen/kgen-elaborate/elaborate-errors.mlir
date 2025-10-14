@@ -12,36 +12,37 @@ kgen.generator @genItf3<x>() {
   kgen.return
 }
 
+// expected-error @+1 {{function instantiation failed}}
 kgen.generator @use_Itf3two() {
-  // expected-error @+1 {{call expansion failed}}
+  // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<2>() : () -> ()
   kgen.return
 }
 
 // -----
 
+// expected-error @+1 {{function instantiation failed}}
 kgen.generator @unfoldableIndex() {
   kgen.param.declare x = <4>
 
   // Index type parameter expressions can only fold when they are known the
   // same on 32-bit and 64-bit systems or if target-specific information is
   // known.
-  // expected-error @+1 {{could not simplify operator div(8000000000, 4)}}
+  // expected-note @+1 {{could not simplify operator div(8000000000, 4)}}
   %1 = kgen.param.constant = <div(8000000000, x)> // 8B/4 differs on 32-bit.
   kgen.return
 }
 
-
-
 // -----
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @unfoldableIndex() {
   kgen.param.declare x = <4>
 
   // Index type parameter expressions can only fold when they are known the
   // same on 32-bit and 64-bit systems or if target-specific information is
   // known.
-  // expected-error @+1 {{could not simplify operator div(8000000000, 4)}}
+  // expected-note @+1 {{could not simplify operator div(8000000000, 4)}}
   %1 = kgen.param.constant = <add(1, div(8000000000, x))> // 8B/4 differs on 32-bit.
   kgen.return
 }
@@ -50,8 +51,9 @@ kgen.generator @unfoldableIndex() {
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
-  // expected-error @below {{could not simplify operator get_sizeof}}
+  // expected-note @below {{could not simplify operator get_sizeof}}
   %0 = kgen.param.constant: index = <get_sizeof(!opaque<"type">, #target)>
   kgen.return
 }
@@ -65,8 +67,9 @@ kgen.generator @cant_interpret(%arg0: index) -> index {
   kgen.return %0 : index
 }
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @interp_func() {
-  // expected-error @below {{failed to compile-time evaluate function call}}
+  // expected-note @below {{failed to compile-time evaluate function call}}
   %0 = kgen.param.constant = <apply(:(index) -> index @cant_interpret, 1)>
   kgen.return
 }
@@ -88,8 +91,9 @@ kgen.generator @passthrough() -> index {
   kgen.return %idx0 : index
 }
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @call_it() {
-  // expected-error @below {{failed to compile-time evaluate function call}}
+  // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @passthrough)>
   kgen.return
 }
@@ -97,10 +101,11 @@ kgen.generator @call_it() {
 
 // -----
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @brokenVLenAssert() {
   kgen.param.declare B : !kgen.string = <"foo">
 
-  // expected-error @+1 {{constraint failed: foo}}
+  // expected-note @+1 {{constraint failed: foo}}
   kgen.param.assert <eq(2, 3)>, B
   kgen.return
 }
@@ -109,7 +114,7 @@ kgen.generator @brokenVLenAssert() {
 
 // COM: Unused `kgen.param.declare` should not be ignored.
 
-// expected-error @below {{function instantiation failed}}
+// expected-note @below {{function instantiation failed}}
 kgen.generator @fail_if_zero<value>() -> index {
   %0 = index.constant 0
   // expected-note @below {{constraint failed: must not be zero!}}
@@ -117,6 +122,7 @@ kgen.generator @fail_if_zero<value>() -> index {
   kgen.return %0 : index
 }
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @unused_param_declare() {
   kgen.param.declare unused = <apply(:() -> index bind_params(:<index>() -> index @fail_if_zero, 0))>
   kgen.return
@@ -124,9 +130,10 @@ kgen.generator @unused_param_declare() {
 
 // -----
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @invalid_rebind(%arg0: !pop.scalar<si32>) {
   kgen.param.declare dt: dtype = <ui32>
-  // expected-error @below {{error: rebind input type '!pop.scalar<si32>' does not match result type '!pop.scalar<ui32>'}}
+  // expected-note @below {{error: rebind input type '!pop.scalar<si32>' does not match result type '!pop.scalar<ui32>'}}
   %0 = kgen.rebind %arg0 : !pop.scalar<si32> to !pop.scalar<dt>
   kgen.return
 }
@@ -139,8 +146,9 @@ kgen.generator @fails() -> index {
   kgen.unreachable
 }
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @failed_apply() {
-  // expected-error @below {{failed to compile-time evaluate function call}}
+  // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.apply value = [() -> index: @fails]()
   kgen.param.constant = <value>
   kgen.return
@@ -148,8 +156,9 @@ kgen.generator @failed_apply() {
 
 // -----
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @failed_param_rebind() {
-  // expected-error @below {{rebind input type 'i64' does not match result type 'i32'}}
+  // expected-note @below {{rebind input type 'i64' does not match result type 'i32'}}
   kgen.param.declare value: i32 = <rebind(:i64 2)>
   kgen.return
 }
@@ -160,16 +169,18 @@ kgen.generator @function<param>() {
   kgen.return
 }
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator export @invalid_param_ref() {
-  // expected-error @below {{cannot reference parametric function}}
+  // expected-note @below {{cannot reference parametric function}}
   kgen.cost_of[<index>() -> (): @function]
   kgen.return
 }
 
 // -----
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator export @recursive() -> index {
-  // expected-error @below {{function instantiation in parameter domain that recursively requires itself}}
+  // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{function recursively calls itself in the parameter domain}}
   kgen.param.apply x = [() -> index: @recursive]()
   %0 = kgen.param.constant = <x>
@@ -178,8 +189,9 @@ kgen.generator export @recursive() -> index {
 
 // -----
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator export @recursive0() -> index {
-  // expected-error @below {{function instantiation in parameter domain that recursively requires itself}}
+  // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{back to parameter domain function call here}}
   kgen.param.apply x = [() -> index: @recursive1]()
   %0 = kgen.param.constant = <x>
@@ -195,10 +207,11 @@ kgen.generator @recursive1() -> index {
 
 // -----
 // COM: MOCO-964 fix.
+// expected-error @below {{function instantiation failed}}
 kgen.generator @will_fail() {
   kgen.param.declare B : !kgen.string = <"foo">
 
-  // expected-error @+1 {{constraint failed: foo}}
+  // expected-note @+1 {{constraint failed: foo}}
   kgen.param.assert <eq(2, 3)>, B
 
   kgen.return
@@ -212,8 +225,9 @@ kgen.generator @will_pass<a, b>() -> (index, index) {
 
 !capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)>
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator export @main() {
-  // expected-error @+1  {{failed to run the pass manager}}
+  // expected-note @+1  {{failed to run the pass manager}}
   %0 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @will_fail>>
   %1 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> (index, index) @will_pass<1, 2>>>
   kgen.return
@@ -223,6 +237,7 @@ kgen.generator export @main() {
 
 // Illegal recursion hidden behind struct type instantiation.
 
+// expected-note @below {{function instantiation failed}}
 kgen.generator @recursive() -> index {
   // expected-note @below {{function instantiation in parameter domain that recursively requires itself}}
   // expected-note @below {{function recursively calls itself in the parameter domain}}
@@ -240,8 +255,9 @@ kgen.generator @use_type<T: type>() {
 
 #weird_struct = #kgen.type<typevalue<#kgen.genref<@WeirdStruct<:type index>>>, struct<(array<2, index>)>> : !kgen.type
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator export @gen_structs() {
-  // expected-error @below {{call expansion failed}}
+  // expected-note @below {{call expansion failed}}
   kgen.call @use_type<:type #weird_struct>() : () -> ()
   kgen.return
 }
@@ -256,8 +272,9 @@ kgen.generator export @metadata<x>() attributes {LLVMMetadataArray = [
   kgen.return
 }
 
+// expected-error @below {{function instantiation failed}}
 kgen.generator @metadata_caller() {
-  // expected-error @below {{call expansion failed}}
+  // expected-note @below {{call expansion failed}}
   kgen.call @metadata<2>() : () -> ()
   kgen.return
 }
