@@ -179,9 +179,6 @@ void ExpansionGraph::didAddTask() { ++numOutstandingResources; }
 ErrorTreeOr<ImplNode *> ParamNode::getFirstConcreteNode() {
   if (!impl.error)
     return &impl;
-  // Propagate the error trivially if the current generator has no parameters.
-  if (inputParams.empty())
-    return impl.error->copy();
   return ErrorTree(gen.getLoc(), "function instantiation failed",
                    impl.error->copy());
 }
@@ -198,9 +195,6 @@ ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
 ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
   if (!impl.error)
     return success();
-  // Propagate the error trivially if the current generator has no parameters.
-  if (inputParams.empty())
-    return impl.error->copy();
   return ErrorTree(gen.getLoc(), "function instantiation failed",
                    impl.error->copy());
 }
@@ -735,13 +729,8 @@ Elaborator::collectConcreteImplementations(Location loc, ImplNode *parent,
   // Get all valid implementations of the callee node.
   ErrorTreeOr<ImplNode *> concrete = calleeNode->getFirstConcreteNode();
   if (concrete.isError()) {
-    // If the callee has no parameters, don't build another error.
-    if (calleeNode->inputParams.empty()) {
-      parent->setToError(concrete.takeError());
-    } else {
-      parent->setToError(
-          ErrorTree(loc, "call expansion failed", concrete.takeError()));
-    }
+    parent->setToError(
+        ErrorTree(loc, "call expansion failed", concrete.takeError()));
     return failure();
   }
 
