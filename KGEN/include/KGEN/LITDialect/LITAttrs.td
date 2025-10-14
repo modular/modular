@@ -1044,8 +1044,8 @@ def LIT_SugarAttr : LITTypedAttr<"Sugar", "sugar"> {
   let extraClassDeclaration = [{
     /// Remove any top-level sugar nodes from this type, but don't fully
     /// canonicalize it.
-    static TypedAttr stripTopLevelSugar(TypedAttr value);
-    static Type stripTopLevelSugar(Type value);
+    static TypedAttr strip(TypedAttr value);
+    static Type strip(Type value);
   }];
 }
 

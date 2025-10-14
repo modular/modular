@@ -1434,7 +1434,7 @@ void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
 void UninitializedValueScan::checkOriginEffect(TypedAttr origin,
                                                Operation &op) {
   // We assume this may mutate the origin unless we know it is read-only.
-  bool isMutate = !cast<OriginType>(origin.getType()).isMutableKnown(false);
+  bool isMutate = !OriginType::isMutableKnown(origin, false);
 
   SmallVector<ValueRef> accesses = valueSet.getValueRefsForOrigin(origin);
   for (auto access : accesses) {

@@ -665,7 +665,7 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
     return OriginUnionAttr::get(OriginType::get(ctx, /*mutable=*/false));
 
   auto getMut = [](TypedAttr origin) {
-    return ::cast<OriginType>(origin.getType()).getIsMutable();
+    return OriginType::sugarCast(origin.getType()).getIsMutable();
   };
 
   // The resultant mutability is the worst case of the input mutabilities.
@@ -743,7 +743,7 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, Type type) {
   if (operand.getType() == type)
     return operand;
 
-  auto attr = get(operand, OriginType::castCanonical(type).isMutable());
+  auto attr = get(operand, OriginType::sugarCast(type).isMutable());
   // Ensure sugar lines up correctly.
   return ParamOperatorAttr::getRebind(attr, type);
 }
@@ -791,7 +791,7 @@ TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
   }
 
   // The structOriginRef must have a OriginType, which we propagate.
-  auto structType = ::cast<OriginType>(structOrigin.getType());
+  auto structType = OriginType::sugarCast(structOrigin.getType());
   return OriginFieldAttr::Base::get(structOrigin.getContext(), structOrigin,
                                     field, structType);
 }
@@ -1301,18 +1301,18 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
 
 /// Remove any top-level sugar nodes from this type, but don't fully
 /// canonicalize it.
-TypedAttr SugarAttr::stripTopLevelSugar(TypedAttr value) {
+TypedAttr SugarAttr::strip(TypedAttr value) {
   while (auto sugar = dyn_cast<SugarAttr>(value))
     value = sugar.getOriginal();
   return value;
 }
 
-Type SugarAttr::stripTopLevelSugar(Type value) {
+Type SugarAttr::strip(Type value) {
   // Sugar for a type will be wrapped in a ParamType converting the attr into
   // the type domain.
   if (auto paramRef = dyn_cast<ParamType>(value))
     if (isa<SugarAttr>(paramRef.getParam()))
-      return ParamType::get(stripTopLevelSugar(paramRef.getParam()));
+      return ParamType::get(strip(paramRef.getParam()));
   return value;
 }
 

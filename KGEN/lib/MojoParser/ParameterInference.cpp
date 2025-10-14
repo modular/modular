@@ -703,11 +703,11 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 
   // If it is an extract from a known struct, then we know there is one field in
   // the struct - we can form a StructAttr around our actual value and recurse.
-  if (auto expExtract = dyn_cast<LIT::StructExtractAttr>(
-          SugarAttr::stripTopLevelSugar(expected))) {
+  if (auto expExtract =
+          dyn_cast<LIT::StructExtractAttr>(SugarAttr::strip(expected))) {
     // If these are two lined up extracts, look through them.
-    if (auto actExtract = dyn_cast<LIT::StructExtractAttr>(
-            SugarAttr::stripTopLevelSugar(actual))) {
+    if (auto actExtract =
+            dyn_cast<LIT::StructExtractAttr>(SugarAttr::strip(actual))) {
       if (expExtract.getField() != actExtract.getField())
         return failure();
       return matchSingleEltStruct(actExtract.getStructValue(),

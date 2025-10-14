@@ -539,7 +539,7 @@ OverallOpValueEffect LIT::getOperationEffects(
       // If capture by reference, the operand effect is either memMut or
       // memLoad.
       if (auto typedAttr = dyn_cast<TypedAttr>(captureAttribute)) {
-        OriginType origin = cast<OriginType>(typedAttr.getType());
+        OriginType origin = OriginType::sugarCast(typedAttr.getType());
         operands.push_back({capture, origin.isMutable()
                                          ? OperandEffect::memMut
                                          : OperandEffect::memLoad});
