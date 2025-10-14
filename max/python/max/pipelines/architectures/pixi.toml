@@ -1,0 +1,40 @@
+[workspace]
+authors = ["rosscampbell <ross.campbell@codethink.co.uk>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "gemma3multimodal"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+# quickly run a model with 1 text prompt and then shut it down
+generate = { cmd = [
+	"max","generate",
+	"--model", "google/gemma-3-4B-it",
+	"--custom-architectures", "gemma3multimodal",
+	"--prompt", "cite some shakespeare"
+] }
+
+# serve a model with openAI API and wait for requests
+serve = { cmd = [
+	"max", "serve",
+	"--model", "google/gemma-3-4B-it",
+	"--custom-architectures", "gemma3multimodal"
+] }
+
+# the bash script uses curl to prompt the model with text and/or an image
+test_text = { cmd = [
+	"./test_model.sh", "text"
+] }
+test_vision = { cmd = [
+	"./test_model.sh", "vision"
+] }
+test_multimodal = [{ task = "test_text" }, { task = "test_vision" }]
+
+# keep it clean
+linter = { cmd = ["../../../../bazelw", "run", "//:lint"] }
+formatter = { cmd = ["../../../../bazelw", "run", "//:format"] }
+lint = [{ task = "linter" }, { task = "formatter" }]
+
+[dependencies]
+modular = "==25.6"
+
