@@ -3380,7 +3380,7 @@ class CreateCompletionRequest(BaseModel):
         description='The prompt(s) to generate completions for, encoded as a string, array of strings, array of tokens, or array of token arrays.\n\nNote that <|endoftext|> is the document separator that the model sees during training, so if a prompt is not specified the model will generate as if from the beginning of a new document.\n',
     )
     best_of: Optional[Annotated[int, Field(ge=0, le=20)]] = Field(
-        1,
+        None,
         description='Generates `best_of` completions server-side and returns the "best" (the one with the highest log probability per token). Results cannot be streamed.\n\nWhen used with `n`, `best_of` controls the number of candidate completions and `n` specifies how many to return – `best_of` must be greater than `n`.\n\n**Note:** Because this parameter generates many completions, it can quickly consume your token quota. Use carefully and ensure that you have reasonable settings for `max_tokens` and `stop`.\n',
     )
     echo: Optional[bool] = Field(
@@ -3388,7 +3388,7 @@ class CreateCompletionRequest(BaseModel):
         description='Echo back the prompt in addition to the completion\n',
     )
     frequency_penalty: Optional[Annotated[float, Field(ge=-2.0, le=2.0)]] = Field(
-        0,
+        None,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
     )
     logit_bias: Optional[Dict[str, int]] = Field(
@@ -3400,26 +3400,26 @@ class CreateCompletionRequest(BaseModel):
         description='Include the log probabilities on the `logprobs` most likely output tokens, as well the chosen tokens. For example, if `logprobs` is 5, the API will return a list of the 5 most likely tokens. The API will always return the `logprob` of the sampled token, so there may be up to `logprobs+1` elements in the response.\n\nThe maximum value for `logprobs` is 5.\n',
     )
     max_tokens: Optional[Annotated[int, Field(ge=0)]] = Field(
-        16,
+        None,
         description="The maximum number of [tokens](/tokenizer) that can be generated in the completion.\n\nThe token count of your prompt plus `max_tokens` cannot exceed the model's context length. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.\n",
         examples=[16],
     )
     min_tokens: Optional[Annotated[int, Field(ge=0)]] = Field(
-        0,
+        None,
         description="Minimum number of tokens to generate per output sequence before EOS or stop_token_ids can be generated\n",
         examples=[16],
     )
     n: Optional[Annotated[int, Field(ge=1, le=128)]] = Field(
-        1,
+        None,
         description='How many completions to generate for each prompt.\n\n**Note:** Because this parameter generates many completions, it can quickly consume your token quota. Use carefully and ensure that you have reasonable settings for `max_tokens` and `stop`.\n',
         examples=[1],
     )
     presence_penalty: Optional[Annotated[float, Field(ge=-2.0, le=2.0)]] = Field(
-        0,
+        None,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
     )
     repetition_penalty: Optional[Annotated[float, Field(gt=0.0)]] = Field(
-        1,
+        None,
         description="Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far. Values > 1 encourage the model to use new tokens, while values < 1 encourage the model to repeat tokens.\n",
     )
     seed: Optional[Annotated[int, Field(ge=-9223372036854775808, le=9223372036854775807)]] = (
@@ -3447,17 +3447,17 @@ class CreateCompletionRequest(BaseModel):
         examples=['test.'],
     )
     temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
-        1,
+        None,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
         examples=[1],
     )
     top_k: Optional[Annotated[int, Field(ge=1, le=255)]] = Field(
-        255,
+        None,
         description='Integer that controls the number of top tokens to consider.\n',
         examples=[1],
     )
     top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
-        1,
+        None,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or `temperature` but not both.\n',
         examples=[1],
     )
@@ -4813,7 +4813,7 @@ class CreateChatCompletionRequest(BaseModel):
         examples=['gpt-4o'],
     )
     frequency_penalty: Optional[Annotated[float, Field(ge=-2.0, le=2.0)]] = Field(
-        0,
+        None,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
     )
     logit_bias: Optional[Dict[str, int]] = Field(
@@ -4833,21 +4833,21 @@ class CreateChatCompletionRequest(BaseModel):
         description="The maximum number of [tokens](/tokenizer) that can be generated in the chat completion.\n\nThe total length of input tokens and generated tokens is limited by the model's context length. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.\n",
     )
     min_tokens: Optional[Annotated[int, Field(ge=0)]] = Field(
-        0,
+        None,
         description="Minimum number of tokens to generate per output sequence before EOS or stop_token_ids can be generated\n",
         examples=[16],
     )
     n: Optional[Annotated[int, Field(ge=1, le=128)]] = Field(
-        1,
+        None,
         description='How many chat completion choices to generate for each input message. Note that you will be charged based on the number of generated tokens across all of the choices. Keep `n` as `1` to minimize costs.',
         examples=[1],
     )
     presence_penalty: Optional[Annotated[float, Field(ge=-2.0, le=2.0)]] = Field(
-        0,
+        None,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
     )
     repetition_penalty: Optional[Annotated[float, Field(gt=0.0)]] = Field(
-        1,
+        None,
         description="Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far. Values > 1 encourage the model to use new tokens, while values < 1 encourage the model to repeat tokens.\n",
     )
     response_format: Optional[
@@ -4884,17 +4884,17 @@ class CreateChatCompletionRequest(BaseModel):
     )
     stream_options: Optional[ChatCompletionStreamOptions] = None
     temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
-        1,
+        None,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
         examples=[1],
     )
     top_k: Optional[Annotated[int, Field(ge=1, le=255)]] = Field(
-        255,
+        None,
         description='Integer that controls the number of top tokens to consider.\n',
         examples=[1],
     )
     top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
-        1,
+        None,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or `temperature` but not both.\n',
         examples=[1],
     )

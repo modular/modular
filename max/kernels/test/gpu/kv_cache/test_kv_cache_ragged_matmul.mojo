@@ -603,7 +603,8 @@ def generic_execute_fused_qkv_cache_ragged[
             2,
             DimList(
                 Dim(),
-                (kv_params.num_heads * 2 + num_q_heads) * kv_params.head_size,
+                (kv_params.num_heads * 2 + UInt(num_q_heads))
+                * kv_params.head_size,
             ),
         ],
         DeviceNDBuffer[

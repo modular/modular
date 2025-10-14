@@ -169,6 +169,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
+    k_matmul_ragged_paged_scale,
     kv_cache_store_ragged,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
@@ -177,6 +178,7 @@ from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import MHAMask
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
+from nn.mla import _k_cache_to_buffer
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
@@ -3955,11 +3957,9 @@ struct ResizeBicubic:
         size: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        # Get input and output dimensions from tensors
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_buffer = managed_tensor_slice_to_ndbuffer(input)
-
-        resize_bicubic[target](output_buffer, input_buffer, ctx)
+        resize_bicubic[dtype=dtype, target=target](
+            output.to_layout_tensor(), input.to_layout_tensor(), ctx
+        )
 
     @staticmethod
     fn shape[
@@ -4216,9 +4216,6 @@ struct Softmax:
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        # shape should be the same between the two inputs
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
@@ -4233,12 +4230,11 @@ struct Softmax:
             output.dtype,
             simd_width_of[output.dtype](),
             output.rank,
-            output_ndbuffer.shape,
             input_fn,
             target,
         ](
             output.shape(),
-            output_ndbuffer,
+            output.to_layout_tensor(),
             output.rank - 1,
             context=ctx,
         )
@@ -4271,10 +4267,14 @@ struct LogSoftmax:
             output.dtype,
             simd_width_of[output.dtype](),
             output.rank,
-            output_ndbuffer.shape,
             input_fn,
             target,
-        ](output.shape(), output_ndbuffer, output.rank - 1, context=ctx)
+        ](
+            output.shape(),
+            output.to_layout_tensor(),
+            output.rank - 1,
+            context=ctx,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4690,14 +4690,18 @@ struct Conv:
             pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
             pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
 
+        alias input_shape = input._static_shape.at[
+            input.rank - 1
+        ]()  # input C, NHWC
+        alias filter_shape = filter._static_shape.at[
+            filter.rank - 2
+        ]()  # filter C, RSCF or FRSCf
         alias conv_attr = ConvInfoStatic[input.rank - 2](
-            static_padding,
-            static_strides,
-            static_dilations,
-            input._static_shape.at[input.rank - 1](),  # input C, NHWC
-            filter._static_shape.at[
-                filter.rank - 2
-            ](),  # filter C, RSCF or FRSCf
+            IntTuple(static_padding),
+            IntTuple(static_strides),
+            IntTuple(static_dilations),
+            input_shape.get() if input_shape else UNKNOWN_VALUE,
+            filter_shape.get() if filter_shape else UNKNOWN_VALUE,
         )
 
         alias filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
@@ -5139,18 +5143,12 @@ struct MaskedFlashAttentionGPU:
         """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
-        var mask_buffer = managed_tensor_slice_to_ndbuffer(mask)
-
         flash_attention(
-            output_buffer,
-            q_buffer,
-            k_buffer,
-            v_buffer,
-            mask_buffer,
+            output.to_layout_tensor(),
+            q.to_layout_tensor(),
+            k.to_layout_tensor(),
+            v.to_layout_tensor(),
+            mask.to_layout_tensor(),
             scale,
             context=ctx,
         )
@@ -5215,14 +5213,14 @@ struct FlashAttentionGPU:
         """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
 
-        alias num_kv_heads = k_buffer.shape.get[
-            2
-        ]() if k_buffer.shape.has_value[2]() else -1
+        alias num_kv_heads = Int(
+            k_buffer.layout.shape[2]
+        ) if k_buffer.layout.shape != UNKNOWN_VALUE else -1
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
@@ -5273,10 +5271,10 @@ struct PaddedFlashAttentionGPU:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
 
         alias valid_length_t = ManagedTensorSlice[
             IOUnknown,
@@ -5284,9 +5282,9 @@ struct PaddedFlashAttentionGPU:
         ]
         _valid_length = rebind[valid_length_t](valid_length)
 
-        alias num_kv_heads = k_buffer.shape.get[
-            2
-        ]() if k_buffer.shape.has_value[2]() else -1
+        alias num_kv_heads = Int(
+            k_buffer.layout.shape[2]
+        ) if k_buffer.layout.shape[2] != UNKNOWN_VALUE else -1
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
@@ -5348,10 +5346,10 @@ struct RaggedFlashAttentionGPU:
         """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
 
         alias input_row_offsets_t = ManagedTensorSlice[
             IOUnknown,
@@ -5359,9 +5357,9 @@ struct RaggedFlashAttentionGPU:
         ]
         _input_row_offsets = rebind[input_row_offsets_t](input_row_offsets)
 
-        alias num_kv_heads = k_buffer.shape.get[
-            1
-        ]() if k_buffer.shape.has_value[1]() else -1
+        alias num_kv_heads = Int(
+            k_buffer.layout.shape[1]
+        ) if k_buffer.layout.shape[1] != UNKNOWN_VALUE else -1
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
@@ -5378,7 +5376,7 @@ struct RaggedFlashAttentionGPU:
                 k_buffer,
                 v_buffer,
                 _input_row_offsets,
-                managed_tensor_slice_to_ndbuffer(q_max_seq_len),
+                q_max_seq_len.to_layout_tensor(),
                 mask,
                 score_mod,
                 scale,
@@ -6664,6 +6662,10 @@ struct Struct_mla_decode_ragged_paged:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
+        constrained[
+            kv_blocks.static_spec.shape.get[1]() == 1,
+            "Only support only_k=True for MLA decompress",
+        ]()
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -6825,6 +6827,13 @@ struct Struct_mla_prefill_ragged_plan:
         buffer_tok_size: UInt32,
         context: DeviceContextPtr,
     ) raises:
+        constrained[
+            kv_blocks.static_spec.shape.get[1]() == 1,
+            (
+                "Expected is_mla=True for MLA decompress, but found both k and"
+                " v dimensions."
+            ),
+        ]()
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -6907,6 +6916,46 @@ struct Struct_kv_cache_get_max_seq_len_paged:
         # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,
         # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
         max_seq_len[0] = kv_collection.max_seq_length
+
+
+@compiler.register("mo.mla.k_cache_to_buffer.paged")
+struct KCacheToBuffer:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        k_latent_buffer: OutputTensor[dtype=dtype, rank=2],
+        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
+        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        buffer_length: Int32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](),
+            "mo.mla.k_cache_to_buffer is only supported on GPU",
+        ]()
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        var k = kv_collection.get_key_cache(Int(layer_idx))
+        _k_cache_to_buffer(
+            managed_tensor_slice_to_ndbuffer(buffer_row_offsets_1d),
+            managed_tensor_slice_to_ndbuffer(cache_offsets_1d),
+            k,
+            Int(buffer_length),
+            managed_tensor_slice_to_ndbuffer(k_latent_buffer),
+            context.get_device_context(),
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -7511,12 +7560,12 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             per_head_norm=per_head_norm,
         ](
             kv_collection,
-            managed_tensor_slice_to_ndbuffer(gamma),
+            gamma.to_layout_tensor(),
             epsilon,
             weight_offset,
             layer_idx,
             total_seq_len,
-            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            input_row_offsets.to_layout_tensor(),
             context,
         )
 
@@ -7544,7 +7593,7 @@ fn print_kv_cache_paged_generic_kernel_api[
     @parameter
     if is_gpu[target]():
         print_kv_cache_paged_generic_gpu[target](
-            managed_tensor_slice_to_ndbuffer(valid_lengths),
+            valid_lengths.to_layout_tensor(),
             kv_collection,
             layer_idx,
             True,
@@ -7552,7 +7601,7 @@ fn print_kv_cache_paged_generic_kernel_api[
         )
     elif is_cpu[target]():
         print_kv_cache_paged_generic_cpu[target](
-            managed_tensor_slice_to_ndbuffer(valid_lengths),
+            valid_lengths.to_layout_tensor(),
             kv_collection,
             layer_idx,
             is_print_compact[0],
@@ -7670,6 +7719,54 @@ struct Struct_k_matmul_ragged_paged:
             managed_tensor_slice_to_ndbuffer(hidden_state),
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
             managed_tensor_slice_to_ndbuffer(weight),
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("mo.k_matmul.ragged.paged.scale")
+struct Struct_k_matmul_ragged_paged_scale:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        scale_dtype: DType,
+        kv_cache_t: DType, //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        target: StaticString,
+    ](
+        hidden_state: InputTensor[dtype=dtype, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        weight: InputTensor[dtype=dtype, rank=2],
+        input_scale: InputTensor[dtype=scale_dtype, rank=2],
+        weight_scale: InputTensor[dtype=scale_dtype, rank=2],
+        kv_blocks: MutableInputTensor[dtype=kv_cache_t, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        k_matmul_ragged_paged_scale[
+            target=target,
+            scales_granularity_mnk = IndexList[3](
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+        ](
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
+            managed_tensor_slice_to_ndbuffer(input_scale),
+            managed_tensor_slice_to_ndbuffer(weight_scale),
             kv_collection,
             layer_idx,
             ctx,
@@ -8745,13 +8842,13 @@ struct MergeRaggedTensors:
         b_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        merge_ragged_tensors[target=target](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(output_row_offsets),
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(a_row_offsets),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(b_row_offsets),
+        merge_ragged_tensors[rank=rank, target=target](
+            output.to_layout_tensor(),
+            output_row_offsets.to_layout_tensor(),
+            a.to_layout_tensor(),
+            a_row_offsets.to_layout_tensor(),
+            b.to_layout_tensor(),
+            b_row_offsets.to_layout_tensor(),
             ctx,
         )
 

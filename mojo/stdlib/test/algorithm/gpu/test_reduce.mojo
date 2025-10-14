@@ -14,7 +14,7 @@
 from algorithm._gpu.reduction import reduce_launch
 from buffer import NDBuffer
 from gpu.host import DeviceContext
-from testing import assert_equal
+from testing import assert_equal, TestSuite
 
 from utils import IndexList, StaticTuple
 
@@ -199,7 +199,7 @@ fn reduce_inner_test[
     _ = res_device
 
 
-def main():
+def test_reduce():
     @parameter
     fn reduce_add[
         dtype: DType,
@@ -388,3 +388,7 @@ def main():
             List[Scalar[DType.bool]](True, False, True, False, True),
             ctx,
         )
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -26,9 +26,16 @@ from gpu import (
 from gpu.globals import WARP_SIZE
 from gpu.host import get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.intrinsics import ds_read_tr16_b64, load_acquire, store_release
+from gpu.intrinsics import (
+    ds_read_tr16_b64,
+    load_acquire,
+    store_release,
+    permlane_shuffle,
+    permlane_swap,
+)
 from gpu.memory import AddressSpace
 from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
+from benchmark import keep
 
 alias MI300X_TARGET = get_gpu_target["mi300x"]()
 alias MI355X_TARGET = get_gpu_target["mi355x"]()
@@ -400,6 +407,33 @@ def test_ds_read_tr16_b64_compile():
     )
 
 
+# CHECK-LABEL: test_permlane_compile
+def test_permlane_compile():
+    print("== test_permlane_compile")
+
+    fn test_kernel[dtype: DType]():
+        var val = Scalar[dtype](lane_id())
+        var val_perm_16 = permlane_shuffle[16](val)
+        var val_perm_32 = permlane_shuffle[32](val)
+        var val_swap_16 = permlane_swap[16](val, val * val)
+        var val_swap_32 = permlane_swap[32](val, val * val)
+        keep(val_perm_16)
+        keep(val_perm_32)
+        keep(val_swap_16)
+        keep(val_swap_32)
+
+    # CHECK: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
+    print(
+        _compile_code[
+            test_kernel[DType.float32],
+            target=MI355X_TARGET,
+        ]()
+    )
+
+
 def main():
     test_shuffle_compile()
     test_cast_fp32_bf16_compile()
@@ -412,3 +446,4 @@ def main():
     test_schedule_group_barrier_compile()
     test_atomic_compile()
     test_ds_read_tr16_b64_compile()
+    test_permlane_compile()

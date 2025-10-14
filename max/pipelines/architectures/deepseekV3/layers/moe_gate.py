@@ -46,6 +46,8 @@ class DeepseekV3TopKRouter(MoEGate):
         norm_topk_prob: bool,
         hidden_dim: int,
         dtype: DType,
+        gate_dtype: DType,
+        correction_bias_dtype: DType | None,
         devices: list[DeviceRef],
     ) -> None:
         """
@@ -60,6 +62,7 @@ class DeepseekV3TopKRouter(MoEGate):
             norm_topk_prob: Whether to normalize the top-k probabilities.
             hidden_dim: The dimension of the hidden state.
             dtype: The data type of the MoEGate.
+            correction_bias_dtype: The data type of the correction bias.
             devices: The devices to use for the MoEGate.
         """
         super().__init__(
@@ -67,7 +70,7 @@ class DeepseekV3TopKRouter(MoEGate):
             hidden_dim=hidden_dim,
             num_experts=num_experts,
             num_experts_per_token=num_experts_per_token,
-            dtype=dtype,
+            dtype=gate_dtype,
         )
 
         if topk_method not in ["noaux_tc"]:
@@ -83,13 +86,19 @@ class DeepseekV3TopKRouter(MoEGate):
         self.routed_scaling_factor = routed_scaling_factor
         self.norm_topk_prob = norm_topk_prob
         self.scoring_func = scoring_func
+        self.gate_dtype = gate_dtype
+        self.correction_bias_dtype = correction_bias_dtype
 
         if self.topk_method == "noaux_tc":
+            if correction_bias_dtype is None:
+                raise ValueError(
+                    "correction_bias_dtype is required for topk_method=noaux_tc"
+                )
             self.e_score_correction_bias = Weight(
                 "e_score_correction_bias",
                 shape=[self.num_experts],
                 device=self.devices[0],
-                dtype=dtype,
+                dtype=correction_bias_dtype,
             )
 
     def __call__(
@@ -236,6 +245,8 @@ class DeepseekV3TopKRouter(MoEGate):
                 topk_group=self.topk_group,
                 norm_topk_prob=self.norm_topk_prob,
                 dtype=self.dtype,
+                gate_dtype=self.gate_dtype,
+                correction_bias_dtype=self.correction_bias_dtype,
                 devices=[device],
             )
 

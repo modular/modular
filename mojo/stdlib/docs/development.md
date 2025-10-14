@@ -83,11 +83,17 @@ To run the tests for the standard library, you can run:
 
 ## Testing only a subset of the standard library
 
-You can run all of the tests within a specific subdirectory by simply
+You can run all the tests within a specific subdirectory by simply
 specifying the subdirectory and using `/...`. For example:
 
 ```bash
 ./bazelw test //mojo/stdlib/test/math/...
+```
+
+To find all the test targets, you can run:
+
+```bash
+./bazelw query 'tests(//mojo/stdlib/...)'
 ```
 
 A convenience script exists for executing standard library tests within the mojo

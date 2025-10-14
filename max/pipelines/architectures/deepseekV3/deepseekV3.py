@@ -43,6 +43,9 @@ from max.nn import (
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
+from max.nn.attention.multi_latent_attention_fp8 import (
+    DataParallelLatentAttentionWithRopeFp8,
+)
 from max.nn.comm.allreduce import Allreduce
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.kv_cache import (
@@ -76,23 +79,36 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         num_devices = len(config.devices)
 
-        self.self_attn = DataParallelLatentAttentionWithRope(
+        # Create Multi-head Latent Attention layer.
+        mla_kwargs: dict[str, Any] = dict(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
             hidden_size=config.hidden_size,
             kv_params=config.kv_params,
-            dtype=config.dtype,
             q_lora_rank=config.q_lora_rank,
             kv_lora_rank=config.kv_lora_rank,
             qk_nope_head_dim=config.qk_nope_head_dim,
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
-            # TODO(GEX-2653): Force prefill, when using "both", the graph
-            # compilation crashes.
-            graph_mode="prefill",
         )
+
+        mla_cls: (
+            type[DataParallelLatentAttentionWithRope]
+            | type[DataParallelLatentAttentionWithRopeFp8]
+        )
+        if config.float8_config is not None:
+            mla_kwargs["float8_config"] = config.float8_config
+            # Decode is not yet supported for FP8.
+            mla_kwargs["graph_mode"] = "prefill"
+            mla_cls = DataParallelLatentAttentionWithRopeFp8
+        else:
+            mla_kwargs["dtype"] = config.dtype
+            mla_kwargs["graph_mode"] = config.graph_mode
+            mla_cls = DataParallelLatentAttentionWithRope
+
+        self.self_attn = mla_cls(**mla_kwargs)
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx)
@@ -105,7 +121,7 @@ class DeepseekV3DecoderLayer(Module):
         create_norm = functools.partial(
             RMSNorm,
             dim=config.hidden_size,
-            dtype=config.dtype,
+            dtype=config.norm_dtype,
             eps=config.rms_norm_eps,
             multiply_before_cast=False,
         )
@@ -156,6 +172,9 @@ class DeepseekV3DecoderLayer(Module):
                     n_group=config.n_group,
                     topk_group=config.topk_group,
                     norm_topk_prob=config.norm_topk_prob,
+                    # Use the same dtype for the gate as the norm
+                    gate_dtype=config.norm_dtype,
+                    correction_bias_dtype=config.correction_bias_dtype,
                 ),
                 has_shared_experts=True,
                 shared_experts_dim=config.n_shared_experts
@@ -275,10 +294,13 @@ class DeepseekV3(Module):
         num_devices = len(config.devices)
         devices = config.devices
 
+        embedding_output_dtype = config.dtype
+        if config.float8_config and config.float8_config.embedding_output_dtype:
+            embedding_output_dtype = config.float8_config.embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
             config.hidden_size,
-            dtype=config.dtype,
+            dtype=embedding_output_dtype,
             devices=config.devices,
             quantization_encoding=None,
         )
@@ -312,7 +334,7 @@ class DeepseekV3(Module):
 
         self.norm = RMSNorm(
             config.hidden_size,
-            config.dtype,
+            config.norm_dtype,
             config.rms_norm_eps,
         )
         self.norm.sharding_strategy = ShardingStrategy.replicate(num_devices)
@@ -320,7 +342,7 @@ class DeepseekV3(Module):
         self.lm_head = ColumnParallelLinear(
             config.hidden_size,
             config.vocab_size,
-            config.dtype,
+            embedding_output_dtype,
             devices=config.devices,
             quantization_encoding=None,
         )

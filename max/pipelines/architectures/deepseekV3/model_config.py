@@ -19,6 +19,7 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
@@ -30,6 +31,8 @@ class DeepseekV3ConfigBase(MAXModelConfigBase):
 
     # MAX specific fields
     dtype: DType
+    norm_dtype: DType
+    correction_bias_dtype: DType | None
     kv_params: KVCacheParams
     devices: list[DeviceRef]
 
@@ -66,6 +69,7 @@ class DeepseekV3ConfigBase(MAXModelConfigBase):
     attention_bias: bool = False
     attention_dropout: float = 0.0
 
+    float8_config: Float8Config | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
     def __post_init__(self):
@@ -116,4 +120,5 @@ class DeepseekV3Config(MAXModelConfig, DeepseekV3ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             data_parallel_degree=data_parallel_degree,
+            is_mla=True,
         )

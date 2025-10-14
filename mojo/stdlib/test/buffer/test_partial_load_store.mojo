@@ -93,8 +93,4 @@ def test_partial_load_store():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_partial_load_store]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

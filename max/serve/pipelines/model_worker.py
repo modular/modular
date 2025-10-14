@@ -194,10 +194,7 @@ class ModelWorker:
                     if wrapped_error is not e:
                         # It was a CUDA OOM error, raise the wrapped version with helpful message
                         raise wrapped_error from e
-                    else:
-                        # Not OOM, handle normally
-                        logger.exception("An error occurred during scheduling")
-                        raise e
+                    raise e
 
         logger.debug("Stopped model worker!")
 
@@ -239,11 +236,7 @@ class ModelWorker:
                 )
             )
         except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            logger.exception(
-                "Encountered an error in ModelWorker.run %s", e, stack_info=True
-            )
+            pass  # suppress noisy stack traces for user abort
 
 
 @asynccontextmanager

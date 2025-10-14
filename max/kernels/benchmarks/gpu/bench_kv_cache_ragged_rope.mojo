@@ -106,6 +106,7 @@ def execute_kv_cache_ragged_rope[
     random(q_host.tensor)
     var q_device = q_host.copy_to_device(ctx)
     var output_device = q_host.copy_to_device(ctx)
+    var output_device_tensor = output_device.to_layout_tensor()
 
     var kv_block_device = DeviceNDBuffer[dtype, 6](
         IndexList[6](
@@ -161,7 +162,7 @@ def execute_kv_cache_ragged_rope[
         kv_collection_device,
         input_row_offsets_device,
         freqs_cis_table_device,
-        output_device,
+        output_device_tensor,
     )
     @always_inline
     fn bench_func(mut b: Bencher):
@@ -173,13 +174,13 @@ def execute_kv_cache_ragged_rope[
                 interleaved=False,
                 target="gpu",
             ](
-                q_device.tensor,
-                input_row_offsets_device.tensor,
+                q_device.to_layout_tensor(),
+                input_row_offsets_device.to_layout_tensor(),
                 kv_collection_device,
-                freqs_cis_table_device.tensor,
+                freqs_cis_table_device.to_layout_tensor(),
                 None,
                 0,
-                output_device.tensor,
+                output_device_tensor,
                 ctx,
             )
 

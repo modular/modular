@@ -16,9 +16,7 @@ from testing import TestSuite
 
 
 def main():
-    var suite = TestSuite()
-    suite.test[test_write_to_stdout]()
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 @fieldwise_init

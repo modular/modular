@@ -71,6 +71,7 @@ from .shmem_api import (
     shmem_get,
     shmem_get_nbi,
     shmem_init,
+    shmem_init_thread,
     shmem_malloc,
     shmem_module_init,
     shmem_my_pe,

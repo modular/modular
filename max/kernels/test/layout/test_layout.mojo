@@ -127,6 +127,14 @@ fn test_layout_basic() raises:
         ),
     )
 
+    assert_equal(
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, 128, 576),
+        Layout(
+            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, 128, 576),
+            IntTuple(-1, 73728, 576, 1),
+        ),
+    )
+
 
 fn test_unknowns() raises:
     print("== test_unknowns")

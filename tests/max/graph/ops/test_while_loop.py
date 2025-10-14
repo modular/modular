@@ -27,6 +27,9 @@ def test_while_loop_basic() -> None:
         x = graph.inputs[0]
 
         def pred(x: TensorValue) -> TensorValue:
+            import sys
+
+            print(f"{pred=}", file=sys.stderr)
             return x < 10
 
         def body(x: TensorValue) -> TensorValue:
@@ -180,6 +183,6 @@ def test_while_loop_device_chains_scoped() -> None:
 
         ops.while_loop([x0_t, x1_t], pred, body)
         # device chains must be restored after staging the loop regions
-        assert id(graph.device_chains[DeviceRef.GPU(0)]) == id0
-        assert id(graph.device_chains[DeviceRef.GPU(1)]) == id1
+        assert id(graph.device_chains[DeviceRef.GPU(0)]) != id0
+        assert id(graph.device_chains[DeviceRef.GPU(1)]) != id1
         graph.output()

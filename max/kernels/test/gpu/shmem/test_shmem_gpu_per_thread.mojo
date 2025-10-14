@@ -10,9 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
+"""Shows how to initialize SHMEM from Mojo. This uses `shmem_launch` to spawn
+one thread for each GPU, and takes care of mpi initialization and
+deinitialization. If running on a single node you can run this compiled binary
+directly without mpirun.
 
-# RUN: %mojo %s
+See `test_shmem_gpu_per_process.mojo` for how you can launch one GPU per process
+using mpirun.
+"""
+
+# RUN: %mojo-build %s -o %t
+# RUN: %t
 
 from testing import assert_equal
 from shmem import *
@@ -38,6 +46,7 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     shmem_p(destination, mype, peer)
 
 
+# Must have this signature to use `shmem_launch`
 def simple_shift(ctx: SHMEMContext):
     # Set up buffers to test devices are communicating with the correct IDs
     var target_device = ctx.enqueue_create_buffer[DType.int32](1)

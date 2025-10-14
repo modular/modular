@@ -40,6 +40,7 @@ class KVCacheParams:
     cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED
     page_size: int | None = None
     n_devices: int = 1
+    is_mla: bool = False
 
     data_parallel_degree: int = 1
 

@@ -225,21 +225,21 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (UInt(UInt(iter_idx) * BK), UInt(a_gmem_slice_coord)),
+            (UInt(UInt(iter_idx) * UInt(BK)), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (UInt(UInt(iter_idx) * BK), UInt(b_gmem_slice_coord)),
+            (UInt(UInt(iter_idx) * UInt(BK)), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
 
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[0],
-            (UInt(work_tile_coord[0] * BM), UInt(iter_idx)),
+            (UInt(work_tile_coord[0] * UInt(BM)), UInt(iter_idx)),
         )
 
 

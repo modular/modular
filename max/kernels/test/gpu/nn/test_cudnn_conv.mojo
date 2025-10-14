@@ -217,3 +217,39 @@ def main():
         # - 4 groups
         # - Depthwise convolution (num_groups = in_channels)
         # - Grouped convolution with float16
+
+    # Test with multiple device contexts consecutively
+    print("\n== Testing with multiple device contexts ==")
+
+    # First context - default device (GPU 0)
+    print("Creating first device context (default device)...")
+    with DeviceContext() as ctx1:
+        test_conv_cudnn[
+            DimList(1, 8, 8, 16),  # input  (NHWC)
+            DimList(3, 3, 16, 32),  # filter (RSCF)
+            DimList(1, 6, 6, 32),  # output (NHWC)
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            IndexList[2](1, 1),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](0, 0),  # pad
+        ](ctx1)
+
+    if DeviceContext.number_of_devices() >= 2:
+        # Second context - device 1
+        print("Creating second device context (device 1)...")
+        with DeviceContext(device_id=1) as ctx2:
+            test_conv_cudnn[
+                DimList(1, 8, 8, 16),  # input  (NHWC)
+                DimList(3, 3, 16, 32),  # filter (RSCF)
+                DimList(1, 6, 6, 32),  # output (NHWC)
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                IndexList[2](1, 1),  # stride
+                IndexList[2](1, 1),  # dilation
+                IndexList[2](0, 0),  # pad
+            ](ctx2)
+
+        print("Multiple device context test completed successfully!")

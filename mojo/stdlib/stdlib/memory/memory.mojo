@@ -491,7 +491,7 @@ fn _malloc[
     if is_gpu():
         alias U = UnsafePointer[NoneType, address_space = AddressSpace.GENERIC]
         var ptr = external_call["malloc", U](size)
-        return ptr.bitcast[type]().origin_cast[True, MutableOrigin.empty]()
+        return ptr.bitcast[type]().unsafe_origin_cast[MutableOrigin.empty]()
     else:
         return __mlir_op.`pop.aligned_alloc`[_type = __type_of(res)._mlir_type](
             alignment._mlir_value, size._mlir_value

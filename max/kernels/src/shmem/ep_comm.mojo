@@ -56,31 +56,288 @@ alias RtTuple_4 = RuntimeTuple[
 alias EP_DATA_READY_FLAG = 1 << 10
 
 
-@fieldwise_init
 @register_passable("trivial")
-struct EPMsgConfig:
-    var dtype: DType
-    var hid_dim: Int
-    var top_k: Int
-    var alignment: Int
+trait TokenFormat:
+    alias hid_dim: Int
+    alias top_k: Int
+    alias alignment: Int
 
-    fn token_size(self) -> Int:
-        return align_up(self.hid_dim * self.dtype.size_of(), self.alignment)
+    @always_inline
+    @staticmethod
+    fn token_size() -> Int:
+        "Returns the size of the (quantized) token in bytes."
+        ...
 
-    fn src_info_size(self) -> Int:
-        return align_up(size_of[Int32](), self.alignment)
+    @always_inline
+    @staticmethod
+    fn src_info_size() -> Int:
+        "Returns the size of the source info in bytes. Currently, source info is a single int32 that stores a token's index in the original rank."
+        return align_up(size_of[Int32](), Self.alignment)
 
-    fn topk_info_size(self) -> Int:
-        return align_up(size_of[UInt16]() * self.top_k, self.alignment)
+    @always_inline
+    @staticmethod
+    fn topk_info_size() -> Int:
+        "Returns the size of the top-k info in bytes. Currently, top-k info is an array of uint16 that stores a token's top-k expert IDs."
+        return align_up(size_of[UInt16]() * Self.top_k, Self.alignment)
 
-    fn msg_size(self) -> Int:
-        return self.token_size() + self.src_info_size() + self.topk_info_size()
+    @always_inline
+    @staticmethod
+    fn msg_size() -> Int:
+        "Returns the size of the message in bytes."
+        return Self.token_size() + Self.src_info_size() + Self.topk_info_size()
 
-    fn src_info_offset(self) -> Int:
-        return self.token_size()
+    @always_inline
+    @staticmethod
+    fn src_info_offset() -> Int:
+        "Returns the offset of the source info in the message."
+        return Self.token_size()
 
-    fn topk_info_offset(self) -> Int:
-        return self.token_size() + self.src_info_size()
+    @always_inline
+    @staticmethod
+    fn topk_info_offset() -> Int:
+        "Returns the offset of the top-k info in the message."
+        return Self.token_size() + Self.src_info_size()
+
+    @always_inline
+    @staticmethod
+    fn copy_token_to_send_buf[
+        src_type: DType
+    ](
+        buf_p: UnsafePointer[UInt8],
+        src_p: UnsafePointer[Scalar[src_type]],
+        block_size: UInt,
+    ) -> None:
+        "Copy the token to the send buffer. This function needs to be called by all threads in the block."
+        ...
+
+    @always_inline
+    fn copy_msg_to_output_tensor(
+        self,
+        buf_p: UnsafePointer[UInt8],
+        token_index: Int,
+    ) -> None:
+        "Copy the message to the output tensor. This function needs to be called by all threads in a warp."
+        ...
+
+
+@register_passable("trivial")
+struct BF16TokenFormat[
+    output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int
+](TokenFormat):
+    alias hid_dim = _hid_dim
+    alias top_k = _top_k
+    alias alignment = _alignment
+
+    alias TensorType = LayoutTensor[
+        DType.bfloat16, output_layout, MutableAnyOrigin
+    ]
+    var output_tokens: Self.TensorType
+
+    @always_inline
+    fn __init__(out self, output_tokens: Self.TensorType):
+        self.output_tokens = output_tokens
+
+    @always_inline
+    @staticmethod
+    fn token_size() -> Int:
+        return align_up(Self.hid_dim * DType.bfloat16.size_of(), Self.alignment)
+
+    @always_inline
+    @staticmethod
+    fn copy_token_to_send_buf[
+        src_type: DType
+    ](
+        buf_p: UnsafePointer[UInt8],
+        src_p: UnsafePointer[Scalar[src_type]],
+        block_size: UInt,
+    ) -> None:
+        alias src_width = simd_width_of[src_type]()
+        alias byte_width = src_width * size_of[BFloat16]()
+
+        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
+            var loaded_vec = src_p.load[
+                width=src_width, alignment = Self.alignment, invariant=True
+            ](i * src_width).cast[DType.bfloat16]()
+
+            buf_p.store[width=byte_width, alignment = Self.alignment](
+                i * byte_width, bitcast[DType.uint8, byte_width](loaded_vec)
+            )
+
+    @always_inline
+    fn copy_msg_to_output_tensor(
+        self,
+        buf_p: UnsafePointer[UInt8],
+        token_index: Int,
+    ) -> None:
+        alias bf16_width = simd_width_of[DType.bfloat16]()
+        alias byte_width = bf16_width * size_of[BFloat16]()
+        for i in range(lane_id(), Self.hid_dim // bf16_width, WARP_SIZE):
+            self.output_tokens.aligned_store[width=bf16_width](
+                token_index,
+                i * bf16_width,
+                bitcast[DType.bfloat16, bf16_width](
+                    buf_p.load[
+                        width=byte_width,
+                        invariant=True,
+                        alignment = Self.alignment,
+                    ](
+                        i * byte_width,
+                    )
+                ),
+            )
+
+
+@register_passable("trivial")
+struct BlockwiseFP8TokenFormat[
+    fp8_dtype: DType,
+    scales_dtype: DType,
+    output_layout: Layout,
+    scales_layout: Layout, //,
+    _hid_dim: Int,
+    _top_k: Int,
+    _alignment: Int,
+](TokenFormat):
+    alias hid_dim = _hid_dim
+    alias top_k = _top_k
+    alias alignment = _alignment
+
+    alias TensorType = LayoutTensor[fp8_dtype, output_layout, MutableAnyOrigin]
+    alias ScalesTensorType = LayoutTensor[
+        scales_dtype, scales_layout, MutableAnyOrigin
+    ]
+    var output_tokens: Self.TensorType
+    var output_scales: Self.ScalesTensorType
+
+    alias group_size = 128
+
+    @always_inline
+    fn __init__(
+        out self,
+        output_tokens: Self.TensorType,
+        output_scales: Self.ScalesTensorType,
+    ):
+        self.output_tokens = output_tokens
+        self.output_scales = output_scales
+
+    @always_inline
+    @staticmethod
+    fn fp8_quant_size() -> Int:
+        return align_up(Self.hid_dim * Self.fp8_dtype.size_of(), Self.alignment)
+
+    @always_inline
+    @staticmethod
+    fn scales_size() -> Int:
+        constrained[
+            Self.hid_dim % Self.group_size == 0,
+            "hid_dim must be divisible by 128",
+        ]()
+        return align_up(
+            Self.hid_dim // Self.group_size * Self.scales_dtype.size_of(),
+            Self.alignment,
+        )
+
+    @always_inline
+    @staticmethod
+    fn token_size() -> Int:
+        return Self.fp8_quant_size() + Self.scales_size()
+
+    @always_inline
+    @staticmethod
+    fn scales_offset() -> Int:
+        return Self.fp8_quant_size()
+
+    @always_inline
+    @staticmethod
+    fn copy_token_to_send_buf[
+        src_type: DType
+    ](
+        buf_p: UnsafePointer[UInt8],
+        src_p: UnsafePointer[Scalar[src_type]],
+        block_size: UInt,
+    ) -> None:
+        alias src_width = simd_width_of[src_type]()
+        alias byte_width = src_width * Self.fp8_dtype.size_of()
+
+        alias fp8_max = Scalar[Self.fp8_dtype].MAX_FINITE
+        alias fp8_max_t = Scalar[Self.fp8_dtype].MAX_FINITE.cast[
+            Self.scales_dtype
+        ]()
+
+        alias n_threads_per_group = Self.group_size // src_width
+        constrained[
+            WARP_SIZE % n_threads_per_group == 0,
+            "Each warp must process a multiple of quantization groups",
+        ]()
+
+        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
+            var loaded_vec = src_p.load[
+                width=src_width, alignment = Self.alignment, invariant=True
+            ](i * src_width).cast[Self.scales_dtype]()
+            var thread_max = abs(loaded_vec).reduce_max()
+            var group_max = warp.lane_group_max_and_broadcast[
+                n_threads_per_group
+            ](thread_max)
+
+            # 1e-4 is taken from DeepEP.
+            var scale_factor = max(group_max, 1e-4) / fp8_max_t
+            var output_vec = loaded_vec / scale_factor
+            output_vec = output_vec.clamp(-fp8_max_t, fp8_max_t)
+
+            buf_p.store[width=byte_width, alignment=byte_width](
+                i * byte_width,
+                bitcast[DType.uint8, byte_width](
+                    output_vec.cast[Self.fp8_dtype]()
+                ),
+            )
+
+            # The first thread in each group stores the scale factor.
+            alias scale_bytes = Self.scales_dtype.size_of()
+            if lane_id() % n_threads_per_group == 0:
+                scale_idx = i * src_width // Self.group_size
+                buf_p.store[width=scale_bytes, alignment=scale_bytes](
+                    Self.scales_offset() + scale_idx * scale_bytes,
+                    bitcast[DType.uint8, scale_bytes](scale_factor),
+                )
+
+    @always_inline
+    fn copy_msg_to_output_tensor(
+        self,
+        buf_p: UnsafePointer[UInt8],
+        token_index: Int,
+    ) -> None:
+        # First we copy the FP8 quants.
+        alias fp8_width = simd_width_of[Self.fp8_dtype]()
+        for i in range(lane_id(), Self.hid_dim // fp8_width, WARP_SIZE):
+            self.output_tokens.aligned_store[width=fp8_width](
+                token_index,
+                i * fp8_width,
+                bitcast[Self.fp8_dtype, fp8_width](
+                    buf_p.load[
+                        width=fp8_width,
+                        invariant=True,
+                        alignment = Self.alignment,
+                    ](
+                        i * fp8_width,
+                    )
+                ),
+            )
+
+        # Unlike the output tensor, the scales tensor is stored in a transposed way.
+        alias scale_bytes = Self.scales_dtype.size_of()
+        for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
+            self.output_scales.store(
+                i,
+                token_index,
+                bitcast[Self.scales_dtype, 1](
+                    buf_p.load[
+                        width=scale_bytes,
+                        invariant=True,
+                        alignment=scale_bytes,
+                    ](
+                        Self.scales_offset() + i * scale_bytes,
+                    )
+                ),
+            )
 
 
 @__llvm_metadata(
@@ -95,8 +352,8 @@ fn dispatch_kernel[
     n_aux_sms: Int,
     n_experts: Int,
     n_ranks: Int,
-    msg_bytes: Int,
     max_tokens_per_rank: Int,
+    token_fmt_type: TokenFormat,
 ](
     input_tokens: LayoutTensor[
         input_type, input_tokens_layout, ImmutableAnyOrigin
@@ -124,8 +381,9 @@ fn dispatch_kernel[
             for each expert, and for signaling the completion of the communication.
         n_experts: The total number of experts in the model.
         n_ranks: The number of all devices participating in the communication.
-        msg_bytes: This is the total number of bytes we need to send for each token.
         max_tokens_per_rank: The maximum number of tokens per rank.
+        token_fmt_type: Type conforming to TokenFormat trait that defines the
+            token encoding scheme.
 
     Args:
         input_tokens: The input tokens to be dispatched.
@@ -152,21 +410,9 @@ fn dispatch_kernel[
         + String(n_warps),
     ]()
 
-    alias src_simd_width = simd_width_of[input_type]()
-    alias byte_simd_width = simd_width_of[DType.uint8]()
-
     alias top_k = topk_ids.shape[1]()
     alias hid_dim = input_tokens.shape[1]()
-    alias msg_config = EPMsgConfig(
-        input_type,
-        hid_dim,
-        top_k,
-        align_of[SIMD[DType.uint8, byte_simd_width]](),
-    )
-    constrained[
-        msg_bytes == msg_config.msg_size(),
-        "EP dispatch: input shape doesn't match message size.",
-    ]()
+    alias msg_bytes = token_fmt_type.msg_size()
 
     var send_buf_layout = RuntimeLayout[
         Layout.row_major(max_tokens_per_rank, msg_bytes),
@@ -254,22 +500,15 @@ fn dispatch_kernel[
             block_idx.x - UInt(n_aux_sms), num_tokens, n_comm_sms
         ):
             # First, all threads in the block copy the input token to the send buffer.
-            alias _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
             var curr_send_buf_ptr = send_buf_p.offset(
                 send_buf_layout(RtTuple_2(token_idx, 0))
             )
-
-            for i in range(tid, hid_dim // src_simd_width, num_threads):
-                curr_send_buf_ptr.store[
-                    width=byte_simd_width, alignment=_align
-                ](
-                    i * byte_simd_width,
-                    bitcast[DType.uint8, byte_simd_width](
-                        input_tokens.aligned_load[src_simd_width](
-                            token_idx, i * src_simd_width
-                        )
-                    ),
-                )
+            var input_tensor_ptr = input_tokens.ptr.offset(
+                input_tokens._offset(token_idx, 0)
+            )
+            token_fmt_type.copy_token_to_send_buf(
+                curr_send_buf_ptr, input_tensor_ptr, UInt(num_threads)
+            )
 
             if tid < UInt(top_k):
                 # Store all the top-k expert IDs in current token's message.
@@ -281,7 +520,7 @@ fn dispatch_kernel[
                     width = size_of[UInt16](),
                     alignment = align_of[DType.uint16](),
                 ](
-                    msg_config.topk_info_offset()
+                    token_fmt_type.topk_info_offset()
                     + tid * UInt(size_of[UInt16]()),
                     bitcast[DType.uint8, size_of[UInt16]()](UInt16(top_k_idx)),
                 )
@@ -292,7 +531,7 @@ fn dispatch_kernel[
                         width = size_of[Int32](),
                         alignment = align_of[DType.int32](),
                     ](
-                        msg_config.src_info_offset(),
+                        token_fmt_type.src_info_offset(),
                         bitcast[DType.uint8, size_of[Int32]()](
                             Int32(token_idx)
                         ),
@@ -360,7 +599,6 @@ fn dispatch_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
 fn dispatch_cb_kernel[
-    output_type: DType,
     num_threads: Int,
     output_tokens_layout: Layout,
     row_offsets_layout: Layout,
@@ -368,15 +606,12 @@ fn dispatch_cb_kernel[
     src_info_layout: Layout,
     n_sms: Int,
     n_aux_sms: Int,
-    top_k: Int,
     n_experts: Int,
     n_ranks: Int,
-    msg_bytes: Int,
     max_tokens_per_rank: Int,
+    token_fmt_type: TokenFormat,
 ](
-    output_tokens: LayoutTensor[
-        output_type, output_tokens_layout, MutableAnyOrigin
-    ],
+    format_handler: token_fmt_type,
     row_offsets: LayoutTensor[
         DType.uint32, row_offsets_layout, MutableAnyOrigin
     ],
@@ -396,7 +631,6 @@ fn dispatch_cb_kernel[
     the output tensor using a ragged representation.
 
     Parameters:
-        output_type: The type of the output tokens.
         num_threads: The number of threads in the block.
         output_tokens_layout: The layout of the output tokens.
         row_offsets_layout: The layout of the row offsets.
@@ -404,14 +638,15 @@ fn dispatch_cb_kernel[
         src_info_layout: The layout of the source token info.
         n_sms: The total number of SMs in the device.
         n_aux_sms: The number of auxiliary SMs in the device.
-        top_k: The number of selected experts per token.
         n_experts: The number of experts in the device.
         n_ranks: The number of ranks.
-        msg_bytes: The number of bytes in the message for each token.
         max_tokens_per_rank: The maximum number of tokens per rank.
+        token_fmt_type: Type conforming to TokenFormat trait that defines the
+            token encoding scheme.
 
     Args:
-        output_tokens: The tensor to store the output tokens.
+        format_handler: Instance of token_fmt_type that performs token decoding
+            and manages output tensor writes.
         row_offsets: The row offsets to be updated. Will be consumed by the
             `grouped_matmul` kernel.
         expert_ids: The expert IDs to be updated. Will be consumed by the
@@ -432,19 +667,9 @@ fn dispatch_cb_kernel[
     alias n_warps = num_threads // WARP_SIZE
     alias n_comm_sms = n_sms - n_aux_sms
 
-    alias hid_dim = output_tokens.shape[1]()
-    alias dst_simd_width = simd_width_of[output_type]()
-    alias byte_simd_width = simd_width_of[DType.uint8]()
-    alias msg_config = EPMsgConfig(
-        output_type,
-        hid_dim,
-        top_k,
-        align_of[SIMD[DType.uint8, byte_simd_width]](),
-    )
-    constrained[
-        msg_bytes == msg_config.msg_size(),
-        "EP dispatch: input shape doesn't match message size.",
-    ]()
+    alias top_k = token_fmt_type.top_k
+    alias hid_dim = token_fmt_type.hid_dim
+    alias msg_bytes = token_fmt_type.msg_size()
     constrained[
         n_local_experts <= n_warps,
         "EP dispatch: local experts per device should be less than "
@@ -600,7 +825,6 @@ fn dispatch_cb_kernel[
         output_offset -= token_count
 
         for token_idx in range(warp_id_in_wg, token_count, wg_size):
-            alias _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
             var token_pos = Int(token_idx + output_offset)
             var recv_buf_ptr = recv_buf_p.offset(
                 recv_buf_layout(
@@ -613,26 +837,13 @@ fn dispatch_cb_kernel[
                 )
             )
 
-            for i in range(lane_id(), hid_dim // dst_simd_width, WARP_SIZE):
-                output_tokens.aligned_store[width=dst_simd_width](
-                    token_pos,
-                    i * dst_simd_width,
-                    bitcast[output_type, dst_simd_width](
-                        recv_buf_ptr.load[
-                            width=byte_simd_width,
-                            invariant=True,
-                            alignment=_align,
-                        ](
-                            i * byte_simd_width,
-                        )
-                    ),
-                )
+            format_handler.copy_msg_to_output_tensor(recv_buf_ptr, token_pos)
 
             if lane_id() < UInt(top_k):
                 # Load top-k expert IDs from the token's message.
                 var src_topk_idx = bitcast[DType.uint16, 1](
                     recv_buf_ptr.load[width = size_of[UInt16]()](
-                        msg_config.topk_info_offset()
+                        token_fmt_type.topk_info_offset()
                         + lane_id() * UInt(size_of[UInt16]()),
                     )
                 )
@@ -643,7 +854,7 @@ fn dispatch_cb_kernel[
                     # Store the source token index and the top-k id.
                     var src_idx = bitcast[DType.int32, 1](
                         recv_buf_ptr.load[width = size_of[Int32]()](
-                            msg_config.src_info_offset()
+                            token_fmt_type.src_info_offset()
                         )
                     )
 

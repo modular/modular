@@ -220,8 +220,9 @@ def execute_kv_cache_ragged_flash_attention[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](
-                output_device.tensor,
-                q_device.tensor,
+                # TODO: remove the origin cast once unified closures are supported.
+                output_device.to_layout_tensor().origin_cast[True](),
+                q_device.to_layout_tensor(),
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),

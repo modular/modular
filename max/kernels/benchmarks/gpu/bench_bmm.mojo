@@ -20,6 +20,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
+from sys.info import has_amd_gpu_accelerator
 
 import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
@@ -220,20 +221,17 @@ fn bench_bmm[
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             @parameter
             if use_vendor_blas:
-                # Vendor BMM
-                for i in range(B):
-                    var c_ptr = c_device.data + (i * M * N)
-                    var a_ptr = a_device.data + (i * M * K)
-                    var b_ptr = b_device.data + (i * K * N)
 
+                @parameter
+                if has_amd_gpu_accelerator():
                     var c_buffer = NDBuffer[dtype, 2, _, static_c_shape](
-                        c_ptr, dynamic_c_shape
+                        c_device.data, dynamic_c_shape
                     )
                     var a_buffer = NDBuffer[dtype, 2, _, static_a_shape](
-                        a_ptr, dynamic_a_shape
+                        a_device.data, dynamic_a_shape
                     )
                     var b_buffer = NDBuffer[dtype, 2, _, static_b_shape](
-                        b_ptr, dynamic_b_shape
+                        b_device.data, dynamic_b_shape
                     )
 
                     vendor_blas.matmul(
@@ -243,7 +241,33 @@ fn bench_bmm[
                         b_buffer,
                         c_row_major=True,
                         transpose_b=transpose_b,
+                        batch_size=B,
                     )
+                else:
+                    # Fallback vendor BMM for non-AMD GPUs or when AMD GPU acceleration is not available
+                    for i in range(B):
+                        var c_ptr = c_device.data + (i * M * N)
+                        var a_ptr = a_device.data + (i * M * K)
+                        var b_ptr = b_device.data + (i * K * N)
+
+                        var c_buffer = NDBuffer[dtype, 2, _, static_c_shape](
+                            c_ptr, dynamic_c_shape
+                        )
+                        var a_buffer = NDBuffer[dtype, 2, _, static_a_shape](
+                            a_ptr, dynamic_a_shape
+                        )
+                        var b_buffer = NDBuffer[dtype, 2, _, static_b_shape](
+                            b_ptr, dynamic_b_shape
+                        )
+
+                        vendor_blas.matmul(
+                            ctx,
+                            c_buffer,
+                            a_buffer,
+                            b_buffer,
+                            c_row_major=True,
+                            transpose_b=transpose_b,
+                        )
                 ctx.synchronize()
 
                 # Epilogue

@@ -151,11 +151,4 @@ def test_hash_comptime():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_hash_byte_array]()
-    suite.test[test_hash_simd]()
-    suite.test[test_issue_31111]()
-    suite.test[test_hash_comptime]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -19,7 +19,6 @@ from sys.info import _cdna_4_or_newer
 from sys.intrinsics import readfirstlane
 
 from algorithm.functional import unswitch
-from buffer import NDBuffer
 from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
@@ -27,6 +26,7 @@ from gpu.sync import AMDScheduleBarrierMask, schedule_barrier
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element
+from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import blocked_product
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -1213,7 +1213,7 @@ struct GlobalMemoryManager[
 
 
 @always_inline
-fn mha_single_batch_amd[
+fn mha_single_batch_gfx942[
     output_type: DType,
     q_type: DType,
     k_t: MHAOperand,
@@ -1234,7 +1234,9 @@ fn mha_single_batch_amd[
     batch_idx: Int,
     start_pos: Int,
     mask: mask_t,
-    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ],
 ):
     alias token_gen = False
     alias BM = config.block_m()
@@ -1322,7 +1324,7 @@ fn mha_single_batch_amd[
             "expect sink_weights to be non-null when sink=true",
         )
         var sink_weight = (
-            sink_weights.value()[Int(q_head_idx)].cast[accum_type]() * log2e
+            sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]() * log2e
         )
         rowmax = rowmax.fill(sink_weight)
         rowsum = rowsum.fill(1)
@@ -1755,7 +1757,7 @@ fn mma[
 
 
 @always_inline
-fn mha_decoding_single_batch_amd[
+fn mha_decoding_single_batch_gfx942[
     output_type: DType,
     q_type: DType,
     k_t: MHAOperand,
@@ -1778,7 +1780,9 @@ fn mha_decoding_single_batch_amd[
     batch_idx: Int,
     start_pos: Int,
     mask: mask_t,
-    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ],
 ):
     alias token_gen = True
 
@@ -1867,7 +1871,7 @@ fn mha_decoding_single_batch_amd[
             "expect sink_weights to be non-null when sink=true",
         )
         var sink_weight = (
-            sink_weights.value()[Int(q_head_idx)].cast[accum_type]() * log2e
+            sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]() * log2e
         )
         rowmax = rowmax.fill(sink_weight)
         rowsum = rowsum.fill(1)

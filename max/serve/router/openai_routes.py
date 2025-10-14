@@ -39,7 +39,7 @@ from typing import (
 from urllib.parse import unquote, urlparse
 
 import aiofiles
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
 from max.interfaces import (
@@ -59,6 +59,7 @@ from max.interfaces import (
     TextGenerationResponseFormat,
 )
 from max.pipelines.core.exceptions import InputError
+from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.parser import LlamaToolParser, parse_json_from_text
@@ -777,7 +778,7 @@ async def openai_create_chat_completion(
         response_generator = OpenAIChatResponseGenerator(
             pipeline, stream_options=stream_options
         )
-        sampling_params = SamplingParams.from_input(
+        sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
                 top_k=completion_request.top_k,
                 top_p=completion_request.top_p,
@@ -791,7 +792,8 @@ async def openai_create_chat_completion(
                 seed=completion_request.seed or randint(0, 2**63 - 1),
                 stop_token_ids=completion_request.stop_token_ids,
                 stop=_convert_stop(completion_request.stop),
-            )
+            ),
+            sampling_params_defaults=request.app.state.pipeline_config.model_config.sampling_params_defaults,
         )
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
@@ -998,6 +1000,12 @@ def _process_log_probabilities(
         token_logprobs=token_log_probabilities,
         top_logprobs=top_log_probabilities,
     )
+
+
+def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
+    pipeline_config = app.state.pipeline_config
+    assert isinstance(pipeline_config, PipelineConfig)
+    return pipeline_config
 
 
 class OpenAICompletionResponseGenerator(
@@ -1256,7 +1264,7 @@ async def openai_create_completion(
         token_requests = []
         for i, prompt in enumerate(prompts):
             prompt = cast(str | Sequence[int], prompt)
-            sampling_params = SamplingParams.from_input(
+            sampling_params = SamplingParams.from_input_and_generation_config(
                 SamplingParamsInput(
                     top_k=completion_request.top_k,
                     top_p=completion_request.top_p,
@@ -1270,7 +1278,10 @@ async def openai_create_completion(
                     seed=completion_request.seed or randint(0, 2**63 - 1),
                     stop_token_ids=completion_request.stop_token_ids,
                     stop=_convert_stop(completion_request.stop),
-                )
+                ),
+                sampling_params_defaults=get_app_pipeline_config(
+                    request.app
+                ).model_config.sampling_params_defaults,
             )
             tgr = TextGenerationRequest(
                 # Generate a unique request_id for each prompt in the request
@@ -1385,8 +1396,11 @@ async def create_streaming_audio_speech(
             TokenGeneratorPipeline | AudioGeneratorPipeline
         ) = await get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
-        sampling_params = SamplingParams(
-            min_new_tokens=audio_generation_request.min_tokens
+        sampling_params = SamplingParams.from_input_and_generation_config(
+            SamplingParamsInput(
+                min_new_tokens=audio_generation_request.min_tokens
+            ),
+            sampling_params_defaults=request.app.state.pipeline_config.model_config.sampling_params_defaults,
         )
         audio_request = AudioGenerationRequest(
             request_id=request_id,

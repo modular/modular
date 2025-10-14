@@ -760,7 +760,9 @@ struct HostBuffer[dtype: DType](
         # Safety: We are casting the pointer to the mutability and origin of
         # self and `_host_ptr` is already mutable.
         return {
-            ptr = self._host_ptr.origin_cast[mut, origin](),
+            ptr = self._host_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
+                origin
+            ](),
             length = UInt(len(self)),
         }
 
@@ -2253,7 +2255,7 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[OpaquePointer]
-        var dense_args_sizes = UnsafePointer[UInt]()
+        var dense_args_sizes = UnsafePointer[UInt64]()
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
             dense_args_sizes = dense_args_sizes.alloc(num_captures + num_args)
@@ -2264,7 +2266,7 @@ struct DeviceFunction[
                 num_captures_static + num_args, OpaquePointer
             ]()
             dense_args_sizes = stack_allocation[
-                num_captures_static + num_args, UInt
+                num_captures_static + num_args, UInt64
             ]()
             for i in range(num_captures_static + num_args):
                 dense_args_sizes[i] = 0
@@ -2275,7 +2277,7 @@ struct DeviceFunction[
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         @parameter
@@ -2285,6 +2287,11 @@ struct DeviceFunction[
         @parameter
         for i in range(num_args):
             _populate_arg_sizes[i]()
+
+        for i in range(num_captures):
+            dense_args_sizes[num_args + i] = UInt64(
+                self._func_impl.capture_sizes[i]
+            )
 
         if cluster_dim:
             attributes.append(
@@ -2329,7 +2336,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
-                    UnsafePointer[UInt],
+                    UnsafePointer[UInt64],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2365,7 +2372,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
-                    UnsafePointer[UInt],
+                    UnsafePointer[UInt64],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2428,7 +2435,7 @@ struct DeviceFunction[
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         if cluster_dim:
@@ -2626,7 +2633,7 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[OpaquePointer]
-        var dense_args_sizes = UnsafePointer[UInt]()
+        var dense_args_sizes = UnsafePointer[UInt64]()
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(
                 num_captures + num_passed_args
@@ -2641,7 +2648,7 @@ struct DeviceFunction[
                 num_captures_static + num_passed_args, OpaquePointer
             ]()
             dense_args_sizes = stack_allocation[
-                num_captures_static + num_passed_args, UInt
+                num_captures_static + num_passed_args, UInt64
             ]()
             for i in range(num_captures_static + num_passed_args):
                 dense_args_sizes[i] = 0
@@ -2661,10 +2668,15 @@ struct DeviceFunction[
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)
                 dense_args_addrs[translated_arg_idx] = first_word_addr
-                dense_args_sizes[i] = UInt(
+                dense_args_sizes[i] = UInt64(
                     size_of[actual_arg_type.device_type]()
                 )
                 translated_arg_idx += 1
+
+        for i in range(num_captures):
+            dense_args_sizes[num_passed_args + i] = UInt64(
+                self._func_impl.capture_sizes[i]
+            )
 
         if cluster_dim:
             attributes.append(
@@ -2711,7 +2723,7 @@ struct DeviceFunction[
                 UnsafePointer[LaunchAttribute],
                 UInt32,
                 UnsafePointer[OpaquePointer],
-                UnsafePointer[UInt],
+                UnsafePointer[UInt64],
             ](
                 ctx._handle,
                 self._handle,
@@ -2998,7 +3010,7 @@ struct DeviceExternalFunction:
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
-                .origin_cast[True]()
+                .unsafe_mut_cast[True]()
             )
 
         if cluster_dim:
@@ -3315,13 +3327,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
-        var api_ptr = StaticString(ptr=UnsafePointer[Byte](), length=0)
-        external_call[
-            "AsyncRT_DeviceContext_deviceApi",
-            NoneType,
-            UnsafePointer[StaticString],
-            _DeviceContextPtr,
-        ](
+        var api_ptr = StaticString(ptr={}, length=0)
+        external_call["AsyncRT_DeviceContext_deviceApi", NoneType](
             UnsafePointer(to=api_ptr),
             self._handle,
         )
@@ -6132,12 +6139,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
         This is a private method intended for internal use only.
         """
-        var arch_name = StaticString(ptr=UnsafePointer[Byte](), length=0)
+        var arch_name = StaticString(ptr={}, length=0)
         external_call[
             "AsyncRT_DeviceContext_archName",
             NoneType,
-            UnsafePointer[StaticString],
-            _DeviceContextPtr,
         ](UnsafePointer(to=arch_name), self._handle)
         return String(arch_name)
 

@@ -214,8 +214,8 @@ def execute_ragged_flash_attention[
 
     # continuous execution
     flash_attention[ragged=True](
-        ref_output_device.tensor,
-        q_ragged_device.tensor,
+        ref_output_device.to_layout_tensor(),
+        q_ragged_device.to_layout_tensor(),
         kv_collection_continuous_device.get_key_cache(layer_idx),
         kv_collection_continuous_device.get_value_cache(layer_idx),
         CausalMask(),
@@ -230,8 +230,8 @@ def execute_ragged_flash_attention[
 
     # paged execution
     flash_attention[ragged=True](
-        test_output_device.tensor,
-        q_ragged_device.tensor,
+        test_output_device.to_layout_tensor(),
+        q_ragged_device.to_layout_tensor(),
         kv_collection_paged_device.get_key_cache(layer_idx),
         kv_collection_paged_device.get_value_cache(layer_idx),
         CausalMask(),

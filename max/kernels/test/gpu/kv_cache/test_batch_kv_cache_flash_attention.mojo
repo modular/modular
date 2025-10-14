@@ -203,8 +203,8 @@ def execute_flash_attention[
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     flash_attention(
-        test_output_device.tensor,
-        q_device.tensor,
+        test_output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         MaterializedMask(
@@ -232,7 +232,7 @@ def execute_flash_attention[
     )
 
     mha_gpu_naive(
-        q_device.tensor,
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         MaterializedMask(
@@ -250,7 +250,7 @@ def execute_flash_attention[
             ),
             start_pos=cache_lengths_device_lt,
         ),
-        ref_output_device.tensor,
+        ref_output_device.to_layout_tensor(),
         ManagedTensorSlice[
             io_spec=IOUnknown,
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),

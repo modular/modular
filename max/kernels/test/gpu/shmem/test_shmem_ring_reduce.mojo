@@ -10,9 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-
-# RUN: %mojo %s
+# RUN: %mojo-build %s -o %t
+# RUN: %t
 
 from algorithm import parallelize
 from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
@@ -65,8 +64,8 @@ fn ring_reduce(
     if elems_per_block * (block_idx + 1) > nreduce:
         return
 
-    src += block_idx * elems_per_block
-    dst += block_idx * elems_per_block
+    src += block_idx * UInt(elems_per_block)
+    dst += block_idx * UInt(elems_per_block)
     nreduce = elems_per_block
     signal += block_idx
 

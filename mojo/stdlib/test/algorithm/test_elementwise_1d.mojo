@@ -51,8 +51,4 @@ def test_elementwise_1d():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_elementwise_1d]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

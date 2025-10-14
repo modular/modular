@@ -86,11 +86,11 @@ fn tma_swizzle_multicast_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].expect_bytes(expected_bytes)
-        var slice_cord_y = (
-            cluster_idx.y * cluster_tileM + rank_m * subcluster_tileM
+        var slice_cord_y = cluster_idx.y * UInt(cluster_tileM) + UInt(
+            rank_m * subcluster_tileM
         )
-        var slice_cord_x = (
-            cluster_idx.x * cluster_tileN + rank_n * subcluster_tileN
+        var slice_cord_x = cluster_idx.x * UInt(cluster_tileN) + UInt(
+            rank_n * subcluster_tileN
         )
         var copy_offset = subcluster_tileM * subcluster_tileN * block_rank
 

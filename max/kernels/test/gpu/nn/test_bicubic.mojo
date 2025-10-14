@@ -22,8 +22,10 @@ from internal_utils import (
     ndbuffer_to_str,
     zero,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
 from testing import assert_almost_equal
+from utils import Index, IndexList
 
 alias num_elements = 20
 
@@ -136,8 +138,11 @@ fn test_bicubic_kernel[
         "--------------------------------now we want to call the bicubic"
         " upsampling kernel--------------------------------"
     )
-    # Call the bicubic upsampling kernel.
-    resize_bicubic[target="cpu"](output_host.tensor, input_host.tensor, ctx)
+    # Call the bicubic upsampling kernel - convert to LayoutTensor
+    var input_tensor = input_host.to_layout_tensor()
+    var output_tensor = output_host.to_layout_tensor()
+    alias layout_4d = Layout.row_major[4]()
+    resize_bicubic[target="cpu"](output_tensor, input_tensor, ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
         " kernel--------------------------------"
@@ -595,7 +600,9 @@ fn test_bicubic_kernel[
     alias H = output_dim.get[2]()
     alias W = output_dim.get[3]()
 
-    resize_bicubic[target="gpu"](output_dev.tensor, input_dev.tensor, ctx)
+    var input_dev_tensor = input_dev.to_layout_tensor()
+    var output_dev_tensor = output_dev.to_layout_tensor()
+    resize_bicubic[target="gpu"](output_dev_tensor, input_dev_tensor, ctx)
 
     ctx.enqueue_copy(output_ref_host.tensor.data, output_dev.buffer)
     ctx.synchronize()
@@ -648,21 +655,37 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
                     )
 
     # Run CPU version.
-    cpu_bicubic_kernel(output_host.tensor, input_host.tensor)
+    var input_host_tensor = input_host.to_layout_tensor()
+    var output_host_tensor = output_host.to_layout_tensor()
+    cpu_bicubic_kernel(output_host_tensor, input_host_tensor)
 
     # Run GPU version.
     var input_dev = DeviceNDBuffer[dtype, 4, input_dim](input_dim, ctx=ctx)
     var output_dev = DeviceNDBuffer[dtype, 4, output_dim](output_dim, ctx=ctx)
 
     ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
+
+    var input_dev_tensor = input_dev.to_layout_tensor()
+    var output_dev_tensor = output_dev.to_layout_tensor()
+    alias layout_4d = Layout.row_major[4]()
     alias kernel = gpu_bicubic_kernel[
-        dtype, rank=4, output_shape=output_dim, input_shape=input_dim
+        dtype, layout_4d, layout_4d, output_dev_tensor.address_space
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
     ctx.enqueue_function_checked[kernel, kernel](
-        output_dev.tensor,
-        input_dev.tensor,
+        LayoutTensor[output_dev_tensor.dtype, layout_4d](
+            output_dev_tensor.ptr,
+            RuntimeLayout[layout_4d].row_major(
+                output_dev_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+        LayoutTensor[input_dev_tensor.dtype, layout_4d](
+            input_dev_tensor.ptr,
+            RuntimeLayout[layout_4d].row_major(
+                input_dev_tensor.runtime_layout.shape.value.canonicalize()
+            ),
+        ),
         grid_dim=(1, 3),
         block_dim=(256,),
     )

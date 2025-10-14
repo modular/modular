@@ -556,6 +556,95 @@ def matmul_k_cache_ragged(
     )
 
 
+def matmul_k_cache_ragged_scaled_float8(
+    kv_params: KVCacheParams,
+    hidden_states: TensorValue,
+    input_row_offsets: TensorValue,
+    weight: TensorValue,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    kv_collection: PagedCacheValues,
+    scales_granularity_mnk: tuple[int, int, int],
+    layer_idx: TensorValue,
+) -> None:
+    """Computes key projections with ragged input with FP8 block scaling.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        hidden_states: TensorValue representing the input tensor with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape [batch_size + 1].
+        weight: TensorValue representing the weight tensor with shape
+            [N=num_heads, K=hidden_dim].
+        input_scale: TensorValue representing the input scale tensor with shape
+            [ceildiv(K / BLOCK_SIZE_K), ceildiv(M / BLOCK_SIZE_M)].
+        weight_scale: TensorValue representing the weight scale tensor with
+            shape [ceildiv(N / BLOCK_SIZE_N), ceildiv(K / BLOCK_SIZE_K)].
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        scales_granularity_mnk: tuple[int, int, int] representing the
+            scaling (BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_SIZE_K).
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel,
+            or when the cache strategy is not supported.
+    """
+    if hidden_states.dtype != weight.dtype:
+        raise ValueError(
+            "expected hidden_states and weight to have the same dtype, but got"
+            f" {hidden_states.dtype} and {weight.dtype}, respectively."
+        )
+
+    hidden_states_rank_expected = 2
+    if hidden_states.rank != hidden_states_rank_expected:
+        raise ValueError(
+            "expected hidden_states to have rank "
+            f"{hidden_states_rank_expected}, was {hidden_states.rank}"
+        )
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
+        )
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    op_name = f"mo.k_matmul.ragged.{cache_strategy_str}.scale"
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "m_scale_granularity": scales_granularity_mnk[0],
+        "n_scale_granularity": scales_granularity_mnk[1],
+        "k_scale_granularity": scales_granularity_mnk[2],
+    }
+
+    ops.inplace_custom(
+        name=op_name,
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            input_row_offsets,
+            weight,
+            input_scale,
+            weight_scale,
+            *kv_collection,
+            layer_idx,
+        ],
+        parameters=parameters,
+    )
+
+
 def fused_qk_ragged_rope(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -1028,6 +1117,11 @@ def flare_mla_decode_ragged(
             f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
         )
 
+    if kv_collection.kv_blocks.shape[1] != 1:
+        raise ValueError(
+            f"expected kv_collection.kv_blocks.shape[1] to be 1, got {kv_collection.kv_blocks.shape[1]}"
+        )
+
     assert kv_params.page_size is not None
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
     parameters: dict[str, int | str | DType] = {
@@ -1259,6 +1353,59 @@ def flare_mla_prefill_plan(
     )
 
     return results[0].tensor, results[1].tensor, results[2].tensor
+
+
+def k_cache_to_buffer(
+    kv_params: KVCacheParams,
+    buffer_row_offsets_1d: TensorValue,
+    cache_offsets_1d: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    buffer_length: TensorValue,
+    buffer_size: int,
+    weight_dim: int,
+) -> TensorValue:
+    """This kernel copies the key cache to a contiguous buffer.
+
+    Args:
+        kv_params: KVCacheParams
+        buffer_row_offsets_1d: Buffer row offsets
+        cache_offsets_1d: Cache offsets
+        kv_collection: KV collection
+        layer_idx: Layer index
+        buffer_length: Buffer length
+        buffer_size: Buffer size for storing the temporal results during
+            prefill, in unit of tokens.
+        weight_dim: Weight dimension
+
+    Returns:
+        A tensor of shape [buffer_size, weight_dim] containing the copied key
+        cache.
+    """
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for k_cache_to_buffer: {kv_params.cache_strategy}"
+        )
+
+    return ops.inplace_custom(
+        "mo.mla.k_cache_to_buffer.paged",
+        device=buffer_row_offsets_1d.device,
+        values=[
+            buffer_row_offsets_1d,
+            cache_offsets_1d,
+            *kv_collection,
+            layer_idx,
+            buffer_length,
+        ],
+        out_types=[
+            TensorType(
+                dtype=kv_params.dtype,
+                shape=[buffer_size, weight_dim],
+                device=buffer_row_offsets_1d.device,
+            ),
+        ],
+    )[0].tensor
 
 
 def flare_mla_decompress_k_cache(
@@ -1814,6 +1961,24 @@ def grouped_dynamic_scaled_fp8_matmul(
             f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
         )
 
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+
+    if expert_ids.rank != 1:
+        raise ValueError(
+            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
+        )
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            f"expert_start_indices dtype must be uint32, but got {expert_start_indices.dtype}"
+        )
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            f"expected expert_start_indices of rank 1 but got {expert_start_indices.rank}"
+        )
+
     if a_scales.rank != 2 or b_scales.rank != 3:
         raise ValueError(
             f"expected a_scales of rank 2 and b_scales of rank 3 but got {a_scales.rank} and {b_scales.rank}"
@@ -1830,8 +1995,9 @@ def grouped_dynamic_scaled_fp8_matmul(
             raise ValueError(
                 f"expected b_scales of rank 3 but got {b_scales.rank}"
             )
+
     else:
-        raise ValueError("unsupported FP8 scaling granularity")
+        raise ValueError("grouped FP8 matmul only supports blockwise scaling")
 
     # if (a_scales.shape[1] * a_scales.dtype.size_in_bytes) % 16 != 0:
     #     raise ValueError(
@@ -1888,9 +2054,21 @@ def batched_dynamic_scaled_fp8_matmul(
     Returns:
         The result of the matmul operation.
     """
+    if a.dtype != b.dtype:
+        raise TypeError(
+            f"a and b dtypes must match, but got {a.dtype}, {b.dtype}"
+        )
 
-    if a.rank != 3 or b.rank != 3 or a_scales.rank != 3 or b_scales.rank != 3:
-        raise ValueError("All arguments must be rank 3 tensors")
+    if a_scales.dtype != b_scales.dtype or a_scales.dtype != DType.float32:
+        raise TypeError(
+            f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if a.rank != 3 or b.rank != 3:
+        raise ValueError("A and B must be rank 3 tensors")
+
+    if a_scales.rank != 3 or b_scales.rank != 3:
+        raise ValueError("A_scales and B_scales must be rank 3 tensors")
 
     if a.shape[0] != b.shape[0]:
         raise ValueError(
@@ -1910,11 +2088,6 @@ def batched_dynamic_scaled_fp8_matmul(
             "Only bfloat16 is supported for batched blockwise scaled matmul"
         )
 
-    if a_scales.dtype != b_scales.dtype or a_scales.dtype != DType.float32:
-        raise TypeError(
-            f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
-        )
-
     # if (a_scales.shape[1] * a_scales.dtype.size_in_bytes) % 16 != 0:
     #     raise ValueError(
     #         "TMA expects total_num_tokens to be divisible by 16 bytes"
@@ -1930,12 +2103,6 @@ def batched_dynamic_scaled_fp8_matmul(
 
     else:
         raise ValueError("unsupported FP8 scaling granularity")
-
-    if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
-        raise TypeError(
-            f"a and b dtypes {a.dtype}, {b.dtype} must match, "
-            f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
-        )
 
     result = ops.custom(
         "mo.batched.matmul.dynamic.scaled.fp8",
@@ -2018,11 +2185,14 @@ def quantize_dynamic_scaled_float8(
     if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
         raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
 
-    group_size = (
-        group_size_or_per_token
-        if group_size_or_per_token != -1
-        else input.shape[1]
-    )
+    if group_size_or_per_token == -1:
+        if input_scale_spec.is_block or weight_scale_spec.is_block:
+            assert input_scale_spec.block_size is not None
+            group_size = input_scale_spec.block_size[1]
+        else:
+            group_size = int(input.shape[1])
+    else:
+        group_size = group_size_or_per_token
 
     a_scales_dim1 = input.shape[0]
     if input_scale_spec.is_block or weight_scale_spec.is_block:
@@ -2057,7 +2227,7 @@ def quantize_dynamic_scaled_float8(
             ),
         ],
         parameters={
-            "group_size_or_per_token": group_size_or_per_token,
+            "group_size_or_per_token": group_size,
         },
     )
 
@@ -2212,7 +2382,8 @@ def dynamic_scaled_matmul(
         # b_scale is of shape [ceildiv(N // BLOCK_SIZE), ceildiv(K // BLOCK_SIZE)]
         if a_scales.shape[0] != b_scales.shape[1]:
             raise ValueError(
-                "both a_scales and b_scales must have the same shape on the K dimension"
+                "both a_scales and b_scales must have the same shape on the K dimension."
+                f" got a_scales.shape={a_scales.shape} and b_scales.shape={b_scales.shape}"
             )
 
     else:

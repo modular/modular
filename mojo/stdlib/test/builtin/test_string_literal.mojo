@@ -242,6 +242,7 @@ def test_iter():
             assert_equal(String(c), "n")
         elif i == 2:
             assert_equal(String(c), "e")
+        i += 1
 
 
 def test_layout():
@@ -350,31 +351,4 @@ def test_float_conversion():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_add]()
-    suite.test[test_mul]()
-    suite.test[test_equality]()
-    suite.test[test_len]()
-    suite.test[test_bool]()
-    suite.test[test_find]()
-    suite.test[test_rfind]()
-    suite.test[test_comparison_operators]()
-    suite.test[test_count]()
-    suite.test[test_indexing]()
-    suite.test[test_intable]()
-    suite.test[test_isdigit]()
-    suite.test[test_islower]()
-    suite.test[test_isupper]()
-    suite.test[test_layout]()
-    suite.test[test_lower_upper]()
-    suite.test[test_repr]()
-    suite.test[test_rjust]()
-    suite.test[test_ljust]()
-    suite.test[test_center]()
-    suite.test[test_startswith]()
-    suite.test[test_endswith]()
-    suite.test[test_strip]()
-    suite.test[test_float_conversion]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

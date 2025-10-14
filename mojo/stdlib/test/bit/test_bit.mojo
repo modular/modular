@@ -597,7 +597,7 @@ def test_log2_ceil():
     _check_alias[32](5)
 
 
-def test_log2_ceil_int32():
+def test_log2_ceil32():
     assert_equal(log2_ceil(Int32(0)), 0)
     for i in range(Int32(1), Int32(100)):
         assert_equal(
@@ -636,29 +636,4 @@ def test_log2_ceil_int32():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_rotate_bits_int]()
-    suite.test[test_rotate_bits_simd]()
-    suite.test[test_next_power_of_two]()
-    suite.test[test_next_power_of_two_simd]()
-    suite.test[test_prev_power_of_two]()
-    suite.test[test_prev_power_of_two_simd]()
-    suite.test[test_bit_width]()
-    suite.test[test_bit_width_simd]()
-    suite.test[test_count_leading_zeros]()
-    suite.test[test_count_leading_zeros_simd]()
-    suite.test[test_count_trailing_zeros]()
-    suite.test[test_count_trailing_zeros_simd]()
-    suite.test[test_bit_reverse]()
-    suite.test[test_bit_reverse_simd]()
-    suite.test[test_byte_swap]()
-    suite.test[test_byte_swap_simd]()
-    suite.test[test_pop_count]()
-    suite.test[test_pop_count_simd]()
-    suite.test[test_bit_not_simd]()
-    suite.test[test_log2_floor]()
-    suite.test[test_log2_ceil]()
-    suite.test[test_log2_ceil_int32]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

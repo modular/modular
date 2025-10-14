@@ -272,6 +272,8 @@ fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
 
 
 def main():
+    # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
+    # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_concurrent_copy]()

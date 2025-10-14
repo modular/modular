@@ -87,8 +87,8 @@ fn repack_Q4_0_for_sm8x[
     var tid: UInt = thread_idx.x
     var warp_id: UInt = tid // WARP_SIZE
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % num_warps_x)
-    var warp_y: UInt = UInt(warp_id // num_warps_x)
+    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
+    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -273,8 +273,8 @@ fn create_ref_b[
     var warp_id: UInt = tid // WARP_SIZE
     var lane_id: UInt = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
-    var warp_x: UInt = UInt(warp_id // num_k_warps)
-    var warp_y: UInt = UInt(warp_id % num_k_warps)
+    var warp_x: UInt = UInt(warp_id // UInt(num_k_warps))
+    var warp_y: UInt = UInt(warp_id % UInt(num_k_warps))
 
     alias group_bytes = group_size // 2 + 2
     alias N = Int(b_q_layout.shape[0])

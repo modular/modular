@@ -1205,9 +1205,11 @@ struct List[T: Copyable & Movable](
         Returns:
             The pointer to the underlying memory.
         """
-        return self._data.origin_cast[origin.mut, origin]().address_space_cast[
-            address_space
-        ]()
+        return (
+            self._data.unsafe_mut_cast[origin.mut]()
+            .unsafe_origin_cast[origin]()
+            .address_space_cast[address_space]()
+        )
 
     @always_inline
     fn _unsafe_next_uninit_ptr(

@@ -285,8 +285,13 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     fn __init__[
-        T: Copyable & Movable & Writable, //
-    ](out self, values: List[T, *_], sep: String = String()):
+        T: Copyable & Movable & Writable, //,
+        origin: ImmutableOrigin = StaticConstantOrigin,
+    ](
+        out self,
+        values: List[T, *_],
+        sep: StringSlice[origin] = StringSlice[origin](),
+    ):
         self.size = 0
         var length = len(values)
         if length == 0:

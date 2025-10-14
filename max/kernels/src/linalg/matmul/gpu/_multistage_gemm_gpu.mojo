@@ -943,8 +943,7 @@ fn multistage_gemm_kernel[
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
             alias alignment = align_of[SIMD[c_type, src_simd_width_y]]()
-            var m = (Int(thread_offset) + dst_idx) // N
-            var n = (Int(thread_offset) + dst_idx) % N
+            var m, n = divmod(Int(thread_offset) + dst_idx, N)
             if m < M and n < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=src_simd_width_y,

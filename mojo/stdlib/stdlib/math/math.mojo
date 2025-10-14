@@ -665,6 +665,126 @@ fn exp[T: _Expable](x: T) -> T:
     return x.__exp__()
 
 
+@always_inline
+fn _exp2_approx_f32[
+    W: Int
+](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
+    """Computes a fast approximation of 2^x using a fused analytic (FA-4)
+        exponential method, using Polynomial (Horner form):
+        p(r) = c0 + r*(c1 + r*(c2 + r*c3))
+
+    Approximation strategy:
+        We compute 2^x by range reduction x = n + r where r ∈ [−0.5, 0.5]
+        then evaluate 2^r with a fixed-degree Horner polynomial and scale
+        by 2^n via the float exponent-bias (±2^23) / ldexp trick. e^x is
+        then 2^(x·log2(e)).
+
+        This function splits the input `x` into integer and fractional components,
+        clamps it to avoid underflow, and reconstructs 2^x as `ldexp(p(r), n)`,
+        where `p(r)` is a cubic polynomial approximation computed via
+        `polynomial_computation`. The method uses floating-point biasing and fused
+        multiply-add operations for efficient SIMD execution with high numerical
+        stability.
+
+    Expected accuracy:
+        Order-of-magnitude relative error is ~1e-4,1e-3 for 2^r on the target
+        interval, which is adequate for softmax once values are stabilized by
+        subtracting max(x).
+
+    Constraints:
+        The input must be a SIMD vector of 32-bit floating-point values.
+
+    Parameters:
+        W: The width of the SIMD vector.
+
+    Args:
+        x: The input SIMD vector representing the exponent.
+
+    Returns:
+        A SIMD vector containing the fast approximate result of 2^x.
+    """
+
+    # --- Constants ------------------------------------------------------------
+
+    # Rounding bias for IEEE-754 float32 via the “add/subtract big constant”
+    # trick.
+    # We use 1.5 * 2^23 (i.e., 2^23 + 2^22) so it works cleanly with
+    # round-to-nearest-even across positive/negative inputs in this range.
+    alias ROUND_BIAS_F32 = 3 * FPUtils[DType.float32].mantissa_mask()
+    alias NEG_ROUND_BIAS_F32 = -ROUND_BIAS_F32
+
+    # Lower clamp for exp2 range reduction:
+    # The float32 exponent bias is 127. Clamping at −127 keeps n from becoming
+    # too negative (extreme subnormals/FTZ) and maintains accuracy of the cubic.
+    # If you require strictly normal outputs, use −126.0 instead.
+    alias EXP2_MIN_INPUT = -FPUtils[DType.float32].exponent_bias()
+    # --- Kernel ---------------------------------------------------------------
+
+    # 1) clamp in float
+    var x_min = max(x, EXP2_MIN_INPUT)
+
+    # 2) bias trick: vi = round(x_min) in float via +bias then −bias
+    # (works for |x| < 2^23; we use 1.5*2^23 to behave well around 0 and negatives)
+    var vb = x_min + ROUND_BIAS_F32
+    var vi = vb + NEG_ROUND_BIAS_F32
+
+    # 3) fractional part in [−0.5, 0.5] without extra clamp
+    var r = x_min - vi
+
+    # 4) cubic (FA-4) poly approximation Degree-3 coefficients for 2^r
+    #  A cubic gives the best throughput/accuracy trade-off for softmax on GPU:
+    #  only ~3 FMAs in the hot path, vectorizes cleanly (SIMD W=1/2), and yields
+    #  low relative error that remains stable once we subtract max(x) before
+    #  exponentiation. Going to degree-4/5 reduces error a bit but costs extra
+    #  FMAs, registers, and latency with minimal end-to-end benefit.
+    #  The coefficients below are a minimax fit for 2^r over the centered reduced
+    #  interval (usually r ∈ [−0.5, 0.5]). They look close to the Taylor series
+    #  at r=0: 2^r ≈ 1 + (ln 2) r + (ln 2)^2 r^2 / 2 + (ln 2)^3 r^3 / 6,
+    #  but are tweaked (via Remez) to minimize the maximum relative error
+    #  across the interval, which improves worst-case behavior vs plain Taylor.
+    var p = polynomial_evaluate[
+        List[Float32](
+            1.0000000000,
+            0.6951461434,
+            0.2275643945,
+            0.0771190897,
+        ),
+    ](r)
+
+    # 5) exponent as int lanes (no extra clamp needed due to early float clamp)
+    var n = SIMD[DType.int32, W](vi)
+
+    # result: 2^x ≈ 2^n * p
+    return ldexp(p, n)
+
+
+# ---------- e^x helpers ----------
+@always_inline
+fn exp_approx_f32[W: Int](x: SIMD[DType.float32, W]) -> SIMD[DType.float32, W]:
+    """Computes a fast approximate e^x for SIMD vectors of 32-bit floats
+    using the base-2 approximation as a backend.
+
+    This function converts the natural exponential input `z` to base-2 space
+    using the identity e^z = 2^(z * log2(e)), then calls the internal
+    `_exp2_approx_f32` function to evaluate the FA-4 polynomial approximation
+    of 2^x. It is optimized for small SIMD widths and is fully inlined for
+    high performance.
+
+    Constraints:
+        The input must be a SIMD vector of 32-bit floating-point values.
+
+    Parameters:
+        W: The width of the SIMD vector.
+
+    Args:
+        x: The input SIMD vector representing the exponent.
+
+    Returns:
+        A SIMD vector containing the approximate value of e^x.
+    """
+    return _exp2_approx_f32[W](x * SIMD[DType.float32, W](log2e))
+
+
 # ===----------------------------------------------------------------------=== #
 # frexp
 # ===----------------------------------------------------------------------=== #
@@ -1955,6 +2075,8 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
             )
     elif is_amd_gpu():
         return _llvm_unary_fn["llvm.log10"](x)
+    elif is_apple_gpu():
+        return _llvm_unary_fn["llvm.air.log10"](x)
 
     return _call_libm["log10"](x)
 

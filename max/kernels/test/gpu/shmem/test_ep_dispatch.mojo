@@ -30,8 +30,8 @@ from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from shmem import *
 from shmem.ep_comm import (
+    BF16TokenFormat,
     EP_DATA_READY_FLAG,
-    EPMsgConfig,
     dispatch_cb_kernel,
     dispatch_kernel,
 )
@@ -89,22 +89,22 @@ fn legalize_topk_ids[
 
 
 fn test_dispatch[
-    input_type: DType,
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
     n_ranks: Int,
     n_tokens_per_rank: Int,
 ](ctx: DeviceContext, my_rank: Int) raises:
+    alias input_type = DType.bfloat16
     alias gpu_target = get_gpu_target()
     alias gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
     alias gpu_alignment = align_of[
         SIMD[DType.uint8, gpu_simd_width], target=gpu_target
     ]()
-    alias msg_config = EPMsgConfig(
-        input_type, hidden_size, top_k, gpu_alignment
-    )
-    alias msg_bytes = msg_config.msg_size()
+    alias token_fmt_type = BF16TokenFormat[
+        output_layout = Layout(), hidden_size, top_k, gpu_alignment
+    ]
+    alias msg_bytes = token_fmt_type.msg_size()
     alias n_local_experts = n_experts // n_ranks
 
     if my_rank == 0:
@@ -123,11 +123,13 @@ fn test_dispatch[
             n_tokens_per_rank,
         )
 
-    var send_buf = shmem_malloc[DType.uint8](n_tokens_per_rank * msg_bytes)
-    var recv_buf = shmem_malloc[DType.uint8](
-        n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
+    var send_buf = shmem_malloc[DType.uint8](
+        UInt(n_tokens_per_rank * msg_bytes)
     )
-    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
+    var recv_buf = shmem_malloc[DType.uint8](
+        UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
+    )
+    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
@@ -212,6 +214,10 @@ fn test_dispatch[
         ),
     )
 
+    var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
+        output_tensor.origin_cast[True, MutableAnyOrigin]()
+    )
+
     alias hw_info = ctx.default_device_info
 
     alias dispatch = dispatch_kernel[
@@ -223,15 +229,14 @@ fn test_dispatch[
         n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
         n_experts,
         n_ranks,
-        msg_bytes,
         n_tokens_per_rank,
+        token_fmt_type,
     ]
 
     var func = ctx.compile_function[dispatch]()
     shmem_module_init(func)
 
     alias dispatch_cb = dispatch_cb_kernel[
-        input_type,
         hw_info.max_thread_block_size,
         output_layout,
         row_offsets_layout,
@@ -239,11 +244,10 @@ fn test_dispatch[
         src_token_info_layout,
         hw_info.sm_count,
         1,
-        top_k,
         n_experts,
         n_ranks,
-        msg_bytes,
         n_tokens_per_rank,
+        __type_of(format_handler),
     ]
 
     var func_cb = ctx.compile_function[dispatch_cb]()
@@ -277,7 +281,7 @@ fn test_dispatch[
     fn run_dispatch_cb(ctx: DeviceContext) raises:
         ctx.enqueue_function(
             func_cb,
-            output_tensor,
+            format_handler,
             row_offsets_tensor,
             expert_ids_tensor,
             src_token_info_tensor,
@@ -497,7 +501,6 @@ def main():
         with SHMEMContext() as shmem_ctx:
             var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
             test_dispatch[
-                input_type = DType.bfloat16,
                 hidden_size=3584,  # equivalent to send 7168 FP8s.
                 top_k=8,
                 n_experts = min(num_gpus * 32, 256),

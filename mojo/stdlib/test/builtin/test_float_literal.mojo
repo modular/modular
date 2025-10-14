@@ -172,16 +172,4 @@ def test_float_conversion():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_init]()
-    suite.test[test_division]()
-    suite.test[test_mod]()
-    suite.test[test_int_conversion]()
-    suite.test[test_bool]()
-    suite.test[test_is_special_value]()
-    suite.test[test_abs]()
-    suite.test[test_comparison]()
-    suite.test[test_float_conversion]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

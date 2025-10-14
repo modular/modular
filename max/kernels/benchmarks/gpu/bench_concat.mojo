@@ -52,7 +52,7 @@ fn bench_concat[
     var input0_ptr = ctx.enqueue_create_buffer[type](size)
     inputs[0] = LayoutTensor[type, layout](
         input0_ptr, RuntimeLayout[layout].row_major(shape)
-    ).origin_cast[True, MutableAnyOrigin]()
+    ).as_any_origin()
     inputs_host[0] = LayoutTensor[type, layout, MutableAnyOrigin](
         UnsafePointer[Scalar[type]].alloc(size),
         RuntimeLayout[layout].row_major(shape),
@@ -101,7 +101,7 @@ fn bench_concat[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _concat_gpu_elementwise[epilogue_fn=None](
-                output.origin_cast[True, MutableAnyOrigin](), axis, inputs, ctx
+                output.as_any_origin(), axis, inputs, ctx
             )
 
         b.iter_custom[kernel_launch](ctx)

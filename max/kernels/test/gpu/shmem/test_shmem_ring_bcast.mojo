@@ -10,10 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-
-
-# RUN: %mojo %s
+# RUN: %mojo-build %s -o %t
+# RUN: %t
 
 from os import getenv, listdir, setenv
 from os.path import dirname

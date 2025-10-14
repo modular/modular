@@ -153,6 +153,7 @@ async def lifespan(  # noqa: ANN201
                 )
 
             app.state.pipeline = pipeline
+            app.state.pipeline_config = serving_settings.pipeline_config
 
             await exit_stack.enter_async_context(pipeline)
             logger.info(

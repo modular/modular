@@ -308,7 +308,7 @@ struct CodepointSliceIter[
 
 
 struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
-    ImplicitlyCopyable, Movable, Sized
+    ImplicitlyCopyable, Iterable, Iterator, Movable, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
@@ -318,6 +318,9 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
         origin: Origin of the underlying string data.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias Element = Codepoint
 
     var _slice: StringSlice[origin]
@@ -340,7 +343,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     # ===-------------------------------------------------------------------===#
 
     @doc_private
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -523,12 +526,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
         var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
-        var ptr = UnsafePointer(__mlir_op.`pop.string.address`(_kgen)).bitcast[
-            Byte
-        ]()
-        self._slice = Span[Byte, StaticConstantOrigin](
-            ptr=ptr, length=UInt(length)
-        )
+        var ptr = UnsafePointer[mut=False, origin=StaticConstantOrigin](
+            __mlir_op.`pop.string.address`(_kgen)
+        ).bitcast[Byte]()
+        self._slice = {ptr = ptr, length = UInt(length)}
 
     @always_inline
     @implicit
@@ -1167,7 +1168,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             A StringSlice merged with the other origin.
         """
         return {
-            ptr = self.unsafe_ptr().origin_cast[result.mut, result.origin](),
+            ptr = self.unsafe_ptr()
+            .unsafe_mut_cast[result.mut]()
+            .unsafe_origin_cast[result.origin](),
             length = UInt(len(self)),
         }
 
@@ -2322,7 +2325,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if len(elems) == 0:
             return String()
 
-        var sep = StaticString(
+        var sep = StringSlice(
             ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
         )
         var total_bytes = _TotalWritableBytes(elems, sep=sep).size
@@ -2700,7 +2703,7 @@ fn _split[
     out output: List[__type_of(src_str).Immutable],
 ):
     alias S = __type_of(src_str).Immutable
-    var ptr = src_str.unsafe_ptr().origin_cast[False]()
+    var ptr = src_str.unsafe_ptr().as_immutable()
     var sep_len = sep.byte_length()
     if sep_len == 0:
         var iterator = src_str.codepoint_slices()
@@ -2761,7 +2764,7 @@ fn _split[
     var lhs = 0
     var rhs: Int
     var items = 0
-    var ptr = src_str.unsafe_ptr().origin_cast[False]()
+    var ptr = src_str.unsafe_ptr().as_immutable()
 
     @always_inline("nodebug")
     fn _build_slice(p: __type_of(ptr), start: Int, end: Int) -> S:

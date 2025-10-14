@@ -22,7 +22,7 @@ import re
 from collections import OrderedDict
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -34,10 +34,10 @@ from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.graph.weights.weights import _cast_to_dtype
 from max.interfaces import (
-    InputContext,
     LoRAStatus,
     LoRAType,
     RequestID,
+    TextGenerationContextType,
 )
 from max.interfaces.pipeline import (
     Pipeline,
@@ -54,8 +54,6 @@ from .lora_request_processor import LoRARequestProcessor
 logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
-
-T = TypeVar("T", bound=InputContext)
 
 
 class LoRALRUCache:
@@ -542,7 +540,7 @@ class LoRAManager:
 
     def get_lora_graph_inputs(
         self,
-        context_batch: Sequence[T],
+        context_batch: Sequence[TextGenerationContextType],
         input_row_offsets: npt.NDArray[np.integer[Any]],
         device: Device,
     ) -> tuple[Tensor, ...]:
@@ -964,8 +962,8 @@ class LoRAManager:
                 )
 
     def sort_lora_batch(
-        self, context_batch: dict[RequestID, T]
-    ) -> dict[RequestID, T]:
+        self, context_batch: dict[RequestID, TextGenerationContextType]
+    ) -> dict[RequestID, TextGenerationContextType]:
         """
         Sorts the LoRA batch by LRU cache id.
 

@@ -58,9 +58,11 @@ fn _get_python_interface() raises -> Pointer[CPython, StaticConstantOrigin]:
     """
 
     var ptr = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
-    var ptr2 = UnsafePointer(to=ptr[].cpython).origin_cast[
-        False, StaticConstantOrigin
-    ]()
+    var ptr2 = (
+        UnsafePointer(to=ptr[].cpython)
+        .as_immutable()
+        .unsafe_origin_cast[StaticConstantOrigin]()
+    )
     return Pointer(to=ptr2[])
 
 
@@ -120,7 +122,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     fn evaluate(
         var expr: String,
         file: Bool = False,
-        name: StringSlice[StaticConstantOrigin] = "__main__",
+        name: StaticString = "__main__",
     ) raises -> PythonObject:
         """Executes the given Python code.
 
@@ -132,14 +134,10 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             `PythonObject` containing the result of the evaluation.
         """
-        ref cpython = Self().cpython()
-        # PyImport_AddModule returns a read-only reference.
-        var module = PythonObject(
-            from_borrowed=cpython.PyImport_AddModule(name)
-        )
-        var dict_obj = PythonObject(
-            from_borrowed=cpython.PyModule_GetDict(module._obj_ptr)
-        )
+        ref cpy = Self().cpython()
+
+        var mod = PythonObject(from_borrowed=cpy.PyImport_AddModule(name))
+        var dict_ptr = cpy.PyModule_GetDict(mod._obj_ptr)
         if file:
             # We compile the code as provided and execute in the module
             # context. Note that this may be an existing module if the provided
@@ -149,38 +147,33 @@ struct Python(Defaultable, ImplicitlyCopyable):
             # The Py_file_input is the code passed to the parsed to indicate
             # the initial state: this is essentially whether it is expecting
             # to compile an expression, a file or statements (e.g. repl).
-            var code_obj_ptr = cpython.Py_CompileString(
+            var code_ptr = cpy.Py_CompileString(
                 expr^, "<evaluate>", Py_file_input
             )
-            if not code_obj_ptr:
-                raise cpython.get_error()
-            var code = PythonObject(from_owned=code_obj_ptr)
-
+            if not code_ptr:
+                raise cpy.unsafe_get_error()
             # For this evaluation, we pass the dictionary both as the globals
             # and the locals. This is because the globals is defined as the
             # dictionary for the module scope, and locals is defined as the
             # dictionary for the *current* scope. Since we are executing at
             # the module scope for this eval, they should be the same object.
-            var result_ptr = cpython.PyEval_EvalCode(
-                code._obj_ptr, dict_obj._obj_ptr, dict_obj._obj_ptr
-            )
-            if not result_ptr:
-                raise cpython.get_error()
-
-            var result = PythonObject(from_owned=result_ptr)
-            _ = result^
-            _ = code^
-            return module
+            var res_ptr = cpy.PyEval_EvalCode(code_ptr, dict_ptr, dict_ptr)
+            cpy.Py_DecRef(code_ptr)
+            if not res_ptr:
+                raise cpy.unsafe_get_error()
+            cpy.Py_DecRef(res_ptr)
+            return mod
         else:
             # We use the result of evaluating the expression directly, and allow
             # all the globals/locals to be discarded. See above re: why the same
             # dictionary is being used here for both globals and locals.
-            var result = cpython.PyRun_String(
-                expr^, Py_eval_input, dict_obj._obj_ptr, dict_obj._obj_ptr
+            var res_ptr = cpy.PyRun_String(
+                expr^, Py_eval_input, dict_ptr, dict_ptr
             )
-            if not result:
-                raise cpython.get_error()
-            return PythonObject(from_owned=result)
+            _ = mod^
+            if not res_ptr:
+                raise cpy.unsafe_get_error()
+            return PythonObject(from_owned=res_ptr)
 
     @staticmethod
     fn add_to_path(dir_path: StringSlice) raises:
@@ -233,12 +226,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The Python module.
         """
-        ref cpython = Python().cpython()
-        # Throw error if it occurred during initialization
-        cpython.check_init_error()
-        var module_ptr = cpython.PyImport_ImportModule(module^)
+        # Initialize the global interpreter and check for errors.
+        ref cpy = Self().cpython()
+        cpy.check_init_error()
+
+        var module_ptr = cpy.PyImport_ImportModule(module^)
         if not module_ptr:
-            raise cpython.get_error()
+            raise cpy.unsafe_get_error()
         return PythonObject(from_owned=module_ptr)
 
     @staticmethod
@@ -255,18 +249,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Returns:
             The Python module.
         """
-        # Initialize the global instance to the Python interpreter
-        # in case this is our first time.
+        # Initialize the global interpreter and check for errors.
+        ref cpy = Self().cpython()
+        cpy.check_init_error()
 
-        ref cpython = Python().cpython()
-
-        # This will throw an error if there are any errors during initialization.
-        cpython.check_init_error()
-
-        var module_ptr = cpython.PyModule_Create(name)
+        var module_ptr = cpy.PyModule_Create(name)
         if not module_ptr:
-            raise cpython.get_error()
-
+            raise cpy.unsafe_get_error()
         return PythonObject(from_owned=module_ptr)
 
     @staticmethod
@@ -379,6 +368,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             var val = entry.value.copy().to_python_object()
             var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
             cpy.Py_DecRef(key)
+            _ = val
             if errno == -1:
                 raise cpy.unsafe_get_error()
 
@@ -437,13 +427,15 @@ struct Python(Defaultable, ImplicitlyCopyable):
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(tuples)):
-            var key_obj = tuples[i][0].copy().to_python_object()
-            var val_obj = tuples[i][1].copy().to_python_object()
-            var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
+            var key = tuples[i][0].copy().to_python_object()
+            var val = tuples[i][1].copy().to_python_object()
+            var errno = cpython.PyDict_SetItem(
+                dict_obj_ptr, key._obj_ptr, val._obj_ptr
             )
-            if result == -1:
-                raise cpython.get_error()
+            _ = key
+            _ = val
+            if errno == -1:
+                raise cpython.unsafe_get_error()
 
         return PythonObject(from_owned=dict_obj_ptr)
 
@@ -467,8 +459,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         for i in range(len(values)):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
@@ -494,8 +486,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @always_inline
@@ -539,8 +531,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj._obj_ptr)
+            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj.steal_data())
+
         return PythonObject(from_owned=obj_ptr)
 
     @always_inline

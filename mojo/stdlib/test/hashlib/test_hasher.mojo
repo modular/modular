@@ -172,14 +172,4 @@ def test_hash_hashable_with_hasher_types():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_hasher]()
-    suite.test[test_hash_with_hasher]()
-    suite.test[test_complex_hasher]()
-    suite.test[test_complex_hash_with_hasher]()
-    suite.test[test_update_with_bytes]()
-    suite.test[test_with_ahasher]()
-    suite.test[test_hash_hashable_with_hasher_types]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

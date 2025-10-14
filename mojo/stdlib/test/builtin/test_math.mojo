@@ -133,14 +133,4 @@ def test_isnan():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_abs]()
-    suite.test[test_divmod]()
-    suite.test[test_max]()
-    suite.test[test_min]()
-    suite.test[test_round]()
-    suite.test[test_pow]()
-    suite.test[test_isnan]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

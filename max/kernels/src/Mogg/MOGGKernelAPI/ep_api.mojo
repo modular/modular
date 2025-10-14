@@ -18,6 +18,7 @@ Expert Parallelism (EP) Communication Kernel.
 import compiler_internal as compiler
 from gpu.host import DeviceBuffer, get_gpu_target
 from gpu.host.info import is_gpu
+from layout import Layout
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import align_of, simd_width_of, size_of
@@ -27,9 +28,9 @@ from tensor_internal.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 
-from shmem import shmem_init, shmem_malloc, shmem_module_init
+from shmem import shmem_init_thread, shmem_module_init, shmem_malloc
 from shmem.ep_comm import (
-    EPMsgConfig,
+    BF16TokenFormat,
     dispatch_kernel,
     dispatch_cb_kernel,
     combine_kernel,
@@ -93,9 +94,10 @@ struct Struct_ep_init:
         ]()
 
         # Calculate message sizes for dispatch and combine phases
-        alias dispatch_msg_size = EPMsgConfig(
-            dispatch_dtype, hidden_size, top_k, gpu_alignment
-        ).msg_size()
+        alias token_fmt_type = BF16TokenFormat[
+            output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        ]
+        alias dispatch_msg_size = token_fmt_type.msg_size()
         # Combine messages only contain the processed token
         alias combine_msg_size = hidden_size * size_of[combine_dtype]()
 
@@ -125,17 +127,21 @@ struct Struct_ep_init:
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
         # Initialize the SHMEM library for this GPU
-        _ = shmem_init(Int(gpu_ctx.id()), n_gpus_per_node)
+        shmem_init_thread(gpu_ctx, n_gpus_per_node)
 
         # Allocate SHMEM buffers for dispatch phase
-        var dispatch_send_p = shmem_malloc[DType.uint8](dispatch_send_size)
-        var dispatch_recv_p = shmem_malloc[DType.uint8](dispatch_recv_size)
-        var dispatch_recv_count_p = shmem_malloc[DType.uint64](n_experts)
+        var dispatch_send_p = shmem_malloc[DType.uint8](
+            UInt(dispatch_send_size)
+        )
+        var dispatch_recv_p = shmem_malloc[DType.uint8](
+            UInt(dispatch_recv_size)
+        )
+        var dispatch_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
 
         # Allocate SHMEM buffers for combine phase
-        var combine_send_p = shmem_malloc[DType.uint8](combine_send_size)
-        var combine_recv_p = shmem_malloc[DType.uint8](combine_recv_size)
-        var combine_recv_count_p = shmem_malloc[DType.uint64](n_experts)
+        var combine_send_p = shmem_malloc[DType.uint8](UInt(combine_send_size))
+        var combine_recv_p = shmem_malloc[DType.uint8](UInt(combine_recv_size))
+        var combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
 
         # Initialize receive count buffers to MAX_FINITE
         # This sentinel value indicates that no data has been received yet
@@ -238,9 +244,9 @@ struct Struct_ep_dispatch:
         alias gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
-        alias dispatch_msg_size = EPMsgConfig(
-            dispatch_dtype, hidden_size, top_k, gpu_alignment
-        ).msg_size()
+        alias token_fmt_type = BF16TokenFormat[
+            output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        ]
 
         alias n_ranks = n_gpus_per_node * n_nodes
 
@@ -253,8 +259,8 @@ struct Struct_ep_dispatch:
             n_experts // (hw_info.max_thread_block_size // hw_info.warp_size),
             n_experts,
             n_ranks,
-            dispatch_msg_size,
             max_token_per_rank,
+            token_fmt_type,
         ]
 
         @always_inline
@@ -269,7 +275,6 @@ struct Struct_ep_dispatch:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
-                ";dispatch_msg_size=", dispatch_msg_size,
             )
             # fmt: on
 
@@ -281,15 +286,15 @@ struct Struct_ep_dispatch:
             var func = gpu_ctx.compile_function[dispatch]()
             shmem_module_init(func)
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](send_ptrs[gpu_id])
+            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(send_ptrs[gpu_id])
             )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](recv_ptrs[gpu_id])
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[
-                DType.uint64
-            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
+                Int(recv_count_ptrs[gpu_id])
+            )
 
             gpu_ctx.enqueue_function(
                 func,
@@ -381,14 +386,15 @@ struct Struct_ep_dispatch_cb:
         alias gpu_alignment = align_of[
             SIMD[DType.uint8, gpu_simd_width], target=gpu_target
         ]()
-        alias dispatch_msg_size = EPMsgConfig(
-            dispatch_dtype, hidden_size, top_k, gpu_alignment
-        ).msg_size()
 
         alias n_ranks = n_gpus_per_node * n_nodes
 
+        constrained[dispatch_dtype == DType.bfloat16]()
+        var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
+            output_tokens_tensor.bitcast[DType.bfloat16]()
+        )
+
         alias dispatch_cb = dispatch_cb_kernel[
-            dispatch_dtype,
             hw_info.max_thread_block_size,
             output_tokens_tensor.layout,
             row_offsets_tensor.layout,
@@ -396,11 +402,10 @@ struct Struct_ep_dispatch_cb:
             src_info_tensor.layout,
             hw_info.sm_count,
             1,
-            top_k,
             n_experts,
             n_ranks,
-            dispatch_msg_size,
             max_token_per_rank,
+            __type_of(format_handler),
         ]
 
         @always_inline
@@ -415,7 +420,6 @@ struct Struct_ep_dispatch_cb:
                 ";max_token_per_rank=", max_token_per_rank,
                 ";n_gpus_per_node=", n_gpus_per_node,
                 ";n_nodes=", n_nodes,
-                ";dispatch_msg_size=", dispatch_msg_size,
             )
             # fmt: on
 
@@ -424,15 +428,15 @@ struct Struct_ep_dispatch_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](recv_ptrs[gpu_id])
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[
-                DType.uint64
-            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
+                Int(recv_count_ptrs[gpu_id])
+            )
 
             gpu_ctx.enqueue_function[dispatch_cb](
-                output_tokens_tensor,
+                format_handler,
                 row_offsets_tensor,
                 expert_ids_tensor,
                 src_info_tensor,
@@ -562,15 +566,15 @@ struct Struct_ep_combine:
             var func = gpu_ctx.compile_function[combine]()
             shmem_module_init(func)
 
-            var send_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](send_ptrs[gpu_id])
+            var send_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(send_ptrs[gpu_id])
             )
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](recv_ptrs[gpu_id])
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[
-                DType.uint64
-            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
+                Int(recv_count_ptrs[gpu_id])
+            )
 
             gpu_ctx.enqueue_function(
                 func,
@@ -681,12 +685,12 @@ struct Struct_ep_combine_cb:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            var recv_buf_p = _unsafe_aliasing_address_to_pointer[DType.uint8](
-                Scalar[DType.int](recv_ptrs[gpu_id])
+            var recv_buf_p = _unsafe_aliasing_address_to_pointer[UInt8](
+                Int(recv_ptrs[gpu_id])
             )
-            var recv_count_p = _unsafe_aliasing_address_to_pointer[
-                DType.uint64
-            ](Scalar[DType.int](recv_count_ptrs[gpu_id]))
+            var recv_count_p = _unsafe_aliasing_address_to_pointer[UInt64](
+                Int(recv_count_ptrs[gpu_id])
+            )
 
             gpu_ctx.enqueue_function[combine_cb](
                 output_tokens_tensor,

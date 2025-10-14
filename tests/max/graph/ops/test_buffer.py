@@ -130,12 +130,12 @@ def test_load(buffer_type: BufferType) -> None:
         ],
     ) as graph:
         buffer = graph.inputs[0].buffer
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[buffer.device]
         assert isinstance(chain_0, _ChainValue)
         assert isinstance(chain_0.type, _ChainType)
 
         y = ops.buffer_load(buffer)
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[buffer.device]
 
         assert isinstance(chain_1, _ChainValue)
         assert isinstance(chain_1.type, _ChainType)
@@ -144,6 +144,7 @@ def test_load(buffer_type: BufferType) -> None:
         assert y.dtype == buffer.dtype
         assert isinstance(y, TensorValue)
         # Check the chain is updated.
+
         assert chain_0 != chain_1
 
         graph.output()
@@ -164,9 +165,9 @@ def test_store(tensor_type: TensorType, buffer_type: BufferType) -> None:
     ) as graph:
         tensor = graph.inputs[0].tensor
         buffer = graph.inputs[1].buffer
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[buffer.device]
         ops.buffer_store(buffer, tensor)
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[buffer.device]
 
         assert buffer.shape == tensor.shape
         assert buffer.dtype == tensor.dtype
@@ -189,9 +190,9 @@ def test_load_store(buffer_type: BufferType) -> None:
         ],
     ) as graph:
         buffer = graph.inputs[0].buffer
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[buffer.device]
         tensor = ops.buffer_load(buffer)
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[buffer.device]
 
         assert tensor.shape == buffer.shape
         assert tensor.dtype == buffer.dtype
@@ -199,7 +200,7 @@ def test_load_store(buffer_type: BufferType) -> None:
         assert chain_0 != chain_1
 
         ops.buffer_store(buffer, tensor)
-        chain_2 = graph._current_chain
+        chain_2 = graph.device_chains[buffer.device]
 
         assert buffer.shape == tensor.shape
         assert buffer.dtype == tensor.dtype
@@ -228,9 +229,9 @@ def test_load_store_ellipsis_slice(
     ) as graph:
         tensor = graph.inputs[0].tensor
         buffer = graph.inputs[1].buffer
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[buffer.device]
         buffer[...] = tensor + buffer[...]
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[buffer.device]
 
         assert buffer.shape == tensor.shape
         assert buffer.dtype == tensor.dtype
@@ -260,9 +261,9 @@ def test_load_store_slice(
     ) as graph:
         tensor = graph.inputs[0].tensor
         buffer = graph.inputs[1].buffer
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[buffer.device]
         buffer[0] = tensor[0] + buffer[0]
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[buffer.device]
 
         assert buffer.shape == tensor.shape
         assert buffer.dtype == tensor.dtype
@@ -319,6 +320,8 @@ def test_prints_with_buffer_ops(
         tensor.print()
         chain_1 = graph._current_chain
 
+        # Buffer load op goes onto the corresponding device chain, which
+        # should leave the global chain unchanged.
         x = buffer[...]
         chain_2 = graph._current_chain
 
@@ -331,7 +334,7 @@ def test_prints_with_buffer_ops(
         graph.output()
 
         assert chain_0 != chain_1
-        assert chain_1 != chain_2
+        assert chain_1 == chain_2
         assert chain_2 != chain_3
 
 

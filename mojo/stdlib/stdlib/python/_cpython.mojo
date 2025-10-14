@@ -309,10 +309,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable, Movable):
 
         This is suitable for use terminating an array of PyMethodDef values.
         """
-        self.method_name = UnsafePointer[c_char]()
-        self.method_impl = OpaquePointer()
+        self.method_name = {}
+        self.method_impl = {}
         self.method_flags = 0
-        self.method_docstring = UnsafePointer[c_char]()
+        self.method_docstring = {}
 
     @staticmethod
     fn function[
@@ -771,6 +771,11 @@ alias PyEval_EvalCode = ExternalFunction[
 ]
 
 # Reference Counting
+alias Py_NewRef = ExternalFunction[
+    "Py_NewRef",
+    # PyObject *Py_NewRef(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
 alias Py_IncRef = ExternalFunction[
     "Py_IncRef",
     # void Py_IncRef(PyObject *o)
@@ -1172,20 +1177,6 @@ fn _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
     )
 
 
-fn _PyModule_AddObjectRef_dummy(
-    module: PyObjectPtr,
-    name: UnsafePointer[c_char, mut=False],
-    value: PyObjectPtr,
-) -> c_int:
-    return abort[c_int](
-        "PyModule_AddObjectRef is not available in this Python version"
-    )
-
-
-fn _Py_Is_dummy(x: PyObjectPtr, y: PyObjectPtr) -> c_int:
-    return abort[c_int]("Py_Is is not available in this Python version")
-
-
 # ===-------------------------------------------------------------------===#
 # Context Managers for Python GIL and Threading
 # ===-------------------------------------------------------------------===#
@@ -1302,6 +1293,7 @@ struct CPython(Defaultable, Movable):
     var _Py_CompileString: Py_CompileString.type
     var _PyEval_EvalCode: PyEval_EvalCode.type
     # Reference Counting
+    var _Py_NewRef: Py_NewRef.type
     var _Py_IncRef: Py_IncRef.type
     var _Py_DecRef: Py_DecRef.type
     # Exception Handling
@@ -1456,6 +1448,7 @@ struct CPython(Defaultable, Movable):
         self._Py_CompileString = Py_CompileString.load(self.lib)
         self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
         # Reference Counting
+        self._Py_NewRef = Py_NewRef.load(self.lib)
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
         # Exception Handling
@@ -1560,10 +1553,7 @@ struct CPython(Defaultable, Movable):
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
         self._PyModule_Create2 = PyModule_Create2.load(self.lib)
         self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
-        if self.version.minor >= 10:
-            self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
-        else:
-            self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
+        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
         # Slice Objects
         self._PySlice_New = PySlice_New.load(self.lib)
         # Capsules
@@ -1573,10 +1563,7 @@ struct CPython(Defaultable, Movable):
         self._PyObject_Free = PyObject_Free.load(self.lib)
         # Object Implementation Support
         # Common Object Structures
-        if self.version.minor >= 10:
-            self._Py_Is = Py_Is.load(self.lib)
-        else:
-            self._Py_Is = _Py_Is_dummy
+        self._Py_Is = Py_Is.load(self.lib)
 
     fn __del__(deinit self):
         pass
@@ -1764,6 +1751,18 @@ struct CPython(Defaultable, Movable):
     # Reference Counting
     # ref: https://docs.python.org/3/c-api/refcounting.html
     # ===-------------------------------------------------------------------===#
+
+    fn Py_NewRef(self, o: PyObjectPtr) -> PyObjectPtr:
+        """Create a new strong reference to an object: call `Py_INCREF()` on `o`
+        and return the object `o`.
+
+        The object `o` must not be `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_NewRef
+        """
+        debug_assert(Bool(o), "Py_NewRef called with NULL")
+        return self._Py_NewRef(o)
 
     fn Py_IncRef(self, ptr: PyObjectPtr):
         """Indicate taking a new strong reference to the object `ptr` points to.
@@ -2707,13 +2706,10 @@ struct CPython(Defaultable, Movable):
         Python.
 
         Part of the Stable ABI since version 3.10.
-        This function is patched to work with Python 3.9 and earlier versions.
 
         References:
         - https://docs.python.org/3/c-api/structures.html#c.Py_Is
         """
-        if self.version.minor < 11:
-            return c_int(Int(x == y))
         return self._Py_Is(x, y)
 
     fn Py_TYPE(self, obj: PyObjectPtr) -> PyTypeObjectPtr:
