@@ -564,20 +564,20 @@ fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
 @always_inline("nodebug")
 fn _is_amd_rdna3() -> Bool:
     return (
-        is_amd_gpu["amdgpu:gfx1100"]()
-        or is_amd_gpu["amdgpu:gfx1101"]()
-        or is_amd_gpu["amdgpu:gfx1102"]()
-        or is_amd_gpu["amdgpu:gfx1103"]()
+        is_amd_gpu["gfx1100"]()
+        or is_amd_gpu["gfx1101"]()
+        or is_amd_gpu["gfx1102"]()
+        or is_amd_gpu["gfx1103"]()
         # These last two are technically RDNA3.5, but we'll treat them as RDNA3
         # for now.
-        or is_amd_gpu["amdgpu:gfx1150"]()
-        or is_amd_gpu["amdgpu:gfx1151"]()
+        or is_amd_gpu["gfx1150"]()
+        or is_amd_gpu["gfx1151"]()
     )
 
 
 @always_inline("nodebug")
 fn _is_amd_rdna4() -> Bool:
-    return is_amd_gpu["amdgpu:gfx1200"]() or is_amd_gpu["amdgpu:gfx1201"]()
+    return is_amd_gpu["gfx1200"]() or is_amd_gpu["gfx1201"]()
 
 
 @always_inline("nodebug")
@@ -587,12 +587,12 @@ fn _is_amd_rdna() -> Bool:
 
 @always_inline("nodebug")
 fn _is_amd_mi300x() -> Bool:
-    return is_amd_gpu["amdgpu:gfx942"]()
+    return is_amd_gpu["gfx942"]()
 
 
 @always_inline("nodebug")
 fn _is_amd_mi355x() -> Bool:
-    return is_amd_gpu["amdgpu:gfx950"]()
+    return is_amd_gpu["gfx950"]()
 
 
 @always_inline("nodebug")
@@ -649,7 +649,7 @@ fn is_amd_gpu[subarch: StaticString]() -> Bool:
     Returns:
         True if the triple target is amdgpu and False otherwise.
     """
-    return is_amd_gpu() and _accelerator_arch() == subarch
+    return is_amd_gpu() and CompilationTarget._is_arch[subarch]()
 
 
 @always_inline("nodebug")

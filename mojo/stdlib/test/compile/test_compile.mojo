@@ -18,6 +18,7 @@ from gpu.memory import AddressSpace
 from memory import stack_allocation
 from testing import *
 from testing import TestSuite
+from sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
 
 
 def test_compile_llvm():
@@ -91,6 +92,19 @@ def test_data_layout_asm():
 
     assert_true("mov.u32" in target_short_asm)
     assert_false("mov.u64" in target_short_asm)
+
+
+# TODO: KERN-2106, this test is causing timeouts in CI.
+# def test_cross_compile():
+#     alias MI355X_TARGET = get_gpu_target["mi355x"]()
+
+#     fn test_kernel():
+#         constrained[
+#             _cdna_4_or_newer(), "test_kernel is only supported on CDNA4+"
+#         ]()
+
+#     var asm = compile_info[test_kernel, target=MI355X_TARGET]()
+#     assert_true("amdgcn-amd-amdhsa--gfx950" in asm)
 
 
 def main():
