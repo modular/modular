@@ -322,9 +322,9 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
         raise Error("Can not create directory: ", fspath)
 
 
-def makedirs[
+fn makedirs[
     PathLike: os.PathLike
-](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) -> None:
+](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) raises -> None:
     """Creates a specified leaf directory along with any necessary intermediate
     directories that don't already exist.
 
@@ -378,7 +378,7 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
         raise Error("Can not remove directory: ", fspath)
 
 
-def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
+fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
     """Removes a leaf directory and all empty intermediate ones.
 
     Directories corresponding to rightmost path segments will be pruned away

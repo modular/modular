@@ -136,7 +136,7 @@ struct TestSuite(Movable):
         self.tests = List[_Test]()
         self.location = location.or_else(__call_location())
 
-    def _register_tests[test_funcs: Tuple, /](mut self):
+    fn _register_tests[test_funcs: Tuple, /](mut self):
         """Internal function to prevent all registrations from being inlined."""
 
         @parameter
@@ -157,7 +157,7 @@ struct TestSuite(Movable):
 
     @always_inline
     @staticmethod
-    def discover_tests[
+    fn discover_tests[
         test_funcs: Tuple, /
     ](*, location: Optional[_SourceLocation] = None) -> Self:
         """Discover tests from the given list of functions, and register them.
@@ -191,7 +191,7 @@ struct TestSuite(Movable):
         var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
         return e.__str__().replace("\n", replacement)
 
-    def run(deinit self):
+    fn run(deinit self) raises:
         """Runs the test suite and prints the results to the console.
 
         Raises:

@@ -125,7 +125,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    def __getitem__(self, key: V) -> Int:
+    fn __getitem__(self, key: V) -> Int:
         """Get the count of a key.
 
         Args:
