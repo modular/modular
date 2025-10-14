@@ -128,6 +128,32 @@ trait DeprecatedTrait:
 alias deprecated_alias = 1
 
 # ===----------------------------------------------------------------------=== #
+# @implicit
+# ===----------------------------------------------------------------------=== #
+
+struct DeprecatedImplicitConversion:
+    @implicit(deprecated=True)
+    fn __init__(out self, value: Int):
+        pass
+
+struct NotDeprecatedImplicitConversion:
+    @implicit(deprecated=False)
+    fn __init__(out self, value: Int):
+        pass
+
+fn foo(y: DeprecatedImplicitConversion): pass
+
+fn foo(z: Int): pass
+
+fn deprecated_implicit_conversion():
+    # There should be no warnings here.
+    _: NotDeprecatedImplicitConversion = 1
+    _ = DeprecatedImplicitConversion(1)
+
+    # There should be no warning here because the `Int` overload is selected.
+    foo(Int(1))
+
+# ===----------------------------------------------------------------------=== #
 # @__llvm_metadata
 # ===----------------------------------------------------------------------=== #
 

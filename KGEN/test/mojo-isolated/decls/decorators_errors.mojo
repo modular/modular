@@ -182,16 +182,16 @@ struct DeprecatedImplicitConversion:
     fn __init__(out self, value: Int):
         pass
 
-struct NotDeprecatedImplicitConversion:
-    @implicit(deprecated=False)
-    fn __init__(out self, value: Int):
-        pass
+fn foo(y: DeprecatedImplicitConversion): pass
+
+fn foo(z: String): pass
 
 fn deprecated_implicit_conversion():
-    _: NotDeprecatedImplicitConversion = 1
-    _ = DeprecatedImplicitConversion(1)
     # expected-warning @+1 {{deprecated implicit conversion from 'IntLiteral[1]' to 'DeprecatedImplicitConversion'}}
     _: DeprecatedImplicitConversion = 1
+
+    # expected-warning @+1 {{deprecated implicit conversion from 'Int' to 'DeprecatedImplicitConversion'}}
+    foo(Int(1))
 
 # ===----------------------------------------------------------------------=== #
 # @export
