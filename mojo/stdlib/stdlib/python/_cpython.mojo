@@ -309,10 +309,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable, Movable):
 
         This is suitable for use terminating an array of PyMethodDef values.
         """
-        self.method_name = UnsafePointer[c_char]()
-        self.method_impl = OpaquePointer()
+        self.method_name = {}
+        self.method_impl = {}
         self.method_flags = 0
-        self.method_docstring = UnsafePointer[c_char]()
+        self.method_docstring = {}
 
     @staticmethod
     fn function[

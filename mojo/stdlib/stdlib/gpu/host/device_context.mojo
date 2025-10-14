@@ -3327,13 +3327,8 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
-        var api_ptr = StaticString(ptr=UnsafePointer[Byte](), length=0)
-        external_call[
-            "AsyncRT_DeviceContext_deviceApi",
-            NoneType,
-            UnsafePointer[StaticString],
-            _DeviceContextPtr,
-        ](
+        var api_ptr = StaticString(ptr={}, length=0)
+        external_call["AsyncRT_DeviceContext_deviceApi", NoneType](
             UnsafePointer(to=api_ptr),
             self._handle,
         )
@@ -6144,12 +6139,10 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
         This is a private method intended for internal use only.
         """
-        var arch_name = StaticString(ptr=UnsafePointer[Byte](), length=0)
+        var arch_name = StaticString(ptr={}, length=0)
         external_call[
             "AsyncRT_DeviceContext_archName",
             NoneType,
-            UnsafePointer[StaticString],
-            _DeviceContextPtr,
         ](UnsafePointer(to=arch_name), self._handle)
         return String(arch_name)
 

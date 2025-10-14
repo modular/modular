@@ -526,12 +526,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
         var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
-        var ptr = UnsafePointer(__mlir_op.`pop.string.address`(_kgen)).bitcast[
-            Byte
-        ]()
-        self._slice = Span[Byte, StaticConstantOrigin](
-            ptr=ptr, length=UInt(length)
-        )
+        var ptr = UnsafePointer[mut=False, origin=StaticConstantOrigin](
+            __mlir_op.`pop.string.address`(_kgen)
+        ).bitcast[Byte]()
+        self._slice = {ptr = ptr, length = UInt(length)}
 
     @always_inline
     @implicit
@@ -2327,7 +2325,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if len(elems) == 0:
             return String()
 
-        var sep = StaticString(
+        var sep = StringSlice(
             ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
         )
         var total_bytes = _TotalWritableBytes(elems, sep=sep).size
