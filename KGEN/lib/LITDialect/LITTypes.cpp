@@ -721,7 +721,7 @@ OriginType::MutabilityClass OriginType::getMutabilityClass() {
 /// Given a value of origin type, return true if the origin is known to have
 /// the specified mutability.
 bool OriginType::isMutableKnown(TypedAttr originValue, bool value) {
-  return OriginType::sugarCast(originValue.getType()).isMutableKnown(value);
+  return sugarCast<OriginType>(originValue.getType()).isMutableKnown(value);
 }
 
 /// Remove any OriginMutCast and ._mlir_origin if present.
@@ -737,12 +737,6 @@ TypedAttr OriginType::stripMutCastAndFieldExtract(TypedAttr origin) {
     return stripMutCastAndFieldExtract(mutCast.getOperand());
 
   return origin;
-}
-
-/// Given a possibly sugared type, get the canonical type and cast it to an
-/// OriginType.
-OriginType OriginType::sugarCast(Type type) {
-  return llvm::cast<OriginType>(SugarAttr::strip(type));
 }
 
 //===----------------------------------------------------------------------===//
@@ -775,7 +769,7 @@ LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 RefType RefType::get(Type elementType, TypedAttr origin, TypedAttr addrSpace) {
-  assert(::isa<OriginType>(SugarAttr::strip(origin.getType())));
+  assert(sugarIsa<OriginType>(origin.getType()));
   return get(origin.getContext(), elementType, origin, addrSpace);
 }
 
@@ -810,7 +804,7 @@ RefType RefType::getWithMutability(bool isMut) {
 /// Return the type of the origin reference, which is always a
 /// `!lit.origin<mutability>` type.
 OriginType RefType::getOriginType() {
-  return OriginType::sugarCast(getOrigin().getType());
+  return sugarCast<OriginType>(getOrigin().getType());
 }
 
 /// Return a reference to the specified element type and mutability with
@@ -836,13 +830,13 @@ bool RefType::isMutableKnown(bool value) {
 
 /// Classify the mutability into Mutable/Immutable/Parametric.
 OriginType::MutabilityClass RefType::getMutabilityClass() {
-  return OriginType::sugarCast(getOrigin().getType()).getMutabilityClass();
+  return sugarCast<OriginType>(getOrigin().getType()).getMutabilityClass();
 }
 
 /// Return a (possibly parameteric) specification for whether this reference
 /// is a mutation or a read.
 TypedAttr RefType::isMutable() {
-  return OriginType::sugarCast(getOrigin().getType()).isMutable();
+  return sugarCast<OriginType>(getOrigin().getType()).isMutable();
 }
 
 /// Return true if this is in address space 0.

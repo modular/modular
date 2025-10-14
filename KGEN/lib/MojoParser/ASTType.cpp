@@ -169,13 +169,11 @@ bool ASTType::isEqualAllowingUnknownAttr(ASTType other,
 }
 
 /// Return true if this is a None type.
-bool ASTType::isNoneType() const {
-  return isa<KGEN::NoneType>(stripTopLevelSugar());
-}
+bool ASTType::isNoneType() const { return sugarIsa<KGEN::NoneType>(mlirType); }
 
 /// Return true if this is a TypeCheckError type.
 bool ASTType::isTypeCheckErrorType() const {
-  return isa<TypeCheckErrorType>(stripTopLevelSugar());
+  return sugarIsa<TypeCheckErrorType>(mlirType);
 }
 
 /// Return the nonmaterializable decorator target for the type, or null if there
@@ -294,7 +292,7 @@ bool ASTType::hasNontrivialDestructor(llvm::SMLoc loc,
     return false;
 
   // Generic types are assumed to have a destructor unless they are trivial.
-  if (isa<TraitType>(ASTType(getMetaType()).stripTopLevelSugar())) {
+  if (sugarIsa<TraitType>(getMetaType())) {
     return getRegisterPassability(loc, shared) !=
            TypeConvention::RegisterPassableTrivial;
   }
@@ -387,13 +385,13 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
 /// if the current type isn't a reference.
 ///
 ASTType ASTType::getReferenceElementType() const {
-  return ASTType(cast<RefType>(stripTopLevelSugar()).getElementType());
+  return ASTType(sugarCast<RefType>(mlirType).getElementType());
 }
 
 /// Given a VariadicType, return the element as an ASTType.  This aborts if
 /// the current type isn't a VariadicType.
 ASTType ASTType::getVariadicElementType() const {
-  return ASTType(cast<VariadicType>(stripTopLevelSugar()).getElementType());
+  return ASTType(sugarCast<VariadicType>(mlirType).getElementType());
 }
 
 /// Return the RefPackType that corresponds to the VariadicPack instance.
@@ -494,7 +492,7 @@ RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
 ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
   // If this is a struct type, try unbinding just the parameters that have
   // parameter references in it.
-  if (auto drt = dyn_cast<StructType>(stripTopLevelSugar())) {
+  if (auto drt = sugarDynCast<StructType>(mlirType)) {
     ParamIndexRefAttrFinder finder;
 
     // Otherwise, check each bound parameter to see if it is unknown.  If so,

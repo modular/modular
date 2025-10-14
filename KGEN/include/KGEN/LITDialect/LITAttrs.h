@@ -74,6 +74,25 @@ static inline void processRawOrigin(TypedAttr origin, T &&fn) {
   fn(origin);
 }
 
+// Helpers for sugar-aware casting.
+template <typename... To, typename From>
+[[nodiscard]] inline bool sugarIsa(From val) {
+  val = SugarAttr::strip(val);
+  return (isa<To>(val) || ...);
+}
+
+template <typename To, typename From>
+[[nodiscard]] inline decltype(auto) sugarCast(From val) {
+  val = SugarAttr::strip(val);
+  return cast<To>(val);
+}
+
+template <typename To, typename From>
+[[nodiscard]] inline decltype(auto) sugarDynCast(From val) {
+  val = SugarAttr::strip(val);
+  return dyn_cast<To>(val);
+}
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_LITDIALECT_LITATTRS_H

@@ -412,8 +412,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
     // All the origins will have the same OriginType, indicating the
     // reference mutability that the callee expected.
-    OriginType commonOriginType =
-        OriginType::sugarCast(refOrigins.back().getType());
+    auto commonOriginType = sugarCast<OriginType>(refOrigins.back().getType());
 
     // If there is more than one element, they probably have different
     // origins, and thus need to be rebound into a common union of them.
