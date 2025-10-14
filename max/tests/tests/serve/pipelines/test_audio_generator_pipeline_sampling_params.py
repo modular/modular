@@ -33,7 +33,6 @@ class MockAudioGeneratorPipelineWithSamplingParams(AudioGeneratorPipeline):
         self.logger = Mock()
         self.debug_logging = False
         self._mock_chunks = mock_chunks
-        self._background_tasks = set()
         self.received_sampling_params: SamplingParams | None = None
 
     async def next_chunk(

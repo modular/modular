@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
+from fastapi import FastAPI
 from max.interfaces import (
     GenerationStatus,
     Pipeline,
     PipelineTask,
+    PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -23,6 +26,7 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
+from max.serve import api_server
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
@@ -82,7 +86,7 @@ async def test_model_worker_propagates_exception(
 class MockInvalidTokenGenerator(
     Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
 ):
-    ERROR_MESSAGE = "I am invalid"
+    ERROR_MESSAGE = "CRASH TEST DUMMY"
 
     def __init__(self) -> None:
         raise ValueError(MockInvalidTokenGenerator.ERROR_MESSAGE)
@@ -96,7 +100,6 @@ class MockInvalidTokenGenerator(
         pass
 
 
-@pytest.mark.skip("RESTORE-THIS")
 @pytest.mark.asyncio
 async def test_model_worker_propagates_construction_exception(
     mock_pipeline_config: PipelineConfig,
@@ -104,9 +107,9 @@ async def test_model_worker_propagates_construction_exception(
     """Tests raising in the model worker task."""
     settings = Settings()
 
-    with pytest.raises(
-        ValueError, match=MockInvalidTokenGenerator.ERROR_MESSAGE
-    ):
+    # The MockTokenGenerator crashes the remote subprocess
+    # then ProcessMonitor checks throw TimeoutError here
+    with pytest.raises(TimeoutError, match="Worker died"):
         async with start_model_worker(
             MockInvalidTokenGenerator,
             mock_pipeline_config,
@@ -150,5 +153,47 @@ async def test_model_worker_start_timeout(
             scheduler_zmq_configs=SchedulerZmqConfigs(
                 PipelineTask.TEXT_GENERATION
             ),
+        ):
+            pass
+
+
+class MockTokenizer(PipelineTokenizer):
+    @property
+    def eos(self) -> int:
+        return 0
+
+    @property
+    def expects_content_wrapping(self) -> bool:
+        return False
+
+    async def new_context(self, req: Any) -> Any:
+        return None
+
+    async def encode(self, text: str, spectok: bool) -> list[int]:
+        return []
+
+    async def decode(self, encoded: Any, **kwargs) -> str:
+        return ""
+
+
+@pytest.mark.asyncio
+async def test_lifespan_propagates_worker_exception(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    """Tests raising in the model worker task."""
+    settings = Settings()
+    serving_settings = api_server.ServingTokenGeneratorSettings(
+        model_factory=MockInvalidTokenGenerator,
+        pipeline_config=mock_pipeline_config,
+        tokenizer=MockTokenizer(),
+    )
+
+    # The MockTokenGenerator crashes the remote subprocess
+    # then ProcessMonitor checks throw TimeoutError here
+    with pytest.raises(TimeoutError, match="Worker died"):
+        async with api_server.lifespan(
+            FastAPI(title="Crash Test Dummy"),
+            settings,
+            serving_settings,
         ):
             pass

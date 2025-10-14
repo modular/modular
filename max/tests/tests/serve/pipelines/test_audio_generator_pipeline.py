@@ -31,7 +31,6 @@ class MockAudioGeneratorPipeline(AudioGeneratorPipeline):
         self.logger = Mock()
         self.debug_logging = False
         self._mock_chunks = mock_chunks
-        self._background_tasks = set()
 
     async def next_chunk(
         self, request: AudioGenerationRequest
