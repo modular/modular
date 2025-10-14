@@ -276,7 +276,7 @@ fn compile_info[
 
     return CompiledFunctionInfo[func_type, func, target](
         asm=StaticString(offload.asm),
-        function_name=get_linkage_name[target, func](),
+        function_name=get_linkage_name[func, target=target](),
         module_name=StaticString(offload.module_name),
         num_captures=Int(mlir_value=offload.num_captures),
         capture_sizes=num_captures_ptr_ui64,
