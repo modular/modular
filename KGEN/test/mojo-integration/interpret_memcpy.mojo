@@ -61,6 +61,9 @@ struct Data(ImplicitlyCopyable, Stringable):
         memcpy(result._data.offset(self._size), rhs._data, rhs._size)
         return result
 
+    fn __del__(deinit self):
+        self._data.free()
+
 
 fn main():
     alias d1 = Data(4, 2)
