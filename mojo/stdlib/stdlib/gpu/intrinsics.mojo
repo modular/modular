@@ -1175,9 +1175,9 @@ fn ds_read_tr16_b64[
         "ds_read_tr16_b64 supports 16-bit dtypes.",
     ]()
 
-    # constrained[
-    #     _cdna_4_or_newer(), "ds_read_tr16_b64 is only supported on CDNA4+"
-    # ]()
+    constrained[
+        _cdna_4_or_newer(), "ds_read_tr16_b64 is only supported on CDNA4+"
+    ]()
 
     return llvm_intrinsic[
         "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=False
@@ -1200,9 +1200,9 @@ fn permlane_swap[
             " hardware."
         ),
     ]()
-    # constrained[
-    #     _cdna_4_or_newer(), "permlane swap is only supported on CDNA4+"
-    # ]()
+    constrained[
+        _cdna_4_or_newer(), "permlane swap is only supported on CDNA4+"
+    ]()
     constrained[bit_width_of[dtype]() == 32, "Unsupported dtype"]()
     constrained[stride in (16, 32), "Unsupported stride"]()
 
