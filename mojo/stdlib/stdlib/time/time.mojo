@@ -198,6 +198,32 @@ fn perf_counter_ns() -> UInt:
 
 
 # ===-----------------------------------------------------------------------===#
+# global perf_counter_ns
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
+    """Returns the current value in the global nanosecond resolution timer. This value
+    is common across all SM's. Currently, this is only supported on NVIDIA GPUs, on
+    non-NVIDIA GPUs, this function returns the same value as perf_counter_ns().
+
+    Returns:
+        The current time in ns.
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        return llvm_intrinsic[
+            "llvm.nvvm.read.ptx.sreg.globaltimer",
+            UInt64,
+            has_side_effect=True,
+        ]()
+
+    return perf_counter_ns()
+
+
+# ===-----------------------------------------------------------------------===#
 # monotonic
 # ===-----------------------------------------------------------------------===#
 
