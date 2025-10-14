@@ -174,16 +174,10 @@ enum class OutputType {
 
 /// Helper function to create an output file with the given extension
 static std::unique_ptr<llvm::ToolOutputFile>
-createOutputFile(const State &state, bool hasBinaryOutput,
-                 StringRef fileExtension) {
+createOutputFile(const State &state, const llvm::opt::InputArgList &args,
+                 bool hasBinaryOutput, StringRef fileExtension) {
   // Get the input filename
-  StringRef inputName;
-  for (const char *arg : state.arguments) {
-    if (StringRef(arg).starts_with("-"))
-      continue;
-    inputName = arg;
-    break;
-  }
+  StringRef inputName = args.getLastArgValue(options::OPT_INPUT);
 
   if (inputName.empty()) {
     state.reportError("no input file provided");
@@ -268,7 +262,8 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
                                llvmModuleOr.getError());
 
     // Open .ll file
-    auto outFile = createOutputFile(state, /*hasBinaryOutput=*/false, ".ll");
+    auto outFile =
+        createOutputFile(state, args, /*hasBinaryOutput=*/false, ".ll");
     if (!outFile)
       return state.reportError("could not open .ll output file");
 
@@ -282,7 +277,8 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
   } break;
   case OutputType::assembly: {
     // Compile Module to Assembly
-    auto outFile = createOutputFile(state, /*hasBinaryOutput=*/false, ".s");
+    auto outFile =
+        createOutputFile(state, args, /*hasBinaryOutput=*/false, ".s");
     if (!outFile)
       return state.reportError("could not open .s output file");
 
