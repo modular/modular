@@ -6949,11 +6949,11 @@ struct KCacheToBuffer:
         )
         var k = kv_collection.get_key_cache(Int(layer_idx))
         _k_cache_to_buffer(
-            managed_tensor_slice_to_ndbuffer(buffer_row_offsets_1d),
-            managed_tensor_slice_to_ndbuffer(cache_offsets_1d),
+            buffer_row_offsets_1d.to_layout_tensor(),
+            cache_offsets_1d.to_layout_tensor(),
             k,
             Int(buffer_length),
-            managed_tensor_slice_to_ndbuffer(k_latent_buffer),
+            k_latent_buffer.to_layout_tensor(),
             context.get_device_context(),
         )
 
