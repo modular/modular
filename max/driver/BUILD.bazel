@@ -7,7 +7,6 @@ modular_py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max:_core",
-        "//SDK/lib/API/python/max/_core_types",
         "//SDK/lib/API/python/max/dtype",
         requirement("numpy"),
     ],
