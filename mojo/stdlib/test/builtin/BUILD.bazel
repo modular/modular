@@ -14,7 +14,6 @@ _FILECHECK_TESTS = [
     "test_debug_assert_warning.mojo",
     "test_range_out_of_bounds.mojo",
     "test_range_uint_reverse_range_bad.mojo",
-    "test_rebind.mojo",
 ]
 
 _LIT_TESTS = [
