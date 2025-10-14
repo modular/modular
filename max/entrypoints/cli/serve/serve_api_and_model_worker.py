@@ -15,9 +15,6 @@
 """Utilities for serving api server with model worker."""
 
 import logging
-import signal
-import sys
-from typing import Any
 
 import uvloop
 from max.interfaces import PipelineTask
@@ -38,37 +35,12 @@ from uvicorn import Server
 
 logger = logging.getLogger("max.entrypoints")
 
-# Global reference to server for graceful shutdown
-_server_instance: Server | None = None
-
-
-def sigterm_handler(sig: int, frame: Any) -> None:
-    # If we have a server instance, trigger its shutdown
-    if _server_instance is not None:
-        _server_instance.should_exit = True
-        logger.info("Server shutdown triggered")
-
-    # Exit cleanly with code 0 to indicate successful completion
-    # This addresses the batch job completion scenario
-    logger.info("Graceful shutdown complete, exiting with success code")
-    sys.exit(0)
-
-
-def sigint_handler(sig: int, frame: Any) -> None:
-    """Handle SIGINT by raising KeyboardInterrupt to allow lifespan to handle it."""
-    # Trigger server shutdown
-    if _server_instance is not None:
-        _server_instance.should_exit = True
-    raise KeyboardInterrupt("SIGINT received")
-
 
 def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
-    global _server_instance
-
     override_architecture: str | None = None
     # TODO: This is a workaround to support embeddings generation until the
     # changes to tie pipelines to tasks is complete. This will be removed.
@@ -100,22 +72,10 @@ def serve_api_server_and_model_worker(
     # Initialize and serve webserver.
     app = fastapi_app(settings, pipeline_settings)
     config = fastapi_config(app=app, server_settings=settings)
+    # If likely to fail, don't waste seconds or minutes loading models
     validate_port_is_free(settings.port)
 
-    # Set up signal handler for Ctrl+C graceful shutdown
-    signal.signal(signal.SIGTERM, sigterm_handler)
-    signal.signal(signal.SIGINT, sigint_handler)
-
     server = Server(config)
-    _server_instance = server
 
-    try:
-        # Run the server and let KeyboardInterrupt propagate to lifespan
-        with Tracer("openai_compatible_frontend_server"):
-            uvloop.run(server.serve())
-    except KeyboardInterrupt:
-        logger.debug(
-            "KeyboardInterrupt caught at server level, exiting gracefully"
-        )
-    finally:
-        _server_instance = None
+    with Tracer("openai_compatible_frontend_server"):
+        uvloop.run(server.serve())

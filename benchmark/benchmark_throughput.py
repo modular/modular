@@ -479,7 +479,7 @@ async def run_max_async(
         # to feed the model worker process.
         TokenGeneratorPipeline(
             model_name=model_name,
-            tokenizer=tokenizer,  # type: ignore
+            tokenizer=tokenizer,
             scheduler_zmq_configs=scheduler_zmq_configs,
             worker_monitor=worker_monitor,
         ) as pipeline,

@@ -209,11 +209,11 @@ class ProcessMonitor:
         return self.proc.is_alive()
 
     async def shutdown(self) -> None:
-        logger.info("Shutting down")
+        logger.info(f"Shutting down {self.pc.name}")
         self.pc.set_canceled()
         if not self.proc.is_alive():
             logger.info(
-                f"Early exit. Process was already dead. exitcode: {self.proc.exitcode}"
+                f"Early exit. Process {self.pc.name} was already dead. exitcode: {self.proc.exitcode}"
             )
             return
 
@@ -236,7 +236,7 @@ class ProcessMonitor:
             logger.info("Process is still alive.  Killing")
             self.proc.kill()
             dead = await self.until_dead()
-        logger.info("Shut down")
+        logger.info(f"Shut down {self.pc.name}")
 
     async def shutdown_if_unhealthy(
         self, cb: Callable[[], None] | None = None
