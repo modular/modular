@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from random import random_si64
+from random import random_si64, random_float64
 from sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -134,8 +134,7 @@ def test_matmul_sm100_epilogue[
 
     for i in range(M):
         for j in range(N):
-            # bigger number for numerical stability
-            c_host.tensor[i, j] = Scalar[c_type](random_si64(0, 20))
+            c_host.tensor[i, j] = Scalar[c_type](random_float64(-1, 1))
             c_host_copy.tensor[i, j] = c_host.tensor[i, j]
 
     # Move operands to the Device

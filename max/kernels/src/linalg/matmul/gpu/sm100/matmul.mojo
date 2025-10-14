@@ -552,7 +552,7 @@ fn shared_memory_epilogue[
 
 @always_inline
 fn _compute_register_lambda_fn[
-    accum_type: DType,
+    epilogue_dtype: DType,
     frag_size: UInt,
     inc: UInt,
     offset: UInt,
@@ -561,7 +561,7 @@ fn _compute_register_lambda_fn[
 ](
     top_coord: StaticTuple[UInt32, 2],
     bottom_coord: StaticTuple[UInt32, 2],
-    mut frag: SIMD[accum_type, frag_size],
+    mut frag: SIMD[epilogue_dtype, frag_size],
     staged_c_row: UInt32,
     staged_c_col: UInt32,
 ):
@@ -635,13 +635,13 @@ fn register_epilogue[
     stageN: UInt,
     compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: UInt,
-    accum_type: DType,
+    epilogue_dtype: DType,
     frag_size: UInt,
     repeats: UInt,
     transpose_c: Bool,
 ](
-    mut upper_frag: SIMD[accum_type, frag_size],
-    mut lower_frag: SIMD[accum_type, frag_size],
+    mut upper_frag_casted: SIMD[epilogue_dtype, frag_size],
+    mut lower_frag_casted: SIMD[epilogue_dtype, frag_size],
     c_row: UInt32,
     c_col: UInt32,
     N: UInt32,
@@ -704,7 +704,7 @@ fn register_epilogue[
         alias offset = i * 4
 
         alias helper = _compute_register_lambda_fn[
-            accum_type=accum_type,
+            epilogue_dtype=epilogue_dtype,
             frag_size=frag_size,
             compute_lambda_fn=compute_lambda_fn,
             inc=inc,
@@ -715,7 +715,7 @@ fn register_epilogue[
         helper(
             top_frag_upper_coord_left,
             bottom_frag_upper_coord_left,
-            upper_frag,
+            upper_frag_casted,
             staged_c_row,
             staged_c_col,
         )
@@ -723,7 +723,7 @@ fn register_epilogue[
         helper(
             top_frag_lower_coord_left,
             bottom_frag_lower_coord_left,
-            lower_frag,
+            lower_frag_casted,
             staged_c_row,
             staged_c_col,
         )
@@ -738,6 +738,7 @@ fn multi_stage_store_C[
     num_accum_pipeline_stages: UInt,
     /,
     *,
+    input_type: DType,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -781,6 +782,10 @@ fn multi_stage_store_C[
 
     # assume N dimension is static
     alias simd_size = simd_width_of[c_type]()
+
+    # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
+    # We should remove this once GEX-2630 is fixed.
+    alias epilogue_dtype = c_type if input_type is DType.bfloat16 else DType.float32
 
     # we break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
@@ -849,6 +854,9 @@ fn multi_stage_store_C[
                 mma_output_pipeline.consumer_mbar(mma_output_output_stage)
             )
 
+        var upper_frag_casted = upper_frag.cast[epilogue_dtype]()
+        var lower_frag_casted = lower_frag.cast[epilogue_dtype]()
+
         @parameter
         if elementwise_compute_lambda_fn:
 
@@ -863,11 +871,11 @@ fn multi_stage_store_C[
                     UInt(stageN),
                     elementwise_compute_lambda_fn.value(),
                     num_output_warps,
-                    accum_type,
-                    UInt(upper_frag.size),
+                    epilogue_dtype,
+                    UInt(upper_frag_casted.size),
                     UInt(rep),
                     transpose_c,
-                ](upper_frag, lower_frag, c_row, c_col, N)
+                ](upper_frag_casted, lower_frag_casted, c_row, c_col, N)
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
@@ -887,10 +895,10 @@ fn multi_stage_store_C[
 
             # Pack the upper frag to shared memory
             stsm_helper[swizzle, transpose_c](
-                upper_frag, c_smem_warp_tile_upper
+                upper_frag_casted, c_smem_warp_tile_upper
             )
             stsm_helper[swizzle, transpose_c](
-                lower_frag, c_smem_warp_tile_lower
+                lower_frag_casted, c_smem_warp_tile_lower
             )
 
             # Guard the write to shared memory is done.
@@ -933,10 +941,10 @@ fn multi_stage_store_C[
                 data_paths, stageN
             ](1, 0)
             stsm_helper[swizzle, transpose_c](
-                upper_frag, c_smem_warp_tile_upper
+                upper_frag_casted, c_smem_warp_tile_upper
             )
             stsm_helper[swizzle, transpose_c](
-                lower_frag, c_smem_warp_tile_lower
+                lower_frag_casted, c_smem_warp_tile_lower
             )
 
             # Guard the write to shared memory is done.
@@ -1464,6 +1472,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             # WAIT FOR MMA TO FINISH AND STORE RESULT
             # scheduler fetch next work
             multi_stage_store_C[
+                input_type=a_type,
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,

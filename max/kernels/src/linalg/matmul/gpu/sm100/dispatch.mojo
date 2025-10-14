@@ -491,6 +491,15 @@ fn matmul_dispatch_sm100[
     alias static_K = a.shape.get[1]()
 
     var logger = Logger()
+
+    var epilogue_type = String("None")
+
+    @parameter
+    if elementwise_compute_lambda_fn:
+        epilogue_type = String("Compute Epilogue")
+    elif elementwise_lambda_fn:
+        epilogue_type = String("Normal Epilogue")
+
     logger.info("------ Dispatching to SM100 (B200+) ------")
     logger.info(
         "Input Data Types: ",
@@ -506,6 +515,8 @@ fn matmul_dispatch_sm100[
         ", ",
         static_K,
         "]",
+        " Epilogue Type: ",
+        epilogue_type,
     )
 
     # default matmul config for sm100
@@ -526,7 +537,8 @@ fn matmul_dispatch_sm100[
                 a_type=a_type,
                 b_type=b_type,
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
 
