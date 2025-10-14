@@ -958,7 +958,10 @@ class TextGenerationPipeline(
         )
 
     def __del__(self) -> None:
-        if self.batch_info_output_fname is not None:
+        if (
+            hasattr(self, "batch_info_output_fname")
+            and self.batch_info_output_fname is not None
+        ):
             output = {
                 "batch_data": [dataclasses.asdict(x) for x in self.batch_infos]
             }
