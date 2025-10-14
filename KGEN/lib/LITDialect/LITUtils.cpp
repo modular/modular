@@ -632,6 +632,7 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
   printSignatureValues(p, printElt, signature.getValues(),
                        signature.getArgConventions(), signature.getFnEffects(),
                        /*optionalResultList=*/false);
+  printOptionalWhereClauses(p, metadata.getConstraints());
 }
 
 //===----------------------------------------------------------------------===//

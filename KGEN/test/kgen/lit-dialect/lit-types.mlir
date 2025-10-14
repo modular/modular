@@ -167,8 +167,8 @@ kgen.func @generator_types() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @fn_types
-kgen.func @fn_types() {
+// CHECK-LABEL: kgen.generator @fn_types
+kgen.generator @fn_types<x: index, y: index>() {
   // CHECK-NEXT: type = <!lit.fn<() -> ()>>
   kgen.param.declare type0: type = <!lit.fn<() -> ()>>
   // CHECK-NEXT: type = <!lit.fn<(index, i8) -> ()>>
@@ -177,6 +177,8 @@ kgen.func @fn_types() {
   kgen.param.declare type2: type = <!kgen.func<!lit.fn<(index, i8) -> ()>>>
   // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
   kgen.param.declare type3: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
+  // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none where {<ge(x, 2), {{.*}}>, <lt(x, 10), {{.*}}>}>>
+  kgen.param.declare type4: type = <!lit.fn<("a": index, "b": i8 = 2) -> none where {<ge(x, 2), loc("test.mlir":1:2)>, <lt(x, 10), loc("test.mlir":3:4)>}>>
   kgen.return
 }
 
