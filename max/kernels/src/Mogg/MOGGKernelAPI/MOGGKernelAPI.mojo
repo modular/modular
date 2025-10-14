@@ -7090,6 +7090,9 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         b_scales_type: DType, //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2],
@@ -7114,6 +7117,9 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         grouped_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
             transpose_b=True,
             target=target,
         ](
@@ -7142,6 +7148,9 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         b_scales_type: DType, //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=3],
@@ -7162,6 +7171,9 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         batched_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
             transpose_b=True,
             target=target,
         ](
@@ -8735,6 +8747,9 @@ struct MatmulDynamicScaledFloat8:
         output_type: DType, //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2],
@@ -8749,6 +8764,9 @@ struct MatmulDynamicScaledFloat8:
         matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
             transpose_b=True,
             target=target,
         ](

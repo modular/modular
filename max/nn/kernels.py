@@ -1928,11 +1928,6 @@ def grouped_dynamic_scaled_fp8_matmul(
         The result of the matmul operation.
     """
 
-    if out_type != DType.bfloat16:
-        raise ValueError(
-            "Only bfloat16 is supported for batched blockwise scaled matmul"
-        )
-
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
 
@@ -1996,13 +1991,30 @@ def grouped_dynamic_scaled_fp8_matmul(
                 f"expected b_scales of rank 3 but got {b_scales.rank}"
             )
 
+        if (
+            input_scale_spec.block_size is None
+            or weight_scale_spec.block_size is None
+        ):
+            raise ValueError(
+                "both input block_size and weight block_size must be set for grouped blockwise scaling"
+            )
+
+        if (
+            input_scale_spec.block_size[0] != 1
+            or input_scale_spec.block_size[1] != 128
+        ):
+            raise ValueError(
+                "grouped blockwise scaling only supports (1,128) granularity for input"
+            )
+        if (
+            weight_scale_spec.block_size[0] != 128
+            or weight_scale_spec.block_size[1] != 128
+        ):
+            raise ValueError(
+                "grouped blockwise scaling only supports (128,128) granularity for weight"
+            )
     else:
         raise ValueError("grouped FP8 matmul only supports blockwise scaling")
-
-    # if (a_scales.shape[1] * a_scales.dtype.size_in_bytes) % 16 != 0:
-    #     raise ValueError(
-    #         "TMA expects total_num_tokens to be divisible by 16 bytes"
-    #     )
 
     output = ops.custom(
         "mo.grouped.matmul.dynamic.scaled.fp8",
@@ -2027,6 +2039,9 @@ def grouped_dynamic_scaled_fp8_matmul(
         parameters={
             "input_scale_granularity": str(input_scale_spec.granularity),
             "weight_scale_granularity": str(weight_scale_spec.granularity),
+            "m_scale_granularity": input_scale_spec.block_size[0],
+            "n_scale_granularity": weight_scale_spec.block_size[0],
+            "k_scale_granularity": weight_scale_spec.block_size[1],
         },
     )[0].tensor
 
@@ -2083,24 +2098,36 @@ def batched_dynamic_scaled_fp8_matmul(
             f"a and b dtypes must be float8_e4m3fn, but got {a.dtype}, {b.dtype}"
         )
 
-    if out_type != DType.bfloat16:
-        raise ValueError(
-            "Only bfloat16 is supported for batched blockwise scaled matmul"
-        )
-
-    # if (a_scales.shape[1] * a_scales.dtype.size_in_bytes) % 16 != 0:
-    #     raise ValueError(
-    #         "TMA expects total_num_tokens to be divisible by 16 bytes"
-    #     )
-
     if input_scale_spec.is_block and weight_scale_spec.is_block:
-        # a_scale is of shape [batch_size, ceildiv(K // BLOCK_SIZE), M-padded]
-        # b_scale is of shape [batch_size, ceildiv(N // BLOCK_SIZE), ceildiv(K // BLOCK_SIZE)]
+        # a_scale is of shape [batch_size, ceildiv(K, BLOCK_SIZE), M-padded]
+        # b_scale is of shape [batch_size, ceildiv(N, BLOCK_SIZE), ceildiv(K, BLOCK_SIZE)]
         if a_scales.shape[0] != b_scales.shape[0]:
             raise ValueError(
                 "both a_scales and b_scales must have the same shape on the batch dimension"
             )
 
+        if (
+            input_scale_spec.block_size is None
+            or weight_scale_spec.block_size is None
+        ):
+            raise ValueError(
+                "both input scale_granularity and weight scale_granularity must be set for batched blockwise scaling"
+            )
+
+        if (
+            input_scale_spec.block_size[0] != 1
+            or input_scale_spec.block_size[1] != 128
+        ):
+            raise ValueError(
+                "batched blockwise scaling only supports (1,128) granularity for input"
+            )
+        if (
+            weight_scale_spec.block_size[0] != 128
+            or weight_scale_spec.block_size[1] != 128
+        ):
+            raise ValueError(
+                "batched blockwise scaling only supports (128,128) granularity for weight"
+            )
     else:
         raise ValueError("unsupported FP8 scaling granularity")
 
@@ -2118,6 +2145,9 @@ def batched_dynamic_scaled_fp8_matmul(
         parameters={
             "input_scale_granularity": str(input_scale_spec.granularity),
             "weight_scale_granularity": str(weight_scale_spec.granularity),
+            "m_scale_granularity": input_scale_spec.block_size[0],
+            "n_scale_granularity": weight_scale_spec.block_size[0],
+            "k_scale_granularity": weight_scale_spec.block_size[1],
         },
     )[0].tensor
 
@@ -2368,6 +2398,13 @@ def dynamic_scaled_matmul(
             raise ValueError("only channel-wise scaling is supported for b")
 
     elif input_scale_spec.is_block or weight_scale_spec.is_block:
+        if (
+            input_scale_spec.block_size is None
+            or weight_scale_spec.block_size is None
+        ):
+            raise ValueError(
+                "both input and weight block size must be set for blockwise scaling"
+            )
         if not (input_scale_spec.is_block and weight_scale_spec.is_block):
             raise ValueError(
                 "both input and weight must be blockwise scaled for blockwise scaling"
@@ -2378,8 +2415,8 @@ def dynamic_scaled_matmul(
                 f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
             )
 
-        # a_scale is of shape [ceildiv(K // BLOCK_SIZE), M-padded]
-        # b_scale is of shape [ceildiv(N // BLOCK_SIZE), ceildiv(K // BLOCK_SIZE)]
+        # a_scale is of shape [ceildiv(K, BLOCK_SIZE), M-padded]
+        # b_scale is of shape [ceildiv(N, BLOCK_SIZE), ceildiv(K, BLOCK_SIZE)]
         if a_scales.shape[0] != b_scales.shape[1]:
             raise ValueError(
                 "both a_scales and b_scales must have the same shape on the K dimension."
@@ -2407,6 +2444,15 @@ def dynamic_scaled_matmul(
         parameters={
             "input_scale_granularity": str(input_scale_spec.granularity),
             "weight_scale_granularity": str(weight_scale_spec.granularity),
+            "m_scale_granularity": -1
+            if input_scale_spec.block_size is None
+            else input_scale_spec.block_size[0],
+            "n_scale_granularity": -1
+            if weight_scale_spec.block_size is None
+            else weight_scale_spec.block_size[0],
+            "k_scale_granularity": -1
+            if weight_scale_spec.block_size is None
+            else weight_scale_spec.block_size[1],
         },
     )[0].tensor
 
