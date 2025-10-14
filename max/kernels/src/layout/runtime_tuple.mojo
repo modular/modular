@@ -80,7 +80,6 @@ struct RuntimeTuple[
     values and runtime-determined values.
 
     Parameters:
-        origin: The origin corresponding to the `IntTuple`.
         S: `IntTuple` with compile-time known values (or `UNKNOWN_VALUE` for runtime values).
         element_type: Integer type of the underlying elements.
     """

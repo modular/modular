@@ -2384,7 +2384,7 @@ struct LayoutTensor[
     @staticmethod
     @always_inline("nodebug")
     fn _to_static[
-        t: IntTuple[__origin_of()], element_type: DType
+        t: IntTuple, element_type: DType
     ]() -> IndexList[len(t), element_type=element_type]:
         var st = IndexList[len(t), element_type=element_type]()
 
@@ -3941,7 +3941,7 @@ struct LayoutTensor[
 
     alias ShapeVectorizedType[
         origin: ImmutableOrigin,
-        vector_shape: IntTuple[origin],
+        vector_shape: IntTuple,
         linear_vectorize: Bool,
     ] = LayoutTensor[
         dtype,
@@ -3988,7 +3988,7 @@ struct LayoutTensor[
     @always_inline
     fn _vectorize_2[
         _origin: ImmutableOrigin,  # FIXME: MOCO-1912
-        vector_shape: IntTuple[_origin],
+        vector_shape: IntTuple,
         check_rank: Bool = True,
         linear_vectorize: Bool = vector_shape.is_value(),
     ](self) -> Self.ShapeVectorizedType[
