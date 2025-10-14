@@ -2077,8 +2077,10 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       continue;
     }
 
-    fnConstraints.push_back(
-        ConstraintAttr::get(propVal, shared.translateLocation(constraint.loc)));
+    // Translate location without any DebugInfo scope since this metadata is
+    // purely frontend use and never ends up in DWARF.
+    fnConstraints.push_back(ConstraintAttr::get(
+        propVal, shared.diags.translateLocation(constraint.loc)));
   }
 }
 

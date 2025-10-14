@@ -56,3 +56,12 @@ def testImplicitVarDeclScopeNoDebug():
 # CHECK-DAG: #[[LOC_OUTER]] = loc(fused<#[[SP]]>
 # CHECK-DAG: #[[LOC_INNER]] = loc(fused<#[[SP]]>
 # CHECK-DAG: #[[LOC_INNER_NODEBUG]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})
+
+# // -----
+
+# CHECK-DAG: lit.fn @"foldable_requires_1{{.*}}, #[[LOC_WHERE:loc[0-9]+]]>} attributes
+fn foldable_requires_1[x: Int]() where x:
+    pass
+
+# COM: Make sure this is a FileLineColLoc and not a FusedLoc.
+# CHECK-DAG: #[[LOC_WHERE]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})
