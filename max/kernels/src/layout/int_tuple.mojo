@@ -60,9 +60,9 @@ from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
-from iter import _Zip2
 from memory import memcpy
 from memory.pointer import _GPUAddressSpace
+from sys.intrinsics import _type_is_eq_parse_time
 
 from utils.numerics import max_finite
 from utils import IndexList
@@ -617,32 +617,28 @@ struct IntTuple(
 
     @always_inline("nodebug")
     fn __init__[
-        tuple0_origin: ImmutableOrigin,
-        tuple1_origin: ImmutableOrigin,
-    ](
-        out self,
-        zipper: _Zip2[
-            _IntTupleIter[tuple0_origin],
-            _IntTupleIter[tuple1_origin],
-        ],
-    ):
+        IterableType: Iterable
+    ](out self, iterable: IterableType) where _type_is_eq_parse_time[
+        IterableType.IteratorType[__origin_of(iterable)].Element,
+        Tuple[IntTuple, IntTuple],
+    ]():
         """Initialize an `IntTuple` from a zip iterator.
 
         Creates an `IntTuple` by appending each element from the zip iterator.
 
         Parameters:
-            tuple0_origin: The first tuple's container origin.
-            tuple1_origin: The second tuple's container origin.
+            IterableType: The type of the iterable.
 
         Args:
-            zipper: A zip iterator containing pairs of elements to append.
+            iterable: An iterable containing pairs of elements to append.
 
         Note:
             This implementation is not optimized and may be improved in future versions.
         """
         # FIXME: massively inefficient
         self = Self()
-        for z0, z1 in zipper:
+        for elem in iterable:
+            var z0, z1 = rebind_var[Tuple[IntTuple, IntTuple]](elem^)
             var tup = IntTuple()
             tup.append(z0)
             tup.append(z1)
