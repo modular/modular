@@ -84,13 +84,13 @@ fn test[
     var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var c_ref_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
     var a_offsets_host = HostNDBuffer[DType.uint32, 1, DimList(Dim())](
-        num_active_experts + 1
+        num_experts + 1
     )
 
     # Create host B buffers
     alias static_b_shape = DimList(num_experts, N, K)
     var b_host = HostNDBuffer[b_type, 3, static_b_shape](static_b_shape)
-    var expert_ids_host = HostNDBuffer[DType.int32, 1](num_active_experts)
+    var expert_ids_host = HostNDBuffer[DType.int32, 1](num_experts)
 
     # Setup  offsets and expert ids
     a_offsets_host.tensor[0] = 0
@@ -118,11 +118,9 @@ fn test[
         static_b_shape, ctx=ctx
     )
     var a_offsets_dev = DeviceNDBuffer[DType.uint32, 1](
-        num_active_experts + 1, ctx=ctx
+        num_experts + 1, ctx=ctx
     )
-    var expert_ids_dev = DeviceNDBuffer[DType.int32, 1](
-        num_active_experts, ctx=ctx
-    )
+    var expert_ids_dev = DeviceNDBuffer[DType.int32, 1](num_experts, ctx=ctx)
 
     # Move inputs to device
     ctx.enqueue_copy(a_dev.buffer, a_host.tensor.data)
