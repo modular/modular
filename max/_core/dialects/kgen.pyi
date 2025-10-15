@@ -1098,6 +1098,41 @@ class StructExtractAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class SugarAttr(max._core.Attribute):
+    """
+    The `#kgen.sugar` attribute represents a syntax sugar overlaid on some other
+    value e.g. an alias or expanded builtin function call. It maintains the
+    original unexpanded attribute value as well as the "one level expanded" and
+    fully expanded "canonical" version of the attribute.
+    """
+
+    @overload
+    def __init__(
+        self,
+        kind: SugarKind,
+        sugared: max._core.dialects.builtin.TypedAttr,
+        original: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        kind: SugarKind,
+        sugared: max._core.dialects.builtin.TypedAttr,
+        original: max._core.dialects.builtin.TypedAttr,
+        canonical: max._core.dialects.builtin.TypedAttr,
+        type: max._core.Type,
+    ) -> None: ...
+    @property
+    def kind(self) -> SugarKind: ...
+    @property
+    def sugared(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def original(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def canonical(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class SymbolConstantAttr(max._core.Attribute):
     """
     This is a value of FuncTypeGenerator type, which refers to a func or
@@ -1668,6 +1703,11 @@ class POCAttr(max._core.Attribute):
     def __init__(self, arg0: Context, arg1: POC, /) -> None: ...
     @property
     def value(self) -> POC: ...
+
+class SugarKind(enum.Enum):
+    aibuiltin = 0
+
+    alias = 1
 
 class TailKind(enum.Enum):
     none = 0
@@ -3678,6 +3718,16 @@ class ParameterTypeInterface(Protocol):
 
     @property
     def meta_type(self) -> bool: ...
+
+class SugaredTypeInterface(Protocol):
+    """This interface can be used to customize SugarAttr behavior."""
+
+    def can_elide_sugar_for(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> bool: ...
+    def get_cached_canonical_type(
+        self, arg: max._core.Type, /
+    ) -> max._core.Type | None: ...
 
 class BuildInfoType(max._core.Type):
     """
