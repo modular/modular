@@ -165,7 +165,7 @@ class AudioGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
 
     final_status: GenerationStatus
     """The final status of the generation process."""
-    steps_executed: int | None = None
+    steps_executed: int
     """The number of steps previously executed."""
     audio_data: npt.NDArray[np.float32] = msgspec.field(
         default_factory=lambda: np.array([], dtype=np.float32)

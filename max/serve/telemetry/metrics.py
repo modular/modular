@@ -162,6 +162,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="requests",
         description="Number of KV cache misses in a batch by the scheduler.",
     ),  # type: ignore
+    "maxserve.tts.audio_output_length": _meter.create_histogram(
+        "maxserve.tts.audio_output_length",
+        unit="ms",
+        description="Audio output length in milliseconds",
+    ),  # type: ignore
 }
 
 
@@ -417,6 +422,12 @@ class _AsyncMetrics:
     def preemption(self) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.cache.preemption_count", 1),
+            MetricLevel.DETAILED,
+        )
+
+    def audio_output_length(self, length_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.tts.audio_output_length", length_ms),
             MetricLevel.DETAILED,
         )
 

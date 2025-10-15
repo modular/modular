@@ -377,7 +377,10 @@ class AudioGeneratorPipeline(
 
         if len(audio_chunks) == 0:
             return AudioGenerationOutput(
-                final_status=GenerationStatus.END_OF_SEQUENCE
+                steps_executed=sum(
+                    chunk.steps_executed for chunk in audio_chunks
+                ),
+                final_status=GenerationStatus.END_OF_SEQUENCE,
             )
 
         # Combine audio chunks and metadata.
@@ -392,5 +395,6 @@ class AudioGeneratorPipeline(
         return AudioGenerationOutput(
             audio_data=combined_audio,
             metadata=last_chunk.metadata,
+            steps_executed=sum(chunk.steps_executed for chunk in audio_chunks),
             final_status=GenerationStatus.END_OF_SEQUENCE,
         )

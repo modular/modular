@@ -40,6 +40,7 @@ from max.pipelines.lib.audio_generator_pipeline import (
 )
 from max.profiler import Tracer
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
+from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import SchedulerProgress
@@ -77,6 +78,7 @@ class SchedulerLogger:
     def log(
         self,
         batch: AudioGenerationSchedulerOutput,
+        paged_cache: TPPagedKVCacheManager,
         num_pending_reqs: int,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
@@ -132,6 +134,26 @@ class SchedulerLogger:
             }
 
             self.logs.append(batch_info)
+
+        cache_metrics = paged_cache.metrics
+        paged_cache.reset_metrics()
+
+        total_blocks = paged_cache.total_num_pages
+        used_blocks = paged_cache.total_num_pages - paged_cache.num_free_blocks
+        num_input_tokens = batch.input_tokens
+        denominator = cache_metrics.cache_tokens + num_input_tokens
+        if denominator == 0:
+            cache_hit_rate = 0.0
+        else:
+            cache_hit_rate = cache_metrics.cache_tokens / float(denominator)
+
+        # log KV cache metrics
+        METRICS.batch_size(batch.batch_size)
+        METRICS.cache_num_used_blocks(used_blocks)
+        METRICS.cache_num_total_blocks(total_blocks)
+        METRICS.cache_hit_rate(cache_hit_rate)
+        METRICS.cache_hits(cache_metrics.cache_tokens)
+        METRICS.cache_misses(num_input_tokens)
 
     def __del__(self) -> None:
         if self.f is not None:
@@ -469,6 +491,7 @@ class AudioGenerationScheduler(Scheduler):
         assert num_steps is not None and num_steps > 0
         self.batch_info_logger.log(
             batch,
+            self.paged_manager,
             len(self.pending_reqs),
             batch_creation_time_s,
             batch_execution_time_s,
