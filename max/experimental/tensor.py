@@ -231,10 +231,48 @@ class Tensor(DLPackArray, HasTensorValue):
     def from_graph_value(
         cls, value: graph.TensorValue | graph.BufferValue
     ) -> Tensor:
+        """Creates a tensor from a graph value.
+
+        Constructs a tensor from an existing graph value, which can be either
+        a :obj:`~max.graph.TensorValue` or :obj:`~max.graph.BufferValue`. This
+        is useful for converting graph level values into tensor objects for
+        eager execution.
+
+        Args:
+            value: The graph value to wrap. Can be either a TensorValue or
+                BufferValue from the MAX graph API.
+
+        Returns:
+            Tensor: A new tensor backed by the provided graph value.
+        """
         return cls(value=value)
 
     @classmethod
     def from_dlpack(cls, array: DLPackArray) -> Tensor:
+        """Creates a tensor from a DLPack array.
+
+        Constructs a tensor by importing data from any object that supports
+        the DLPack protocol (such as NumPy arrays and PyTorch tensors).
+        This enables zero-copy interoperability with other array libraries.
+
+        .. code-block:: python
+
+            import numpy as np
+            from max.experimental import tensor
+
+            # Create a NumPy array
+            np_array = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+
+            # Convert to MAX tensor via DLPack
+            x = tensor.Tensor.from_dlpack(np_array)
+
+        Args:
+            array: Any object supporting the DLPack protocol, such as NumPy
+                arrays, PyTorch tensors, or JAX arrays.
+
+        Returns:
+            Tensor: A new tensor containing the data from the DLPack array.
+        """
         return Tensor(storage=driver.Tensor.from_dlpack(array))
 
     @classmethod
@@ -245,6 +283,40 @@ class Tensor(DLPackArray, HasTensorValue):
         dtype: DType | None = None,
         device: Device | None = None,
     ) -> Tensor:
+        """Creates a constant tensor from a scalar, array, or nested list.
+
+        Constructs a tensor with constant values that can be a scalar, a nested
+        Python list, or a DLPack-compatible array. The shape is automatically
+        inferred from the input data structure.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create from scalar
+            x = tensor.Tensor.constant(42, dtype=DType.int32)
+
+            # Create from nested list
+            y = tensor.Tensor.constant([[1.0, 2.0], [3.0, 4.0]])
+
+            # Create from NumPy array
+            import numpy as np
+
+            z = tensor.Tensor.constant(np.array([1, 2, 3]))
+
+        Args:
+            value: The constant value for the tensor. Can be a scalar number,
+                a nested Python list, or any DLPack-compatible array.
+            dtype: The data type for the tensor elements. If not specified,
+                defaults to :obj:`DType.float32` for CPU devices and
+                :obj:`DType.bfloat16` for accelerator devices.
+            device: The device where the tensor will be allocated. If not
+                specified, defaults to an accelerator if available, otherwise CPU.
+
+        Returns:
+            Tensor: A new tensor containing the constant value(s).
+        """
         dtype, device = defaults(dtype, device)
         return F.constant(value, dtype, device)
 
@@ -257,12 +329,71 @@ class Tensor(DLPackArray, HasTensorValue):
         dtype: DType | None = None,
         device: Device | None = None,
     ) -> Tensor:
+        """Creates a tensor filled with a specified value.
+
+        Returns a new tensor with the given shape where all elements are
+        initialized to the specified value. This is useful for creating
+        tensors with uniform values other than zero or one.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.dtype import DType
+
+            # Create a 3x3 tensor filled with 7
+            x = tensor.Tensor.full((3, 3), value=7, dtype=DType.int32)
+
+            # Create a 2x4 tensor filled with pi
+            y = tensor.Tensor.full((2, 4), value=3.14159)
+
+        Args:
+            shape: The shape of the output tensor. Can be a tuple of integers,
+                a list of integers, or any value that can be converted to a shape.
+            value: The scalar value to fill the tensor with.
+            dtype: The data type for the tensor elements. If not specified,
+                defaults to :obj:`DType.float32` for CPU devices and
+                :obj:`DType.bfloat16` for accelerator devices.
+            device: The device where the tensor will be allocated. If not
+                specified, defaults to an accelerator if available, otherwise CPU.
+
+        Returns:
+            Tensor: A new tensor with the specified shape filled with the given value.
+        """
         return F.broadcast_to(
             cls.constant(value, dtype=dtype, device=device), shape
         )
 
     @classmethod
     def full_like(cls, type: TensorType, value: Number) -> Tensor:
+        """Creates a tensor filled with a value, matching a given type's properties.
+
+        Returns a new tensor filled with the specified value that matches the
+        shape, data type, and device of the given tensor type. This is useful
+        when you need to create a tensor with uniform values that's compatible
+        with an existing tensor's properties.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.graph import TensorType
+            from max.driver import CPU
+            from max.dtype import DType
+
+            # Create a reference tensor type
+            ref_type = TensorType(DType.float32, (2, 3), device=CPU())
+
+            # Create tensor filled with 5.0 matching the reference type
+            x = tensor.Tensor.full_like(ref_type, value=5.0)
+
+        Args:
+            type: The tensor type to match. The returned tensor will have the
+                same shape, dtype, and device as this type.
+            value: The scalar value to fill the tensor with.
+
+        Returns:
+            Tensor: A new tensor filled with the specified value, matching the
+                properties of the input type.
+        """
         return cls.full(
             type.shape,
             value=value,
@@ -278,10 +409,70 @@ class Tensor(DLPackArray, HasTensorValue):
         dtype: DType | None = None,
         device: Device | None = None,
     ) -> Tensor:
+        """Creates a tensor filled with zeros.
+
+        Returns a new tensor with the specified shape where all elements are
+        initialized to zero. The tensor is created with eager execution and
+        automatic compilation.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.driver import CPU
+            from max.dtype import DType
+
+            # Create a 2x3 tensor of zeros
+            x = tensor.Tensor.zeros((2, 3), dtype=DType.float32, device=CPU())
+            # Result: [[0.0, 0.0, 0.0],
+            #          [0.0, 0.0, 0.0]]
+
+            # Create a 1D tensor using default dtype and device
+            y = tensor.Tensor.zeros((5,))
+
+        Args:
+            shape: The shape of the output tensor. Can be a tuple of integers,
+                a list of integers, or any value that can be converted to a shape.
+            dtype: The data type for the tensor elements. If not specified,
+                defaults to :obj:`DType.float32` for CPU devices and
+                :obj:`DType.bfloat16` for accelerator devices.
+            device: The device where the tensor will be allocated. If not
+                specified, defaults to an accelerator if available, otherwise CPU.
+
+        Returns:
+            Tensor: A new tensor with the specified shape filled with zeros.
+        """
         return cls.full(shape, value=0, dtype=dtype, device=device)
 
     @classmethod
     def zeros_like(cls, type: TensorType) -> Tensor:
+        """Creates a tensor of zeros matching a given type's properties.
+
+        Returns a new tensor filled with zeros that matches the shape, data type,
+        and device of the specified tensor type. This is useful when you need to
+        create a zero tensor that's compatible with an existing tensor's properties.
+
+        .. code-block:: python
+
+            from max.experimental import tensor
+            from max.graph import TensorType
+            from max.driver import CPU
+            from max.dtype import DType
+
+            # Create a reference tensor type
+            ref_type = TensorType(DType.float32, (3, 4), device=CPU())
+
+            # Create zeros tensor matching the reference type
+            x = tensor.Tensor.zeros_like(ref_type)
+            # Result: 3x4 tensor of zeros with dtype float32 on CPU
+
+        Args:
+            type: The tensor type to match. The returned tensor will have the
+                same shape, dtype, and device as this type.
+
+        Returns:
+            Tensor: A new tensor filled with zeros matching the properties of the
+                input type.
+        """
         return cls.zeros(
             type.shape, dtype=type.dtype, device=type.device.to_device()
         )
