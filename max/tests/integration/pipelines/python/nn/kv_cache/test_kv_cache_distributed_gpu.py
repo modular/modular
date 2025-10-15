@@ -14,7 +14,7 @@ from max.interfaces import TextGenerationContext
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     load_kv_manager,
 )
 from test_common.context_utils import create_text_context
@@ -61,7 +61,7 @@ def create_paged_manager(
     page_size: int,
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
-) -> PagedKVCacheManager:
+) -> TPPagedKVCacheManager:
     NUM_KV_HEADS = 1
     HEAD_DIM = 1
     NUM_LAYERS = 1
@@ -98,7 +98,7 @@ def create_paged_manager(
 
     session = InferenceSession(devices=devices)
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         params=kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,

@@ -17,7 +17,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from test_common.context_utils import create_text_context
 
@@ -87,7 +87,7 @@ def test_kv_cache_radd_basic() -> None:
         * dtype.size_in_bytes
     )
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,

@@ -17,8 +17,8 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
     RaggedKVCacheInputs,
+    TPPagedKVCacheManager,
 )
 from test_common.context_utils import create_text_context
 
@@ -89,7 +89,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
@@ -168,7 +168,7 @@ def test_partial_rms_norm_key_cache(
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
@@ -261,7 +261,7 @@ def test_rms_norm_new_key_cache(
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
@@ -366,7 +366,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,
@@ -416,7 +416,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
     )
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         max_batch_size=batch_size,
         max_seq_len=max_seq_len,

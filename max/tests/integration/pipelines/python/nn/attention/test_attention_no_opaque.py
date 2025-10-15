@@ -30,7 +30,7 @@ from max.nn.attention.attention_with_rope import (
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.kv_cache import PagedCacheValues, PagedKVCacheManager
+from max.nn.kv_cache import PagedCacheValues, TPPagedKVCacheManager
 from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
@@ -162,7 +162,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
     no_opaque_attention.load_state_dict(attention_weights)
     reference_attention.load_state_dict(attention_weights)
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,

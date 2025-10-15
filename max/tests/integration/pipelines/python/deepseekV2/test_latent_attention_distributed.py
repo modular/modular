@@ -20,12 +20,12 @@ from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
 from max.nn.kv_cache import (
+    DPPagedKVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
-    MultiPagedKVCacheManager,
     PagedCacheValues,
-    PagedKVCacheManager,
     RaggedKVCacheInputs,
+    TPPagedKVCacheManager,
     load_kv_manager,
 )
 from max.nn.rotary_embedding import (
@@ -99,7 +99,7 @@ def _single_gpu_baseline(
     )
     attn.load_state_dict(attention_weights)
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         devices=[Accelerator(0)],
         params=kv_params,
         available_cache_memory=100 * 1024 * 1024,
@@ -264,7 +264,7 @@ def _build_graph_and_compile(
     session: InferenceSession,
     attn: DataParallelLatentAttentionWithRope,
     rope: DeepseekYarnRotaryEmbedding,
-    kv_manager: MultiPagedKVCacheManager,
+    kv_manager: DPPagedKVCacheManager,
     devices: list[Accelerator],
 ) -> tuple:
     """Builds a per-device inputs graph and compiles it."""
@@ -369,10 +369,10 @@ def _run_distributed_dp(
         page_size=128,
     )
     # This test is **always** distributed: assert we got MultiPaged
-    assert isinstance(kv_manager, MultiPagedKVCacheManager), (
-        "Distributed test requires MultiPagedKVCacheManager"
+    assert isinstance(kv_manager, DPPagedKVCacheManager), (
+        "Distributed test requires DPPagedKVCacheManager"
     )
-    kv_manager = cast(MultiPagedKVCacheManager, kv_manager)
+    kv_manager = cast(DPPagedKVCacheManager, kv_manager)
 
     compiled, _ = _build_graph_and_compile(
         config=config,

@@ -24,7 +24,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
@@ -77,7 +77,7 @@ def _create_kv_manager(
     head_dim: int,
     device: Accelerator,
     gpu_session: InferenceSession,
-) -> tuple[PagedKVCacheManager, KVCacheParams]:
+) -> tuple[TPPagedKVCacheManager, KVCacheParams]:
     """Create and configure the KV cache manager."""
     kv_cache_params = KVCacheParams(
         dtype=DType.bfloat16,
@@ -87,7 +87,7 @@ def _create_kv_manager(
         cache_strategy=KVCacheStrategy.PAGED,
     )
 
-    manager = PagedKVCacheManager(
+    manager = TPPagedKVCacheManager(
         params=kv_cache_params,
         available_cache_memory=1024 * 1024,
         max_batch_size=batch_size,
@@ -169,7 +169,7 @@ def _create_attention_state_dict(
 def _build_and_execute_attention_graph(
     attention: AttentionWithRope,
     rope: RotaryEmbedding,
-    kv_manager: PagedKVCacheManager,
+    kv_manager: TPPagedKVCacheManager,
     kv_cache_params: KVCacheParams,
     batch_size: int,
     seq_len: int,

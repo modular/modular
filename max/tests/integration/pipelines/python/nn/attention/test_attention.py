@@ -22,7 +22,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
@@ -71,7 +71,7 @@ def test_kv_cache_ragged_attention(
         DType.uint32, ["input_row_offsets_len"], DeviceRef.CPU()
     )
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         available_cache_memory=1024 * 1024 * 1024,
         page_size=128,
@@ -135,7 +135,7 @@ def test_kv_cache_ragged_attention(
 
     for context in batch:
         kv_manager.external_claim(context.request_id)
-        assert isinstance(kv_manager, PagedKVCacheManager)
+        assert isinstance(kv_manager, TPPagedKVCacheManager)
         kv_manager.maybe_reserve(context, num_steps=1)
 
     input_row_offsets = Tensor(

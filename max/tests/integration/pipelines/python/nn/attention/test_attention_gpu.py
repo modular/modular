@@ -27,7 +27,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
@@ -400,7 +400,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     input_row_offsets_type = TensorType(
         DType.uint32, ["input_row_offsets_len"], DeviceRef.GPU()
     )
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         available_cache_memory=1024 * 1024 * 32,
         page_size=128,

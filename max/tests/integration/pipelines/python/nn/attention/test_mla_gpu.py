@@ -17,7 +17,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -46,7 +46,7 @@ def test_mla_prefill_plan() -> None:
         DType.uint32, shape=["input_row_offsets_len"], device=DeviceRef.GPU()
     )
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         available_cache_memory=1024 * 1024 * 1024,
         page_size=page_size,
@@ -155,7 +155,7 @@ def test_mla_decompress_k_cache() -> None:
         device=DeviceRef.GPU(),
     )
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         available_cache_memory=1024 * 2 * 576,
         page_size=page_size,
@@ -301,7 +301,7 @@ def test_mla_decompress_k_cache_only_k() -> None:
         device=DeviceRef.GPU(),
     )
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         available_cache_memory=1024 * 2 * 576,
         page_size=page_size,

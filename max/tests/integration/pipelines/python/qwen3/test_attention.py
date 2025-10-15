@@ -19,7 +19,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     load_kv_manager,
 )
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
@@ -102,7 +102,7 @@ def generate_torch_outputs(
 
 
 def unflatten_kv_inputs(
-    kv_manager: PagedKVCacheManager,
+    kv_manager: TPPagedKVCacheManager,
     kv_params: KVCacheParams,
     kv_inputs_flat: Sequence[TensorValue],
 ) -> list[tuple[TensorValue, ...]]:
@@ -188,7 +188,7 @@ def generate_max_outputs(
         page_size=kv_cache_config.kv_cache_page_size,
         session=session,
     )
-    assert isinstance(kv_manager, PagedKVCacheManager)
+    assert isinstance(kv_manager, TPPagedKVCacheManager)
 
     # Construct input types.
     input_type = TensorType(

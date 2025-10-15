@@ -15,7 +15,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 
 
@@ -92,7 +92,7 @@ def test_print_kv_cache(dtype: DType) -> None:
         page_size=128,
     )
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = TPPagedKVCacheManager(
         kv_params,
         max_batch_size=1,
         max_seq_len=1,

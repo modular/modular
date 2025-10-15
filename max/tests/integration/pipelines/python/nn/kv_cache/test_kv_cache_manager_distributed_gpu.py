@@ -12,9 +12,9 @@ from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
+    DPPagedKVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
-    MultiPagedKVCacheManager,
     RaggedKVCacheInputs,
     load_kv_manager,
 )
@@ -23,8 +23,8 @@ from test_common.context_utils import create_text_context
 
 def _create_kv_manager(
     data_parallel_degree: int, num_devices: int
-) -> MultiPagedKVCacheManager:
-    """Creates a MultiPagedKVCacheManager with the given data parallel degree
+) -> DPPagedKVCacheManager:
+    """Creates a DPPagedKVCacheManager with the given data parallel degree
     and number of devices.
 
     The maximum batch size is 2 * num_devices.
@@ -49,7 +49,7 @@ def _create_kv_manager(
         session=InferenceSession(devices=devices),
         available_cache_memory=100 * 2**20,
     )
-    assert isinstance(manager, MultiPagedKVCacheManager)
+    assert isinstance(manager, DPPagedKVCacheManager)
     return manager
 
 
