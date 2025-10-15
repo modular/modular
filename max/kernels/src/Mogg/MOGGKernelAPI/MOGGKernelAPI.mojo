@@ -5639,9 +5639,7 @@ struct VroomQ40Matmul:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_qint4[32](
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
 
     @staticmethod
@@ -5665,8 +5663,7 @@ struct VroomQ40RepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_qint4_pack_b[32](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
 
     @staticmethod

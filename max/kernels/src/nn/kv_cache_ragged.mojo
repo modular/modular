@@ -1959,12 +1959,37 @@ fn _qmatmul_gguf_quantized_common[
     weight: NDBuffer[DType.uint8, 2, _, _],
     output: NDBuffer[mut=True, DType.float32, 2, _, _],
 ) raises:
+    var hidden_state_lt = LayoutTensor[
+        DType.float32, Layout.row_major[2](hidden_state.shape)
+    ](
+        hidden_state.data,
+        RuntimeLayout[Layout.row_major[2](hidden_state.shape)].row_major(
+            hidden_state.get_shape().canonicalize()
+        ),
+    )
+    var weight_lt = LayoutTensor[
+        DType.uint8, Layout.row_major[2](weight.shape)
+    ](
+        weight.data,
+        RuntimeLayout[Layout.row_major[2](weight.shape)].row_major(
+            weight.get_shape().canonicalize()
+        ),
+    )
+    var output_lt = LayoutTensor[
+        DType.float32, Layout.row_major[2](output.shape)
+    ](
+        output.data,
+        RuntimeLayout[Layout.row_major[2](output.shape)].row_major(
+            output.get_shape().canonicalize()
+        ),
+    )
+
     @parameter
     if quantization_encoding == "q4_0":
         matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            hidden_state_lt,
+            weight_lt,
+            output_lt,
         )
     elif quantization_encoding == "q4_k":
         matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
