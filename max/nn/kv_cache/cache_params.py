@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 
@@ -49,12 +51,22 @@ class KVCacheParams:
 
     def __post_init__(self):
         if self.data_parallel_degree > 1:
+            if self.n_devices < self.data_parallel_degree:
+                raise ValueError(
+                    f"Data parallelism degree ({self.data_parallel_degree}) cannot be greater than the number of devices ({self.n_devices})"
+                )
+            if self.data_parallel_degree < self.n_devices:
+                raise ValueError(
+                    f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
+                )
             self.n_kv_heads_per_device = self.n_kv_heads
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
-            self.n_kv_heads_per_device = max(
-                self.n_kv_heads // self.n_devices, 1
-            )
+            if self.n_kv_heads % self.n_devices != 0:
+                raise ValueError(
+                    f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+                )
+            self.n_kv_heads_per_device = self.n_kv_heads // self.n_devices
 
         # Validate inputs
         if (
