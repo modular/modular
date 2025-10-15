@@ -2203,6 +2203,17 @@ void ClosureEmitter::addConformanceToDevicePassable(
   ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
   ASTDecl *devicePassableTrait =
       shared.getBuiltinDevicePassableTrait(structDecl.getLoc());
+  // Ensure body is parsed and unresolved decls pulled in
+  if (failed(shared.declResolver->resolveBody(*devicePassableTrait,
+                                              devicePassableTrait->getLoc())))
+    return;
+  // Ensure the top level members are at least signature resolved.
+  for (auto &nameGroup : devicePassableTrait->getDeclsInScope()) {
+    for (ASTDecl *funcFieldOrAlias : nameGroup.second)
+      if (failed(shared.declResolver->resolveSignature(
+              *funcFieldOrAlias, funcFieldOrAlias->getLoc())))
+        return;
+  }
   if (!devicePassableTrait)
     return;
   TraitDeclOp trait = cast<TraitDeclOp>(devicePassableTrait->getIfOperation());
