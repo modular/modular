@@ -129,7 +129,7 @@ def parse_pyproject_toml(path_config: str) -> Dict[str, Any]:
     """
     with open(path_config, "rb") as f:
         pyproject_toml = tomllib.load(f)
-    config = pyproject_toml.get("tool", {}).get("black", {})
+    config = pyproject_toml.get("tool", {}).get("mblack", {})
     return {k.replace("--", "").replace("-", "_"): v for k, v in config.items()}
 
 
