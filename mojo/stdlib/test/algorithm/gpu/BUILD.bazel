@@ -1,10 +1,6 @@
 load("//bazel:api.bzl", "mojo_test")
 
 _EXTRA_CONSTRAINTS = {
-    "test_elementwise.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRTD-506
     "test_reduce.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
