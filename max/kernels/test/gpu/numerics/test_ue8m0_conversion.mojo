@@ -171,9 +171,7 @@ fn test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     i += 1
 
     alias kernel = test_simd_f32_to_ue8m0_ptx_kernel[M, DType.uint8, 18]
-    ctx.enqueue_function_checked[kernel, kernel](
-        f32_simd, grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
