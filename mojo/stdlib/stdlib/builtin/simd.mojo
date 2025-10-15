@@ -292,7 +292,6 @@ struct SIMD[dtype: DType, size: Int](
     CeilDivable,
     Ceilable,
     Comparable,
-    ConvertibleToPython,
     Defaultable,
     DevicePassable,
     Floorable,
@@ -1783,15 +1782,6 @@ struct SIMD[dtype: DType, size: Int](
     # ===------------------------------------------------------------------=== #
     # Trait implementations
     # ===------------------------------------------------------------------=== #
-
-    fn to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-        """
-        constrained[size == 1, "only works with scalar values"]()
-        return PythonObject(self._refine[new_size=1]())
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -3902,7 +3892,7 @@ fn _write_scalar[
         ]()
 
 
-__extension SIMD:
+__extension SIMD(ConvertibleToPython):
     # TODO(MSTDL-1587): Remove the dummy parameter.
     @always_inline
     fn __init__[
@@ -3936,3 +3926,12 @@ __extension SIMD:
         else:
             self = Scalar[dtype]()
             constrained[False, "unsupported dtype"]()
+
+    fn to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        constrained[size == 1, "only works with scalar values"]()
+        return PythonObject(self._refine[new_size=1]())
