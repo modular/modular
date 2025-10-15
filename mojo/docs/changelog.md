@@ -113,6 +113,10 @@ fn main():
   Conversion from `Int` to `UInt` should now be done explicitly using
   `UInt(int_value)`.
 
+- `assert_equal` now displays colored character-by-character diffs when string
+  comparisons fail, making it easier to spot differences. Differing characters
+  are highlighted in red for the left string and green for the right string.
+  
 - Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
   `--sanitize address` at compile time.
 
