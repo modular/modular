@@ -225,7 +225,7 @@ def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
         n_kv_heads=1,
         head_dim=576,
         cache_strategy=KVCacheStrategy.PAGED,
-        n_devices=1,
+        n_devices=dp_degree,
         page_size=128,
         data_parallel_degree=dp_degree,
         is_mla=True,
@@ -358,7 +358,7 @@ def _run_distributed_dp(
         attention_weights=attention_weights,
     )
 
-    kv_manager_loaded = load_kv_manager(
+    kv_manager = load_kv_manager(
         params=_build_kv_params(config, dp_degree),
         max_batch_size=dp_degree,  # one request per replica
         max_seq_len=config.max_position_embeddings,
@@ -369,10 +369,10 @@ def _run_distributed_dp(
         page_size=128,
     )
     # This test is **always** distributed: assert we got MultiPaged
-    assert isinstance(kv_manager_loaded, MultiPagedKVCacheManager), (
+    assert isinstance(kv_manager, MultiPagedKVCacheManager), (
         "Distributed test requires MultiPagedKVCacheManager"
     )
-    kv_manager = cast(MultiPagedKVCacheManager, kv_manager_loaded)
+    kv_manager = cast(MultiPagedKVCacheManager, kv_manager)
 
     compiled, _ = _build_graph_and_compile(
         config=config,
