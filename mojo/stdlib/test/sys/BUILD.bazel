@@ -6,6 +6,7 @@ _FILECHECK_TESTS = [
 
 _LIT_TESTS = [
     "test_invalid_paramenv.mojo",
+    "test_compile_sanitize_address.mojo",
 ]
 
 _PLATFORM_CONSTRAINTS = {

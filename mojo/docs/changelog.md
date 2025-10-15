@@ -113,6 +113,9 @@ fn main():
   Conversion from `Int` to `UInt` should now be done explicitly using
   `UInt(int_value)`.
 
+- Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
+  `--sanitize address` at compile time.
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`

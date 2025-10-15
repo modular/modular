@@ -109,3 +109,10 @@ struct _DebugLevel(ImplicitlyCopyable, Movable, Stringable, Writable):
 
 alias DebugLevel = _DebugLevel()
 """Represents the debug level used during compilation."""
+
+# ===----------------------------------------------------------------------=== #
+# SanitizeAddress
+# ===----------------------------------------------------------------------=== #
+
+alias SanitizeAddress = env_get_int["__SANITIZE_ADDRESS"]() == 1
+"""True if address sanitizer is enabled at compile-time"""
