@@ -60,6 +60,22 @@ what we publish.
     _ = MyStuff(1)  # this is okay, because the conversion is already explicit.
   ```
 
+The `@deprecated` decorator can now take a target symbol with the `use` keyword
+argument. This is mutually exclusive with the existing positional string
+argument. A deprecation warning will be automatically generated.
+
+```mojo
+@deprecated(use=new)
+fn old():
+  pass
+
+fn new():
+  pass
+
+fn main():
+  old() # 'old' is deprecated, use 'new' instead
+```
+
 ### Language changes
 
 ### Standard library changes
