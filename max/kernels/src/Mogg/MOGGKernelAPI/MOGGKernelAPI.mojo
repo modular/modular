@@ -5871,9 +5871,9 @@ struct QMatmulGPU_b4_g32:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             matmul_gpu_qint4[32, target](
-                managed_tensor_slice_to_ndbuffer(c),
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
+                c.to_layout_tensor(),
+                a.to_layout_tensor(),
+                b.to_layout_tensor(),
                 ctx,
             )
 
@@ -5905,9 +5905,9 @@ struct QMatmulGPU_b4_g128:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             matmul_gpu_qint4[128, target](
-                managed_tensor_slice_to_ndbuffer(c),
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
+                c.to_layout_tensor(),
+                a.to_layout_tensor(),
+                b.to_layout_tensor(),
                 ctx,
             )
 
@@ -5938,9 +5938,7 @@ struct QMatmulGPURepackGGUF:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             gpu_qint4_repack_Q4_0[b_shape = b.static_spec.shape, target](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
-                ctx,
+                b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
             )
 
     @staticmethod
@@ -5969,9 +5967,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             gpu_qint4_repack_GPTQ[128, target](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
-                ctx=ctx,
+                b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx=ctx
             )
 
     @staticmethod
@@ -6000,11 +5996,15 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
+            var perm_idx_lt = perm_idx.to_layout_tensor()
             gpu_qint4_repack_GPTQ[128, target](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
-                rebind[NDBuffer[DType.int32, 1, MutableAnyOrigin]](
-                    managed_tensor_slice_to_ndbuffer(perm_idx)
+                b.to_layout_tensor(),
+                b_packed.to_layout_tensor(),
+                LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
+                    perm_idx_lt.ptr,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        perm_idx_lt.runtime_layout.shape.value.canonicalize()
+                    ),
                 ),
                 ctx=ctx,
             )

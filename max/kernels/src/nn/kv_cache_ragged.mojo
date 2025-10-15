@@ -1033,18 +1033,44 @@ fn _qmatmul_common[
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = weight.shape.get[0]()
-    var c_nd: NDBuffer[dtype, 2, MutableAnyOrigin, DimList(Dim(), N)]
+    alias c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+    var c_nd: LayoutTensor[dtype, c_layout, MutableAnyOrigin]
 
     c_nd = {
         UnsafePointer[Scalar[dtype]](),
-        IndexList[2](TOTAL_SEQ_LEN, N),
+        RuntimeLayout[c_layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
+
+    var hidden_state_lt = LayoutTensor[
+        dtype,
+        Layout.row_major[2](hidden_state.shape),
+        address_space = hidden_state.address_space,
+    ](
+        hidden_state.data,
+        RuntimeLayout[Layout.row_major[2](hidden_state.shape)].row_major(
+            hidden_state.get_shape().canonicalize()
+        ),
+    )
+
+    var weight_lt = LayoutTensor[
+        DType.uint8, Layout.row_major[2](weight.shape)
+    ](
+        weight.data,
+        RuntimeLayout[Layout.row_major[2](weight.shape)].row_major(
+            weight.get_shape().canonicalize()
+        ),
+    )
 
     matmul_gpu_qint4_impl[
         target=target,
         group_size=group_size,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state, weight, context)
+    ](
+        c_nd,
+        hidden_state_lt,
+        weight_lt,
+        context,
+    )
 
 
 @always_inline
