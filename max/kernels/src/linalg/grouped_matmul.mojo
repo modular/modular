@@ -968,7 +968,8 @@ fn grouped_matmul[
         alias BK = (a_swizzle.bytes() // size_of[a_type]())
         alias _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
         alias MMA_K = min(_MMA_K, K)
-        alias cta_group = 2 if N >= 256 else 1
+        # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
+        alias cta_group = 2 if N % 256 == 0 else 1
         alias block_tile_shape = Index(128, 32 // cta_group, BK)
         alias umma_shape = Index(
             block_tile_shape[0] * cta_group,

@@ -421,6 +421,20 @@ def main():
             expert_shape = Index(256, 64),
         ](2, List[Int](10, 60), List[Int](2, 0), ctx)
 
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(2880, 512),
+        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(5760, 512),
+        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+
         # Multiple matmuls selecting part of experts
         test[
             DType.bfloat16,
