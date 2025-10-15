@@ -88,7 +88,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
 
     alias kernel = reduce
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         res_add_device,
         res_min_device,
         res_max_device,
