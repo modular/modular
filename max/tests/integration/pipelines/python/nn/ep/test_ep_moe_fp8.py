@@ -14,12 +14,21 @@ from max.engine import InferenceSession
 from max.graph import (
     DeviceRef,
     Graph,
+    Shape,
     ShardingStrategy,
     TensorType,
     TensorValue,
 )
+from max.graph.weights import WeightData
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import MoE, MoEGate
+from max.nn.float8_config import (
+    Float8Config,
+    Float8InputScaleSpec,
+    Float8ScaleGranularity,
+    Float8ScaleOrigin,
+    Float8WeightScaleSpec,
+)
+from max.nn.moe import MoEFp8, MoEGate
 from max.nn.transformer.distributed_transformer import forward_sharded_layers
 from test_common.graph_utils import is_b100_b200, is_h100_h200
 
@@ -75,7 +84,11 @@ def torch_moe(
     reason="NVSHMEM library requires H100 or H200 or B200",
 )
 @pytest.mark.parametrize("n_devices", [4])
-def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
+def test_ep_moe_fp8(
+    n_devices: int,
+    moe_weights: dict[str, torch.Tensor],
+    moe_weights_fp8: dict[str, torch.Tensor],
+) -> None:
     assert n_devices <= accelerator_count(), (
         "Devices are not enough to run EP test"
     )
@@ -83,7 +96,22 @@ def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
     # Configuration parameters
     top_k = 8
     max_tokens_per_rank = 128
-    dtype = DType.bfloat16
+    dtype = DType.float8_e4m3fn
+
+    # warp fp8 torch tensors as WeightData
+    wrapped_moe_weights_fp8: dict[str, WeightData | torch.Tensor] = {}
+    for key, value in moe_weights_fp8.items():
+        if value.dtype == torch.float8_e4m3fn:
+            wrapped_moe_weights_fp8[key] = WeightData(
+                Tensor.from_dlpack(value.view(torch.uint8)).view(
+                    DType.float8_e4m3fn
+                ),
+                key,
+                dtype,
+                Shape(value.shape),
+            )
+        else:
+            wrapped_moe_weights_fp8[key] = value
 
     # Initialize devices
     devices = [Accelerator(id) for id in range(n_devices)]
@@ -91,16 +119,40 @@ def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
     devices_ref = [DeviceRef(d.label, d.id) for d in devices]
     session = InferenceSession(devices=devices_with_host)
 
+    # Create fp8 config
+    fp8_input_config = Float8InputScaleSpec(
+        granularity=Float8ScaleGranularity.BLOCK,
+        origin=Float8ScaleOrigin.DYNAMIC,
+        dtype=DType.float32,
+        block_size=(1, 128),
+    )
+
+    fp8_weight_config = Float8WeightScaleSpec(
+        granularity=Float8ScaleGranularity.BLOCK,
+        dtype=DType.float32,
+        block_size=(128, 128),
+    )
+
+    fp8_config = Float8Config(
+        input_scale=fp8_input_config,
+        weight_scale=fp8_weight_config,
+        mlp_in_float8=set(),
+        attn_qkv_in_float8=set(),
+        embedding_output_dtype=None,
+        quant_method="fp8",
+    )
+
     # Create EP configuration
     ep_config = EPConfig(
         dispatch_dtype=dtype,
-        combine_dtype=dtype,
+        combine_dtype=DType.bfloat16,
         hidden_size=HIDDEN_DIM,
         top_k=top_k,
         n_experts=NUM_EXPERTS,
         max_tokens_per_rank=max_tokens_per_rank,
         n_gpus_per_node=n_devices,
         n_nodes=1,  # Single node test
+        dispatch_fp8_config=fp8_input_config,
     )
 
     # Initialize EP communication
@@ -108,7 +160,7 @@ def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
     ep_batch_manager = EPBatchManager(ep_config)
 
     # Create MoE module with EP support
-    moe = MoE(
+    moe = MoEFp8(
         devices=devices_ref,
         hidden_dim=HIDDEN_DIM,
         num_experts=NUM_EXPERTS,
@@ -120,12 +172,13 @@ def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
         dtype=dtype,
         apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
+        float8_config=fp8_config,
     )
     moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
     moe_shards = moe.shard(devices_ref)
 
     # Load weights
-    moe.load_state_dict(moe_weights)
+    moe.load_state_dict(wrapped_moe_weights_fp8)
 
     # Initialize EP communication infrastructure
     ep_comm_init.ep_init(session)
@@ -155,7 +208,7 @@ def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
     ]
 
     with Graph(
-        "EPMoE",
+        "EPMoE_FP8",
         input_types=[
             *per_device_input_types,
             *ep_comm_init.input_types(),
@@ -182,7 +235,7 @@ def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
         hidden_dim=HIDDEN_DIM,
         num_experts=NUM_EXPERTS,
         num_experts_per_token=top_k,
-        dtype=dtype,
+        dtype=DType.bfloat16,
     )
     moe_gate.sharding_strategy = ShardingStrategy.replicate(n_devices)
     moe_gate_shards = moe_gate.shard(devices_ref)
@@ -227,6 +280,6 @@ def test_ep_moe(n_devices: int, moe_weights: dict[str, torch.Tensor]) -> None:
         torch.testing.assert_close(
             all_outputs[tok_idx : tok_idx + 1],
             torch_output,
-            rtol=3e-2,
-            atol=4e-2,
+            rtol=8e-2,
+            atol=8e-2,
         )
