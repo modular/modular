@@ -436,36 +436,26 @@ class LineGenerator(Visitor[Line]):
 
     def _sort_struct_trait_conformances(self, node: Node) -> None:
         """Sorts the conformance/inheritance list for struct/trait nodes in-place."""
-        # Find the parentheses group (LPAR ... RPAR) after the struct/trait name
-        lpar_idx = None
-        rpar_idx = None
-        for i, child in enumerate(node.children):
-            if isinstance(child, Leaf) and child.type == token.LPAR:
-                lpar_idx = i
-            if isinstance(child, Leaf) and child.type == token.RPAR:
-                rpar_idx = i
+
+        for child in node.children:
+            # Find the parentheses group after the struct/trait name.
+            if child.type == syms.arglist:
                 break
-        if lpar_idx is None or rpar_idx is None:
+        else:
+            # If there is no arglist, we don't need to sort the conformances.
             return
 
-        if rpar_idx > lpar_idx + 1:
-            # Extract the conformances (skip commas, sort names only)
-            conformances = []
-            for c in node.children[lpar_idx+1:rpar_idx]:
-                if isinstance(c, Leaf) and c.type == token.NAME:
-                    conformances.append(c.value)
+        # Extract the conformances as strings.
+        conformances = []
+        for c in child.children:
+            if isinstance(c, Leaf) and c.type == token.NAME:
+                conformances.append(c.value)
 
-            # Sort conformances alphabetically
-            sorted_conformances = sorted(conformances)
-
-            # Rebuild the children between LPAR and RPAR
-            new_children = []
-            for idx, name in enumerate(sorted_conformances):
-                new_children.append(Leaf(token.NAME, name))
-                new_children.append(Leaf(token.COMMA, ","))
-
-            # Replace in node.children
-            node.children[lpar_idx+1:rpar_idx] = new_children
+        # Replace the names in the arglist with the sorted conformances.
+        sorted_conformances = (s for s in sorted(conformances))
+        for c in child.children:
+            if isinstance(c, Leaf) and c.type == token.NAME:
+                c.replace(Leaf(token.NAME, next(sorted_conformances)))
 
     def visit_classdef_sorted(
         self,
@@ -476,7 +466,7 @@ class LineGenerator(Visitor[Line]):
     ):
         # Only sort for struct/trait, not regular class
         from mblib2to3.pgen2 import token as mtoken
-        if getattr(node, 'type', None) in (mtoken.STRUCT, mtoken.TRAIT):
+        if node.children[0].type in (mtoken.STRUCT, mtoken.TRAIT):
             self._sort_struct_trait_conformances(node)
         # Fallback to original logic
         yield from self.visit_stmt(node, keywords, parens, nodeTypes)
