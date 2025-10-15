@@ -464,6 +464,8 @@ public:
           } else {
             responder->getValue()(failure());
           }
+
+          responders.erase(responder);
         });
 
     startProgressFn = handler.outgoingNotification<
