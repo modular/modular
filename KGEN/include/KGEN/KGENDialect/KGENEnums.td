@@ -316,4 +316,19 @@ def KGEN_ClosureMemoryKind : I32EnumAttr<"ClosureMemoryKind", "closure memory ki
   let genSpecializedAttr = 0;
 }
 
+//===----------------------------------------------------------------------===//
+// SugarKind
+//===----------------------------------------------------------------------===//
+
+def KGEN_SugarKind : I32EnumAttr<"SugarKind",
+    "What kind of sugar a SugarAttr was formed from", [
+  /// This is an expansion of a call to an @always_inline("builtin") function.
+  I32EnumAttrCase<"AlwaysInlineBuiltin", 0, "aibuiltin">,
+  /// This is an expansion of an alias reference "x" or "A.x".
+  I32EnumAttrCase<"Alias", 1, "alias">,
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
 #endif // KGEN_KGENDIALECT_KGENENUMS_TD

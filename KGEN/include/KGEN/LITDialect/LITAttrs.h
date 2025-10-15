@@ -35,11 +35,6 @@ class FnMetadataAttr;
 
 namespace M::KGEN::LIT {
 
-/// Given an attribute or type, return the "canonical" version of the attribute
-/// with all type sugar removed.
-TypedAttr getCanonicalAttr(TypedAttr src);
-Type getCanonicalType(Type type);
-
 /// Given a list of operations, create an array of bools (as a mask) indicating
 /// variadic parameters in their concatenated list of parameter declarations.
 /// The given operations must all implement DeclInterface.
@@ -72,25 +67,6 @@ static inline void processRawOrigin(TypedAttr origin, T &&fn) {
   }
 
   fn(origin);
-}
-
-// Helpers for sugar-aware casting.
-template <typename... To, typename From>
-[[nodiscard]] inline bool sugarIsa(From val) {
-  val = SugarAttr::strip(val);
-  return (isa<To>(val) || ...);
-}
-
-template <typename To, typename From>
-[[nodiscard]] inline decltype(auto) sugarCast(From val) {
-  val = SugarAttr::strip(val);
-  return cast<To>(val);
-}
-
-template <typename To, typename From>
-[[nodiscard]] inline decltype(auto) sugarDynCast(From val) {
-  val = SugarAttr::strip(val);
-  return dyn_cast<To>(val);
 }
 
 } // namespace M::KGEN::LIT

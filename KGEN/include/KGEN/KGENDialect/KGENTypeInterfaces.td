@@ -115,4 +115,27 @@ def StructTypeInterface : TypeInterface<"StructTypeInterface"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// SugaredTypeInterface
+//===----------------------------------------------------------------------===//
+
+def SugaredTypeInterface : TypeInterface<"SugaredTypeInterface"> {
+  let description = [{
+    This interface can be used to customize SugarAttr behavior.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Returns whether the sugar should be elided for the given attribute.
+    }], "bool", "canElideSugarFor", (ins "TypedAttr":$attr)>,
+
+    InterfaceMethod<[{
+      If this type has a cached canonical type, return it, otherwise return
+      null.  The type canonicalizer will recursively canonicalize types without
+      a cache.
+    }], "Type", "getCachedCanonicalType", (ins "Type":$type)>,
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD

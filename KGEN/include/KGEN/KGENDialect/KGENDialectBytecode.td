@@ -271,6 +271,12 @@ def LLVMBitcodeLibArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"Attribute">:$value
 )>;
 
+def SugarAttr : DialectAttribute<(attr
+  EnumAttr<"SugarKind">:$kind,
+  TypedAttr:$sugared,
+  TypedAttr:$original
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -306,7 +312,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     LinkDependencyArrayAttr,
     TailKindAttr,
     PackagedLLVMBitcodeLibAttr,
-    LLVMBitcodeLibArrayAttr
+    LLVMBitcodeLibArrayAttr,
+    SugarAttr
   ];
 }
 

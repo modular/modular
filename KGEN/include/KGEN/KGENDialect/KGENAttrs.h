@@ -58,6 +58,42 @@ public:
   static EmitAsAttr get(MLIRContext *ctx, EmitAs val);
   EmitAs getValue() const;
 };
+
+//===----------------------------------------------------------------------===//
+// Sugar Processing for Type and TypedAttr
+//===----------------------------------------------------------------------===//
+//
+// SugarAttr represents a "syntax sugar" on a type or typed attr, e.g. when
+// resolving "alias four = 4", we might want to preserve the name "four" instead
+// of inlining the value.  These are typically looked through by semantic
+// analysis, but used when generating user-visible error messages.
+//
+// SugarAttr is lowered away by LowerLIT.
+
+/// Given an attribute or type, return the "canonical" version of the attribute
+/// with all type sugar removed.
+TypedAttr getCanonicalAttr(TypedAttr src);
+Type getCanonicalType(Type type);
+
+// Helpers for sugar-aware casting.
+template <typename... To, typename From>
+[[nodiscard]] inline bool sugarIsa(From val) {
+  val = SugarAttr::strip(val);
+  return (isa<To>(val) || ...);
+}
+
+template <typename To, typename From>
+[[nodiscard]] inline decltype(auto) sugarCast(From val) {
+  val = SugarAttr::strip(val);
+  return cast<To>(val);
+}
+
+template <typename To, typename From>
+[[nodiscard]] inline decltype(auto) sugarDynCast(From val) {
+  val = SugarAttr::strip(val);
+  return dyn_cast<To>(val);
+}
+
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//

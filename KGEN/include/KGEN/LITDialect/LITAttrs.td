@@ -1008,45 +1008,4 @@ def LIT_VarDeclKindAttr : EnumAttr<LITDialect, LIT_VarDeclKind,
 def LIT_ImplicitConversionKindAttr : EnumAttr<LITDialect,
     LIT_ImplicitConversionKind, "implicit_conversion">;
 
-//===----------------------------------------------------------------------===//
-// SugarAttr
-//===----------------------------------------------------------------------===//
-
-def LIT_SugarAttr : LITTypedAttr<"Sugar", "sugar"> {
-  let summary = "Syntax sugar for some other attribute.";
-  let description = [{
-    The `#lit.sugar` attribute represents a syntax sugar overlaid on some other
-    value e.g. an alias or expanded builtin function call. It maintains the
-    original unexpanded attribute value as well as the "one level expanded" and
-    fully expanded "canonical" version of the attribute.
-  }];
-
-  let parameters = (ins
-    "SugarKind":$kind, "TypedAttr":$sugared, "TypedAttr":$original,
-    "TypedAttr":$canonical, AttributeSelfTypeParameter<"">:$type
-  );
-
-  let assemblyFormat =
-    "$kind `,` custom<SugarAttr>($sugared, $original, $canonical)";
-
-  let skipDefaultBuilders = 1;
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "SugarKind":$kind,
-                                    "TypedAttr":$sugared,
-                                    "TypedAttr":$original), "", "TypedAttr">,
-
-    // Override the default builder used by the generated parser.
-    AttrBuilder<(ins "SugarKind":$kind, "TypedAttr":$sugared,
-                  "TypedAttr":$original, "TypedAttr":$canonical, "Type":$type),
-                   "", "TypedAttr">,
-  ];
-
-  let extraClassDeclaration = [{
-    /// Remove any top-level sugar nodes from this type, but don't fully
-    /// canonicalize it.
-    static TypedAttr strip(TypedAttr value);
-    static Type strip(Type value);
-  }];
-}
-
 #endif // KGEN_LITDIALECT_LITATTRS_TD

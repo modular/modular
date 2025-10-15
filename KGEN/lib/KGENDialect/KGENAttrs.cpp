@@ -3409,6 +3409,196 @@ LogicalResult LLVMBitcodeLibArrayAttr::verify(
 }
 
 //===----------------------------------------------------------------------===//
+// SugarAttr
+//===----------------------------------------------------------------------===//
+
+/// Return true if the specified result doesn't need to be sugared, because it
+/// is simple enough to be printed directly without sugar.
+///
+/// This is designed to align with ASTPrinter, but needs to be here as part of
+/// Sugar building, because we want this to simplify sugar when parameter values
+/// are bound to concrete things.  For example we want to maintain "x+y" as
+/// sugar, but fold it to "4" when 3 and 1 are substituted in.
+static bool canElideSugarFor(TypedAttr attr) {
+  // If we folded this to a reference to another declaration, just use it.
+  if (isa<ParamDeclRefAttr>(attr))
+    return true;
+
+  // Otherwise, see if the LIT type knows how to elide itself.  LIT::StructType
+  // knows how to print literals for Int, IntegerLiteral, etc.
+  if (auto sugarItf = dyn_cast<SugaredTypeInterface>(attr.getType()))
+    return sugarItf.canElideSugarFor(attr);
+
+  return false;
+}
+
+static ParseResult parseSugarAttr(AsmParser &p, TypedAttr &sugared,
+                                  TypedAttr &original, TypedAttr &canonical) {
+  Type type;
+  if (p.parseType(type) || p.parseComma() ||
+      parseParamValue(p, sugared, type) || p.parseComma() ||
+      parseParamValue(p, original, type))
+    return failure();
+
+  canonical = getCanonicalAttr(original);
+  return success();
+}
+
+static void printSugarAttr(AsmPrinter &p, TypedAttr sugared, TypedAttr original,
+                           TypedAttr canonical) {
+  p.printType(sugared.getType());
+  p << ", ";
+  printParamValue(p, sugared);
+  p << ", ";
+  printParamValue(p, original);
+  // The canonical value is rebuilt as needed.
+}
+
+TypedAttr SugarAttr::get(SugarKind kind, TypedAttr sugared,
+                         TypedAttr original) {
+  // If we shouldn't maintain type sugar for this, then just return the
+  // original.
+  if (canElideSugarFor(original))
+    return original;
+
+  auto canonical = getCanonicalAttr(original);
+  return Base::get(sugared.getContext(), kind, sugared, original, canonical,
+                   original.getType());
+}
+
+TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
+                         TypedAttr sugared, TypedAttr original,
+                         TypedAttr canonical, Type type) {
+  // This method gets called by client doing general structural replacements,
+  // e.g. a parameter with an arbitrary attribute.  This can turn canonical
+  // forms to non-canonical and visa-versa, so always recompute the canonical
+  // pointer.
+  return get(kind, sugared, original);
+}
+
+/// Remove any top-level sugar nodes from this type, but don't fully
+/// canonicalize it.
+TypedAttr SugarAttr::strip(TypedAttr value) {
+  while (auto sugar = dyn_cast<SugarAttr>(value))
+    value = sugar.getOriginal();
+  return value;
+}
+
+Type SugarAttr::strip(Type value) {
+  // Sugar for a type will be wrapped in a ParamType converting the attr into
+  // the type domain.
+  if (auto paramRef = dyn_cast<ParamType>(value))
+    if (isa<SugarAttr>(paramRef.getParam()))
+      return ParamType::get(strip(paramRef.getParam()));
+  return value;
+}
+
+static Attribute getLocalCanonical(Attribute attr) {
+  // SugarAttr maintains its canonical form directly so we don't need to walk.
+  if (auto sugar = dyn_cast<SugarAttr>(attr))
+    return sugar.getCanonical();
+  return {};
+}
+static Type getLocalCanonical(Type type) {
+  // FIXME: Why is this getting called with null types?
+  if (!type)
+    return {};
+
+  // Otherwise, see if the LIT type knows how to elide itself.
+  if (auto sugarItf = dyn_cast<KGEN::SugaredTypeInterface>(type))
+    return sugarItf.getCachedCanonicalType(type);
+
+  return {};
+}
+
+namespace {
+class Canonicalizer : public ParameterReplacer<Canonicalizer> {
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  doReplace(T value, size_t depth) {
+    // If this type has a canonical cache pointer, use it.
+    if (auto can = getLocalCanonical(value))
+      return can;
+
+    // Param/Symbol references are handled specially because the decl being
+    // referenced may have a sugared type must always be referred to that
+    // sugared type (they must match up).  Handle this by using a rebind to the
+    // canonical type.
+    if constexpr (std::is_base_of_v<Attribute, T>) {
+      // We can't change the type of a decl reference, because it will cause the
+      // verifier to complain.  Instead, form a canonical form by using the
+      // existing reference and immediately rebinding the sugar away.
+      if (isa<ParamDeclRefAttr, ParamIndexRefAttr, SymbolConstantAttr>(value)) {
+        auto ref = cast<TypedAttr>(value);
+        auto newType = this->replaceImpl(ref.getType(), depth);
+        if (newType == ref.getType())
+          return ref;
+        return ParamOperatorAttr::getRebind(ref, newType);
+      }
+
+      // The values specified for BindParamsAttr must align with the declared
+      // types of the parameters, even if those types are non-canonical.
+      if (auto bind = dyn_cast<BindParamsAttr>(value)) {
+        auto canGenerator =
+            cast<TypedAttr>(this->replaceImpl(bind.getGenerator(), depth));
+        bool changed = canGenerator != bind.getGenerator();
+        SmallVector<TypedAttr> canBindings;
+        for (auto param : bind.getParamValues()) {
+          auto canParam = cast<TypedAttr>(this->replaceImpl(param, depth));
+          // The parameter values must line up with the declared types of the
+          // generator, but need to be canonicalized within themselves.
+          canParam = ParamOperatorAttr::getRebind(canParam, param.getType());
+          canBindings.push_back(canParam);
+          changed |= canParam != param;
+        }
+        auto canType = this->replaceImpl(bind.getType(), depth);
+        changed |= canType != bind.getType();
+        if (!changed)
+          return bind;
+        return BindParamsAttr::get(canGenerator.getContext(), canGenerator,
+                                   canBindings, canType);
+      }
+    }
+
+    // Otherwise, recursively walk and rebuild the attribute with
+    // canonicalized subelements.
+    SmallVector<Attribute, 16> newAttrs;
+    SmallVector<Type, 16> newTypes;
+    bool changed = false;
+    auto walkFn = [&](auto value, SmallVectorImpl<decltype(value)> &values) {
+      auto newValue = this->replaceImpl(value, depth);
+      changed |= newValue != value;
+      values.push_back(newValue);
+    };
+    value.walkImmediateSubElements(
+        [&](Attribute attr) { walkFn(attr, newAttrs); },
+        [&](Type type) { walkFn(type, newTypes); });
+    if (!changed)
+      return value;
+    return value.replaceImmediateSubElements(newAttrs, newTypes);
+  }
+
+  friend class ParameterReplacer<Canonicalizer>;
+};
+}; // end anonymous namespace
+
+/// Given an attribute or type, return the "canonical" version of the attribute
+/// with all type sugar removed.
+TypedAttr KGEN::getCanonicalAttr(TypedAttr src) {
+  // If this is locally and obviously canonical, then just return it.
+  if (auto local = getLocalCanonical(src))
+    return cast<TypedAttr>(local);
+  return Canonicalizer().replace(src);
+}
+
+Type KGEN::getCanonicalType(Type src) {
+  // If this is locally and obviously canonical, then just return it.
+  if (auto local = getLocalCanonical(src))
+    return local;
+  return Canonicalizer().replace(src);
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

@@ -159,6 +159,15 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
   return TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
 }
 
+bool TypeSignatureType::canElideSugarFor(TypedAttr attr) const { return false; }
+
+Type TypeSignatureType::getCachedCanonicalType(Type type) const {
+  // TypeSignatureType is always canonical, because the embedded types mirror
+  // the parameter decls of the type.  These must line up.
+  assert(isa<TypeSignatureType>(type));
+  return type;
+}
+
 //===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
@@ -426,6 +435,57 @@ LIT::StructType LIT::StructType::bindUnbound(ArrayRef<TypedAttr> values) const {
   }
   assert(it == values.end() && "expected all bindings to be consumed");
   return bindAll(bindings);
+}
+
+/// We don't sugar always_inline builtin calls to things that produce a literal,
+/// we want things like "x+1" to fold to "5" when x is substituted with 4.
+bool LIT::StructType::canElideSugarFor(TypedAttr attr) const {
+  auto getTypeName = [&]() -> StringRef {
+    if (auto structType = dyn_cast<LIT::StructType>(attr.getType()))
+      return structType.getSymbol().getLeafReference().strref();
+    return {};
+  };
+
+  /// A StructAttr is due to an inline @always_inline("builtin") initializer.
+  /// Elide it if we have the default type with a literal so we don't print
+  /// Int(42), but print it if it is something weird like IntLiteral(42)
+  if (auto structAttr = dyn_cast<LITStructAttr>(attr)) {
+    // If the struct has a single element, elide the braces.
+    if (structAttr.getValues().size() == 1) {
+      auto typeName = getTypeName();
+      TypedAttr elt = std::get<1>(structAttr.getValues().front());
+      if (typeName == "Int" || typeName == "UInt" || typeName == "Bool" ||
+          typeName == "DType" || typeName == "_AddressSpace") {
+        if (isa<IntegerAttr, DTypeConstantAttr>(elt))
+          return true;
+      }
+
+      if (typeName == "Origin") {
+        if (isa<AnyOriginAttr, ComptimeOriginAttr>(elt))
+          return true;
+      }
+
+      if (typeName == "AddressSpace" && canElideSugarFor(elt))
+        return true;
+    }
+  }
+
+  if (isa<UnknownAttr>(attr)) {
+    auto typeName = getTypeName();
+    if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
+        typeName == "StringLiteral")
+      return true;
+  }
+
+  return false;
+}
+
+Type LIT::StructType::getCachedCanonicalType(Type type) const {
+  // Struct type has a canonical type cache to cut recursive walks.
+  auto structType = cast<LIT::StructType>(type);
+  if (auto can = structType.getCanonical())
+    return can;
+  return structType;
 }
 
 //===----------------------------------------------------------------------===//
