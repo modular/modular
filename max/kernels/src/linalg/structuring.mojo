@@ -44,7 +44,9 @@ struct ScatterGatherAmd[
     @always_inline
     fn copy(
         self,
-        dst_reg_tile: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
+        dst_reg_tile: LayoutTensor[
+            mut=True, *_, address_space = AddressSpace.LOCAL, **_
+        ],
         src_gmem_tile: LayoutTensor,
         src_tensor: LayoutTensor,
         offset: OptionalReg[UInt] = None,
@@ -57,7 +59,7 @@ struct ScatterGatherAmd[
     @always_inline("nodebug")
     fn copy(
         self,
-        dst_gmem_tile: LayoutTensor,
+        dst_gmem_tile: LayoutTensor[mut=True, *_, **_],
         src_reg_tile: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
     ):
         _copy_local_to_dram[
@@ -82,7 +84,7 @@ struct IteratorScatterGatherAmd[
     @always_inline
     fn copy(
         self,
-        dst_reg_tile: LayoutTensor,
+        dst_reg_tile: LayoutTensor[mut=True, *_, **_],
         src_gmem_tile_iter: LayoutTensorIter,
     ):
         _copy_dram_to_local[

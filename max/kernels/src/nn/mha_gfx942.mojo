@@ -1611,7 +1611,9 @@ fn mma[
     mut a_iter: LayoutTensorIter,
     a_smem_iter: LayoutTensorIter,
     mut b_iter: LayoutTensorIter,
-    b_smem_iter: LayoutTensorIter[*_, address_space = AddressSpace.SHARED, **_],
+    b_smem_iter: LayoutTensorIter[
+        mut=True, *_, address_space = AddressSpace.SHARED, **_
+    ],
     num_b_rows: OptionalReg[Int] = None,
 ):
     alias BK = config.block_k()
@@ -2195,7 +2197,9 @@ fn copy_fragment_to_smem[
     fragment_layout: Layout,
     warp_layout: Layout,
 ](
-    p_smem_iter: LayoutTensorIter[*_, address_space = AddressSpace.SHARED, **_],
+    p_smem_iter: LayoutTensorIter[
+        mut=True, *_, address_space = AddressSpace.SHARED, **_
+    ],
     p_reg_vectorized: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
     warp_row: Int,
     warp_col: Int,

@@ -175,7 +175,9 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _copy_single_tensor_to_sram(dst: LayoutTensor, src: LayoutTensor):
+    fn _copy_single_tensor_to_sram(
+        dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor
+    ):
         copy_dram_to_sram_async[
             thread_layout=async_copy_a_layout,
             swizzle=swizzle_a,
@@ -187,8 +189,8 @@ fn multistage_dual_mma[
     @always_inline
     @parameter
     fn _copy_dual_tensor_to_sram(
-        b0_dst: LayoutTensor,
-        b1_dst: LayoutTensor,
+        b0_dst: LayoutTensor[mut=True, *_, **_],
+        b1_dst: LayoutTensor[mut=True, *_, **_],
         b0_src: LayoutTensor,
         b1_src: LayoutTensor,
     ):

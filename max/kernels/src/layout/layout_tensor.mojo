@@ -850,10 +850,11 @@ struct LayoutTensor[
     ]
 
     alias MutableAnyType = Self.OriginCastType[True, MutableAnyOrigin]
+    alias _AsMut = Self.OriginCastType[True, _]
 
     @always_inline("nodebug")
     fn as_any_origin(
-        self: LayoutTensor[mut=True, *_, **_],
+        self: Self._AsMut,
     ) -> __type_of(self).OriginCastType[True, MutableAnyOrigin]:
         """Casts the origin of the mutable `LayoutTensor` to `MutableAnyOrigin`.
 
@@ -2087,7 +2088,9 @@ struct LayoutTensor[
         )
 
     @always_inline("nodebug")
-    fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
+    fn store[
+        width: Int
+    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[dtype, width],):
         """Store a SIMD vector to the tensor at the specified 2D coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
@@ -2126,7 +2129,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn store[
         width: Int
-    ](self, coords: IndexList[*_, **_], val: SIMD[dtype, width]):
+    ](self: Self._AsMut, coords: IndexList[*_, **_], val: SIMD[dtype, width],):
         """Store a SIMD vector to the tensor at the specified 2D coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
@@ -2166,7 +2169,9 @@ struct LayoutTensor[
         return self.ptr.store[alignment = Self.alignment](idx, val)
 
     @always_inline("nodebug")
-    fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
+    fn aligned_store[
+        width: Int
+    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[dtype, width],):
         """Store a SIMD vector with alignment guarantees to the tensor.
 
         Performs an aligned vectorized store operation to the tensor's memory,
@@ -4705,7 +4710,7 @@ struct LayoutTensor[
     @always_inline
     fn distance(
         self,
-        addr: UnsafePointer[Scalar[dtype], address_space=address_space, *_],
+        addr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
     ) -> Scalar[linear_idx_type]:
         """Calculate the element-wise distance between this tensor's pointer
         and another pointer.
@@ -4826,7 +4831,7 @@ struct LayoutTensor[
             return idx
 
     @always_inline("nodebug")
-    fn copy_from(self, other: LayoutTensor):
+    fn copy_from(self: Self._AsMut, other: LayoutTensor):
         """Copy data from another tensor to this tensor.
 
         This method performs an element-by-element copy from the source tensor
@@ -5615,7 +5620,9 @@ fn _get_worker_idx[
 
 
 @always_inline("nodebug")
-fn _copy_dram_to_sram_validate_args(dst: LayoutTensor, src: LayoutTensor):
+fn _copy_dram_to_sram_validate_args(
+    dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor
+):
     """Validate arguments for DRAM to SRAM copy operations.
 
     This internal function validates that the source and destination tensors
@@ -5667,7 +5674,7 @@ fn copy_dram_to_sram[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """Synchronously copy data from DRAM (global memory) to SRAM (shared memory)
     in a GPU context.
 
@@ -5818,7 +5825,7 @@ fn copy_dram_to_sram[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src_iter: LayoutTensorIter, bound: Int):
+](dst: LayoutTensor[mut=True, *_, **_], src_iter: LayoutTensorIter, bound: Int):
     """Efficiently copy data from global memory (DRAM) to shared memory (SRAM)
     on AMD GPUs.
 
@@ -5907,7 +5914,11 @@ fn cp_async_k_major[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
-        dtype, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
+        mut=True,
+        dtype,
+        _,
+        address_space = gpu_memory.AddressSpace.SHARED,
+        *_, **_,
     ],
     src: LayoutTensor[
         dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
@@ -6017,7 +6028,11 @@ fn cp_async_mn_major[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
-        dtype, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
+        mut=True,
+        dtype,
+        _,
+        address_space = gpu_memory.AddressSpace.SHARED,
+        *_, **_,
     ],
     src: LayoutTensor[
         dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
@@ -6134,7 +6149,7 @@ fn copy_dram_to_sram[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src_iter: LayoutTensorIter, bound: Int):
+](dst: LayoutTensor[mut=True, *_, **_], src_iter: LayoutTensorIter, bound: Int):
     """Synchronously copy data from DRAM to SRAM using a unified thread layout
     for AMD GPUs.
 
@@ -6196,7 +6211,7 @@ fn copy_dram_to_sram[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """Synchronously copy data from DRAM to SRAM using a unified thread layout.
 
     This is a convenience wrapper around the more general `copy_dram_to_sram()`
@@ -6260,7 +6275,7 @@ fn copy_dram_to_sram_async[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = src_thread_layout.size(),
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """Asynchronously copy data from DRAM (global memory) to SRAM (shared
     memory) in a GPU context.
 
@@ -6436,7 +6451,7 @@ fn copy_dram_to_sram_async[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = thread_layout.size(),
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """
     Asynchronous copy from DRAM to SRAM with thread affinity mapping.
 
@@ -6501,7 +6516,7 @@ fn copy_sram_to_dram[
     num_threads: Int = thread_layout.size(),
     block_dim_count: Int = 1,
     binary_op: OptionalReg[binary_op_type] = None,
-](dst: LayoutTensor, src: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """Synchronously copy data from SRAM (shared memory) to DRAM (global
     memory).
 
@@ -6714,7 +6729,7 @@ fn copy_sram_to_dram[
 fn copy_sram_to_local[
     src_warp_layout: Layout,
     axis: OptionalReg[Int] = None,
-](dst: LayoutTensor, src: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """Synchronously copy data from SRAM (shared memory) to local memory.
 
     This function performs a synchronous memory transfer from SRAM (shared
@@ -6791,7 +6806,7 @@ fn copy_local_to_dram[
     num_threads: Int = dst_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """Efficiently copy data from registers (LOCAL) to global memory (DRAM).
 
     This function implements a high-performance memory transfer operation from
@@ -6921,7 +6936,11 @@ fn _copy_local_to_dram[
     num_threads: Int = dst_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor, buffer: AMDBufferResource):
+](
+    dst: LayoutTensor[mut=True, *_, **_],
+    src: LayoutTensor,
+    buffer: AMDBufferResource,
+):
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
 
     _copy_local_to_dram_validate_args(dst, src)
@@ -6994,7 +7013,11 @@ fn copy_local_to_dram[
     num_threads: Int = dst_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
+](
+    dst: LayoutTensor[mut=True, *_, **_],
+    src: LayoutTensor,
+    dst_base: LayoutTensor,
+):
     """Efficiently copy data from registers (LOCAL) to global memory (DRAM) on
     AMD GPUs.
 
@@ -7053,7 +7076,7 @@ fn _copy_dram_to_local[
     block_dim_count: Int = 1,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
-    dst: LayoutTensor,
+    dst: LayoutTensor[mut=True, *_, **_],
     src: LayoutTensor,
     buffer: AMDBufferResource,
     offset: OptionalReg[UInt] = None,
@@ -7126,7 +7149,7 @@ fn copy_dram_to_local[
     block_dim_count: Int = 1,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
 ](
-    dst: LayoutTensor,
+    dst: LayoutTensor[mut=True, *_, **_],
     src: LayoutTensor,
     src_base: LayoutTensor,
     offset: OptionalReg[UInt] = None,
@@ -7192,7 +7215,11 @@ fn _copy_dram_to_local[
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](dst: LayoutTensor, src_iter: LayoutTensorIter, buffer: AMDBufferResource):
+](
+    dst: LayoutTensor[mut=True, *_, **_],
+    src_iter: LayoutTensorIter,
+    buffer: AMDBufferResource,
+):
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     var src_tensor = src_iter[].vectorize[
         dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
@@ -7214,7 +7241,11 @@ fn copy_dram_to_local[
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](dst: LayoutTensor, src_iter: LayoutTensorIter, bounds: UInt32):
+](
+    dst: LayoutTensor[mut=True, *_, **_],
+    src_iter: LayoutTensorIter,
+    bounds: UInt32,
+):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
     This function implements an optimized memory transfer operation specifically
@@ -7271,7 +7302,7 @@ fn copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor):
+](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """Efficiently copy data from global memory (DRAM) to registers.
 
     This function implements an optimized memory transfer operation from
@@ -7372,7 +7403,9 @@ fn copy_local_to_shared[
     *,
     row_major: Bool = False,
 ](
-    dst: LayoutTensor[*_, address_space = _GPUAddressSpace.SHARED, **_],
+    dst: LayoutTensor[
+        mut=True, *_, address_space = _GPUAddressSpace.SHARED, **_
+    ],
     src: LayoutTensor[*_, address_space = _GPUAddressSpace.LOCAL, **_],
 ):
     """Synchronously copy data from local memory (registers) to SRAM (shared
@@ -7525,7 +7558,7 @@ fn copy_local_to_shared[
 
 
 @always_inline
-fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
+fn copy_local_to_local(dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
     """Synchronously copy data between local memory (register) tensors with type
     conversion.
 

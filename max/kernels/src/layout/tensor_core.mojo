@@ -665,7 +665,9 @@ struct TensorCore[
         return c_reg_tile
 
     @always_inline
-    fn store_d(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+    fn store_d(
+        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
+    ):
         """
         Store matrix D to destination memory.
 
@@ -683,7 +685,9 @@ struct TensorCore[
             self._store_d_amd(d_dst, d_src)
 
     @always_inline
-    fn _store_d_amd(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+    fn _store_d_amd(
+        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
+    ):
         constrained[
             d_src.shape[0]() == Self.c_reg_tile_type.shape[0]()
             and d_src.shape[1]() == Self.c_reg_tile_type.shape[1](),
@@ -707,7 +711,9 @@ struct TensorCore[
             constrained[False, "No valid type to store to LayoutTensor d"]()
 
     @always_inline
-    fn _store_d_nvidia(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+    fn _store_d_nvidia(
+        self, d_dst: LayoutTensor[mut=True, *_, **_], d_src: LayoutTensor
+    ):
         constrained[
             d_dst.dtype == out_type,
             "destination tensor must have the same type",
