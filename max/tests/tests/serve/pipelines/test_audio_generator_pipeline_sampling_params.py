@@ -77,6 +77,7 @@ def test_pipeline_receives_sampling_params() -> None:
     chunk_audio = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
     chunks = [
         AudioGenerationOutput(
+            steps_executed=1,
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100),
             final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -106,6 +107,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
     chunk_audio = np.array([[4.0, 5.0]], dtype=np.float32)
     chunks = [
         AudioGenerationOutput(
+            steps_executed=1,
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=22050),
             final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -163,6 +165,7 @@ def test_multiple_requests_different_sampling_params() -> None:
     chunk_audio = np.array([[1.0]], dtype=np.float32)
     chunks = [
         AudioGenerationOutput(
+            steps_executed=1,
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(),
             final_status=GenerationStatus.END_OF_SEQUENCE,

@@ -65,11 +65,13 @@ def test_generate_full_audio_multiple_chunks() -> None:
             audio_data=chunk1_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100, duration=0.1),
             final_status=GenerationStatus.ACTIVE,
+            steps_executed=1,
         ),
         AudioGenerationOutput(
             audio_data=chunk2_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100, duration=0.2),
             final_status=GenerationStatus.ACTIVE,
+            steps_executed=1,
         ),
         AudioGenerationOutput(
             audio_data=chunk3_audio,
@@ -77,6 +79,7 @@ def test_generate_full_audio_multiple_chunks() -> None:
                 sample_rate=44100, duration=0.3, final_chunk=True
             ),
             final_status=GenerationStatus.END_OF_SEQUENCE,
+            steps_executed=1,
         ),
     ]
 
@@ -113,6 +116,7 @@ def test_generate_full_audio_single_chunk() -> None:
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=22050, duration=0.5),
             final_status=GenerationStatus.END_OF_SEQUENCE,
+            steps_executed=1,
         ),
     ]
 
@@ -158,6 +162,7 @@ def test_generate_full_audio_last_chunk_not_done() -> None:
             audio_data=chunk_audio,
             metadata=AudioGenerationMetadata(sample_rate=44100),
             final_status=GenerationStatus.ACTIVE,  # This should cause the assertion to fail
+            steps_executed=1,
         ),
     ]
 
@@ -183,16 +188,19 @@ def test_generate_full_audio_different_tensor_shapes() -> None:
             audio_data=chunk1_audio,
             metadata=AudioGenerationMetadata(chunk_id=1),
             final_status=GenerationStatus.ACTIVE,
+            steps_executed=1,
         ),
         AudioGenerationOutput(
             audio_data=chunk2_audio,
             metadata=AudioGenerationMetadata(chunk_id=2),
             final_status=GenerationStatus.ACTIVE,
+            steps_executed=1,
         ),
         AudioGenerationOutput(
             audio_data=chunk3_audio,
             metadata=AudioGenerationMetadata(chunk_id=3, final_chunk=True),
             final_status=GenerationStatus.END_OF_SEQUENCE,
+            steps_executed=1,
         ),
     ]
 
@@ -232,6 +240,7 @@ def test_generate_full_audio_preserves_chunk_objects() -> None:
                 chunk_id=1, timestamp="2024-01-01"
             ),
             final_status=GenerationStatus.ACTIVE,
+            steps_executed=1,
         ),
         AudioGenerationOutput(
             audio_data=chunk2_audio,
@@ -241,6 +250,7 @@ def test_generate_full_audio_preserves_chunk_objects() -> None:
                 final_chunk=True,
             ),
             final_status=GenerationStatus.END_OF_SEQUENCE,
+            steps_executed=1,
         ),
     ]
 
