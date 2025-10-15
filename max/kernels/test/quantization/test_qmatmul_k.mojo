@@ -16,7 +16,6 @@ from random import rand, random_float64
 from sys import size_of
 
 from algorithm import sync_parallelize
-from buffer import NDBuffer
 from layout import (
     LayoutTensor,
     Layout,
@@ -265,20 +264,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
     ):
-        matmul_Q4_K_pack_b(
-            NDBuffer[DType.uint8, 2, b.origin](
-                b.ptr,
-                rebind[IndexList[2]](
-                    b.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            NDBuffer[DType.uint8, 2, b_packed.origin](
-                b_packed.ptr,
-                rebind[IndexList[2]](
-                    b_packed.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-        )
+        matmul_Q4_K_pack_b(b, b_packed)
 
     @staticmethod
     fn kernel(
@@ -286,26 +272,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
         c: LayoutTensor[DType.float32, Layout.row_major[2]()],
     ):
-        matmul_Q4_K(
-            NDBuffer[DType.float32, 2, a.origin](
-                a.ptr,
-                rebind[IndexList[2]](
-                    a.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            NDBuffer[DType.uint8, 2, b.origin](
-                b.ptr,
-                rebind[IndexList[2]](
-                    b.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            NDBuffer[DType.float32, 2, c.origin](
-                c.ptr,
-                rebind[IndexList[2]](
-                    c.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-        )
+        matmul_Q4_K(a, b, c)
 
     @staticmethod
     fn dot_product(
@@ -434,20 +401,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
     ):
-        matmul_Q6_K_pack_b(
-            NDBuffer[DType.uint8, 2, b.origin](
-                b.ptr,
-                rebind[IndexList[2]](
-                    b.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            NDBuffer[DType.uint8, 2, b_packed.origin](
-                b_packed.ptr,
-                rebind[IndexList[2]](
-                    b_packed.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-        )
+        matmul_Q6_K_pack_b(b, b_packed)
 
     @staticmethod
     fn kernel(
@@ -455,26 +409,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
         c: LayoutTensor[DType.float32, Layout.row_major[2]()],
     ):
-        matmul_Q6_K(
-            NDBuffer[DType.float32, 2, a.origin](
-                a.ptr,
-                rebind[IndexList[2]](
-                    a.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            NDBuffer[DType.uint8, 2, b.origin](
-                b.ptr,
-                rebind[IndexList[2]](
-                    b.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            NDBuffer[DType.float32, 2, c.origin](
-                c.ptr,
-                rebind[IndexList[2]](
-                    c.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-        )
+        matmul_Q6_K(a, b, c)
 
     @staticmethod
     fn dot_product(

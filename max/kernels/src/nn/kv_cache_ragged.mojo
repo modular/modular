@@ -1993,15 +1993,15 @@ fn _qmatmul_gguf_quantized_common[
         )
     elif quantization_encoding == "q4_k":
         matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            hidden_state_lt,
+            weight_lt,
+            output_lt,
         )
     elif quantization_encoding == "q6_k":
         matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            hidden_state_lt,
+            weight_lt,
+            output_lt,
         )
     else:
         raise Error(

@@ -5722,9 +5722,7 @@ struct VroomQ4KMatmul:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q4_K(
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
 
     @staticmethod
@@ -5748,8 +5746,7 @@ struct VroomQ4KRepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q4_K_pack_b(
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
 
     @staticmethod
@@ -5815,9 +5812,7 @@ struct VroomQ6KMatmul:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q6_K(
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
 
     @staticmethod
@@ -5841,8 +5836,7 @@ struct VroomQ6KRepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q6_K_pack_b(
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
 
     @staticmethod
