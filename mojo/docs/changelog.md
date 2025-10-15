@@ -93,6 +93,45 @@ what we publish.
   casting function and explicitly unsafe `unsafe_mut_cast` and
   `unsafe_origin_cast` casting function.
 
+- The `Roundable` trait has been refactored and now allows several different
+  rounding modes and the ability to round to a multiple of a given value. Having
+  the multiple to round to as a parameter allows for some optimizations. An
+  example implementation:
+
+  ```mojo
+  @fieldwise_init
+  struct Complex(Roundable):
+      alias _RoundMultipleType = Float64
+      alias _RoundMultipleDefault = Float64(1)
+      alias _RoundModeDefault = RoundMode.HalfToEven
+
+      var re: Float64
+      var im: Float64
+
+      fn __round__[
+          mode: RoundMode, to_multiple_of: Self._RoundMultipleType
+      ](self) -> Self:
+          return Self(
+              round[mode, to_multiple_of=to_multiple_of](self.re),
+              round[mode, to_multiple_of=to_multiple_of](self.im),
+          )
+
+      fn __round__(self, ndigits: Int) -> Self:
+          return Self(round(self.re, ndigits), round(self.im, ndigits))
+  ```
+
+  And how one could use it:
+
+  ```mojo
+  round[RoundMode.Up, to_multiple_of=3](4) # 6
+  round[RoundMode.Down, to_multiple_of=3](4) # 3
+  round[RoundMode.ToEven, to_multiple_of=3](4) # 6
+  round[RoundMode.ToZero, to_multiple_of=3](4) # 3
+  round[RoundMode.HalfUp, to_multiple_of=2](5) # 6
+  round[RoundMode.HalfDown, to_multiple_of=2](5) # 4
+  round[RoundMode.HalfToZero, to_multiple_of=2](5) # 4
+  ```
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`

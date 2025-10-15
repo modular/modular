@@ -243,6 +243,10 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
+    alias _RoundMultipleType = Self
+    alias _RoundMultipleDefault = Self(1)
+    alias _RoundModeDefault = RoundMode.HalfToEven
+
     alias BITWIDTH = Int(DType.int.bit_width())
     """The bit width of the integer type."""
 
@@ -1060,14 +1064,21 @@ struct Int(
         """
         return self
 
-    @always_inline("builtin")
-    fn __round__(self) -> Self:
-        """Return the rounded value of the Int value, which is itself.
+    @always_inline("nodebug")
+    fn __round__[
+        mode: RoundMode, to_multiple_of: Self._RoundMultipleType
+    ](self) -> Self:
+        """Get a rounded value for `Int`.
+
+        Parameters:
+            mode: The `RoundMode` for the operation.
+            to_multiple_of: The target base for which self is is rounded until
+                reaching a multiple thereof.
 
         Returns:
-            The Int value itself.
+            The rounded value.
         """
-        return self
+        return Int(Scalar[DType.int](self).__round__[mode, to_multiple_of]())
 
     @always_inline("nodebug")
     fn __round__(self, ndigits: Int) -> Self:

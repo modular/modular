@@ -143,13 +143,13 @@ def test_floor():
 
 
 def test_round():
-    assert_equal(UInt.__round__(UInt(5)), UInt(5))
-    assert_equal(UInt.__round__(UInt(0)), UInt(0))
-    assert_equal(UInt.__round__(UInt(Int(-5))), UInt(Int(-5)))
-    assert_equal(UInt.__round__(UInt(5), UInt(1)), UInt(5))
-    assert_equal(UInt.__round__(UInt(0), UInt(1)), UInt(0))
-    assert_equal(UInt.__round__(UInt(Int(-5)), UInt(1)), UInt(Int(-5)))
-    assert_equal(UInt.__round__(UInt(100), UInt(Int(-2))), UInt(100))
+    assert_equal(round(UInt(5)), UInt(5))
+    assert_equal(round(UInt(0)), UInt(0))
+    assert_equal(round(UInt(Int(-5))), UInt(Int(-5)))
+    assert_equal(round(UInt(5), UInt(1)), UInt(5))
+    assert_equal(round(UInt(0), UInt(1)), UInt(0))
+    assert_equal(round(UInt(Int(-5)), UInt(1)), UInt(Int(-5)))
+    assert_equal(round(UInt(100), UInt(Int(-2))), UInt(100))
 
 
 def test_trunc():
