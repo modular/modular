@@ -455,6 +455,42 @@ def test_iter():
     assert_equal(iter(c).__has_next__(), False)
 
 
+def test_value_nested_tuple():
+    """Test that value() correctly extracts values from nested single-element tuples.
+    """
+    # Create a tuple where elements are stored as nested single-element tuples
+    # This simulates what happens with Layout.row_major(8, 8).stride
+    var stride = reverse(prefix_product(reverse(IntTuple(8, 8))))
+
+    # Verify the tuple is constructed correctly
+    assert_equal(String(stride), "(8, 1)")
+
+    # Test that elements are stored as tuples, not direct values
+    assert_true(stride.is_tuple(0))
+    assert_true(stride.is_tuple(1))
+    assert_false(stride.is_value(0))
+    assert_false(stride.is_value(1))
+
+    # Test that value() correctly extracts the actual integer values
+    # Before the fix, this would return -65536 and -65537 (negative offsets)
+    assert_equal(stride.value(0), 8)
+    assert_equal(stride.value(1), 1)
+
+    # Test with different sizes to ensure robustness
+    var stride2 = reverse(prefix_product(reverse(IntTuple(4, 16))))
+    assert_equal(stride2.value(0), 16)
+    assert_equal(stride2.value(1), 1)
+
+    var stride3 = reverse(prefix_product(reverse(IntTuple(3, 4, 5))))
+    assert_equal(stride3.value(0), 20)
+    assert_equal(stride3.value(1), 5)
+    assert_equal(stride3.value(2), 1)
+
+    # Test that __getitem__ also works correctly
+    assert_equal(Int(stride[0]), 8)
+    assert_equal(Int(stride[1]), 1)
+
+
 def main():
     test_tuple_basic()
     test_tuple_slicing()
@@ -479,3 +515,4 @@ def main():
     test_unknown_value_arith()
 
     test_iter()
+    test_value_nested_tuple()

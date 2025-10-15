@@ -1243,7 +1243,16 @@ struct IntTuple(
         Notes:
             If the element is not a value, the behavior is undefined.
         """
-        return self._store[i + 1]
+        var val = self._store[i + 1]
+        if val >= Self.MinimumValue:
+            # Direct value
+            return val
+        else:
+            # It's a tuple reference - extract the value from the sub-tuple
+            # This handles the case where elements are stored as single-element tuples
+            var offset = i + 1 - (val - Self.MinimumValue)
+            # For a single-element tuple containing an int, the value is at offset+1
+            return self._store[offset + 1]
 
     @always_inline("nodebug")
     fn tuple(ref self) -> ref [self] Self:

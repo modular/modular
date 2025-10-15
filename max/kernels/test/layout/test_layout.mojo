@@ -137,6 +137,35 @@ fn test_layout_basic() raises:
     )
 
 
+def test_layout_stride_value_access():
+    """Test that Layout stride values can be accessed correctly via `value()` method.
+    """
+    # Test basic 2D row-major layout
+    var layout_2d = Layout.row_major(8, 8)
+    assert_equal(layout_2d.stride.value(0), 8)
+    assert_equal(layout_2d.stride.value(1), 1)
+
+    # Test different sizes
+    var layout_4x16 = Layout.row_major(4, 16)
+    assert_equal(layout_4x16.stride.value(0), 16)
+    assert_equal(layout_4x16.stride.value(1), 1)
+
+    # Test 3D row-major layout
+    var layout_3d = Layout.row_major(3, 4, 5)
+    assert_equal(layout_3d.stride.value(0), 20)
+    assert_equal(layout_3d.stride.value(1), 5)
+    assert_equal(layout_3d.stride.value(2), 1)
+
+    # Test column-major layout (should also work)
+    var col_layout = Layout.col_major(8, 8)
+    assert_equal(col_layout.stride.value(0), 1)
+    assert_equal(col_layout.stride.value(1), 8)
+
+    # Test that shape values are also accessible
+    assert_equal(layout_2d.shape.value(0), 8)
+    assert_equal(layout_2d.shape.value(1), 8)
+
+
 fn test_unknowns() raises:
     print("== test_unknowns")
     alias shape = IntTuple(2, IntTuple(UNKNOWN_VALUE, 4))
@@ -907,6 +936,7 @@ def test_arange_nested_layout():
 
 def main():
     test_layout_basic()
+    test_layout_stride_value_access()
     test_unknowns()
     test_coalesce()
     test_composition()
