@@ -1,0 +1,555 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from ..tile_scheduler import RasterOrder
+from internal_utils import Table, TuningConfig
+
+
+@register_passable("trivial")
+struct TuningConfigSM100(TuningConfig):
+    var M: Int
+    var N: Int
+    var K: Int
+    var mma_shape: IndexList[3]
+    var block_tile_shape: IndexList[3]
+    var cluster_shape: IndexList[3]
+    var block_swizzle_size: UInt
+    var rasterize_order: RasterOrder
+    var num_pipeline_stages: UInt
+
+    fn __init__(
+        out self,
+        M: Int,
+        N: Int,
+        K: Int,
+        mma_shape: IndexList[3],
+        block_tile_shape: IndexList[3],
+        cluster_shape: IndexList[3],
+        block_swizzle_size: UInt,
+        rasterize_order: RasterOrder,
+        num_pipeline_stages: UInt = 1,
+    ):
+        self.M = M
+        self.N = N
+        self.K = K
+        self.mma_shape = mma_shape
+        self.block_tile_shape = block_tile_shape
+        self.cluster_shape = cluster_shape
+        self.block_swizzle_size = block_swizzle_size
+        self.rasterize_order = rasterize_order
+        self.num_pipeline_stages = num_pipeline_stages
+
+    fn __str__(self) -> String:
+        return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+
+
+# codegen template
+# TuningConfigSM100(
+#     M=[@M],
+#     N=[@N],
+#     K=[@K],
+#     mma_shape=Index([@TUNE_BM] * 2, [@TUNE_BN] * 2, mma_k),
+#     block_tile_shape=Index([@TUNE_BM], [@TUNE_BN], bk),
+#     cluster_shape=Index([@TUNE_CLUSTER_DIM_X], [@TUNE_CLUSTER_DIM_Y], [@TUNE_CLUSTER_DIM_Z]),
+#     block_swizzle_size=[@TUNE_BLOCK_SWIZZLE_SIZE],
+#     rasterize_order=RasterOrder([@TUNE_RASTER_ORDER]),
+# )
+
+
+fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
+    # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
+    alias config_list = List(
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [0]
+        TuningConfigSM100(
+            M=150,
+            N=16384,
+            K=4096,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [1]
+        TuningConfigSM100(
+            M=150,
+            N=16384,
+            K=13312,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=4,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [2]
+        TuningConfigSM100(
+            M=150,
+            N=4608,
+            K=16384,
+            mma_shape=Index(64 * 2, 64 * 2, mma_k),
+            block_tile_shape=Index(64, 64, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [3]
+        TuningConfigSM100(
+            M=150,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 96 * 2, mma_k),
+            block_tile_shape=Index(128, 96, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [4]
+        TuningConfigSM100(
+            M=225,
+            N=16384,
+            K=4096,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [5]
+        TuningConfigSM100(
+            M=225,
+            N=16384,
+            K=13312,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [6]
+        TuningConfigSM100(
+            M=225,
+            N=4608,
+            K=16384,
+            mma_shape=Index(64 * 2, 64 * 2, mma_k),
+            block_tile_shape=Index(64, 64, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=2,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [7]
+        TuningConfigSM100(
+            M=225,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 96 * 2, mma_k),
+            block_tile_shape=Index(128, 96, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [8]
+        TuningConfigSM100(
+            M=300,
+            N=16384,
+            K=4096,
+            mma_shape=Index(64 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(64, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [9]
+        TuningConfigSM100(
+            M=300,
+            N=16384,
+            K=13312,
+            mma_shape=Index(64 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(64, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [10]
+        TuningConfigSM100(
+            M=300,
+            N=4608,
+            K=16384,
+            mma_shape=Index(64 * 2, 96 * 2, mma_k),
+            block_tile_shape=Index(64, 96, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [11]
+        TuningConfigSM100(
+            M=300,
+            N=26624,
+            K=16384,
+            mma_shape=Index(64 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(64, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [12]
+        TuningConfigSM100(
+            M=450,
+            N=16384,
+            K=4096,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [13]
+        TuningConfigSM100(
+            M=450,
+            N=16384,
+            K=13312,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [14]
+        TuningConfigSM100(
+            M=450,
+            N=4608,
+            K=16384,
+            mma_shape=Index(128 * 2, 64 * 2, mma_k),
+            block_tile_shape=Index(128, 64, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [15]
+        TuningConfigSM100(
+            M=450,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 120 * 2, mma_k),
+            block_tile_shape=Index(128, 120, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [16]
+        TuningConfigSM100(
+            M=600,
+            N=16384,
+            K=4096,
+            mma_shape=Index(64 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(64, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [17]
+        TuningConfigSM100(
+            M=600,
+            N=16384,
+            K=13312,
+            mma_shape=Index(64 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(64, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [18]
+        TuningConfigSM100(
+            M=600,
+            N=4608,
+            K=16384,
+            mma_shape=Index(128 * 2, 96 * 2, mma_k),
+            block_tile_shape=Index(128, 96, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [19]
+        TuningConfigSM100(
+            M=600,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [20]
+        TuningConfigSM100(
+            M=750,
+            N=16384,
+            K=4096,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [21]
+        TuningConfigSM100(
+            M=750,
+            N=16384,
+            K=13312,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [22]
+        TuningConfigSM100(
+            M=750,
+            N=4608,
+            K=16384,
+            mma_shape=Index(128 * 2, 96 * 2, mma_k),
+            block_tile_shape=Index(128, 96, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [23]
+        TuningConfigSM100(
+            M=750,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [24]
+        TuningConfigSM100(
+            M=2048,
+            N=16384,
+            K=4096,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [25]
+        TuningConfigSM100(
+            M=2048,
+            N=16384,
+            K=13312,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [26]
+        TuningConfigSM100(
+            M=2048,
+            N=4608,
+            K=16384,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [27]
+        TuningConfigSM100(
+            M=2048,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 120 * 2, mma_k),
+            block_tile_shape=Index(128, 120, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [28]
+        TuningConfigSM100(
+            M=4096,
+            N=16384,
+            K=4096,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [29]
+        TuningConfigSM100(
+            M=4096,
+            N=16384,
+            K=13312,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [30]
+        TuningConfigSM100(
+            M=4096,
+            N=4608,
+            K=16384,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [31]
+        TuningConfigSM100(
+            M=4096,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 104 * 2, mma_k),
+            block_tile_shape=Index(128, 104, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [32]
+        TuningConfigSM100(
+            M=6144,
+            N=16384,
+            K=4096,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [33]
+        TuningConfigSM100(
+            M=6144,
+            N=16384,
+            K=13312,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [34]
+        TuningConfigSM100(
+            M=6144,
+            N=4608,
+            K=16384,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [35]
+        TuningConfigSM100(
+            M=6144,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 120 * 2, mma_k),
+            block_tile_shape=Index(128, 120, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=4,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [36]
+        TuningConfigSM100(
+            M=8192,
+            N=16384,
+            K=4096,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=1,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [37]
+        TuningConfigSM100(
+            M=8192,
+            N=16384,
+            K=13312,
+            mma_shape=Index(128 * 2, 112 * 2, mma_k),
+            block_tile_shape=Index(128, 112, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [38]
+        TuningConfigSM100(
+            M=8192,
+            N=4608,
+            K=16384,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        # Automatically generated from [tuning_table_sm100_fp8.yaml]
+        # index: [39]
+        TuningConfigSM100(
+            M=8192,
+            N=26624,
+            K=16384,
+            mma_shape=Index(128 * 2, 128 * 2, mma_k),
+            block_tile_shape=Index(128, 128, bk),
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+    )
+    # ----------------END-TUNING-LIST-SM100-FP8----------------
+
+    return materialize[config_list]()
