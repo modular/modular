@@ -322,7 +322,7 @@ class GptOssMoE(MoE, Shardable):
                 "Only tensor parallel sharding strategy is supported for MoE"
             )
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[GptOssMoE]:  # type: ignore[override]
+    def shard(self, devices: Iterable[DeviceRef]) -> list[GptOssMoE]:
         """Create sharded views of this MoE module across multiple devices.
 
         Args:

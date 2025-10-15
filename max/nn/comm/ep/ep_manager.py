@@ -46,6 +46,7 @@ from .ep_kernels import (
     call_ep_combine_cb,
     call_ep_dispatch,
     call_ep_dispatch_cb,
+    call_ep_dispatch_cb_fp8,
     call_ep_init,
 )
 
@@ -200,9 +201,7 @@ class EPBatchManager:
             self.config,
         )
 
-    def ep_dispatch_cb(
-        self, device_id: int
-    ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+    def ep_dispatch_cb(self, device_id: int) -> tuple[TensorValue, ...]:
         """Complete Expert Parallelism token dispatch phase.
 
         This function launches the EP dispatch callback kernel that waits for
@@ -216,6 +215,9 @@ class EPBatchManager:
             A tuple containing:
             - output_tokens: Aggregated tokens ready for grouped matmul computation.
                 Shape: (max_recv_tokens, hidden_size).
+            - output_scales: Aggregated scales ready for grouped matmul computation.
+                Only returned when we use FP8 quantization.
+                Shape: (hidden_size // block_size, max_recv_tokens).
             - expert_start_indices: Row offsets for grouped matmul computation.
                 Shape: (n_local_experts + 1,).
             - expert_ids: Local expert IDs for the grouped computation.
@@ -225,20 +227,36 @@ class EPBatchManager:
         """
         DISPATCH_GROUP = 0
 
-        # Collect results from all devices
-        results = call_ep_dispatch_cb(
-            self.atomic_counters[DISPATCH_GROUP][device_id],
-            self.recv_buf_ptrs[DISPATCH_GROUP],
-            self.recv_count_ptrs[DISPATCH_GROUP],
-            self.config,
-        )
+        if self.config.dispatch_fp8_config is not None:
+            results = call_ep_dispatch_cb_fp8(
+                self.atomic_counters[DISPATCH_GROUP][device_id],
+                self.recv_buf_ptrs[DISPATCH_GROUP],
+                self.recv_count_ptrs[DISPATCH_GROUP],
+                self.config,
+            )
 
-        # The first four elements are the input for the grouped matmul
-        # operation. The last element is the src_info, we need to store it for
-        # the combine phase.
-        self._src_info[device_id] = results[4]
+            # The first five elements are the input for the grouped matmul
+            # operation. The last element is the src_info, we need to store it for
+            # the combine phase.
+            self._src_info[device_id] = results[5]
 
-        return results[:4]
+            return results[:5]
+
+        else:
+            # Collect results from all devices
+            results = call_ep_dispatch_cb(
+                self.atomic_counters[DISPATCH_GROUP][device_id],
+                self.recv_buf_ptrs[DISPATCH_GROUP],
+                self.recv_count_ptrs[DISPATCH_GROUP],
+                self.config,
+            )
+
+            # The first four elements are the input for the grouped matmul
+            # operation. The last element is the src_info, we need to store it for
+            # the combine phase.
+            self._src_info[device_id] = results[4]
+
+            return results[:4]
 
     def ep_combine(self, input_tokens: TensorValue, device_id: int) -> None:
         """Initiate Expert Parallelism combine phase.
