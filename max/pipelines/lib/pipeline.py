@@ -64,11 +64,11 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.kv_cache import (
+    DPPagedKVCacheManager,
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
-    MultiPagedKVCacheManager,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
@@ -438,7 +438,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 class KVCacheMixin(Protocol):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
+    ) -> TPPagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -489,11 +489,13 @@ class KVCacheMixin(Protocol):
 
 def get_paged_manager(
     pipeline: Pipeline[Any, Any],
-) -> PagedKVCacheManager | None:
+) -> TPPagedKVCacheManager | None:
     if (
         hasattr(pipeline, "_pipeline_model")
         and hasattr(pipeline._pipeline_model, "kv_manager")
-        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
+        and isinstance(
+            pipeline._pipeline_model.kv_manager, TPPagedKVCacheManager
+        )
     ):
         return pipeline._pipeline_model.kv_manager
 
@@ -519,7 +521,7 @@ class _TextGenerationProtocol(
     Protocol, Generic[TextGenerationContextType, RequestType]
 ):
     @property
-    def kv_managers(self) -> list[PagedKVCacheManager]: ...
+    def kv_managers(self) -> list[TPPagedKVCacheManager]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...
@@ -598,10 +600,10 @@ class GenerateMixin(
                 "parallelism is enabled."
             )
         if data_parallel_degree > 1 and not isinstance(
-            kv_managers[0], MultiPagedKVCacheManager
+            kv_managers[0], DPPagedKVCacheManager
         ):
             raise ValueError(
-                "MultiPagedKVCacheManager is required when data parallelism is enabled."
+                "DPPagedKVCacheManager is required when data parallelism is enabled."
             )
         batches = [{} for _ in range(data_parallel_degree)]
         for context in context_batch:
@@ -815,7 +817,7 @@ class TextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager]:
+    ) -> list[TPPagedKVCacheManager]:
         return [self._pipeline_model.kv_manager]
 
     def calculate_num_steps(

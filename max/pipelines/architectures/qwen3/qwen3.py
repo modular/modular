@@ -30,7 +30,7 @@ from max.nn import (
     Transformer,
 )
 from max.nn.kv_cache import (
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from max.nn.transformer import TransformerBlock
 from max.pipelines.architectures.llama3.llama3 import (
@@ -181,7 +181,7 @@ class Qwen3(Transformer):
         )
 
     def input_types(
-        self, kv_manager: PagedKVCacheManager
+        self, kv_manager: TPPagedKVCacheManager
     ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

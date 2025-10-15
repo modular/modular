@@ -27,19 +27,19 @@ from max.interfaces import RequestID, TextGenerationContext
 from ..cache_params import KVCacheParams
 from ..data_parallelism_utils import split_input_row_offsets, split_into_groups
 from ..manager import RaggedKVCacheInputs
-from .paged_cache import (
+from .tp_cache_manager import (
     KVCacheMetrics,
     PagedCacheInputSymbols,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 
 logger = logging.getLogger("max.pipelines")
 
 
-class MultiPagedKVCacheManager(PagedKVCacheManager):
-    """Enhanced PagedKVCacheManager with support for data parallelism.
+class DPPagedKVCacheManager(TPPagedKVCacheManager):
+    """Enhanced TPPagedKVCacheManager with support for data parallelism.
 
-    This class extends the existing PagedKVCacheManager to use MultiBlockManager,
+    This class extends the existing TPPagedKVCacheManager to use MultiBlockManager,
     enabling efficient data parallelism across multiple kv cache replicas.
     """
 
@@ -80,7 +80,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
 
         if params.data_parallel_degree <= 1:
             raise ValueError(
-                "MultiPagedKVCacheManager requires data parallelism to be enabled"
+                "DPPagedKVCacheManager requires data parallelism to be enabled"
             )
 
         if (
@@ -88,7 +88,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
             or params.enable_kvcache_swapping_to_host
         ):
             raise ValueError(
-                "Prefix caching is not supported in MultiPagedKVCacheManager"
+                "Prefix caching is not supported in DPPagedKVCacheManager"
             )
 
         max_batch_size_per_replica = (
@@ -106,10 +106,10 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         self.devices = devices
         self.devices_per_replica = split_into_groups(devices, num_replicas)
 
-        self._replica_managers: list[PagedKVCacheManager] = []
+        self._replica_managers: list[TPPagedKVCacheManager] = []
         for devices in self.devices_per_replica:
             self._replica_managers.append(
-                PagedKVCacheManager(
+                TPPagedKVCacheManager(
                     params=params,
                     max_batch_size=max_batch_size_per_replica,
                     max_seq_len=max_seq_len,
@@ -245,7 +245,7 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         """Reserve a sequence ID for the given request ID."""
         if replica_idx == -1:
             raise ValueError(
-                "replica_idx must be specified for MultiPagedKVCacheManager"
+                "replica_idx must be specified for DPPagedKVCacheManager"
             )
         if request_id in self._request_to_replica_idx:
             raise ValueError(

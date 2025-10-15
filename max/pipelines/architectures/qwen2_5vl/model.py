@@ -38,7 +38,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -1264,8 +1264,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
-        """Loads and initializes the PagedKVCacheManager for the Qwen2.5VL model."""
+    ) -> TPPagedKVCacheManager:
+        """Loads and initializes the TPPagedKVCacheManager for the Qwen2.5VL model."""
         return load_kv_manager(
             params=Qwen2_5VLConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,

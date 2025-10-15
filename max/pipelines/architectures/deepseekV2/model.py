@@ -31,7 +31,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -255,7 +255,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
+    ) -> TPPagedKVCacheManager:
         return load_kv_manager(
             params=DeepseekV2Config.get_kv_params(
                 huggingface_config=self.huggingface_config,

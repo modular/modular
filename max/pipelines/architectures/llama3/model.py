@@ -27,11 +27,11 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
+    DPPagedKVCacheManager,
     KVCacheInputs,
     KVCacheParams,
-    MultiPagedKVCacheManager,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -264,7 +264,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         data_parallel_splits: Tensor | None = None
         if self.pipeline_config.model_config.data_parallel_degree > 1:
-            assert isinstance(self.kv_manager, MultiPagedKVCacheManager)
+            assert isinstance(self.kv_manager, DPPagedKVCacheManager)
             data_parallel_splits = self.kv_manager.get_data_parallel_splits(
                 context_batch
             )
@@ -332,7 +332,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         self,
         session: InferenceSession,
         available_cache_memory: int | None,
-    ) -> PagedKVCacheManager:
+    ) -> TPPagedKVCacheManager:
         # For pipeline parallel, use layers per stage instead of total layers
         num_layers_for_cache = Llama3Config.get_num_layers(
             huggingface_config=self.huggingface_config

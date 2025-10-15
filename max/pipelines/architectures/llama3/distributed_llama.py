@@ -33,7 +33,7 @@ from max.nn import (
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 
 logger = logging.getLogger("max.pipelines")
@@ -200,7 +200,7 @@ class DistributedLlama3(DistributedTransformer):
         )
 
     def input_types(
-        self, kv_manager: PagedKVCacheManager
+        self, kv_manager: TPPagedKVCacheManager
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

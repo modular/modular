@@ -24,7 +24,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import TPPagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import (
     LoRAManager,
@@ -120,7 +120,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        paged_cache: PagedKVCacheManager | None = None,
+        paged_cache: TPPagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

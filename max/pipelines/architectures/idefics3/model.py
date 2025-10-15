@@ -37,7 +37,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -809,8 +809,8 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
-        """Loads and initializes the PagedKVCacheManager for the Idefics3 model."""
+    ) -> TPPagedKVCacheManager:
+        """Loads and initializes the TPPagedKVCacheManager for the Idefics3 model."""
         return load_kv_manager(
             params=Idefics3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,

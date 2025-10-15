@@ -27,9 +27,9 @@ from max.graph.weights import WeightData
 from max.nn import Signals
 from max.nn.float8_config import parse_float8_config
 from max.nn.kv_cache import (
+    DPPagedKVCacheManager,
     KVCacheInputs,
-    MultiPagedKVCacheManager,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines.core import TextContext
@@ -297,7 +297,7 @@ class DeepseekV3Model(DeepseekV2Model):
 
         data_parallel_splits: Tensor
         if self.pipeline_config.model_config.data_parallel_degree > 1:
-            assert isinstance(self.kv_manager, MultiPagedKVCacheManager)
+            assert isinstance(self.kv_manager, DPPagedKVCacheManager)
             data_parallel_splits = self.kv_manager.get_data_parallel_splits(
                 context_batch
             )
@@ -340,7 +340,7 @@ class DeepseekV3Model(DeepseekV2Model):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager:
+    ) -> TPPagedKVCacheManager:
         return load_kv_manager(
             params=DeepseekV3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,

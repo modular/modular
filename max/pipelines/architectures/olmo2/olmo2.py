@@ -28,7 +28,7 @@ from max.nn import (
     Transformer,
 )
 from max.nn.kv_cache import (
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
@@ -179,7 +179,7 @@ class Olmo2(Transformer):
         )
 
     def input_types(
-        self, kv_manager: PagedKVCacheManager
+        self, kv_manager: TPPagedKVCacheManager
     ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

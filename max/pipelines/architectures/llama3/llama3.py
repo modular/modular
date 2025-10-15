@@ -37,7 +37,7 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.kv_cache import (
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from max.pipelines.lib.lora import LoRAManager
 
@@ -247,7 +247,7 @@ class Llama3(Transformer):
 
     def input_types(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: TPPagedKVCacheManager,
         lora_manager: LoRAManager | None,
     ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
