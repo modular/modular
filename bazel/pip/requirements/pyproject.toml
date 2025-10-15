@@ -17,6 +17,7 @@ dependencies = [
   "docutils",
   "einops",
   "einx",
+  "expandvars",
   "fastapi>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
   "faster_whisper",
   "fire ", # For mistral-evals.

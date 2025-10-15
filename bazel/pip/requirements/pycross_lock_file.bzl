@@ -44,6 +44,7 @@ PINS = {
     "editdistance": "editdistance@0.8.1",
     "einops": "einops@0.8.0",
     "einx": "einx@0.3.0",
+    "expandvars": "expandvars@1.1.2",
     "fastapi": "fastapi@0.116.1",
     "faster-whisper": "faster-whisper@1.1.1",
     "filelock": "filelock@3.16.1",
@@ -1333,6 +1334,17 @@ def targets():
         name = "executing@2.1.0",
         wheel = ":_wheel_executing@2.1.0",
         testonly = "executing" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_expandvars@1.1.2",
+        actual = "@pycross_lock_file_wheel_expandvars_1.1.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "expandvars@1.1.2",
+        wheel = ":_wheel_expandvars@1.1.2",
+        testonly = "expandvars" in _TESTONLY_DEPS,
     )
 
     _fastapi_0_116_1_deps = [
@@ -9207,6 +9219,16 @@ def repositories():
         ],
         sha256 = "8d63781349375b5ebccc3142f4b30350c0cd9c79f921cde38be2be4637e98eaf",
         downloaded_file_path = "executing-2.1.0-py2.py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_expandvars_1.1.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/7f/e6/79c43f7a55264e479a9fbf21ddba6a73530b3ea8439a8bb7fa5a281721af/expandvars-1.1.2-py3-none-any.whl",
+        ],
+        sha256 = "d1652fe4e61914f5b88ada93aaedb396446f55ae4621de45c8cb9f66e5712526",
+        downloaded_file_path = "expandvars-1.1.2-py3-none-any.whl",
     )
 
     maybe(
