@@ -67,3 +67,20 @@ def test_instrument_called() -> None:
         metrics.MaxMeasurement("maxserve.itl", 1).commit()
         # make sure the consumer got called
         assert mock_consumer.consume_measurement.call_count == 1
+
+
+def test_batch_execution_time_with_attributes() -> None:
+    """Test that batch_execution_time metric works with batch_type attribute."""
+    common.configure_metrics(Settings())
+
+    # Test with CE (prefill) batch type
+    m_ce = metrics.MaxMeasurement(
+        "maxserve.batch_execution_time", 100.5, attributes={"batch_type": "CE"}
+    )
+    m_ce.commit()  # Should not raise
+
+    # Test with TG (decode) batch type
+    m_tg = metrics.MaxMeasurement(
+        "maxserve.batch_execution_time", 50.2, attributes={"batch_type": "TG"}
+    )
+    m_tg.commit()  # Should not raise
