@@ -13,10 +13,7 @@
 
 from sys import align_of
 from collections import OptionalReg
-from gpu import (
-    WARP_SIZE,
-    thread_idx,
-)
+from gpu import WARP_SIZE, thread_idx
 from gpu.memory import AddressSpace
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout_tensor import (
@@ -34,6 +31,7 @@ from sys import size_of, is_amd_gpu, _RegisterPackType
 from itertools import product
 
 from layout.layout_tensor import _get_worker_idx
+from gpu import warp_id as get_warp_id
 
 
 @always_inline
@@ -341,6 +339,7 @@ struct RingBuffer[
     WK: Int,
     warps_per_block_m: Int,
     warps_per_block_n: Int,
+    consumer_warps: Int,
 ]:
 
     """Simulates A TMA barriers on AMD. This pipeline can be used for both multistage
@@ -350,9 +349,16 @@ struct RingBuffer[
     # NOTE: smem can be 3D if pipelined, in that case we need a way to extract
     # the 2D tiles that's what this does
 
-    alias BarrierTensorType[warp_count: Int] = LayoutTensor[
+    # The barrier consists of integers. Producers and
+    # consumers should wait if the barrier integer value does not fit into their expected range.
+    # The rows of the barrier represent the warp tile desired. the columns consist of pipeline stages
+    # each with consumer_warps slots. If pipeline_stages is > 1 then shared memory buffering is being used.
+    # There are also consumer_warps slots for each pipeline stage, since each warp can write to the barrier
+    # at the same time causing race conditions.
+
+    alias BarrierTensorType[warp_tile_count: Int] = LayoutTensor[
         DType.int32,
-        Layout.row_major(warp_count, pipeline_stages),
+        Layout.row_major(warp_tile_count, consumer_warps * pipeline_stages),
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=32,
@@ -407,15 +413,23 @@ struct RingBuffer[
             return rebind[__type_of(bar)](self.barrier_b)
 
     @always_inline
+    fn _get_current_barrier_value[
+        is_a: Bool
+    ](self, tile_idx: Int, stage: Int) -> Int:
+        var bar = self._get_barrier[is_a]()
+        var warp_vector = bar.vectorize[1, consumer_warps]()[tile_idx, stage]
+        return Int(warp_vector.reduce_add())
+
+    @always_inline
     fn _producer_wait[is_a: Bool](self, phase: Int, tile_idx: Int, stage: Int):
-        while self._get_barrier[is_a]()[tile_idx, stage] != phase:
+        while self._get_current_barrier_value[is_a](tile_idx, stage) != phase:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
             ]()
 
     @always_inline
     fn _consumer_wait[is_a: Bool](self, phase: Int, tile_idx: Int, stage: Int):
-        while self._get_barrier[is_a]()[tile_idx, stage] < phase:
+        while self._get_current_barrier_value[is_a](tile_idx, stage) < phase:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
             ]()
@@ -462,13 +476,10 @@ struct RingBuffer[
         )
 
     @always_inline
-    fn put_tile[
-        is_a: Bool
+    fn await_shared_memory_tile[
+        is_a: Bool, is_producer: Bool
     ](
-        mut self,
-        mut phase: Int,
-        stage: Int,
-        tile_idx: Int,
+        mut self, mut phase: Int, stage: Int, tile_idx: Int
     ) -> Self.SharedMemoryBufferType[is_a].WarpTileType:
         var phase_inc: Int
 
@@ -478,43 +489,16 @@ struct RingBuffer[
         else:
             phase_inc = 1 + warps_per_block_m
 
-        return self._get_shared_memory_warp_tile[is_a, True](
-            phase, tile_idx, stage, phase_inc
-        )
-
-    @always_inline
-    fn get_tile[
-        is_a: Bool
-    ](
-        mut self, mut phase: Int, stage: Int, tile_idx: Int
-    ) -> Self.SharedMemoryBufferType[is_a].WarpTileType:
-        var phase_inc: Int
-
-        @parameter
-        if is_a:
-            phase_inc = warps_per_block_m
-        else:
-            phase_inc = warps_per_block_n
-
-        return self._get_shared_memory_warp_tile[is_a, False](
+        return self._get_shared_memory_warp_tile[is_a, is_producer](
             phase, tile_idx, stage, phase_inc
         )
 
     @always_inline
     fn commit[is_a: Bool](mut self, stage: Int, tile_idx: Int):
-        var bar: Self.BarrierTensorType
-
-        # NOTE this may need atomics
-
-        @parameter
-        if is_a:
-            self.barrier_a[tile_idx, stage] = (
-                self.barrier_a[tile_idx, stage] + 1
-            )
-        else:
-            self.barrier_b[tile_idx, stage] = (
-                self.barrier_b[tile_idx, stage] + 1
-            )
+        var bar = self._get_barrier[is_a]()
+        var bar_tile = bar.tile[1, consumer_warps](tile_idx, stage)
+        var warp_id = get_warp_id() % consumer_warps
+        bar_tile[1, warp_id] = bar_tile[1, warp_id] + 1
 
 
 struct AmdWarpBlockScatterGather[
@@ -605,7 +589,9 @@ struct AmdWarpBlockScatterGather[
             has_side_effect=True,
         ]()
 
-        var warp_tile = cache_manager.put_tile[is_a](phase, stage, tile_idx)
+        var warp_tile = cache_manager.await_shared_memory_tile[is_a, True](
+            phase, stage, tile_idx
+        )
 
         copy_local_to_shared[
             thread_layout=thread_layout,
@@ -772,6 +758,8 @@ struct AmdTileOperator[
 
         self.a_reg_tile = Self.InMmaFragmentTypeA.stack_allocation()
         self.b_reg_tile = Self.InMmaFragmentTypeB.stack_allocation()
+
+        # BUG: this operation fails for some blocks see KERN-2090 for more details.
         self.full_c_reg_tile = (
             Self.FullOutMmaFragmentType.stack_allocation().fill(0)
         )
@@ -791,15 +779,16 @@ struct AmdTileOperator[
         mut phase_a: Int,
         mut phase_b: Int,
         stage: Int,
-        tile_idx_a: Int,
-        tile_idx_b: Int,
-        linear_warp_idx: Int,
+        smem_warp_tile_idx_a: Int,
+        smem_warp_tile_idx_b: Int,
+        linear_warp_idx: Int,  # tells us which set of registers to use
+        block_tile_num: Int,
     ):
-        var smem_tile_a = cache_manager.get_tile[True](
-            phase_a, stage, tile_idx_a
+        var smem_tile_a = cache_manager.await_shared_memory_tile[True, False](
+            phase_a, stage, smem_warp_tile_idx_a
         )
-        var smem_tile_b = cache_manager.get_tile[False](
-            phase_b, stage, tile_idx_b
+        var smem_tile_b = cache_manager.await_shared_memory_tile[False, False](
+            phase_b, stage, smem_warp_tile_idx_b
         )
 
         @parameter
@@ -821,13 +810,6 @@ struct AmdTileOperator[
                 ).vectorize[1, Self.simd_width](),
                 UInt(k_tile_idx),
             )
-
-        inlined_assembly[
-            "s_waitcnt lgkmcnt(0)",
-            NoneType,
-            constraints="",
-            has_side_effect=True,
-        ]()
 
         # TODO: remove this constraint
         constrained[
@@ -867,17 +849,31 @@ struct AmdTileOperator[
                     # NOTE: this storage scheme is column major, because distribute needs it
                     # when writing back to global memory
 
-                    # TODO make c_layout column major
+                    var c_vector: SIMD[OutType, Self.register_count_a]
                     var c_fragment = c_slice.tile[1, Self.register_count_a](
                         mma_n_idx * Self.num_m_mmas + mma_m_idx, 0
                     )
+
+                    # required because of BUG: where fill fails for some blocks
+                    if (
+                        k_tile_idx == 0
+                        and fragment == 0
+                        and block_tile_num == 0
+                    ):
+                        c_vector = SIMD[OutType, Self.register_count_a](0)
+                    else:
+                        c_vector = rebind[__type_of(c_vector)](
+                            c_fragment.vectorize[1, Self.register_count_a]()[
+                                0, 0
+                            ]
+                        )
 
                     mma(
                         c_fragment.vectorize[1, Self.register_count_a]()[0, 0],
                         b_fragment.vectorize[1, Self.register_count_b]()[0, 0],
                         a_fragment.vectorize[1, Self.register_count_a]()[0, 0],
-                        c_fragment.vectorize[1, Self.register_count_a]()[0, 0],
+                        c_vector,
                     )
 
-        cache_manager.commit[True](stage, tile_idx_a)
-        cache_manager.commit[False](stage, tile_idx_b)
+        cache_manager.commit[True](stage, smem_warp_tile_idx_a)
+        cache_manager.commit[False](stage, smem_warp_tile_idx_b)
