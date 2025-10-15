@@ -459,8 +459,7 @@ class Line:
         """Render the line."""
         # Auto-sort struct/trait/extension conformances for Mojo
         if self.is_class and (
-            self.leaves[0].type in (token.STRUCT, token.TRAIT, token.EXTENSION) or
-            (self.leaves[0].type == token.NAME and self.leaves[0].value in ("struct", "trait", "__extension"))
+            self.leaves[0].type in (token.STRUCT, token.TRAIT, token.EXTENSION)
         ):
             # Find LPAR and RPAR, but only if not inside square brackets
             lpar_idx = None
