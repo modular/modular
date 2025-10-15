@@ -1,0 +1,10 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "support",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    deps = [
+        requirement("numpy"),
+    ],
+)

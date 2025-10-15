@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "dtype",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max:_core",
+        requirement("numpy"),
+    ],
+)
