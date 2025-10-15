@@ -8,10 +8,12 @@
 #include "Support/MDialect/MAttrs.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
+#include <string>
 
 using namespace M;
 using namespace KGEN;
 using namespace AsyncRT;
+using namespace std::string_literals;
 
 CompilationOptions::CompilationOptions(
     unsigned optimizationLevel, DebugInfoLevel debugLevel,
@@ -66,6 +68,9 @@ CompilationOptions::parseDefinesWithDefaults(MLIRContext *ctx,
   }
   definesWithDefaults.push_back("__OPTIMIZATION_LEVEL=" +
                                 Twine(optimizationLevel).str());
+  definesWithDefaults.push_back(
+      "__SANITIZE_ADDRESS="s +
+      (sanitizers.has(Sanitizers::kAddress) ? "1" : "0"));
   for (std::string define : defines)
     definesWithDefaults.push_back(define);
   return EnvAttr::parseDefines(ctx, definesWithDefaults);
