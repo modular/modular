@@ -729,8 +729,22 @@ Elaborator::collectConcreteImplementations(Location loc, ImplNode *parent,
   // Get all valid implementations of the callee node.
   ErrorTreeOr<ImplNode *> concrete = calleeNode->getFirstConcreteNode();
   if (concrete.isError()) {
-    parent->setToError(
-        ErrorTree(loc, "call expansion failed", concrete.takeError()));
+    SmallVector<std::string> result = printSimpleParamAttrValues(
+        calleeNode->gen.getInputParams(), calleeNode->inputParams);
+
+    if (result.empty()) {
+      parent->setToError(
+          ErrorTree(loc, "call expansion failed", concrete.takeError()));
+    } else {
+      std::string str;
+      llvm::raw_string_ostream os(str);
+      os << "(";
+      llvm::interleaveComma(result, os);
+      os << ")";
+      parent->setToError(ErrorTree(
+          loc, Twine("call expansion failed with parameter value(s): " + str),
+          concrete.takeError()));
+    }
     return failure();
   }
 
