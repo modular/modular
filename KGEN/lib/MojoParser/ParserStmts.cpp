@@ -460,7 +460,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 
     // Allow object/PythonObject to be ignored.  This should really be
     // implemented with a decorator on the type, not hard coded here.
-    auto declRef = dyn_cast<LIT::StructType>(type.mlirType);
+    auto declRef = sugarDynCast<LIT::StructType>(type.mlirType);
     if (!declRef || !declRef.getParamValues().empty())
       return false;
 
@@ -480,7 +480,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // If this type is a function with no formal arguments and an ignorable type,
   // we emit a warning with a fix it hint suggesting that it get called.
   // TODO: This is incorrect for default arguments and varargs.
-  if (auto sig = dyn_cast<FnTypeGeneratorType>(valueType)) {
+  if (auto sig = sugarDynCast<FnTypeGeneratorType>(valueType)) {
     // Get the result type without any error handling in the way.
     Type resultType = sig.getUserResultType();
     if ((sig.getNumArguments() ==
@@ -826,14 +826,14 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
       resultDest.resetForError(emitter);
       return {};
     }
-    RefType argType = cast<RefType>(refValue.getType());
+    RefType argType = sugarCast<RefType>(refValue.getType());
 
     // We already checked the element type, check the origin and address
     // space.
     // TODO: Move this to general implicit conversion diagnostics.
     if (!userResultType.isEqualCanon(argType)) {
       if (!emitter.canZeroCostConvert(argType, userResultType)) {
-        auto expectedRefType = cast<RefType>(userResultType);
+        auto expectedRefType = sugarCast<RefType>(userResultType);
         auto diag = emitter.emitError(operandExpr->getLoc())
                     << "cannot return reference with incompatible ";
         if (argType.getOrigin() != expectedRefType.getOrigin()) {
@@ -1830,7 +1830,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           CallSyntax::kMethodCall, enterEmitter)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self 'mut'.
-    if (auto signature = dyn_cast<FuncTypeGeneratorType>(enterMethod.getType());
+    if (auto signature =
+            sugarDynCast<FuncTypeGeneratorType>(enterMethod.getType());
         signature && !signature.getBody().getArgConventions().empty()) {
       auto firstArgConvention = signature.getBody().getArgConventions()[0];
       if (firstArgConvention != ArgConvention::Mut && !hasExitMethod)

@@ -676,8 +676,8 @@ PValue OverloadSet::filterOverloadSetForValueType(
     function_ref<InflightDiag &(SMLoc)> emitError) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
-  if (!isa<FnTypeGeneratorType>(functionType)) {
-    if (emitError && !isa<TypeCheckErrorType>(functionType)) {
+  if (!sugarIsa<FnTypeGeneratorType>(functionType)) {
+    if (emitError && !sugarIsa<TypeCheckErrorType>(functionType)) {
       auto &diag = emitError(expr->getLoc())
                    << "cannot convert function to non-function type "
                    << functionType;

@@ -976,7 +976,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     ArgConvention conv = sig.getArgConvention(idx);
     // Handle vararg kinds.
     if (sig.isPosVarArg(idx)) {
-      auto variadic = cast<VariadicType>(type);
+      auto variadic = sugarCast<VariadicType>(type);
       type = variadic.getElementType();
       conv = sig.getPosVarArgConvention(idx);
     } else if (sig.isKwVarArg(idx)) {
@@ -997,7 +997,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
   }
 
   bool allVanillaKernelArgs = llvm::all_of(argTypes, [](ASTType astType) {
-    if (auto structTy = dyn_cast<LIT::StructType>(astType.mlirType)) {
+    if (auto structTy = sugarDynCast<LIT::StructType>(astType.mlirType)) {
       return MOGGPreElab::isDPSTensor(structTy) ||
              MOGGPreElab::isMojoDeviceContextPtr(structTy);
     }
@@ -1435,7 +1435,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // If any of the arguments had an error or if the result type is a type check
   // error, then we won't allow forming a reference to this function.
-  if (isa<TypeCheckErrorType>(tcSignature.resultType.mlirType) ||
+  if (sugarIsa<TypeCheckErrorType>(tcSignature.resultType.mlirType) ||
       llvm::any_of(fnSignature.parsedArgs,
                    [](ParsedArgument &arg) { return arg.isErroneous; }))
     decl.setErroneous();
@@ -1667,9 +1667,9 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
                                    SMLoc loc, ArgConvention convention) {
 
   // Determine if this is VariadicList or VariadicListMem, and get it.
-  auto variadicType = cast<VariadicType>(argValue.getType());
+  auto variadicType = sugarCast<VariadicType>(argValue.getType());
   ASTType variadicEltType = variadicType.getElementType();
-  auto refType = dyn_cast<RefType>(variadicEltType);
+  auto refType = sugarDynCast<RefType>(variadicEltType);
   ASTType varListType =
       emitter.shared.getBuiltinVariadicListType(parentDecl, loc, (bool)refType);
   if (varListType.isTypeCheckErrorType())
@@ -2306,9 +2306,9 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
     // Reject inheriting from types we don't support yet.
     auto traitType = dyn_cast<TraitType>(type);
     if (!traitType) {
-      if (isa<LIT::StructType>(type)) {
+      if (sugarIsa<LIT::StructType>(type)) {
         p.emitError(loc) << "inheriting from structs is not allowed";
-      } else if (isa<ParamType>(type)) {
+      } else if (sugarIsa<ParamType>(type)) {
         p.emitError(loc)
             << "inheriting from a parameter expression is not allowed";
       } else {
@@ -3120,7 +3120,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
     return failure();
   }
 
-#if 0
+#if 0 // FIXME: Enable this someday.
   // Strip sugar off the field type, this is because we can't handle
   // canonicalization of LITStructAttr's in complicated cases.
   // FIXME(Sugar, MOCO-2584): Preserve this sugar.

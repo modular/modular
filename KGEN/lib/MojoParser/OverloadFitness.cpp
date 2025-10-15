@@ -194,8 +194,8 @@ static void addTypeConversionDetail(InflightDiag &diag,
     return;
   }
   // Try to detect mismatched memory result type.
-  auto lhsSig = dyn_cast<FnTypeGeneratorType>(operandType);
-  auto rhsSig = dyn_cast<FnTypeGeneratorType>(argType);
+  auto lhsSig = sugarDynCast<FnTypeGeneratorType>(operandType);
+  auto rhsSig = sugarDynCast<FnTypeGeneratorType>(argType);
   if (lhsSig && rhsSig) {
     auto getByRefResult = [](FnTypeGeneratorType sig) -> std::pair<bool, Type> {
       return {sig.getBody().hasMemoryOnlyResult(),
@@ -348,7 +348,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     }
     diag << " to ";
 
-    if (auto refType = dyn_cast<RefType>(ty)) {
+    if (auto refType = sugarDynCast<RefType>(ty)) {
       diagnoseFailedRefTypeConversion(diag, operand, refType, shared);
       return diag;
     }
@@ -437,7 +437,7 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature) {
   // preceding defaults won't be used anyway.
   if (ASTType variadicPackType = signature.getIfVariadicPack(lastPosIdx)) {
     VariadicAttr packed = // See if resolved.
-        dyn_cast<VariadicAttr>(variadicPackType.getVariadicPackTypeList());
+        sugarDynCast<VariadicAttr>(variadicPackType.getVariadicPackTypeList());
 
     // The caller should know the concrete type list unless we binded the pack
     // directly as a parameter.  This is an unpack like situation.
@@ -519,7 +519,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // One detail is how we do this: we bind these arguments to immutable
     // temporaries, because we specifically do NOT want 'ref' arguments with
     // parametric mutability to treat these things as mutable.
-    if (cast<RefType>(expectedType).isMutableKnown(true))
+    if (sugarCast<RefType>(expectedType).isMutableKnown(true))
       return {kWrongType, expectedType};
 
     // Remember that this argument needs to be emitted.
@@ -1099,7 +1099,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // If we have a varargs argument, then it will eat the rest of the
     // positional arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
-      auto expectedVariadic = cast<VariadicType>(expectedType);
+      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numPosOperands) {
         if (auto result = processPositionalOperand(

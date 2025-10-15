@@ -214,9 +214,10 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
     // case we just know that the input type conforms to Movable, and we want to
     // look up members to bind in Movable, so bind the Trait type here.  If this
     // is a struct, or simple trait, keep it.
-    if (auto paramType = dyn_cast<ParamType>(type.getMetaType())) {
+    if (auto paramType = sugarDynCast<ParamType>(type.getMetaType())) {
       auto simpleTraitType =
-          cast<AnyTraitType>(paramType.getParam().getType()).getTraitType();
+          sugarCast<AnyTraitType>(paramType.getParam().getType())
+              .getTraitType();
       // Upcast from a parametric type of trait metatype value (e.g. "some
       // type that conforms to Movable) to the simple trait type (Movable)
       // so we can substitute the value into the signature.
@@ -503,7 +504,7 @@ ParamBindings::verifyBindingsImpl(
     ASTType expectedType = requestedType;
     // If this is a vararg parameter, infer using the element type.
     if (paramListAttr.isPosVarArg(idx))
-      if (auto varType = dyn_cast<VariadicType>(expectedType))
+      if (auto varType = sugarDynCast<VariadicType>(expectedType))
         expectedType = ASTType(varType.getElementType());
 
     // Inferred params precede positional params, and if explicitly specified,

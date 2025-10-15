@@ -53,7 +53,7 @@ void InferenceFailure::addExplanation(InflightDiag &diag) const {
   }
 
   auto failure = cast<TypeConflictFailure>(info);
-  if (isa<TypeType>(failure.paramType)) {
+  if (sugarIsa<TypeType>(failure.paramType)) {
     if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
       diag << ", argument type " << anyStruct.getType()
            << " is not a '@register_passable(\"trivial\")' type, so "
@@ -62,13 +62,13 @@ void InferenceFailure::addExplanation(InflightDiag &diag) const {
     }
   }
 
-  if (isa<TraitType>(failure.paramType)) {
+  if (sugarIsa<TraitType>(failure.paramType)) {
     if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
       diag << ", argument type " << anyStruct.getType()
            << " does not conform to trait " << failure.paramType;
       return;
     }
-    if (isa<TraitType>(failure.argParamType)) {
+    if (sugarIsa<TraitType>(failure.argParamType)) {
       diag << ", argument type " << failure.argParamType
            << " is not a child trait of " << failure.paramType;
       return;
@@ -729,7 +729,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
     // argument value instead of an implicit conv.
     auto expStruct = expExtract.getStructValue();
     // Figure out if the struct is something we can handle.
-    auto expDRT = cast<StructType>(expStruct.getType());
+    auto expDRT = sugarCast<StructType>(expStruct.getType());
 
     // Conservatively only handle the types we know have a single field.  We
     // special case these ones to avoid name lookup in common cases.
@@ -750,10 +750,10 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 
       // If we succeeded, figure out what the concrete type being inferred would
       // be with any parameters bound.
-      auto initSig = cast<FnTypeGeneratorType>(pValue.value().getType());
+      auto initSig = sugarCast<FnTypeGeneratorType>(pValue.value().getType());
       // The constructed type is the result of the initializer.
       assert(initSig.getNumArguments() != 0);
-      expDRT = cast<StructType>(initSig.getUserResultType());
+      expDRT = sugarCast<StructType>(initSig.getUserResultType());
 
       // Finally, perform any implicit conversion of the actual value to
       // whatever the 'value' would provide.
@@ -816,7 +816,7 @@ static bool usesUnboundParameters(TypedAttr paramValue,
 LogicalResult
 ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
   // We can only support struct inference right now.
-  auto returnedDRT = dyn_cast<StructType>(returnedType);
+  auto returnedDRT = sugarDynCast<StructType>(returnedType);
   if (!returnedDRT)
     return success();
 
@@ -826,7 +826,7 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
   for (auto [idx, param] : llvm::enumerate(returnedDRT.getParamValues())) {
     // If this is simply a reference to the enclosing parameter (as in a normal
     // Self) init, then we can't infer anything from it.
-    if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param))
+    if (auto indexRef = sugarDynCast<ParamIndexRefAttr>(param))
       // If this == 0 seems weird, it's probably okay because the returnedType
       // always comes from the result type of a FnTypeGeneratorType. So this
       // depth 0 always means it refers to the FnTypeGeneratorType that we're
@@ -911,7 +911,7 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue *init,
       /*isImplicitConversion=*/false);
   if (failed(initFn) || !initFn.value())
     return {};
-  return cast<FnTypeGeneratorType>(initFn.value().getType())
+  return sugarCast<FnTypeGeneratorType>(initFn.value().getType())
       .getUserResultType();
 }
 
@@ -1019,7 +1019,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   case ArgConvention::Ref:
   case ArgConvention::MutRef: {
-    auto expectedRef = cast<RefType>(expectedType);
+    auto expectedRef = sugarCast<RefType>(expectedType);
     // Infer the origin and address space before inferring the element type.
     CValue argVal = resolveOperandCValue(expectedRef.getElementType());
     if (!argVal)
@@ -1198,7 +1198,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // If we found one, we recursively call inferOneOperand (but with implicit
   // conversions disabled of course) to resolve our value as the init
   // methods argument.  This allows us to infer parameters from it.
-  auto initSig = cast<FnTypeGeneratorType>(pValue.value().getType());
+  auto initSig = sugarCast<FnTypeGeneratorType>(pValue.value().getType());
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
@@ -1257,7 +1257,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     // If we have a varargs parameters, then it will eat the rest of the
     // parameters, but we have to check each of them.
     if (paramListAttr.isPosVarArg(idx)) {
-      auto expectedVariadic = cast<VariadicType>(expectedType);
+      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
       Type varArgsEltType = expectedVariadic.getElementType();
       while (posIdx != numParams) {
         if (!givenBindings[posIdx].keyword)
@@ -1300,7 +1300,7 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
       if (inferredParams.size() <= nextParamNo)
         inferredParams.resize(nextParamNo + 1);
       auto type = types[evaluator.getNumIndexBindings()];
-      auto empty = VariadicAttr::get({}, cast<VariadicType>(type));
+      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
       inferredParams[nextParamNo] = empty;
       evaluator.appendIndexBinding(empty);
     }
@@ -1342,9 +1342,9 @@ LogicalResult ParameterInferenceState::infer(
     getPartiallySpecializedAttrTypes(inferredParams, evaluator,
                                      totalExpectedBindings, pendingAttrs,
                                      pendingTypes);
-    bodyType = cast<FnType>(pendingTypes.back());
+    bodyType = sugarCast<FnType>(pendingTypes.back());
     metadata = cast<PogListAttr>(pendingAttrs.front());
-    signature = cast<FnTypeGeneratorType>(GeneratorType::get(
+    signature = sugarCast<FnTypeGeneratorType>(GeneratorType::get(
         ArrayRef<Type>(pendingTypes).drop_back(), bodyType, metadata));
   }
 
@@ -1401,7 +1401,7 @@ LogicalResult ParameterInferenceState::infer(
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
-      auto expectedVariadic = cast<VariadicType>(expectedType);
+      auto expectedVariadic = sugarCast<VariadicType>(expectedType);
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numOperands) {
         auto &operand = operands[posOperandIdx];
@@ -1454,7 +1454,8 @@ LogicalResult ParameterInferenceState::infer(
 
           // If that didn't work, then we fail due to the type mismatch.  If the
           // variadic type is due to a parameter mismatch, record it.
-          if (auto ire = dyn_cast<ParamIndexRefAttr>(packType.getVariadic());
+          if (auto ire =
+                  sugarDynCast<ParamIndexRefAttr>(packType.getVariadic());
               ire && ire.getDepth() == paramIndexRefDepth) {
             // Otherwise, we failed to infer the parameter. Record this failure.
             addFailure(ire.getIndex(), InferenceFailure::TypeConflictFailure{
@@ -1472,7 +1473,8 @@ LogicalResult ParameterInferenceState::infer(
       }
 
       // Infer the value of type list from the types we have.
-      auto variadicType = cast<VariadicType>(packType.getVariadic().getType());
+      auto variadicType =
+          sugarCast<VariadicType>(packType.getVariadic().getType());
       if (failed(matchParams(VariadicAttr::get(types, variadicType),
                              packType.getVariadic())))
         return failure();
@@ -1525,7 +1527,7 @@ LogicalResult ParameterInferenceState::infer(
     if (inferredParams.size() <= nextParamNo)
       inferredParams.resize(nextParamNo + 1);
     auto type = signature.getInputParamTypes()[evaluator.getNumIndexBindings()];
-    auto empty = VariadicAttr::get({}, cast<VariadicType>(type));
+    auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
     inferredParams[nextParamNo] = empty;
     evaluator.appendIndexBinding(empty);
   }
@@ -1608,7 +1610,8 @@ ParameterInferenceState::inferCTADParams(FnTypeGeneratorType signature,
   // If passing self by reference, wrap the Self type with the RefType
   // paraphernalia like origins.
   if (hasAddress(selfConvention))
-    selfType = cast<RefType>(signature.getArgument(0)).getWithElement(selfType);
+    selfType =
+        sugarCast<RefType>(signature.getArgument(0)).getWithElement(selfType);
 
   // Infer the first operand against this type - it was presumably already
   // inferred against the methods declared type of 'self' as well.

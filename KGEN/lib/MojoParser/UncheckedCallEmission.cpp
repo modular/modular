@@ -228,7 +228,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   if (calleeSig.isPosVarArg(argIdx)) {
     // In the case of a variadic argument, we need to remove the
     // !pop.variadic<> wrapper to get the type to convert to.
-    expectedType = cast<VariadicType>(expectedType).getElementType();
+    expectedType = sugarCast<VariadicType>(expectedType).getElementType();
     convention = calleeSig.getPosVarArgConvention(argIdx);
   } else if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
     RefPackType packType = variadicPackType.getVariadicPackInfo(emitter.shared);
@@ -255,7 +255,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   case ArgConvention::OwnedMem:
     // Owned conventions pass rvalues.
     if (convention == ArgConvention::OwnedMem)
-      expectedType = cast<RefType>(expectedType).getElementType();
+      expectedType = sugarCast<RefType>(expectedType).getElementType();
     return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
 
   case ArgConvention::Ref:
@@ -272,8 +272,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     if (!refValue)
       return {};
 
-    auto refValueType = cast<RefType>(refValue.getType());
-    auto expectedRefType = cast<RefType>(expectedType);
+    auto refValueType = sugarCast<RefType>(refValue.getType());
+    auto expectedRefType = sugarCast<RefType>(expectedType);
 
     // Origins must be convertible, this is checked by OverloadFitness.
     // The destination may be less mutable because of canZeroCostConvert.
@@ -282,7 +282,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         expectedRefType.isMutableKnown(false)) {
       refValue = emitter.builder->create<RefImmutOp>(
           operand.expr->getLocation(emitter), refValue);
-      refValueType = cast<RefType>(refValue.getType());
+      refValueType = sugarCast<RefType>(refValue.getType());
     }
 
     // The origins may disagree if we're converting a value to a
@@ -290,7 +290,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     refValue = emitter.emitRebindOpIfNeeded(
         refValue, refValueType.getWithOrigin(expectedRefType.getOrigin()),
         operand.expr->getLoc());
-    refValueType = cast<RefType>(refValue.getType());
+    refValueType = sugarCast<RefType>(refValue.getType());
 
     assert((refValueType == expectedType ||
             getCanonicalType(refValueType) == getCanonicalType(expectedType)) &&
@@ -300,7 +300,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
   case ArgConvention::ReadMem:
     // by-ref arguments are converted to the expected r-value type.
-    expectedType = cast<RefType>(expectedType).getElementType();
+    expectedType = sugarCast<RefType>(expectedType).getElementType();
     [[fallthrough]];
   case ArgConvention::ReadReg:
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
@@ -549,14 +549,14 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (calleeSig.isPosVarArg(argIdx)) {
       // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
       auto argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
-                                       cast<VariadicType>(expectedType));
+                                       sugarCast<VariadicType>(expectedType));
       argumentValues.push_back({PValue(argAttr), callExpr});
       continue;
     }
 
     // Pack arguments are fulfilled with an empty #lit.ref.pack.
     if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-      assert(cast<VariadicAttr>(variadicPackType.getVariadicPackTypeList())
+      assert(sugarCast<VariadicAttr>(variadicPackType.getVariadicPackTypeList())
                  .getValues()
                  .empty() &&
              "pack type already checked against operand count");
@@ -577,7 +577,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       // If this is a variadic keyword argument, we initialize a dictionary.
       ValueDest dictDest(ExprContext::EC_KWArgsArgument);
       auto dict = emitter.emitConstructorCall(
-          cast<RefType>(expectedType).getElementType(), {}, callExpr,
+          sugarCast<RefType>(expectedType).getElementType(), {}, callExpr,
           CallSyntax::kTypeCall, dictDest);
       kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
       argumentValues.push_back({kwargsDict, callExpr});
@@ -751,7 +751,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   SmallPtrSet<Attribute, 2> destOrigins, destContainerOrigins;
 
   // processRawOrigin takes apart origin unions for us.
-  auto refOrigin = cast<RefType>(destBuffer.getType()).getOrigin();
+  auto refOrigin = sugarCast<RefType>(destBuffer.getType()).getOrigin();
   processRawOrigin(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
     // AnyOrigin is assumed to be ok since it is used for
     // UnsafePointer etc.  We don't want to track it.
@@ -850,7 +850,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ArgConvention::OwnedMem:
     // Promote PValue's if needed.
     return checkMValueAddrSpace(emitter.emitMRValue(argValAndExpr, ctx));
-    break;
   case ArgConvention::ReadReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
       return emitter.emitSRValue(argValAndExpr, ctx);
@@ -871,7 +870,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
         checkMValueAddrSpace(emitter.emitMBValue(argValAndExpr, ctx));
 
     // Drop mutability for a MBValue.
-    if (result && !cast<RefType>(result.getType()).isMutableKnown(false))
+    if (result && !sugarCast<RefType>(result.getType()).isMutableKnown(false))
       result = emitter.builder->create<RefImmutOp>(
           argValAndExpr.expr->getLocation(emitter), result);
     return result;
@@ -911,7 +910,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     if (!argValAndExpr.ir) {
       assert(convention == ArgConvention::ByRefResult &&
              "value must be present for 'mut' convention");
-      auto resultRValueType = cast<RefType>(declaredArgType).getElementType();
+      auto resultRValueType =
+          sugarCast<RefType>(declaredArgType).getElementType();
 
       // Often the result of the call will be directly assigned into a
       // user-defined var or other location with existing storage.  In these
@@ -982,7 +982,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     if (auto mlVal = loadVal.getIfMLValue()) {
       // Don't do this for assignments.
       if (convention == ArgConvention::Mut &&
-          cast<RefType>(mlVal.getType()).isDefaultAddrSpace())
+          sugarCast<RefType>(mlVal.getType()).isDefaultAddrSpace())
         return mlVal;
     }
 
@@ -1136,7 +1136,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
   if (boundSigType.isRefResult()) {
     result = ParamOperatorAttr::get(
         POC::LoadFromMem, result,
-        cast<RefType>(result.getType()).getElementType());
+        sugarCast<RefType>(result.getType()).getElementType());
   }
   return result;
 }
@@ -1183,7 +1183,7 @@ static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
 void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
                                          const CallOperands &callOperands) {
   // Check for a known callee.
-  auto symbol = dyn_cast<SymbolConstantAttr>(call.getCallee());
+  auto symbol = sugarDynCast<SymbolConstantAttr>(call.getCallee());
   if (!symbol)
     return;
 
@@ -1366,7 +1366,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
     if (convention == ArgConvention::ByRefResult ||
         convention == ArgConvention::ByRefError) {
       checkOriginAccess(argVal, convention, argIdx,
-                        cast<RefType>(argVal.getType()).getOrigin());
+                        sugarCast<RefType>(argVal.getType()).getOrigin());
       return;
     }
 
@@ -1377,7 +1377,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       // origins.
       if (hasAddress(convention))
         checkOriginAccess(argVal, convention, argIdx,
-                          cast<RefType>(argVal.getType()).getOrigin());
+                          sugarCast<RefType>(argVal.getType()).getOrigin());
       return;
     }
 
@@ -1505,7 +1505,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
   // we have a common problem where something is passed both mutable and
   // borrowed.
   if (hasAddress(convention) &&
-      OriginMutCastAttr::strip(cast<RefType>(val.getType()).getOrigin()) ==
+      OriginMutCastAttr::strip(sugarCast<RefType>(val.getType()).getOrigin()) ==
           origin) {
     diag << "'" << ASTType::getOriginAsString(origin, &shared)
          << "' value is passed through aliasing '" << getUserSyntax(convention)
