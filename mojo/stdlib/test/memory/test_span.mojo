@@ -293,7 +293,7 @@ def test_apply():
         return x * 2
 
     @parameter
-    fn _where[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+    fn _is_even[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
         return (x % 2).eq(0)
 
     def _test[D: DType]():
@@ -309,7 +309,7 @@ def test_apply():
         # twice only even numbers
         twice = items.copy()
         span = Span(twice)
-        span.apply[func = _twice[D], cond = _where[D]]()
+        span.apply[func = _twice[D], when = _is_even[D]]()
         for i, item in enumerate(items):
             if item % 2 == 0:
                 assert_true(span[i] == item * 2)

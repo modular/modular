@@ -688,7 +688,7 @@ struct Span[
         O: MutableOrigin, //,
         func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
-        cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        when: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -697,7 +697,7 @@ struct Span[
             dtype: The DType.
             O: The origin of the `Span`.
             func: The function to evaluate.
-            cond: The condition to apply the function.
+            when: The condition for when to apply the function.
         """
 
         alias widths = (256, 128, 64, 32, 16, 8, 4)
@@ -714,12 +714,12 @@ struct Span[
                 for _ in range((length - processed) // w):
                     var p_curr = ptr + processed
                     var vec = p_curr.load[width=w]()
-                    p_curr.store(cond(vec).select(func(vec), vec))
+                    p_curr.store(when(vec).select(func(vec), vec))
                     processed += w
 
         for i in range(length - processed):
             var vec = ptr[processed + i]
-            if cond(vec):
+            if when(vec):
                 (ptr + processed + i).init_pointee_move(func(vec))
 
     fn count[
