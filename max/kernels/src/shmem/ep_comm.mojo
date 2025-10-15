@@ -104,7 +104,7 @@ trait TokenFormat:
         src_type: DType
     ](
         buf_p: UnsafePointer[UInt8],
-        src_p: UnsafePointer[Scalar[src_type]],
+        src_p: UnsafePointer[Scalar[src_type], mut=False],
         block_size: UInt,
     ) -> None:
         "Copy the token to the send buffer. This function needs to be called by all threads in the block."
@@ -148,7 +148,7 @@ struct BF16TokenFormat[
         src_type: DType
     ](
         buf_p: UnsafePointer[UInt8],
-        src_p: UnsafePointer[Scalar[src_type]],
+        src_p: UnsafePointer[Scalar[src_type], mut=False],
         block_size: UInt,
     ) -> None:
         alias src_width = simd_width_of[src_type]()
@@ -252,7 +252,7 @@ struct BlockwiseFP8TokenFormat[
         src_type: DType
     ](
         buf_p: UnsafePointer[UInt8],
-        src_p: UnsafePointer[Scalar[src_type]],
+        src_p: UnsafePointer[Scalar[src_type], mut=False],
         block_size: UInt,
     ) -> None:
         alias src_width = simd_width_of[src_type]()

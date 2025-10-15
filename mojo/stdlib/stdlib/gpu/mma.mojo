@@ -994,7 +994,8 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
         smem_ptr: UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED
+            Scalar[dtype],
+            address_space = AddressSpace.SHARED, **_,
         ],
     ) -> Self:
         """Create a descriptor for shared memory operand.

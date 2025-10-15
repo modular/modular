@@ -32,9 +32,8 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
         data_ptr_gpu,
     )
 
-    var indices = LayoutTensor[DType.int32, Layout.row_major(4, 2)](
-        InlineArray[Int32, 4 * 2](uninitialized=True),
-    )
+    var array = InlineArray[Int32, 4 * 2](uninitialized=True)
+    var indices = LayoutTensor[DType.int32, Layout.row_major(4, 2)](array)
 
     indices[0, 0] = 0
     indices[0, 1] = 1

@@ -255,7 +255,7 @@ fn cosine[
 fn relative_difference[
     dtype: DType, //,
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], mut=False],
     ref_out: __type_of(output),
     len: Int,
 ) -> Float64:

@@ -620,7 +620,11 @@ struct LayoutTensor[
         Args:
             device_buffer: Contains the underlying data to point to.
         """
-        self = Self.GenericLayoutTensorType(device_buffer.unsafe_ptr())
+        self = Self.GenericLayoutTensorType(
+            device_buffer.unsafe_ptr()
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
 
     @always_inline
     fn __init__(
@@ -651,7 +655,11 @@ struct LayoutTensor[
         Args:
             host_buffer: Contains the underlying data to point to.
         """
-        self = Self.GenericLayoutTensorType(host_buffer.unsafe_ptr())
+        self = Self.GenericLayoutTensorType(
+            host_buffer.unsafe_ptr()
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
 
     @always_inline
     fn __init__(
@@ -673,7 +681,10 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the LayoutTensor.
         """
         self = Self.GenericLayoutTensorType(
-            device_buffer.unsafe_ptr(), runtime_layout
+            device_buffer.unsafe_ptr()
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin](),
+            runtime_layout,
         )
 
     @always_inline
@@ -696,7 +707,10 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
         """
         self = Self.GenericLayoutTensorType(
-            host_buffer.unsafe_ptr(), runtime_layout
+            host_buffer.unsafe_ptr()
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin](),
+            runtime_layout,
         )
 
     @always_inline
@@ -718,7 +732,11 @@ struct LayoutTensor[
             element_runtime_layout: The runtime layout of each element.
         """
         self = Self.GenericLayoutTensorType(
-            device_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
+            device_buffer.unsafe_ptr()
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin](),
+            runtime_layout,
+            element_runtime_layout,
         )
 
     @always_inline
@@ -740,7 +758,11 @@ struct LayoutTensor[
             element_runtime_layout: The runtime layout of each element.
         """
         self = Self.GenericLayoutTensorType(
-            host_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
+            host_buffer.unsafe_ptr()
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin](),
+            runtime_layout,
+            element_runtime_layout,
         )
 
     @always_inline("nodebug")
@@ -782,9 +804,7 @@ struct LayoutTensor[
             A tensor merged with the specified `other_type`.
         """
         return {
-            self.ptr.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
-                result.origin
-            ](),
+            self.ptr.mut_cast[result.mut]().unsafe_origin_cast[result.origin](),
             self.runtime_layout,
             self.runtime_element_layout,
         }
@@ -1030,7 +1050,7 @@ struct LayoutTensor[
         @parameter
         for i in range(self.layout.size()):
             alias idx = self.layout(i)
-            self.ptr.store(
+            self.ptr.mut_cast[True]().store(
                 idx, func(self.ptr.load[width = Self.element_size](idx))
             )
         return self
@@ -1146,7 +1166,7 @@ struct LayoutTensor[
                 alias lhs_idx = self.layout(i)
                 alias rhs_idx = other.layout(i % other_size)
 
-                self.ptr.store(
+                self.ptr.mut_cast[True]().store(
                     lhs_idx,
                     func(
                         self.ptr.load[width = Self.element_size](lhs_idx),
@@ -1159,7 +1179,7 @@ struct LayoutTensor[
         for i in range(self.layout.size()):
             alias lhs_idx = self.layout(i)
             alias rhs_idx = other.layout(i)
-            self.ptr.store(
+            self.ptr.mut_cast[True]().store(
                 lhs_idx,
                 func(
                     self.ptr.load[width = Self.element_size](lhs_idx),
@@ -1772,7 +1792,7 @@ struct LayoutTensor[
         return {
             self._stack_copy()
             ._elementwise_unary[exp_func]()
-            .ptr.unsafe_mut_cast[mut]()
+            .ptr.mut_cast[mut]()
             .unsafe_origin_cast[origin](),
             self.runtime_layout,
             self.runtime_element_layout,
@@ -1900,7 +1920,7 @@ struct LayoutTensor[
 
         Element[index_type=linear_idx_type](
             val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
+        ).store(self.ptr.mut_cast[True]().offset(offset))
 
     @always_inline("nodebug")
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
@@ -2348,7 +2368,9 @@ struct LayoutTensor[
         if Self.layout.all_dims_known():
             copy = self.stack_allocation()
         else:
-            copy = Self.StackTensorType(self.ptr, self.runtime_layout)
+            copy = Self.StackTensorType(
+                self.ptr.mut_cast[True]().as_any_origin(), self.runtime_layout
+            )
 
         fn self_value(
             lhs: Self.element_type, rhs: Self.element_type
@@ -4027,19 +4049,21 @@ struct LayoutTensor[
                     self.runtime_layout.stride.value[i] * vector_shape_i
                 )
 
+        var ptr = self.ptr.as_immutable().unsafe_origin_cast[_origin]()
+
         @parameter
         if layout.all_dims_known():
 
             @parameter
             if vectorized_type.masked:
                 return vectorized_type(
-                    self.ptr,
+                    ptr,
                     vectorized_type.RuntimeLayoutType(
                         runtime_shape, runtime_stride
                     ),
                 )
             else:
-                return vectorized_type(self.ptr)
+                return vectorized_type(ptr)
         else:
             constrained[
                 coalesce(vectorized_type.element_layout).known_shape(),
@@ -4058,7 +4082,7 @@ struct LayoutTensor[
             return Self.ShapeVectorizedType[
                 _origin, vector_shape, linear_vectorize
             ](
-                self.ptr,
+                ptr,
                 vectorized_type.RuntimeLayoutType(
                     runtime_shape, runtime_stride
                 ),
@@ -5087,7 +5111,9 @@ struct LayoutTensor[
             src.layout.all_dims_known() and src.element_layout.all_dims_known()
         )
 
-        var dst_ptr = self.ptr.address_space_cast[_GPUAddressSpace.SHARED]()
+        var dst_ptr = self.ptr.address_space_cast[
+            _GPUAddressSpace.SHARED
+        ]().mut_cast[True]()
         var src_ptr = src.ptr.address_space_cast[_GPUAddressSpace.GLOBAL]()
 
         # Coalesce element layouts to simplify vectorization condition.

@@ -59,7 +59,7 @@ alias MPIComm = UnsafePointer[OpaquePointer]
 # ===-----------------------------------------------------------------------===#
 
 
-fn MPI_Init(argc: Int, argv: VariadicList[StaticString]) raises:
+fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
     """Initialize MPI."""
     var result = _get_mpi_function[
         "MPI_Init",

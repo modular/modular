@@ -363,13 +363,16 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
         )
 
     @always_inline
-    fn unsafe_ptr(
-        ref [AddressSpace.SHARED]self,
+    fn unsafe_ptr[
+        mut: Bool, //,
+        origin: Origin[mut],
+    ](
+        ref [origin, AddressSpace.SHARED]self,
     ) -> UnsafePointer[
         Int64,
         address_space = AddressSpace.SHARED,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        mut=mut,
+        origin=origin,
     ]:
         """Get an unsafe pointer to the barrier's memory location.
 
@@ -377,11 +380,19 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
         This method is primarily used internally by other barrier operations that need
         direct access to the underlying memory.
 
+        Parameters:
+            mut: Mutability of self.
+            origin: Origin of self.
+
         Returns:
             An unsafe pointer to the barrier's memory location in shared memory,
             properly typed and aligned for barrier operations.
         """
-        return {UnsafePointer(to=self.mbar)}
+        return (
+            UnsafePointer(to=self.mbar)
+            .mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
 
     @always_inline
     fn arrive_cluster(
@@ -705,7 +716,7 @@ struct TMATensorTile[
                     + String(desc_layout),
                 ]()
                 cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
-                    dst.ptr + copy_offset,
+                    dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
@@ -777,7 +788,7 @@ struct TMATensorTile[
                     ) + (i * num_copies_dim2 + j) * copy_size
 
                     cp_async_bulk_tensor_shared_cluster_global(
-                        dst.ptr + copy_offset,
+                        dst.ptr.mut_cast[True]() + copy_offset,
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
@@ -847,7 +858,7 @@ struct TMATensorTile[
                 cp_async_bulk_tensor_shared_cluster_global_multicast[
                     cta_group=cta_group
                 ](
-                    dst.ptr + copy_offset,
+                    dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
@@ -1469,7 +1480,9 @@ def create_tma_tile[
     return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
         DeviceBuffer(
             ctx,
-            tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+            tensor.ptr.mut_cast[True]().address_space_cast[
+                AddressSpace.GENERIC
+            ](),
             1,
             owning=False,
         ),
@@ -1582,7 +1595,9 @@ def create_tma_tile[
         return create_tma_descriptor[dtype, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                tensor.ptr.mut_cast[True]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
                 1,
                 owning=False,
             ),
@@ -1608,7 +1623,9 @@ def create_tma_tile[
         return create_tma_descriptor[dtype, 3, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                tensor.ptr.mut_cast[True]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
                 1,
                 owning=False,
             ),
@@ -1716,7 +1733,9 @@ fn create_nested_tma_tile[
     res = create_tma_descriptor[dtype, 2, swizzle_mode](
         DeviceBuffer(
             ctx,
-            tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+            tensor.ptr.mut_cast[True]().address_space_cast[
+                AddressSpace.GENERIC
+            ](),
             1,
             owning=False,
         ),

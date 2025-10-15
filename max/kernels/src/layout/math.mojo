@@ -25,7 +25,7 @@ from utils.index import IndexList
 
 @always_inline
 fn outer_product_acc(
-    res: LayoutTensor,
+    res: LayoutTensor[mut=True, *_, **_],
     lhs: LayoutTensor,
     rhs: LayoutTensor,
 ):

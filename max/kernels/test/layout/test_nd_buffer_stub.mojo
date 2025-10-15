@@ -77,7 +77,7 @@ fn print_element[
     rank: Int,
     element_shape: IndexList[rank],
 ](
-    element_ptr: UnsafePointer[Scalar[dtype]],
+    element_ptr: UnsafePointer[Scalar[dtype], mut=False],
     element_layout: ElementLayout[rank, element_shape],
 ):
     var simd_element = SIMD[dtype, element_shape[0] * element_shape[1]](0)

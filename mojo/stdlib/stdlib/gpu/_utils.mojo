@@ -61,7 +61,7 @@ fn to_llvm_shared_mem_ptr[
 @always_inline
 fn to_llvm_ptr[
     type: AnyType
-](ptr: UnsafePointer[type]) -> __mlir_type.`!llvm.ptr`:
+](ptr: UnsafePointer[type, **_]) -> __mlir_type.`!llvm.ptr`:
     """Cast a pointer to LLVMPointer Type.
 
     Args:
