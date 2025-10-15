@@ -141,6 +141,10 @@ class SchedulerLogger:
         )
 
         METRICS.batch_size(batch_size)
+        METRICS.batch_execution_time(
+            batch_execution_time_s * 1000,
+            batch_type=batch_type.value,  # "CE" (prefill) or "TG" (decode)
+        )  # Convert to ms
 
         if paged_cache is None:
             if log_batch_info:

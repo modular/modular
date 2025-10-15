@@ -126,6 +126,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.batch_size": _meter.create_histogram(
         "maxserve.batch_size", description="Distribution of batch sizes"
     ),  # type: ignore
+    "maxserve.batch_execution_time": _meter.create_histogram(
+        "maxserve.batch_execution_time",
+        unit="ms",
+        description="Distribution of batch execution time",
+    ),  # type: ignore
     # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
     "maxserve.cache.num_used_blocks": _meter.create_counter(
         "maxserve.cache.num_used_blocks",
@@ -366,6 +371,18 @@ class _AsyncMetrics:
     def batch_size(self, size: int) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.batch_size", size), MetricLevel.DETAILED
+        )
+
+    def batch_execution_time(
+        self, execution_time: float, batch_type: str
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_execution_time",
+                execution_time,
+                attributes={"batch_type": batch_type},
+            ),
+            MetricLevel.DETAILED,
         )
 
     def cache_num_used_blocks(self, num_used_blocks: int) -> None:
