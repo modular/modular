@@ -26,12 +26,16 @@ struct Foo(Movable, Writable, Copyable):
 trait Bar(Writable, Movable, Copyable):
   pass
 
+# CHECK: struct Bar[x: Int]:
+struct Bar[x: Int]:
+  pass
 
 # CHECK: struct ComplexStruct[
+# CHECK:     bar: Bar[5],
 # CHECK:     index_type: DType = _get_index_type(layout, address_space),
 # CHECK: ](Copyable, Movable, Writable):
 # CHECK:     pass
 struct ComplexStruct[
-    index_type: DType = _get_index_type(layout, address_space),
+    bar: Bar[5], index_type: DType = _get_index_type(layout, address_space),
 ](Writable, Movable, Copyable):
     pass
