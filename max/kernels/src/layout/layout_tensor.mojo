@@ -1157,12 +1157,13 @@ struct LayoutTensor[
 
         @parameter
         for i in range(self.layout.size()):
-            alias idx = self.layout(i)
+            alias lhs_idx = self.layout(i)
+            alias rhs_idx = other.layout(i)
             self.ptr.store(
-                idx,
+                lhs_idx,
                 func(
-                    self.ptr.load[width = Self.element_size](idx),
-                    other.ptr.load[width = Self.element_size](idx),
+                    self.ptr.load[width = Self.element_size](lhs_idx),
+                    other.ptr.load[width = Self.element_size](rhs_idx),
                 ),
             )
         return self

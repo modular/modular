@@ -108,3 +108,10 @@ what we publish.
 
 - The `math.cos` and `math.sin` function can now be evaluated at compile time
   (fixes #5111).
+
+- Fixed `LayoutTensor` element-wise arithmetic operations (`+`, `-`, `*`, `/`)
+  between tensors with different memory layouts. Previously, operations like
+  `a.transpose() - b` would produce incorrect results when the operands had
+  different layouts, because the same layout index was incorrectly used for both
+  operands. This now correctly computes separate indices for each tensor based
+  on its layout.
