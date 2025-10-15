@@ -1,0 +1,8 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+modular_py_library(
+    name = "_core_types",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)

@@ -53,23 +53,15 @@ load("@rules_python//python:defs.bzl", "py_library")
 # Subdirectories of the wheel that are part of this repo and therefore should
 # be removed so that they're not accidentally used when testing changes that
 # depend on some closed-source portions of the wheel.
-_OPEN_SOURCE_GLOBS = [
-    "modular/lib/mojo/*",
-    "max/diagnostics/**",
-    "max/entrypoints/**",
-    "max/graph/**",
-    "max/nn/**",
-    "max/pipelines/**",
-    "max/serve/**",
-    "mojo/**",
-]
-
 py_library(
     name = "max",
     data = glob([
-        "max/**",
+        "max/_core.*",
+        "max/_mlir/**",
         "modular/**",
-    ], exclude = _OPEN_SOURCE_GLOBS),
+    ], exclude = [
+        "modular/lib/mojo/*",
+    ]),
     visibility = ["//visibility:public"],
     imports = ["."],
 )""",

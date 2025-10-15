@@ -39,6 +39,22 @@ alias LICENSE_TO_ADD = """# ===-------------------------------------------------
 
 
 fn is_ignored_file(filename: StringSlice) -> Bool:
+    # Temporary hack while we update the notices
+    if (
+        filename.startswith("max/_core_mojo")
+        or filename.startswith("max/_core_types")
+        or filename.startswith("max/driver")
+        or filename.startswith("max/dtype")
+        or filename.startswith("max/engine")
+        or filename.startswith("max/experimental")
+        or filename.startswith("max/interfaces")
+        or filename.startswith("max/interfaces")
+        or filename.startswith("max/mlir")
+        or filename.startswith("max/profiler")
+        or filename.startswith("max/support")
+        or filename.startswith("max/torch")
+    ):
+        return True
     if not (
         filename.endswith(".py")
         or filename.endswith(".mojo")
