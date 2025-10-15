@@ -723,12 +723,16 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     SymbolConstantAttr symbolConstant =
         buildSymbol(impl, implType, originSetParam);
     b.create<WitnessOp>(StringAttr::get(ctx, name), symbolConstant);
+
+    return witnessTable;
   };
 
+  llvm::StringMap<ConformanceOp> parentWitnesses;
   for (ClosureParent &closureParent : closureParents) {
     if (!closureParent.isEmpty()) {
-      addWitnessEntry(closureParent.getTrait(moduleDecl),
-                      closureParent.getDefiningOp(moduleDecl));
+      auto tbl = addWitnessEntry(closureParent.getTrait(moduleDecl),
+                                 closureParent.getDefiningOp(moduleDecl));
+      parentWitnesses[closureParent.getDefiningOpName()] = tbl;
     }
   }
 
@@ -786,6 +790,34 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   if (typeConvention == TypeConvention::RegisterPassableTrivial)
     addConformanceToDevicePassable(structDecl, wrappedField, implType,
                                    originSetParam);
+
+  // Generate is-trivial special aliases
+  auto generateIsTrivialSpecialAlias = [&](StringRef name,
+                                           ClosureParent parent) {
+    bool value = typeConvention == TypeConvention::RegisterPassableTrivial;
+    b.setInsertionPointToEnd(&declOp.getBodyRegion().front());
+    TypedAttr valueAttr = BoolAttr::get(ctx, value);
+    ParamDeclAttr paramAttr = ParamDeclAttr::get(
+        ctx, StringAttr::get(ctx, name), valueAttr.getType());
+    AliasDeclOp aliasOp = b.create<LIT::AliasDeclOp>(
+        declOp.getBodyRegion().getLoc(), paramAttr, valueAttr);
+    aliasOp.setInheritedFromAttr(parent.getSymbolRef(moduleDecl));
+    shared.declResolver->addFullyResolvedDecl(
+        aliasOp, StringAttr::get(ctx, name), structDecl.getLoc(), &structDecl);
+
+    // Look up the existing conformance table for this trait. We already created
+    // these earlier.
+    assert(parentWitnesses.contains(parent.getDefiningOpName()) &&
+           "parent witness table should already exist");
+    auto conformanceOp = parentWitnesses[parent.getDefiningOpName()];
+    b.setInsertionPointToEnd(&conformanceOp.getBody().front());
+    b.create<WitnessOp>(StringAttr::get(ctx, name), valueAttr);
+  };
+
+  generateIsTrivialSpecialAlias("__del__is_trivial", anyParent);
+  generateIsTrivialSpecialAlias("__moveinit__is_trivial", moveParent);
+  if (isCopyable)
+    generateIsTrivialSpecialAlias("__copyinit__is_trivial", copyParent);
 
   return &structDecl;
 }
