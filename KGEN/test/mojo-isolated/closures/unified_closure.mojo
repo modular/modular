@@ -459,3 +459,18 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 fn makeIt[T: AnyTrivialRegType](a: T):
     fn parametric() unified {var a} -> T:
         return a
+
+
+# // -----
+
+# COM: Check that device passable conformance is emitted properly
+
+
+fn conditionallyDevicePassable(x: Int):
+    # CHECK: kgen.conformance @"{{.*}}::DevicePassable" {
+    # CHECK-NEXT: kgen.witness "device_type`1" : !kgen.param<:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable impl> =
+    # CHECK-NEXT: kgen.witness "_to_device_type" : !lit.generator
+    # CHECK-NEXT: kgen.witness "get_type_name" : !lit.generator
+    # CHECK-NEXT: kgen.witness "get_device_type_name" : !lit.generator
+    fn device_passable() unified register_passable {var} -> Int:
+        return x
