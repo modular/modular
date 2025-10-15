@@ -1,4 +1,4 @@
-[tool.black]
+[tool.mblack]
 verbose = 1
 --check = "no"
 diff = "y"
