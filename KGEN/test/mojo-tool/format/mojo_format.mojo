@@ -4,7 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo format --quiet - < %s 2>&1 | FileCheck %s
+# `mojo format` only works on `.mojo` files, and modifies them in place.
+# The `grep` is used to remove the `CHECK` lines from the output so FileCheck
+# doesn't match on its own directives.
+# RUN: cp %s %t.mojo
+# RUN: mojo format %t.mojo
+# RUN: cat %t.mojo | grep -v "# CHECK:" | FileCheck %t.mojo
 
 # CHECK: fn function() -> Int:
 # CHECK: return 10
