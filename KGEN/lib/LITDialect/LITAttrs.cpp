@@ -1043,7 +1043,7 @@ LITStructAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
     }
 
     Type reboundType = evaluator.getReboundType(fieldDecl.getType());
-    if (reboundType != std::get<1>(value).getType()) {
+    if (!isCanonicalEqual(reboundType, std::get<1>(value).getType())) {
       return (emitError(loc)
               << "struct attribute field #" << i << " has type "
               << std::get<1>(value).getType()

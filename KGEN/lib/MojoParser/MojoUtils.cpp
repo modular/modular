@@ -58,7 +58,7 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
   };
 
   for (ParamDeclAttr param : params)
-    if (isa<OriginSetType>(param.getType()))
+    if (sugarIsa<OriginSetType>(param.getType()))
       addOriginSet(ParamDeclRefAttr::get(param));
   if (captureOrigins)
     addOriginSet(captureOrigins);

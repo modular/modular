@@ -180,13 +180,14 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
     indexVal = getCanonicalAttr(indexVal.get());
 
     // If this is a wrapper for a type, print it as such.
-    if (isa<TraitType>(indexVal.getType())) {
+    if (sugarIsa<TraitType>(indexVal.getType())) {
       // values of trait type are printed in a kgen compatible way, e.g.
       // "":!lit.trait<@stdlib::@builtin::@stubs::@AnyType> someParamValue"
       if (!elideType)
         os << ":" << ASTType(indexVal.getType()).mlirType << " ";
       os << ASTType(indexVal).mlirType;
-    } else if (isa<TypeType, StructMetaType, AnyTraitType>(indexVal.getType()))
+    } else if (sugarIsa<TypeType, StructMetaType, AnyTraitType>(
+                   indexVal.getType()))
       os << ASTType(indexVal).mlirType;
     else // Otherwise print it as an attribute.
       indexVal.get().print(os, elideType);
@@ -252,19 +253,20 @@ static std::string getStringRepresentation(AttrCtorDeferredAttr attr) {
   std::string result;
   llvm::raw_string_ostream os(result);
   for (auto str : attr.getStrings()) {
-    if (auto strAttr = dyn_cast<StringAttr>(str)) {
+    if (auto strAttr = sugarDynCast<StringAttr>(str)) {
       os << strAttr.str();
-    } else if (auto toStrAttr = dyn_cast<ToStringDeferredAttr>(str)) {
+    } else if (auto toStrAttr = sugarDynCast<ToStringDeferredAttr>(str)) {
       auto val = cast<TypedAttr>(toStrAttr.getAttr());
       bool elideType = toStrAttr.getNeedElideType() != nullptr;
 
-      if (isa<TraitType>(val.getType())) {
+      if (sugarIsa<TraitType>(val.getType())) {
         // values of trait type are printed in a kgen compatible way, e.g.
         // "":!lit.trait<@stdlib::@builtin::@stubs::@AnyType> someParamValue"
         if (!elideType)
           os << ":" << ASTType(val.getType()).mlirType << " ";
         os << ASTType(val).mlirType;
-      } else if (isa<TypeType, StructMetaType, AnyTraitType>(val.getType()))
+      } else if (sugarIsa<TypeType, StructMetaType, AnyTraitType>(
+                     val.getType()))
         os << ASTType(val).mlirType;
       else // Otherwise print it as an attribute.
         val.print(os, elideType);
@@ -561,13 +563,13 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
                                        const ExprNode *expr, ValueDest &dest,
                                        IREmitter &emitter) {
-  if (isa<TypeCheckErrorType>(type))
+  if (sugarIsa<TypeCheckErrorType>(type))
     return {}; // Sanity check the returned declaration.
   ASTDecl *decl = type.getDecl(emitter.shared);
 
   auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
   if (!litStruct || litStruct.getParams().size() != 1 ||
-      !isa<POP::IntLiteralType, POP::FloatLiteralType, StringType>(
+      !sugarIsa<POP::IntLiteralType, POP::FloatLiteralType, StringType>(
           litStruct.getParams()[0].getType())) {
     emitter.emitError(expr->getLoc(), "malformed Literal type");
     return {};
@@ -1076,7 +1078,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
   // If the declaration is a type check error, its error has already been
   // diagnosed. Squelch any downstream issues.
-  if (isa<TypeCheckErrorType>(value.getRValueType()))
+  if (sugarIsa<TypeCheckErrorType>(value.getRValueType()))
     return {};
 
   // If this is a reference to a value from an outer function scope, record
@@ -1313,7 +1315,7 @@ static TypedAttr emitSingleParamBinding(const Operand &operand,
     PValue value = emitter.emitExprPValue(unpackExpr->subExpr, context);
     if (!value)
       return {};
-    if (!isa<VariadicType>(value.getType())) {
+    if (!sugarIsa<VariadicType>(value.getType())) {
       emitter.emitError(unpackExpr->getLoc(), "only variadics can be unpacked")
           << unpackExpr->getRange();
       return {};
@@ -1387,7 +1389,7 @@ static std::optional<ParamBindings> getBindingsForParameterOperands(
 static PValue substituteParametersIntoUserDefinedType(
     PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
     SMLoc rhsLoc, IREmitter &emitter) {
-  auto metaType = cast<StructMetaType>(typeValue.getType());
+  auto metaType = sugarCast<StructMetaType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
   auto structOp = cast<StructDeclOp>(typeDecl->getIfOperation());
 
@@ -1485,9 +1487,9 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   auto lookupError = [&] {
     auto diagType = baseType;
     // Complain about "SomeType" in 'SomeType.foo' not 'AnyStruct[SomeType]'.
-    if (auto anyStruct = dyn_cast<StructMetaType>(diagType))
+    if (auto anyStruct = sugarDynCast<StructMetaType>(diagType))
       diagType = anyStruct.getType();
-    else if (auto anyTrait = dyn_cast<AnyTraitType>(diagType))
+    else if (auto anyTrait = sugarDynCast<AnyTraitType>(diagType))
       diagType = anyTrait.getTraitType();
 
     auto diag = emitter.emitError(node->getLoc())
@@ -1608,8 +1610,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     elementType = getter.getType().getSignatureUserResultType();
 
     // Also look through ref results.
-    if (cast<FnTypeGeneratorType>(getter.getType()).isRefResult())
-      elementType = cast<RefType>(elementType).getElementType();
+    if (sugarCast<FnTypeGeneratorType>(getter.getType()).isRefResult())
+      elementType = sugarCast<RefType>(elementType).getElementType();
   }
 
   // We need to figure out which setter to use, but can't just filter the set
@@ -1640,7 +1642,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       lookupError();
       return {}; // Getter invalid.
     }
-    auto sigType = cast<FnTypeGeneratorType>(directSymbolAttr.getType());
+    auto sigType = sugarCast<FnTypeGeneratorType>(directSymbolAttr.getType());
     // Check basic sanity.
     size_t setValueIdx = operands.getNumPositional();
     if (sigType.getNumArguments() <= setValueIdx) {
@@ -1743,16 +1745,16 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
     // If there is no decl, the type is an MLIR type.
     Type baseMLIRType = baseRVType.mlirType;
-    if (isa<TypeCheckErrorType>(baseMLIRType))
+    if (sugarIsa<TypeCheckErrorType>(baseMLIRType))
       return {}; // An already-diagnosed error.
 
     // Handle __mlir_op.`xxx` references, lazily synthesizing values when
     // they are referenced.
-    if (isa<MagicMLIRAttrType>(baseMLIRType)) {
+    if (sugarIsa<MagicMLIRAttrType>(baseMLIRType)) {
       PValue result = synthesizeMLIRAttrFromString(spelling, getLoc(), shared);
       return emitter.emitResult(result, this, dest);
     }
-    if (isa<MagicMLIRAttrType, MagicMLIRDeferredAttrType>(baseMLIRType)) {
+    if (sugarIsa<MagicMLIRAttrType, MagicMLIRDeferredAttrType>(baseMLIRType)) {
       /// `__mlir_deferred_attr` always behaves like `__mlir_attr` when used
       /// with backticks. Don't want to strictly enforce that, but user should
       /// be aware that use of `__mlir_attr` is preferred
@@ -1760,11 +1762,11 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       PValue result = synthesizeMLIRAttrFromString(spelling, getLoc(), shared);
       return emitter.emitResult(result, this, dest);
     }
-    if (isa<MagicMLIROpType>(baseMLIRType)) {
+    if (sugarIsa<MagicMLIROpType>(baseMLIRType)) {
       PValue result = synthesizeMLIROpFromString(spelling, emitter);
       return emitter.emitResult(result, this, dest);
     }
-    if (isa<MagicMLIRTypeType>(baseMLIRType)) {
+    if (sugarIsa<MagicMLIRTypeType>(baseMLIRType)) {
       ASTType result = parseMLIRType(spelling, this, shared);
       return emitter.emitResult(result, this, dest);
     }
@@ -1795,7 +1797,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // We can only look up in something of struct or trait type.
   if (!isa_and_nonnull<StructDeclOp, TraitDeclOp>(typeDeclOp) &&
-      !isa<TraitType>(typeDecl->getIfTypeValue())) {
+      !sugarIsa<TraitType>(typeDecl->getIfTypeValue())) {
     emitter.emitError(getLoc(), "cannot access attribute in type ")
         << baseVal.getType() << base->getRange();
     return {};
@@ -1825,7 +1827,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         if (isExtension)
           if (!decl->getIfOperation())
             if (auto cv = decl->getIfIRValue().getIfPValue())
-              if (isa<ParamDeclRefAttr>(cv.get()))
+              if (sugarIsa<ParamDeclRefAttr>(cv.get()))
                 continue;
         memberDecls.push_back(decl);
       }
@@ -1923,7 +1925,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
     // If we get here, we're accessing an alias in a trait.
     assert((isa_and_nonnull<TraitDeclOp>(typeDecl->getIfOperation()) ||
-            isa<TraitType>(typeDecl->getIfTypeValue())) &&
+            sugarIsa<TraitType>(typeDecl->getIfTypeValue())) &&
            "Alias's parent should be struct, trait, or extension");
     PValue basePValue = baseVal.getIfPValue();
     if (!basePValue) {
@@ -1933,7 +1935,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
 
     // If the base has a parametric type, use the trait type instead.
-    if (auto paramType = dyn_cast<ParamType>(baseRVType))
+    if (auto paramType = sugarDynCast<ParamType>(baseRVType))
       basePValue = PValue(paramType.getParam());
 
     // Make a get_witness call to extract the value out of the trait
@@ -1997,7 +1999,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // If the field is a variable, emit a reference to it.
   if (auto fieldOp =
           dyn_cast_or_null<StructFieldOp>(memberDecl.getIfOperation())) {
-    if (hasTypeBase || isa<StructMetaType>(baseRVType)) {
+    if (hasTypeBase || sugarIsa<StructMetaType>(baseRVType)) {
       emitter.emitError(getLoc(), "cannot access instance field '")
           << spelling << "' without an instance of " << baseRVType
           << getRange();
@@ -2010,8 +2012,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // This allows to emit a get and/or set as needed.
     if (DLValue baseLV = baseVal.getIfDLValue()) {
       // The base is a known StructType because we got the ASTDecl from it.
-      ASTType elementType =
-          fieldOp.getReboundType(cast<LIT::StructType>(baseRVType.mlirType));
+      ASTType elementType = fieldOp.getReboundType(
+          sugarCast<LIT::StructType>(baseRVType.mlirType));
       DLValue result(RCRef<StoredAttributeRefDLValue>::create(
           ASTExprAnd<DLValue>{baseLV, base}, fieldOp, elementType, this));
       return emitter.emitResult(result, this, dest);
@@ -2026,7 +2028,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // to construct this specific type, not the shared type on the struct.
   if (auto parameter = memberDecl.getIfIRValue().getIfPValue()) {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
-    if (auto baseDecl = dyn_cast<StructMetaType>(baseRVType.getMetaType())) {
+    if (auto baseDecl =
+            sugarDynCast<StructMetaType>(baseRVType.getMetaType())) {
       for (auto [name, value] :
            llvm::zip(cast<StructDeclOp>(typeDecl->getIfOperation()).getParams(),
                      baseDecl.getParamValues())) {
@@ -2104,22 +2107,22 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         state.types.push_back(ASTType(type));
         return success();
       };
-      if (auto valueMetaType = dyn_cast<StructMetaType>(value.getType())) {
+      if (auto valueMetaType = sugarDynCast<StructMetaType>(value.getType())) {
         ASTType tupleType = emitter.shared.getBuiltinTupleType(
             emitter.declScope, call.getLoc());
         // If the _type field is a Tuple of types, then the operation
         // returns multiple results, with types specified in the list.  We
         // need to take apart the Tuple value to get the types from inside it.
         if (valueMetaType.getSymbol() ==
-            cast<StructMetaType>(tupleType.getMetaType()).getSymbol()) {
+            sugarCast<StructMetaType>(tupleType.getMetaType()).getSymbol()) {
           // Dig out the types from the tuple.  Tuple literals must always
           // have this particular shape.
-          auto tca = cast<TypeParamAttr>(value);
-          auto drt = cast<LIT::StructType>(tca.getMlirType());
+          auto tca = sugarCast<TypeParamAttr>(value);
+          auto drt = sugarCast<LIT::StructType>(tca.getMlirType());
           ArrayRef<TypedAttr> paramValues = drt.getParamValues();
           assert(paramValues.size() == 1 &&
                  "_types tuple ParamValues must be size 1");
-          auto variadic = cast<VariadicAttr>(paramValues[0]);
+          auto variadic = sugarCast<VariadicAttr>(paramValues[0]);
           for (TypedAttr type : variadic.getValues()) {
             if (pushTypeToState(type, "value in _type tuple is not a type")
                     .failed())
@@ -2145,15 +2148,15 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     // too.
     if (llvm::any_of(unboundOp.getAttrs(), [](NamedAttribute attr) {
           if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue()))
-            return isa<DeferredType>(typedAttr.getType());
+            return sugarIsa<DeferredType>(typedAttr.getType());
           return false;
         })) {
       return true;
     }
     mlir::AttrTypeWalker walker;
     walker.addWalk([](Type type) {
-      return isa<VariadicSplatType>(type) ? WalkResult::interrupt()
-                                          : WalkResult::advance();
+      return sugarIsa<VariadicSplatType>(type) ? WalkResult::interrupt()
+                                               : WalkResult::advance();
     });
 
     // If either result type or operands have `!kgen.variadic_splat` type, the
@@ -2161,7 +2164,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     // TODO: Try to avoid this if possible. For example, if operation has no
     // InferTypeOpInterface, this is probably not needed.
     if (llvm::any_of(state.types, [&](Type type) {
-          assert(!isa<DeferredType>(type) &&
+          assert(!sugarIsa<DeferredType>(type) &&
                  "Deferred type is not allowed in return");
           return walker.walk(type).wasInterrupted();
         })) {
@@ -2562,7 +2565,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   if (auto value = baseValue.getIfPValue()) {
     // Check for attribute bindings to an MLIR operation.
     if (auto unboundOperator =
-            dyn_cast<UnboundMLIROperationAttr>(value.get())) {
+            sugarDynCast<UnboundMLIROperationAttr>(value.get())) {
       PValue result =
           bindAttributesToMLIROperatorCall(*this, unboundOperator, emitter);
       return emitter.emitResult(result, this, dest);
@@ -2570,7 +2573,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
     // If this is a parametric PValue, this is binding parameter values to the
     // generator value.
-    if (auto sig = dyn_cast<LITGeneratorType>(baseType)) {
+    if (auto sig = sugarDynCast<LITGeneratorType>(baseType)) {
       PValue result =
           bindToGeneratorValue(value, sig, operands, emitter, getIndexRange());
       if (!result)
@@ -2582,7 +2585,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // If the sub-value is an unbound Type, try binding parameters to it!
   if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types and custom MLIR types.
-    if (auto structValue = dyn_cast<StructMetaType>(baseType)) {
+    if (auto structValue = sugarDynCast<StructMetaType>(baseType)) {
       PValue result = substituteParametersIntoUserDefinedType(
           baseValue.getIfPValue(), operands, getLoc(), lsquareLoc, rsquareLoc,
           emitter);
@@ -2590,19 +2593,19 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
 
     // Handle __mlir_type["foo"] and __mlir_attr["foo"].
-    if (isa<MagicMLIRTypeType>(typeValue)) {
+    if (sugarIsa<MagicMLIRTypeType>(typeValue)) {
       std::string result = substituteMLIRMagic(*this, emitter);
       if (result.empty())
         return {};
       ASTType type = parseMLIRType(result, this, emitter.shared);
       return emitter.emitResult(type, this, dest);
     }
-    if (isa<MagicMLIRAttrType, MagicMLIRDeferredAttrType>(typeValue)) {
+    if (sugarIsa<MagicMLIRAttrType, MagicMLIRDeferredAttrType>(typeValue)) {
       std::string result = substituteMLIRMagic(*this, emitter);
       if (result.empty())
         return {};
       const bool fallbackToDeferredAttr =
-          isa<MagicMLIRDeferredAttrType>(typeValue);
+          sugarIsa<MagicMLIRDeferredAttrType>(typeValue);
       // When we are not allowed to fallback to deferred attrobute, report an
       // error if attribute cannot be constructed.
       PValue attr = synthesizeMLIRAttrFromString(
@@ -2648,7 +2651,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   //
   // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
   // a standard library type that implements `__getitem__` and `__setitem__`.
-  if (auto variadic = dyn_cast<VariadicType>(baseType)) {
+  if (auto variadic = sugarDynCast<VariadicType>(baseType)) {
     // Attempt to convert the index.
     if (operands.size() != 1 || operands[0].isKeywordOrUnpackedKeyword()) {
       emitter.emitError(getLoc()) << "variadic can only be subscripted with a "
@@ -3006,9 +3009,9 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // Emit trait composition if both operands have AnyTrait types.
   if (kind == kAnd) {
     auto lhsTrait =
-        dyn_cast_or_null<AnyTraitType>(lhsRV.getRValueTypeIfResolvable());
+        sugarDynCastIfPresent<AnyTraitType>(lhsRV.getRValueTypeIfResolvable());
     auto rhsTrait =
-        dyn_cast_or_null<AnyTraitType>(rhsRV.getRValueTypeIfResolvable());
+        sugarDynCastIfPresent<AnyTraitType>(rhsRV.getRValueTypeIfResolvable());
     if (lhsTrait && rhsTrait) {
       SmallVector<SymbolRefAttr> symbols(lhsTrait.getTraitType().getSymbols());
       llvm::append_range(symbols, rhsTrait.getTraitType().getSymbols());
@@ -3142,7 +3145,7 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
   auto deadCodeCheck = [&]() {
     if (!lhsI1PVal)
       return;
-    IntegerAttr asIntAttr = dyn_cast<IntegerAttr>(lhsI1PVal.get());
+    IntegerAttr asIntAttr = sugarDynCast<IntegerAttr>(lhsI1PVal.get());
     if (!asIntAttr)
       return;
     bool isZero = asIntAttr.getValue().isZero();
@@ -3477,7 +3480,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   auto deadCodeCheck = [&]() {
     if (PValue condPVal = condRVal.getIfPValue()) {
       // Warn about dead code and remove it.
-      IntegerAttr asIntAttr = dyn_cast<IntegerAttr>(condPVal.get());
+      IntegerAttr asIntAttr = sugarDynCast<IntegerAttr>(condPVal.get());
       if (!asIntAttr)
         return;
       Region *deadRegion = &ifOp.getElseRegion();
@@ -3943,9 +3946,9 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (kind == kGetLitRefAsMValue) {
     Value exprVal =
         emitter.emitSRValue({subExprValue, subExpr}, dest.getContext());
-    if (!exprVal)
+    if (!exprVal || sugarIsa<TypeCheckErrorType>(exprVal.getType()))
       return {};
-    if (!isa<RefType>(exprVal.getType())) {
+    if (!sugarIsa<RefType>(exprVal.getType())) {
       emitter.emitError(getLoc(), "operand isn't a '!lit.ref' type ")
           << ASTType(exprVal.getType()) << getRange();
       return {};
@@ -3958,8 +3961,15 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // !kgen.pointer.
   RValue exprRVal =
       emitter.emitRValue({subExprValue, subExpr}, dest.getContext());
-  if (!exprRVal)
+  if (!exprRVal || sugarIsa<TypeCheckErrorType>(exprRVal.getType()))
     return {};
+
+  Value exprVal = emitter.emitSRValue({exprRVal, subExpr}, dest.getContext());
+  if (!exprVal)
+    return {};
+  // Strip sugar that gets in the way of the pointer type.
+  exprVal = emitter.emitRebindOpIfNeeded(
+      exprVal, SugarAttr::strip(exprVal.getType()), subExpr->getLoc());
 
   if (!isa<PointerType>(exprRVal.getRValueType())) {
     emitter.emitError(getLoc(),
@@ -3967,10 +3977,6 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
         << exprRVal.getRValueType() << getRange();
     return {};
   }
-
-  Value exprVal = emitter.emitSRValue({exprRVal, subExpr}, dest.getContext());
-  if (!exprVal)
-    return {};
 
   // TODO(references): if we keep these functions, they should take a origin.
   auto immortal = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
@@ -4217,7 +4223,7 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       assert(expectedType.getParamBindings().size() == 1 &&
              "Tuple has one variadic parameter");
       if (auto variadicAttr =
-              dyn_cast<VariadicAttr>(expectedType.getParamBindings()[0])) {
+              sugarDynCast<VariadicAttr>(expectedType.getParamBindings()[0])) {
         if (variadicAttr.getValues().size() == exprs.size()) {
           for (auto typeElt : variadicAttr.getValues())
             eltTypes.push_back(ASTType(typeElt));

@@ -106,7 +106,8 @@ static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
   bool actualMemResult = actual.hasMemoryOnlyResult();
   bool expectedMemResult = expected.hasMemoryOnlyResult();
   // TODO: We could allow implicit conversions here.
-  if (actual.getUserResultType() != expected.getUserResultType())
+  if (!ASTType(actual.getUserResultType())
+           .isEqualCanon(expected.getUserResultType()))
     return false;
 
   ArrayRef<Type> actualArgTypes =
@@ -182,7 +183,7 @@ static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
     ASTType variadicElType = refPackType.getVariadicElementType();
 
     // This works because VariadicPack's element type is always a trait.
-    auto expectedTraitType = cast<TraitType>(variadicElType.mlirType);
+    auto expectedTraitType = sugarCast<TraitType>(variadicElType.mlirType);
 
     for (size_t actualArgIndex = numNormalArgs;
          actualArgIndex < actualArgTypes.size(); actualArgIndex++) {
@@ -240,8 +241,8 @@ static bool canConvertGeneratorTypes(ASTDecl &declScope, SMLoc loc,
     return true;
 
   // If the body is a function, we apply custom conversion rules.
-  if (auto actualFnType = dyn_cast<FnType>(actual.getBody())) {
-    if (auto expectedFnType = dyn_cast<FnType>(expected.getBody())) {
+  if (auto actualFnType = sugarDynCast<FnType>(actual.getBody())) {
+    if (auto expectedFnType = sugarDynCast<FnType>(expected.getBody())) {
       return canConvertFunctionTypes(declScope.getShared(), actualFnType,
                                      expectedFnType);
     }
@@ -249,7 +250,8 @@ static bool canConvertGeneratorTypes(ASTDecl &declScope, SMLoc loc,
 
   // Otherwise, the bodies must be convertible. This is possible if we can get
   // the body, meaning the value must be a GeneratorAttr.
-  auto genAttr = dyn_cast_if_present<GeneratorAttr>(value.getIfPValue().get());
+  auto genAttr =
+      sugarDynCastIfPresent<GeneratorAttr>(value.getIfPValue().get());
   if (!genAttr)
     return false;
 
@@ -298,7 +300,7 @@ static FnType getReducedFnType(FnType sig) {
 static GeneratorType getReducedGeneratorType(GeneratorType gen) {
   // If the body is a function, we can further reduce it.
   Type bodyType = gen.getBody();
-  if (auto fnType = dyn_cast<FnType>(bodyType))
+  if (auto fnType = sugarDynCast<FnType>(bodyType))
     bodyType = getReducedFnType(fnType);
 
   return GeneratorType::get(
@@ -543,7 +545,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
       ArrayRef(paramValues)
           .take_back(actualSignature.getInputParamTypes().size()),
       &shared.getEvaluationContext());
-  assert(cast<FnTypeGeneratorType>(calleeParam.getType())
+  assert(sugarCast<FnTypeGeneratorType>(calleeParam.getType())
              .getInputParamTypes()
              .size() == 0);
 
@@ -586,15 +588,15 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   }
 
   MLIRContext *ctx = expected.getContext();
-  auto actual = cast<FnTypeGeneratorType>(callee.getType());
+  auto actual = sugarCast<FnTypeGeneratorType>(callee.getType());
 
   // Canonicalize the function types. This strips away unnecessary metadata that
   // does not affect the conversion semantics. In other words, a function type
   // and its reduced type can be trivially converted with a rebind.
-  FnTypeGeneratorType reducedActual =
-      cast<FnTypeGeneratorType>(getReducedGeneratorType(actual));
-  FnTypeGeneratorType reducedExpected =
-      cast<FnTypeGeneratorType>(getReducedGeneratorType(expected));
+  auto reducedActual =
+      sugarCast<FnTypeGeneratorType>(getReducedGeneratorType(actual));
+  auto reducedExpected =
+      sugarCast<FnTypeGeneratorType>(getReducedGeneratorType(expected));
 
   // We need to specially handle when `actual` mentions any parameters in its
   // scope, like how `= read_ship[Z]` mentions the `Z` parameter here:
@@ -651,7 +653,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     paramRefsReplacer.setDeclBinding(
         ref.getName(), ParamIndexRefAttr::get(i, thunkParamTypes.back()));
   }
-  auto reparamActualForThunkKey = cast<FnTypeGeneratorType>(
+  auto reparamActualForThunkKey = sugarCast<FnTypeGeneratorType>(
       paramRefsReplacer.getReboundType(reducedActual));
   // Above, clarifying parameters were at the beginning (and were replaced with
   // `*(0,i) where i < N`).
@@ -678,7 +680,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       reducedExpected.getCaptureOrigins(),
       reducedExpected.getIsNestedOriginExclusivityCheckingDisabled(),
       reducedExpected.getFnMetadata().getConstraints());
-  auto thunkFuncType = cast<FunctionType>(
+  auto thunkFuncType = sugarCast<FunctionType>(
       paramRefsReplacer.getReboundType(reducedExpected.getValues()));
   auto thunkSignature = FuncTypeGeneratorType::get(
       /*inputParamTypes=*/thunkParamTypes,
@@ -746,7 +748,7 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
                                     GeneratorType expected, IREmitter &emitter,
                                     ValueDest &dest) {
   // If this is a function generator value, defer to function conversion.
-  if (auto expectedFnType = dyn_cast<FnTypeGeneratorType>(expected)) {
+  if (auto expectedFnType = sugarDynCast<FnTypeGeneratorType>(expected)) {
     return convertFunctionGeneratorValue(value, expr, expectedFnType, emitter,
                                          dest);
   }
@@ -772,10 +774,10 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
 //===----------------------------------------------------------------------===//
 
 static TypedAttr stripTypeValueUpcast(TypedAttr typeValue) {
-  if (auto upcast = dyn_cast<UpcastAttr>(typeValue))
+  if (auto upcast = sugarDynCast<UpcastAttr>(typeValue))
     return stripTypeValueUpcast(upcast.getInputTypeValue());
-  if (auto typeParam = dyn_cast<TypeParamAttr>(typeValue))
-    if (auto paramType = dyn_cast<ParamType>(typeParam.getTypeValue()))
+  if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue))
+    if (auto paramType = sugarDynCast<ParamType>(typeParam.getTypeValue()))
       return stripTypeValueUpcast(paramType.getParam());
   return typeValue;
 }
@@ -786,8 +788,9 @@ static bool canZeroCostConvertParamTypes(ParamType fromParamType,
   // If the source & target types are both get_witness on the same type-values,
   // we can zero-cost convert.
   if (auto fromGetWitness =
-          dyn_cast<GetWitnessAttr>(fromParamType.getParam())) {
-    if (auto toGetWitness = dyn_cast<GetWitnessAttr>(toParamType.getParam())) {
+          sugarDynCast<GetWitnessAttr>(fromParamType.getParam())) {
+    if (auto toGetWitness =
+            sugarDynCast<GetWitnessAttr>(toParamType.getParam())) {
       if (fromGetWitness.getWitnessName() != toGetWitness.getWitnessName())
         return false;
 
@@ -814,16 +817,16 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   fromType = getCanonicalType(fromType);
 
   // Trait metatypes are allowed to upcast to trivial types.
-  if (isa<TypeType>(toType)) {
-    if (isa<AnyTraitType>(fromType))
+  if (sugarIsa<TypeType>(toType)) {
+    if (sugarIsa<AnyTraitType>(fromType))
       return true;
-    if (auto structType = dyn_cast<StructMetaType>(fromType)) {
+    if (auto structType = sugarDynCast<StructMetaType>(fromType)) {
       return ASTType(structType.getType())
                  .getRegisterPassability(SMLoc(), shared) ==
              TypeConvention::RegisterPassableTrivial;
     }
 
-    if (auto traitType = dyn_cast<TraitType>(fromType)) {
+    if (auto traitType = sugarDynCast<TraitType>(fromType)) {
       auto traitDeclOp = shared.declResolver->getTraitDecl(traitType);
       if (!traitDeclOp)
         return false;
@@ -837,8 +840,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   }
 
   // Check for param type conversions.
-  if (auto fromParamType = dyn_cast<ParamType>(fromType))
-    if (auto toParamType = dyn_cast<ParamType>(toType))
+  if (auto fromParamType = sugarDynCast<ParamType>(fromType))
+    if (auto toParamType = sugarDynCast<ParamType>(toType))
       return canZeroCostConvertParamTypes(fromParamType, toParamType, shared);
 
   // Check for closure structs and dig out their underlying signature types to
@@ -872,8 +875,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   //   Conversion from KNOWN mutable to any mutability is fine.
   //   Conversion from with mutability "X" to "X&Y" is known to be fine.
   // We allow KGEN to fold the true and false cases for us.
-  if (auto fromOrigin = dyn_cast<OriginType>(fromType))
-    if (auto toOrigin = dyn_cast<OriginType>(toType)) {
+  if (auto fromOrigin = sugarDynCast<OriginType>(fromType))
+    if (auto toOrigin = sugarDynCast<OriginType>(toType)) {
       auto toMut = toOrigin.getIsMutable();
       auto result =
           ParamOperatorAttr::get(POC::And, toMut, fromOrigin.getIsMutable());
@@ -883,8 +886,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
 
   // Check reference downcasting.  The only thing allowed to disagree is the
   // origin set / mutability.
-  if (auto fromRef = dyn_cast<RefType>(fromType)) {
-    if (auto toRef = dyn_cast<RefType>(toType)) {
+  if (auto fromRef = sugarDynCast<RefType>(fromType)) {
+    if (auto toRef = sugarDynCast<RefType>(toType)) {
       // Element types and address space have to be exactly equal.
       if (fromRef.getAddressSpace() != toRef.getAddressSpace() ||
           !ASTType(fromRef.getElementType())
@@ -901,7 +904,7 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       // We allow converting an "any" origin to anything concrete.
       // NOTE: This is not memory safe; we should make this an explicit
       // operation someday.
-      if (isa<AnyOriginAttr>(fromRef.getOrigin()))
+      if (sugarIsa<AnyOriginAttr>(fromRef.getOrigin()))
         return true;
 
       // We can convert origin subset to a origins superset.
@@ -914,8 +917,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   }
 
   // Otherwise handle function conversions.
-  auto from = dyn_cast<FnTypeGeneratorType>(fromType);
-  auto to = dyn_cast<FnTypeGeneratorType>(toType);
+  auto from = sugarDynCast<FnTypeGeneratorType>(fromType);
+  auto to = sugarDynCast<FnTypeGeneratorType>(toType);
   if (!from || !to)
     return false;
 
@@ -1223,10 +1226,10 @@ PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
   assert(toType.mlirType != value.getType() && "Already the same");
 
   // PValues of origin type have a special conversion.
-  if (isa<OriginType>(toType) && isa<OriginType>(value.getType()))
+  if (sugarIsa<OriginType>(toType) && sugarIsa<OriginType>(value.getType()))
     value = OriginMutCastAttr::get(value, toType);
 
-  if (isa<TypeType>(toType) && isa<TraitType>(value.getType()))
+  if (sugarIsa<TypeType>(toType) && sugarIsa<TraitType>(value.getType()))
     return TypeParamAttr::get(ASTType(value), toType);
 
   return ParamOperatorAttr::getRebind(value.get(), toType);
@@ -1332,7 +1335,7 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   }
 
   // If the type is a param type, then we just need to upcast it to the trait.
-  if (auto paramType = dyn_cast<ParamType>(mlirType)) {
+  if (auto paramType = sugarDynCast<ParamType>(mlirType)) {
     return UpcastAttr::get(trait, PValue(paramType.getParam()));
   }
 
@@ -1370,7 +1373,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Origin values can convert into an OriginSet by becoming a member of the
   // set.  OriginSet is a singleton type, the value carries the origins.
-  if (isa<OriginType>(rvType) && isa<OriginSetType>(requiredType))
+  if (sugarIsa<OriginType>(rvType) && sugarIsa<OriginSetType>(requiredType))
     return true;
 
   // Check to see if we already cached this convertibility check.
@@ -1388,17 +1391,17 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // Values of known {struct/trait/mlir} type can convert to any trait type they
   // implement.
   if (auto anyTrait =
-          dyn_cast_if_present<AnyTraitType>(requiredType.getMetaType())) {
+          sugarDynCastIfPresent<AnyTraitType>(requiredType.getMetaType())) {
     TraitType trait = anyTrait.getTraitType();
     bool result = false;
 
-    if (isa<TypeType>(rvType)) {
+    if (sugarIsa<TypeType>(rvType)) {
       // MLIR types can conform to traits that have limited requirements.
       // AnyTraitType (the type of all traits) conforms to traits with only a
       // destructor (e.g. AnyType) since all traits have that.
       result = checkMLIRTypeConformance(shared, value.expr->getLoc(), trait);
-    } else if (isa<StructMetaType>(rvType) ||
-               isa_and_nonnull<AnyTraitType>(rvType.getMetaType())) {
+    } else if (sugarIsa<StructMetaType>(rvType) ||
+               sugarIsaAndNonNull<AnyTraitType>(rvType.getMetaType())) {
       // Only a struct or a trait instance can be converted to a trait.
       if (auto pval = value.ir.getIfPValue(); pval && LIT::isTypeExpr(pval)) {
         // Can only convert static types to traits, not existentials.
@@ -1412,8 +1415,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
   // This is a conversion of things like "the Movable type" (which has type
   // "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
-  if (auto anyTrait = dyn_cast<AnyTraitType>(requiredType)) {
-    if (auto fromAnyTrait = dyn_cast<AnyTraitType>(rvType))
+  if (auto anyTrait = sugarDynCast<AnyTraitType>(requiredType)) {
+    if (auto fromAnyTrait = sugarDynCast<AnyTraitType>(rvType))
       if (auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared))
         return cacheAndReturnVal(
             fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
@@ -1421,9 +1424,9 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Support implicit conversions of generator types (incl. non-trivial function
   // generator conversions).
-  if (auto requiredGenerator = dyn_cast<GeneratorType>(requiredType)) {
+  if (auto requiredGenerator = sugarDynCast<GeneratorType>(requiredType)) {
     bool result = false;
-    if (auto rvGeneratorType = dyn_cast<GeneratorType>(rvType))
+    if (auto rvGeneratorType = sugarDynCast<GeneratorType>(rvType))
       result =
           canConvertGeneratorTypes(declScope, value.expr->getLoc(), value.ir,
                                    rvGeneratorType, requiredGenerator);
@@ -1473,17 +1476,17 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   }
 
   // Handle conversions between origins and origin sets.
-  if (isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) {
+  if (sugarIsa<OriginType>(rvType) && sugarIsa<OriginSetType>(requiredType)) {
     // This can only be done in the parameter domain.
     if (TypedAttr pv = value.getIfPValue()) {
-      pv = OriginSetAttr::get(pv, cast<OriginSetType>(requiredType));
+      pv = OriginSetAttr::get(pv, sugarCast<OriginSetType>(requiredType));
       return emitCResult(pv, expr, dest);
     }
   }
-  if (isa<OriginSetType>(rvType) && isa<OriginType>(requiredType)) {
+  if (sugarIsa<OriginSetType>(rvType) && sugarIsa<OriginType>(requiredType)) {
     // This can only be done in the parameter domain.
     if (TypedAttr pv = value.getIfPValue()) {
-      pv = OriginSetUnionAttr::get(pv, cast<OriginType>(requiredType));
+      pv = OriginSetUnionAttr::get(pv, sugarCast<OriginType>(requiredType));
       return emitCResult(pv, expr, dest);
     }
   }
@@ -1491,7 +1494,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   // Emit metatype conversions to trait types if the metatype implements the
   // specified trait.
   if (auto anyTrait =
-          dyn_cast_if_present<AnyTraitType>(requiredType.getMetaType())) {
+          sugarDynCastIfPresent<AnyTraitType>(requiredType.getMetaType())) {
     TraitType trait = anyTrait.getTraitType();
     if (isa<TypeType>(rvType)) {
       // Conversions from MLIR types.
@@ -1516,14 +1519,14 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
   // This is a conversion of things like "the Movable type" (which has type
   // "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
-  if (auto anyTrait = dyn_cast<AnyTraitType>(requiredType)) {
+  if (auto anyTrait = sugarDynCast<AnyTraitType>(requiredType)) {
     PValue typePValue = value.getIfPValue();
     if (!typePValue) {
       emitError(expr->getLoc(), "existentials are not supported yet!");
       return {};
     }
 
-    if (auto rvAnyTrait = dyn_cast<AnyTraitType>(rvType)) {
+    if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(rvType)) {
       auto *fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
       if (fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType())) {
         // This is just the trait itself, not a conformance, just upcast.
@@ -1534,8 +1537,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
   // Support implicit conversions of generator types (incl. function
   // generators).
-  if (auto requiredGenerator = dyn_cast<GeneratorType>(requiredType)) {
-    if (auto rvGeneratorType = dyn_cast<GeneratorType>(rvType))
+  if (auto requiredGenerator = sugarDynCast<GeneratorType>(requiredType)) {
+    if (auto rvGeneratorType = sugarDynCast<GeneratorType>(rvType))
       if (canConvertGeneratorTypes(declScope, expr->getLoc(), value,
                                    rvGeneratorType, requiredGenerator))
         return convertGeneratorValue(value, expr, requiredGenerator, *this,

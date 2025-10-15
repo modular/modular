@@ -3598,6 +3598,13 @@ Type KGEN::getCanonicalType(Type src) {
   return Canonicalizer().replace(src);
 }
 
+/// Return true if the specified types are canonically equal.
+bool KGEN::isCanonicalEqual(Type t1, Type t2) {
+  if (t1 == t2)
+    return true;
+  return getCanonicalType(t1) == getCanonicalType(t2);
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

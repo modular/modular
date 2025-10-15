@@ -283,8 +283,7 @@ Value VariantValueStorageBase::getMValueReference() const {
 }
 
 RefType VariantValueStorageBase::getMValueType() const {
-  Type mlirType = getMValueReference().getType();
-  return cast<RefType>(ASTType(mlirType).stripTopLevelSugar());
+  return sugarCast<RefType>(getMValueReference().getType());
 }
 
 /// Given an S*Value, return the underlying register.
@@ -317,33 +316,34 @@ Value VariantValueStorageBase::getMlirValue() const {
 }
 
 void MRValue::check() const {
-  assert(::isa<RefType>(Value::getType()) &&
-         ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
+  assert(::sugarIsa<RefType>(Value::getType()) &&
+         ::sugarCast<RefType>(Value::getType()).isMutableKnown(true) &&
          "MRValue can only be used for a mutable reference");
 }
 
 void MLValue::check() const {
-  assert(::isa<RefType>(Value::getType()) &&
-         ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
+  assert(::sugarIsa<RefType>(Value::getType()) &&
+         ::sugarCast<RefType>(Value::getType()).isMutableKnown(true) &&
          "MLValue can only be used for a mutable reference");
 }
 
 void RLValue::check() const {
-  assert(::isa<RefType>(Value::getType()) &&
-         ::cast<RefType>(Value::getType()).isMutableKnown(true) &&
+  assert(::sugarIsa<RefType>(Value::getType()) &&
+         ::sugarCast<RefType>(Value::getType()).isMutableKnown(true) &&
          "RLValue can only be used for a mutable reference");
-  assert(::isa<RefType>(::cast<RefType>(Value::getType()).getElementType()) &&
+  assert(::sugarIsa<RefType>(
+             ::sugarCast<RefType>(Value::getType()).getElementType()) &&
          "RLValue should be ref of ref");
 }
 
 void MBValue::check() const {
   // MBValue allow any mutability.
-  assert(::isa<RefType>(Value::getType()));
+  assert(::sugarIsa<RefType>(Value::getType()));
 }
 
 void MBPValue::check() const {
-  assert(::isa<RefType>(Value::getType()) &&
-         ::cast<RefType>(Value::getType()).getMutabilityClass() ==
+  assert(::sugarIsa<RefType>(Value::getType()) &&
+         ::sugarCast<RefType>(Value::getType()).getMutabilityClass() ==
              OriginType::Parametric &&
          "MBPValue can only be used for a parametric mutability reference");
 }
@@ -351,7 +351,7 @@ void MBPValue::check() const {
 /// Given a value of !lit.ref type, return an MLValue/MBValue/MBPValue
 /// depending on the mutability of the reference.
 CValue CValue::getMValueForRef(Value refValue) {
-  switch (cast<RefType>(refValue.getType()).getMutabilityClass()) {
+  switch (sugarCast<RefType>(refValue.getType()).getMutabilityClass()) {
   case OriginType::Mutable:
     return MLValue(refValue);
   case OriginType::Immutable:

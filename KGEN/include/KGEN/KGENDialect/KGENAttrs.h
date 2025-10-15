@@ -75,23 +75,40 @@ public:
 TypedAttr getCanonicalAttr(TypedAttr src);
 Type getCanonicalType(Type type);
 
+/// Return true if the specified types are canonically equal.
+bool isCanonicalEqual(Type t1, Type t2);
+
 // Helpers for sugar-aware casting.
 template <typename... To, typename From>
 [[nodiscard]] inline bool sugarIsa(From val) {
+  auto stripped = SugarAttr::strip(val);
+  return (isa<To>(stripped) || ...);
+}
+
+// Helpers for sugar-aware casting.
+template <typename... To, typename From>
+[[nodiscard]] inline bool sugarIsaAndNonNull(From val) {
+  if (!val)
+    return false;
   val = SugarAttr::strip(val);
   return (isa<To>(val) || ...);
 }
 
 template <typename To, typename From>
 [[nodiscard]] inline decltype(auto) sugarCast(From val) {
-  val = SugarAttr::strip(val);
-  return cast<To>(val);
+  return cast<To>(SugarAttr::strip(val));
 }
 
 template <typename To, typename From>
 [[nodiscard]] inline decltype(auto) sugarDynCast(From val) {
-  val = SugarAttr::strip(val);
-  return dyn_cast<To>(val);
+  return dyn_cast<To>(SugarAttr::strip(val));
+}
+
+template <typename To, typename From>
+[[nodiscard]] inline decltype(auto) sugarDynCastIfPresent(From val) {
+  if (!val)
+    return To();
+  return sugarDynCast<To>(val);
 }
 
 } // namespace M::KGEN
