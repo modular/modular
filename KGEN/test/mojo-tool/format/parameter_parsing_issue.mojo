@@ -7,7 +7,12 @@
 # This test validates the fix for MOTO-1262 with complex nested @parameter decorators
 # that previously failed to parse. The formatter should now handle these cases correctly.
 
-# RUN: mojo format --quiet - < %s | FileCheck %s
+# `mojo format` only works on `.mojo` files, and modifies them in place.
+# The `grep` is used to remove the `CHECK` lines from the output so FileCheck
+# doesn't match on its own directives.
+# RUN: cp %s %t.mojo
+# RUN: mojo format %t.mojo
+# RUN: cat %t.mojo | grep -v "# CHECK:" | FileCheck %t.mojo
 
 # CHECK: fn some_wrapper_function[
 # CHECK:     param1: Int,

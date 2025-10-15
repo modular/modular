@@ -8,7 +8,12 @@
 # Validates that @parameter decorators on expression statements format correctly
 # after the grammar fix.
 
-# RUN: mojo format --quiet - < %s | FileCheck %s
+# `mojo format` only works on `.mojo` files, and modifies them in place.
+# The `grep` is used to remove the `CHECK` lines from the output so FileCheck
+# doesn't match on its own directives.
+# RUN: cp %s %t.mojo
+# RUN: mojo format %t.mojo
+# RUN: cat %t.mojo | grep -v "# CHECK:" | FileCheck %t.mojo
 
 # CHECK: fn test_func[dtype: DType](x: Int):
 # CHECK:     pass
