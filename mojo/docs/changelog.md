@@ -10,7 +10,7 @@ what we publish.
 [//]: ### ✨ Highlights
 [//]: ### Language enhancements
 [//]: ### Language changes
-[//]: ### Standard library changes
+[//]: ### Library changes
 [//]: ### Tooling changes
 [//]: ### ❌ Removed
 [//]: ### 🛠️ Fixed
@@ -19,7 +19,7 @@ what we publish.
 
 ### ✨ Highlights
 
-### Language enhancements
+### Language enhancements {#25-7-language-enhancements}
 
 - Literals now have a default type. For example, you can now bind `[1,2,3]` to
   `T` in a call to a function defined as `fn zip[T: Iterable](impl:T)` because
@@ -60,25 +60,25 @@ what we publish.
     _ = MyStuff(1)  # this is okay, because the conversion is already explicit.
   ```
 
-The `@deprecated` decorator can now take a target symbol with the `use` keyword
-argument. This is mutually exclusive with the existing positional string
-argument. A deprecation warning will be automatically generated.
+- The `@deprecated` decorator can now take a target symbol with the `use` keyword
+  argument. This is mutually exclusive with the existing positional string
+  argument. A deprecation warning will be automatically generated.
 
-```mojo
-@deprecated(use=new)
-fn old():
-  pass
+  ```mojo
+  @deprecated(use=new)
+  fn old():
+    pass
 
-fn new():
-  pass
+  fn new():
+    pass
 
-fn main():
-  old() # 'old' is deprecated, use 'new' instead
-```
+  fn main():
+    old() # 'old' is deprecated, use 'new' instead
+  ```
 
-### Language changes
+### Language changes {#25-7-language-changes}
 
-### Standard library changes
+### Library changes {#25-7-library-changes}
 
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
@@ -120,24 +120,43 @@ fn main():
 - Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
   `--sanitize address` at compile time.
 
-### Tooling changes
+### Tooling changes {#25-7-tooling-changes}
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
   functions rather than inlining them into the error message.
 
-### ❌ Removed
+### ❌ Removed {#25-7-removed}
 
-### 🛠️ Fixed
+- `LayoutTensorBuild` type has been removed.  Use `LayoutTensor` with parameters
+  directly instead.
+
+### 🛠️ Fixed {#25-7-fixed}
 
 - The `math.cos` and `math.sin` function can now be evaluated at compile time
   (fixes #5111).
 
-- Fixed `LayoutTensor` element-wise arithmetic operations (`+`, `-`, `*`, `/`)
+- Fixed `IntTuple.value(i)` method returning incorrect values when elements are
+  stored as nested single-element tuples. Previously, calling
+  `Layout.row_major(M, N).stride.value(i)` would return negative offset values
+  (e.g., -65536, -65537) instead of the actual stride values. This affected any
+  code that accessed layout stride or shape values using the `value()` method.
+
+- Fixed `LayoutTensor.shape[idx]()` method returning incorrect values for nested
+  layouts. The bug occurred when accessing shape dimensions of tensors with
+  nested layouts like `((32, 2), (32, 4))`, where the method would return
+  garbage values instead of the correct product (e.g., 64).
+
+  - Fixed `LayoutTensor` element-wise arithmetic operations (`+`, `-`, `*`, `/`)
   between tensors with different memory layouts. Previously, operations like
   `a.transpose() - b` would produce incorrect results when the operands had
   different layouts, because the same layout index was incorrectly used for both
   operands. This now correctly computes separate indices for each tensor based
   on its layout.
+
+- Fixed `LayoutTensor.shape[idx]()` method returning incorrect values for nested
+  layouts. The bug occurred when accessing shape dimensions of tensors with
+  nested layouts like `((32, 2), (32, 4))`, where the method would return
+  garbage values instead of the correct product (e.g., 64).
 
 - Fixed `arange()` function in `layout._fillers` to properly handle nested
   layout structures. Previously, the function would fail when filling
