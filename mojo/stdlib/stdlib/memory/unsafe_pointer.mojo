@@ -512,15 +512,6 @@ struct UnsafePointer[
         return Int(self) != 0
 
     @always_inline
-    fn __as_bool__(self) -> Bool:
-        """Return true if the pointer is non-null.
-
-        Returns:
-            Whether the pointer is null.
-        """
-        return self.__bool__()
-
-    @always_inline
     fn __int__(self) -> Int:
         """Returns the pointer address as an integer.
 

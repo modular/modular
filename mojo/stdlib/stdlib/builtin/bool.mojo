@@ -87,13 +87,14 @@ trait ImplicitlyBoolable(Boolable):
     ```
     """
 
+    @always_inline
     fn __as_bool__(self) -> Bool:
         """Get the boolean representation of the value.
 
         Returns:
             The boolean representation of the value.
         """
-        ...
+        return self.__bool__()
 
 
 # ===----------------------------------------------------------------------=== #
