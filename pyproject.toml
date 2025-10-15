@@ -3,7 +3,7 @@ name = "modular"
 version = "0"
 requires-python = ">= 3.10"
 
-[tool.black]
+[tool.mblack]
 include = '\.mojo$'
 line-length = 80
 preview = true
