@@ -467,10 +467,16 @@ class LineGenerator(Visitor[Line]):
             # Replace in node.children
             node.children[lpar_idx+1:rpar_idx] = new_children
 
-    def visit_classdef_sorted(self, node: Node, keywords: Set[str], parens: Set[str], nodeTypes: Set[int] = set()):
+    def visit_classdef_sorted(
+        self,
+        node: Node,
+        keywords: Set[str],
+        parens: Set[str],
+        nodeTypes: Set[int] = set(),
+    ):
         # Only sort for struct/trait, not regular class
         from mblib2to3.pgen2 import token as mtoken
-        if getattr(node, 'type', None) == mtoken.STRUCT or getattr(node, 'type', None) == mtoken.TRAIT:
+        if getattr(node, 'type', None) in (mtoken.STRUCT, mtoken.TRAIT):
             self._sort_struct_trait_conformances(node)
         # Fallback to original logic
         yield from self.visit_stmt(node, keywords, parens, nodeTypes)
