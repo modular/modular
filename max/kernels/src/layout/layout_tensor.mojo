@@ -270,8 +270,8 @@ struct LayoutTensor[
     masked: Bool = False,
     alignment: Int = align_of[dtype](),
 ](
-    ImplicitlyCopyable,
     DevicePassable,
+    ImplicitlyCopyable,
     Movable,
     Stringable,
     Writable,

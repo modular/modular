@@ -233,13 +233,13 @@ struct NDBuffer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
 ](
+    Defaultable,
+    DevicePassable,
+    ImplicitlyCopyable,
+    Movable,
     Sized,
     Stringable,
     Writable,
-    ImplicitlyCopyable,
-    Movable,
-    Defaultable,
-    DevicePassable,
 ):
     """An N-dimensional buffer.
 
