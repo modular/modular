@@ -115,3 +115,9 @@ what we publish.
   different layouts, because the same layout index was incorrectly used for both
   operands. This now correctly computes separate indices for each tensor based
   on its layout.
+
+- Fixed `arange()` function in `layout._fillers` to properly handle nested
+  layout structures. Previously, the function would fail when filling
+  tensors with nested layouts like
+  `Layout(IntTuple(IntTuple(16, 8), IntTuple(32, 2)), ...)` because it
+  attempted to extract shape values from nested tuples incorrectly.
