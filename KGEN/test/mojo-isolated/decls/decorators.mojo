@@ -127,6 +127,45 @@ trait DeprecatedTrait:
 @deprecated("alias")
 alias deprecated_alias = 1
 
+
+##===----------------------------------------------------------------------===##
+# @deprecated(use)
+##===----------------------------------------------------------------------===##
+
+struct DeprecatedStructTarget:
+    pass
+
+# CHECK-LABEL: lit.struct.decl @DeprecatedStructUse
+# CHECK-SAME: deprecationWarning = "'DeprecatedStructUse' is deprecated, use 'DeprecatedStructTarget' instead"
+@deprecated(use=DeprecatedStructTarget)
+struct DeprecatedStructUse:
+    pass
+
+fn deprecated_func_target():
+    pass
+
+# CHECK-LABEL: lit.fn @"deprecated_func_use
+# CHECK-SAME: deprecationWarning = "'deprecated_func_use' is deprecated, use 'deprecated_func_target' instead"
+@deprecated(use=deprecated_func_target)
+fn deprecated_func_use():
+    pass
+
+trait DeprecatedTraitTarget:
+    pass
+
+# CHECK-LABEL: lit.trait.decl @DeprecatedTraitUse
+# CHECK-SAME: deprecationWarning = "'DeprecatedTraitUse' is deprecated, use 'DeprecatedTraitTarget' instead"
+@deprecated(use=DeprecatedTraitTarget)
+trait DeprecatedTraitUse:
+    pass
+
+alias deprecated_alias_target = 1
+
+# CHECK-LABEL: lit.alias.decl *"deprecated_alias_use
+# CHECK-SAME: deprecationWarning = "'deprecated_alias_use' is deprecated, use 'deprecated_alias_target' instead"
+@deprecated(use=deprecated_alias_target)
+alias deprecated_alias_use = 1
+
 # ===----------------------------------------------------------------------=== #
 # @implicit
 # ===----------------------------------------------------------------------=== #

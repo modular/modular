@@ -2630,6 +2630,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   // real name is set.
   fnOp->removeAttr("sym_name");
   fnOp->setAttr("sym_namex", emptyStr /*StringArrayAttr::get(ctx, {})*/);
+  fnOp.setSourceNameAttr(baseName);
 
   // If marked as 'def', remember this on the function decl.
   if (isDef)
