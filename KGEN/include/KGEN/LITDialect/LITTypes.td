@@ -113,7 +113,8 @@ def LIT_ModuleType : LITType<"Module", "module"> {
 //===----------------------------------------------------------------------===//
 
 def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
-    [ParameterScopeTypeInterface]> {
+    [ParameterScopeTypeInterface,
+     DeclareTypeInterfaceMethods<SugaredTypeInterface>]> {
   let summary = "type parameter signature";
   let description = [{
     The `!lit.type_signature` type describes the parameter signature of a type:
@@ -172,7 +173,8 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
 
 def LIT_StructType : LITType<"Struct", "struct", [
     DeclareTypeInterfaceMethods<StructTypeInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<SugaredTypeInterface>]> {
   let summary = "Reference to a type declaration.";
   let description = [{
     A `!lit.struct` type references a type declaration and binds parameter
