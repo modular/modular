@@ -278,3 +278,34 @@ kgen.generator @metadata_caller() {
   kgen.call @metadata<2>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// COM: test displaying trivial parameter values with call expansion failures.
+// expected-note @below {{function instantiation failed}}
+kgen.generator @fn1<a, b>() {
+  // expected-note @+1  {{constraint failed: must be equal!}}
+  kgen.param.assert <eq(a, b)>, "must be equal!"
+  kgen.return
+}
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @fn2<a, b>() {
+  // expected-note @+1 {{call expansion failed with parameter value(s): ("a": 2, "b": 4)}}
+  kgen.call @fn1<a, b>() : () -> ()
+  kgen.return
+}
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @fn3<a, b>() {
+  // expected-note @+1 {{call expansion failed with parameter value(s): ("a": 2, "b": 4)}}
+  kgen.call @fn2<a, b>() : () -> ()
+  kgen.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @main() {
+  // expected-note @+1 {{call expansion failed with parameter value(s): ("a": 2, "b": 4)}}
+  kgen.call @fn3<2, 4>() : () -> ()
+  kgen.return
+}

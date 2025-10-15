@@ -488,6 +488,10 @@ void printMemSymbolTripleAttrWithoutType(
                                           ArrayRef<TypedAttr> params)>>
         parameterPrinter = {});
 
+SmallVector<std::string>
+printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
+                           ArrayRef<TypedAttr> values);
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENUTILS_H
