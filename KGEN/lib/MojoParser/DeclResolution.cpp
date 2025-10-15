@@ -122,7 +122,7 @@ public:
         signatureOnly(signatureOnly) {}
 
   /// Handle the `@deprecated` decorator for all decls.
-  LogicalResult handleDeprecated(ExprNode *expr);
+  LogicalResult handleDeprecated(ExprNode *expr, ASTDecl &decl);
 
   /// Process signature decorators on the declaration using the provided
   /// functor. The functor should return success if the decorator was processed
@@ -150,34 +150,92 @@ private:
 };
 } // namespace
 
-LogicalResult Decorators::handleDeprecated(ExprNode *expr) {
+LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
   // Detect expression `deprecated` and complain that a warning message should
   // be explicitly specified.
   if (auto declRef = dyn_cast<DeclRefNode>(expr);
       declRef && declRef->spelling == "deprecated") {
-    shared.emitError(expr->getLoc(), "@deprecated requires a warning message")
+    shared.emitError(expr->getLoc(), "@deprecated requires a warning message "
+                                     "or a replacement symbol (with 'use')")
         << FixIt::insertAfterToken(expr->getRange().getEnd(),
                                    "(\"insert deprecation message here\")",
                                    shared.diags);
     return success();
   }
 
-  // Detect expression `deprecated("some string")`.
   auto callNode = dyn_cast<CallNode>(expr);
   if (!callNode)
     return failure();
   auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
-  if (!declRef || declRef->spelling != "deprecated" ||
-      callNode->operands.size() != 1 ||
-      !callNode->operands.front().isPositional())
+  if (!declRef || declRef->spelling != "deprecated")
     return failure();
-  auto strExpr = dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
-  if (!strExpr)
-    return failure();
-  cast<ASTDeclInterface>(decl.getIfOperation())
-      .setDeprecationWarningAttr(
-          StringAttr::get(getContext(), strExpr->getValue()));
-  return success();
+  if (callNode->operands.size() != 1) {
+    shared.emitError(expr->getLoc(),
+                     "@deprecated accepts either a warning message or a "
+                     "replacement symbol (with 'use')");
+    return success();
+  }
+
+  auto &arg = callNode->operands.front();
+  // Handle a positional string, or a keyword argument reason=
+  if (arg.isPositional() || (arg.isKeyword() && arg.name == "reason")) {
+    auto strExpr = dyn_cast<StringLiteralNode>(arg.expr);
+    if (!strExpr)
+      return failure();
+
+    cast<ASTDeclInterface>(decl.getIfOperation())
+        .setDeprecationWarningAttr(
+            StringAttr::get(getContext(), strExpr->getValue()));
+
+    return success();
+  }
+  // Handle a use= argument
+  else if (arg.isKeyword() && arg.name == "use") {
+    auto target = dyn_cast<DeclRefNode>(arg.expr);
+    if (!target) {
+      shared.emitError(arg.expr->getLoc(), "'use' must reference a symbol");
+      return failure();
+    }
+
+    LookupResult lookup = shared.lookupAndResolveDecl(
+        target->spelling, target->getLoc(), *decl.getParentDecl(),
+        /*searchParentScopes=*/true);
+    if (lookup.isErroneous())
+      return failure();
+
+    ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
+    if (decls.empty()) {
+      shared.emitError(target->getLoc(), "cannot reference unknown value '")
+          << target->spelling << "'";
+      return failure();
+    }
+
+    std::string sourceName;
+    if (auto sym = dyn_cast<mlir::SymbolOpInterface>(decl.getIfOperation())) {
+      sourceName = sym.getName();
+    } else if (auto fn = dyn_cast<FnOp>(decl.getIfOperation())) {
+      sourceName = fn.getSourceName() ? fn.getSourceName()->str()
+                                      : "<anonymous function>";
+    } else if (auto alias = dyn_cast<AliasDeclOp>(decl.getIfOperation())) {
+      sourceName = demangleParameterName(alias.getParamDecl().getName());
+    } else {
+      assert(false && "unhandled case");
+      sourceName = "<unhandled case>";
+    }
+
+    cast<ASTDeclInterface>(decl.getIfOperation())
+        .setDeprecationWarningAttr(StringAttr::get(
+            getContext(),
+            llvm::formatv("'{0}' is deprecated, use '{1}' instead", sourceName,
+                          target->spelling)));
+
+    return success();
+  } else {
+    emitError(expr->getLoc(), "deprecated must specify either a message or a "
+                              "symbol (with the 'use' argument)");
+  }
+
+  return failure();
 }
 
 void Decorators::applySignatureDecorators(
@@ -190,7 +248,7 @@ void Decorators::applySignatureDecorators(
     if (decoratorExprs.empty())
       return;
     ExprNode *decorator = decoratorExprs.front().first;
-    if (succeeded(handleDeprecated(decorator)) ||
+    if (succeeded(handleDeprecated(decorator, decl)) ||
         succeeded(process(decorator))) {
       decoratorExprs = decoratorExprs.drop_front();
       continue;
@@ -3402,13 +3460,6 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
           if (isInherited(func, parentDecl))
             continue;
 
-          // For some reason source name attr isn't set during the initial
-          // identifier parse of fn ops. We need to have it set on func right
-          // now so we can find the corresponding decl for it in the parent
-          // trait decl when we want to signature resolve it.
-          //
-          // TODO: Should we just set sourceNameAttr during parseDefFnStmt?
-          func.setSourceNameAttr(name);
           addDecl(func, decl->getLoc(), name, &traitDecl, LexerCursor(),
                   LexerCursor(), -1);
         }
