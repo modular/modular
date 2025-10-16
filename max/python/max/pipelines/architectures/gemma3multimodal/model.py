@@ -26,7 +26,8 @@ from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
 
-from ..gemma3.model import Gemma3Model
+# from ..gemma3.model import Gemma3Model
+from max.pipelines.architectures.gemma3.model import Gemma3Model
 
 
 class Gemma3_MultiModalModel(Gemma3Model):
