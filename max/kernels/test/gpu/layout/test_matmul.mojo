@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import has_nvidia_gpu_accelerator
-from sys.info import _has_gpu_fp32_tensor_cores
+from sys.info import _has_gpu_fp32_tensor_cores, _has_gpu_tensor_cores
 
 from benchmark import Bench
 from buffer.dimlist import DimList
@@ -226,5 +226,30 @@ def main():
             test_tc.run_test[k_tc](m)
         else:
             print("Skipping float32 tensor core test on GPU (not supported)")
+
+        var test_tc_bf16 = test_matmul[
+            DType.bfloat16, a_layout, b_layout, c_layout, True
+        ](m, ctx)
+
+        alias k_tc_bf16 = run_gemm_kernel_tc[
+            DType.bfloat16,
+            a_layout,
+            b_layout,
+            c_layout,
+            64,
+            64,
+            32,
+            32,
+            32,
+            MMA_M,
+            MMA_N,
+            MMA_K,
+        ]
+
+        @parameter
+        if _has_gpu_tensor_cores():
+            test_tc_bf16.run_test[k_tc_bf16](m)
+        else:
+            print("Skipping BF16 tensor core test on GPU (not supported)")
 
     m.dump_report()
