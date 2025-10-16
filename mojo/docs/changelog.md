@@ -88,6 +88,10 @@ what we publish.
 
 ### Library changes {#25-7-library-changes}
 
+- Added `os.isatty()` function to check whether a file descriptor refers to a
+  terminal. This function accepts an `Int` file descriptor. If you have a
+  `FileDescriptor` object, use its `isatty()` method instead.
+
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
 - The deprecated `DType.index` is now removed in favor of the `DType.int`.
