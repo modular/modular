@@ -121,10 +121,7 @@ class AttentionWithRopeV1(AttentionImpl):
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -734,19 +731,13 @@ class AttentionWithRope(Module, Shardable):
 
             # 2) Normalize Q per head across the last dim (head_dim).
             q_gamma = self.q_norm_weight
-            if xq.device is not None:
-                q_gamma_tensor = q_gamma.to(xq.device)
-            else:
-                q_gamma_tensor = q_gamma
+            q_gamma_tensor = q_gamma.to(xq.device)
             q_gamma_tensor = ops.cast(q_gamma_tensor, xq.dtype)
             eps_q = ops.constant(self.rms_norm_eps, xq.dtype, device=xq.device)
             inv_rms = ops.rsqrt(ops.mean(xq * xq, axis=-1) + eps_q)
             xq = (xq * inv_rms) * q_gamma_tensor
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
@@ -1107,10 +1098,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,

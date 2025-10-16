@@ -234,10 +234,7 @@ class GptOssAttention(Module, Shardable):
         # Apply rotary embedding based on layer type
         rope = self.rope
 
-        if xq.device is not None:
-            freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(rope.freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,

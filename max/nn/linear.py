@@ -997,7 +997,6 @@ class MLPV1(Layer):
             self.gate_proj.bias is None
             and self.up_proj.bias is None
             and TensorValue(x).rank == 2
-            and TensorValue(x).device is not None
             and TensorValue(x).device != DeviceRef.CPU()
             and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
         ):

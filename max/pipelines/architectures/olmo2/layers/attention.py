@@ -219,10 +219,7 @@ class Olmo2Attention(Module):
         )
 
         # Apply RoPE
-        if xq.device is not None:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        else:
-            freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
