@@ -2154,7 +2154,9 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     return result
 
 
-fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
+fn _trim_and_handle_sign(
+    str_slice: StringSlice, str_len: Int
+) -> Tuple[Int, Bool]:
     """Trims leading whitespace, handles the sign of the number in the string.
 
     Args:
@@ -2177,7 +2179,7 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
 
 fn _handle_base_prefix(
     pos: Int, str_slice: StringSlice, str_len: Int, base: Int
-) -> (Int, Bool):
+) -> Tuple[Int, Bool]:
     """Adjusts the starting position if a valid base prefix is present.
 
     Handles "0b"/"0B" for base 2, "0o"/"0O" for base 8, and "0x"/"0X" for base

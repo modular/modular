@@ -85,7 +85,9 @@ def matmul_qint4_pack_b[
 
 fn _quantize_a_block[
     group_size: Int, aq_type: DType, dtype: DType
-](a_ptr: UnsafePointer[Scalar[dtype]]) -> (SIMD[aq_type, group_size], Float32):
+](a_ptr: UnsafePointer[Scalar[dtype]]) -> Tuple[
+    SIMD[aq_type, group_size], Float32
+]:
     alias a_zero_point = 128 if aq_type.is_unsigned() else 0
 
     var fp_data = a_ptr.load[width=group_size]()

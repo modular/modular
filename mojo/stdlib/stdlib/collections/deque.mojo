@@ -863,7 +863,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     fn _compute_pop_and_move_counts(
         self, len_self: Int, len_values: Int
-    ) -> (Int, Int, Int, Int, Int):
+    ) -> Tuple[Int, Int, Int, Int, Int]:
         """
         Calculates the number of elements to retain, move or discard in the deque and
         in the list of the new values based on the current length of the deque,

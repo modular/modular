@@ -20,10 +20,10 @@ from testing import TestSuite
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
-alias _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> (
+alias _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
     IndexList[rank],
-)
+]
 alias load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
     IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
@@ -79,10 +79,10 @@ def test_stencil_avg_pool():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
@@ -191,10 +191,10 @@ def test_stencil_avg_pool_padded():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
         )
@@ -305,10 +305,10 @@ def test_stencil_avg_pool_stride_2():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -422,10 +422,10 @@ def test_stencil_max_pool_dilation_2():
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank, **_]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
-    ):
+    ]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )

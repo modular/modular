@@ -1736,7 +1736,7 @@ fn _calculate_output_bounds[
     c: LayoutTensor[_, c_layout, MutableAnyOrigin, *_, **_],
     block_y: Int,
     block_x: Int,
-) -> (UInt32, UInt32):
+) -> Tuple[UInt32, UInt32]:
     """Calculate the output bounds for the current thread block."""
     alias N = c_layout.shape[1].value()
     var M = c.dim[0]()

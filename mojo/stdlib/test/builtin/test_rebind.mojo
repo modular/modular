@@ -40,11 +40,11 @@ def test_rebind_register():
 struct MyMemStruct[size: Int](Movable):
     var value: Int
 
-    fn sizes(self) -> (Int, Int):
+    fn sizes(self) -> Tuple[Int, Int]:
         return (size, self.value)
 
 
-fn indirect_with_rebind[X: Int](a: MyMemStruct[X]) -> (Int, Int):
+fn indirect_with_rebind[X: Int](a: MyMemStruct[X]) -> Tuple[Int, Int]:
     return rebind[MyMemStruct[4]](a).sizes()
 
 

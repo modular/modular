@@ -1775,10 +1775,10 @@ fn _stencil_impl_cpu[
     stencil_axis: IndexList[stencil_rank, **_],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> (
+    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> Tuple[
         IndexList[stencil_rank, **_],
         IndexList[stencil_rank, **_],
-    ),
+    ],
     map_strides: fn (dim: Int) capturing [_] -> Int,
     load_fn: fn[simd_width: Int, dtype: DType] (
         IndexList[rank, **_]
@@ -1943,10 +1943,10 @@ fn _stencil_impl_gpu[
     stencil_axis: IndexList[stencil_rank, **_],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> (
+    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> Tuple[
         IndexList[stencil_rank, **_],
         IndexList[stencil_rank, **_],
-    ),
+    ],
     map_strides: fn (dim: Int) capturing [_] -> Int,
     load_fn: fn[simd_width: Int, dtype: DType] (
         IndexList[rank, **_]

@@ -204,7 +204,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    fn __init__(out self, elems: (Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:
@@ -229,7 +229,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    fn __init__(out self, elems: (Int, Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:
@@ -254,7 +254,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    fn __init__(out self, elems: (Int, Int, Int, Int)):
+    fn __init__(out self, elems: Tuple[Int, Int, Int, Int]):
         """Constructs a static int tuple given a tuple of integers.
 
         Args:

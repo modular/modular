@@ -1230,7 +1230,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
                 return slot
             self._next_index_slot(slot, perturb)
 
-    fn _find_index(self, hash: UInt64, key: K) -> (Bool, UInt64, Int):
+    fn _find_index(self, hash: UInt64, key: K) -> Tuple[Bool, UInt64, Int]:
         # Return (found, slot, index)
         var slot = hash & (self._reserved() - 1)
         var perturb = hash

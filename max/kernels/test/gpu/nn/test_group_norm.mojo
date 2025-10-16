@@ -24,10 +24,10 @@ from utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: LayoutTensor[t, **_], size: Int, eps: Scalar[t]) -> (
+](vec: LayoutTensor[t, **_], size: Int, eps: Scalar[t]) -> Tuple[
     Scalar[t],
     Scalar[t],
-):
+]:
     constrained[vec.rank == 1, "vec must be rank 1"]()
     var sum_val = Scalar[t]()
     var sum_sq = Scalar[t]()

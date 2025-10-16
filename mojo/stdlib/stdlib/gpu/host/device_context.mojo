@@ -2041,7 +2041,7 @@ struct DeviceFunction[
         )
 
     @staticmethod
-    fn _dump_q[name: String, val: _DumpPath]() -> (Bool, _DumpPath):
+    fn _dump_q[name: String, val: _DumpPath]() -> Tuple[Bool, _DumpPath]:
         alias env_var = "DUMP_GPU_" + name.upper()
 
         @parameter
@@ -6147,7 +6147,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         return String(arch_name)
 
     @always_inline
-    fn get_memory_info(self) raises -> (_SizeT, _SizeT):
+    fn get_memory_info(self) raises -> Tuple[_SizeT, _SizeT]:
         """Returns the free and total memory size for this device.
 
         This method queries the current state of device memory, providing information

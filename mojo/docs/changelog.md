@@ -78,6 +78,10 @@ what we publish.
 
 ### Language changes {#25-7-language-changes}
 
+- Expressions like `(Int, Float)` is no longer a syntax sugar for
+  `Tuple[Int, Float]`. It instead creates a tuple instance of two type values,
+  i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
+
 ### Library changes {#25-7-library-changes}
 
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
@@ -116,7 +120,7 @@ what we publish.
 - `assert_equal` now displays colored character-by-character diffs when string
   comparisons fail, making it easier to spot differences. Differing characters
   are highlighted in red for the left string and green for the right string.
-  
+
 - Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
   `--sanitize address` at compile time.
 

@@ -60,11 +60,11 @@ fn __source_location() -> _SourceLocation:
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
         inlineCount = Int(0)._mlir_value,
-        _type = (
+        _type = Tuple[
             __mlir_type.index,
             __mlir_type.index,
             __mlir_type.`!kgen.string`,
-        ),
+        ],
     ]()
 
     return _SourceLocation(
@@ -101,11 +101,11 @@ fn __call_location[*, inline_count: Int = 1]() -> _SourceLocation:
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
         inlineCount = inline_count._mlir_value,
-        _type = (
+        _type = Tuple[
             __mlir_type.index,
             __mlir_type.index,
             __mlir_type.`!kgen.string`,
-        ),
+        ],
     ]()
 
     return _SourceLocation(

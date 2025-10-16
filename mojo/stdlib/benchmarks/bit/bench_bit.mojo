@@ -168,7 +168,7 @@ def main():
         BenchId("bench_next_power_of_two_uint_v4")
     )
 
-    results = Dict[String, (Float64, Int)]()
+    results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
         n = info.name
         time = info.result.mean("ms")

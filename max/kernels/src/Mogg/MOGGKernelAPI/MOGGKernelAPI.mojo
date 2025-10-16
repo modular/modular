@@ -1881,7 +1881,7 @@ struct Transpose:
     fn transpose_in_place(
         input: InputTensor,
         permutations: InputTensor[rank=1],
-        out result: (IndexList[input.rank], IndexList[input.rank]),
+        out result: Tuple[IndexList[input.rank], IndexList[input.rank]],
     ):
         var new_shape = IndexList[input.rank]()
         var new_stride = IndexList[input.rank]()
