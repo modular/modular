@@ -91,6 +91,8 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
   return result.takeValue();
 }
 
+int IREvaluator::getErrorLimit() { return elaborator->options.elabErrorLimit; }
+
 //===----------------------------------------------------------------------===//
 // Expression Evaluation
 //===----------------------------------------------------------------------===//

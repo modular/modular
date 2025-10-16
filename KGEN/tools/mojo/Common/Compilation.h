@@ -41,20 +41,21 @@ class TargetInfoAttr;
 /// Parse the common configuration options for Mojo related to compilation,
 /// populating the provided `compilationOptions` argument. An error is returned
 /// if any of the provided option values are invalid.
-ErrorOrSuccess
-parseCompilationOptions(const State &state, const llvm::opt::InputArgList &args,
-                        KGEN::CompilationOptions &compilationOptions,
-                        llvm::SourceMgr &sourceMgr, MLIRContext &ctx,
-                        llvm::opt::OptSpecifier includeDirsId,
-                        llvm::opt::OptSpecifier optimizationLevelId = {},
-                        llvm::opt::OptSpecifier debugLevelId = {},
-                        llvm::opt::OptSpecifier sanitizeId = {},
-                        llvm::opt::OptSpecifier sharedLibasan = {},
-                        llvm::opt::OptSpecifier externalLibasan = {},
-                        llvm::opt::OptSpecifier bitcodeLibs = {},
-                        llvm::opt::OptSpecifier debugInfoLanguageId = {},
-                        llvm::opt::OptSpecifier numThreadsId = {},
-                        llvm::opt::OptSpecifier stdLibPath = {});
+ErrorOrSuccess parseCompilationOptions(
+    const State &state, const llvm::opt::InputArgList &args,
+    KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
+    MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
+    llvm::opt::OptSpecifier optimizationLevelId = {},
+    llvm::opt::OptSpecifier debugLevelId = {},
+    llvm::opt::OptSpecifier sanitizeId = {},
+    llvm::opt::OptSpecifier sharedLibasan = {},
+    llvm::opt::OptSpecifier externalLibasan = {},
+    llvm::opt::OptSpecifier bitcodeLibs = {},
+    llvm::opt::OptSpecifier debugInfoLanguageId = {},
+    llvm::opt::OptSpecifier numThreadsId = {},
+    llvm::opt::OptSpecifier stdLibPath = {},
+    llvm::opt::OptSpecifier loopUnrollingWarnThresholdId = {},
+    llvm::opt::OptSpecifier elabErrorLimitId = {});
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(
@@ -73,8 +74,7 @@ ErrorOrSuccess parseTargetOptions(
     llvm::opt::OptSpecifier mtuneId,
     llvm::opt::OptSpecifier targetAcceleratorId,
     llvm::opt::OptSpecifier mcmodelId,
-    llvm::opt::OptSpecifier largeDataThresholdId,
-    llvm::opt::OptSpecifier loopUnrollingWarnThreshold);
+    llvm::opt::OptSpecifier largeDataThresholdId);
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module

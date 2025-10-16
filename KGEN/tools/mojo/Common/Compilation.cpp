@@ -35,7 +35,9 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier externalLibasan,
     llvm::opt::OptSpecifier bitcodeLibs,
     llvm::opt::OptSpecifier debugInfoLanguageId,
-    llvm::opt::OptSpecifier numThreadsId, llvm::opt::OptSpecifier stdLibPath) {
+    llvm::opt::OptSpecifier numThreadsId, llvm::opt::OptSpecifier stdLibPath,
+    llvm::opt::OptSpecifier loopUnrollingWarnThresholdId,
+    llvm::opt::OptSpecifier elabErrorLimitId) {
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
     StringRef sanitizer = args.getLastArgValue(sanitizeId);
@@ -136,6 +138,7 @@ ErrorOrSuccess M::parseCompilationOptions(
             .Case(kDebugLevelLineTables, CompilationOptions::kLineTablesOnly)
             .Case(kDebugLevelFull, CompilationOptions::kFullDebugInfo);
   }
+
   if (numThreadsId.isValid()) {
     if (args.hasMultipleArgs(numThreadsId)) {
       return Error("Number of threads can only be specified once");
@@ -145,6 +148,39 @@ ErrorOrSuccess M::parseCompilationOptions(
       // Next line has a side effect of setting compilationOptions.numThreads
       if (!llvm::to_integer(numThreadsStr, compilationOptions.numThreads))
         return Error("Invalid number of threads: " + numThreadsStr.str());
+    }
+  }
+
+  if (loopUnrollingWarnThresholdId.isValid()) {
+    if (args.hasMultipleArgs(loopUnrollingWarnThresholdId)) {
+      return Error("too many specified loop unroll factor threshold, expected "
+                   "exactly one");
+    }
+    StringRef loopUnrollingWarnThreshold =
+        args.getLastArgValue(loopUnrollingWarnThresholdId);
+    if (!loopUnrollingWarnThreshold.empty()) {
+      if (!llvm::to_integer(loopUnrollingWarnThreshold,
+                            compilationOptions.loopUnrollingWarnThreshold)) {
+        return Error("invalid loop-unrolling-warn-threshold'" +
+                     loopUnrollingWarnThreshold +
+                     "', expected an integer number");
+      }
+    }
+  }
+
+  if (elabErrorLimitId.isValid()) {
+    if (args.hasMultipleArgs(elabErrorLimitId)) {
+      return Error(
+          "too many specified elaboration-error-limit, expected exactly one");
+    }
+
+    StringRef elabErrorLimit = args.getLastArgValue(elabErrorLimitId);
+    if (!elabErrorLimit.empty()) {
+      if (!llvm::to_integer(elabErrorLimit,
+                            compilationOptions.elabErrorLimit)) {
+        return Error("invalid elaboration-error-limit'" + elabErrorLimit +
+                     "', expected an integer number");
+      }
     }
   }
 
@@ -189,8 +225,7 @@ ErrorOrSuccess M::parseTargetOptions(
     llvm::opt::OptSpecifier mtuneId,
     llvm::opt::OptSpecifier targetAcceleratorId,
     llvm::opt::OptSpecifier mcmodelId,
-    llvm::opt::OptSpecifier largeDataThresholdId,
-    llvm::opt::OptSpecifier loopUnrollingWarnThresholdId) {
+    llvm::opt::OptSpecifier largeDataThresholdId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -229,12 +264,6 @@ ErrorOrSuccess M::parseTargetOptions(
   if (args.hasMultipleArgs(largeDataThresholdId))
     return Error(
         "too many specified large data threshold, expected exactly one");
-
-  StringRef loopUnrollingWarnThreshold =
-      args.getLastArgValue(loopUnrollingWarnThresholdId);
-  if (args.hasMultipleArgs(loopUnrollingWarnThresholdId))
-    return Error("too many specified loop unroll factor threshold, expected "
-                 "exactly one");
 
   // If the user specified the triple, the target CPU, or the target feature
   // set, use those to override the defaults.
@@ -279,16 +308,6 @@ ErrorOrSuccess M::parseTargetOptions(
                    "', expected a positive integer number");
     }
     compilationOptions.largeDataThreshold = value;
-  }
-
-  if (!loopUnrollingWarnThreshold.empty()) {
-    uint64_t value;
-    if (!llvm::to_integer(loopUnrollingWarnThreshold, value)) {
-      return Error("invalid loop-unrolling-warn-threshold'" +
-                   loopUnrollingWarnThreshold +
-                   "', expected an integer number");
-    }
-    compilationOptions.loopUnrollingWarnThreshold = value;
   }
 
   // Initialize targets first - we rely on this for getTargetInfo as well as for

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Compiler/ErrorTree.h"
+#include "Support/Compiler/Diags.h"
 #include "mlir/IR/Diagnostics.h"
 
 using namespace M;
@@ -149,7 +150,7 @@ static void emitErrorTreeDiag(const ErrorTree &err,
   }
 }
 
-void ErrorTree::emit(
+InFlightDiagnostic ErrorTree::emit(
     function_ref<InFlightDiagnostic(Location)> emitError, StringRef callSiteMsg,
     std::optional<mlir::DiagnosticEngine::HandlerID> diagHandlerID) && {
   // Try to compress recursive errors. To provide a root, start iterating from
@@ -181,6 +182,7 @@ void ErrorTree::emit(
 
   // Emit the causes.
   emit(*diag, causes, callSiteMsg);
+  return std::move(*diag);
 }
 
 void ErrorTree::emit(InFlightDiagnostic &diag, ArrayRef<ErrorTree> errors,

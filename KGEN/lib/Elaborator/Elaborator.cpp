@@ -19,6 +19,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/Error.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -128,8 +129,15 @@ void ImplNode::setToError(ErrorTree &&err) {
     else
       llvm::errs() << "[ROOT NODE]";
     llvm::errs() << "\n";
-    std::move(*error).emit([](Location loc) { return mlir::emitError(loc); },
-                           "HERE");
+
+    ErrorLimit errorLimit{this->getEvaluator().getErrorLimit(), 0};
+    emitLimitedError(
+        [&] {
+          return std::move(*error).emit(
+              [](Location loc) { return mlir::emitError(loc); }, "HERE");
+        },
+        errorLimit);
+
 #endif // MODULAR_PRODUCTION
     llvm_unreachable("impl node already has an error");
   }
@@ -2399,7 +2407,7 @@ static WalkResult rewriteCompileOffloadOp(
     DenseMap<TargetInfoAttr,
              DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
         &compiledOffload,
-    bool &failed) {
+    bool &failed, ErrorLimit &errorLimit) {
   // Plug offload compilation results as strings back to the elaborated IR.
   auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
@@ -2411,9 +2419,13 @@ static WalkResult rewriteCompileOffloadOp(
   auto targetIter = compiledOffload.find(target);
   if (targetIter == compiledOffload.end()) {
     ErrorTree compileOffloadError(loc, "compile offload result missing target");
-    std::move(compileOffloadError)
-        .emit([](Location loc) { return mlir::emitError(loc); },
-              "Compile offload failed.");
+    emitLimitedError(
+        [&] {
+          return std::move(compileOffloadError)
+              .emit([](Location loc) { return mlir::emitError(loc); },
+                    "Compile offload failed.");
+        },
+        errorLimit);
     failed = true;
     return WalkResult::interrupt();
   }
@@ -2423,9 +2435,15 @@ static WalkResult rewriteCompileOffloadOp(
     ErrorTree compileOffloadError(
         loc, "compile offload result missing emissionOptions \"" +
                  emissionOptionsStr + "\"");
-    std::move(compileOffloadError)
-        .emit([](Location loc) { return mlir::emitError(loc); },
-              "Compile offload failed.");
+
+    emitLimitedError(
+        [&] {
+          return std::move(compileOffloadError)
+              .emit([](Location loc) { return mlir::emitError(loc); },
+                    "Compile offload failed.");
+        },
+        errorLimit);
+
     failed = true;
     return WalkResult::interrupt();
   }
@@ -2435,9 +2453,13 @@ static WalkResult rewriteCompileOffloadOp(
     ErrorTree compileOffloadError(loc,
                                   "compile offload result missing kernelId " +
                                       std::to_string(kernelId));
-    std::move(compileOffloadError)
-        .emit([](Location loc) { return mlir::emitError(loc); },
-              "Compile offload failed.");
+    emitLimitedError(
+        [&] {
+          return std::move(compileOffloadError)
+              .emit([](Location loc) { return mlir::emitError(loc); },
+                    "Compile offload failed.");
+        },
+        errorLimit);
     failed = true;
     return WalkResult::interrupt();
   }
@@ -2547,12 +2569,20 @@ Elaborator::run(ModuleOp theModule,
 
   // Check for any errors and emit them. Emit as many errors as possible.
   bool failed = false;
+  ErrorLimit errorLimit{.errorLimit = options.elabErrorLimit, .errorCount = 0};
+
   for (ParamNode *genNode : primaryNodes) {
     ErrorTreeOrSuccess err = genNode->collectErrorsOrSuccess();
     if (err.isError()) {
       failed = true;
-      err.takeError().emit([](Location loc) { return mlir::emitError(loc); },
-                           "call expansion failed");
+
+      emitLimitedError(
+          [&]() {
+            return err.takeError().emit(
+                [](Location loc) { return mlir::emitError(loc); },
+                "call expansion failed");
+          },
+          errorLimit);
     }
   }
 
@@ -2567,8 +2597,14 @@ Elaborator::run(ModuleOp theModule,
   ErrorTreeOrSuccess bundleOr = bundleOffloadModules(theModule, symToRename);
 
   if (bundleOr.isError()) {
-    bundleOr.takeError().emit([](Location loc) { return mlir::emitError(loc); },
-                              "Bundle CompileOffload failed.");
+    emitLimitedError(
+        [&]() {
+          return bundleOr.takeError().emit(
+              [](Location loc) { return mlir::emitError(loc); },
+              "Bundle CompileOffload failed.");
+        },
+        errorLimit);
+
     for (ImplNode *node : llvm::make_second_range(concreteNodes.get()))
       node->inst.erase();
     return failure();
@@ -2584,9 +2620,14 @@ Elaborator::run(ModuleOp theModule,
   if (compiledOffloadOr.isError()) {
     ErrorTree compileOffloadError(theModule->getLoc(),
                                   compiledOffloadOr.takeError());
-    std::move(compileOffloadError)
-        .emit([](Location loc) { return mlir::emitError(loc); },
-              "Compile offload failed.");
+    emitLimitedError(
+        [&]() {
+          return std::move(compileOffloadError)
+              .emit([](Location loc) { return mlir::emitError(loc); },
+                    "Compile offload failed.");
+        },
+        errorLimit);
+
     for (ImplNode *node : llvm::make_second_range(concreteNodes.get()))
       node->inst.erase();
 
@@ -2677,7 +2718,7 @@ Elaborator::run(ModuleOp theModule,
     if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
       // Plug offload compilation results as strings back to the elaborated IR.
       rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
-                              failed);
+                              failed, errorLimit);
     } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
       // Rewrite IsCompileTimeOp to runtime value as always false.
       OpBuilder b(op);

@@ -68,6 +68,9 @@ public:
   /// Set the location to associate errors with.
   void setErrorLoc(Location loc) { errorLoc = loc; }
 
+  /// Get compilation error limit from the elaborator.
+  int getErrorLimit();
+
 private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
