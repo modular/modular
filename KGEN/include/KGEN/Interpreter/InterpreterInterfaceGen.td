@@ -33,6 +33,29 @@ def BytecodeInterpreterOpInterface :
 }
 
 //===----------------------------------------------------------------------===//
+// ParametricBytecodeInterpreterOpInterface
+//===----------------------------------------------------------------------===//
+
+def ParametricBytecodeInterpreterOpInterface :
+    OpInterface<"ParametricBytecodeInterpreterOpInterface"> {
+  let description = [{
+    This interface defines an API for operations to generate custom bytecode and
+    leverage it to be interpreted at compile time. Operation specify bytecode
+    size requirements, define a hook for generating bytecode, and a hook for
+    being interpreted.
+  }];
+
+  let cppNamespace = "::M";
+
+  let methods = [
+    StaticInterfaceMethod<[{
+      Get a function pointer that interprets the operation given its constant
+      inputs. An operation specific payload is provided to the hook.
+    }], "OpBytecodeGenerator", "getBytecodeGenerator">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // MemoryableTypeInterface
 //===----------------------------------------------------------------------===//
 
