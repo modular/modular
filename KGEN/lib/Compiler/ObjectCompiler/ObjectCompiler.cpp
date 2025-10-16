@@ -1717,8 +1717,11 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
       xcrunPath,   "-sdk", "macosx",        "metallib",
       airTempFile, "-o",   metallibTempFile};
 
-  if (auto customAIR = KGENPassCLOptions::objectCompilerUseCustomAIR()) {
-    llvm::errs() << "WARNING: Using custom AIR file: " << customAIR << '\n';
+  // Need to keep customAIR variable alive as metallibArgs reference to it.
+  std::optional<std::string> customAIR =
+      KGENPassCLOptions::objectCompilerUseCustomAIR();
+  if (customAIR) {
+    llvm::errs() << "WARNING: Using custom AIR file: " << *customAIR << '\n';
     metallibArgs = {xcrunPath,  "-sdk", "macosx",        "metallib",
                     *customAIR, "-o",   metallibTempFile};
   }
