@@ -8888,7 +8888,7 @@ struct Struct_lora_sgmv_ragged:
         constrained[is_gpu[target](), "SGMV only supported on GPUs"]()
         cuda_ctx = context.get_device_context()
 
-        grouped_matmul_vendor(
+        grouped_matmul(
             managed_tensor_slice_to_ndbuffer(c),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),

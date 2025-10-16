@@ -589,15 +589,15 @@ class LoRAManager:
 
         grouped_offsets.append(input_row_offsets[-1])
 
-        # TODO: Move to GPU when KERN-1981 is complete
-        lora_ids = Tensor.from_numpy(np.array(grouped_ids, dtype=np.int32))
+        lora_ids = Tensor.from_numpy(np.array(grouped_ids, dtype=np.int32)).to(
+            device
+        )
         lora_ranks = Tensor.from_numpy(
             np.array(grouped_ranks, dtype=np.uint32)
         ).to(device)
-        # TODO: Move to GPU when KERN-1981 is complete
         lora_grouped_offsets = Tensor.from_numpy(
             np.array(grouped_offsets, dtype=np.uint32)
-        )
+        ).to(device)
 
         return lora_ids, lora_ranks, lora_grouped_offsets
 
@@ -929,16 +929,14 @@ class LoRAManager:
         Returns:
             The graph input symbols.
         """
-        # TODO: Move to GPU when KERN-1981 is complete
         lora_ids_type = TensorType(
-            DType.int32, shape=["lora_ids"], device=DeviceRef.CPU()
+            DType.int32, shape=["lora_ids"], device=device_ref
         )
         lora_ranks_type = TensorType(
             DType.uint32, shape=["lora_ranks"], device=device_ref
         )
-        # TODO: Move to GPU when KERN-1981 is complete
         lora_grouped_offsets_type = TensorType(
-            DType.uint32, shape=["lora_grouped_offsets"], device=DeviceRef.CPU()
+            DType.uint32, shape=["lora_grouped_offsets"], device=device_ref
         )
         return [lora_ids_type, lora_ranks_type, lora_grouped_offsets_type]
 
