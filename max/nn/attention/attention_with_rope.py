@@ -1536,6 +1536,13 @@ class AttentionWithRopeNoOpaque(Module):
         self.rope = rope
         self.n_heads = num_attention_heads
         self.kv_params = kv_params
+
+        if num_key_value_heads != self.kv_params.n_kv_heads:
+            raise ValueError(
+                f"Inconsistent KV head counts: num_key_value_heads={num_key_value_heads}, "
+                f"kv_params.n_kv_heads={self.kv_params.n_kv_heads}"
+            )
+
         self.scale = (
             scale
             if scale is not None
