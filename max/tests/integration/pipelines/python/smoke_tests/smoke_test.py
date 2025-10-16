@@ -25,6 +25,7 @@ import os
 import signal
 import subprocess
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from subprocess import Popen
@@ -161,10 +162,6 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
         "qwen/qwen3-8b": ",max_gen_toks=4096",
     }.get(model, "")
 
-    if task == "chartqa":
-        # Chartqa has a bug in lm-eval, so we use a local version until it's fixed
-        task = str(Path(__file__).parent.resolve() / "chartqa")
-
     return [
         ".venv-lm-eval/bin/python",
         "-m",
@@ -173,6 +170,8 @@ def get_lm_eval_cmd(model: str, task: str) -> list[str]:
         "local-chat-completions",
         "--model_args",
         f"model={model},base_url={URL},num_concurrent=64",
+        "--include_path",
+        str(Path(__file__).parent.resolve() / "chartqa_modular"),
         "--tasks",
         task,
         "--fewshot_as_multiturn",
@@ -206,7 +205,10 @@ def gracefully_stop_process(process: Popen) -> None:
         process.wait(5)
 
 
-def locate_results_json(model: str) -> Path:
+def parse_results(model: str, tasks: list[str]) -> list[dict]:
+    """
+    Returns a list of the lm-eval results for the given model and tasks.
+    """
     sanitized_name = safe_model_name(model)
     results_dir = Path("./lm_eval_output") / Path(sanitized_name)
     candidates = sorted(
@@ -214,9 +216,21 @@ def locate_results_json(model: str) -> Path:
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
-    if not candidates:
-        raise FileNotFoundError(f"No results_*.json under {results_dir}")
-    return candidates[0]
+    if len(candidates) < len(tasks):
+        raise FileNotFoundError(
+            f"No results_*.json under {results_dir} for all tasks"
+        )
+
+    result_dicts = []
+    for index, task in enumerate(reversed(tasks)):
+        result = json.loads(candidates[index].read_text())
+        if task not in result["results"]:
+            raise FileNotFoundError(
+                f"Did not find results for task {task} in {result}"
+            )
+        result_dicts.append(result)
+
+    return result_dicts
 
 
 @dataclass
@@ -230,32 +244,40 @@ class EvalSummary:
 
 
 def build_eval_summary(
-    results_json: Path, startup_time_seconds: float, task: str
-) -> EvalSummary:
+    results: Sequence[Mapping], startup_time_seconds: float
+) -> list[EvalSummary]:
     """
-    Parse lm-eval's results JSON and extract the metrics
+    Extract the metrics from the lm-eval results and build a summary for each task.
     """
-    data = json.loads(results_json.read_text())
-    metrics = data["results"][task]
-    total_secs = float(data["total_evaluation_time_seconds"])
+    summaries = []
 
-    if task == "chartqa":
-        accuracy = metrics["relaxed_accuracy,none"]
-        accuracy_stderr = metrics["relaxed_accuracy_stderr,none"]
-    elif task == "gsm8k_cot_llama":
-        accuracy = metrics["exact_match,flexible-extract"]
-        accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
-    else:
-        raise ValueError(f"Unknown task: {task}")
+    for result in results:
+        assert len(result["results"]) == 1, "Expected exactly one task result"
+        task = next(iter(result["results"].keys()))
+        metrics = result["results"][task]
+        total_secs = float(result["total_evaluation_time_seconds"])
 
-    return EvalSummary(
-        startup_time_seconds=round(startup_time_seconds, 2),
-        eval_task=task,
-        accuracy=accuracy,
-        accuracy_stderr=accuracy_stderr,
-        total_evaluation_time_seconds=total_secs,
-        task_hash=data["task_hashes"][task],
-    )
+        if "chartqa" in task:
+            accuracy = metrics["relaxed_accuracy,none"]
+            accuracy_stderr = metrics["relaxed_accuracy_stderr,none"]
+        elif task == "gsm8k_cot_llama":
+            accuracy = metrics["exact_match,flexible-extract"]
+            accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
+        else:
+            raise ValueError(f"Unknown task: {task}")
+
+        summaries.append(
+            EvalSummary(
+                startup_time_seconds=round(startup_time_seconds, 2),
+                eval_task=task,
+                accuracy=accuracy,
+                accuracy_stderr=accuracy_stderr,
+                total_evaluation_time_seconds=total_secs,
+                task_hash=result["task_hashes"][task],
+            )
+        )
+
+    return summaries
 
 
 @click.command()
@@ -285,7 +307,9 @@ def smoke_test(framework: str, model: str, output_file: Path | None) -> None:
         kw in model
         for kw in ("qwen2.5-vl", "vision", "internvl", "idefics", "pixtral")
     )
-    task = "chartqa" if is_vision_model else "gsm8k_cot_llama"
+    tasks = ["gsm8k_cot_llama"]
+    if is_vision_model:
+        tasks.append("chartqa")
 
     # SGLang depends on ninja which is in the serve environment
     env = os.environ.copy()
@@ -307,37 +331,38 @@ def smoke_test(framework: str, model: str, output_file: Path | None) -> None:
         write_github_output("startup_time", f"{startup_time:.2f}")
 
         try:
-            test_single_request(model, task)
-        except Exception as e:
-            gracefully_stop_process(server_process)
-            raise Exception(f"Test single request failed: {e}") from e
+            for task in tasks:
+                test_single_request(model, task)
 
-        try:
-            lm_eval_cmd = get_lm_eval_cmd(model, task)
-            logger.info(f"Starting lm-eval with command:\n {lm_eval_cmd}")
-            with Popen(lm_eval_cmd, start_new_session=True) as lm_eval_process:
-                try:
-                    rc = lm_eval_process.wait(600)
-                except subprocess.TimeoutExpired:
-                    gracefully_stop_process(lm_eval_process)
-                    raise
-                if rc != 0:
-                    raise Exception(f"lm-eval exited with non-zero status {rc}")
+                lm_eval_cmd = get_lm_eval_cmd(model, task)
+                logger.info(f"Starting lm-eval with command:\n {lm_eval_cmd}")
+                with Popen(
+                    lm_eval_cmd, start_new_session=True
+                ) as lm_eval_process:
+                    try:
+                        rc = lm_eval_process.wait(600)
+                    except subprocess.TimeoutExpired:
+                        logger.warning("lm-eval timed out, killing process")
+                        gracefully_stop_process(lm_eval_process)
+                        raise
+                    if rc != 0:
+                        raise Exception(
+                            f"lm-eval exited with non-zero status {rc}"
+                        )
         finally:
             gracefully_stop_process(server_process)
 
-    results_json = locate_results_json(model)
-    summary = build_eval_summary(
-        results_json, startup_time_seconds=startup_time, task=task
-    )
+    results = parse_results(model, tasks)
+    summary = build_eval_summary(results, startup_time_seconds=startup_time)
 
+    summary_json = json.dumps([asdict(s) for s in summary], indent=2)
     if output_file is not None:
-        output_file.write_text(json.dumps(asdict(summary), indent=2))
+        output_file.write_text(summary_json)
         logger.info(f"Wrote EvalSummary JSON to {output_file.resolve()}")
 
     time.sleep(1)
     logger.info("Smoke test completed")
-    logger.info(f"EvalSummary: {json.dumps(asdict(summary), indent=2)}")
+    logger.info(f"EvalSummary: {summary_json}")
 
 
 if __name__ == "__main__":
