@@ -706,7 +706,7 @@ fn lane_group_sum[
     """
 
     @parameter
-    fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    fn _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
         return x + y
 
     return lane_group_reduce[
@@ -742,7 +742,7 @@ fn lane_group_sum_and_broadcast[
     """
 
     @parameter
-    fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    fn _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
         return x + y
 
     @parameter
@@ -947,11 +947,11 @@ fn _has_redux_f32_support[dtype: DType, simd_width: Int]() -> Bool:
 
 
 @always_inline("nodebug")
-fn _redux_f32_max_min[direction: StaticString](val: SIMD) -> __type_of(val):
+fn _redux_f32_max_min[direction: StaticString](val: SIMD) -> type_of(val):
     alias instruction = StaticString("redux.sync.") + direction + ".NaN.f32"
     return inlined_assembly[
         instruction + " $0, $1, $2;",
-        __type_of(val),
+        type_of(val),
         constraints="=r,r,i",
         has_side_effect=True,
     ](val, Int32(_FULL_MASK))
@@ -992,7 +992,7 @@ fn lane_group_max[
         return _redux_f32_max_min["max"](val)
 
     @parameter
-    fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    fn _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
         return _max(x, y)
 
     return lane_group_reduce[
@@ -1035,7 +1035,7 @@ fn lane_group_max_and_broadcast[
         return _redux_f32_max_min["max"](val)
 
     @parameter
-    fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    fn _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
         return _max(x, y)
 
     @parameter
@@ -1121,7 +1121,7 @@ fn lane_group_min[
         return _redux_f32_max_min["min"](val)
 
     @parameter
-    fn _reduce_min(x: SIMD, y: __type_of(x)) -> __type_of(x):
+    fn _reduce_min(x: SIMD, y: type_of(x)) -> type_of(x):
         return _min(x, y)
 
     return lane_group_reduce[

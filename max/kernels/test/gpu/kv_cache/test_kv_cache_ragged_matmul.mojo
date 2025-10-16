@@ -705,7 +705,7 @@ def generic_execute_fused_qkv_cache_ragged[
     # Pass around the DeviceNDBuffers, these are reference counted using DeviceBuffers.
     # If we return around HostNDBuffers then we'll double free because HostNDBuffers are
     # @value decorated and can't be moved.
-    return rebind[__type_of(result)](
+    return rebind[type_of(result)](
         (
             ref_output_device,
             test_output_device,

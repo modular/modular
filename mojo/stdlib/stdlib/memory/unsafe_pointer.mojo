@@ -474,7 +474,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn __merge_with__[
-        other_type: __type_of(
+        other_type: type_of(
             UnsafePointer[
                 type,
                 address_space=address_space,
@@ -1195,7 +1195,7 @@ struct UnsafePointer[
                 " the mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[__type_of(result)]()
+        result = abort[type_of(result)]()
 
     @always_inline("builtin")
     fn as_any_origin(

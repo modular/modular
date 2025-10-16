@@ -118,7 +118,7 @@ struct RuntimeTuple[
         Args:
             values: Variadic number of integer values to initialize the tuple with.
         """
-        self.value = __type_of(self.value)(values)
+        self.value = type_of(self.value)(values)
 
     @always_inline
     @implicit
@@ -141,8 +141,8 @@ struct RuntimeTuple[
                 l,
             ),
         ]()
-        self.value = rebind[__type_of(self.value)](
-            values.cast[__type_of(values).element_type]()
+        self.value = rebind[type_of(self.value)](
+            values.cast[type_of(values).element_type]()
         )
 
     @staticmethod

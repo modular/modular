@@ -52,7 +52,7 @@ fn memcpy_or_fuse[
 ](
     dest_data: UnsafePointer[Int8],
     out_byte_offset: Int,
-    src_data: __type_of(dest_data),
+    src_data: type_of(dest_data),
     n: Int,
     out_shape: IndexList[rank, **_],
 ) raises:

@@ -91,9 +91,9 @@ fn create_vector[
     ptr: UnsafePointer[Scalar[dtype]],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
-    var dynamic_layout = __type_of(result.runtime_layout)(
-        __type_of(result.runtime_layout.shape)(m),
-        __type_of(result.runtime_layout.stride)(1),
+    var dynamic_layout = type_of(result.runtime_layout)(
+        type_of(result.runtime_layout.shape)(m),
+        type_of(result.runtime_layout.stride)(1),
     )
     return {ptr, dynamic_layout}
 
@@ -106,9 +106,9 @@ fn create_tensor[
     ptr: UnsafePointer[Scalar[dtype]],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
-    var dynamic_layout = __type_of(result.runtime_layout)(
-        __type_of(result.runtime_layout.shape)(m, n),
-        __type_of(result.runtime_layout.stride)(1, m),
+    var dynamic_layout = type_of(result.runtime_layout)(
+        type_of(result.runtime_layout.shape)(m, n),
+        type_of(result.runtime_layout.stride)(1, m),
     )
     return {ptr, dynamic_layout}
 

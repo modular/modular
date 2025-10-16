@@ -23,9 +23,7 @@ from testing import assert_false, assert_true
 def test_operation[
     dtype: DType,
     target_arch: StaticString,
-    op_fn: fn[width: Int] (x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(
-        x
-    ),
+    op_fn: fn[width: Int] (x: SIMD[dtype, width], y: type_of(x)) -> type_of(x),
     op_name: StaticString,
 ]():
     var scalar: String
@@ -64,21 +62,21 @@ def test_operation[
 
 
 def test_add[dtype: DType, target_arch: StaticString]():
-    fn add[width: Int](x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(x):
+    fn add[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x + y
 
     test_operation[dtype, target_arch, add, "add"]()
 
 
 def test_sub[dtype: DType, target_arch: StaticString]():
-    fn sub[width: Int](x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(x):
+    fn sub[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x - y
 
     test_operation[dtype, target_arch, sub, "sub"]()
 
 
 def test_mul[dtype: DType, target_arch: StaticString]():
-    fn mul[width: Int](x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(x):
+    fn mul[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x * y
 
     test_operation[dtype, target_arch, mul, "mul"]()
@@ -101,19 +99,19 @@ def test_half_float_instruction_selection():
 def test_fma[dtype: DType]():
     fn fma[
         width: Int
-    ](x: SIMD[dtype, width], y: __type_of(x), z: __type_of(x)) -> __type_of(x):
+    ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
         return x * y + z
 
     fn fma_manual[
         width: Int
-    ](x: SIMD[dtype, width], y: __type_of(x), z: __type_of(x)) -> __type_of(x):
+    ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
         return x.fma(y, z)
 
     # Ensure `_mul_with_fastmath_none` threads fastmath flags through to
     # pop.mul.
     fn _mul_with_fastmath_none[
         width: Int
-    ](x: SIMD[DType.float32, width], y: __type_of(x)) -> __type_of(x):
+    ](x: SIMD[DType.float32, width], y: type_of(x)) -> type_of(x):
         return x._mul_with_fastmath_none(y)
 
     @parameter

@@ -393,10 +393,10 @@ usually results in an error.
 
 If you need to know the type of the tile (to declare a variable, for example),
 you can use the `tile_type()` method, with the same tile size parameters. Only
-use `tile_type()` inside the `__type_of()` operator.
+use `tile_type()` inside the `type_of()` operator.
 
 ```mojo
-alias MyTileType = __type_of(tensor.tile_type[32, 32]())
+alias MyTileType = type_of(tensor.tile_type[32, 32]())
 var my_tile: MyTileType
 ```
 

@@ -37,7 +37,7 @@ fn is_negative(value: Int) -> Int:
 
 
 @always_inline
-fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> __type_of(value):
+fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
     """Get a bitmask of whether the value is negative.
 
     Parameters:

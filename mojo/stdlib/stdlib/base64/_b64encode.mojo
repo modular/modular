@@ -275,7 +275,7 @@ fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
     return _repeat_until[width](v.join(v))
 
 
-fn _rshift_bits_in_u16[shift: Int](input: Bytes) -> __type_of(input):
+fn _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
     var u16 = bitcast[DType.uint16, input.size // 2](input)
     var res = bit.rotate_bits_right[shift](u16)
     return bitcast[DType.uint8, input.size](res)
@@ -288,4 +288,4 @@ fn _sub_with_saturation[
     DType.uint8, width
 ]:
     # generates a single `vpsubusb` on x86 with AVX
-    return llvm_intrinsic["llvm.usub.sat", __type_of(a)](a, b)
+    return llvm_intrinsic["llvm.usub.sat", type_of(a)](a, b)

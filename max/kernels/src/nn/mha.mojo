@@ -574,7 +574,7 @@ fn flash_attention_dispatch[
                     output.dtype,
                     mask_t,
                     score_mod_t,
-                    __type_of(valid_length.to_layout_tensor()).layout,
+                    type_of(valid_length.to_layout_tensor()).layout,
                     config,
                     group=group,
                     use_score_mod=use_score_mod,
@@ -695,7 +695,7 @@ fn flash_attention_dispatch[
                     output.dtype,
                     mask_t,
                     score_mod_t,
-                    __type_of(valid_length.to_layout_tensor()).layout,
+                    type_of(valid_length.to_layout_tensor()).layout,
                     BM=BM,
                     BN=BN,
                     BK = UInt(BK),
@@ -1585,7 +1585,7 @@ fn mha_single_batch[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -1840,12 +1840,12 @@ fn mha_single_batch[
         @always_inline
         @parameter
         fn _mask_tensor_row(
-            tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
+            tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
             return {
                 tensor.ptr,
-                __type_of(tensor.runtime_layout)(
-                    __type_of(tensor.runtime_layout.shape)(
+                type_of(tensor.runtime_layout)(
+                    type_of(tensor.runtime_layout.shape)(
                         num_rows, tensor.dim[1]()
                     ),
                     tensor.runtime_layout.stride,
@@ -2304,7 +2304,7 @@ fn mha_single_batch_pipelined[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -2552,11 +2552,11 @@ fn mha_single_batch_pipelined[
                 swizzle_a=True,
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
-                next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
-                next_op_b_layout_int_type = __type_of(
+                next_op_b_iter_masked = type_of(v_gmem_iter).masked,
+                next_op_b_layout_int_type = type_of(
                     v_gmem_iter
                 ).layout_int_type,
-                next_op_b_linear_idx_type = __type_of(
+                next_op_b_linear_idx_type = type_of(
                     v_gmem_iter
                 ).linear_idx_type,
                 k_group_size = config.k_group_size,
@@ -2587,11 +2587,11 @@ fn mha_single_batch_pipelined[
                 swizzle_a=True,
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
-                next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
-                next_op_b_layout_int_type = __type_of(
+                next_op_b_iter_masked = type_of(v_gmem_iter).masked,
+                next_op_b_layout_int_type = type_of(
                     v_gmem_iter
                 ).layout_int_type,
-                next_op_b_linear_idx_type = __type_of(
+                next_op_b_linear_idx_type = type_of(
                     v_gmem_iter
                 ).linear_idx_type,
                 k_group_size = config.k_group_size,
@@ -2969,11 +2969,11 @@ fn mha_decoding[
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
-    var qk_max_batch_ptr = __type_of(qk_max_ptr)()
+    var qk_max_batch_ptr = type_of(qk_max_ptr)()
     if qk_max_ptr:
         qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
 
-    var exp_sum_batch_ptr = __type_of(exp_sum_ptr)()
+    var exp_sum_batch_ptr = type_of(exp_sum_ptr)()
     if exp_sum_ptr:
         exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
 
@@ -3329,7 +3329,7 @@ fn mha_decoding_single_batch[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -3489,9 +3489,7 @@ fn mha_decoding_single_batch[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int
-    ) -> __type_of(tensor):
+    fn _mask_tensor_row(tensor: LayoutTensor, num_rows: Int) -> type_of(tensor):
         return {
             tensor.ptr,
             {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
@@ -4010,7 +4008,7 @@ fn mha_decoding_single_batch_pipelined[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -4590,7 +4588,7 @@ fn mha_gpu_naive[
         k_t,
         mask_t,
         p_type,
-        __type_of(valid_length.to_layout_tensor()).layout,
+        type_of(valid_length.to_layout_tensor()).layout,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -4635,7 +4633,7 @@ fn mha_gpu_naive[
         output_type,
         p_type,
         v_t,
-        __type_of(valid_length.to_layout_tensor()).layout,
+        type_of(valid_length.to_layout_tensor()).layout,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -4775,9 +4773,9 @@ fn _bmm0_bs[
 
                 @parameter
                 if width == 1:
-                    accum += rebind[__type_of(accum)](qk_val)
+                    accum += rebind[type_of(accum)](qk_val)
                 else:
-                    accum_vec += rebind[__type_of(accum_vec)](qk_val)
+                    accum_vec += rebind[type_of(accum_vec)](qk_val)
 
             vectorize[accum_fn, simd_width_of[p_type]()](depth)
             accum += accum_vec.reduce_add()

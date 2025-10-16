@@ -272,7 +272,7 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
     )
 
 
-fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
+fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
     """UTF-8 byte type.
 
     Returns:

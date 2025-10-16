@@ -144,7 +144,7 @@ struct TestSuite(Movable):
             alias test_func = test_funcs[idx]
 
             @parameter
-            if _type_is_eq[__type_of(test_func), _Test.fn_type]():
+            if _type_is_eq[type_of(test_func), _Test.fn_type]():
 
                 @parameter
                 if _get_test_func_name[test_func]().startswith("test_"):

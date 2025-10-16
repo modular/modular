@@ -256,12 +256,12 @@ def test_overloaded():
 
 
 @always_inline
-fn exp(x: SIMD[DType.float32, 4]) -> __type_of(x):
+fn exp(x: SIMD[DType.float32, 4]) -> type_of(x):
     return math.exp(x)
 
 
 @always_inline
-fn tanh(x: SIMD[DType.float32, 4]) -> __type_of(x):
+fn tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
     return math.tanh(x)
 
 

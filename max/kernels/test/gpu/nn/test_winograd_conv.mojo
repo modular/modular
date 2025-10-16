@@ -41,7 +41,7 @@ from utils.numerics import get_accum_type
 fn _get_b[
     dtype: DType
 ](out B: LayoutTensor[dtype, Layout.row_major(4, 4), MutableAnyOrigin]):
-    B = __type_of(B).stack_allocation()
+    B = type_of(B).stack_allocation()
     # fmt:off
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
@@ -54,7 +54,7 @@ fn _get_b[
 fn _get_g[
     dtype: DType
 ](out G: LayoutTensor[dtype, Layout.row_major(4, 3), MutableAnyOrigin]):
-    G = __type_of(G).stack_allocation()
+    G = type_of(G).stack_allocation()
     # fmt:off
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
@@ -67,7 +67,7 @@ fn _get_g[
 fn _get_a[
     dtype: DType
 ](out A: LayoutTensor[dtype, Layout.row_major(2, 4), MutableAnyOrigin]):
-    A = __type_of(A).stack_allocation()
+    A = type_of(A).stack_allocation()
     # fmt:off
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0

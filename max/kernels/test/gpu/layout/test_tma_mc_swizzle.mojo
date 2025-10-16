@@ -95,7 +95,7 @@ fn tma_swizzle_multicast_load_kernel[
         var copy_offset = subcluster_tileM * subcluster_tileN * block_rank
 
         tma_tile.async_multicast_load(
-            __type_of(tile)(tile.ptr + copy_offset),
+            type_of(tile)(tile.ptr + copy_offset),
             mbar[0],
             (UInt(slice_cord_x), UInt(slice_cord_y)),
             tma_multicast_mask,
@@ -154,11 +154,11 @@ def test_tma_multicast_swizzle[
     print(test_name)
 
     alias kernel = tma_swizzle_multicast_load_kernel[
-        dtype = __type_of(tma_tensor).dtype,
+        dtype = type_of(tma_tensor).dtype,
         layout=layout,
         cluster_tile_layout = Layout.row_major(tileM, tileN),
-        subcluster_tile_layout = __type_of(tma_tensor).layout,
-        desc_layout = __type_of(tma_tensor).desc_layout,
+        subcluster_tile_layout = type_of(tma_tensor).layout,
+        desc_layout = type_of(tma_tensor).desc_layout,
         CLUSTER_M=CLUSTER_M,
         CLUSTER_N=CLUSTER_N,
     ]
@@ -175,12 +175,12 @@ def test_tma_multicast_swizzle[
 
     ctx.synchronize()
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    alias descM = __type_of(tma_tensor).desc_layout.shape[0].value()
-    alias descN = __type_of(tma_tensor).desc_layout.shape[1].value()
+    alias descM = type_of(tma_tensor).desc_layout.shape[0].value()
+    alias descN = type_of(tma_tensor).desc_layout.shape[1].value()
     alias desc_tile_size = descM * descN
 
     desc_tile = LayoutTensor[
-        dtype, __type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, type_of(tma_tensor).desc_layout, MutableAnyOrigin
     ].stack_allocation()
 
     src_host = src.tensor()

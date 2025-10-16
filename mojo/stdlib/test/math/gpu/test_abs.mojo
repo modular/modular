@@ -22,7 +22,7 @@ alias MI300X_TARGET = get_gpu_target["mi300x"]()
 def test_abs():
     fn do_abs[
         dtype: DType, *, width: Int = 1
-    ](val: SIMD[dtype, width]) -> __type_of(val):
+    ](val: SIMD[dtype, width]) -> type_of(val):
         return abs(val)
 
     # AMD GPU kernels cannot have a return value

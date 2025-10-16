@@ -278,7 +278,7 @@ trait AccumulatorTile(ImplicitlyCopyable, Movable):
     @staticmethod
     @always_inline
     fn _empty_tensor() -> (
-        __type_of(
+        type_of(
             local_tensor_type[
                 Self.dtype, Self.vec_output_layout, Self.element_layout
             ]()
@@ -289,7 +289,7 @@ trait AccumulatorTile(ImplicitlyCopyable, Movable):
     @staticmethod
     @always_inline
     fn rows_of_frags(
-        src: __type_of(Self._empty_tensor()),
+        src: type_of(Self._empty_tensor()),
         out res: LayoutTensor[
             Self.dtype,
             Self.rows_of_frags_layout,
@@ -302,21 +302,21 @@ trait AccumulatorTile(ImplicitlyCopyable, Movable):
     @staticmethod
     @always_inline
     fn allocate_register_tile(
-        out res: __type_of(Self._empty_tensor()),
+        out res: type_of(Self._empty_tensor()),
     ):
         ...
 
     @always_inline
     fn copy_from(
         self,
-        src: __type_of(Self._empty_tensor()),
+        src: type_of(Self._empty_tensor()),
     ):
         ...
 
     @always_inline
     fn copy_to(
         self,
-        dst: __type_of(Self._empty_tensor()),
+        dst: type_of(Self._empty_tensor()),
     ):
         ...
 
@@ -387,7 +387,7 @@ struct TMemAccumulator[
     @staticmethod
     @always_inline
     fn _empty_tensor() -> (
-        __type_of(
+        type_of(
             local_tensor_type[
                 Self.dtype, Self.vec_output_layout, Self.layout_t.element_layout
             ]()
@@ -482,7 +482,7 @@ struct TMemAccumulator[
     @staticmethod
     @always_inline
     fn rows_of_frags(
-        src: __type_of(Self._empty_tensor()),
+        src: type_of(Self._empty_tensor()),
         out res: LayoutTensor[
             Self.dtype,
             Self.rows_of_frags_layout,
@@ -496,14 +496,14 @@ struct TMemAccumulator[
     @staticmethod
     @always_inline
     fn allocate_register_tile(
-        out res: __type_of(Self._empty_tensor()),
+        out res: type_of(Self._empty_tensor()),
     ):
-        res = __type_of(res).stack_allocation()
+        res = type_of(res).stack_allocation()
 
     @always_inline
     fn copy_from(
         self,
-        src: __type_of(Self._empty_tensor()),
+        src: type_of(Self._empty_tensor()),
     ):
         frags = Self.rows_of_frags(src).vectorize[1, Self.frag_size]()
         alias dtype_size = size_of[Self.dtype]()
@@ -541,7 +541,7 @@ struct TMemAccumulator[
     @always_inline
     fn copy_to(
         self,
-        dst: __type_of(Self._empty_tensor()),
+        dst: type_of(Self._empty_tensor()),
     ):
         frags = Self.rows_of_frags(dst).vectorize[1, Self.frag_size]()
         alias dtype_size = size_of[Self.dtype]()
@@ -553,10 +553,9 @@ struct TMemAccumulator[
         alias repeat = frag_size_b32 // 4
         constrained[
             Self.vec_output_layout.size() * Self.element_layout.size()
-            == __type_of(dst).layout.size()
-            * __type_of(dst).element_layout.size()
+            == type_of(dst).layout.size() * type_of(dst).element_layout.size()
         ]()
-        constrained[num_m_mmas * num_n_mmas == __type_of(frags).layout.size()]()
+        constrained[num_m_mmas * num_n_mmas == type_of(frags).layout.size()]()
 
         @parameter
         for m_mma in range(num_m_mmas):
@@ -604,7 +603,7 @@ struct TMemOperand[
     ]
     alias frag_size = Self.reg_layout.frag_size
     alias vec_output_layout = Self.reg_layout.vec_output_layout
-    alias reg_tile_t = __type_of(
+    alias reg_tile_t = type_of(
         local_tensor_type[
             dtype, Self.vec_output_layout, Self.reg_layout.element_layout
         ]()
@@ -751,7 +750,7 @@ struct TMemOperand[
             tmem = self.offset[m_mma, 0]()
             # 16 x 256b results in repeated 8x4<1x2> pattern
             frags[m_mma, 0] = rebind[
-                SIMD[dst_type, __type_of(frags).element_size]
+                SIMD[dst_type, type_of(frags).element_size]
             ](
                 bitcast[dtype, Self.frag_size](
                     tcgen05_ld[
@@ -2552,7 +2551,7 @@ fn _mha_sm100[
 
         @parameter
         @always_inline
-        fn scale(correction: __type_of(rowmax), vout: VecOType):
+        fn scale(correction: type_of(rowmax), vout: VecOType):
             # Correct output
             # We could avoid this on the first iter
             # if we specialize and unswitch on `first_iter`
@@ -2569,7 +2568,7 @@ fn _mha_sm100[
 
         @always_inline
         fn elementwise_reciprocal(
-            old_rowsum: __type_of(rowsum), new_rowsum: __type_of(rowsum)
+            old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
             @parameter
@@ -2583,7 +2582,7 @@ fn _mha_sm100[
         @always_inline
         fn write_output(
             position: PositionType,
-            rowsum_inv: __type_of(rowsum),
+            rowsum_inv: type_of(rowsum),
             vout: VecOType,
         ):
             # Apply softmax denumerator.
@@ -2804,7 +2803,7 @@ fn _mha_sm100[
             ](vectorize_p_reg_tile(), rowmax, False)
 
             score_frag_rowmax = current_rowmax
-            score_frag_rowsum = rebind[__type_of(rowsum)](
+            score_frag_rowsum = rebind[type_of(rowsum)](
                 _rowsum[mma_thread_layout](vectorize_p_reg_tile())
             )
 
@@ -2852,9 +2851,9 @@ fn _mha_sm100[
 
         output_accumulator.copy_to(output_reg_tile)
         constrained[
-            __type_of(output_reg_tile).layout[1].size() > 1,
+            type_of(output_reg_tile).layout[1].size() > 1,
             "output_reg_tile.layout = "
-            + String(__type_of(output_reg_tile).layout)
+            + String(type_of(output_reg_tile).layout)
             + "\n",
         ]()
         write_output(position, rowsum, vectorize_o_reg_tile())

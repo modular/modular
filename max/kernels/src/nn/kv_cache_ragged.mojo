@@ -3487,7 +3487,7 @@ fn generic_kv_cache_radd_dispatch[
         var old_val = cache.load[width=width](
             Int(corrected_batch_idx), h_idx, cache_token_idx, hd_idx
         )
-        var a_val = rebind[__type_of(old_val)](a.load[width=width](idx))
+        var a_val = rebind[type_of(old_val)](a.load[width=width](idx))
 
         cache.store(
             Int(corrected_batch_idx),

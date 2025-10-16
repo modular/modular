@@ -27,7 +27,7 @@ fn test_svg_nvidia_shape() raises:
         Layout.row_major(8, 4)
     ](0)
 
-    var tensor_list = List[__type_of(tensor_dist.get_immutable())]()
+    var tensor_list = List[type_of(tensor_dist.get_immutable())]()
     for i in range(32):
         tensor_list.append(
             tensor.vectorize[1, 2]()
@@ -163,7 +163,7 @@ fn test_svg_wgmma_shape() raises:
 
     print_svg(
         tensor.get_immutable(),
-        List[__type_of(tensor_dist.get_immutable())](
+        List[type_of(tensor_dist.get_immutable())](
             tensor_dist.get_immutable(), tensor_dist2.get_immutable()
         ),
         color_map,
@@ -194,7 +194,7 @@ fn test_svg_swizzle() raises:
 
     print_svg[swizzle](
         tensor.get_immutable(),
-        List[__type_of(tensor.get_immutable())](),
+        List[type_of(tensor.get_immutable())](),
         color_map=color_map,
         file_path=Path("./test_svg_swizzle.svg"),
     )

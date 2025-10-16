@@ -123,7 +123,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     # Fields
     alias _sentinel: Int = -1
     alias _mlir_type = __mlir_type[
-        `!kgen.variant<[rebind(:`, __type_of(Ts), ` `, Ts, `)]>`
+        `!kgen.variant<[rebind(:`, type_of(Ts), ` `, Ts, `)]>`
     ]
     var _impl: Self._mlir_type
 

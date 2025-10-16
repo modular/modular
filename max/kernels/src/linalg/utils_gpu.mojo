@@ -32,15 +32,15 @@ from utils.numerics import get_accum_type
 
 
 fn block_swizzle(
-    block_idx: IndexList[2, **_], grid_dim: __type_of(block_idx)
-) -> __type_of(block_idx):
+    block_idx: IndexList[2, **_], grid_dim: type_of(block_idx)
+) -> type_of(block_idx):
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
 @always_inline
 fn _block_swizzle_by_scale[
     scale0: UInt
-](block_idx: IndexList[2, **_], grid_dim: __type_of(block_idx)) -> __type_of(
+](block_idx: IndexList[2, **_], grid_dim: type_of(block_idx)) -> type_of(
     block_idx
 ):
     """

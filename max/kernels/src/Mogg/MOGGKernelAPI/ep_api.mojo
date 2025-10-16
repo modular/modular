@@ -428,7 +428,7 @@ struct Struct_ep_dispatch_cb:
             n_experts,
             n_ranks,
             max_token_per_rank,
-            __type_of(format_handler),
+            type_of(format_handler),
         ]
 
         @always_inline
@@ -743,7 +743,7 @@ struct Struct_ep_dispatch_cb_fp8:
             n_experts,
             n_ranks,
             max_token_per_rank,
-            __type_of(format_handler),
+            type_of(format_handler),
         ]
 
         @always_inline

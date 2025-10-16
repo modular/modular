@@ -518,7 +518,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Args:
             other: The Span to cast.
         """
-        self = rebind[__type_of(self)](other)
+        self = rebind[type_of(self)](other)
 
     @doc_private
     @always_inline
@@ -1151,7 +1151,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(StringSlice[_]),
+        other_type: type_of(StringSlice[_]),
     ](
         self,
         out result: StringSlice[
@@ -2658,7 +2658,7 @@ fn _memrchr[
     source: UnsafePointer[Scalar[dtype], mut=False, **_],
     char: Scalar[dtype],
     len: Int,
-) -> __type_of(source):
+) -> type_of(source):
     if not len:
         return {}
     for i in reversed(range(len)):
@@ -2679,7 +2679,7 @@ fn _memrmem[
         Scalar[dtype], address_space=address_space, mut=False, **_
     ],
     needle_len: Int,
-) -> __type_of(haystack):
+) -> type_of(haystack):
     if not needle_len:
         return haystack
     if needle_len > haystack_len:
@@ -2700,9 +2700,9 @@ fn _split[
     src_str: StringSlice,
     sep: StringSlice,
     maxsplit: Int,
-    out output: List[__type_of(src_str).Immutable],
+    out output: List[type_of(src_str).Immutable],
 ):
-    alias S = __type_of(src_str).Immutable
+    alias S = type_of(src_str).Immutable
     var ptr = src_str.unsafe_ptr().as_immutable()
     var sep_len = sep.byte_length()
     if sep_len == 0:
@@ -2750,9 +2750,9 @@ fn _split[
     src_str: StringSlice,
     sep: NoneType,
     maxsplit: Int,
-    out output: List[__type_of(src_str).Immutable],
+    out output: List[type_of(src_str).Immutable],
 ):
-    alias S = __type_of(src_str).Immutable
+    alias S = type_of(src_str).Immutable
     alias prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
@@ -2767,7 +2767,7 @@ fn _split[
     var ptr = src_str.unsafe_ptr().as_immutable()
 
     @always_inline("nodebug")
-    fn _build_slice(p: __type_of(ptr), start: Int, end: Int) -> S:
+    fn _build_slice(p: type_of(ptr), start: Int, end: Int) -> S:
         return S(ptr=p + start, length=UInt(end - start))
 
     while lhs <= str_byte_len:

@@ -33,7 +33,7 @@ fn reshape[
     input.origin,
     address_space = input.address_space,
 ]:
-    var stride_tuple = __type_of(new_shape)()
+    var stride_tuple = type_of(new_shape)()
     var stride: Int = 1
 
     # Create contiguous strides.

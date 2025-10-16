@@ -121,7 +121,7 @@ struct HostNDBuffer[
     ):
         result = {
             self.tensor.data,
-            RuntimeLayout[__type_of(result).layout](
+            RuntimeLayout[type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
         }
@@ -226,7 +226,7 @@ struct DeviceNDBuffer[
     ):
         result = {
             self.buffer,
-            RuntimeLayout[__type_of(result).layout](
+            RuntimeLayout[type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
         }

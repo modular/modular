@@ -210,10 +210,10 @@ fn load_AB[
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
-    var a_smem_slice = __type_of(a_smem_tile)(
+    var a_smem_slice = type_of(a_smem_tile)(
         a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
-    var b_smem_slice = __type_of(b_smem_tile)(
+    var b_smem_slice = type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -2083,7 +2083,7 @@ fn matmul_sm100_fallback_kernel[
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x
     )
-    alias c_coord_type = __type_of(ctile_coords)
+    alias c_coord_type = type_of(ctile_coords)
 
     var M = c.dim[0]()
     alias N = c.layout.shape[1].value()
@@ -2122,7 +2122,7 @@ fn matmul_sm100_fallback_kernel[
                 @parameter
                 for m_vec in range(num_vecs_m):
                     alias i_vec = n_vec * num_vecs_m + m_vec
-                    alias dst_idx = __type_of(c_gmem_frag).layout(
+                    alias dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
                     alias dst_m_offset = dst_idx // N
@@ -2198,11 +2198,11 @@ fn matmul_sm100_fallback[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(c).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(c).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,

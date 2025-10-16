@@ -767,7 +767,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(
+        other_type: type_of(
             LayoutTensor[
                 dtype,
                 layout,
@@ -875,7 +875,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn as_any_origin(
         self: Self._AsMut,
-    ) -> __type_of(self).OriginCastType[True, MutableAnyOrigin]:
+    ) -> type_of(self).OriginCastType[True, MutableAnyOrigin]:
         """Casts the origin of the mutable `LayoutTensor` to `MutableAnyOrigin`.
 
         Returns:
@@ -898,7 +898,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn as_any_origin(
         self: LayoutTensor[mut=False, *_, **_],
-    ) -> __type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
+    ) -> type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
         """Casts the origin of the immutable `LayoutTensor` to `ImmutableAnyOrigin`.
 
         Returns:
@@ -918,7 +918,7 @@ struct LayoutTensor[
     @doc_private
     fn as_any_origin(
         self: LayoutTensor[*_, **_],
-        out result: __type_of(self).OriginCastType[False, ImmutableAnyOrigin],
+        out result: type_of(self).OriginCastType[False, ImmutableAnyOrigin],
     ):
         constrained[
             False,
@@ -928,7 +928,7 @@ struct LayoutTensor[
                 " mutability explicitly before calling this function."
             ),
         ]()
-        result = abort[__type_of(result)]()
+        result = abort[type_of(result)]()
 
     alias AddressSpaceCastType[
         address_space: AddressSpace = Self.address_space,
@@ -5212,9 +5212,9 @@ struct LayoutTensor[
         use_runtime_layout: Bool = (
             not layout.all_dims_known() or layout.size() > BATCH_SIZE
         ),
-    ](
-        self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]
-    ) -> __type_of(self):
+    ](self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]) -> type_of(
+        self
+    ):
         """Fill the entire tensor with a single value.
 
         This method sets all elements of the tensor to the specified value. It

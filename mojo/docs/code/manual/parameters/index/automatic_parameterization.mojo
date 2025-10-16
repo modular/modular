@@ -32,7 +32,7 @@ fn on_instance():
     _ = x
 
 
-fn interleave(v1: SIMD, v2: __type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
+fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
     var result = SIMD[v1.dtype, v1.size * 2]()
 
     @parameter

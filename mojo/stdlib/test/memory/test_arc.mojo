@@ -40,7 +40,7 @@ def test_deleter_not_called_until_no_references():
     _ = p^
     assert_false(deleted)
 
-    var vec = List[__type_of(p)]()
+    var vec = List[type_of(p)]()
     vec.append(p2)
     _ = p2^
     assert_false(deleted)
@@ -55,7 +55,7 @@ def test_deleter_not_called_until_no_references_explicit_copy():
     _ = p^
     assert_false(deleted)
 
-    var vec = List[__type_of(p)]()
+    var vec = List[type_of(p)]()
     vec.append(p2.copy())
     _ = p2^
     assert_false(deleted)

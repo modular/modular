@@ -238,7 +238,7 @@ struct AMD_MMA[
 fn mma[
     k_tile_idx: Int,
     swap_a_b: Bool,
-    MMAType: __type_of(AMD_MMA),
+    MMAType: type_of(AMD_MMA),
 ](
     a_tiles: MMATileBuffers[mma_type=MMAType],
     b_tiles: MMATileBuffers[mma_type=MMAType],
@@ -273,13 +273,13 @@ struct MMATileBuffers[
     tensor_origin: ImmutableOrigin, //,
     smem_layout: Layout,
     /,
-    tensor_type: __type_of(LayoutTensor),
+    tensor_type: type_of(LayoutTensor),
     thread_layout: Layout,
     block_rows: Int,
     warp_rows: Int,
     stride: Int,
     num_mmas: Int,
-    mma_type: __type_of(AMD_MMA),
+    mma_type: type_of(AMD_MMA),
 ]:
     """Manages memory for a single matrix (A or B) in GEMM computation.
 

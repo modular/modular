@@ -291,7 +291,7 @@ fn matmul[
     # NOTE: Read comments within the loop from the inside out.
     for _ in range(M // Mc):
         var pb: UnsafePointer[Scalar[elt]] = B.ptr
-        var pak: __type_of(pb) = pa
+        var pak: type_of(pb) = pa
         for _ in range(N // Nc):
             var pck: UnsafePointer[Scalar[elt]] = pc
             pak = pa

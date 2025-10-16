@@ -792,9 +792,9 @@ struct Trunc(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return llvm_intrinsic[
-            "llvm.trunc", __type_of(x), has_side_effect=False
-        ](x)
+        return llvm_intrinsic["llvm.trunc", type_of(x), has_side_effect=False](
+            x
+        )
 
 
 @compiler.register("mo.log")
@@ -4857,10 +4857,10 @@ struct ConvTranspose:
             )
 
         var stride_tuple = IndexList[
-            __type_of(input.to_layout_tensor()).layout.rank() - 2
+            type_of(input.to_layout_tensor()).layout.rank() - 2
         ](0)
         var dilation_tuple = IndexList[
-            __type_of(input.to_layout_tensor()).layout.rank() - 2
+            type_of(input.to_layout_tensor()).layout.rank() - 2
         ](0)
 
         @parameter
@@ -4931,7 +4931,7 @@ struct ConvTranspose:
 
             var cuda_ctx = ctx.get_device_context()
             var pad_tuple = IndexList[
-                __type_of(input.to_layout_tensor()).layout.rank() - 2
+                type_of(input.to_layout_tensor()).layout.rank() - 2
             ](0)
 
             @parameter

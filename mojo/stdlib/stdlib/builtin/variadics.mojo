@@ -395,7 +395,7 @@ struct VariadicListMem[
 # ===-----------------------------------------------------------------------===#
 
 
-alias _AnyTypeMetaType = __type_of(AnyType)
+alias _AnyTypeMetaType = type_of(AnyType)
 
 
 @register_passable

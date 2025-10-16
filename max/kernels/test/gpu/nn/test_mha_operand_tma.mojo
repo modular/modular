@@ -78,7 +78,7 @@ fn mha_operand_tma_copy_kernel[
     # Allocate shared memory tile
     smem_tile = LayoutTensor[
         kv_t.dtype,
-        __type_of(src_tma_tile).layout,
+        type_of(src_tma_tile).layout,
         MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,

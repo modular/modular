@@ -204,7 +204,7 @@ fn gemv_kernel_vector[
     # Every warp processes a single row of the resultant vector
     var local_accum = SIMD[s_type, Int(simd_width)](0)
 
-    alias local_accum_type = __type_of(local_accum)
+    alias local_accum_type = type_of(local_accum)
 
     for i in range(Int(ceildiv(k // simd_width, WARP_SIZE))):
         var a_tile = a.tile[1, Int(WARP_SIZE * simd_width)](warp_id, i)
@@ -380,7 +380,7 @@ fn gemv_split_k[
         var mid = ii // tile_n
         var nid = ii % tile_n
         var val = Scalar[s_type]()
-        alias ValType = __type_of(val)
+        alias ValType = type_of(val)
 
         @parameter
         for jj in range(k_warp_num):

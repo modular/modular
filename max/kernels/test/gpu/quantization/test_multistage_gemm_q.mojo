@@ -354,7 +354,7 @@ fn create_ref_b[
         return v
 
     alias write_back_layout = Layout.row_major(1, 32)
-    alias write_back_type = __type_of(mma_tile_iter_1[].vectorize[1, 2]()[0, 0])
+    alias write_back_type = type_of(mma_tile_iter_1[].vectorize[1, 2]()[0, 0])
 
     @parameter
     for i in range(0, TILE_N // 8, 2):

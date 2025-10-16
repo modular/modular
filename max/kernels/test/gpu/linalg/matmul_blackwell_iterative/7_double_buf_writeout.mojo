@@ -208,10 +208,10 @@ fn load_AB[
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
-    var a_smem_slice = __type_of(a_smem_tile)(
+    var a_smem_slice = type_of(a_smem_tile)(
         a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
     )
-    var b_smem_slice = __type_of(b_smem_tile)(
+    var b_smem_slice = type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
     )
 

@@ -75,7 +75,7 @@ struct ManagedLayoutTensor[
             ".",
         ]()
 
-        self.runtime_layout = rebind[__type_of(self.runtime_layout)](
+        self.runtime_layout = rebind[type_of(self.runtime_layout)](
             runtime_layout
         )
         self.device_data = None
@@ -122,7 +122,7 @@ struct ManagedLayoutTensor[
 
         self.ctx = ctx
 
-        self.runtime_layout = rebind[__type_of(self.runtime_layout)](
+        self.runtime_layout = rebind[type_of(self.runtime_layout)](
             runtime_layout
         )
         self.device_data = ctx.enqueue_create_buffer[dtype](
@@ -229,8 +229,8 @@ fn load_to_simd(
         tensor.layout.all_dims_known(),
         "load_to_simd is supported only for tensors with known layout",
     ]()
-    alias size = __type_of(res).size
-    return rebind[__type_of(res)](
+    alias size = type_of(res).size
+    return rebind[type_of(res)](
         tensor.reshape[Layout(size)]().vectorize[size]()[0]
     )
 
@@ -250,7 +250,7 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
 
     alias element_layout = tensor.element_layout
     alias element_offset = element_layout(element_layout.size() - 1)
-    alias tensor_t = __type_of(tensor)
+    alias tensor_t = type_of(tensor)
     var strides = tensor.runtime_layout.stride.value
     var offset = tensor._get_offset(
         strides,

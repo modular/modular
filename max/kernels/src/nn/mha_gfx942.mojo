@@ -132,7 +132,7 @@ fn convert_f32_to_bf16[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
 
     @parameter
     if use_truncation:
-        res = __type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
+        res = type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
     else:
         res = x.cast[dtype]()
 
@@ -273,9 +273,9 @@ struct KBuffer[
             mma_shape[2] * k_group_size == 16,
             "mma_shape[2] * k_group_size must be 16",
         ]()
-        self.load_tile = __type_of(self.load_tile).stack_allocation()
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
+        self.load_tile = type_of(self.load_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
+        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
         alias stride = Self.GlobalTiledIteratorType.layout.stride[0].value()
         self.bounds = num_b_rows.value() * stride if num_b_rows else Int.MAX
         self.global_iterator = global_tile.tiled_iterator[
@@ -499,9 +499,9 @@ struct VBuffer[
             0, 0
         )
 
-        self.load_tile = __type_of(self.load_tile).stack_allocation()
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
+        self.load_tile = type_of(self.load_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
+        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
 
     @always_inline
     @staticmethod
@@ -735,7 +735,7 @@ struct QRegisterBuffer[
             "mma_shape[2] * k_group_size must be 16",
         ]()
         self.gmem_tensor = tensor
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
 
     @always_inline
     fn load_from_dram(mut self):
@@ -1142,14 +1142,14 @@ struct GlobalMemoryManager[
             + num_heads * q_tile_idx * BM
         )
 
-        self.q_runtime_layout = __type_of(self.q_runtime_layout)(
+        self.q_runtime_layout = type_of(self.q_runtime_layout)(
             RuntimeTuple[
                 Self.q_gmem_layout.shape,
-                element_type = __type_of(self.q_runtime_layout).element_type,
+                element_type = type_of(self.q_runtime_layout).element_type,
             ](Int(q_tile_num_rows), Int(depth)),
             RuntimeTuple[
                 Self.q_gmem_layout.stride,
-                element_type = __type_of(self.q_runtime_layout).linear_idx_type,
+                element_type = type_of(self.q_runtime_layout).linear_idx_type,
             ](Int(num_heads * depth if not token_gen else depth), 1),
         )
 
@@ -1203,11 +1203,11 @@ struct GlobalMemoryManager[
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = __type_of(result.runtime_layout)(
-            __type_of(result.runtime_layout.shape)(
+        var kv_runtime_layout = type_of(result.runtime_layout)(
+            type_of(result.runtime_layout.shape)(
                 Int(kv_tile_num_rows), Int(depth)
             ),
-            __type_of(result.runtime_layout.stride)(
+            type_of(result.runtime_layout.stride)(
                 Int(Self.kv_num_heads * depth), 1
             ),
         )

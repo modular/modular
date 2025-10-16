@@ -82,6 +82,9 @@ what we publish.
   `Tuple[Int, Float]`. It instead creates a tuple instance of two type values,
   i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
 
+- The `__type_of` magic function has been been renamed to `type_of`. Using the
+  old spelling will yield a deprecation warning.
+
 ### Library changes {#25-7-library-changes}
 
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.

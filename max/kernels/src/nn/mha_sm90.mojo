@@ -1539,7 +1539,7 @@ fn _mha_sm90[
 
         @parameter
         @always_inline
-        fn scale_output(correction: __type_of(rowmax)):
+        fn scale_output(correction: type_of(rowmax)):
             # we are now able to read/modify `output_reg_tile` and modify `p_frag`
             vout = vectorize_o_reg_tile()
 
@@ -1559,7 +1559,7 @@ fn _mha_sm90[
 
         @always_inline
         fn elementwise_reciprocal(
-            old_rowsum: __type_of(rowsum), new_rowsum: __type_of(rowsum)
+            old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
             @parameter
@@ -1574,7 +1574,7 @@ fn _mha_sm90[
         fn write_output(
             position: PositionType,
             q_idx: UInt32,
-            rowsum_inv: __type_of(rowsum),
+            rowsum_inv: type_of(rowsum),
         ):
             vout = vectorize_o_reg_tile()
 
@@ -1832,7 +1832,7 @@ fn _mha_sm90[
                             qk_max_ptr[q_head_idx] = rebind[
                                 Scalar[PartitionType.accum_dtype]
                             ](rowmax[0])
-                    score_frag_rowsum = rebind[__type_of(rowsum)](
+                    score_frag_rowsum = rebind[type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_p_reg_tile())
                     )
                     rowmax.copy_from(score_frag_rowmax)
@@ -1876,7 +1876,7 @@ fn _mha_sm90[
                     q_idx_old = q_idx_new
                     q_phase_old = q_pipeline_state.phase()
                 else:
-                    score_frag_rowsum = rebind[__type_of(rowsum)](
+                    score_frag_rowsum = rebind[type_of(rowsum)](
                         _rowsum[mma_thread_layout](vectorize_p_reg_tile())
                     )
 

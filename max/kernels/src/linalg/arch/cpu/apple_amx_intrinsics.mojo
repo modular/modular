@@ -481,7 +481,7 @@ fn dot_at_b_impl(
 
 
 @always_inline
-fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
+fn dot_at_b(c: NDBuffer, a: type_of(c), b: type_of(c)):
     constrained[
         c.type is DType.float32 or c.type is DType.float16,
         "the buffer dtype must be float32 or float16",

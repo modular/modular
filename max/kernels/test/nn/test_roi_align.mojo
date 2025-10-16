@@ -48,7 +48,7 @@ def test_roi_align_avg[scale_type: DType]():
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     roi_align_nhwc[aligned=False](
-        LayoutTensor[__type_of(output).dtype, out_layout_unknown](
+        LayoutTensor[type_of(output).dtype, out_layout_unknown](
             output_stack,
             RuntimeLayout[out_layout_unknown].row_major(
                 IndexList[4](1, 5, 5, 1)
@@ -123,7 +123,7 @@ def test_roi_align_max():
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     roi_align_nhwc[aligned=False, mode="MAX"](
-        LayoutTensor[__type_of(output).dtype, out_layout_unknown](
+        LayoutTensor[type_of(output).dtype, out_layout_unknown](
             output_stack,
             RuntimeLayout[out_layout_unknown].row_major(
                 IndexList[4](1, 5, 5, 1)
@@ -198,7 +198,7 @@ def test_roi_align_KERN_692():
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
     )
     roi_align_nhwc[aligned=False](
-        LayoutTensor[__type_of(output).dtype, out_layout_unknown](
+        LayoutTensor[type_of(output).dtype, out_layout_unknown](
             output_stack,
             RuntimeLayout[out_layout_unknown].row_major(
                 IndexList[4](1, 3, 3, 1)

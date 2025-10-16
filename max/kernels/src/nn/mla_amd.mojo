@@ -162,30 +162,28 @@ struct GlobalMemoryManager[
             * BM
         )
 
-        self.q_runtime_layout = __type_of(self.q_runtime_layout)(
+        self.q_runtime_layout = type_of(self.q_runtime_layout)(
             RuntimeTuple[
                 Self.q_gmem_layout.shape,
-                element_type = __type_of(self.q_runtime_layout).element_type,
+                element_type = type_of(self.q_runtime_layout).element_type,
             ](Int(q_tile_num_rows), Int(q_depth)),
             RuntimeTuple[
                 Self.q_gmem_layout.stride,
-                element_type = __type_of(self.q_runtime_layout).linear_idx_type,
+                element_type = type_of(self.q_runtime_layout).linear_idx_type,
             ](Int(num_heads * q_depth if not token_gen else q_depth), 1),
         )
 
-        self.output_runtime_layout = __type_of(self.output_runtime_layout)(
+        self.output_runtime_layout = type_of(self.output_runtime_layout)(
             RuntimeTuple[
                 Self.output_gmem_layout.shape,
-                element_type = __type_of(
-                    self.output_runtime_layout
-                ).element_type,
+                element_type = type_of(self.output_runtime_layout).element_type,
             ](
                 Int(q_tile_num_rows),
                 Int(Self.depth) if not token_gen else Int(Self.nope_depth),
             ),
             RuntimeTuple[
                 Self.output_gmem_layout.stride,
-                element_type = __type_of(
+                element_type = type_of(
                     self.output_runtime_layout
                 ).linear_idx_type,
             ](Int(num_heads * depth if not token_gen else Self.nope_depth), 1),
@@ -206,7 +204,7 @@ struct GlobalMemoryManager[
             masked=True,
         ],
     ):
-        return __type_of(result)(
+        return type_of(result)(
             ptr + Int(self.q_offset),
             self.q_runtime_layout,
         )
@@ -226,7 +224,7 @@ struct GlobalMemoryManager[
             masked=True,
         ],
     ):
-        return __type_of(result)(
+        return type_of(result)(
             ptr + Int(self.output_offset),
             self.output_runtime_layout,
         )
@@ -247,16 +245,16 @@ struct GlobalMemoryManager[
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = __type_of(result.runtime_layout)(
-            __type_of(result.runtime_layout.shape)(
+        var kv_runtime_layout = type_of(result.runtime_layout)(
+            type_of(result.runtime_layout.shape)(
                 Int(kv_tile_num_rows), Int(depth)
             ),
-            __type_of(result.runtime_layout.stride)(
+            type_of(result.runtime_layout.stride)(
                 Int(Self.kv_num_heads * depth), 1
             ),
         )
 
-        return __type_of(result)(
+        return type_of(result)(
             ptr,
             kv_runtime_layout,
         )
@@ -277,16 +275,16 @@ struct GlobalMemoryManager[
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout
-        var k_rope_runtime_layout = __type_of(result.runtime_layout)(
-            __type_of(result.runtime_layout.shape)(
+        var k_rope_runtime_layout = type_of(result.runtime_layout)(
+            type_of(result.runtime_layout.shape)(
                 Int(kv_tile_num_rows), Int(cache_depth)
             ),
-            __type_of(result.runtime_layout.stride)(
+            type_of(result.runtime_layout.stride)(
                 Int(cache_num_heads * cache_depth), 1
             ),
         )
 
-        return __type_of(result)(
+        return type_of(result)(
             ptr,
             k_rope_runtime_layout,
         )

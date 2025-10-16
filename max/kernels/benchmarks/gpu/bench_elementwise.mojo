@@ -28,15 +28,15 @@ from utils import IndexList
 from utils.index import product
 
 
-fn add_const_fn(x: SIMD) -> __type_of(x):
+fn add_const_fn(x: SIMD) -> type_of(x):
     return x + 42
 
 
-fn copy_fn(x: SIMD) -> __type_of(x):
+fn copy_fn(x: SIMD) -> type_of(x):
     return x
 
 
-fn simd_sqrt(x: SIMD) -> __type_of(x):
+fn simd_sqrt(x: SIMD) -> type_of(x):
     return sqrt(x)
 
 

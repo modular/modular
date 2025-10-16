@@ -120,9 +120,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     )
     var tensormaps = TMATensorTileArray[
         num_of_tensormaps,
-        __type_of(template_tma_tensormap).dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).layout,
+        type_of(template_tma_tensormap).desc_layout,
     ](device_tensormaps)
 
     var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
@@ -138,13 +138,13 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     ctx.synchronize()
 
     alias kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
-        __type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).dtype,
         num_of_tensormaps,
         src_layout,  # src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
-        __type_of(template_tma_tensormap).layout,  # thread layout
+        type_of(template_tma_tensormap).layout,  # smem layout
+        type_of(template_tma_tensormap).desc_layout,  # desc layout
+        type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
     ctx.enqueue_function[kernel](
@@ -278,9 +278,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     )
     var tensormaps = TMATensorTileArray[
         num_of_tensormaps,
-        __type_of(template_tma_tensormap).dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).layout,
+        type_of(template_tma_tensormap).desc_layout,
     ](device_tensormaps)
 
     var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
@@ -296,13 +296,13 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     ctx.synchronize()
 
     alias kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
-        __type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).dtype,
         num_of_tensormaps,
         src_layout,  # src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
-        __type_of(template_tma_tensormap).layout,  # thread layout
+        type_of(template_tma_tensormap).layout,  # smem layout
+        type_of(template_tma_tensormap).desc_layout,  # desc layout
+        type_of(template_tma_tensormap).layout,  # thread layout
     ]
 
     ctx.enqueue_function[kernel](
@@ -491,8 +491,8 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     var tensormaps = TMATensorTileArray[
         num_of_subtensors,
         dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).layout,
+        type_of(template_tma_tensormap).desc_layout,
     ](device_tensormaps)
 
     ctx.synchronize()
@@ -502,8 +502,8 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         num_of_subtensors,
         src_layout,  # new src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
+        type_of(template_tma_tensormap).layout,  # smem layout
+        type_of(template_tma_tensormap).desc_layout,  # desc layout
     ]
 
     ctx.enqueue_function[kernel](

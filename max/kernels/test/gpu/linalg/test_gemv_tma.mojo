@@ -209,7 +209,7 @@ fn gemv_tma_kernel[
                     var row_idx = warp_row_offset + i
                     if global_row_idx + i < M:
                         var a_val = current_a_tile[row_idx, col_idx]
-                        dot_products[i] += rebind[__type_of(dot_products[i])](
+                        dot_products[i] += rebind[type_of(dot_products[i])](
                             a_val.cast[accum_type]() * b_val.cast[accum_type]()
                         )
 

@@ -124,8 +124,8 @@ fn distribute[
         UnsafePointer(to=data_layout_tensor.ptr[offset]),
         rebind[
             MixedLayout[
-                shape_types = __type_of(shape)._get_variadic_pack(),
-                stride_types = __type_of(stride)._get_variadic_pack(),
+                shape_types = type_of(shape)._get_variadic_pack(),
+                stride_types = type_of(stride)._get_variadic_pack(),
             ]
         ](frag_layout),
     )

@@ -156,7 +156,7 @@ fn runtime_row_major[
         Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
     ],
 ):
-    return __type_of(res).row_major(
+    return type_of(res).row_major(
         IndexList[2, element_type = res.element_type](rows, cols)
     )
 

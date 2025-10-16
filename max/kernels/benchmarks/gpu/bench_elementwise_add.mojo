@@ -66,7 +66,7 @@ fn bench_add[
 
         b.iter_custom[kernel_launch](ctx)
 
-    b.bench_with_input[__type_of(shape), bench_func](
+    b.bench_with_input[type_of(shape), bench_func](
         BenchId("add", String(shape)),
         shape,
         # TODO: Pick relevant benchmetric.

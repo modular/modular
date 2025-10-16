@@ -1046,7 +1046,7 @@ struct Bench(Stringable, Writable):
         # Write the timing labels
         if self.config.verbose_timing:
             var labels = materialize[
-                __type_of(self.config).VERBOSE_TIMING_LABELS
+                type_of(self.config).VERBOSE_TIMING_LABELS
             ]()
             # skip the met label
             for i in range(len(labels)):
@@ -1069,7 +1069,7 @@ struct Bench(Stringable, Writable):
 
             if self.config.verbose_timing:
                 var labels = materialize[
-                    __type_of(self.config).VERBOSE_TIMING_LABELS
+                    type_of(self.config).VERBOSE_TIMING_LABELS
                 ]()
                 # skip the met label
                 for i in range(len(labels)):
@@ -1178,7 +1178,7 @@ struct Bench(Stringable, Writable):
         # If label is larger than any value, will pad to the label length
 
         var max_met = len(met_label)
-        alias ConfigType = __type_of(self.config)
+        alias ConfigType = type_of(self.config)
         # NOTE: We insert an explicit materialization for Int here to avoid
         # materialize a more expensive `VERBOSE_TIMING_LABELS[]` object.
         var max_min = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[0])]()

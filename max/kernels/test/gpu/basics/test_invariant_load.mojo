@@ -24,7 +24,7 @@ fn ldg_kernel(i8: UnsafePointer[Int8]):
 
 fn layout_kernel(
     a: LayoutTensor[mut=False, DType.int8, Layout.row_major(1)],
-    mut b: __type_of(a[0]),
+    mut b: type_of(a[0]),
 ):
     b = a[0]
 

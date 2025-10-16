@@ -58,7 +58,7 @@ fn runtime_row_major[
         Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
     ],
 ):
-    return __type_of(res).row_major(IndexList[2]((rows, cols)))
+    return type_of(res).row_major(IndexList[2]((rows, cols)))
 
 
 fn test_dual_matmul[

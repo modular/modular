@@ -33,8 +33,8 @@ fn test_nested_layouts() raises:
     assert_equal(inner[1].value(), 3)
     assert_equal(nested[0][0].value(), 2)
     assert_equal(nested[1].value(), 4)
-    assert_equal(size_of[__type_of(inner)](), size_of[Int]())
-    assert_equal(size_of[__type_of(nested)](), size_of[Int]())
+    assert_equal(size_of[type_of(inner)](), size_of[Int]())
+    assert_equal(size_of[type_of(nested)](), size_of[Int]())
 
 
 fn test_int_tuple_conversion() raises:

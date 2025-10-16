@@ -454,7 +454,7 @@ fn _copy_frag_to_smem_nvidia[
 
             @parameter
             for i in range(p_reg_vecs.shape[1]()):
-                alias offset_in_frag = __type_of(p_smem_frag).layout(i)
+                alias offset_in_frag = type_of(p_smem_frag).layout(i)
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 var offset_BMxBN = frag_offset + offset_in_frag

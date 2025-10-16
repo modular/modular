@@ -1066,7 +1066,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
 @always_inline
 fn _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
-](n: Int, shape: IndexList[rank, **_], out res: __type_of(shape)):
+](n: Int, shape: IndexList[rank, **_], out res: type_of(shape)):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 
@@ -1134,7 +1134,7 @@ fn _get_start_indices_of_nth_subvolume[
 fn _get_start_indices_of_nth_subvolume_uint[
     rank: Int, //,
     subvolume_rank: UInt = 1,
-](n: UInt, shape: IndexList[rank, **_]) -> __type_of(shape):
+](n: UInt, shape: IndexList[rank, **_]) -> type_of(shape):
     """Converts a flat index into the starting ND indices of the nth subvolume
     with rank `subvolume_rank`.
 

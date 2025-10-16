@@ -154,11 +154,11 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                         @parameter
                         fn dot[simd_size: Int](n: Int):
                             constrained[
-                                __type_of(dst_view).layout.stride[1] == 1,
+                                type_of(dst_view).layout.stride[1] == 1,
                                 "elements of dst should be contiguous",
                             ]()
                             constrained[
-                                __type_of(rhs_view).layout.stride[1] == 1,
+                                type_of(rhs_view).layout.stride[1] == 1,
                                 "elements of rhs should be contiguous",
                             ]()
 
@@ -229,7 +229,7 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
                         @parameter
                         fn dot[simd_size: Int](n: Int):
                             constrained[
-                                __type_of(dst_view).layout.stride[1] == 1,
+                                type_of(dst_view).layout.stride[1] == 1,
                                 "elements of dst should be contiguous",
                             ]()
 

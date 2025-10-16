@@ -326,7 +326,7 @@ struct Optional[T: Copyable & Movable](
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Bool),
+        other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
 
@@ -586,7 +586,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Bool),
+        other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
 

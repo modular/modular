@@ -1169,7 +1169,7 @@ fn ListOfTensorDef[
             static_spec = StaticTensorSpec[dtype, rank].create_unknown()
         ]
     ]
-) -> __type_of(ty):
+) -> type_of(ty):
     return ty.copy()
 
 

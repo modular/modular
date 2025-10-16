@@ -194,7 +194,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
         Returns:
             The result.
         """
-        alias len_pos_args = __type_of(args).__len__()
+        alias len_pos_args = type_of(args).__len__()
         ref entries, size_estimation = Self._create_entries(
             fmt_src, len_pos_args
         )

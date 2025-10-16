@@ -687,7 +687,7 @@ struct IntervalTree[
 
         # Find the insertion point by traversing down the tree
         # parent_node tracks the parent of the current node
-        var parent_node = __type_of(self._root)()
+        var parent_node = type_of(self._root)()
         # current_node traverses down the tree until we find an empty spot
         var current_node = self._root
         while current_node:

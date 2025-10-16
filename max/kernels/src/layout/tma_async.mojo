@@ -672,12 +672,12 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
         constrained[
-            __type_of(dst).dtype == dtype,
+            type_of(dst).dtype == dtype,
             "Input tensor has a different type than the TMA op",
         ]()
 
@@ -755,7 +755,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -838,7 +838,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(dst).alignment % 128 == 0,
+            type_of(dst).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -949,7 +949,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(src).alignment % 128 == 0,
+            type_of(src).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
 
@@ -1008,7 +1008,7 @@ struct TMATensorTile[
         """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
-            __type_of(src).alignment % 128 == 0,
+            type_of(src).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
         cp_async_bulk_tensor_reduce[reduction_kind=reduction_kind](
@@ -1700,7 +1700,7 @@ fn create_nested_tma_tile[
     Raises:
         If there was an error creating the underlying TMADescriptor.
     """
-    alias ResultType = __type_of(res)
+    alias ResultType = type_of(res)
     alias desc_layout = ResultType.desc_layout
     alias desc_bytes_size = desc_layout.size() * size_of[dtype]()
     alias layout_size = ResultType.layout.size() * size_of[dtype]()

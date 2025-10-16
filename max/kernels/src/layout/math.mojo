@@ -278,7 +278,7 @@ fn max[
         Currently only supports rank-2 inputs.
     """
 
-    var res_tensor = __type_of(res).stack_allocation()
+    var res_tensor = type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
     return res_tensor
 
@@ -288,7 +288,7 @@ fn max[
     dtype: DType, layout: Layout
 ](
     x: LayoutTensor[dtype, layout, **_], y: LayoutTensor[dtype, layout, **_]
-) -> __type_of(x).MutableAnyType:
+) -> type_of(x).MutableAnyType:
     """Computes element-wise maximum of two tensors.
 
     Returns a new tensor containing the element-wise maximum between the
@@ -312,7 +312,7 @@ fn max[
     constrained[
         x.layout.all_dims_known(), "max expects tensor of statically know shape"
     ]()
-    var res_tensor = __type_of(x).stack_allocation()
+    var res_tensor = type_of(x).stack_allocation()
 
     @parameter
     for i in range(res_tensor.layout.size()):
@@ -357,7 +357,7 @@ fn sum[
         Currently only supports rank-2 inputs.
     """
 
-    var res_tensor = __type_of(res).stack_allocation()
+    var res_tensor = type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
     return res_tensor
 

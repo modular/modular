@@ -300,7 +300,7 @@ struct TensorCore[
     ):
         alias mma_m = shape[0]
         alias mma_k = shape[2]
-        var a_reg_tile = __type_of(res).stack_allocation()
+        var a_reg_tile = type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_k]()
         # for AMD we load k_group_size mma tiles at a time so that we can use 16B loads
         # For example, when loading 16x16 bfloat16 tile only 32 lanes will be active
@@ -365,7 +365,7 @@ struct TensorCore[
     ):
         alias mma_m = shape[0]
         alias mma_k = shape[2]
-        var a_reg_tile = __type_of(res).stack_allocation()
+        var a_reg_tile = type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_k]()
 
         alias warp_layout = Layout.row_major(8, 4)
@@ -473,7 +473,7 @@ struct TensorCore[
     ):
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var b_reg_tile = __type_of(res).stack_allocation()
+        var b_reg_tile = type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
         alias k_group_size = _get_b_k_group_size[b.layout, shape, transpose_b]()
 
@@ -546,7 +546,7 @@ struct TensorCore[
     ):
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var b_reg_tile = __type_of(res).stack_allocation()
+        var b_reg_tile = type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
 
         alias warp_layout = Layout.row_major(
@@ -622,7 +622,7 @@ struct TensorCore[
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var c_reg_tile = __type_of(res).stack_allocation()
+        var c_reg_tile = type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
         alias warp_layout = Layout.row_major(mma_m // reg_per_thread, mma_n)
 
@@ -646,7 +646,7 @@ struct TensorCore[
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
-        var c_reg_tile = __type_of(res).stack_allocation()
+        var c_reg_tile = type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
 
         @parameter
@@ -767,9 +767,9 @@ struct TensorCore[
         var c_reg = load_to_simd(c)
         var d_reg = c_reg
         mma(d_reg, a_reg, b_reg, d_reg)
-        var d = __type_of(res).stack_allocation()
+        var d = type_of(res).stack_allocation()
         d.vectorize[1, Self.c_reg_type.size]()[0, 0] = rebind[
-            __type_of(d.vectorize[1, Self.c_reg_type.size]()[0, 0])
+            type_of(d.vectorize[1, Self.c_reg_type.size]()[0, 0])
         ](d_reg)
         return d
 
@@ -1071,7 +1071,7 @@ struct TensorCore[
                 # shared memory tile.
                 @parameter
                 if WN == 32:  # 32 is the min in practice.
-                    var mma_tile_shifted = __type_of(mma_tile)(
+                    var mma_tile_shifted = type_of(mma_tile)(
                         mma_tile.ptr - warp_tile_coord_n * UInt(WN)
                     )
 

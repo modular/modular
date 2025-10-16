@@ -59,8 +59,8 @@ fn async_dynamic_copy_kernel[
         masked=True,
     ](
         input.ptr,
-        __type_of(input.runtime_layout)(
-            __type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
+        type_of(input.runtime_layout)(
+            type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
             input.runtime_layout.stride,
         ),
     )
@@ -301,8 +301,8 @@ fn masked_async_copy_kernel[
         masked=True,
     ](
         input.ptr,
-        __type_of(input.runtime_layout)(
-            __type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
+        type_of(input.runtime_layout)(
+            type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
             input.runtime_layout.stride,
         ),
     )
@@ -430,8 +430,8 @@ fn masked_copy_kernel[
         masked=True,
     ](
         input.ptr,
-        __type_of(input.runtime_layout)(
-            __type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
+        type_of(input.runtime_layout)(
+            type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
             input.runtime_layout.stride,
         ),
     )
@@ -553,8 +553,8 @@ fn masked_copy_dram_to_local_kernel[
         masked=True,
     ](
         input.ptr,
-        __type_of(input.runtime_layout)(
-            __type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
+        type_of(input.runtime_layout)(
+            type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
             input.runtime_layout.stride,
         ),
     )

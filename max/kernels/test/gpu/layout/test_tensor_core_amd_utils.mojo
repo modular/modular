@@ -78,7 +78,7 @@ fn test_store_d[
     inst_shape: IndexList[3],
 ](d: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
-    var src = __type_of(mma).c_reg_tile_type.stack_allocation().fill(lane_id())
+    var src = type_of(mma).c_reg_tile_type.stack_allocation().fill(lane_id())
     mma.store_d(d, src)
 
 

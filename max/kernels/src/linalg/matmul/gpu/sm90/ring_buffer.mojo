@@ -59,7 +59,7 @@ from ....structuring import SMemBarrier
 @register_passable("trivial")
 struct ProducerTiles[
     origin: Origin[True],
-    ring_buffer_type: __type_of(RingBuffer),
+    ring_buffer_type: type_of(RingBuffer),
 ]:
     """Context manager for producer access to ring buffer tiles.
 
@@ -96,7 +96,7 @@ struct ProducerTiles[
 @register_passable("trivial")
 struct ConsumerTiles[
     origin: Origin[True],
-    ring_buffer_type: __type_of(RingBuffer),
+    ring_buffer_type: type_of(RingBuffer),
 ]:
     """Context manager for consumer access to ring buffer tiles.
 
@@ -133,7 +133,7 @@ struct ConsumerTiles[
 @register_passable("trivial")
 struct RingBufferConsumer[
     origin: Origin[True],
-    ring_buffer_type: __type_of(RingBuffer),
+    ring_buffer_type: type_of(RingBuffer),
 ]:
     """Consumer view of the ring buffer.
 
@@ -167,7 +167,7 @@ struct RingBufferConsumer[
 @register_passable("trivial")
 struct RingBufferProducer[
     origin: Origin[True],
-    ring_buffer_type: __type_of(RingBuffer),
+    ring_buffer_type: type_of(RingBuffer),
 ]:
     """Producer view of the ring buffer.
 

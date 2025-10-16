@@ -309,12 +309,12 @@ def execute_flash_attention[
         MaterializedMask(
             LayoutTensor[
                 mask_device_mod.dtype,
-                __type_of(mask_device_mod.to_layout_tensor()).layout,
+                type_of(mask_device_mod.to_layout_tensor()).layout,
                 MutableAnyOrigin,
             ](
                 mask_device_mod.to_layout_tensor().ptr,
                 RuntimeLayout[
-                    __type_of(mask_device_mod.to_layout_tensor()).layout
+                    type_of(mask_device_mod.to_layout_tensor()).layout
                 ].row_major(
                     mask_device_mod.to_layout_tensor().runtime_layout.shape.value.canonicalize()
                 ),

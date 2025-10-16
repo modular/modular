@@ -2248,7 +2248,7 @@ struct DeviceFunction[
     ) raises:
         alias num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
-        alias populate = __type_of(self._func_impl).populate
+        alias populate = type_of(self._func_impl).populate
         alias num_captures_static = 16
 
         # NOTE: Manual short buffer optimization. We could use a
@@ -2415,7 +2415,7 @@ struct DeviceFunction[
     ) raises:
         alias num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
-        alias populate = __type_of(self._func_impl).populate
+        alias populate = type_of(self._func_impl).populate
         alias num_captures_static = 16
 
         # NOTE: Manual short buffer optimization. We could use a
@@ -2605,7 +2605,7 @@ struct DeviceFunction[
                     translated_arg_offsets[i] = -1
 
         var num_captures = self._func_impl.num_captures
-        alias populate = __type_of(self._func_impl).populate
+        alias populate = type_of(self._func_impl).populate
         alias num_captures_static = 16
 
         # We need the total byte size of arguments as a compile time constant,
@@ -3539,7 +3539,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3616,7 +3616,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3687,7 +3687,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3764,7 +3764,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3835,7 +3835,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             <= self.default_device_info.shared_memory_per_multiprocessor,
             "Requested more than available shared memory.",
         )
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             func_attribute=func_attribute,
@@ -3904,7 +3904,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         )
         ```
         """
-        alias result_type = __type_of(result)
+        alias result_type = type_of(result)
         result = result_type(
             self,
             function_name=function_name,
