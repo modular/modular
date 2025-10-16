@@ -152,7 +152,7 @@ def test_def_arg_box_mbvalue(
     _ = b.member.method()
 
 
-fn returnsMultiple() -> (Int, MemoryOnly):
+fn returnsMultiple() -> Tuple[Int, MemoryOnly]:
     pass
 
 

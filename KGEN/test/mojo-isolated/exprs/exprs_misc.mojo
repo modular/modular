@@ -183,7 +183,7 @@ fn test_type_patterns():
     # declare multiple variables at once.
     # CHECK: %d = lit.var.decl "d" var : !lit.ref<!Int,
     # CHECK: %e = lit.var.decl "e" var : !lit.ref<!Int,
-    (var d, e): (Int, Int)
+    (var d, e): Tuple[Int, Int]
 
 
 ##===----------------------------------------------------------------------===##

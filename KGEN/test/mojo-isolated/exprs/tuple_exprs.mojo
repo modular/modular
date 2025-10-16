@@ -74,7 +74,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     var i2 = 2
 
     # CHECK: %iTup = lit.var.decl "iTup"
-    var iTup: (Int, Int)
+    var iTup: Tuple[Int, Int]
 
     # Tuple Rvalue
     # CHECK: [[TUP:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}({{.*}}, %iTup)
@@ -174,11 +174,11 @@ fn returnTup1() -> Tuple[Int]:
 
 # CHECK-LABEL: lit.fn @"returnTup1
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int]>
-fn returnTup1a() -> (Int,):
+fn returnTup1a() -> Tuple[Int]:
     return (Int(4),)
 
 
-fn returnTup1b() -> (Int,):
+fn returnTup1b() -> Tuple[Int]:
     return (Int(4),)
 
 
@@ -193,19 +193,19 @@ fn returnTup2() -> Tuple[Int, FloatDyn]:
 
 # CHECK-LABEL: lit.fn @"returnTup2a
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [!Int, !FloatDyn]>,
-fn returnTup2a() -> (Int, FloatDyn):
+fn returnTup2a() -> Tuple[Int, FloatDyn]:
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [!Int, !FloatDyn]
     return (Int(4), 2.0)
 
 
 # CHECK-LABEL: lit.fn @"returnTup2b
-fn returnTup2b() -> (Int, FloatDyn):
+fn returnTup2b() -> Tuple[Int, FloatDyn]:
     return Int(4), 2.0
 
 
-# CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable>
-# CHECK-SAME: @Tuple<:variadic<!AnyType> [!kgen.param<:!ImplicitlyCopyable T>, !kgen.param<:!ImplicitlyCopyable T>]>
-fn takesSugarTuple[T: ImplicitlyCopyable](elements: (T, T)):
+# CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable_Movable>
+# CHECK-SAME: @Tuple<:variadic<!AnyType> [!kgen.param<:!ImplicitlyCopyable_Movable T>, !kgen.param<:!ImplicitlyCopyable_Movable T>]>
+fn takesSugarTuple[T: ImplicitlyCopyable & Movable](elements: Tuple[T, T]):
     pass
 
 

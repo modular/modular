@@ -4239,7 +4239,6 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   }
 
   bool allEltsLValue = true;
-  bool allEltsTypes = true;
   TypedAttr tuplePVal = dest.getIfPValueInitializer();
   SmallVector<ASTExprAnd<AnyValue>> elements;
   for (auto [i, expr] : llvm::enumerate(exprs)) {
@@ -4267,10 +4266,9 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     if (!exprVal)
       return {};
     allEltsLValue &= !exprVal.getIfLValue().isNull();
-    allEltsTypes &= !exprVal.getIfTypeValue().isNull();
     elements.push_back({std::move(exprVal), expr});
   }
-  assert(!(allEltsTypes && allEltsLValue && !elements.empty()));
+  assert(allEltsLValue || !elements.empty());
 
   // If we are destructing a tuple parameter, the result after emitting the
   // TupleNode is the same as the tuple we are destructing and we do not need to
@@ -4278,21 +4276,6 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   if (tuplePVal)
     return emitter.emitResult(tuplePVal, this, dest);
 
-  // HACK: Tuple emission should not be context dependent.
-  if (allEltsTypes && !elements.empty()) {
-    SmallVector<Operand> operands;
-    for (ExprNode *exprNode : exprs)
-      operands.push_back(Operand(exprNode, exprNode->getLoc(),
-                                 Operand::PassKind::kPositional));
-
-    if (tupleType.isTypeCheckErrorType())
-      return {};
-    PValue concretizedTupleType = substituteParametersIntoUserDefinedType(
-        PValue(tupleType), operands, getLoc(), exprs.front()->getRangeStart(),
-        exprs.back()->getRangeEnd(), emitter);
-
-    return emitter.emitResult(concretizedTupleType, this, dest);
-  }
   // If this is a tuple with all LValue elements, return a DLValue since we
   // can assign into this expression.
   // TODO: Add support for list LValues as well.
