@@ -22,7 +22,6 @@ purpose. The current libraries are:
 - [Compiler](Compiler.md)
 - [CrashReporting](CrashReporting.md)
 - [Cryptography](Cryptography.md)
-- [CUDA](CUDA.md)
 - [DebugInfoDialect](DebugInfoDialect.md)
 - [Driver](Driver.md)
 - [Filesystem](Filesystem.md)
@@ -35,7 +34,7 @@ purpose. The current libraries are:
 - [Profiling](Profiling.md)
 - [Telemetry](Telemetry.md)
 - [Threading](Threading.md)
-- [UI](UI.md)
+- [Tracy](Tracy.md)
 
 The `Support/` directory also includes a number of stand-alone libraries that
 are not in subdirectories.
