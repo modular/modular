@@ -693,11 +693,38 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     IREmitter::emitNormalReturn(b, callOp.getResult(0));
     return op;
   };
+  auto getSymbolNoParamValues = [&](FnOp impl) {
+    SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
+        cast<mlir::SymbolOpInterface>(impl.getOperation()));
+    FnTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
+    baseSigGen = FuncTypeGeneratorType::remapToFuncTypeGenerator(
+        declOp.getInputParams(),
+        FunctionType::get(baseSigGen.getContext(),
+                          baseSigGen.getBody().getArguments(),
+                          baseSigGen.getResultType()),
+        baseSigGen.getArgConventions(), baseSigGen.getFnEffects(),
+        baseSigGen.getFnMetadata(), {});
+    return SymbolConstantAttr::get(implSymbol, baseSigGen, {});
+  };
   DenseMap<StringRef, FnOp> nameToImpl;
   for (ClosureParent &closureParent : closureParents) {
-    if (!closureParent.isEmpty())
-      nameToImpl.insert(
-          {closureParent.getDefiningOpName(), populateTraitFn(closureParent)});
+    if (!closureParent.isEmpty()) {
+      FnOp impl = populateTraitFn(closureParent);
+      switch (closureParent.getClosureMethod()) {
+      case ClosureMethod::COPY:
+        declOp.setCopyInitAttr(getSymbolNoParamValues(impl));
+        break;
+      case ClosureMethod::MOVE:
+        declOp.setMoveInitAttr(getSymbolNoParamValues(impl));
+        break;
+      case ClosureMethod::DEL:
+        declOp.setDestructorAttr(getSymbolNoParamValues(impl));
+        break;
+      default:
+        break;
+      }
+      nameToImpl.insert({closureParent.getDefiningOpName(), impl});
+    }
   }
 
   // Emit conformance tables
@@ -1890,6 +1917,24 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
           shared.emitError(nestedFnDecl.getLoc(),
                            "cannot capture " + capture.getSpelling() +
                                " because it is not destructable.");
+        // rebind the parameterized symbol
+        auto paramValues = structType.getParamValues();
+        auto paramArray = ParameterExprArrayAttr::get(ctx, paramValues);
+        auto bind = [&](SymbolConstantAttr sym) -> SymbolConstantAttr {
+          if (!sym)
+            return sym;
+          // Resolve the FnOp, then bind concrete params on the symbol.
+          ASTDecl *fnDecl =
+              shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
+          auto fnOp = cast<FnOp>(fnDecl->getIfOperation());
+          SymbolConstantAttr bound =
+              fnOp.getBoundSymbolRef(shared.getEvaluationContext(), paramArray);
+          return bound;
+        };
+
+        copy = bind(copy);
+        move = bind(move);
+        del = bind(del);
         MemSymbolTripleAttr memTriple =
             MemSymbolTripleAttr::get(ctx, copy, move, del, isMove);
         captureInfo.push_back(memTriple);

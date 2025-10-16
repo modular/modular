@@ -29,7 +29,10 @@
 # CHECK-NEXT: }
 # CHECK-NEXT: }
 
-# CHECK: lit.struct.decl @"fn(y: Int) -> Int_wrapper_copyable"<impl: [[IMPL_PARENT]], origin_set: origin.set, |>([[IMPL_PARENT]]) attributes {synthetic} {
+# CHECK: lit.struct.decl @"fn(y: Int) -> Int_wrapper_copyable"<impl: [[IMPL_PARENT]], origin_set: origin.set, |>([[IMPL_PARENT]]) attributes {synthetic}
+# CHECK-NEXT: destructor :
+# CHECK-NEXT: move :
+# CHECK-NEXT: copy :
 # CHECK:  lit.struct.field field0 : !kgen.param<:[[IMPL_PARENT]] impl>
 # CHECK: lit.fn @"__call__({{.*}})"[mut *"[[L0:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper_copyable"<:[[IMPL_PARENT]] impl, :origin.set origin_set>, mut *"[[L0]]`"> read_mem, |, %y: [[INT]]) -> [[INT]]
 # CHECK-NEXT:  [[CLOSURE:%.*]] = lit.ref.struct.ger %{{.*}}[field0]
@@ -122,8 +125,8 @@ fn make_closure(x: Int) -> Int:
 
 
 # CHECK: lit.struct.decl @"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"
-# CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>([[TRAIT]]) attributes {synthetic} {
-# CHECK-NEXT: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
+# CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>([[TRAIT]]) attributes {synthetic}
+# CHECK: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: origin<1>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"
 # CHECK-SAME: <:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> read_mem, |, %a: !lit.ref<!String, mut {{.*}}lt){{.*}}, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem) -> !kgen.none attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
 # CHECK-NEXT: [[V1:%.*]] = lit.ref.struct.ger %0[field0] : <@{{.*}}::@"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<:[[TRAIT]] impl, :origin.set origin_set>, mut *"[[L1]]`"> -> :[[TRAIT]] impl
@@ -317,7 +320,7 @@ fn bindIt() -> Int:
 
 
 # CHECK: lit.struct.decl @"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"
-# CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>([[TRAIT]]) attributes {synthetic} {
+# CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>([[TRAIT]]) attributes {synthetic}
 
 # CHECK: kgen.conformance @"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None" {
 # CHECK-NEXT: kgen.witness "__call__" : !lit.generator<<"lt": origin<1>>[2](!lit.ref<@{{.*}}::@"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper_copyable"<{{.*}}>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, mut {{.*}}*(0,0){{.*}}, "b": !lit.ref<!String, imm *[0,1]> read_mem) -> !kgen.none
@@ -451,7 +454,7 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 
 
 # CHECK: lit.struct.decl @"fn[T: {{.*}}, /]() -> T_wrapper_copyable"
-# CHECK-NEXT: lit.struct.field field0
+# CHECK: lit.struct.field field0
 # CHECK-NEXT:      lit.fn @"__call__
 # CHECK-NEXT:        %1 = lit.ref.struct.ger
 # CHECK-NEXT:        %2 = lit.call[!lit.generator<[1]({{.*}}) -> !kgen.param<T>>
