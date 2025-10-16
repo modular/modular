@@ -14,6 +14,7 @@
 from math import ceildiv
 
 from gpu.id import block_idx, grid_dim
+from hashlib.hasher import Hasher
 
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
@@ -23,7 +24,7 @@ from ...utils_gpu import block_swizzle
 
 @fieldwise_init
 @register_passable("trivial")
-struct RasterOrder(ImplicitlyCopyable, Movable):
+struct RasterOrder(Hashable, ImplicitlyCopyable, Movable, Stringable, Writable):
     var _value: Int32
 
     alias AlongN = Self(0)
@@ -36,6 +37,20 @@ struct RasterOrder(ImplicitlyCopyable, Movable):
     @always_inline
     fn __ne__(self, other: Self) -> Bool:
         return self._value != other._value
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        if self._value == 0:
+            writer.write("rasterN")
+        else:
+            writer.write("rasterM")
+
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        hasher.update(self._value)
 
 
 @fieldwise_init

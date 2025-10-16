@@ -31,7 +31,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
-from linalg.utils_gpu import MatmulConfig
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -145,18 +145,17 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
     alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=block_tile_shape,
-        mma_shape=mma_shape,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
+        mma_shape=mma_shape,
+        cta_group=2,
+        block_swizzle_size=block_swizzle_size,
     )
 
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        cta_group=2,
-        block_swizzle_size=block_swizzle_size,
         swapAB=swapAB,
     ](
         c_device.to_layout_tensor(),
