@@ -13,7 +13,12 @@
 
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import has_nvidia_gpu_accelerator
-from sys.info import _has_gpu_fp32_tensor_cores, _has_gpu_tensor_cores
+from sys.info import (
+    _accelerator_arch,
+    _has_gpu_bf16_fma,
+    _has_gpu_fp32_tensor_cores,
+    _has_gpu_tensor_cores,
+)
 
 from benchmark import Bench
 from buffer.dimlist import DimList
@@ -220,6 +225,36 @@ def main():
         test.run_test[k4](m)
         test.run_test[k5](m)
         test.run_test[k6](m)
+
+        @parameter
+        if _has_gpu_bf16_fma():
+            var gpu_arch = _accelerator_arch()
+            var is_rdna3 = (
+                gpu_arch == "amdgpu:gfx1100"
+                or gpu_arch == "amdgpu:gfx1101"
+                or gpu_arch == "amdgpu:gfx1102"
+                or gpu_arch == "amdgpu:gfx1103"
+            )
+            if not is_rdna3:
+                var test_bf16_fma = test_matmul[
+                    DType.bfloat16, a_layout, b_layout, c_layout, False
+                ](m, ctx)
+
+                alias k1_bf16 = run_gemm_kernel_1[
+                    DType.bfloat16, a_layout, b_layout, c_layout, 32, 32
+                ]
+
+                test_bf16_fma.run_test[k1_bf16](m)
+            else:
+                print(
+                    "Skipping BF16 FMA test on RDNA3 (rocBLAS lacks BF16"
+                    " support for gfx1100-gfx1103)"
+                )
+        else:
+            print(
+                "Skipping BF16 FMA test (GPU does not support BF16 FMA"
+                " operations)"
+            )
 
         @parameter
         if _has_gpu_fp32_tensor_cores():
