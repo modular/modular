@@ -44,12 +44,14 @@ from layout import (
     RuntimeTuple,
 )
 from layout.int_tuple import fill_like
+from math import log2
 from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
+from os.env import getenv
 from runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList, product
+from utils.index import IndexList, StaticTuple, product
 from utils.numerics import max_or_inf, min_or_neg_inf
 
 
@@ -1237,6 +1239,7 @@ fn _topk_gpu[
     out_idx_type: DType, //,
     sampling: Bool = True,
     largest: Bool = True,
+    _force_old_impl: Bool = False,
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1279,6 +1282,7 @@ fn _topk_gpu[
         out_idx_type: DType - The data dtype of the output indices (default is DType.int).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
+        _force_old_impl: Bool - Whether to force use the old implementation.
 
     Args:
         ctx: DeviceContext
@@ -1360,7 +1364,7 @@ fn _topk_gpu[
 
     # Enqueue the first kernel (stage 1)
     @parameter
-    if env_get_bool["USE_OLD_TOP_K_KERNEL", False]():
+    if env_get_bool["USE_OLD_TOP_K_KERNEL", False]() or _force_old_impl:
         alias kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
         ctx.enqueue_function_checked[kernel_1, kernel_1](
             k_device,
@@ -1483,6 +1487,7 @@ fn topk_gpu[
     out_idx_type: DType, //,
     sampling: Bool = True,
     largest: Bool = True,
+    _force_old_impl: Bool = False,
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1522,6 +1527,7 @@ fn topk_gpu[
         out_idx_type: DType - The data dtype of the output indices (default is DType.int).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
+        _force_old_impl: Bool - Whether to force use the old implementation.
 
     Args:
         ctx: DeviceContext
@@ -1688,6 +1694,7 @@ fn topk_gpu[
         out_idx_type=out_idx_type,
         sampling=sampling,
         largest=largest,
+        _force_old_impl=_force_old_impl,
     ](
         ctx,
         max_k,
@@ -1746,6 +1753,24 @@ fn fused_token_sampling_gpu[
     Returns the sampled indices from the Top-K of the innermost
     dimension of the input tensor for each row/subvolume.
     """
+
+    var gumbel_flag = getenv(
+        "MAX_INTERNAL_USE_GUMBEL_SAMPLING", "False"
+    ).lower()
+    if gumbel_flag == "true" or gumbel_flag == "1":
+        # TODO(E2EOPT-315) -- Gumbel trick could only be used when top_k = vocab_size.
+        # However, for a request requires top_k = -1 (vocab_size), MAX automatically rewrites top_k to 255.
+        # if max_k == input.shape[1]():
+        if max_k >= 255:
+            gumbel_sampling_gpu(
+                ctx,
+                input,
+                out_idxs,
+                temperature,
+                seed,
+            )
+            return
+
     constrained[
         input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
     ]()
@@ -1771,4 +1796,193 @@ fn fused_token_sampling_gpu[
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
         seed=seed,
+    )
+
+
+# ===-----------------------------------------------------------------------===#
+# Sampling Kernel with the Gumbel-max trick
+# ===-----------------------------------------------------------------------===#
+
+
+fn apply_gumbel_noise_kernel[
+    dtype: DType,
+    input_layout: Layout,
+    num_sms: Int,
+    num_threads: Int,
+](
+    output: LayoutTensor[dtype, input_layout, MutableAnyOrigin],
+    input: LayoutTensor[dtype, input_layout, ImmutableAnyOrigin],
+    temperature: UnsafePointer[Float32],
+    seed: UnsafePointer[UInt64],
+):
+    alias EPS = Float32(1e-20)
+    alias LOG2 = Float32(0.6931471806)
+
+    alias simd_width = simd_width_of[dtype]()
+    alias N = input.shape[1]()
+    alias num_blocks_per_token = 8
+    alias group_size = num_blocks_per_token * num_threads
+    alias num_groups = num_sms // num_blocks_per_token
+
+    var tid = Int(thread_idx.x)
+    var sm_id = Int(block_idx.x)
+    var group_id = sm_id // num_blocks_per_token
+    var tid_in_group = tid + (sm_id % num_blocks_per_token) * num_threads
+
+    var num_tokens = input.dim[0]()
+
+    constrained[
+        simd_width % 4 == 0,
+        "SIMD width must be divisible by 4 to match RNG output size.",
+    ]()
+
+    # split workload across blocks
+    with PDL():
+        if sm_id >= num_groups * num_blocks_per_token:
+            return
+
+        for tok_idx in range(group_id, num_tokens, num_groups):
+            var temp_val = Float32(1.0)
+            if temperature:
+                temp_val = temperature[tok_idx]
+
+            var seed_val = UInt64(0)
+            if seed:
+                seed_val = seed[tok_idx]
+
+            for i in range(tid_in_group, N // simd_width, group_size):
+                var rng_state = Random(
+                    seed=seed_val * N + i,
+                )
+                var input_val = input.aligned_load[simd_width](
+                    tok_idx, i * simd_width
+                ).cast[DType.float32]()
+                var noised_logits = input_val / temp_val
+
+                @parameter
+                for loop_i in range(simd_width // 4):
+                    var rnd_val = rng_state.step_uniform()
+                    rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
+
+                    @parameter
+                    for vec_i in range(4):
+                        noised_logits[4 * loop_i + vec_i] += rnd_val[vec_i]
+
+                output.aligned_store(
+                    tok_idx, i * simd_width, noised_logits.cast[dtype]()
+                )
+
+            # If N is not divisible by simd_width, handle remaining elements
+            @parameter
+            if N % simd_width != 0:
+                alias N_res = N % simd_width
+                var rng_state = Random(
+                    seed=seed_val * N + (N - N_res) + tid_in_group,
+                )
+                if tid_in_group < N_res:
+                    var input_val = input.load[1](
+                        tok_idx, (N - N_res) + tid_in_group
+                    ).cast[DType.float32]()
+                    var noised_logit = input_val / temp_val
+                    var rnd_val = rng_state.step_uniform()[0]
+                    rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
+                    noised_logit += rnd_val
+                    output.store(
+                        tok_idx,
+                        (N - N_res) + tid_in_group,
+                        noised_logit.cast[dtype](),
+                    )
+
+
+@always_inline
+fn gumbel_sampling_gpu[
+    dtype: DType,
+    out_idx_type: DType,
+    input_layout: Layout, //,
+](
+    ctx: DeviceContext,
+    input: LayoutTensor[dtype, input_layout, **_],
+    out_idxs: LayoutTensor[mut=True, out_idx_type, **_],
+    temperature: OptionalReg[
+        LayoutTensor[
+            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
+    ] = None,
+    seed: OptionalReg[
+        LayoutTensor[
+            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
+    ] = None,
+) raises:
+    """
+    Gumbel sampling using the Gumbel-max trick for categorical distributions.
+
+    Applies Gumbel(0,1) noise to input logits, then selects the argmax.
+    This is mathematically equivalent to sampling from softmax(logits/temperature)
+    but avoids expensive softmax computation.
+
+    Args:
+        ctx: Device context for GPU operations.
+        input: Input logits tensor [batch, vocab_size].
+        out_idxs: Output tensor for sampled indices [batch, 1].
+        temperature: Optional per-token temperature scaling [batch].
+        seed: Optional per-token random seeds [batch] for reproducibility.
+    """
+
+    # create a buffer to hold the Gumbel noise applied input
+    var noised_input_buf = ctx.enqueue_create_buffer[dtype](input.size())
+    var noised_input = LayoutTensor[dtype, input_layout, MutableAnyOrigin](
+        noised_input_buf, input.runtime_layout
+    )
+
+    # Handle optional temperature parameter
+    var temp_ptr: UnsafePointer[Float32]
+    if temperature:
+        temp_ptr = rebind[UnsafePointer[Float32]](temperature.value().ptr)
+    else:
+        temp_ptr = UnsafePointer[Float32]()  # null pointer
+
+    # Handle optional seed parameter
+    var seed_ptr: UnsafePointer[UInt64]
+    if seed:
+        seed_ptr = rebind[UnsafePointer[UInt64]](seed.value().ptr)
+    else:
+        seed_ptr = UnsafePointer[UInt64]()  # null pointer
+
+    alias hw_info = ctx.default_device_info
+    alias gumbel_kernel = apply_gumbel_noise_kernel[
+        dtype,
+        input_layout,
+        hw_info.sm_count,
+        hw_info.max_thread_block_size,
+    ]
+
+    ctx.enqueue_function[gumbel_kernel](
+        noised_input,
+        input,
+        temp_ptr,
+        seed_ptr,
+        grid_dim=hw_info.sm_count,
+        block_dim=hw_info.max_thread_block_size,
+        attributes=pdl_launch_attributes(),
+    )
+
+    # Extract argmax after Gumbel noise application.
+    var out_vals_shape = input.runtime_layout.shape.value.canonicalize()
+    out_vals_shape[input.rank - 1] = 1
+    var out_vals_buf = ctx.enqueue_create_buffer[dtype](
+        out_vals_shape.flattened_length()
+    )
+    var out_vals = LayoutTensor[dtype, Layout.row_major[input.rank]()](
+        out_vals_buf.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[input.rank]()].row_major(out_vals_shape),
+    )
+
+    # The old implementation of topk_gpu is correct when top_k = 1.
+    topk_gpu[sampling=False, _force_old_impl=True](
+        ctx,
+        1,
+        noised_input,
+        out_vals,
+        out_idxs,
     )

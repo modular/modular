@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from os import getenv
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -99,6 +100,17 @@ class FusedSamplingProcessor:
         )
         self.top_k = Tensor.from_numpy(top_k_np).to(device)
         max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
+        if max_k_np == 255:
+            gumbel_flag = getenv(
+                "MAX_INTERNAL_USE_GUMBEL_SAMPLING", "false"
+            ).lower()
+            if gumbel_flag == "true" or (
+                gumbel_flag == "1" and np.min(top_k_np) != max_k_np
+            ):
+                logger.warning(
+                    "Gumbel-max sampling is enabled, but current batch has request with top_k != -1, ignoring"
+                )
+
         self.max_k = Tensor.from_numpy(max_k_np)
 
         self.top_p = Tensor.from_numpy(
