@@ -391,7 +391,7 @@ struct ExampleCMTuple(ImplicitlyCopyable):
     fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __enter__(self) -> (Int, Int):
+    fn __enter__(self) -> Tuple[Int, Int]:
         return (42, 43)
 
     fn __exit__(self):

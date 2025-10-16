@@ -27,7 +27,7 @@ fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
     # CHECK: [[MULTIRET:%.*]]:2 = "op_that_has_multiple_returns"() : () -> (!Int, !Int)
     # CHECK: [[PACK:%.*]] = lit.ref.pack.create
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}[!Int, !Int]{{.*}}({{.*}}, %r)
-    var r = __mlir_op.`op_that_has_multiple_returns`[_type= (Int, Int)]()
+    var r = __mlir_op.`op_that_has_multiple_returns`[_type= Tuple[Int, Int]]()
     return r^
 
 
