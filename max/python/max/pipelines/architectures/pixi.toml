@@ -6,6 +6,20 @@ platforms = ["linux-64"]
 version = "0.1.0"
 
 [tasks]
+# run a benchmark test
+benchmark_text = { cmd = [
+    "max", "benchmark",
+    "--model", "google/gemma-3-4B-it",
+    "--custom-architectures", "gemma3multimodal",
+    "--backend", "modular",
+    "--endpoint", "/v1/chat/completions",
+    "--dataset-name", "sonnet",
+    "--num-prompts", "500",
+    "--sonnet-input-len", "550",
+    "--output-lengths", "256",
+    "--sonnet-prefix-len", "2",
+] }
+
 # quickly run a model with 1 text prompt and then shut it down
 generate = { cmd = [
 	"max","generate",
@@ -14,27 +28,22 @@ generate = { cmd = [
 	"--prompt", "cite some shakespeare"
 ] }
 
-# serve a model with openAI API and wait for requests
-serve = { cmd = [
-	"max", "serve",
-	"--model", "google/gemma-3-4B-it",
-	"--custom-architectures", "gemma3multimodal"
-] }
-
-# the bash script uses curl to prompt the model with text and/or an image
-test_text = { cmd = [
-	"./test_model.sh", "text"
-] }
-test_vision = { cmd = [
-	"./test_model.sh", "vision"
-] }
-test_multimodal = [{ task = "test_text" }, { task = "test_vision" }]
-
 # keep it clean
 linter = { cmd = ["../../../../bazelw", "run", "//:lint"] }
 formatter = { cmd = ["../../../../bazelw", "run", "//:format"] }
 lint = [{ task = "linter" }, { task = "formatter" }]
 
+# the py script uses OpenAI API to prompt the model with text and/or an image
+[tasks.test_serve]
+cmd = "./test_model.py --serve --model google/gemma-3-4B-it --architecture gemma3multimodal --port 8001"
+
+[tasks.test_text]
+cmd = "./test_model.py --text --model google/gemma-3-4B-it"
+
+[tasks.test_vision]
+cmd = "./test_model.py --vision --model google/gemma-3-4B-it"
+
 [dependencies]
 modular = "==25.6"
+openai = ">=2.3.0,<3"
 
