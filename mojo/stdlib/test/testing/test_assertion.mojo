@@ -237,8 +237,8 @@ def test_assert_equal_stringslice():
 
     fn _build(
         read value: String, start: Int, end: Int
-    ) -> StringSlice[__origin_of(value)]:
-        return StringSlice[__origin_of(value)](
+    ) -> StringSlice[origin_of(value)]:
+        return StringSlice[origin_of(value)](
             ptr=value.unsafe_ptr() + start,
             length=UInt(end - start),
         )

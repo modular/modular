@@ -47,7 +47,7 @@ def test_basic_lock():
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
                 tg.create_task(inc())
-        tg.wait[__origin_of(lock)]()
+        tg.wait[origin_of(lock)]()
 
     _ = time_function[test_atomic]()
     _ = lock^

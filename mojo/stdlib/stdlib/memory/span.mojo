@@ -595,7 +595,7 @@ struct Span[
         out result: Span[
             mut = mut & other_type.origin.mut,
             T,
-            __origin_of(origin, other_type.origin),
+            origin_of(origin, other_type.origin),
             address_space=address_space,
         ],
     ):

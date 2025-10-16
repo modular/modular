@@ -786,7 +786,7 @@ struct LayoutTensor[
             mut = mut & other_type.origin.mut,
             dtype,
             layout,
-            __origin_of(origin, other_type.origin),
+            origin_of(origin, other_type.origin),
             alignment=alignment,
             address_space=address_space,
             element_layout=element_layout,
@@ -3963,7 +3963,7 @@ struct LayoutTensor[
         vector_len: Int,
         linear_vectorize: Bool = True,
     ](self) -> Self.ShapeVectorizedType[
-        __origin_of(),
+        origin_of(),
         IntTuple(vector_len),
         linear_vectorize=linear_vectorize,
     ]:
@@ -3979,7 +3979,7 @@ struct LayoutTensor[
             vector length.
         """
         return self._vectorize_2[
-            __origin_of(),
+            origin_of(),
             IntTuple(vector_len),
             linear_vectorize=linear_vectorize,
         ]()
@@ -4159,7 +4159,7 @@ struct LayoutTensor[
         """
 
         alias shape = IntTuple(vector_shape)
-        alias _origin = __origin_of()  # FIXME: MOCO-1912
+        alias _origin = origin_of()  # FIXME: MOCO-1912
         var ret = self._vectorize_2[
             _origin,
             shape,

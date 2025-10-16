@@ -101,7 +101,7 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
         self.loop_bounds = other.loop_bounds.copy()
         self.early_stop = other.early_stop
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     fn __next__(mut self) -> Self.Element:

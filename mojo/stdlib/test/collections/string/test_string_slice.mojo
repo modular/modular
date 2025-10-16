@@ -965,10 +965,8 @@ def test_string_slice_from_pointer():
     assert_equal(3, len(a))
     assert_equal(3, len(b))
     var c = "ABCD"
-    var d = StringSlice[__origin_of(c)](
-        unsafe_from_utf8_ptr=c.unsafe_cstr_ptr()
-    )
-    var e = StringSlice[__origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_ptr())
+    var d = StringSlice[origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_cstr_ptr())
+    var e = StringSlice[origin_of(c)](unsafe_from_utf8_ptr=c.unsafe_ptr())
     assert_equal(4, len(c))
     assert_equal(4, len(d))
     assert_equal(4, len(e))
@@ -1045,7 +1043,7 @@ def test_merge():
 
     fn cond(
         pred: Bool, a: StringSlice, b: StringSlice
-    ) -> StringSlice[__origin_of(a.origin, b.origin)]:
+    ) -> StringSlice[origin_of(a.origin, b.origin)]:
         return a if pred else b
 
     _ = cond(True, a, b)

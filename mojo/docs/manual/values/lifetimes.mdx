@@ -120,7 +120,7 @@ few ways to specify origin values:
 * Static origin. The `StaticConstantOrigin` alias is an origin value
   representing immutable values that last for the duration of the program.
   String literal values have a `StaticConstantOrigin`.
-* Derived origin. The `__origin_of()` magic function returns the origin
+* Derived origin. The `origin_of()` magic function returns the origin
   associated with the value (or values) passed in.
 * Inferred origin. You can use inferred parameters to capture the origin of a
   value passed in to a function.
@@ -142,8 +142,8 @@ immutable, static origin.
 
 #### Derived origins
 
-Use the `__origin_of(value)` operator to obtain a value's origin. An argument
-to `__origin_of()` can take an arbitrary expression that yields one of the
+Use the `origin_of(value)` operator to obtain a value's origin. An argument
+to `origin_of()` can take an arbitrary expression that yields one of the
 following:
 
 - An origin value.
@@ -153,14 +153,14 @@ following:
 For example:
 
 ```mojo
-__origin_of(self)
-__origin_of(x.y)
-__origin_of(foo())
+origin_of(self)
+origin_of(x.y)
+origin_of(foo())
 ```
 
-The `__origin_of()` operator is analyzed statically at compile time;
-The expressions passed to `__origin_of()` are never evaluated. (For example,
-when the compiler analyzes `__origin_of(foo())`, it doesn't run the `foo()`
+The `origin_of()` operator is analyzed statically at compile time;
+The expressions passed to `origin_of()` are never evaluated. (For example,
+when the compiler analyzes `origin_of(foo())`, it doesn't run the `foo()`
 function.)
 
 The following struct stores a string value using a
@@ -177,18 +177,18 @@ struct BoxedString:
     fn __init__(out self, value: String):
         self.o_ptr = OwnedPointer(value)
 
-    fn as_ptr(mut self) -> Pointer[String, __origin_of(self.o_ptr)]:
+    fn as_ptr(mut self) -> Pointer[String, origin_of(self.o_ptr)]:
         return Pointer(to=self.o_ptr[])
 ```
 
 Note that the `as_ptr()` method takes its `self` argument as `mut self`. If it
 used the default `read` argument convention, it would be immutable, and the
-derived origin (`__origin_of(self.o_ptr)`) would also be immutable.
+derived origin (`origin_of(self.o_ptr)`) would also be immutable.
 
-You can also pass multiple expressions to `__origin_of()` to express the union
+You can also pass multiple expressions to `origin_of()` to express the union
 of two or more origins:
 
-`__origin_of(a, b)`
+`origin_of(a, b)`
 
 #### Inferred origins
 
@@ -274,11 +274,11 @@ specifier can be either:
 * An origin value.
 
 * An arbitrary expression, which is treated as shorthand for
-  `__origin_of(expression)`. In other words, the following declarations are
+  `origin_of(expression)`. In other words, the following declarations are
   equivalent:
 
   ```mojo
-  ref [__origin_of(self)]
+  ref [origin_of(self)]
   ref [self]
   ```
 

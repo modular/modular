@@ -221,7 +221,7 @@ struct DeviceNDBuffer[
     fn to_layout_tensor(
         ref self,
         out result: LayoutTensor[
-            dtype, Layout.row_major(IntTuple(shape)), __origin_of(self.buffer)
+            dtype, Layout.row_major(IntTuple(shape)), origin_of(self.buffer)
         ],
     ):
         result = {

@@ -485,7 +485,7 @@ struct UnsafePointer[
     ](self) -> UnsafePointer[
         type=type,
         mut = mut & other_type.origin.mut,
-        origin = __origin_of(origin, other_type.origin),
+        origin = origin_of(origin, other_type.origin),
         address_space=address_space,
     ]:
         """Returns a pointer merged with the specified `other_type`.

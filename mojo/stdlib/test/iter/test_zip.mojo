@@ -106,7 +106,7 @@ struct TestIter(ImplicitlyCopyable, Iterable, Iterator, Movable):
     var lower: Int
     var upper: Optional[Int]
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn __has_next__(self) -> Bool:

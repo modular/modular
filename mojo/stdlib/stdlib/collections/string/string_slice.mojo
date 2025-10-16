@@ -117,7 +117,7 @@ struct CodepointSliceIter[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -343,7 +343,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
     # ===-------------------------------------------------------------------===#
 
     @doc_private
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     @always_inline
@@ -1156,7 +1156,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self,
         out result: StringSlice[
             mut = mut & other_type.origin.mut,
-            __origin_of(origin, other_type.origin),
+            origin_of(origin, other_type.origin),
         ],
     ):
         """Returns a string slice with merged origins.

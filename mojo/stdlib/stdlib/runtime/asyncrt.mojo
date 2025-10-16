@@ -408,7 +408,7 @@ struct TaskGroup(Defaultable):
 
         _suspend_async[await_body]()
 
-    fn wait[origins: OriginSet = __origin_of()](mut self):
+    fn wait[origins: OriginSet = origin_of()](mut self):
         """Wait for all tasks in the `TaskGroup` to complete.
 
         This is a blocking call that returns only when all tasks have finished.

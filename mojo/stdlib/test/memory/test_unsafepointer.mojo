@@ -232,7 +232,7 @@ def test_unsafepointer_alloc_origin():
 
     # Note: Set ObservableDel origin explicitly since it otherwise contains a
     #   MutableAnyOrigin pointer that interferes with this test.
-    _ = ObservableDel[__origin_of(did_del_2)](UnsafePointer(to=did_del_2))
+    _ = ObservableDel[origin_of(did_del_2)](UnsafePointer(to=did_del_2))
 
     # `obj_2` is ASAP destroyed, since `ptr_2` origin does not keep it alive.
     assert_true(did_del_2)
@@ -419,9 +419,7 @@ def test_swap_pointees_non_trivial_move():
 
 def test_as_any_origin_mutable():
     var deleted = False
-    var observer = ObservableDel[__origin_of(deleted)](
-        UnsafePointer(to=deleted)
-    )
+    var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
     var mutable = UnsafePointer(to=x).as_any_origin()
@@ -434,9 +432,7 @@ def test_as_any_origin_mutable():
 
 def test_as_any_origin_immutable():
     var deleted = False
-    var observer = ObservableDel[__origin_of(deleted)](
-        UnsafePointer(to=deleted)
-    )
+    var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
     var immutable = UnsafePointer(to=x).as_any_origin().as_immutable()
@@ -472,8 +468,8 @@ def test_unsafe_origin_cast():
     var y = "world"
 
     var ptr = UnsafePointer(to=x)
-    _ref_to[__origin_of(x)](ptr[])
-    _ref_to[__origin_of(y)](ptr.unsafe_origin_cast[__origin_of(y)]()[])
+    _ref_to[origin_of(x)](ptr[])
+    _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
 def main():

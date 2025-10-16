@@ -345,14 +345,14 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
     fn __iter__(
         ref self,
-    ) -> Self.IteratorType[__origin_of(self)]:
+    ) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the set, returning immutable references.
 
         Returns:
             An iterator of immutable references to the set elements.
         """
         # here we rely on Set being a trivial wrapper of a Dict
-        return rebind[Self.IteratorType[__origin_of(self)]](
+        return rebind[Self.IteratorType[origin_of(self)]](
             _DictKeyIter(_DictEntryIter(0, 0, self._data))
         )
 

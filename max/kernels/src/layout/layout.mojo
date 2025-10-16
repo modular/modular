@@ -305,7 +305,7 @@ struct _LayoutIter[origin: ImmutableOrigin](
         return len(self.layout[].shape) - self.index
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -863,7 +863,7 @@ struct Layout(
         return len(self.shape)
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Returns an iterator over the layout's dimensions.
 
         Each iteration yields a Layout containing the shape and stride for one dimension.

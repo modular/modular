@@ -86,8 +86,8 @@ struct Origin[mut: Bool]:
     ```
     """
 
-    alias empty = Self.cast_from[__origin_of()]
-    """An empty `__origin_of()` of the given mutability. The empty origin
+    alias empty = Self.cast_from[origin_of()]
+    """An empty `origin_of()` of the given mutability. The empty origin
     is guaranteed not to alias any existing origins."""
 
     # ===-------------------------------------------------------------------===#

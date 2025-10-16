@@ -26,7 +26,7 @@ struct _CountIterator(Iterable, Iterator):
     var step: Int
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -80,7 +80,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         self._inner_a_elem = None
         self._initial_inner_b = inner_b.copy()
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn copy(self) -> Self:
@@ -126,8 +126,8 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
 fn product[
     IterableTypeA: Iterable, IterableTypeB: Iterable
 ](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Product2[
-    IterableTypeA.IteratorType[__origin_of(iterable_a)],
-    IterableTypeB.IteratorType[__origin_of(iterable_b)],
+    IterableTypeA.IteratorType[origin_of(iterable_a)],
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of the iterables.

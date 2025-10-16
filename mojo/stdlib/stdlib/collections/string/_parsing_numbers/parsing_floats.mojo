@@ -78,7 +78,7 @@ fn _get_w_and_q_from_float_string(
     significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
     alias array_ptr = Pointer[
-        type_of(exponent), __origin_of(exponent, significand)
+        type_of(exponent), origin_of(exponent, significand)
     ]
     prt_to_array = array_ptr(to=exponent)
     array_index = CONTAINER_SIZE

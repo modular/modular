@@ -307,7 +307,7 @@ struct _IntTupleIter[origin: ImmutableOrigin](Iterable, Iterator):
         return self.src[][idx]
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline("nodebug")
@@ -619,7 +619,7 @@ struct IntTuple(
     fn __init__[
         IterableType: Iterable
     ](out self, iterable: IterableType) where _type_is_eq_parse_time[
-        IterableType.IteratorType[__origin_of(iterable)].Element,
+        IterableType.IteratorType[origin_of(iterable)].Element,
         Tuple[IntTuple, IntTuple],
     ]():
         """Initialize an `IntTuple` from a zip iterator.
@@ -1091,7 +1091,7 @@ struct IntTuple(
         return self._store[0]
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """
         Returns an iterator over the elements of the `IntTuple`.
 

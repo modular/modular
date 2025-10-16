@@ -418,12 +418,12 @@ struct RingBuffer[
         self.read_state.step()
 
     @always_inline
-    fn consumer(mut self) -> RingBufferConsumer[__origin_of(self), Self]:
+    fn consumer(mut self) -> RingBufferConsumer[origin_of(self), Self]:
         """Create a consumer view of this ring buffer."""
         return {Pointer(to=self)}
 
     @always_inline
-    fn producer(mut self) -> RingBufferProducer[__origin_of(self), Self]:
+    fn producer(mut self) -> RingBufferProducer[origin_of(self), Self]:
         """Create a producer view of this ring buffer."""
         return {Pointer(to=self)}
 
