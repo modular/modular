@@ -152,6 +152,13 @@ struct KBuffer[
     BK: Int,
     num_threads: Int,
 ]:
+    """Buffer manager for K (key) matrix in AMD GPU MHA kernels.
+
+    Manages shared memory layout and data movement for key tensors during
+    matrix multiplication operations in attention computation. Uses a tiled
+    blocked layout with swizzling for efficient memory access patterns.
+    """
+
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
     alias num_mmas = ceildiv(WN, Self.MMA_N)
@@ -185,6 +192,12 @@ struct KBuffer[
     # │1016 1017 1018 1019 1020 1021 1022 1023     │ 2040 2041 2042 2043 2044 2045 2046 2047    │                                 │
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
     # stride between blocks = BN x simd_width = 128 x 8 = 1024
+    #
+    # Memory access pattern: Element at (row r, col c) maps to linear index:
+    #   block_id = c // simd_width
+    #   offset_in_block = (r * simd_width) + (c % simd_width)
+    #   linear_index = (block_id * BN * simd_width) + offset_in_block
+    # This layout enables coalesced 128-bit loads (8 bf16 elements) per thread
 
     alias base_layout = Layout.row_major(BN, Self.simd_width)
     alias tiler_layout = Layout.row_major(1, Self.num_repeats)
@@ -364,6 +377,14 @@ struct VBuffer[
     depth: Int,
     num_threads: Int,
 ]:
+    """Buffer manager for V (value) matrix in AMD GPU MHA kernels.
+
+    Manages shared memory layout and data movement for value tensors during
+    matrix multiplication operations in attention computation. Includes
+    padding (depth//8) to avoid shared memory bank conflicts and uses
+    transposed access patterns for optimal performance.
+    """
+
     alias simd_width = simd_width_of[dtype]()
     alias num_repeats = BK // Self.simd_width
 
@@ -391,6 +412,11 @@ struct VBuffer[
     # │1144 1145 1146 1147 1148 1149 1150 1151     │ 2296 2297 2298 2299 2300 2301 2302 2303    │                                 │
     # └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
     # stride between blocks = (depth + padding) x simd_width = 144 x 8 = 1152
+    #
+    # Padding rationale: Shared memory is organized in 32 banks (4 bytes each)
+    # Without padding, depth=128 (256 bytes) creates conflicts: threads accessing
+    # row[i] and row[i+32] hit same bank. Adding depth//8 padding (16 rows = 32 bytes)
+    # breaks this stride pattern, ensuring consecutive threads access different banks.
 
     alias base_layout = Layout.row_major(
         Self.pad[depth](),
@@ -679,6 +705,13 @@ struct QRegisterBuffer[
     depth: Int,
     thread_layout: Layout,
 ]:
+    """Buffer manager for Q (query) matrix in AMD GPU MHA kernels.
+
+    Manages register-level storage and data loading for query tensors
+    during attention computation. Loads query data directly from global
+    memory into registers and provides tiles for matrix multiplication.
+    """
+
     alias simd_width = simd_width_of[dtype]()
     alias MMA_M = mma_shape[0]
     alias MMA_K = mma_shape[2]
@@ -782,6 +815,13 @@ struct PRegisterBuffer[
     num_n_mmas: Int,
     output_frag_size: Int,
 ]:
+    """Buffer manager for attention probability matrix P in AMD GPU MHA kernels.
+
+    Manages register storage for attention weights (QK^T scores) and provides
+    interleaving functionality for efficient matrix multiplication with V matrix.
+    Stores values in accumulator type for precision during softmax computation.
+    """
+
     alias RegisterTileType = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, output_frag_size),
@@ -991,6 +1031,14 @@ struct SharedMemoryManager[
     num_rowwise_warps: Int,
     token_gen: Bool,
 ](Defaultable):
+    """Manager for shared memory allocation in AMD GPU MHA kernels.
+
+    Allocates and manages shared memory buffers for attention matrices
+    (Q, K, V, P) and provides iterators for efficient data access. Memory
+    layout differs between decoding (token_gen=True) and prefill modes
+    to optimize for different access patterns.
+    """
+
     var p_smem: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.SHARED
     ]
@@ -1109,6 +1157,14 @@ struct GlobalMemoryManager[
     group: UInt32,
     token_gen: Bool,
 ]:
+    """Manager for global memory access patterns in AMD GPU MHA kernels.
+
+    Handles tensor layout transformations and provides utilities for
+    accessing Q, K, V tensors from global memory with proper head grouping
+    (GQA/MQA support). Manages different memory layouts for decoding vs
+    prefill modes and handles runtime bounds checking.
+    """
+
     alias kv_num_heads = num_heads // group
     # BHSD layout for q and kv cache
     alias q_gmem_layout = Layout(
@@ -1511,7 +1567,11 @@ fn mha_single_batch_gfx942[
         alias reg_layout_by_mma_unit = Layout.row_major(
             num_m_mmas * num_n_mmas, output_frag_size
         )
-        # don't know why we need this barrier but i get random failures without it
+        # Barrier ensures P (attention scores) are fully written to registers before
+        # online softmax reads them. Without this, compiler may reorder memory operations,
+        # causing softmax to read stale values from previous KV tile iterations.
+        # This synchronization is critical for numerical correctness of the online softmax
+        # running max/sum updates across KV tiles.
         barrier()
         _online_softmax_iter_for_mma_output[
             accum_type,
@@ -2074,7 +2134,11 @@ fn mha_decoding_single_batch_gfx942[
             num_m_mmas * num_n_mmas, output_frag_size
         )
 
-        # Not sure why we need this barrier here, but the code hangs without it
+        # Barrier prevents deadlock in online softmax warp shuffle operations.
+        # The warp_scratch tensor in shared memory requires all warps to complete
+        # their previous writes before softmax reduction begins. Without this sync,
+        # warps may attempt shuffle operations on incomplete/garbage data, causing
+        # hangs due to data dependency violations in the reduction tree.
         barrier()
 
         _online_softmax_iter_for_mma_output[

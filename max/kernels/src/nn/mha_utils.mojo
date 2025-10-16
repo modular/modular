@@ -65,6 +65,15 @@ alias is_sm90or100 = is_sm90 or is_sm100
 struct FlashAttentionAlgorithm(
     Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
 ):
+    """Configuration for Flash Attention algorithm versions.
+
+    Supports different versions of the Flash Attention algorithm optimized
+    for various hardware architectures and data types:
+    - FA1: Original Flash Attention
+    - FA2: Improved parallelization and reduced shared memory usage
+    - FA3: TMA-based implementation for NVIDIA Hopper (SM90+) architecture
+    """
+
     var _value: Int32
 
     alias NAIVE = Self(0)
@@ -123,6 +132,14 @@ struct FlashAttentionAlgorithm(
 @fieldwise_init
 @register_passable("trivial")
 struct MHAConfig(ImplicitlyCopyable, Movable, Writable):
+    """Configuration parameters for Multi-Head Attention (MHA) kernels.
+
+    Defines tile sizes, thread configurations, and algorithm parameters
+    for optimized MHA computation on GPU architectures. Tile sizes are
+    automatically tuned based on hardware capabilities, data type, and
+    selected algorithm to maximize performance and memory efficiency.
+    """
+
     var dtype: DType
 
     # Q, K, V, output should have the same type.
@@ -739,6 +756,14 @@ fn _dispatch_score_mod[
 # different numbers of arguments post-compilation.
 @register_passable("trivial")
 trait OptionallyStaticInt(Copyable, Intable):
+    """Trait for integers that may be compile-time constants or runtime values.
+
+    Used to avoid generating code for unused arguments in kernel specializations.
+    When a value is known at compile time (StaticInt), no runtime argument is
+    passed, reducing kernel launch overhead. When the value is dynamic (DynamicInt),
+    it is passed as a runtime argument.
+    """
+
     alias static_value: OptionalReg[Int]
 
     fn as_uint32(self) -> UInt32:
@@ -749,6 +774,11 @@ trait OptionallyStaticInt(Copyable, Intable):
 # That is, if we have a static int, no argument should be passed.
 @register_passable("trivial")
 struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
+    """Compile-time constant integer value.
+
+    Represents a static integer known at compile time, avoiding runtime argument passing.
+    """
+
     alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
 
     @always_inline("nodebug")
@@ -766,6 +796,11 @@ struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
 
 @register_passable("trivial")
 struct DynamicInt(OptionallyStaticInt):
+    """Runtime integer value.
+
+    Represents a dynamic integer value that must be passed as a runtime argument.
+    """
+
     var value: UInt32
     alias static_value: OptionalReg[Int] = None
 
@@ -789,6 +824,15 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
 
 @register_passable("trivial")
 trait MHAPartitionScheme(Copyable):
+    """Partitioning scheme for Multi-Head Attention computation.
+
+    Defines how attention computation is split across multiple partitions
+    for memory efficiency and parallelization. Partitioning enables split-K
+    parallelization where the K/V sequence dimension is divided across multiple
+    thread blocks, with results combined via reduction. This is particularly
+    useful for decoding with long context lengths.
+    """
+
     alias do_partition: Bool
     alias accum_dtype: DType
 
@@ -807,6 +851,11 @@ trait MHAPartitionScheme(Copyable):
 struct NoPartition[dtype: DType](
     Defaultable, ImplicitlyCopyable, MHAPartitionScheme, Movable
 ):
+    """No partitioning scheme for MHA computation.
+
+    Performs attention computation without splitting across partitions.
+    """
+
     alias do_partition: Bool = False
     alias accum_dtype: DType = dtype
 
@@ -829,6 +878,12 @@ struct NoPartition[dtype: DType](
 struct SplitKPartition[dtype: DType](
     ImplicitlyCopyable, MHAPartitionScheme, Movable
 ):
+    """Split-K partitioning scheme for MHA computation.
+
+    Splits attention computation across multiple partitions along the K dimension
+    for improved memory efficiency and parallelization.
+    """
+
     alias do_partition: Bool = True
     alias accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
