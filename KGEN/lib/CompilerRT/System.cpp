@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Memory.h"
 #include "Support/SymbolExport.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/StringRef.h"
@@ -147,8 +148,8 @@ COMPILERRT_VISIBILITY_EXPORT int KGEN_CompilerRT_GetStackTrace(char **strings,
     return 0;
 
   std::string stacktrace = getStackTrace(depth);
-  const size_t len = stacktrace.length();
-  *strings = (char *)malloc(len);
+  const size_t len = stacktrace.length() + 1; // include \0 terminator
+  *strings = (char *)KGEN_CompilerRT_AlignedAlloc(0, len);
   memcpy(*strings, stacktrace.c_str(), len);
   return len;
 }
