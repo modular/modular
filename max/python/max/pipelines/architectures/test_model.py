@@ -50,18 +50,16 @@ def test_vision(model_name: str, base_api_url: str, image_url: str = "https://gi
 def serve(model_name: str, weight_path: str, custom_architecture: str, serve_local: bool = False):
     print(f"-- serving {model_name}")
     cmd = f"max serve --model {model_name}"
+    if custom_architecture:
+        cmd += f" --custom-architectures {custom_architecture}"
     if not serve_local: # if running on DevHW, use GPU
-        print("ssh in and do something")
-        # max warm-cache --model {model_name} # ?? might be useful
-        # max serve --model {model_name} --devices=gpu 
+        cmd += f" --devices=gpu"
     else: # if running locally, use CPU
         cmd += " --devices=cpu"
         if weight_path:
             cmd += f" --weight-path {weight_path}"
-        if custom_architecture:
-            cmd += f" --custom-architectures {custom_architecture}"
-        print(f"-- running: {cmd}")
-        os.system(cmd)
+    print(f"-- running: {cmd}")
+    os.system(cmd)
 
 
 def main():
@@ -127,7 +125,7 @@ def main():
     elif args.vision:
         test_vision(model_name=args.model, base_api_url=base_api_url)
     elif args.serve:
-        serve(model_name=args.model, weight_path=args.weights, custom_architecture=args.architecture, serve_local=True)
+        serve(model_name=args.model, weight_path=args.weights, custom_architecture=args.architecture, serve_local=False)
 
 
 if __name__ == "__main__":
