@@ -202,3 +202,156 @@ def test_tensor_parallel_odd_division_fails() -> None:
             data_parallel_degree=1,
             page_size=16,
         )
+
+
+# ==================== copy_as_dp_1 Tests ====================
+
+
+def test_copy_as_dp_1_basic() -> None:
+    """Test copy_as_dp_1 creates a new instance with DP=1."""
+    params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+        n_devices=4,
+        data_parallel_degree=4,
+        page_size=16,
+        enable_prefix_caching=True,
+    )
+
+    copied = params.copy_as_dp_1()
+
+    # Verify DP is set to 1
+    assert copied.data_parallel_degree == 1
+    # Verify n_devices is adjusted correctly
+    assert copied.n_devices == 1
+    # Verify n_kv_heads_per_device is recomputed correctly (TP mode now)
+    assert copied.n_kv_heads_per_device == 8
+    # Verify other parameters are preserved
+    assert copied.dtype == DType.bfloat16
+    assert copied.n_kv_heads == 8
+    assert copied.head_dim == 128
+    assert copied.page_size == 16
+    assert copied.enable_prefix_caching is True
+
+
+def test_copy_as_dp_1_preserves_all_parameters() -> None:
+    """Test that copy_as_dp_1 preserves all configuration parameters."""
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=16,
+        head_dim=64,
+        enable_prefix_caching=True,
+        enable_kvcache_swapping_to_host=True,
+        host_kvcache_swap_space_gb=10.5,
+        page_size=32,
+        n_devices=8,
+        is_mla=True,
+        data_parallel_degree=8,
+    )
+
+    copied = params.copy_as_dp_1()
+
+    # Verify adjusted parameters
+    assert copied.data_parallel_degree == 1
+    assert copied.n_devices == 1
+    assert copied.n_kv_heads_per_device == 16
+
+    # Verify all other parameters are preserved
+    assert copied.dtype == DType.float32
+    assert copied.n_kv_heads == 16
+    assert copied.head_dim == 64
+    assert copied.enable_prefix_caching is True
+    assert copied.enable_kvcache_swapping_to_host is True
+    assert copied.host_kvcache_swap_space_gb == 10.5
+    assert copied.page_size == 32
+    assert copied.is_mla is True
+
+
+def test_copy_as_dp_1_runs_post_init_validation() -> None:
+    """Test that copy_as_dp_1 runs __post_init__ validation."""
+    # Create a DP config that will become invalid TP when copied
+    # 8 devices with DP=8, becomes 1 device with DP=1
+    # But with 7 heads (not divisible by 1), it should still be valid
+    params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=7,
+        head_dim=128,
+        n_devices=8,
+        data_parallel_degree=8,
+        page_size=16,
+    )
+
+    # This should work because 1 device with 7 heads is valid
+    copied = params.copy_as_dp_1()
+    assert copied.n_devices == 1
+    assert copied.n_kv_heads_per_device == 7
+
+
+def test_copy_as_dp_1_from_dp_1() -> None:
+    """Test copy_as_dp_1 when data_parallel_degree is already 1."""
+    params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+        n_devices=2,
+        data_parallel_degree=1,
+        page_size=16,
+    )
+
+    copied = params.copy_as_dp_1()
+
+    # Everything should remain the same
+    assert copied.data_parallel_degree == 1
+    assert copied.n_devices == 2
+    assert copied.n_kv_heads_per_device == 4
+
+
+def test_copy_as_dp_1_non_divisible_devices_fails() -> None:
+    """Test that copy_as_dp_1 fails when n_devices is not divisible by DP degree."""
+    params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+        n_devices=5,
+        data_parallel_degree=5,
+        page_size=16,
+    )
+
+    # Manually set n_devices to a non-divisible value to test the check
+    # (This is a bit contrived since __post_init__ would normally prevent this)
+    params.n_devices = 7
+
+    with pytest.raises(
+        ValueError,
+        match=r"Number of devices \(7\) must be evenly divisible by data parallel degree \(5\)",
+    ):
+        params.copy_as_dp_1()
+
+
+def test_copy_as_dp_1_does_not_modify_original() -> None:
+    """Test that copy_as_dp_1 does not modify the original instance."""
+    params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=128,
+        n_devices=4,
+        data_parallel_degree=4,
+        page_size=16,
+    )
+
+    original_n_devices = params.n_devices
+    original_dp = params.data_parallel_degree
+    original_heads_per_device = params.n_kv_heads_per_device
+
+    copied = params.copy_as_dp_1()
+
+    # Verify original is unchanged
+    assert params.n_devices == original_n_devices
+    assert params.data_parallel_degree == original_dp
+    assert params.n_kv_heads_per_device == original_heads_per_device
+
+    # Verify n_devices and data_parallel_degree changed in the copy
+    assert copied.n_devices == 1
+    assert copied.data_parallel_degree == 1
+    assert copied.n_kv_heads_per_device == 8
