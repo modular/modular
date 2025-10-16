@@ -119,6 +119,8 @@ public:
 
   std::string loopUnrollingWarnThreshold;
 
+  int elabErrorLimit{20};
+
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
@@ -144,9 +146,9 @@ public:
     std::optional<CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel != CompilationOptions::kDebugUnset)
       debugAt = debugAtLevel;
-    return CompilationOptions(optLevel, debugInfoLevel, debugAt,
-                              sanitizerOptions, targetTriple, targetCpu,
-                              targetFeatures, targetAccelerator);
+    return CompilationOptions(
+        optLevel, debugInfoLevel, debugAt, sanitizerOptions, targetTriple,
+        targetCpu, targetFeatures, targetAccelerator, elabErrorLimit);
   }
 
   bool optLevel0{false};
@@ -397,7 +399,6 @@ private:
       llvm::cl::location(options.loopUnrollingWarnThreshold),
       llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
 
-private:
   M::cl::MOpt<bool, true> optLevel0{"O0", cl::desc("Disable all optimizations"),
                                     llvm::cl::location(options.optLevel0),
                                     llvm::cl::cat(KGENOptionsCategory)};
@@ -421,6 +422,14 @@ private:
                  clEnumValN(SanitizerKind::kThread, "thread",
                             "Enable thread sanitizer")),
       llvm::cl::location(options.sanitizerOptions),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<int, true> elabErrorLimit{
+      "elaboration-error-limit",
+      cl::desc("Stop emitting diagnostics during elaboration after limited "
+               "number of errors have been produced. The default is 20, and "
+               "the limit can be disabled with -elaboration-error-limit=0."),
+      llvm::cl::location(options.elabErrorLimit),
       llvm::cl::cat(KGENOptionsCategory)};
 };
 

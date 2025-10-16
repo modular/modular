@@ -60,7 +60,7 @@ public:
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures(),
-      std::string targetAccelerator = "",
+      std::string targetAccelerator = "", int elabErrorLimit = 20,
       DebugInfoLanguage debugInfoLanguage = kLangMojo,
       std::string searchPaths = "",
       SmallVector<std::string> extraSearchPaths = {});
@@ -119,6 +119,8 @@ public:
   SmallVector<std::string> bitcodeLibs = {};
 
   bool verboseOutput = false;
+
+  int elabErrorLimit = 20;
 
   // HACK: to disable llvm splitting for some cases.
   // - mojo REPL (#35345)

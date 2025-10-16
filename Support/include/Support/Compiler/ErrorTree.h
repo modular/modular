@@ -84,7 +84,7 @@ public:
 
   /// Emit this error to an MLIR diagnostic. The main error is emitted as a
   /// diagnostic error. Any causes are emitted as notes.
-  void
+  InFlightDiagnostic
   emit(function_ref<InFlightDiagnostic(Location)> emitError,
        StringRef callSiteMsg,
        std::optional<mlir::DiagnosticEngine::HandlerID> diagHandlerID = {}) &&;

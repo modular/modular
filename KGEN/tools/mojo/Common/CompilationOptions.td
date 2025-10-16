@@ -76,6 +76,19 @@ defm num_threads : CommandOption<["--", "-"], "num-threads",
 def : JoinedOrSeparate<["-"], "j">, Group<CompilationOptionGroup>,
   Index<11>, Alias<num_threads>;
 
+defm loop_unrolling_warn_threshold: CommandOptionHidden<["--", "-"],
+  "loop-unrolling-warn-threshold",
+  CompilationOptionGroup, Index<12>, MetaVarName<"LUWT">,
+  HelpText<"Sets loop unrolling factor warning threshold, "
+           "default is 1024, set to 0 to disable the warning.">>;
+
+defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
+  "elaboration-error-limit",
+  CompilationOptionGroup, Index<13>, MetaVarName<"ELABERRORLIMIT">,
+  HelpText<
+    "Sets limit to number of produced errors during elaboration "
+    "before stop emitting diagnostics. The default is 20, and "
+    "the limit can be disabled with -elaboration-error-limit=0.">>;
 
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
