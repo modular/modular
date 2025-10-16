@@ -370,6 +370,9 @@ fn mean(src: LayoutTensor[**_]) raises -> Scalar[src.dtype]:
 
     Returns:
         The mean value of the elements in the given buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
     constrained[src.rank == 1, "src must be of rank 1"]()
 
@@ -399,6 +402,9 @@ fn mean[
     Args:
         src: The input buffer.
         dst: The output buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
     alias simd_width = simd_width_of[dst.dtype]()
     sum[reduce_axis](src, dst)
@@ -462,6 +468,9 @@ fn variance(
 
     Returns:
         The variance value of the elements in a buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
     """
 
     @always_inline

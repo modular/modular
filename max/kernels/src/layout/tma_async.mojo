@@ -1696,6 +1696,9 @@ fn create_nested_tma_tile[
     Returns:
         The `TMATensorTile` configured with the specified tile dimensions and
         swizzle mode, ready for use in asynchronous data transfer operations.
+
+    Raises:
+        If there was an error creating the underlying TMADescriptor.
     """
     alias ResultType = __type_of(res)
     alias desc_layout = ResultType.desc_layout
@@ -1846,7 +1849,7 @@ struct TMATensorTileArray[
     fn __init__(
         out self,
         tensormaps_device: DeviceBuffer[DType.uint8],
-    ) raises:
+    ):
         """
         Initializes a new TMATensorTileArray.
 
