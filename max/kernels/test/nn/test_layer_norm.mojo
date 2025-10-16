@@ -13,6 +13,7 @@
 
 from math import rsqrt
 
+from itertools import product
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -107,7 +108,7 @@ fn run_layer_norm_cpu[
 
     layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
 
-    for r in range(rows):
+    for r, c in product(range(rows), range(cols)):
         var vec = LayoutTensor[dtype, layout_1d](
             input_ptr + r * cols,
             RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
@@ -115,12 +116,11 @@ fn run_layer_norm_cpu[
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = rsqrt(var_ref + epsilon)
-        for c in range(cols):
-            var idx = r * cols + c
-            var val = (
-                (input_ptr[idx] - mean_ref) * norm_factor_ref
-            ) * gamma_ptr[c] + beta_ptr[c]
-            assert_almost_equal(val, output_ptr[idx], rtol=rtol)
+        var idx = r * cols + c
+        var val = ((input_ptr[idx] - mean_ref) * norm_factor_ref) * gamma_ptr[
+            c
+        ] + beta_ptr[c]
+        assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 
     input_ptr.free()
     output_ptr.free()

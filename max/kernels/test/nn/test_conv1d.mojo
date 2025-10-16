@@ -17,6 +17,7 @@ from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from itertools import product
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -171,26 +172,24 @@ fn test[
 
     # Check results, return on the first failed comparison.
     var idx = 0
-    for n in range(N):
-        for wo in range(WO):
-            for f in range(F):
-                if not isclose(
-                    output_ref_ptr[idx],
-                    output_ptr[idx],
-                    atol=1e-4,  # absolute error tolerance
-                    rtol=1e-4,  # relative error tolerance
-                ):
-                    print("Input shape NWC: ", Index(N, W, C))
-                    print("filter shape SCF: ", Index(S, C, F))
-                    print("filter packed", filter_packed)
-                    print("num groups", num_groups)
-                    print("Test failed at index: ", Index(n, wo, f))
-                    print("Golden value: ", output_ref_ptr[idx])
-                    print("Actual value: ", output_ptr[idx])
-                    output_ptr.free()
-                    output_ref_ptr.free()
-                    return
-                idx += 1
+    for n, wo, f in product(range(N), range(WO), range(F)):
+        if not isclose(
+            output_ref_ptr[idx],
+            output_ptr[idx],
+            atol=1e-4,  # absolute error tolerance
+            rtol=1e-4,  # relative error tolerance
+        ):
+            print("Input shape NWC: ", Index(N, W, C))
+            print("filter shape SCF: ", Index(S, C, F))
+            print("filter packed", filter_packed)
+            print("num groups", num_groups)
+            print("Test failed at index: ", Index(n, wo, f))
+            print("Golden value: ", output_ref_ptr[idx])
+            print("Actual value: ", output_ptr[idx])
+            output_ptr.free()
+            output_ref_ptr.free()
+            return
+        idx += 1
 
     output_ptr.free()
     output_ref_ptr.free()

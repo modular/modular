@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from itertools import product
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
@@ -142,9 +143,8 @@ def test_where():
         ),
     )
 
-    for i in range(3):
-        for j in range(3):
-            assert_equal(computed_outputs[i, j], golden_outputs[i, j])
+    for i, j in product(range(3), range(3)):
+        assert_equal(computed_outputs[i, j], golden_outputs[i, j])
 
 
 # CHECK-LABEL: test_where_1d
@@ -275,9 +275,8 @@ def test_where_bool():
         ),
     )
 
-    for i in range(3):
-        for j in range(3):
-            assert_equal(computed_outputs[i, j], golden_outputs[i, j])
+    for i, j in product(range(3), range(3)):
+        assert_equal(computed_outputs[i, j], golden_outputs[i, j])
 
 
 def main():
