@@ -51,15 +51,15 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 try:
-    from .benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ServingBenchmarkConfig,
         parse_benchmark_args,
     )
-    from .benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         CpuMetricsCollector,
         collect_pids_for_port,
     )
-    from .benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
         BatchJobBenchmarkDataset,
@@ -74,13 +74,13 @@ try:
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
     )
-    from .benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         BenchmarkMetrics,
         LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from .benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+    from max.benchmark.benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         fetch_and_parse_metrics,
         print_server_metrics,
     )
