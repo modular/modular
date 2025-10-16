@@ -277,8 +277,7 @@ fn nested[
 # CHECK: [[TRAIT:!Int_Movable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"fn(z: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
-# CHECK: module {
-# CHECK-NEXT: kgen.struct.generator @{{.*}}::bindIt({{.*}})::myclosure"
+# CHECK: kgen.struct.generator @"bindIt({{.*}})::myclosure"
 # CHECK-SAME: <CAPTURES: !kgen.param_closure<@{{.*}}::@"bindIt(::Int,::Int)" "myclosure">>:
 # CHECK-SAME: [[TRAIT]] = !kgen.closure<@{{.*}}::@"bindIt({{.*}})", "myclosure" nonescaping>{
 # CHECK: kgen.conformance @"{{.*}}::AnyType" {
@@ -297,7 +296,7 @@ fn bindIt(x: Int, y: Int) -> Int:
 # COM: Check that parameters are emitted correctly
 
 
-# CHECK: kgen.struct.generator @"{{.*}}::bindIt()::myclosure"
+# CHECK: kgen.struct.generator @"bindIt()::myclosure"
 # CHECK: kgen.witness "__call__" : !lit.generator<<"my_param": !AnyType>
 # CHECK-SAME: [1](!lit.ref<!kgen.closure<@{{.*}}::@"bindIt()", "myclosure" nonescaping>, mut *[0,0]> read_mem, |, "z": !Int) -> !kgen.none
 # CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::@"bindIt()", "myclosure", #kgen.closure_method<call>

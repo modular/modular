@@ -14,6 +14,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Transforms/RegionUtils.h"
@@ -675,6 +676,19 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
 
   Region &body = liftedWrapper.getBodyRegion();
   body.takeBody(region);
+  /// Scope verification is conditional on the enclosing function. If the
+  /// function carries a fused subprogram scope, every nested op must carry a
+  /// compatible scope. If the closure was pulled in from a bytecode package it
+  /// will not carry a subprogram because the dibuilder in the parser is null
+  /// for package building. Synthesis is required to pass verification in this
+  /// case.
+  DebugInfo::DIBuilder builder(b.getContext());
+  DebugInfo::DISubprogramAttr scope =
+      DebugInfo::extractScope((mlir::FunctionOpInterface)liftedWrapper);
+  builder.pushScope(scope);
+  if (failed(builder.visitLexicalRegion(liftedWrapper.getBodyRegion())))
+    return failure();
+
   /// Get a map from a captured parameter "T" to the expression with respect to
   /// the packed parameter value, i.e. "struct.extract<CAPTURES, 0>"
   auto fromParamToExtractExpr = unpackCapturesInto(b, body, closureInitData);

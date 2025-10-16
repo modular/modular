@@ -1830,6 +1830,15 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                   &structDecl);
             }
           })
+          .Case([&](StructGeneratorOp op) {
+            // this should not be referenceable from source so do not create an
+            // ASTDecl. Instead, materialize.
+            if (bytecodeReader->isMaterializable(op)) {
+              LogicalResult result = bytecodeReader->materialize(
+                  op, [](Operation *) { return true; });
+              assert(succeeded(result));
+            }
+          })
           .Case([&](TraitDeclOp op) {
             ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());
             traitDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(op));
