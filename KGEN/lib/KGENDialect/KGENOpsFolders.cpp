@@ -21,7 +21,7 @@ using namespace KGEN;
 
 ErrorTreeOrSuccess
 ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                   InterpreterState &state) {
+                                   ParametricInterpreterState &state) {
 
   return success();
 }
@@ -77,7 +77,7 @@ ErrorTreeOrSuccess ParamConstantOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ParamConstantOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       const Payload &payload,
-                                      InterpreterState &state) {
+                                      ParametricInterpreterState &state) {
   return success();
 }
 
@@ -87,7 +87,7 @@ ParamConstantOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess
 ParamDeclareOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                     InterpreterState &state) {
+                                     ParametricInterpreterState &state) {
   return success();
 }
 
@@ -133,7 +133,7 @@ ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ParamMaterializeOp::parametric_interpret(ArrayRef<Attribute> operands,
                                          const Payload &payload,
-                                         InterpreterState &state) {
+                                         ParametricInterpreterState &state) {
   return success();
 }
 
@@ -164,8 +164,9 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
-ErrorTreeOrSuccess RebindOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                                  InterpreterState &state) {
+ErrorTreeOrSuccess
+RebindOp::parametric_interpret(ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
   return success();
 }
 
@@ -189,7 +190,7 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 
 ErrorTreeOrSuccess
 ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                    InterpreterState &state) {
+                                    ParametricInterpreterState &state) {
   return success();
 }
 
@@ -198,7 +199,7 @@ ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 ErrorTreeOrSuccess
 ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                 InterpreterState &state) {
+                                 ParametricInterpreterState &state) {
   return success();
 }
 
@@ -207,7 +208,7 @@ ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 ErrorTreeOrSuccess
 ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
+                                      ParametricInterpreterState &state) {
   return success();
 }
 
@@ -216,7 +217,7 @@ ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 ErrorTreeOrSuccess
 ParamForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
+                                         ParametricInterpreterState &state) {
   return success();
 }
 
@@ -312,8 +313,9 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
   return success();
 }
 
-ErrorTreeOrSuccess ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                                   InterpreterState &state) {
+ErrorTreeOrSuccess
+ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                ParametricInterpreterState &state) {
   return success();
 }
 
@@ -323,7 +325,7 @@ ErrorTreeOrSuccess ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess
 ParamYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                   InterpreterState &state) {
+                                   ParametricInterpreterState &state) {
   return success();
 }
 
@@ -343,8 +345,9 @@ ErrorTreeOrSuccess CallOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
-ErrorTreeOrSuccess CallOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                                InterpreterState &state) {
+ErrorTreeOrSuccess
+CallOp::parametric_interpret(ArrayRef<Attribute> operands,
+                             ParametricInterpreterState &state) {
   return success();
 }
 
@@ -366,7 +369,7 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
 
 ErrorTreeOrSuccess
 CallParamOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                  InterpreterState &state) {
+                                  ParametricInterpreterState &state) {
   return success();
 }
 
@@ -407,7 +410,7 @@ ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess
 CallIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                     InterpreterState &state) {
+                                     ParametricInterpreterState &state) {
   return success();
 }
 
@@ -427,7 +430,7 @@ ErrorTreeOrSuccess CreateClosureOp::interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess
 CreateClosureOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
+                                      ParametricInterpreterState &state) {
   return success();
 }
 
@@ -524,8 +527,9 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
-ErrorTreeOrSuccess CostOfOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                                  InterpreterState &state) {
+ErrorTreeOrSuccess
+CostOfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
   return success();
 }
 
@@ -543,7 +547,7 @@ ErrorTreeOrSuccess IsCompileTimeOp::interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess
 IsCompileTimeOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
+                                      ParametricInterpreterState &state) {
   return success();
 }
 
@@ -636,7 +640,7 @@ ErrorTreeOrSuccess SourceLocOp::interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess
 SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                  InterpreterState &state) {
+                                  ParametricInterpreterState &state) {
   return success();
 }
 
@@ -650,8 +654,9 @@ ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
-ErrorTreeOrSuccess ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                                  InterpreterState &state) {
+ErrorTreeOrSuccess
+ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
   return success();
 }
 
@@ -673,7 +678,7 @@ OpFoldResult PackCreateOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess
 PackCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                   InterpreterState &state) {
+                                   ParametricInterpreterState &state) {
   return success();
 }
 
@@ -698,7 +703,7 @@ OpFoldResult PackExtractOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess
 PackExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                    InterpreterState &state) {
+                                    ParametricInterpreterState &state) {
   return success();
 }
 
@@ -751,8 +756,9 @@ ErrorTreeOrSuccess PackGEPOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
-ErrorTreeOrSuccess PackGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                                   InterpreterState &state) {
+ErrorTreeOrSuccess
+PackGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                ParametricInterpreterState &state) {
   return success();
 }
 
@@ -784,7 +790,7 @@ ErrorTreeOrSuccess PackLoadOp::interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess
 PackLoadOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                 InterpreterState &state) {
+                                 ParametricInterpreterState &state) {
   return success();
 }
 
@@ -808,7 +814,7 @@ OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess
 VariantCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
+                                      ParametricInterpreterState &state) {
   return success();
 }
 
@@ -849,7 +855,7 @@ OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess
 VariantGetOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                   InterpreterState &state) {
+                                   ParametricInterpreterState &state) {
   return success();
 }
 
@@ -901,7 +907,7 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess
 StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                     InterpreterState &state) {
+                                     ParametricInterpreterState &state) {
   return success();
 }
 
@@ -920,7 +926,7 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess
 StructExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
+                                      ParametricInterpreterState &state) {
   return success();
 }
 
@@ -940,7 +946,7 @@ OpFoldResult StructReplaceOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess
 StructReplaceOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
+                                      ParametricInterpreterState &state) {
   return success();
 }
 
@@ -976,6 +982,6 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess
 StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                  InterpreterState &state) {
+                                  ParametricInterpreterState &state) {
   return success();
 }

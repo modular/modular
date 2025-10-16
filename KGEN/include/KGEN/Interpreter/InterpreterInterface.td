@@ -68,7 +68,7 @@ def ParametricInterpreterOpInterface :
       value results, with access to the interpreter state and the contextual
       value map.
     }], "ErrorTreeOrSuccess", "parametric_interpret",
-    (ins "ArrayRef<Attribute>":$operands, "InterpreterState &":$state)>
+    (ins "ArrayRef<Attribute>":$operands, "ParametricInterpreterState &":$state)>
   ];
 }
 
