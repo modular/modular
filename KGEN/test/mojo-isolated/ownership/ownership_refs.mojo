@@ -206,7 +206,7 @@ struct SelfRefTest(ImplicitlyCopyable):
   fn __del__(deinit self): pass
   # CHECK-LABEL: lit.fn @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
-  fn method(ref self) -> Pointer[Self, __origin_of(self)]:
+  fn method(ref self) -> Pointer[Self, origin_of(self)]:
       return Pointer(to=self)
 
 # CHECK-LABEL: lit.fn @"testSelfRef
@@ -223,13 +223,13 @@ fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
 # CHECK-SAME: !lit.struct<#Pointer <{{.*}}origin<0> = *"a`"}>, :!AddressSpace {_value: !Int = {0}}>
-fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, __origin_of(a)]:
+fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
   return Pointer(to=a)
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf2
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
 # CHECK-SAME: !lit.ref<!MemExample, imm {{.*}}*"a`")
-fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, __origin_of(a)]._mlir_type:
+fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_type:
 
   # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm {{.*}}*"a`")
   return Pointer(to=a)._value
@@ -249,12 +249,12 @@ fn callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
   use_any(l1, l2, l3, l4)
 
 fn returnOneArgLifetime(a: MemExample)
-  -> OneLifetime[__origin_of(a)]:
-  return OneLifetime[__origin_of(a)]()
+  -> OneLifetime[origin_of(a)]:
+  return OneLifetime[origin_of(a)]()
 
 fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
-  -> TwoLifetimes[__origin_of(a), __origin_of(b)]:
-  return TwoLifetimes[__origin_of(a), __origin_of(b)]()
+  -> TwoLifetimes[origin_of(a), origin_of(b)]:
+  return TwoLifetimes[origin_of(a), origin_of(b)]()
 
 struct OneLifetime[a_origin: ImmutableOrigin]:
   fn __init__(out self): pass
@@ -278,7 +278,7 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType),
 
     fn get_element[index: Int](self) -> Pointer[
         element_types[index],
-        __origin_of(self),
+        origin_of(self),
     ]:
        while True: pass
 
@@ -322,7 +322,7 @@ fn parametric_mut_mbvalue[
     mut: __mlir_type.i1,
     origin: Origin[mut]._mlir_type,
  ](a: Pointer[ThingWithFields, origin])
-   -> Pointer[Int, __origin_of(a[].field)]:
+   -> Pointer[Int, origin_of(a[].field)]:
   # CHECK: lit.ref.struct.ger
   return Pointer(to=a[].field)
 

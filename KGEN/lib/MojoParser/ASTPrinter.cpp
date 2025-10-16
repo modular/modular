@@ -354,7 +354,7 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
   if (size_t(paramIdx) >= paramListAttr.size()) {
     assert(isa<OriginType>(paramDecls[paramIdx].getType()) &&
            "Only unnamed thing should be an implicit origin");
-    os << "__origin_of(" << demangledName << ")";
+    os << "origin_of(" << demangledName << ")";
     return;
   }
 
@@ -406,7 +406,7 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
       if (auto refType = dyn_cast<RefType>(argType))
         if (auto refOrigin = dyn_cast<ParamDeclRefAttr>(refType.getOrigin())) {
           if (refOrigin.getName() == declRef.getName()) {
-            os << "__origin_of(";
+            os << "origin_of(";
             printArgName();
             os << ")";
             return;
@@ -870,7 +870,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return prettyPrintParamName(declRef, *diagShared, os);
   }
 
-  // These are origins but don't need __origin_of around them.
+  // These are origins but don't need `origin_of(...)` around them.
   if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
     if (anyOrig.getType().isMutableKnown(true))
       os << "MutableAnyOrigin";
@@ -894,10 +894,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     }
   }
 
-  // Origins are handled with their own grammar that has `__origin_of(x)` on
-  // the outside.
+  // Origins are handled with their own grammar that has `origin_of(x)` on the
+  // outside.
   if (isa<OriginType>(param.getType())) {
-    os << "__origin_of(";
+    os << "origin_of(";
     // Flatten unions into a comma separated list.
     if (auto unionAttr = dyn_cast<OriginUnionAttr>(param)) {
       llvm::interleaveComma(unionAttr.getOperands(), os, [&](TypedAttr param) {
@@ -926,8 +926,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   os << KGEN::getParamAsString(param);
 }
 
-/// Print the specified parameter like we would in an origin expression,
-/// works in an __origin_of(x) body.
+/// Print the specified parameter like we would in an origin expression, works
+/// in an `origin_of(x)` body.
 void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
                                SharedState *diagShared) {
 

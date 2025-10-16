@@ -650,7 +650,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   var bref = Pointer(to=b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, __origin_of(b)]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, origin_of(b)]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
@@ -704,7 +704,7 @@ fn testSomeThing(a: SomeThing):
 fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   # These are all fine since they are not returned.
   _ = Pointer(to=a)
-  _ = __origin_of(a)
+  _ = origin_of(a)
   _ = __get_mvalue_as_litref(a)
   # This is okay. The VariadicListMem has a origin.
   _ = Pointer(to=args)
@@ -752,14 +752,14 @@ struct ThingWithFields:
   var field: Int
 
 fn field_sensitive_origins(a: ThingWithFields)
-    -> Pointer[ThingWithFields, __origin_of(a.field)]:
+    -> Pointer[ThingWithFields, origin_of(a.field)]:
 
   # expected-error @+1 {{'ThingWithFields' value has no attribute 'field_abc'}}
-  _ = __origin_of(a.field_abc)
+  _ = origin_of(a.field_abc)
   # expected-error @+1 {{MLIR type 'index' has no attributes}}
-  _ = __origin_of(Index.field_abc)
+  _ = origin_of(Index.field_abc)
 
-  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, __origin_of(a.field)]'}}
+  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, origin_of(a.field)]'}}
   return a
 
 
@@ -785,8 +785,8 @@ fn unbound_function_type():
 # https://github.com/modular/mojo/issues/1921
 struct SomeStruct:
   fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int])
-      -> Pointer[Int, __origin_of(self)]:
-    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin]' value to 'Pointer[Int, __origin_of(self)]'}}
+      -> Pointer[Int, origin_of(self)]:
+    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin]' value to 'Pointer[Int, origin_of(self)]'}}
     return Pointer(to=ptr[])
 
 # Various type printing cases.
@@ -859,7 +859,7 @@ fn getSomeNonTrivRegPassable() -> SomeNonTrivRegPassable: pass
 # expected-note @below {{function declared here}}
 fn direct3830(ref a: SomeNonTrivRegPassable, ref[a] b: SomeNonTrivRegPassable): pass
 fn test3830():
-    # expected-error @below {{invalid call to 'direct3830': failed to infer parameter 'a_is_mut', it inferred to two different values: '__origin_of((muttoimm anonymous*))' and '__origin_of((muttoimm anonymous*))'}}
+    # expected-error @below {{invalid call to 'direct3830': failed to infer parameter 'a_is_mut', it inferred to two different values: 'origin_of((muttoimm anonymous*))' and 'origin_of((muttoimm anonymous*))'}}
     # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
@@ -940,10 +940,10 @@ fn test_mergewith_pointer():
     # FIXME: This really should work, we need to figure out how exclusivity
     # works here.
 
-    # expected-error @below {{'List[Pointer[Int, __origin_of(a, b)]]' does not implement the '__iter__' method}}
-    # expected-error @below {{argument of 'List[Pointer[Int, __origin_of(a, b)]]' initializer call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' memory accessed through reference embedded in value of type 'Pointer[Int, __origin_of(a, b)]'}}
-    # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, __origin_of(a, b)]'}}
+    # expected-error @below {{'List[Pointer[Int, origin_of(a, b)]]' does not implement the '__iter__' method}}
+    # expected-error @below {{argument of 'List[Pointer[Int, origin_of(a, b)]]' initializer call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(a, b)]'}}
+    # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(a, b)]'}}
     for elt in [Pointer(to=a), Pointer(to=b)]:
         elt[] *= 2
 
@@ -1008,3 +1008,7 @@ fn test_trait_member_access_error():
 # expected-warning @+1 {{'__type_of' is deprecated, use 'type_of' instead}}
 fn test_type_of_deprecated(x: Int) -> __type_of(x):
     return x
+
+fn test_origin_of_deprecated[T: AnyType](a: T):
+  # expected-warning @+1 {{'__origin_of' is deprecated, use 'origin_of' instead}}
+  _ = __origin_of(a)

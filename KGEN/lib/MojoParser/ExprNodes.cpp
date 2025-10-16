@@ -3883,8 +3883,14 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 }
 
 AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
-  if (kind == kOriginOf)
+  if (kind == kOriginOfDeprecated || kind == kOriginOf) {
+    if (kind == kOriginOfDeprecated) {
+      emitter.emitWarning(
+          getLoc(), "'__origin_of' is deprecated, use 'origin_of' instead")
+          << getRange() << FixIt::replaceToken(getLoc(), "origin_of");
+    }
     return emitOriginOf(dest, emitter);
+  }
 
   // __get_nearest_error_slot returns an MLValue.
   if (kind == kGetNearestErrorSlot) {

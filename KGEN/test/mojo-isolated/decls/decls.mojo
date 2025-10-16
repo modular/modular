@@ -932,7 +932,7 @@ fn coroutine_origins():
     # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<@decls::@LifetimeAccess<:origin<1> [[Y_LT]]>,
     # CHECK-SAME: mut *[0,0]{{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]
     # CHECK: Coroutine<:!AnyType [{{.*}}@__MLIRType<:type none>, none], :origin.set {{{.*}}, mut [[Y_LT]]}>
-    var access = lifetime_access(LifetimeAccess[__origin_of(y)]())
+    var access = lifetime_access(LifetimeAccess[origin_of(y)]())
 
 
 # CHECK-LABEL: lit.fn @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
@@ -1249,7 +1249,7 @@ struct SomeType:
 # CHECK-SAME: !lit.ref<{{.*}}<:!AnyType {{.*}}Match<:origin<0> *"arg`">>
 fn implicit_origin_as_param(
     arg: SomeType,
-) -> Bound[Match[__origin_of(arg)]]:
+) -> Bound[Match[origin_of(arg)]]:
     pass
 
 

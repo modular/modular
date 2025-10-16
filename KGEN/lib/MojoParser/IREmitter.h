@@ -583,7 +583,7 @@ public:
   ///
   /// On failure, an error is emitted and the callback is not invoked.
   ///
-  /// This is used for evaluating expressions like __origin_of(x) and
+  /// This is used for evaluating expressions like `origin_of(x)` and
   /// `type_of(x)` and `ref [x] T`.
   void emitExpressionWithOutEvaluatingIt(
       const ExprNode *expr, ExprContext exprContext,
@@ -628,7 +628,7 @@ public:
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest);
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprContext context);
 
-  /// Given an expression that can be used in __origin_of or a ref expression,
+  /// Given an expression that can be used in `origin_of` or a ref expression,
   /// analyze it to determine which origin it represents.  If it doesn't work,
   /// emit an error and return null.
   TypedAttr extractOriginOf(const ExprNode *expr, CValue value);

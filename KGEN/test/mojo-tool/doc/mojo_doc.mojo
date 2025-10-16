@@ -634,7 +634,7 @@ fn fn_with_anon_refs(
 fn fn_with_named_refs[
     life: MutableOrigin
 ](ref [life]ref_arg1: AnyTrivialRegType) -> ref [
-    __origin_of(ref_arg1)
+    origin_of(ref_arg1)
 ] AnyTrivialRegType:
     pass
 

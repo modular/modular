@@ -80,7 +80,7 @@ TypedAttr ASTType::extractOriginOf(SMLoc loc, TypedAttr value,
   return {};
 }
 
-/// Given an expression that can be used in __origin_of or a ref expression,
+/// Given an expression that can be used in `origin_of` or a ref expression,
 /// analyze it to determine which origin it represents.  If it doesn't work,
 /// emit an error and return null.
 TypedAttr IREmitter::extractOriginOf(const ExprNode *expr, CValue value) {
@@ -1792,7 +1792,7 @@ static void typeCheckResult(ParsedArgument resultArg,
   // Check to see if the result type has any embedded origins that refer to
   // in-memory argument origins of generic type, e.g.:
   //
-  //     fn get[T: AnyType](a: T) -> Pointer[T, __origin_of(a)]:
+  //     fn get[T: AnyType](a: T) -> Pointer[T, origin_of(a)]:
   //        return Pointer(a)
   //
   // These origins are not allowed to be returned from the function, because
@@ -1800,7 +1800,7 @@ static void typeCheckResult(ParsedArgument resultArg,
   // lowering will turn them into:
   //
   //     fn get[T: AnyType](borrow_in_reg a: T)
-  //                             -> Pointer[T, __origin_of(tmp)]:
+  //                             -> Pointer[T, origin_of(tmp)]:
   //        var tmp = a
   //        return Reference(tmp)
   //

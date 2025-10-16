@@ -12,14 +12,14 @@ from collections.deque import _DequeIter
 
 fn not_a_list[
     T: Copyable & Movable
-](ref value: Deque[T]) -> _DequeIter[T, __origin_of(value), False]:
+](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     return value.__reversed__()
 
 
 fn needs_default[
     IterableTypeA: Iterable
 ](ref iterable_a: IterableTypeA) -> IterableTypeA.IteratorType[
-    __origin_of(iterable_a)
+    origin_of(iterable_a)
 ]:
     return iter(iterable_a)
 
