@@ -299,6 +299,12 @@ static ErrorOrSuccess launchDebug(ArrayRef<std::string> options,
 //===----------------------------------------------------------------------===//
 
 static int test(const State &subcommandState) {
+  llvm::errs()
+      << "WARNING: 'mojo test' is deprecated and will be removed in a future "
+         "version. For more information and migration instructions, see "
+         "https://github.com/modular/modular/blob/main/mojo/proposals/"
+         "mojo-test-deprecation.md\n";
+
   State state = subcommandState;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode = parseArgs(state, args))
