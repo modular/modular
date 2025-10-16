@@ -735,6 +735,128 @@ fn _is_amd_cdna() -> Bool:
 
 
 @always_inline("nodebug")
+fn _has_nvidia_tensor_cores() -> Bool:
+    """Returns True if the NVIDIA GPU has tensor core support.
+
+    Tensor cores were introduced in Volta (sm_70) architecture in 2017.
+    Earlier architectures (Maxwell sm_50, Pascal sm_60/sm_61) do not have
+    tensor core hardware.
+
+    Returns:
+        True if the GPU is Volta (sm_70) or newer with tensor core support.
+    """
+    return is_nvidia_gpu() and not (
+        is_nvidia_gpu["sm_50"]()
+        or is_nvidia_gpu["sm_60"]()
+        or is_nvidia_gpu["sm_61"]()
+    )
+
+
+@always_inline("nodebug")
+fn _has_amd_tensor_cores() -> Bool:
+    """Returns True if the AMD GPU has MFMA / WMMA tensor core support.
+
+    AMD CDNA GPUs (MI300X, MI355X) use v_mfma_* instructions for tensor cores.
+    AMD RDNA GPUs have v_wmma_* instructions but LLVM cannot lower them yet.
+
+    Returns:
+        True if the GPU is CDNA with MFMA support.
+    """
+    return _is_amd_cdna()
+
+
+@always_inline("nodebug")
+fn _has_apple_tensor_cores() -> Bool:
+    """Returns True if the Apple GPU has matrix/tensor core support.
+
+    Apple M-series GPUs (M1/M2/M3/M4) support matrix operations through
+    Metal Performance Shaders and SIMD matrix instructions. While not
+    called "tensor cores", they provide similar matrix multiplication
+    acceleration capabilities.
+
+    Returns:
+        True if the GPU is Apple with matrix operation support.
+    """
+    return is_apple_gpu()
+
+
+@always_inline("nodebug")
+fn _has_gpu_tensor_cores() -> Bool:
+    """Returns True if the current GPU has tensor core support.
+
+    This is a vendor-agnostic check that returns True for:
+    - NVIDIA GPUs with tensor cores (Volta/sm_70 and newer)
+    - AMD CDNA GPUs with MFMA support (MI300X, MI355X)
+    - Apple M-series GPUs (M1/M2/M3/M4 with matrix operations)
+
+    Returns False for:
+    - NVIDIA Maxwell/Pascal (no tensor cores)
+    - AMD RDNA (LLVM cannot lower v_wmma_* intrinsics yet)
+
+    Returns:
+        True if the GPU has working tensor core support.
+    """
+    return (
+        _has_nvidia_tensor_cores()
+        or _has_amd_tensor_cores()
+        or _has_apple_tensor_cores()
+    )
+
+
+@always_inline("nodebug")
+fn _has_gpu_fp32_tensor_cores() -> Bool:
+    """Returns True if the GPU supports FP32 tensor core operations.
+
+    Checks whether the GPU supports FP32 × FP32 → FP32 matrix operations
+    via tensor cores or equivalent hardware.
+
+    Returns True for:
+    - NVIDIA GPUs with tensor cores (Volta/sm_70 and newer)
+    - Apple M-series GPUs (support FP32 via Metal simdgroup_matrix)
+
+    Returns False for:
+    - AMD RDNA/CDNA - only support lower-precision inputs (FP16/BF16/FP8/INT8)
+      with FP32 accumulation, not FP32 × FP32 → FP32
+    - NVIDIA Maxwell/Pascal (no tensor cores)
+
+    Returns:
+        True if the GPU supports FP32 tensor core operations.
+    """
+    return _has_nvidia_tensor_cores() or _has_apple_tensor_cores()
+
+
+@always_inline("nodebug")
+fn _has_gpu_bf16_fma() -> Bool:
+    """Returns True if the GPU supports BF16 outputs with FMA operations.
+
+    This checks whether the GPU can perform BF16 × BF16 → BF16 operations
+    using scalar/vector FMA instructions (not tensor cores).
+
+    Returns True for:
+    - NVIDIA GPUs (all architectures support BF16 FMA)
+    - AMD CDNA GPUs with MFMA (MI300X, MI355X)
+    - Apple GPUs (M-series support BF16 operations)
+
+    Returns False for:
+    - AMD RDNA GPUs - these require FP32 accumulation for BF16 FMA.
+      BF16 outputs are only supported via WMMA (tensor cores), which
+      LLVM cannot lower yet. For FMA operations, RDNA requires
+      BF16 inputs with FP32 outputs.
+
+    Note:
+        This is specifically for FMA (non-tensor-core) operations.
+        For tensor core BF16 support, use _has_gpu_tensor_cores().
+
+    Returns:
+        True if the GPU supports BF16 output with FMA operations.
+    """
+    # NVIDIA: All GPUs support BF16 FMA
+    # AMD: Only CDNA (MFMA) supports BF16 outputs; RDNA requires FP32 accumulation
+    # Apple: M-series GPUs support BF16 operations
+    return is_nvidia_gpu() or _has_amd_tensor_cores() or is_apple_gpu()
+
+
+@always_inline("nodebug")
 fn is_amd_gpu() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
     False otherwise.
