@@ -1588,8 +1588,8 @@ class AttentionWithRopeNoOpaque(Module):
         k_end = q_end + self.kv_params.n_kv_heads * self.kv_params.head_dim
         v_end = k_end + self.kv_params.n_kv_heads * self.kv_params.head_dim
         x_q = x_qkv[:, :q_end]
-        x_k = x_qkv[:, k_end:v_end]
-        x_v = x_qkv[:, v_end:]
+        x_k = x_qkv[:, q_end:k_end]
+        x_v = x_qkv[:, k_end:v_end]
 
         freqs_cis = ops.cast(self.rope.freqs_cis, x_q.dtype)
 
