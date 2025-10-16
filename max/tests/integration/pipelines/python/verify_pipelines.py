@@ -1048,17 +1048,22 @@ PIPELINES = {
             kl_div_threshold=2.7e-2,
         ),
     ),
-    # TODO(MODELS-788): Support FP8 in DeepSeekV3 pipeline
-    # "kathywu95/deepseek-v3-small-random-bfloat16-fp8": PipelineDef(
-    #     compatible_with=[DeviceKind.GPU],
-    #     tags=["nvidia-only", "no-h100"],  # B200 only
-    #     run=_make_pipeline_runner(
-    #         pipeline="deepseek-v3-small-random-fp8",
-    #         encoding="float8_e4m3fn",
-    #         cos_dist_threshold=9.4e-03,
-    #         kl_div_threshold=2.7e-2,
-    #     ),
-    # ),
+    "kathywu95/deepseek-v3-small-random-fp8": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-only", "no-h100"],  # B200 only
+        run=_make_pipeline_runner(
+            pipeline="deepseek-v3-small-random-fp8",
+            encoding="float8_e4m3fn",
+            # Goldens generated using VLLM.
+            # Script: https://gist.github.com/k-w-w/420b2d64283e83c1121f89d35027a1d6
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_deepseek-v3-small-random-fp8_golden/1/29b77d635f3e2cb5f3b8df155174ce5a77f5d6d1a074a4283fddcaf090906cc8/torch_deepseek-v3-small-random-fp8_golden.tar.gz",
+                json_file="torch_deepseek-v3-small-random_bfloat16_golden.json",
+            ),
+            cos_dist_threshold=2.7e-03,
+            kl_div_threshold=1.1e-2,
+        ),
+    ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(
