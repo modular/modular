@@ -564,12 +564,15 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
   // This emits an error message if we parsed a decorator, because this
   // statement doesn't support them.
-  auto rejectDecorator = [&](bool inFunctionBody = false) {
+  auto rejectDecorator = [&](bool inFunctionBody = false,
+                             bool printToken = true) {
     if (startCursor == getLexer().getCursor())
       return;
-    emitTokenError() << "'" << getToken().getSpelling() << "' statement "
-                     << (inFunctionBody ? "in function body " : "")
-                     << "does not allow decorators";
+    auto diag = emitTokenError();
+    if (printToken)
+      diag << "'" << getToken().getSpelling() << "' ";
+    diag << "statement " << (inFunctionBody ? "in function body " : "")
+         << "does not allow decorators";
   };
 
   // This lambda is used to generate an error when a compound statement is used
@@ -684,10 +687,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_var:
     // In function bodies, we parse 'var' as expressions, part of the pattern
     // grammar.  TODO: extend this to other contexts.
-    if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
-      rejectDecorator(/*inFunctionBody=*/true);
+    if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()))
       break;
-    }
     return parseVarStmt(startCursor, stmtIndent);
   case Token::kw_alias:
     // Decorators on aliases are not allowed inside function bodies.
@@ -719,6 +720,9 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // Parse a single expression, an assignment stmt, or augmented assignment
   // statement.
   ExprNode *expr = nullptr;
+  bool isVarStatement = getToken().is(Token::kw_var);
+  rejectDecorator(/*inFunctionBody=*/isVarStatement,
+                  /*printToken=*/isVarStatement);
   if (parseSimpleStmtExprs(expr, stmtIndent))
     return failure();
 
