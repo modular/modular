@@ -134,6 +134,11 @@ class TPPagedKVCacheManager:
         self.devices = devices
         self.session = session
 
+        if params.data_parallel_degree > 1:
+            raise ValueError(
+                "TPPagedKVCacheManager does not support data parallelism."
+            )
+
         # Attributes for managing available slots.
         self._available = set(range(self.max_batch_size))
 

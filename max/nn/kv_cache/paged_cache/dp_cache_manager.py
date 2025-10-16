@@ -107,10 +107,11 @@ class DPPagedKVCacheManager(TPPagedKVCacheManager):
         self.devices_per_replica = split_into_groups(devices, self.num_replicas)
 
         self._replica_managers: list[TPPagedKVCacheManager] = []
+        dp_1_params = params.copy_as_dp_1()
         for devices in self.devices_per_replica:
             self._replica_managers.append(
                 TPPagedKVCacheManager(
-                    params=params,
+                    params=dp_1_params,
                     max_batch_size=max_batch_size_per_replica,
                     max_seq_len=max_seq_len,
                     num_layers=num_layers,
