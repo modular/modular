@@ -1678,6 +1678,20 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
   return init;
 }
 
+static SymbolRefAttr
+getFullyResolvedSymbolRefUpToFileModule(mlir::SymbolOpInterface op) {
+  SmallVector<FlatSymbolRefAttr> symbols;
+  do {
+    symbols.push_back(FlatSymbolRefAttr::get(op.getNameAttr()));
+  } while ((op = dyn_cast<mlir::SymbolOpInterface>(op->getParentOp())) &&
+           !isa<FileModuleOp>(op));
+  if (symbols.size() == 1)
+    return symbols.front();
+  std::reverse(symbols.begin(), symbols.end());
+  return SymbolRefAttr::get(symbols[0].getAttr(),
+                            ArrayRef(symbols).drop_front());
+}
+
 TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent, ClosureType closureType,
     SmallVector<ClosureParent> &closureParents) {
@@ -1686,10 +1700,6 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   MLIRContext *ctx = shared.getContext();
   SymbolRefAttr parentSymbolRef = getFullyResolvedSymbolRef(
       cast<mlir::SymbolOpInterface>(parent.getOperation()));
-  StringAttr symName =
-      StringAttr::get(ctx, Twine(getFlattenedSymbolName(parentSymbolRef))
-                               .concat("::")
-                               .concat(closureType.getName().getValue()));
   ParamClosureType paramClosureType =
       KGEN::ParamClosureType::get(ctx, parentSymbolRef, closureType.getName());
 
@@ -1699,12 +1709,16 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, closureParams);
   ImplicitLocOpBuilder builder(location, ctx);
   builder.setInsertionPointToStart(
-      &cast<ModuleOp>(shared.getTopLevelDecl().getIfOperation())
-           .getBodyRegion()
-           .front());
+      &cast<FileModuleOp>(moduleDecl.getIfOperation()).getBodyRegion().front());
   TraitType traitType = getTraitType(closureParents, moduleDecl);
-  auto structGen = builder.create<StructGeneratorOp>(symName, parameters,
-                                                     closureType, traitType);
+  auto structGen = builder.create<StructGeneratorOp>(
+      StringAttr::get(
+          ctx,
+          Twine(getFlattenedSymbolName(getFullyResolvedSymbolRefUpToFileModule(
+                    cast<mlir::SymbolOpInterface>(parent.getOperation()))))
+              .concat("::")
+              .concat(closureType.getName().getValue())),
+      parameters, closureType, traitType);
   Block *structGenBody = builder.createBlock(&structGen.getRegion());
 
   // Emit the conformance ops into the struct gen body by finding the closure

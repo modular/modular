@@ -11,7 +11,7 @@
 # CHECK-PACK-NOT: lit.trait.decl @"fn(x: Int) -> Int"
 # CHECK-PACK-NOT: definesClosure
 
-from closure import printIt
+from closure import printIt, defineIt
 from sys import argv
 
 
@@ -20,9 +20,11 @@ fn aThing(y: Int):
         return y + x
 
     printIt[__type_of(myclosure)](myclosure, y)
+    defineIt(y)
 
 
 def main():
+    # CHECK: 8
     # CHECK: 8
     var x = atol(argv()[1])
     aThing(x)

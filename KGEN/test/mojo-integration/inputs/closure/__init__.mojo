@@ -4,4 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .foo import printIt
+from .foo import printIt, defineIt

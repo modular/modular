@@ -137,6 +137,7 @@ public:
     result.scopes = scopes;
     return result;
   }
+  LogicalResult visitLexicalRegion(Region &region);
 
 private:
   MLIRContext *context;

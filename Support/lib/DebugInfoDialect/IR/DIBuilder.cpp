@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "mlir/IR/BuiltinOps.h"
 
 using namespace M;
 using namespace M::DebugInfo;
@@ -85,4 +86,20 @@ DILocalVariableAttr DIBuilder::createLocalVariable(StringRef name,
   auto scope = cast<DILocalScopeAttr>(scopes.back());
   return DILocalVariableAttr::get(scope, name, file, line, arg, alignInBits,
                                   type, flags);
+}
+
+LogicalResult DIBuilder::visitLexicalRegion(Region &region) {
+  for (Operation &op : region.front()) {
+    op.setLoc(createScopedLoc(op.getLoc()));
+    for (Region &region : op.getRegions()) {
+      auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
+      if (!fileLoc)
+        return mlir::emitError(op.getLoc()) << "did not find a FileLineColLoc";
+      DebugInfo::DIBuilder::ScopeGuard guard = pushNestedLexicalBlock(
+          createFile(fileLoc), fileLoc.getLine(), fileLoc.getColumn());
+      if (failed(visitLexicalRegion(region)))
+        return failure();
+    }
+  }
+  return success();
 }

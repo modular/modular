@@ -26,24 +26,6 @@ using namespace KGEN;
 // synthesizeDebugInfo
 //===----------------------------------------------------------------------===//
 
-/// In general, each region corresponds to a Mojo lexical block.
-static LogicalResult visitLexicalRegion(Region &region,
-                                        DebugInfo::DIBuilder &dib) {
-  for (Operation &op : region.front()) {
-    op.setLoc(dib.createScopedLoc(op.getLoc()));
-    for (Region &region : op.getRegions()) {
-      auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
-      if (!fileLoc)
-        return mlir::emitError(op.getLoc()) << "did not find a FileLineColLoc";
-      DebugInfo::DIBuilder::ScopeGuard guard = dib.pushNestedLexicalBlock(
-          dib.createFile(fileLoc), fileLoc.getLine(), fileLoc.getColumn());
-      if (failed(visitLexicalRegion(region, dib)))
-        return failure();
-    }
-  }
-  return success();
-}
-
 /// Synthesize fake debug info for the module given concrete IR using knowledge
 /// of how the IR is lowered from Mojo. In doing so, we try to dig out
 /// FileLineColLoc. If the file came from the front-end, this should be no
@@ -113,7 +95,7 @@ synthesizeDebugInfo(ModuleOp module,
                                DebugInfo::SubprogramFlags::Optimized,
                            spType);
     func->setLoc(dib.createScopedLoc(fileLoc));
-    if (failed(visitLexicalRegion(func.getBodyRegion(), dib)))
+    if (failed(dib.visitLexicalRegion(func.getBodyRegion())))
       return failure();
   }
 
