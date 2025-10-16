@@ -63,7 +63,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
 
 
 struct Codepoint(
-    EqualityComparable, ImplicitlyCopyable, Intable, Movable, Stringable
+    Comparable, ImplicitlyCopyable, Intable, Movable, Stringable
 ):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
@@ -299,7 +299,7 @@ struct Codepoint(
         Args:
             other: The codepoint value to compare against.
         Returns:
-            True if this character's values is less than the other codepoint values;
+            True if this character's value is less than the other codepoint value;
             False otherwise.
         """
         return self.to_u32() < other.to_u32()
@@ -310,7 +310,7 @@ struct Codepoint(
         Args:
             other: The codepoint value to compare against.
         Returns:
-            True if this character's values is less than or equal to the other codepoint values;
+            True if this character's value is less than or equal to the other codepoint value;
             False otherwise.
         """
         return self.to_u32() <= other.to_u32()
@@ -321,7 +321,7 @@ struct Codepoint(
         Args:
             other: The codepoint value to compare against.
         Returns:
-            True if this character's values is greater than or equal the other codepoint values;
+            True if this character's value is greater than or equal to the other codepoint value;
             False otherwise.
         """
         return self.to_u32() >= other.to_u32()
@@ -332,7 +332,7 @@ struct Codepoint(
         Args:
             other: The codepoint value to compare against.
         Returns:
-            True if this character's values is greater than to other codepoint values;
+            True if this character's value is greater than to other codepoint value;
             False otherwise.
         """
         return self.to_u32() > other.to_u32()
