@@ -22,12 +22,15 @@ fn issue1242():
     @decorator # expected-error {{cannot use a dynamic value in decorator}}
     fn on_message(): pass
 
-@invalidDec # expected-error {{use of unknown declaration 'invalidDec'}}
+@invalid_dec # expected-error {{use of unknown declaration 'invalid_dec'}}
 def unknown_decorator(): pass
 
-fn decorator_on_var():
-    @invalidDec
-    var DecoratedVar: Int # expected-error {{'var' statement does not allow decorators}}
+fn decorator_inside_function():
+    @invalid_dec
+    var decorated_var: Int  # expected-error {{'var' statement in function body does not allow decorators}}
+
+    @invalid_dec
+    alias decorated_alias = 42  # expected-error {{'alias' statement in function body does not allow decorators}}
 
 # expected-error @+1 {{decorators must be on their own line, not ahead of a statement}}
 @always_inline def same_line_decorator(): pass
@@ -319,7 +322,7 @@ fn outer_function():
 # Struct decorators
 # ===----------------------------------------------------------------------=== #
 
-@invalidDec  # expected-error {{use of unknown declaration 'invalidDec'}}
+@invalid_dec  # expected-error {{use of unknown declaration 'invalid_dec'}}
 struct BadStructDecorator: pass
 
 

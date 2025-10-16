@@ -2164,9 +2164,16 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(shared, lexer);
+
+  // Parse the decorators for alias declarations but only process them if they
+  // are outside function bodies. This is because decorators inside function
+  // bodies are not allowed, and this prevents redundant (and potentially
+  // confusing) error messages.
   auto decoratorExprs = p.parseDecorators(decl);
-  Decorators(decl, /*signatureOnly=*/true)
-      .applySignatureDecorators(decoratorExprs);
+  if (!isa_and_nonnull<FnOp>(decl.getParentDecl()->getIfOperation())) {
+    Decorators(decl, /*signatureOnly=*/true)
+        .applySignatureDecorators(decoratorExprs);
+  }
 
   // Parse the type if present.
   SMLoc identifierLoc;
