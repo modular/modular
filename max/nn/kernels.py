@@ -25,6 +25,7 @@ from max.graph import (
     BufferValueLike,
     DeviceRef,
     Dim,
+    StaticDim,
     TensorType,
     TensorValue,
     TensorValueLike,
@@ -2215,6 +2216,11 @@ def quantize_dynamic_scaled_float8(
     if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
         raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
 
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
+        )
+
     if group_size_or_per_token == -1:
         if input_scale_spec.is_block or weight_scale_spec.is_block:
             assert input_scale_spec.block_size is not None
@@ -2258,6 +2264,7 @@ def quantize_dynamic_scaled_float8(
         ],
         parameters={
             "group_size_or_per_token": group_size,
+            "input_hidden_size": int(input.shape[1]),
         },
     )
 

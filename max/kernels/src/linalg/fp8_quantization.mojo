@@ -28,7 +28,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
 from memory import bitcast
-from runtime.tracing import trace_arg
+from runtime.tracing import Trace, TraceLevel, trace_arg
 from stdlib.bit import log2_floor
 
 from utils.index import Index, IndexList
@@ -110,12 +110,14 @@ fn quantize_static_scaled_fp8[
 fn quantize_dynamic_scaled_fp8[
     out_dtype: DType,
     in_dtype: DType,
-    scales_dtype: DType, //,
+    scales_dtype: DType,
+    input_shape: DimList, //,
     group_size_or_per_token: Int,
+    input_hidden_size: Int,
 ](
     scaled_output: NDBuffer[mut=True, out_dtype, 2, MutableAnyOrigin],
     scales: NDBuffer[mut=True, scales_dtype, 2, MutableAnyOrigin],
-    input: NDBuffer[in_dtype, 2, *_],
+    input: NDBuffer[in_dtype, 2, _, input_shape],
     scale_ub: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -128,37 +130,55 @@ fn quantize_dynamic_scaled_fp8[
         "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
     ]()
 
-    alias group_size = input.shape.get[
-        1
-    ]() if group_size_or_per_token == -1 else group_size_or_per_token
-    alias n_groups = input.shape.get[1]() // group_size
+    alias group_size = input_hidden_size if group_size_or_per_token == -1 else group_size_or_per_token
+    alias n_groups = input_hidden_size // group_size
     alias simd_width = simd_width_of[in_dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     alias warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block
     )
+    with Trace[TraceLevel.OP, target = StaticString("gpu")](
+        "quantize_dynamic_scaled_fp8",
+        task_id=Int(ctx.id()),
+    ):
 
-    alias kernel = quantize_fp8_kernel[
-        out_dtype,
-        scales_dtype,
-        in_dtype,
-        warps_per_block,
-        group_size,
-    ]
+        @parameter
+        if n_groups == 0:
 
-    # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
-    # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
-    var expected_input: NDBuffer[in_dtype, 2, MutableAnyOrigin] = input
+            @parameter
+            if input_hidden_size != 0:
+                raise Error(
+                    "Cannot quantize small input where input shape[1] ="
+                    + String(input.shape.get[1]())
+                    + ". Must be greater than group_size "
+                    + String(group_size)
+                )
+            return
 
-    ctx.enqueue_function_checked[kernel, kernel](
-        scaled_output,
-        scales,
-        expected_input,
-        scale_ub.cast[scales_dtype](),
-        grid_dim=(input.dim[0](), n_groups, 1),
-        block_dim=warps_per_block * WARP_SIZE,
-        attributes=pdl_launch_attributes(),
-    )
+        if input.dim[0]() == 0:
+            return
+
+        alias kernel = quantize_fp8_kernel[
+            out_dtype,
+            scales_dtype,
+            in_dtype,
+            warps_per_block,
+            group_size,
+        ]
+
+        # TODO: the input to this function should ideally be fixed on the origin type rather than parametric.
+        # Additionally, it ought to be immutable over time.  The origins need to be bound/correct/matching the expected `quantize_fp8_kernel` below so that type checking succeeds for `enqueue_function_checked`.
+        var expected_input: NDBuffer[in_dtype, 2, MutableAnyOrigin] = input
+
+        ctx.enqueue_function_checked[kernel, kernel](
+            scaled_output,
+            scales,
+            expected_input,
+            scale_ub.cast[scales_dtype](),
+            grid_dim=(input.dim[0](), n_groups, 1),
+            block_dim=warps_per_block * WARP_SIZE,
+            attributes=pdl_launch_attributes(),
+        )
 
 
 fn quantize_fp8_kernel[

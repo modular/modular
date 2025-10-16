@@ -52,7 +52,7 @@ from max.nn.kv_cache import (
     PagedCacheValues,
     TPPagedKVCacheManager,
 )
-from max.nn.moe import MoE
+from max.nn.moe import MoE, MoEFp8
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -158,7 +158,7 @@ class DeepseekV3DecoderLayer(Module):
             and layer_idx >= config.first_k_dense_replace
             and layer_idx % config.moe_layer_freq == 0
         ):
-            moe = MoE(
+            moe_kwargs: dict[str, Any] = dict(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.n_routed_experts,
@@ -181,7 +181,14 @@ class DeepseekV3DecoderLayer(Module):
                 * config.moe_intermediate_size,
                 dtype=config.dtype,
                 apply_router_weight_first=False,
+                float8_config=config.float8_config,
             )
+
+            moe: MoE | MoEFp8
+            if config.float8_config is not None:
+                moe = MoEFp8(**moe_kwargs)
+            else:
+                moe = MoE(**moe_kwargs)
             moe.sharding_strategy = ShardingStrategy.tensor_parallel(
                 len(config.devices)
             )
@@ -193,6 +200,7 @@ class DeepseekV3DecoderLayer(Module):
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
+                float8_config=config.float8_config,
             )
             mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
                 len(config.devices)
