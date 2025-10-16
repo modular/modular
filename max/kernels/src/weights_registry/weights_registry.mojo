@@ -11,4 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-alias WeightsRegistry = Dict[String, OpaquePointer]
+
+@fieldwise_init
+struct WeightsRegistry(ImplicitlyCopyable, Movable):
+    """Bag of weights where names[i] names a weight with data weights[i]."""
+
+    var names: List[String]
+    var weights: List[OpaquePointer]
+
+    fn __copyinit__(out self, existing: Self):
+        """Copy an existing weights registry.
+
+        Args:
+            existing: The existing weights registry.
+        """
+        self.names = existing.names.copy()
+        self.weights = existing.weights.copy()
+
+    def __getitem__(self, name: String) -> OpaquePointer:
+        for i in range(len(self.names)):
+            if self.names[i] == name:
+                return self.weights[i]
+
+        raise Error("no weight called " + name + " in weights registry")
