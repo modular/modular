@@ -21,12 +21,12 @@ fn just_print[n: Int]():
 
 
 @no_inline
-fn bind_unop_and_print[unop: __type_of(myIntAdd[2])]():
+fn bind_unop_and_print[unop: type_of(myIntAdd[2])]():
     just_print[unop[7]]()
 
 
 @no_inline
-fn bind_binop_and_print[binop: __type_of(myIntAdd)]():
+fn bind_binop_and_print[binop: type_of(myIntAdd)]():
     bind_unop_and_print[binop[5]]()
 
 

@@ -137,7 +137,7 @@ const char *LIT::getContextMessage(ExprContext context) {
   case EC_Origin:
     return " in origin specifier";
   case EC_TypeOf:
-    return " in __type_of";
+    return " in type_of";
   case EC_FunctionsInModule:
     return " in __functions_in_module";
   case EC_PyBindGen:
@@ -1555,7 +1555,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 /// On failure, an error is emitted and the callback is not invoked.
 ///
 /// This is used for evaluating expressions like __origin_of(x) and
-/// __type_of(x) and `ref [x] T`.
+/// `type_of(x)` and `ref [x] T`.
 void IREmitter::emitExpressionWithOutEvaluatingIt(
     const ExprNode *expr, ExprContext exprContext,
     std::function<void(CValue, IREmitter &emitter)> callback) {

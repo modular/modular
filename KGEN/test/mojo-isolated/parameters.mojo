@@ -324,7 +324,7 @@ fn autoparam_of_params[a: Index, //, b: IndexParam, c: IndexParam[a]]():
 
 # CHECK-LABEL: lit.fn @"autoparam_of_struct_metatype_params
 # CHECK-SAME: <["x`1"]*"x`1", +, a: meta<!lit.struct<#IndexParam <*"x`1">>>>
-fn autoparam_of_struct_metatype_params[a: __type_of(IndexParam)]():
+fn autoparam_of_struct_metatype_params[a: type_of(IndexParam)]():
     pass
 
 @fieldwise_init
@@ -1640,7 +1640,7 @@ struct DepUser[b: Int]:
     fn foo(self):
         # This should infer
         var x : DepUser[2] = self.xyz(DepValue[1]())
-    fn xyz(self, rhs: DepUser) -> __type_of(rhs): pass
+    fn xyz(self, rhs: DepUser) -> type_of(rhs): pass
     @implicit
     fn __init__[x: Int](value: DepValue[x], out result: DepUser[x+1]):
         pass
@@ -1651,7 +1651,7 @@ struct DepUser[b: Int]:
 
 fn infer_variadic[
     ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
-    T: __type_of(Tuple[*ArgTypes]),
+    T: type_of(Tuple[*ArgTypes]),
 ]():
     pass
 

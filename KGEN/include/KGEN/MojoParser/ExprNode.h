@@ -84,7 +84,8 @@ public:
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
     kGetNearestErrorSlot,      // __get_nearest_error_slot()
     kOriginOf,                 // __origin_of(x)
-    kTypeOf,                   // __type_of(x)
+    kTypeOfDeprecated,         // __type_of(x), TODO(MOCO-2604): remove this.
+    kTypeOf,                   // type_of(x)
     kFunctionsInModule,        // __functions_in_module()
     kFirstMagicFunction = kGetMValueAsLitRef,
     kLastMagicFunction = kFunctionsInModule,

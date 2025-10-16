@@ -85,6 +85,7 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "GetNearestErrorSlot";
   case ExprNode::kOriginOf:
     return "OriginOf";
+  case ExprNode::kTypeOfDeprecated:
   case ExprNode::kTypeOf:
     return "TypeOf";
   case ExprNode::kFunctionsInModule:

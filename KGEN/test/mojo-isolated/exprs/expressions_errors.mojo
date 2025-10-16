@@ -909,13 +909,13 @@ fn test_implicit_copy_errors():
 ##===----------------------------------------------------------------------===##
 
 struct TypeA:
-    fn __merge_with__[other_type: __type_of(TypeB)](self) -> TypeB:
+    fn __merge_with__[other_type: type_of(TypeB)](self) -> TypeB:
         pass
-    fn __merge_with__[other_type: __type_of(TypeC)](self) -> Int:
+    fn __merge_with__[other_type: type_of(TypeC)](self) -> Int:
         pass
 
 struct TypeB:
-    fn __merge_with__[other_type: __type_of(TypeA)](self) -> Int:
+    fn __merge_with__[other_type: type_of(TypeA)](self) -> Int:
         pass
 
 struct TypeC:
@@ -999,3 +999,12 @@ fn test_trait_member_access_error():
 
     # expected-error @below {{Direct access of trait members is not supported.}}
     alias SomeAlias = TraitWithMember.MemberAlias
+
+
+##===----------------------------------------------------------------------===##
+# Deprecated magic functions
+##===----------------------------------------------------------------------===##
+
+# expected-warning @+1 {{'__type_of' is deprecated, use 'type_of' instead}}
+fn test_type_of_deprecated(x: Int) -> __type_of(x):
+    return x

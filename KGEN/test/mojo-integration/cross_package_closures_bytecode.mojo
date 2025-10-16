@@ -19,7 +19,7 @@ fn aThing(y: Int):
     fn myclosure(x: Int) unified {var} -> Int:
         return y + x
 
-    printIt[__type_of(myclosure)](myclosure, y)
+    printIt[type_of(myclosure)](myclosure, y)
     defineIt(y)
 
 

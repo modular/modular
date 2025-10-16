@@ -378,7 +378,7 @@ fn bindIt(z: Int):
     fn myclosure(x: Int) unified {var} -> Int:
         return z
 
-    takeIt[__type_of(myclosure)](myclosure)
+    takeIt[type_of(myclosure)](myclosure)
 
 
 # // -----

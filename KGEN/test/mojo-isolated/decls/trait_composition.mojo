@@ -292,7 +292,7 @@ struct Struct1C(Trait1C, Trait2):
         pass
 
 
-fn trait_param[A: __type_of(Trait1), T: A & Trait2](x: T):
+fn trait_param[A: type_of(Trait1), T: A & Trait2](x: T):
     x.f1()
     x.f2()
 

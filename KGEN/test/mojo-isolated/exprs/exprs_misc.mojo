@@ -205,7 +205,7 @@ fn testUnmovable(a: Unmovable):
 
 
 ##===----------------------------------------------------------------------===##
-# __type_of
+# type_of
 ##===----------------------------------------------------------------------===##
 
 alias index = __mlir_type.index
@@ -213,14 +213,14 @@ alias index = __mlir_type.index
 
 # CHECK-LABEL: lit.fn @"simple_typeof_return(
 # CHECK: __mlir_type.index)"(%x: index) -> index
-fn simple_typeof_return(x: index) -> __type_of(x):
+fn simple_typeof_return(x: index) -> type_of(x):
     return x
 
 
 # CHECK-LABEL: lit.fn @"typeof_arg(
 # CHECK: __mlir_type.index,__mlir_type.index)"(%x: index, %y: index) -> index
-fn typeof_arg(x: index, y: __type_of(x)) -> index:
-    var z: __type_of(x) = y
+fn typeof_arg(x: index, y: type_of(x)) -> index:
+    var z: type_of(x) = y
     return z
 
 
@@ -231,12 +231,12 @@ fn typeof_dynval_in_param(x: index):
     var y = String()
 
     # CHECK-NEXT: lit.alias.decl *"a`1": type = <index>
-    alias a = __type_of(x)
+    alias a = type_of(x)
     # CHECK-NEXT: lit.alias.decl *"b`2": !mt_Int = <!Int>
-    alias b = __type_of(y.__len__())
+    alias b = type_of(y.__len__())
 
     # CHECK-NEXT: lit.alias.decl *"c`3": !mt_Int = <!Int>
-    alias c = __type_of(throwing_fn())
+    alias c = type_of(throwing_fn())
 
 
 ##===----------------------------------------------------------------------===##
@@ -299,31 +299,31 @@ fn test_string_literal1(cond: Bool):
 
 @register_passable("trivial")
 struct TypeA:
-    fn __merge_with__[other_type: __type_of(TypeB)](self) -> TypeB:
+    fn __merge_with__[other_type: type_of(TypeB)](self) -> TypeB:
         pass
 
-    fn __merge_with__[other_type: __type_of(TypeC)](self) -> Int:
+    fn __merge_with__[other_type: type_of(TypeC)](self) -> Int:
         pass
 
 
 @register_passable("trivial")
 struct TypeB:
-    fn __merge_with__[other_type: __type_of(Int)](self) -> Int:
+    fn __merge_with__[other_type: type_of(Int)](self) -> Int:
         pass
 
 
 @register_passable("trivial")
 struct TypeC:
-    fn __merge_with__[other_type: __type_of(TypeA)](self) -> Int:
+    fn __merge_with__[other_type: type_of(TypeA)](self) -> Int:
         pass
 
-    fn __merge_with__[other_type: __type_of(TypeD)](self) -> TypeE:
+    fn __merge_with__[other_type: type_of(TypeD)](self) -> TypeE:
         pass
 
 
 @register_passable("trivial")
 struct TypeD:
-    fn __merge_with__[other_type: __type_of(TypeA)](self) -> Int:
+    fn __merge_with__[other_type: type_of(TypeA)](self) -> Int:
         pass
 
 

@@ -57,7 +57,7 @@ struct TraitStruct(MyMovable, SimpleTrait):
 
 
 fn test_many_things_of_specified_trait[
-    element_type: __type_of(AnyType), *element_types: element_type
+    element_type: type_of(AnyType), *element_types: element_type
 ]():
     pass
 
@@ -140,7 +140,7 @@ fn bindAnyTraitToTrait():
 
 fn anytrait_assignment():
     # expected-error @below {{cannot implicitly convert 'AnyTrait[ImplicitlyCopyable]' value to 'AnyTrait[Movable]' in alias initializer}}
-    alias t: __type_of(Movable) = ImplicitlyCopyable
+    alias t: type_of(Movable) = ImplicitlyCopyable
 
 
 trait SomeTrait:

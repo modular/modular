@@ -172,7 +172,7 @@ contents. In the case of `Tuple`, that contents parameter is a `kgen.variadic`.
 Looking at VariadicPack’s definition:
 
 ```python
-alias _AnyTypeMetaType = __type_of(AnyType)
+alias _AnyTypeMetaType = type_of(AnyType)
 
 @register_passable
 struct VariadicPack[
@@ -183,7 +183,7 @@ struct VariadicPack[
 ]: ...
 ```
 
-that `_AnyTypeMetaType = __type_of(AnyType)` means that `element_trait` can be
+that `_AnyTypeMetaType = type_of(AnyType)` means that `element_trait` can be
 any trait. It can’t be e.g. a struct or an int.
 
 ## The Asterisk

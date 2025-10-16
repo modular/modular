@@ -3918,8 +3918,14 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return {};
   }
 
-  if (kind == kTypeOf)
+  if (kind == kTypeOfDeprecated || kind == kTypeOf) {
+    if (kind == kTypeOfDeprecated) {
+      emitter.emitWarning(getLoc(),
+                          "'__type_of' is deprecated, use 'type_of' instead")
+          << getRange() << FixIt::replaceToken(getLoc(), "type_of");
+    }
     return emitTypeOf(dest, emitter);
+  }
 
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);

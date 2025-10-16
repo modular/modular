@@ -14,4 +14,4 @@ fn defineIt(y: Int):
     fn fallback(x: Int) unified {} -> Int:
         return x + x
 
-    printIt[__type_of(fallback)](fallback, y)
+    printIt[type_of(fallback)](fallback, y)
