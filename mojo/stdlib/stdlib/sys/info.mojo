@@ -775,33 +775,34 @@ fn _has_gpu_fp32_tensor_cores() -> Bool:
 
 @always_inline("nodebug")
 fn _has_gpu_bf16_fma() -> Bool:
-    """Returns True if the GPU supports BF16 outputs with FMA operations.
+    """Returns True if the GPU supports BF16 FMA operations.
 
-    This checks whether the GPU can perform BF16 × BF16 → BF16 operations
-    using scalar/vector FMA instructions (not tensor cores).
+    This checks whether the GPU can perform BF16 × BF16 operations using
+    scalar/vector FMA instructions (not tensor cores). On some platforms,
+    this may use FP32 emulation internally.
 
     Returns True for:
-    - NVIDIA GPUs (all architectures support BF16 FMA)
-    - AMD CDNA GPUs with MFMA (MI300X, MI355X)
+    - NVIDIA GPUs (all architectures support native BF16 FMA)
+    - AMD CDNA GPUs with MFMA (MI300X, MI355X - native BF16 support)
+    - AMD RDNA GPUs (RDNA3+ - emulated via FP32 accumulation)
     - Apple GPUs (M-series support BF16 operations)
 
-    Returns False for:
-    - AMD RDNA GPUs - these require FP32 accumulation for BF16 FMA.
-      BF16 outputs are only supported via WMMA (tensor cores), which
-      LLVM cannot lower yet. For FMA operations, RDNA requires
-      BF16 inputs with FP32 outputs.
+    Implementation notes:
+    - RDNA3 hardware supports BF16 via v_wmma_* instructions, but LLVM
+      cannot lower these intrinsics yet. For FMA operations, the compiler
+      automatically promotes BF16 to FP32, performs FP32 computation, then
+      converts back to BF16. This emulation provides correct results with
+      some performance overhead.
+    - CDNA uses native v_mfma_* instructions for BF16.
 
     Note:
         This is specifically for FMA (non-tensor-core) operations.
         For tensor core BF16 support, use _has_gpu_tensor_cores().
 
     Returns:
-        True if the GPU supports BF16 output with FMA operations.
+        True if the GPU supports BF16 FMA operations (native or emulated).
     """
-    # NVIDIA: All GPUs support BF16 FMA
-    # AMD: Only CDNA (MFMA) supports BF16 outputs; RDNA requires FP32 accumulation
-    # Apple: M-series GPUs support BF16 operations
-    return is_nvidia_gpu() or _has_amd_tensor_cores() or is_apple_gpu()
+    return is_nvidia_gpu() or has_amd_gpu_accelerator() or is_apple_gpu()
 
 
 @always_inline("nodebug")
