@@ -623,7 +623,7 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant", [ConstantLike,
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
-      const Payload &payload, InterpreterState &state);
+      const Payload &payload, ParametricInterpreterState &state);
   }];
 }
 
@@ -670,7 +670,7 @@ def KGEN_ParamMaterializeOp : KGENOp<"param.materialize", [
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
     ErrorTreeOrSuccess parametric_interpret(ArrayRef<Attribute> operands,
-      const Payload &payload, InterpreterState &state);
+      const Payload &payload, ParametricInterpreterState &state);
   }];
 }
 

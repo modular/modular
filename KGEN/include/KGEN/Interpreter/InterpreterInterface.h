@@ -13,6 +13,7 @@
 
 namespace M {
 class InterpreterState;
+class ParametricInterpreterState;
 class TargetInfoAttr;
 
 using InterpretHook = ErrorTreeOrSuccess (*)(Operation *, ArrayRef<Attribute>,
@@ -29,6 +30,24 @@ struct OpBytecodeGenerator {
   // introduce extra dependency to interpreter.
   static constexpr uint64_t payloadAlignment = 8;
 };
+
+using ParametricInterpretHook =
+    ErrorTreeOrSuccess (*)(Operation *, ArrayRef<Attribute>, const void *,
+                           ParametricInterpreterState &);
+using ParametricGenBytecodeHook = ErrorOrSuccess (*)(
+    Operation *, void *, TargetInfoAttr, ParametricInterpreterState &);
+
+struct ParametricOpBytecodeGenerator {
+  uint32_t payloadSize;
+  ParametricGenBytecodeHook genBytecode;
+  ParametricInterpretHook interpret;
+  // The alignment of the payload. Has to be a maximum of allowed alignment of
+  // all Payloads in KGEN Dialect.
+  // Ideally we want to use `alignof(KGEN*::Payload)` here, but that will
+  // introduce extra dependency to interpreter.
+  static constexpr uint64_t payloadAlignment = 8;
+};
+
 } // namespace M
 
 //===----------------------------------------------------------------------===//
@@ -146,10 +165,10 @@ struct ParametricInterpreterDelegateOpInterfaceTraits
 
     /// This method defines the delegate `interpret` hook to call into the
     /// concrete operation's `interpret` method.
-    static inline OpBytecodeGenerator getInterpretHook() {
+    static inline ParametricOpBytecodeGenerator getInterpretHook() {
       return {0, nullptr,
               +[](Operation *op, ArrayRef<Attribute> operands,
-                  const void *payload, InterpreterState &state) {
+                  const void *payload, ParametricInterpreterState &state) {
                 return cast<ConcreteOp>(op).parametric_interpret(operands,
                                                                  state);
               }};
@@ -165,21 +184,23 @@ struct ParametricBytecodeDelegateOpInterfaceTraits
     using Interface = ParametricInterpreterDelegateOpInterface;
     Model() : Concept{getInterpretHook} {}
 
-    static inline OpBytecodeGenerator getInterpretHook() {
+    static inline ParametricOpBytecodeGenerator getInterpretHook() {
       using Payload = typename ConcreteOp::Payload;
       return {sizeof(Payload),
               +[](Operation *op, void *payload, TargetInfoAttr target) {
                 assert(llvm::isAddrAligned(
-                           llvm::Align(OpBytecodeGenerator::payloadAlignment),
+                           llvm::Align(
+                               ParametricOpBytecodeGenerator::payloadAlignment),
                            payload) &&
                        "payload is not properly aligned");
                 return cast<ConcreteOp>(op).parametric_compile(
                     *(Payload *)payload, target);
               },
               +[](Operation *op, ArrayRef<Attribute> operands,
-                  const void *payload, InterpreterState &state) {
+                  const void *payload, ParametricInterpreterState &state) {
                 assert(llvm::isAddrAligned(
-                           llvm::Align(OpBytecodeGenerator::payloadAlignment),
+                           llvm::Align(
+                               ParametricOpBytecodeGenerator::payloadAlignment),
                            payload) &&
                        "payload is not properly aligned");
                 return cast<ConcreteOp>(op).parametric_interpret(
