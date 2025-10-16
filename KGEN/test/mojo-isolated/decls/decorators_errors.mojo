@@ -25,24 +25,32 @@ fn issue1242():
 @invalid_dec # expected-error {{use of unknown declaration 'invalid_dec'}}
 def unknown_decorator(): pass
 
-fn decorator_inside_function():
+fn decorator_on_statements():
     @invalid_dec
     var decorated_var: Int  # expected-error {{'var' statement in function body does not allow decorators}}
 
     @invalid_dec
     alias decorated_alias = 42  # expected-error {{'alias' statement in function body does not allow decorators}}
 
+    @invalid_dec
+    while True:  # expected-error {{'while' statement does not allow decorators}}
+        pass
+
+    @invalid_dec
+    _ = 1 + 1  # expected-error {{statement does not allow decorators}}
+
+
 # expected-error @+1 {{decorators must be on their own line, not ahead of a statement}}
 @always_inline def same_line_decorator(): pass
 
 # @parameter if causes confusing indentation error message
 # https://github.com/modularml/modular/issues/19163
-fn someFn():
+fn some_fn():
     # expected-error @below {{decorators must be on their own line, not ahead of a statement}}
     @decorator if True:
         pass
 
-fn someFn2():
+fn some_fn_2():
         # expected-error @below {{orphaned decorator not associated with a declaration or statement}}
         @decorator
     if True: # expected-error {{unknown tokens at the end of a declaration}}

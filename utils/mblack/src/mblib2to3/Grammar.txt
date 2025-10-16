@@ -29,7 +29,7 @@ eval_input: testlist NEWLINE* ENDMARKER
 
 decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
-decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | simple_stmt)
+decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | alias_stmt NEWLINE)
 async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test
 funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [global_effects] [unified_capture] ['->' result_type] (where_clause)* ':' suite
