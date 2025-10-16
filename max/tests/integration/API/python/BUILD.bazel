@@ -20,7 +20,6 @@ modular_py_test(
         "test_lora.py",
         "test_memory_estimation.py",
         "test_registry.py",
-        "test_sampling.py",
         "test_telemetry.py",
         "test_weight_path_parser.py",
     ],
@@ -134,6 +133,38 @@ modular_py_test(
     ],
     env = {"MODULAR_PATH": "."},
     env_inherit = ["HF_TOKEN"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//SDK/integration-test/pipelines/python:hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max",
+        "//SDK/lib/API/python/max/entrypoints",
+    ],
+)
+
+modular_py_test(
+    name = "test-sampling",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "sampling/test_gumbel_sampling.py",
+        "sampling/test_sampling.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    env_inherit = ["HF_TOKEN"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
