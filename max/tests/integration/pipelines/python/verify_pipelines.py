@@ -902,7 +902,7 @@ PIPELINES = {
     ),
     "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
+        tags=[],  # TODO(MODELS-803) Errors on 4x GPU
         run=_make_pipeline_runner(
             pipeline="qwen2.5-vl-3b",
             encoding="bfloat16",
