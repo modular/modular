@@ -917,7 +917,9 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
         # Apply RoPE.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        freqs_cis = ops.cast(freqs_cis, xq.dtype)
+
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
+
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
@@ -1449,7 +1451,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Cast freqs_cis to xq's dtype to match the fused_qk_ragged_rope kernel.
-        freqs_cis = ops.cast(freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
