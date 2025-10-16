@@ -791,13 +791,14 @@ class TPPagedKVCacheManager:
         return 0
 
     def external_claim(
-        self, request_id: RequestID, replica_idx: int = 0
+        self, request_id: RequestID, replica_idx: int | None = None
     ) -> None:
         """Reserve a sequence ID for the given request ID."""
-        if replica_idx != 0:
+        if replica_idx is not None:
             raise ValueError(
                 "TPPagedKVCacheManager does not support multiple replicas"
             )
+
         if request_id in self._request_to_seq_id:
             raise ValueError(f"Request ID {request_id} is already claimed")
 
