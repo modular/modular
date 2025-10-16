@@ -899,7 +899,7 @@ def test_list_init_span():
 def test_list_init_iter():
     var l = [String("a"), "bb", "cc", "def"]
     var it = iter(l)
-    var l2 = List[String](it)
+    var l2 = List(it)
     assert_equal(len(l), len(l2))
     assert_equal(l[0], l2[0])
     assert_equal(l[1], l2[1])

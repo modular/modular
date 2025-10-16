@@ -329,20 +329,19 @@ struct List[T: Copyable & Movable](
         for value in span:
             self.append(value.copy())
 
-    fn __init__[
-        IterableType: Iterable
-    ](out self, iterable: IterableType) where _type_is_eq_parse_time[
-        T, IterableType.IteratorType[__origin_of(iterable)].Element
-    ]():
+    fn __init__(
+        var iterable: Some[Iterable],
+        out self: List[__type_of(iterable).IteratorType[__origin_of()].Element],
+    ):
         """Constructs a list from an iterable of values.
 
         Args:
             iterable: The iterable of values to populate the list with.
         """
         var lower, _ = iter(iterable).bounds()
-        self = Self(capacity=lower)
-        for value in iterable:
-            self.append(rebind[T](value).copy())
+        self = {capacity = lower}
+        for var value in iterable:
+            self.append(rebind_var[__type_of(self).T](value^))
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):
