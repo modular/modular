@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import has_nvidia_gpu_accelerator
+from sys.info import _has_gpu_fp32_tensor_cores
 
 from benchmark import Bench
 from buffer.dimlist import DimList
@@ -218,6 +219,11 @@ def main():
         test.run_test[k4](m)
         test.run_test[k5](m)
         test.run_test[k6](m)
-        test_tc.run_test[k_tc](m)
+
+        @parameter
+        if _has_gpu_fp32_tensor_cores():
+            test_tc.run_test[k_tc](m)
+        else:
+            print("Skipping float32 tensor core test on GPU (not supported)")
 
     m.dump_report()
