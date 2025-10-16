@@ -229,15 +229,15 @@ struct RingBuffer[
     alias SMM = SharedMemoryManager[]
 
     # Tile iterator types for managing shared memory tiles
-    alias ATileIterType = Self.SMM.TileIter[
+    alias ATileArrayType = Self.SMM.TileArray[
         a_type, a_tile_layout, num_pipeline_stages
     ]
-    alias BTileIterType = Self.SMM.TileIter[
+    alias BTileArrayType = Self.SMM.TileArray[
         b_type, b_tile_layout, num_pipeline_stages
     ]
     # Actual tile tensor types that hold the data
-    alias ATileType = Self.ATileIterType.T.LayoutTensorType
-    alias BTileType = Self.BTileIterType.T.LayoutTensorType
+    alias ATileType = Self.ATileArrayType.T.TileType
+    alias BTileType = Self.BTileArrayType.T.TileType
 
     # Barriers for synchronization:
     # - full_mbar[i]: Signaled by producer when slot i contains data
@@ -253,16 +253,16 @@ struct RingBuffer[
     var warp_group_thread_idx: UInt
 
     # Tile storage arrays in shared memory
-    var a_tiles: Self.ATileIterType.T
-    var b_tiles: Self.BTileIterType.T
+    var a_tiles: Self.ATileArrayType.T
+    var b_tiles: Self.BTileArrayType.T
 
     fn __init__(
         out self,
         full_mbar: SMemBarrier,
         empty_mbar: SMemBarrier,
         warp_group_thread_idx: UInt,
-        a_tiles: Self.ATileIterType.T,
-        b_tiles: Self.BTileIterType.T,
+        a_tiles: Self.ATileArrayType.T,
+        b_tiles: Self.BTileArrayType.T,
     ):
         """Initialize ring buffer with barrier pointers.
 
@@ -301,7 +301,7 @@ struct RingBuffer[
     fn get_expected_bytes() -> Int:
         """Calculate expected bytes per pipeline stage for TMA transfers."""
         return (
-            Self.ATileIterType.storage_size + Self.BTileIterType.storage_size
+            Self.ATileArrayType.storage_size + Self.BTileArrayType.storage_size
         ) // num_pipeline_stages
 
     @always_inline
@@ -335,8 +335,8 @@ struct RingBuffer[
         var idx = self.get_slot()
         return (
             self.full_mbar.offset(idx),
-            self.a_tiles.next(idx)[],
-            self.b_tiles.next(idx)[],
+            self.a_tiles[idx],
+            self.b_tiles[idx],
         )
 
     @always_inline
@@ -384,8 +384,8 @@ struct RingBuffer[
         var read_idx = self.get_tile()
         return (
             read_idx,
-            self.a_tiles.next(read_idx)[],
-            self.b_tiles.next(read_idx)[],
+            self.a_tiles[read_idx],
+            self.b_tiles[read_idx],
         )
 
     @always_inline

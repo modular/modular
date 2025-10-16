@@ -331,7 +331,7 @@ struct ScatterGather:
                     fill = Scalar[dst.dtype](0),
                 ](src_ptr, dst_ptr, src_size=size_bytes)
             else:
-                # Out-of-bounds: zero-fill by setting src_size=0
+                # Out-of-bounds: zero-fill
                 async_copy[
                     size_bytes, bypass_L1_16B=False, fill = Scalar[dst.dtype](0)
                 ](src_ptr, dst_ptr, src_size=0)
