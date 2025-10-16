@@ -14,6 +14,17 @@
 using namespace M;
 using namespace KGEN;
 
+//===----------------------------------------------------------------------===//
+// ParamApplyOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+ParamApplyOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+
+  return success();
+}
+
 template <typename Payload>
 static ErrorOrSuccess populateContainsPtrPayload(Attribute value,
                                                  Payload &payload) {
@@ -62,6 +73,23 @@ ErrorTreeOrSuccess ParamConstantOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+ParamConstantOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      const Payload &payload,
+                                      InterpreterState &state) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamDeclareOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+ParamDeclareOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamMaterializeOp
 //===----------------------------------------------------------------------===//
@@ -101,6 +129,13 @@ ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+ParamMaterializeOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                         const Payload &payload,
+                                         InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // RebindOp
 //===----------------------------------------------------------------------===//
@@ -128,6 +163,11 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess RebindOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                                  InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
@@ -144,6 +184,39 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
     return success();
   }
   return failure();
+}
+
+ErrorTreeOrSuccess
+ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamForOp
+//===----------------------------------------------------------------------===//
+ErrorTreeOrSuccess
+ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamForBreakOp
+//===----------------------------------------------------------------------===//
+ErrorTreeOrSuccess
+ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamForContinueOp
+//===----------------------------------------------------------------------===//
+ErrorTreeOrSuccess
+ParamForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -238,6 +311,21 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
   return success();
 }
 
+ErrorTreeOrSuccess ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                                   InterpreterState &state) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamYieldOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+ParamYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
@@ -254,6 +342,11 @@ ErrorTreeOrSuccess CallOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess CallOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                                InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // CallParamOp
 //===----------------------------------------------------------------------===//
@@ -267,6 +360,12 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
 
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
                                       op.getOperands());
+  return success();
+}
+
+ErrorTreeOrSuccess
+CallParamOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                  InterpreterState &state) {
   return success();
 }
 
@@ -305,6 +404,12 @@ ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+CallIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
@@ -316,6 +421,12 @@ ErrorTreeOrSuccess CreateClosureOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
 
   state.mapResults(getCallee());
+  return success();
+}
+
+ErrorTreeOrSuccess
+CreateClosureOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
   return success();
 }
 
@@ -412,6 +523,11 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess CostOfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                                  InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // IsCompileTimeOp
 //===----------------------------------------------------------------------===//
@@ -421,6 +537,12 @@ ErrorTreeOrSuccess IsCompileTimeOp::interpret(ArrayRef<Attribute> operands,
   // Always return true during interpreting time.
   Builder builder(getContext());
   state.mapResults(builder.getBoolAttr(true));
+  return success();
+}
+
+ErrorTreeOrSuccess
+IsCompileTimeOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
   return success();
 }
 
@@ -511,6 +633,12 @@ ErrorTreeOrSuccess SourceLocOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess
+SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                  InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
@@ -518,6 +646,11 @@ ErrorTreeOrSuccess SourceLocOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
                                        InterpreterState &state) {
   state.returnFromFunction(operands);
+  return success();
+}
+
+ErrorTreeOrSuccess ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                                  InterpreterState &state) {
   return success();
 }
 
@@ -537,6 +670,12 @@ OpFoldResult PackCreateOp::fold(FoldAdaptor adaptor) {
   return PackAttr::get(values, getType());
 }
 
+ErrorTreeOrSuccess
+PackCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // PackExtractOp
 //===----------------------------------------------------------------------===//
@@ -554,6 +693,12 @@ OpFoldResult PackExtractOp::fold(FoldAdaptor adaptor) {
     return create.getOperands()[index.getInt()];
 
   return {};
+}
+
+ErrorTreeOrSuccess
+PackExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -605,6 +750,11 @@ ErrorTreeOrSuccess PackGEPOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+ErrorTreeOrSuccess PackGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                                   InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // PackLoadOp
 //===----------------------------------------------------------------------===//
@@ -631,6 +781,12 @@ ErrorTreeOrSuccess PackLoadOp::interpret(ArrayRef<Attribute> operands,
   return ErrorTree(getLoc(), "non-constant inputs");
 }
 
+ErrorTreeOrSuccess
+PackLoadOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
@@ -647,6 +803,12 @@ OpFoldResult VariantCreateOp::fold(FoldAdaptor adaptor) {
     return takeOp.getOperand();
 
   return {};
+}
+
+ErrorTreeOrSuccess
+VariantCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -682,6 +844,12 @@ OpFoldResult VariantGetOp::fold(FoldAdaptor adaptor) {
       create.getIndex() != getIndex())
     return {};
   return create.getOperand();
+}
+
+ErrorTreeOrSuccess
+VariantGetOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -730,6 +898,12 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess
+StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // StructExtractOp
 //===----------------------------------------------------------------------===//
@@ -741,6 +915,12 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   if (auto structCreate = getOperand().getDefiningOp<StructCreateOp>())
     return structCreate.getOperand(adaptor.getIndex());
   return {};
+}
+
+ErrorTreeOrSuccess
+StructExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -755,6 +935,12 @@ OpFoldResult StructReplaceOp::fold(FoldAdaptor adaptor) {
   SmallVector<TypedAttr> values(container.getValues());
   values[getIndexAttr().getInt()] = value;
   return StructAttr::get(values, getType());
+}
+
+ErrorTreeOrSuccess
+StructReplaceOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -784,5 +970,11 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
   state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
+  return success();
+}
+
+ErrorTreeOrSuccess
+StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                  InterpreterState &state) {
   return success();
 }
