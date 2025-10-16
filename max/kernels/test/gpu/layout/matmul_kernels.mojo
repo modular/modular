@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
-from sys.info import simd_width_of
+from sys import has_amd_gpu_accelerator
+from sys.info import _has_gpu_tensor_cores, simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -160,19 +161,46 @@ fn gemm_kernel_1[
     var dst = c.tile[BM, BN](bidy, bidx)
 
     # Initialize a register to accumulate the result for this thread.
-    var dst_reg: c.element_type = 0
+    @parameter
+    if (
+        dtype == DType.bfloat16
+        and has_amd_gpu_accelerator()
+        and not _has_gpu_tensor_cores()
+    ):
+        var dst_reg: Float32 = 0
 
-    # Iterate over the K dimension to compute the dot product.
-    for k in range(b.dim[0]()):
-        # Get the corresponding tiles from matrices A and B.
-        var a_tile = a.tile[BM, 1](bidy, k)
-        var b_tile = b.tile[1, BN](k, bidx)
+        # Iterate over the K dimension to compute the dot product.
+        for k in range(b.dim[0]()):
+            # Get the corresponding tiles from matrices A and B.
+            var a_tile = a.tile[BM, 1](bidy, k)
+            var b_tile = b.tile[1, BN](k, bidx)
 
-        # Multiply the elements and accumulate the result.
-        dst_reg += a_tile[row, 0] * b_tile[0, col]
+            # Emulate BF16 FMA: promote to FP32, compute, convert back
+            # Rebind layout tensor elements to scalars for arithmetic
+            var a_val = rebind[Scalar[DType.float32]](
+                a_tile[row, 0].cast[DType.float32]()
+            )
+            var b_val = rebind[Scalar[DType.float32]](
+                b_tile[0, col].cast[DType.float32]()
+            )
+            dst_reg += a_val * b_val
 
-    # Write the final accumulated result to the output matrix.
-    dst[row, col] += dst_reg
+        # Convert FP32 result back to BF16 and write to output
+        dst[row, col] += dst_reg.cast[dtype]()
+    else:
+        var dst_reg: c.element_type = 0
+
+        # Iterate over the K dimension to compute the dot product.
+        for k in range(b.dim[0]()):
+            # Get the corresponding tiles from matrices A and B.
+            var a_tile = a.tile[BM, 1](bidy, k)
+            var b_tile = b.tile[1, BN](k, bidx)
+
+            # Multiply the elements and accumulate the result.
+            dst_reg += a_tile[row, 0] * b_tile[0, col]
+
+        # Write the final accumulated result to the output matrix.
+        dst[row, col] += dst_reg
 
 
 fn run_gemm_kernel_1[
