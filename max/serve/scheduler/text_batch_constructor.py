@@ -384,9 +384,10 @@ class TextBatchConstructor:
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
-                    # TODO: This should not be used until we have a DP Aware Paged Cache
                     replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
-                    self.paged_cache.external_claim(req_id, replica_idx=None)
+                    self.paged_cache.external_claim(
+                        req_id, replica_idx=replica_idx
+                    )
 
             if self.paged_cache is not None:
                 # Attempt to schedule the request.
