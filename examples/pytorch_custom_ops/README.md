@@ -1,10 +1,5 @@
 # Extending PyTorch with custom operations using Mojo or MAX graphs
 
-> [!NOTE]
-> This is a preview of the capability to write PyTorch custom operations in
-> Mojo / MAX, and we plan to enhance the performance and ergonomics of this
-> feature.
-
 Custom operations in PyTorch can now be written using Mojo or MAX graphs,
 letting you experiment with new GPU algorithms in a familiar PyTorch
 environment. Mojo custom operations are registered using the
