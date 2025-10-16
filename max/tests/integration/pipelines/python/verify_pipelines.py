@@ -1130,7 +1130,8 @@ PIPELINES = {
     ),
     "HuggingFaceTB/SmolLM2-135M-Instruct-LoRA-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=[],  # Small model (<8B params)
+        # TODO: E2EOPT-698
+        tags=["nvidia-only"],  # Small model (<8B params)
         run=_make_pipeline_runner(
             pipeline="smollm2-lora",
             encoding="bfloat16",
