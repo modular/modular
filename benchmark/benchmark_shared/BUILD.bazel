@@ -7,7 +7,7 @@ modular_py_library(
     data = glob(["datasets/packaged_data/**/*"]) + [
         "//open-source/max/benchmark:benchmark_config_yaml_files",
     ],
-    imports = [".."],
+    imports = ["../../.."],
     # Used under the OSS path, but not under the internal path.
     # TODO: Remove when we no longer have internal symlinking to OSS.
     tags = [ALLOW_UNUSED_TAG],

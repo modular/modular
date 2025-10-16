@@ -32,11 +32,21 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow.parquet
-from benchmark_shared.config import BaseBenchmarkConfig
-from benchmark_shared.datasets import (
-    BenchmarkDataset,
-    CodeDebugBenchmarkDataset,
-)
+
+try:
+    from max.benchmark.benchmark_shared.config import BaseBenchmarkConfig
+    from max.benchmark.benchmark_shared.datasets import (
+        BenchmarkDataset,
+        CodeDebugBenchmarkDataset,
+    )
+except ImportError:
+    from benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        BaseBenchmarkConfig,
+    )
+    from benchmark_shared.datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        BenchmarkDataset,
+        CodeDebugBenchmarkDataset,
+    )
 from huggingface_hub import hf_hub_download
 from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
@@ -440,7 +450,6 @@ async def pipeline_encode(
 ) -> tuple[str, EmbeddingsGenerationOutput]:
     """Encodes the request."""
     prompt = request_payload.prompt
-    output_len = request_payload.output_len
 
     request = TextGenerationRequest(
         request_id=RequestID(str(request_id)),
@@ -459,7 +468,7 @@ async def run_max_async(
     model_name: str,
     requests: list[RequestPayload],
     config: PipelineConfig,
-    model_factory: PipelinesFactory,
+    model_factory: PipelinesFactory,  # type: ignore[type-arg]  # TODO
     tokenizer: TextTokenizer,
     show_text: bool,
     pipeline_task: PipelineTask,
@@ -546,7 +555,7 @@ def load_model_config(
     max_num_steps: int | None,
     trust_remote_code: bool | None,
     pipeline_task: PipelineTask,
-) -> tuple[PipelinesFactory, PipelineConfig, TextTokenizer]:
+) -> tuple[PipelinesFactory, PipelineConfig, TextTokenizer]:  # type: ignore[type-arg]  # TODO
     config_kwargs: dict[str, Any] = {}
 
     # Match what we already do in SDK/lib/API/python/max/entrypoints/cli/config.py

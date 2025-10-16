@@ -80,7 +80,7 @@ try:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from .benchmark_shared.server_metrics import (  # type: ignore[import-not-found]
+    from .benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         fetch_and_parse_metrics,
         print_server_metrics,
     )
@@ -114,7 +114,7 @@ except ImportError:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from benchmark_shared.server_metrics import (
+    from benchmark_shared.server_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         compute_metrics_delta,
         fetch_and_parse_metrics,
         print_server_metrics,
