@@ -978,10 +978,10 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
         var a_s1 = a_scales.dim(1)
         var b_s0 = b_scales.dim(1)
         var b_s1 = b_scales.dim(2)
-        MAT_A_ROWS_SCALE_SIZE = K // a_s0
-        MAT_A_COLS_SCALE_SIZE = c.dim(0) // a_s1
-        MAT_B_ROWS_SCALE_SIZE = N // b_s0
-        MAT_B_COLS_SCALE_SIZE = K // b_s1
+        MAT_A_ROWS_SCALE_SIZE = UInt(K // a_s0)
+        MAT_A_COLS_SCALE_SIZE = UInt(c.dim(0) // a_s1)
+        MAT_B_ROWS_SCALE_SIZE = UInt(N // b_s0)
+        MAT_B_COLS_SCALE_SIZE = UInt(K // b_s1)
 
     var a_start_row = Int(a_offsets[expert_idx])
     var expert = Int(expert_ids[expert_idx])

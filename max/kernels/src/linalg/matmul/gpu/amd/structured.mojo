@@ -497,7 +497,7 @@ struct RingBuffer[
     fn commit[is_a: Bool](mut self, stage: Int, tile_idx: Int):
         var bar = self._get_barrier[is_a]()
         var bar_tile = bar.tile[1, consumer_warps](tile_idx, stage)
-        var warp_id = get_warp_id() % consumer_warps
+        var warp_id = get_warp_id() % UInt(consumer_warps)
         bar_tile[1, warp_id] = bar_tile[1, warp_id] + 1
 
 

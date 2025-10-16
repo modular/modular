@@ -613,10 +613,6 @@ fn matmul_dispatch_sm100_fp8[
     @parameter
     @always_inline("nodebug")
     fn _dispatch[entry: TuningConfigSM100]() raises:
-        var c_tensor = from_ndbuffer_row_major(c)
-        var a_tensor = from_ndbuffer_row_major(a)
-        var b_tensor = from_ndbuffer_row_major(b)
-
         alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,

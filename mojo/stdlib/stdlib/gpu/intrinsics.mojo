@@ -1225,7 +1225,7 @@ fn permlane_swap[
 fn permlane_shuffle[
     dtype: DType, simd_width: Int, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: __type_of(val)):
-    var lane_group = lane_id() // stride
+    var lane_group = lane_id() // UInt(stride)
 
     var out = __type_of(res)()
 
