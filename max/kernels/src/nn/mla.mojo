@@ -94,7 +94,7 @@ from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
-from .mla_amd import mla_prefill_single_batch_amd
+from .mla_amd import mla_prefill_single_batch_amd, mla_decoding_single_batch_amd
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -345,8 +345,8 @@ fn flare_mla_decoding_dispatch[
         kv_num_heads == 1, "flareMLA_decoding only supports kv_num_heads == 1."
     ]()
     constrained[
-        has_nvidia_gpu_accelerator(),
-        "flareMLA_decoding currently only supports Nvidia GPUs.",
+        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
+        "flareMLA_decoding currently only supports Nvidia and AMD GPUs.",
     ]()
 
     constrained[
@@ -374,11 +374,13 @@ fn flare_mla_decoding_dispatch[
     if batch_size == 0:
         return
 
-    alias BM = 16 if num_heads == 16 or not has_enough_smem else 32  # for deepseek-v2 lite
-    alias BN = 64
-    alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
+    alias BM = 16 if (
+        num_heads == 16 or not has_enough_smem or has_amd_gpu_accelerator()
+    ) else 32  # for deepseek-v2 lite
+    alias BN = 64 if has_nvidia_gpu_accelerator() else 128
+    alias BK = 64 if has_nvidia_gpu_accelerator() else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
     alias WM = BM
-    alias WN = 16
+    alias WN = 16 if has_nvidia_gpu_accelerator() else 32
     # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
@@ -396,6 +398,9 @@ fn flare_mla_decoding_dispatch[
         BM * BN * size_of[k_t.dtype]()
         + 2 * num_warps * BM * size_of[accum_type]()
     )
+
+    shared_mem_bytes = shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+
     alias num_blocks_y = num_heads // UInt(BM)
 
     alias kernel = mla_decoding[
@@ -544,34 +549,74 @@ fn mla_decoding[
     if not _is_cache_length_accurate:
         num_keys += seq_len
 
-    mla_decoding_single_batch[
-        BM=BM,
-        BN=BN,
-        BK=BK,
-        WM=WM,
-        WN=WN,
-        depth=depth,
-        depth_v=depth_v,
-        num_heads=num_heads,
-        num_threads=num_threads,
-        num_pipeline_stages=num_pipeline_stages,
-        group=group,
-        use_score_mod=use_score_mod,
-        decoding_warp_split_k=decoding_warp_split_k,
-    ](
-        q_ptr.offset(q_batch_offset),
-        k,
-        output_ptr.offset(output_batch_offset),
-        exp_sum_batch_ptr,
-        qk_max_batch_ptr,
-        scale,
-        UInt(num_keys),
-        UInt(num_partitions),
-        UInt(max_cache_valid_length),
-        mask,
-        score_mod,
-        batch_idx,
-    )
+    @parameter
+    if is_nvidia_gpu():
+        mla_decoding_single_batch[
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
+            depth_v=depth_v,
+            num_heads=num_heads,
+            num_threads=num_threads,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_score_mod=use_score_mod,
+            decoding_warp_split_k=decoding_warp_split_k,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k,
+            output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            scale,
+            UInt(num_keys),
+            UInt(num_partitions),
+            UInt(max_cache_valid_length),
+            mask,
+            score_mod,
+            batch_idx,
+        )
+    elif is_amd_gpu():
+        alias config = MHAConfig(
+            q_type,
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            num_pipeline_stages=num_pipeline_stages,
+            k_group_size=group,
+        )
+        mla_decoding_single_batch_amd[
+            depth_v=depth_v,
+            group=group,
+            config=config,
+            sink=False,
+        ](
+            output_ptr.offset(output_batch_offset),
+            q_ptr.offset(q_batch_offset),
+            k,
+            k,
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            seq_len,
+            num_keys,
+            num_partitions,
+            scale,
+            batch_idx,
+            Int(0),
+            mask,
+            None,
+        )
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="mla_decoding"
+        ]()
 
 
 @always_inline
