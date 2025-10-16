@@ -255,7 +255,7 @@ def test_copy_as_dp_1_preserves_all_parameters() -> None:
     # Verify adjusted parameters
     assert copied.data_parallel_degree == 1
     assert copied.n_devices == 1
-    assert copied.n_kv_heads_per_device == 16
+    assert copied.n_kv_heads_per_device == 1
 
     # Verify all other parameters are preserved
     assert copied.dtype == DType.float32
@@ -355,3 +355,34 @@ def test_copy_as_dp_1_does_not_modify_original() -> None:
     assert copied.n_devices == 1
     assert copied.data_parallel_degree == 1
     assert copied.n_kv_heads_per_device == 8
+
+
+def test_mla_bypasses_divisibility_check() -> None:
+    """Test MLA mode bypasses tensor parallel head divisibility check."""
+    # This would fail for non-MLA due to 1 head not being divisible by 4 devices
+    params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=576,
+        n_devices=4,
+        data_parallel_degree=1,
+        page_size=128,
+        is_mla=True,
+    )
+    assert params.n_kv_heads == 1
+    assert params.n_kv_heads_per_device == 1
+
+
+def test_mla_with_data_parallel_compatible() -> None:
+    """Test MLA mode with data parallelism."""
+    params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=576,
+        n_devices=4,
+        data_parallel_degree=4,
+        page_size=128,
+        is_mla=True,
+    )
+    # In DP mode, all heads are on each device
+    assert params.n_kv_heads_per_device == 1
