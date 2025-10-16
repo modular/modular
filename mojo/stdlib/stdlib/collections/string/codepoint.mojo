@@ -332,7 +332,7 @@ struct Codepoint(
         Args:
             other: The codepoint value to compare against.
         Returns:
-            True if this character's value is greater than to other codepoint value;
+            True if this character's value is greater than the other codepoint value;
             False otherwise.
         """
         return self.to_u32() > other.to_u32()
