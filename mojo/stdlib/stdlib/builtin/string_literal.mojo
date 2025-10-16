@@ -19,6 +19,7 @@ from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
 from sys.ffi import c_char
+from sys.intrinsics import _type_is_eq_parse_time
 
 from python import ConvertibleToPython, PythonObject
 
@@ -663,6 +664,22 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             The joined string.
         """
         return String(elems, sep=self)
+
+    fn join(
+        self, iterable: Some[Iterable]
+    ) -> String where _type_is_eq_parse_time[
+        StringSlice[__origin_of()],
+        __type_of(iterable).IteratorType[__origin_of()].Element,
+    ]():
+        """Joins string elements using the current string as a delimiter.
+
+        Args:
+            iterable: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return String(iterable, sep=self)
 
     fn join[
         T: Copyable & Movable & Writable

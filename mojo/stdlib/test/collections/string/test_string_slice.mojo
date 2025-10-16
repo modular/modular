@@ -1026,6 +1026,8 @@ def test_join():
     var s5 = StaticString(",").join(List[UInt8](1))
     assert_equal(s5, "1")
 
+    assert_equal("1,2,3,4,5,6,7,8,9", ",".join("123456789".__iter__()))
+
 
 def test_string_slice_intern():
     assert_equal(get_static_string["hello"](), "hello")
