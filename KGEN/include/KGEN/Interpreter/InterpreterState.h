@@ -213,7 +213,8 @@ public:
   ErrorOrSuccess externalizeMemory(MutableArrayRef<Attribute> results);
 
   /// Load a single attribute from memory from a memref.
-  ErrorOr<TypedAttr> loadAttributeFromMemRef(MemRefAttr memref, Type type);
+  virtual ErrorOr<TypedAttr> loadAttributeFromMemRef(MemRefAttr memref,
+                                                     Type type);
 
   //===--------------------------------------------------------------------===//
   // Interpreter Control Flow
@@ -358,6 +359,7 @@ private:
     std::optional<llvm::BitVector> symbolRegions;
   };
 
+protected:
   /// A memory table is just a vector of blobs organized by ascending address.
   struct MemoryTable {
     MemoryTable(MemoryKind kind, int64_t minAddr, int64_t maxAddr)
@@ -389,12 +391,11 @@ private:
     std::vector<MemoryBlob> blobs;
   };
 
+private:
   /// Get the memory blob for the given address. Check that the access is
   /// in-bounds and then compute the offset into the blob.
   ErrorOr<std::pair<MemoryBlob &, int64_t>> getMemory(int64_t addr,
                                                       size_t size);
-
-  ErrorOr<PointerAttr> allocateInternalStackFor(Type type, Type ptrType);
 
   /// Get the memory table for the memory kind.
   MemoryTable &getTable(MemoryKind kind) {
@@ -407,6 +408,8 @@ private:
   virtual void notifyAllocationOnFrame() = 0;
 
 protected:
+  ErrorOr<PointerAttr> allocateInternalStackFor(Type type, Type ptrType);
+
   /// When the interpreter executor returns from a function, it needs to notify
   /// the memory model how many stack allocations need to get popped.
   void notifyReturnFromFrame(size_t numStackAllocs) {
@@ -417,7 +420,7 @@ protected:
   // TODO: mark const once all dependencies have const versions.
   void dump();
 
-private:
+protected:
   /// All interpreter memory tables, containing stack, heap, persistent, and
   /// constant global memory.
   MemoryTable memory[4];
@@ -425,6 +428,7 @@ private:
   /// A structure to store values with no runtime representation.
   SmallVector<TypedAttr, 0> symbols;
 
+private:
   /// A bump pointer allocator for fast memory allocations.
   /// TODO: Use an ArrayRecycler if memory usage is too high.
   llvm::BumpPtrAllocator allocator;
@@ -435,6 +439,7 @@ private:
   /// Reset the executor state.
   virtual void resetExecutor() = 0;
 
+protected:
   virtual ErrorTreeOr<SmallVector<Attribute>>
   interpretFunction(Region &body, ArrayRef<Attribute> arguments) = 0;
 
@@ -442,6 +447,7 @@ private:
   /// current stack frame.
   virtual ErrorTree addStackTrace(ErrorTree error) = 0;
 
+private:
   /// This map implements named global values. Named global values represent a
   /// mechanism for storing SSA value captures at compile time.
   DenseMap<StringAttr, Attribute> namedGlobals;

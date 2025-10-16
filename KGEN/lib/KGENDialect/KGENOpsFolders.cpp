@@ -6,6 +6,7 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/IR/PatternMatch.h"
