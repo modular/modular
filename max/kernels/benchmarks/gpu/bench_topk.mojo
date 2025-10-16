@@ -66,14 +66,14 @@ fn bench_topk_batched[
         DimList(batch_size, out_idx_len), ctx=ctx
     )
 
-    var num_blocks_per_input_: Int = ceildiv(
-        N, block_size
-    ) if not num_blocks_per_input else num_blocks_per_input
+    if not num_blocks_per_input:
+        num_blocks_per_input = min(ceildiv(N, block_size), 8)
+
     var device_local_topk_vals = DeviceNDBuffer[dtype, rank](
-        DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
+        DimList(batch_size, num_blocks_per_input * K), ctx=ctx
     )
     var device_local_topk_idxs = DeviceNDBuffer[out_idx_type, rank](
-        DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
+        DimList(batch_size, num_blocks_per_input * K), ctx=ctx
     )
 
     ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
@@ -126,7 +126,9 @@ fn bench_topk_batched[
 
         b.iter_custom[kernel_launch](ctx)
 
-    var kernel_name = "tk-smpl-gpu" if sampling else "tk-gpu"
+    var kernel_name = String(
+        "bench-topk", "/N=", N, "/K=", K, "/batch_size=", batch_size
+    )
 
     var num_bytes = device_in.tensor.size() * size_of[dtype]()
     m.bench_function[bench_func](
@@ -137,16 +139,6 @@ fn bench_topk_batched[
     ctx.enqueue_copy(topk_vals.tensor.data, device_out_vals.buffer)
     ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
     ctx.synchronize()
-
-    var _msg1: String = "Top-K values: "
-    var _msg2 = "Sample token index: " if sampling else StaticString(
-        "Top K indices: "
-    )
-
-    @parameter
-    if sampling:
-        print(_msg2, topk_idxs.tensor)
-        print(_msg1, topk_vals.tensor)
 
     # ASSERT equality with CPU topk kernel reference
     @parameter
@@ -219,8 +211,8 @@ fn bench_topk_multi_rank[
     # var input_shape = test_case.input_shape
     var K = test_case.K
     var block_size = test_case.block_size
-    var num_blocks_per_input: Int = ceildiv(
-        input_shape.flattened_length(), block_size
+    var num_blocks_per_input: Int = min(
+        ceildiv(input_shape.flattened_length(), block_size), 8
     ) if not test_case.num_blocks_per_input else test_case.num_blocks_per_input
 
     alias largest = test_case.largest
@@ -413,10 +405,10 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](
 fn main() raises:
     var N = arg_parse("N", -1)
     var K = arg_parse("K", -1)
-    var block_size = arg_parse("block_size", -1)
+    var block_size = arg_parse("block_size", 256)
     var batch_size = arg_parse("batch_size", -1)
-    var num_blocks_per_input = arg_parse("num_blocks_per_input", 1)
-    var fill_fn_name = arg_parse("fill_fn_name", "fill_iota")
+    var num_blocks_per_input = arg_parse("num_blocks_per_input", 0)
+    var fill_fn_name = arg_parse("fill_fn_name", "fill_random")
 
     alias dtype = env_get_dtype["dtype", DType.float32]()
     alias rank = env_get_int["rank", 2]()
