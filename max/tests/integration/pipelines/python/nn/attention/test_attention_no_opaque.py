@@ -232,7 +232,9 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             input_row_offsets.tensor,
         )
 
-    hidden_state = np.random.randn(max_seq_len * batch_size, dim)
+    hidden_state = np.random.randn(max_seq_len * batch_size, dim).astype(
+        np.float32
+    )
     input_row_offsets = np.array(
         [0, max_seq_len, max_seq_len * 2], dtype=np.uint32
     )
