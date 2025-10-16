@@ -18,6 +18,7 @@ from collections.string._utf8 import (
     _is_valid_utf8_comptime,
     _is_valid_utf8_runtime,
     _utf8_byte_type,
+    BIGGEST_UTF8_FIRST_BYTE,
 )
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
@@ -26,6 +27,7 @@ from testing import TestSuite
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
+
 
 alias GOOD_SEQUENCES = [
     List("a".as_bytes()),
@@ -295,7 +297,7 @@ def test_utf8_byte_type():
         assert_equal(_utf8_byte_type(i), 2)
     for i in range(UInt8(0b1110_0000), UInt8(0b1111_0000)):
         assert_equal(_utf8_byte_type(i), 3)
-    for i in range(UInt8(0b1111_0000), UInt8(0b1111_1111)):
+    for i in range(UInt8(0b1111_0000), BIGGEST_UTF8_FIRST_BYTE + 1):
         assert_equal(_utf8_byte_type(i), 4)
 
 
