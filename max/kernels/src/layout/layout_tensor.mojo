@@ -324,16 +324,26 @@ struct LayoutTensor[
         Returns:
             The host type's name.
         """
-        return (
-            "LayoutTensor[mut = "
-            + String(mut)
-            + ", dtype = "
-            + String(dtype)
-            + ", layout = "
-            + String(layout)
-            + ", address_space = "
-            + String(address_space)
-            + "]"
+        return String(
+            "LayoutTensor[mut = ",
+            mut,
+            ", dtype = ",
+            dtype,
+            ", layout = ",
+            layout,
+            ", address_space = ",
+            address_space,
+            ", element_layout = ",
+            element_layout,
+            ", layout_int_type = ",
+            layout_int_type,
+            ", linear_idx_type = ",
+            linear_idx_type,
+            ", masked = ",
+            masked,
+            ", alignment = ",
+            alignment,
+            "]",
         )
 
     @staticmethod

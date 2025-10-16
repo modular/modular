@@ -590,6 +590,119 @@ fn naive_blockwise_scaled_fp8_matmul[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
+    b_scales_type: DType, //,
+    *,
+    BLOCK_DIM: Int = 16,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    accum_type: DType = get_accum_type[c_type](),
+    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
+](
+    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, **_],
+    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, **_],
+    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, **_],
+    a_scales: LayoutTensor[
+        a_scales_type, address_space = AddressSpace.GENERIC, **_
+    ],
+    b_scales: LayoutTensor[
+        b_scales_type, address_space = AddressSpace.GENERIC, **_
+    ],
+    ctx: DeviceContext,
+) raises:
+    constrained[
+        a_type == b_type == DType.float8_e4m3fn,
+        (
+            "Only float8_e4m3fn is supported for input dtype for blockwise"
+            " scaled fp8 matmul"
+        ),
+    ]()
+
+    constrained[
+        a_scales_type == b_scales_type,
+        "input A and B scales dtype should be same",
+    ]()
+
+    constrained[
+        accum_type == DType.float32,
+        "Only float32 is supported for accumulation for scaled matmul",
+    ]()
+
+    var logger = Logger()
+
+    var M = c.dim(0)
+    var N = c.dim(1)
+    var K = a.dim(1)
+
+    var a_scales_dim0 = a_scales.dim(0)
+    var b_scales_dim0 = b_scales.dim(0)
+    var b_scales_dim1 = b_scales.dim(1)
+
+    # these checks are only applicable when A_SCALES_SIZE and B_SCALES_SIZE are not provided
+    @parameter
+    if not scales_granularity_mnk:
+        if K % a_scales_dim0 != 0:
+            raise Error(
+                "K must be divisible by a_scales.dim(0) if A_SCALES_SIZE is not"
+                " provided"
+            )
+
+        if transpose_b and (K % b_scales_dim1 != 0 or N % b_scales_dim0 != 0):
+            raise Error(
+                "K must be divisible by b_scales.dim(1) and N must be divisible"
+                " by b_scales.dim(0) if B_SCALES_SIZE is not provided"
+            )
+
+        if not transpose_b and (
+            K % b_scales_dim0 != 0 or N % b_scales_dim1 != 0
+        ):
+            raise Error(
+                "K must be divisible by b_scales.dim(0) and N must be divisible"
+                " by b_scales.dim(1) if B_SCALES_SIZE is not provided"
+            )
+
+    logger.info("Executing Naive Blockwise Scaled FP8 GEMM")
+    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]", sep="")
+    logger.info(
+        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]", sep=""
+    )
+    logger.info(
+        "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]", sep=""
+    )
+
+    alias kernel = naive_blockwise_scaled_fp8_matmul_kernel[
+        c_type,
+        a_type,
+        b_type,
+        a_scales_type,
+        b_scales_type,
+        accum_type,
+        type_of(a).layout,
+        type_of(b).layout,
+        type_of(c).layout,
+        type_of(a_scales).layout,
+        type_of(b_scales).layout,
+        BLOCK_DIM=BLOCK_DIM,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        scales_granularity_mnk=scales_granularity_mnk,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+    )
+
+
+fn naive_blockwise_scaled_fp8_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
     b_scales_type: DType,
     c_shape: DimList,
     a_shape: DimList,
