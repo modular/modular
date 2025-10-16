@@ -114,6 +114,9 @@ class KVCacheParams:
                     f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
                 )
             self.n_kv_heads_per_device = self.n_kv_heads
+        elif self.is_mla:
+            # MLA always caches one latent vector per device.
+            self.n_kv_heads_per_device = 1
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
             if self.n_kv_heads % self.n_devices != 0:
