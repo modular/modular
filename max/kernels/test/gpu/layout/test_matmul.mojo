@@ -113,7 +113,7 @@ struct test_matmul[
         print("=== test_matmul")
 
         var ctx = self.ctx
-        ctx.enqueue_memset(self.c_device_buffer_ref, 0)
+        ctx.enqueue_memset(self.c_device_buffer, 0)
 
         fn create_tensor[
             layout: Layout
