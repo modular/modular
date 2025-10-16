@@ -97,6 +97,10 @@ what we publish.
   Conversion from `Int` to `UInt` should now be done explicitly using
   `UInt(int_value)`.
 
+- `String` can now decode UTF-16 input using the `String(from_utf16=...)`
+  constructor. PR [#5255](https://github.com/modular/modular/pull/5255) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
