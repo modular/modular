@@ -776,5 +776,16 @@ def test_with_python_eval_and_evaluate():
     test_python_eval_and_evaluate(python)
 
 
+def test_python_object_string():
+    var s = String(PythonObject("hello"))
+    assert_equal(s, "hello")
+
+    var p = Python()
+    _ = p.eval("class A:\n  def __str__(self): pass")
+    var a = p.evaluate("A()")
+    with assert_raises(contains="__str__ returned non-string"):
+        _ = String(a)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
