@@ -53,7 +53,7 @@ def test_char_from_u8():
 def test_char_comparison():
     assert_equal(Codepoint(0), Codepoint(0))
     assert_not_equal(Codepoint(0), Codepoint(1))
-    
+
     # Test less than and less than or equal to
     assert_true(Codepoint.__le__(Codepoint(0), Codepoint(1)))
     assert_true(Codepoint.__le__(Codepoint(1), Codepoint(1)))
@@ -69,6 +69,7 @@ def test_char_comparison():
     assert_true(Codepoint.__gt__(Codepoint(1), Codepoint(0)))
     assert_false(Codepoint.__gt__(Codepoint(0), Codepoint(1)))
     assert_false(Codepoint.__gt__(Codepoint(1), Codepoint(1)))
+
 
 def test_char_formatting():
     assert_equal(String(Codepoint(0)), "\0")
