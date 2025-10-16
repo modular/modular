@@ -41,6 +41,7 @@ fn main() raises:
 # O3-FULL-NO-STACK: Unhandled exception caught during execution: nested gotcha!
 
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
+# O3-FULL-NEXT: #{{.*}} stdlib::builtin::error::StackTrace::__init__(::Int) open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} stack_trace_exception_no_handling::foo2()_REMOVED_ARG {{.*}}/stack_trace_exception_no_handling.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} stack_trace_exception_no_handling::foo1() {{.*}}/stack_trace_exception_no_handling.mojo:{{.*}}:{{.*}}

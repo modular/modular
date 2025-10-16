@@ -63,14 +63,14 @@ fn main():
 
 # O3-FULL-LABEL: stack trace of gotcha!
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
-# O3-FULL-NEXT: #{{.*}} stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
-# O3-FULL-NEXT: #{{.*}} stack_trace_exception::foo()_REMOVED_ARG {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
-# O3-FULL-NEXT: #{{.*}} stack_trace_exception::main() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
+# O3-FULL-NEXT: #{{.*}} stdlib::builtin::error::StackTrace::__init__(::Int) open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
+# O3-FULL:      #{{.*}} stack_trace_exception::main() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} stdlib::builtin::_startup::__wrap_and_execute_main[fn() -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stack_trace_exception::main()" open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} main open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:{{.*}}:{{.*}}
 
 # O3-FULL-LABEL: stack trace of nested gotcha!
 # O3-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
+# O3-FULL-NEXT: #{{.*}} stdlib::builtin::error::StackTrace::__init__(::Int) open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} stack_trace_exception::foo2()_REMOVED_ARG {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O3-FULL-NEXT: #{{.*}} stack_trace_exception::foo1() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
@@ -99,6 +99,7 @@ fn main():
 
 # O0-FULL-LABEL: stack trace of gotcha!
 # O0-FULL:      #{{.*}} KGEN_CompilerRT_GetStackTrace
+# O0-FULL-NEXT: #{{.*}} stdlib::builtin::error::StackTrace::__init__(::Int) open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0]),value`2x="gotcha!" open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} stack_trace_exception::foo() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT: #{{.*}} stack_trace_exception::main() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
@@ -107,6 +108,7 @@ fn main():
 
 # O0-FULL-LABEL: stack trace of nested gotcha!
 # O0-FULL:       #{{.*}} KGEN_CompilerRT_GetStackTrace
+# O0-FULL-NEXT: #{{.*}} stdlib::builtin::error::StackTrace::__init__(::Int) open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0]),value`2x="nested gotcha!" open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stack_trace_exception::foo2() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
 # O0-FULL-NEXT:  #{{.*}} stack_trace_exception::foo1() {{.*}}/stack_trace_exception.mojo:{{.*}}:{{.*}}
