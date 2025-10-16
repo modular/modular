@@ -100,7 +100,7 @@ struct ParameterIncrement:
             simd_width: Int
         ](idx: IndexList[B.rank]) -> SIMD[B.dtype, simd_width]:
             var a = A.load[simd_width](idx)
-            return a + __type_of(a)(increment)
+            return a + type_of(a)(increment)
 
         foreach[doit, target=target](B, ctx)
 
