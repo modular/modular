@@ -128,10 +128,13 @@ what we publish.
 - Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
   `--sanitize address` at compile time.
 
-### Tooling changes {#25-7-tooling-changes}
-
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
   functions rather than inlining them into the error message.
+
+### Tooling changes {#25-7-tooling-changes}
+
+- `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
+  and will be removed in a future release.
 
 ### ❌ Removed {#25-7-removed}
 
