@@ -82,7 +82,7 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]._mlir_type]:
         `#lit.indirect.origin<`,
         Self.base,
         `> : `,
-        __type_of(Self.base),
+        type_of(Self.base),
     ]
 
 
@@ -181,7 +181,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
             ]
         ],
     ):
-        result = __type_of(result)()
+        result = type_of(result)()
 
     @always_inline("builtin")
     fn __sub__(
@@ -197,10 +197,10 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
             ]
         ],
     ):
-        result = __type_of(result)()
+        result = type_of(result)()
 
     @always_inline("builtin")
-    fn __neg__(self) -> __type_of(0 - self):
+    fn __neg__(self) -> type_of(0 - self):
         return 0 - self
 
 
@@ -223,11 +223,11 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
             ]
         ],
     ):
-        result = __type_of(result)()
+        result = type_of(result)()
 
     @always_inline("builtin")
-    fn __neg__(self, out result: __type_of(self * -1)):
-        result = __type_of(result)()
+    fn __neg__(self, out result: type_of(self * -1)):
+        result = type_of(result)()
 
     @always_inline("builtin")
     fn __mul__(
@@ -243,7 +243,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
             ]
         ],
     ):
-        result = __type_of(result)()
+        result = type_of(result)()
 
     @always_inline("builtin")
     fn __truediv__(
@@ -259,7 +259,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
             ]
         ],
     ):
-        result = __type_of(result)()
+        result = type_of(result)()
 
 
 @register_passable("trivial")
@@ -408,7 +408,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
     # eventually merge into String through nonmaterialization.
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(StringLiteral[_]),
+        other_type: type_of(StringLiteral[_]),
     ](self) -> StaticString:
         return self
 
@@ -758,10 +758,10 @@ struct VariadicListMem[
         Returns:
             An iterator to the start of the list.
         """
-        return __type_of(result)(0, Pointer(to=self))
+        return type_of(result)(0, Pointer(to=self))
 
 
-alias _AnyTypeMetaType = __type_of(AnyType)
+alias _AnyTypeMetaType = type_of(AnyType)
 
 
 @register_passable
@@ -895,7 +895,7 @@ struct Pointer[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(Pointer[type, _, address_space]),
+        other_type: type_of(Pointer[type, _, address_space]),
     ](self) -> Pointer[
         mut = mut & other_type.origin.mut,
         type=type,

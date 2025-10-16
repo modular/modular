@@ -296,7 +296,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
 
   // Handle when both are metatypes.
   // For example, when we match a Tuple[Int, Bool] against a
-  // T: __type_of(Tuple[*ArgTypes]), this will infer that the ArgTypes variadic
+  // T: type_of(Tuple[*ArgTypes]), this will infer that the ArgTypes variadic
   // is [Int, Bool].
   if (auto actualMetaType = dyn_cast<StructMetaType>(actualType)) {
     auto actualDRT = actualMetaType.getType();

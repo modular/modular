@@ -84,7 +84,7 @@ enum ExprContext {
   EC_Trait,                // trait conformance checking for `T`
   EC_Closure,              // closure formation
   EC_Origin,               // origin specifier
-  EC_TypeOf,               // __type_of(x)
+  EC_TypeOf,               // type_of(x)
   EC_FunctionsInModule,    // __functions_in_module()
   EC_PyBindGen,            // within Python binding generation
   EC_MergeWith,            // implicit __merge_with__ call
@@ -584,7 +584,7 @@ public:
   /// On failure, an error is emitted and the callback is not invoked.
   ///
   /// This is used for evaluating expressions like __origin_of(x) and
-  /// __type_of(x) and `ref [x] T`.
+  /// `type_of(x)` and `ref [x] T`.
   void emitExpressionWithOutEvaluatingIt(
       const ExprNode *expr, ExprContext exprContext,
       std::function<void(CValue, IREmitter &emitter)> callback);

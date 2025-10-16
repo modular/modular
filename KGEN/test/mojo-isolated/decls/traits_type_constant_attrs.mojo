@@ -105,5 +105,5 @@ trait MyThingTrait:
         ...
 
 
-fn propagate_type[T: MyThingTrait](range: T) -> __type_of(declval[T]().thing()):
+fn propagate_type[T: MyThingTrait](range: T) -> type_of(declval[T]().thing()):
     pass

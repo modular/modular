@@ -83,7 +83,7 @@ fn metatypes():
 @fieldwise_init
 struct StefStressTest[x: Int]:
     @staticmethod
-    fn increment() -> __type_of(StefStressTest[x + 1]):
+    fn increment() -> type_of(StefStressTest[x + 1]):
         while True:
             pass
         # return StefStressTest[x+1]  # Doesn't work yet.

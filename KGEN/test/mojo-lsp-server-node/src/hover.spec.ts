@@ -683,7 +683,7 @@ def function[
       server,
       "test:///test.mojo",
       `
-fn fn1[f: fn [p1: DType](foo: Scalar[p1]) -> __type_of(foo)]():
+fn fn1[f: fn [p1: DType](foo: Scalar[p1]) -> type_of(foo)]():
   ...
 
 

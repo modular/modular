@@ -79,7 +79,7 @@ alias myDouble[x: Int] = myDependentDefaultAdd[x]
 
 # CHECK-LABEL: fn @"expect_two_ints
 # CHECK-SAME: <binop: !lit.generator<<"x": !Int, "y": !Int>!Int>>
-fn expect_two_ints[binop: __type_of(myIntAdd)]():
+fn expect_two_ints[binop: type_of(myIntAdd)]():
     pass
 
 
