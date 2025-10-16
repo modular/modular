@@ -499,7 +499,7 @@ struct String(ImplicitlyCopyable, KeyElement):
 
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[UInt8, mut=False, origin = __origin_of(self)]:
+    ) -> UnsafePointer[UInt8, mut=False, origin = origin_of(self)]:
         return {}
 
 
@@ -741,7 +741,7 @@ struct VariadicListMem[
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
         Origin[elt_is_mutable]
-        .cast_from[__origin_of(origin, self)]
+        .cast_from[origin_of(origin, self)]
         .result
     ] element_type:
         while True:
@@ -750,7 +750,7 @@ struct VariadicListMem[
     fn __iter__(
         self,
         out result: _VariadicListMemIter[
-            element_type, origin, __origin_of(self), is_owned
+            element_type, origin, origin_of(self), is_owned
         ],
     ):
         """Iterate over the list.
@@ -899,7 +899,7 @@ struct Pointer[
     ](self) -> Pointer[
         mut = mut & other_type.origin.mut,
         type=type,
-        origin = __origin_of(origin, other_type.origin),
+        origin = origin_of(origin, other_type.origin),
         address_space=address_space,
     ]:
         return self._value  # allow lit.ref to convert.

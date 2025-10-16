@@ -205,8 +205,8 @@ public:
   static void printParam(raw_ostream &os, TypedAttr param,
                          SharedState *diagShared);
 
-  /// Print the specified parameter like we would in an origin expression,
-  /// works in an __origin_of(x) body.
+  /// Print the specified parameter like we would in an origin expression, works
+  /// in an `origin_of(x)` body.
   static void printOriginParam(raw_ostream &os, TypedAttr param,
                                SharedState *diagShared);
 
@@ -219,7 +219,7 @@ public:
   /// Get the specified parameter as a string.
   static std::string getParamAsString(TypedAttr param, SharedState *diagShared);
 
-  /// Get the specified parameter as a string, works in an __origin_of(x) body.
+  /// Get the specified parameter as a string, works in an `origin_of(x)` body.
   static std::string getOriginAsString(TypedAttr param,
                                        SharedState *diagShared);
 

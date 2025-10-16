@@ -1554,7 +1554,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 ///
 /// On failure, an error is emitted and the callback is not invoked.
 ///
-/// This is used for evaluating expressions like __origin_of(x) and
+/// This is used for evaluating expressions like `origin_of(x)` and
 /// `type_of(x)` and `ref [x] T`.
 void IREmitter::emitExpressionWithOutEvaluatingIt(
     const ExprNode *expr, ExprContext exprContext,

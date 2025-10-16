@@ -1215,15 +1215,15 @@ fn handleAnyLifetime5():
 # CHECK-LABEL: lit.fn @"test_origin_ctor_folding
 fn test_origin_ctor_folding[orig1: Origin[_]](abcdef: A):
     # CHECK-NEXT: lit.alias.decl *"x{{.*}} = <{{.*}}{_mlir_origin: origin<0> = *"abcdef`1"}
-    alias x = Origin(__origin_of(abcdef))
+    alias x = Origin(origin_of(abcdef))
 
     # MOCO-1467: Origin type equality problem.
     # CHECK-NEXT: lit.alias.decl *"y{{.*}} = <{{.*}}orig1
     alias y = Origin(orig1._mlir_origin)
 
-    # Check that __origin_of works on origins as well as MValues.
+    # Check that origin_of works on origins as well as MValues.
     # CHECK-NEXT: lit.alias.decl *"o2{{.*}} = <{{{.*}}abcdef{{.*}}orig1
-    alias o2 = __origin_of(orig1, abcdef)
+    alias o2 = origin_of(orig1, abcdef)
 
 fn useMemory(a: MemExample): pass
 
@@ -1376,7 +1376,7 @@ fn test_min2(a: String):
 
 # MOCO-1500: Can't take origin of read-only String arg
 def origin_of_def_arg(a: String):
-    _ = __origin_of(a)
+    _ = origin_of(a)
 
 # MOCO-1542: Need to rebind field type when checking size.
 @fieldwise_init
@@ -1388,7 +1388,7 @@ fn use_parameterized_field():
   var s = MyParameterizedField[Dim](Dim(8), Dim(3))
   var litref = __get_mvalue_as_litref(s.b)
   var rebind = __mlir_op.`kgen.rebind`
-    [_type=Pointer[Int, __origin_of(s.b)]._mlir_type](litref)
+    [_type=Pointer[Int, origin_of(s.b)]._mlir_type](litref)
   # expected-warning @+1 {{assignment to 'mvalue' was never used}}
   var mvalue = __get_litref_as_mvalue(rebind)
 

@@ -13,11 +13,11 @@ from utils import Index
 alias x1 = Index(16, 16, 16)
 
 # CHECK-LABEL: "name": "x2"
-# CHECK: "value": "Tuple[IndexList[3]](VariadicPack[True, True, __origin_of(), Copyable & Movable, IndexList[3]](Index(64, 8, 8)))"
+# CHECK: "value": "Tuple[IndexList[3]](VariadicPack[True, True, origin_of(), Copyable & Movable, IndexList[3]](Index(64, 8, 8)))"
 alias x2 = (Index(64, 8, 8),)
 
 # CHECK-LABEL: "name": "x3"
-# CHECK: "value": "Tuple[Int, Int](VariadicPack[True, True, __origin_of(), Copyable & Movable, Int, Int](1, 1))"
+# CHECK: "value": "Tuple[Int, Int](VariadicPack[True, True, origin_of(), Copyable & Movable, Int, Int](1, 1))"
 alias x3: Tuple[Int, Int] = (1, 1)
 
 # Do not truncate non-functions.

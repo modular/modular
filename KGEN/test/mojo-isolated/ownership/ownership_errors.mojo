@@ -481,7 +481,7 @@ fn bad_addr_space[
 # Returning a reference to the caller's stack.
 # https://github.com/modularml/modular/issues/38421
 # This is valid to declare...
-fn return_owned_arg_ref(var x: String) -> Pointer[String, __origin_of(x)]:
+fn return_owned_arg_ref(var x: String) -> Pointer[String, origin_of(x)]:
     return Pointer(to=x)
 
 

@@ -240,22 +240,22 @@ fn typeof_dynval_in_param(x: index):
 
 
 ##===----------------------------------------------------------------------===##
-# __origin_of
+# origin_of
 ##===----------------------------------------------------------------------===##
 
 
 # CHECK-LABEL: lit.fn @"lifetime_of
 fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
     # CHECK-NEXT: origin<0> = <{}>
-    alias lt0 = __origin_of()
+    alias lt0 = origin_of()
     # CHECK-NEXT: origin<0> = <*"x`">
-    alias lt1 = __origin_of(x)
+    alias lt1 = origin_of(x)
     # CHECK-NEXT: origin<0> = <{*"x`", *"y`1"}>
-    alias lt2 = __origin_of(x, y)
+    alias lt2 = origin_of(x, y)
     # CHECK-NEXT: origin<1> = <*"z`2">
-    alias lt3 = __origin_of(z)
+    alias lt3 = origin_of(z)
     # CHECK-NEXT: origin<0> = <{*"x`", (mutcast mut *"z`2")}>
-    alias lt4 = __origin_of(x, z)
+    alias lt4 = origin_of(x, z)
 
 
 ##===----------------------------------------------------------------------===##

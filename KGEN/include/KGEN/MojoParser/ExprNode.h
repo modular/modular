@@ -83,7 +83,8 @@ public:
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
     kGetNearestErrorSlot,      // __get_nearest_error_slot()
-    kOriginOf,                 // __origin_of(x)
+    kOriginOfDeprecated,       // __origin_of(x), TODO(MOCO-2604): remove this.
+    kOriginOf,                 // origin_of(x)
     kTypeOfDeprecated,         // __type_of(x), TODO(MOCO-2604): remove this.
     kTypeOf,                   // type_of(x)
     kFunctionsInModule,        // __functions_in_module()

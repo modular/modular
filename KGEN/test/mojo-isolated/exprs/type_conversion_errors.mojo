@@ -50,7 +50,7 @@ struct WrapsMadeFromPack[*Ts: AnyType]:
 
     @implicit
     fn __init__(out self, *args: *Ts):
-        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, __origin_of(args), AnyType, Ts]' value to 'MadeFromPack[Ts]'}}
+        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[False, origin_of(args), AnyType, Ts]' value to 'MadeFromPack[Ts]'}}
         self.data = args
 
 
