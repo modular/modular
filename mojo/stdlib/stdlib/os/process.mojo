@@ -153,6 +153,7 @@ struct Pipe:
 
 alias ERR_STR_LEN = 8
 
+
 struct Process:
     """Create and manage child processes from file executables.
 
@@ -272,7 +273,11 @@ struct Process:
                 var bytes_read = pipe.read_bytes(buf)
                 err = StringSlice(unsafe_from_utf8=buf)
             except e:
-                raise Error("Failed to read child process response from pipe, exception was: " + String(e))
+                raise Error(
+                    "Failed to read child process response from pipe, exception"
+                    " was: "
+                    + String(e)
+                )
 
             if err and len(err.value()) > 0 and err.value() == exec_err_code:
                 raise Error("Failed to execute " + path)
