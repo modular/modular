@@ -140,9 +140,7 @@ fn naive_grouped_matmul_kernel[
     expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
 ):
     # There has to be a better way :(
-    var M: UInt = UInt(
-        a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)]
-    )
+    var M = UInt(a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)])
     N = b.dim[1]()
     K = b.dim[2]()
 

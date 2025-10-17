@@ -25,7 +25,7 @@ from memory import Span, bitcast, memcpy
 
 alias HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
-alias STACK_BUFFER_BYTES: UInt = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
+alias STACK_BUFFER_BYTES = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
 """The size of the stack buffer for IO operations from CPU."""
 
 

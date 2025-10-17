@@ -2223,7 +2223,7 @@ fn warp_specialized_gemm_output[
         ):
             # Output dimensions in global memory.
             alias N = c_layout.shape[1].value()
-            var M: UInt = UInt(c.dim[0]())
+            var M = UInt(c.dim[0]())
 
             var lane = lane_id()
 

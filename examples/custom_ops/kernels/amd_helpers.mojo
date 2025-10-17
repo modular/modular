@@ -446,8 +446,8 @@ fn compute_relative_error_kernel[
     var idy = global_idx.y
 
     # Get tensor dimensions
-    var rows: UInt = UInt(reference.dim[0]())
-    var cols: UInt = UInt(reference.dim[1]())
+    var rows = UInt(reference.dim[0]())
+    var cols = UInt(reference.dim[1]())
 
     # Check bounds
     if idx >= rows or idy >= cols:
@@ -504,7 +504,7 @@ fn max_reduce_kernel[
     var local_relative_error = relative_error.ptr[offset * elements * bid]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
-    var i: UInt = UInt(elements) >> 1
+    var i = UInt(elements) >> 1
     while i > 0:
         # Check bounds: threadIdx.x < i && offset * (elements * blockIdx.x + threadIdx.x + i) < maxIdx
         var current_idx = offset * (elements * bid + tid + i)

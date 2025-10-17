@@ -169,13 +169,13 @@ fn b2b_gemm[
     # B is K x L
     # C is L x N
     # B is M x N
-    var M: UInt = UInt(D.dim[0]())
-    var L: UInt = UInt(B.dim[0 if transpose_b else 1]())
+    var M = UInt(D.dim[0]())
+    var L = UInt(B.dim[0 if transpose_b else 1]())
     # var K: UInt = B.dim[1 if transpose_b else 0]()
     # TODO: allow dynamic `K`, so long as it still
     # fits in shared memory, we shouldn't require static.
-    alias K: UInt = UInt(Int(A.layout.shape[1]))
-    alias N: UInt = UInt(Int(D.layout.shape[1]))
+    alias K = UInt(Int(A.layout.shape[1]))
+    alias N = UInt(Int(D.layout.shape[1]))
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -543,9 +543,7 @@ fn b2b_gemm[
             @parameter
             for i in range(type_of(d_gmem_frag).layout.size()):
                 alias src_idx = d_reg_frag.layout(i)
-                alias dst_static_idx: UInt = UInt(
-                    type_of(d_gmem_frag).layout(i)
-                )
+                alias dst_static_idx = UInt(type_of(d_gmem_frag).layout(i))
 
                 @parameter
                 if d_layout.all_dims_known():

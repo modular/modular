@@ -1609,10 +1609,8 @@ fn _elementwise_impl_gpu[
     alias registers_per_thread = 255
     alias num_waves = 32
     alias registers_per_block = hw_info.max_registers_per_block
-    alias sm_count: UInt = UInt(hw_info.sm_count)
-    alias threads_per_multiprocessor: UInt = UInt(
-        hw_info.threads_per_multiprocessor
-    )
+    alias sm_count = UInt(hw_info.sm_count)
+    alias threads_per_multiprocessor = UInt(hw_info.threads_per_multiprocessor)
 
     constrained[
         sm_count > 0 and threads_per_multiprocessor > 0,
@@ -1620,7 +1618,7 @@ fn _elementwise_impl_gpu[
     ]()
 
     # split between packed and tail regions of input
-    var length: UInt = UInt(shape.flattened_length())
+    var length = UInt(shape.flattened_length())
     var num_packed_elems = length // simd_width
     var unpacked_tail_length = length % simd_width
     var packed_region_length = length - unpacked_tail_length

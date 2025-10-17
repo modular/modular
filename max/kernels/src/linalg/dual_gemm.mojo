@@ -249,7 +249,7 @@ fn multistage_dual_mma[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias num_k_mmas: UInt = UInt(BK // MMA_K)
+    alias num_k_mmas = UInt(BK // MMA_K)
     alias num_k_mma_iters: UInt = num_k_mmas // k_group_size
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // (2 * MMA_N)
@@ -488,9 +488,9 @@ fn multistage_dual_gemm_kernel[
 
     alias simd_size = simd_width_of[c_type]()
 
-    var M: UInt = UInt(c.dim[0]())
-    var N: UInt = UInt(b0.dim[0 if transpose_b else 1]())
-    var K: UInt = UInt(b0.dim[1 if transpose_b else 0]())
+    var M = UInt(c.dim[0]())
+    var N = UInt(b0.dim[0 if transpose_b else 1]())
+    var K = UInt(b0.dim[1 if transpose_b else 0]())
     # we require b0 and b1 to be of the same size
 
     alias BM = config.block_tile_shape[0]
@@ -752,9 +752,7 @@ fn multistage_dual_gemm_kernel[
             @parameter
             for i in range(type_of(c_gmem_frag).layout.size()):
                 alias src_idx = c_reg_frag.layout(i)
-                alias dst_static_idx: UInt = UInt(
-                    type_of(c_gmem_frag).layout(i)
-                )
+                alias dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
                 var dst_idx: Int
 
                 @parameter
@@ -1189,9 +1187,9 @@ fn dual_gemv_kernel[
     b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
     b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
 ):
-    var m: UInt = UInt(c.dim(0))
-    var n: UInt = UInt(b0.dim(0))
-    var k: UInt = UInt(b0.dim(1))
+    var m = UInt(c.dim(0))
+    var n = UInt(b0.dim(0))
+    var k = UInt(b0.dim(1))
 
     var tid = thread_idx.x
 

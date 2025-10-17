@@ -97,7 +97,7 @@ fn topk_wrapper[
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
-    var block_offset: UInt = UInt(block_lane * block_size)
+    var block_offset = UInt(block_lane * block_size)
     var stride = block_size * UInt(num_blocks_per_input)
     topk_sram[tid] = TopK_2[T, largest]()
     for i in range(tid + block_offset, num_elements, stride):
@@ -115,7 +115,7 @@ fn topk_wrapper[
 
         if tid == 0:
             # Store the local top-K values and indices in global memory
-            var vector_idx: UInt = UInt(total.p)
+            var vector_idx = UInt(total.p)
             local_topk_vals[bid * UInt(K) + UInt(k)] = total.u
             local_topk_idxs[bid * UInt(K) + UInt(k)] = Scalar[DType.int](
                 vector_idx

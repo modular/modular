@@ -1298,8 +1298,8 @@ fn _matmul_kv_cache_ragged_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N: UInt = UInt(Int(weight.layout.shape[0]))
-    alias K: UInt = UInt(Int(weight.layout.shape[1]))
+    alias N = UInt(Int(weight.layout.shape[0]))
+    alias K = UInt(Int(weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1515,8 +1515,8 @@ fn _matmul_k_cache_ragged_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N: UInt = UInt(Int(weight.layout.shape[0]))
-    alias K: UInt = UInt(Int(weight.layout.shape[1]))
+    alias N = UInt(Int(weight.layout.shape[0]))
+    alias K = UInt(Int(weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1688,8 +1688,8 @@ fn _matmul_k_cache_ragged_scale_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N: UInt = UInt(Int(weight.layout.shape[0]))
-    alias K: UInt = UInt(Int(weight.layout.shape[1]))
+    alias N = UInt(Int(weight.layout.shape[0]))
+    alias K = UInt(Int(weight.layout.shape[1]))
 
     var batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1980,8 +1980,8 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     k_or_v_cache: cache_t,
 ) raises:
     alias kv_params = cache_t.kv_params
-    alias N: UInt = UInt(Int(k_or_v_weight.layout.shape[0]))
-    alias K: UInt = UInt(Int(k_or_v_weight.layout.shape[1]))
+    alias N = UInt(Int(k_or_v_weight.layout.shape[0]))
+    alias K = UInt(Int(k_or_v_weight.layout.shape[1]))
 
     batch_size = input_row_offsets.dim[0]() - 1
 

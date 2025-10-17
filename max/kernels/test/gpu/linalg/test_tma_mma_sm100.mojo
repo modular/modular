@@ -669,7 +669,7 @@ def test_tma_umma[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
-    alias block_dim: UInt = UInt(2 * MMA_M)
+    alias block_dim = UInt(2 * MMA_M)
 
     @parameter
     if a_smem:

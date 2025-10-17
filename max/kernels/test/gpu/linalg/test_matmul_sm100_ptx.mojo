@@ -190,7 +190,7 @@ fn test_ptx[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages: UInt = UInt(
+    alias max_pipeline_stages = UInt(
         smem_leftover // producer_consumer_smem_per_stage
     )
 

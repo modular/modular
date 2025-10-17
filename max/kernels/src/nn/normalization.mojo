@@ -350,7 +350,7 @@ fn layer_norm_gpu_block[
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
-    var num_cols: UInt = UInt(shape[1])
+    var num_cols = UInt(shape[1])
     var tid = thread_idx.x
     var row = block_idx.x
 

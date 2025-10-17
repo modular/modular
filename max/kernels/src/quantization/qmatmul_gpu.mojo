@@ -973,8 +973,8 @@ fn repack_Q4_0_for_sm8x[
     var tid: UInt = thread_idx.x
     var warp_id = UInt(tid // WARP_SIZE)
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
-    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
+    var warp_x = UInt(warp_id % UInt(num_warps_x))
+    var warp_y = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -1164,8 +1164,8 @@ fn repack_GPTQ_for_sm8x[
     var tid: UInt = thread_idx.x
     var warp_id = UInt(tid // UInt(WARP_SIZE))
     alias num_warps_x = BN // repack_tile[0]
-    var warp_x: UInt = UInt(warp_id % UInt(num_warps_x))
-    var warp_y: UInt = UInt(warp_id // UInt(num_warps_x))
+    var warp_x = UInt(warp_id % UInt(num_warps_x))
+    var warp_y = UInt(warp_id // UInt(num_warps_x))
     var lane_id: Int = Int(tid % UInt(WARP_SIZE))
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -1397,10 +1397,10 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     var num_scales_stages = ceildiv((num_pipeline_stages - 1) * UInt(block_mnk[2]), UInt(group_size)) + 1
     var scales_usage = block_mnk[1] * ceildiv(block_mnk[2], group_size
     ) * num_scales_stages * size_of[config.a_type]()
-    var slice_k_reduction: UInt = UInt(block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * size_of[DType.float32]())
+    var slice_k_reduction = UInt(block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * size_of[DType.float32]())
     # fmt: on
 
-    var smem_usage: UInt = UInt(
+    var smem_usage = UInt(
         num_warp_k_partitions * UInt(a_usage + b_usage + scales_usage)
     )
     return Int(max(c_usage, Int(smem_usage), Int(slice_k_reduction)))

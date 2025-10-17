@@ -626,10 +626,10 @@ fn naive_batched_matmul_kernel[
     b_tensor: LayoutTensor[b_type, b_layout, MutableAnyOrigin],  # 1 * k
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
-    var batch_size: UInt = UInt(c_tensor.dim(0))
-    var m: UInt = UInt(c_tensor.dim(1))
-    var n: UInt = UInt(c_tensor.dim(2))
-    var k: UInt = UInt(a_tensor.dim(2))
+    var batch_size = UInt(c_tensor.dim(0))
+    var m = UInt(c_tensor.dim(1))
+    var n = UInt(c_tensor.dim(2))
+    var k = UInt(a_tensor.dim(2))
 
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)

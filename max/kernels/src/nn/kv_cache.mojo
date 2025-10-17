@@ -203,7 +203,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     alias N = Int(weight.layout.shape[0])
     alias K = Int(weight.layout.shape[1])
 
-    var SEQ_LEN: UInt = UInt(hidden_state.dim[1]())
+    var SEQ_LEN = UInt(hidden_state.dim[1]())
 
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
