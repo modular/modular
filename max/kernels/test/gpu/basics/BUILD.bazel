@@ -93,6 +93,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2397
+    # RDNA3 (GFX11) WMMA tests - Disabled due to LLVM bug
+    # Bug: LLVM 15.0.0-22.0.0git cannot select WMMA intrinsics for compute kernels
+    # Status: Fix ready for LLVM upstream (Oct 2025), waiting for Mojo LLVM upgrade
+    # Details: See /data/modular/RDNA3_WMMA_PROJECT_STATUS.md
+    "test_mma_fp16_fp32.mojo": ["@platforms//:incompatible"],  # FIXME: https://github.com/llvm/llvm-project/pull/164036
+    "test_mma_bf16_fp32.mojo": ["@platforms//:incompatible"],  # FIXME: https://github.com/llvm/llvm-project/pull/164036
 }
 
 [
