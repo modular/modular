@@ -212,9 +212,9 @@ fn product[
     ref iterable_b: IterableTypeB,
     ref iterable_c: IterableTypeC,
 ) -> _Product3[
-    IterableTypeA.IteratorType[__origin_of(iterable_a)],
-    IterableTypeB.IteratorType[__origin_of(iterable_b)],
-    IterableTypeC.IteratorType[__origin_of(iterable_c)],
+    IterableTypeA.IteratorType[origin_of(iterable_a)],
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    IterableTypeC.IteratorType[origin_of(iterable_c)],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of three iterables.
@@ -283,7 +283,7 @@ struct _Product4[
         var product3 = Self._Product3Type(inner_b, inner_c, inner_d)
         self._inner = Self._Product2Type(inner_a, product3)
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn copy(self) -> Self:
@@ -318,10 +318,10 @@ fn product[
     ref iterable_c: IterableTypeC,
     ref iterable_d: IterableTypeD,
 ) -> _Product4[
-    IterableTypeA.IteratorType[__origin_of(iterable_a)],
-    IterableTypeB.IteratorType[__origin_of(iterable_b)],
-    IterableTypeC.IteratorType[__origin_of(iterable_c)],
-    IterableTypeD.IteratorType[__origin_of(iterable_d)],
+    IterableTypeA.IteratorType[origin_of(iterable_a)],
+    IterableTypeB.IteratorType[origin_of(iterable_b)],
+    IterableTypeC.IteratorType[origin_of(iterable_c)],
+    IterableTypeD.IteratorType[origin_of(iterable_d)],
 ]:
     """Returns an iterator that yields tuples of the elements of the outer
     product of four iterables.
