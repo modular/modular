@@ -106,6 +106,10 @@ what we publish.
 - Added `swap_pointees` function to `UnsafePointer` as an alternative to `swap`
   when the pointers may potentially alias each other.
 
+- `Span` and `StringSlice` constructors now accept `Int` for length parameters
+  instead of `UInt`. This change makes these types more ergonomic to use with
+  integer literals and other `Int`-based APIs.
+
 - `memcpy` and `parallel_memcpy` without keyword arguments are deprecated.
 
 - The `math` package now has a mojo native implementation of `acos`, `asin`,

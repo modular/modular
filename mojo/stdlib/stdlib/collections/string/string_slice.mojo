@@ -259,7 +259,7 @@ struct CodepointSliceIter[
                 byte_len += 1
                 back_ptr -= 1
 
-            return StringSlice[origin](ptr=back_ptr, length=UInt(byte_len))
+            return StringSlice[origin](ptr=back_ptr, length=byte_len)
         else:
             return None
 
@@ -640,7 +640,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         out self,
         *,
         ptr: UnsafePointer[Byte, mut=mut, origin=origin, **_],
-        length: UInt,
+        length: Int,
     ):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
         encoded bytes and a length.
@@ -700,7 +700,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             the provided string slice.
         """
         var len = self.byte_length()
-        var result = String(unsafe_uninit_length=UInt(len))
+        var result = String(
+            unsafe_uninit_length=UInt(len)
+        )  # TODO: make `unsafe_uninit_length` an `Int`
         memcpy(dest=result.unsafe_ptr_mut(), src=self.unsafe_ptr(), count=len)
         return result^
 
@@ -1647,7 +1649,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             return self.find(prefix, start) == start
         # FIXME: use normalize_index
         return StringSlice[origin](
-            ptr=self.unsafe_ptr() + start, length=UInt(end - start)
+            ptr=self.unsafe_ptr() + start, length=end - start
         ).startswith(prefix)
 
     fn endswith(
@@ -1673,7 +1675,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             return self.rfind(suffix, start) + len(suffix) == len(self)
         # FIXME: use normalize_index
         return StringSlice[origin](
-            ptr=self.unsafe_ptr() + start, length=UInt(end - start)
+            ptr=self.unsafe_ptr() + start, length=end - start
         ).endswith(suffix)
 
     fn removeprefix(self, prefix: StringSlice, /) -> Self:
@@ -2327,9 +2329,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if len(elems) == 0:
             return String()
 
-        var sep = StringSlice(
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
-        )
+        var sep = StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
         var total_bytes = _TotalWritableBytes(elems, sep=sep).size
         var result = String(capacity=total_bytes)
 
@@ -2442,7 +2442,7 @@ fn _to_string_list[
         var elt_ptr = Pointer(to=items[i])
         var og_len = len_fn(elt_ptr[])
         var og_ptr = unsafe_ptr_fn(elt_ptr[])
-        out_list.append(String(StringSlice(ptr=og_ptr, length=UInt(og_len))))
+        out_list.append(String(StringSlice(ptr=og_ptr, length=og_len)))
     return out_list^
 
 
@@ -2742,7 +2742,7 @@ fn _split[
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
-        output.append(S(ptr=ptr + lhs, length=UInt(rhs - lhs)))
+        output.append(S(ptr=ptr + lhs, length=rhs - lhs))
         lhs = rhs + sep_len
 
 
@@ -2770,7 +2770,7 @@ fn _split[
 
     @always_inline("nodebug")
     fn _build_slice(p: type_of(ptr), start: Int, end: Int) -> S:
-        return S(ptr=p + start, length=UInt(end - start))
+        return S(ptr=p + start, length=end - start)
 
     while lhs <= str_byte_len:
         # Python adds all "whitespace chars" as one separator
@@ -2794,5 +2794,5 @@ fn _split[
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
-        output.append(S(ptr=ptr + lhs, length=UInt(rhs - lhs)))
+        output.append(S(ptr=ptr + lhs, length=rhs - lhs))
         lhs = rhs

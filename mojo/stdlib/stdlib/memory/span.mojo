@@ -75,7 +75,6 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-@fieldwise_init
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
@@ -134,7 +133,7 @@ struct Span[
         self = rebind[type_of(self)](other)
 
     @always_inline("builtin")
-    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: UInt):
+    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: Int):
         """Unsafe construction from a pointer and length.
 
         Args:
@@ -142,7 +141,7 @@ struct Span[
             length: The length of the view.
         """
         self._data = ptr
-        self._len = Int(length)
+        self._len = length
 
     @always_inline
     @implicit

@@ -156,7 +156,7 @@ struct TopK:
                         )
 
                     sort[val_greater_than](
-                        Span(out_idxs.unsafe_ptr() + offset, K)
+                        Span(ptr=out_idxs.unsafe_ptr() + offset, length=K)
                     )
 
                     for i in range(K):

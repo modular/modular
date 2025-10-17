@@ -113,8 +113,8 @@ struct BlackwellWarpProfilingWorkspaceManager[
             length
         ).enqueue_fill(0)
         return Span[UInt64, MutableAnyOrigin](
-            device_buffer.unsafe_ptr(),
-            length,
+            ptr=device_buffer.unsafe_ptr(),
+            length=length,
         )
 
     @staticmethod

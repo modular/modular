@@ -1824,7 +1824,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         ].get_workspace(ctx)
     else:
         workspace = Span[UInt64, MutableAnyOrigin](
-            UnsafePointer[UInt64, origin=MutableAnyOrigin](), 0
+            ptr=UnsafePointer[UInt64, origin=MutableAnyOrigin](), length=0
         )
 
     ctx.enqueue_function[kernel](

@@ -434,9 +434,7 @@ fn _debug_assert_msg(
         # Pass last arg
         _ = printf_append_args(fd, 1, UInt64(thread_idx.z), 0, 0, 0, 0, 0, 0, 0)
         # Append message and finalize
-        _ = printf_append_string_n(
-            fd, Span(ptr=message, length=UInt(length)), True
-        )
+        _ = printf_append_string_n(fd, Span(ptr=message, length=length), True)
     else:
         _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
             loc.file_name.unsafe_ptr(),

@@ -1001,7 +1001,9 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
 
     # Overallocate the string.
     var buf_len = Int(INITIAL_CAPACITY)
-    var osver = String(unsafe_uninit_length=UInt(buf_len))
+    var osver = String(
+        unsafe_uninit_length=UInt(buf_len)
+    )  # TODO: make `unsafe_uninit_length` an `Int`
 
     var err = external_call["sysctlbyname", Int32](
         "kern.osproductversion".unsafe_cstr_ptr(),
