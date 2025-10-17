@@ -1562,7 +1562,7 @@ static bool shouldEmitParameterCall(RValue callee,
 
   // If this is an @always_inline("builtin") function, we must emit its body
   // inline.
-  if (auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(
+  if (auto calleeSymbolCst = sugarDynCast<SymbolConstantAttr>(
           ParamOperatorAttr::stripRebind(callee.getIfPValue()))) {
     if (ASTDecl *calleeDecl = shared.getDeclResolver().getDeclForFuncSymbol(
             calleeSymbolCst.getSymbol())) {

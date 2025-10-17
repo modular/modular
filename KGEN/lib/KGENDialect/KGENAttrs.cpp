@@ -2664,7 +2664,7 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
     return UnboundAttr::get(resultType);
 
   // Fold rebinds of a StructType. Unify metatypes so information is not lost.
-  if (auto typeCst = dyn_cast<TypeParamAttr>(input))
+  if (auto typeCst = sugarDynCast<TypeParamAttr>(input))
     return TypeParamAttr::get(typeCst.getTypeValue(), typeCst.getMlirType(),
                               resultType);
   // rebind(rebind(x)) => rebind(x)
@@ -3599,7 +3599,7 @@ Type KGEN::getCanonicalType(Type src) {
 }
 
 /// Return true if the specified types are canonically equal.
-bool KGEN::isCanonicalEqual(Type t1, Type t2) {
+bool KGEN::isEqualCanon(Type t1, Type t2) {
   if (t1 == t2)
     return true;
   return getCanonicalType(t1) == getCanonicalType(t2);
