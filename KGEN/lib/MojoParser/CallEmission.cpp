@@ -875,7 +875,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
   SMLoc callLoc = expr->getLoc();
 
   // For struct types, we need to look in both the struct and its extensions.
-  if (isa<LIT::StructType>(type.mlirType)) {
+  if (sugarIsa<LIT::StructType>(type)) {
     SmallVector<ASTDecl *, 4> structAndExtensions =
         declScope.collectTypeAndExtensions(type, callLoc);
     for (ASTDecl *containerDecl : structAndExtensions) {
@@ -1282,7 +1282,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
         singleOperandType = cValue.getRValueType();
 
       auto diag = emitError(expr->getLoc());
-      if (isa<StructType>(type)) {
+      if (sugarIsa<StructType>(type)) {
         diag << "invalid implicit conversion to " << type
              << ": no constructors found";
         dest.resetForError(*this);

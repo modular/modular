@@ -191,13 +191,12 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
     if (!checkConventionsConvertible(expectedConv, actualConv))
       return failure();
 
-    ASTType expectedValueAstType =
-        getFunctionArgumentRValueType(expectedAstType, expectedConv);
-    ASTType actualValueAstType =
-        getFunctionArgumentRValueType(actualAstType, actualConv);
+    Type expectedValueAstType =
+        RefType::stripRefConvention(expectedAstType, expectedConv);
+    Type actualValueAstType =
+        RefType::stripRefConvention(actualAstType, actualConv);
     // Now check that the argument types line up.
-    if (!succeeded(matchTypes(actualValueAstType.mlirType,
-                              expectedValueAstType.mlirType)))
+    if (!succeeded(matchTypes(actualValueAstType, expectedValueAstType)))
       return failure();
   }
 
@@ -232,12 +231,11 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
       if (!checkConventionsConvertible(expectedConv, actualConv))
         return failure();
 
-      ASTType actualValueAstType =
-          getFunctionArgumentRValueType(actualAstType, actualConv);
+      Type actualValueAstType =
+          RefType::stripRefConvention(actualAstType, actualConv);
 
       // If the argument types line up, then we can skip the rest of this.
-      if (succeeded(
-              matchTypes(actualValueAstType.mlirType, variadicElType.mlirType)))
+      if (succeeded(matchTypes(actualValueAstType, variadicElType.mlirType)))
         continue;
 
       // We can convert a more general `actual` function (that takes in a trait
@@ -247,7 +245,7 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
       // arguments (see TTSMFS).
       IREmitter emitter(declScope, EC_TypeParamValue);
       SyntheticNode synthNode(declScope.getLoc());
-      CValue actualAstTypeCValue = CValue(actualValueAstType.mlirType);
+      CValue actualAstTypeCValue = CValue(actualValueAstType);
       // Now, check if the actual arg can be converted to the expected trait.
       PValue actualAstTypeAsVariadicElTrait =
           emitter.emitMetaTypeToTraitConversion(

@@ -80,13 +80,6 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
       .create<UnreachableOp>(unreachableLoc);
 }
 
-ASTType LIT::getFunctionArgumentRValueType(ASTType type, ArgConvention conv) {
-  if (conv == ArgConvention::ReadReg)
-    return type;
-  else // Everything else is passed through memory.
-    return type.getReferenceElementType();
-}
-
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//

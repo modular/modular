@@ -106,8 +106,7 @@ static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
   bool actualMemResult = actual.hasMemoryOnlyResult();
   bool expectedMemResult = expected.hasMemoryOnlyResult();
   // TODO: We could allow implicit conversions here.
-  if (!ASTType(actual.getUserResultType())
-           .isEqualCanon(expected.getUserResultType()))
+  if (!isEqualCanon(actual.getUserResultType(), expected.getUserResultType()))
     return false;
 
   ArrayRef<Type> actualArgTypes =
@@ -156,9 +155,9 @@ static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
       return false;
 
     ASTType expectedAstValueType =
-        getFunctionArgumentRValueType(expectedAstType, expectedConv);
+        RefType::stripRefConvention(expectedAstType, expectedConv);
     ASTType actualValueAstType =
-        getFunctionArgumentRValueType(actualAstType, actualConv);
+        RefType::stripRefConvention(actualAstType, actualConv);
     // Now check that the argument types line up.
     if (actualValueAstType.isEqualCanon(expectedAstValueType))
       continue;
@@ -195,9 +194,8 @@ static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
 
       // Now that we know the conventions are valid, check that the actual
       // argument conforms to the variadic pack's element trait.
-
       ASTType actualValueAstType =
-          getFunctionArgumentRValueType(actualAstType, actualConv);
+          RefType::stripRefConvention(actualAstType, actualConv);
 
       // If the arguments are exactly equal, skip the more expensive checks.
       if (actualValueAstType.isEqualCanon(variadicElType))

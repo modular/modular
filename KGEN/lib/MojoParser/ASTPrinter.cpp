@@ -46,7 +46,7 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol, bool isFunc) {
 static std::pair<SymbolRefAttr, ArrayRef<TypedAttr>>
 tryGetSymbolNameAndParams(TypedAttr param) {
   param = ParamOperatorAttr::stripRebind(param);
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param))
+  if (auto symbolCst = sugarDynCast<SymbolConstantAttr>(param))
     return {symbolCst.getSymbol(), symbolCst.getParamValues()};
   return {{}, {}};
 }

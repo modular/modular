@@ -76,7 +76,7 @@ TypedAttr getCanonicalAttr(TypedAttr src);
 Type getCanonicalType(Type type);
 
 /// Return true if the specified types are canonically equal.
-bool isCanonicalEqual(Type t1, Type t2);
+bool isEqualCanon(Type t1, Type t2);
 
 // Helpers for sugar-aware casting.
 template <typename... To, typename From>

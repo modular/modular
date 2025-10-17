@@ -61,10 +61,6 @@ TypedAttr getOriginsAccessibleByParams(PogListAttr paramList,
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
-/// Given a function argument type and the argument's convention, get the RValue
-/// type of the argument.
-ASTType getFunctionArgumentRValueType(ASTType type, ArgConvention conv);
-
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//
