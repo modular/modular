@@ -186,7 +186,7 @@ struct _Product3[
         var product2 = Self._Product2Type(inner_b, inner_c)
         self._inner = Self._OuterProduct2Type(inner_a, product2)
 
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     fn copy(self) -> Self:
