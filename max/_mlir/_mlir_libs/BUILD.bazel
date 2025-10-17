@@ -10,7 +10,22 @@ copy_files(
 
 modular_nanobind_extension(
     name = "_mlir.bindings",
-    srcs = ["//:nanobind_mlir_srcs"],
+    srcs = [
+        "@llvm-raw//:mlir/lib/Bindings/Python/Globals.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRAffine.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRAttributes.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRCore.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRInterfaces.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRModule.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRModule.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/IRTypes.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/MainModule.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/NanobindUtils.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Pass.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Pass.h",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Rewrite.cpp",
+        "@llvm-raw//:mlir/lib/Bindings/Python/Rewrite.h",
+    ],
     local_defines = [
         # Set definition used in Interop.h to prefix the MLIR package.
         "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
