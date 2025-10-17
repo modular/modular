@@ -1145,6 +1145,9 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "internvl3-78b-instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-78B-Instruct"
     ),
+    "internvl3_5-8b-instruct": InternVLPipelineOracle(
+        "OpenGVLab/InternVL3_5-8B-Instruct"
+    ),
     "idefics3-8b-llama3": Idefics3PipelineOracle(
         "HuggingFaceM4/Idefics3-8B-Llama3"
     ),
