@@ -247,7 +247,7 @@ fn test_dispatch[
         n_experts,
         n_ranks,
         n_tokens_per_rank,
-        __type_of(format_handler),
+        type_of(format_handler),
     ]
 
     var func_cb = ctx.compile_function[dispatch_cb]()

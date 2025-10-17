@@ -557,7 +557,7 @@ fn matmul_sm100[
     var M = c.dim[0]()
     var N = c.dim[1]()
     alias K = a_shape.get[1]()
-    alias num_iters: UInt = UInt(K // BK)
+    alias num_iters = UInt(K // BK)
 
     alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
 

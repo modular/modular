@@ -439,7 +439,7 @@ fn async_gmem_to_local_kernel[
 
         @parameter
         for j in range(N):
-            alias frag_type = __type_of(out_frag[i, j])
+            alias frag_type = type_of(out_frag[i, j])
             var f = rebind[frag_type](local_frag[i, j])
             out_frag[i, j] = f
 

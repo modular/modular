@@ -67,15 +67,15 @@ struct MixedLayout[
             stride: The stride as a MixedTuple.
         """
         constrained[
-            __type_of(shape).__len__() == __type_of(stride).__len__(),
+            type_of(shape).__len__() == type_of(stride).__len__(),
             String(
                 (
                     "Shape and stride must have the same length, but got shape"
                     " length: "
                 ),
-                __type_of(shape).__len__(),
+                type_of(shape).__len__(),
                 " stride length: ",
-                __type_of(stride).__len__(),
+                type_of(stride).__len__(),
             ),
         ]()
         self.shape = shape
@@ -130,7 +130,7 @@ struct MixedLayout[
 fn make_row_major[
     First: MixedTupleLike,
     Second: MixedTupleLike, //,
-](shape: MixedTuple[First, Second]) -> __type_of(
+](shape: MixedTuple[First, Second]) -> type_of(
     MixedLayout(
         shape=MixedTuple(shape[0], shape[1]),
         stride=MixedTuple(shape[1], Idx[1]()),
@@ -145,9 +145,7 @@ fn make_row_major[
     First: MixedTupleLike,
     Second: Int,
     Third: Int, //,
-](
-    shape: MixedTuple[First, ComptimeInt[Second], ComptimeInt[Third]]
-) -> __type_of(
+](shape: MixedTuple[First, ComptimeInt[Second], ComptimeInt[Third]]) -> type_of(
     MixedLayout(
         shape=MixedTuple(shape[0], shape[1], shape[2]),
         stride=MixedTuple(
@@ -171,7 +169,7 @@ fn make_row_major[
     First: MixedTupleLike,
     Second: MixedTupleLike,
     Third: MixedTupleLike, //,
-](shape: MixedTuple[First, Second, Third]) -> __type_of(
+](shape: MixedTuple[First, Second, Third]) -> type_of(
     MixedLayout(
         shape=MixedTuple(shape[0], shape[1], shape[2]),
         stride=MixedTuple(

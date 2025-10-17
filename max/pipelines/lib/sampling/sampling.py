@@ -64,6 +64,9 @@ def _sampling_input_types(
     top_p_type = TensorType(DType.float32, ["batch"], device=device)
     inputs["top_p"] = top_p_type
 
+    min_p_type = TensorType(DType.float32, [], device=DeviceRef.CPU())
+    inputs["min_top_p"] = min_p_type
+
     seed_type = TensorType(DType.uint64, ["batch"], device=device)
     inputs["seed"] = seed_type
 
@@ -224,6 +227,7 @@ def token_sampler(
         top_k = graph.inputs[list(_input_dict).index("top_k")].tensor
         max_k = graph.inputs[list(_input_dict).index("max_k")].tensor
         top_p = graph.inputs[list(_input_dict).index("top_p")].tensor
+        min_top_p = graph.inputs[list(_input_dict).index("min_top_p")].tensor
         seed = graph.inputs[list(_input_dict).index("seed")].tensor
 
         tokens = topk_fused_sampling(
@@ -232,6 +236,7 @@ def token_sampler(
             max_k=max_k,
             temperature=temperature,
             top_p=top_p,
+            min_top_p=min_top_p,
             seed=seed,
         )
 

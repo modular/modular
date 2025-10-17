@@ -78,7 +78,7 @@ from utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ....utils_gpu import MatmulConfig
+from .config import MatmulConfig
 from ..tile_scheduler import RasterOrder
 from .tile_scheduler import TileScheduler, WorkInfo
 from ..profiler import (
@@ -210,10 +210,10 @@ fn load_AB[
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
-    var a_smem_slice = __type_of(a_smem_tile)(
+    var a_smem_slice = type_of(a_smem_tile)(
         a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
-    var b_smem_slice = __type_of(b_smem_tile)(
+    var b_smem_slice = type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -1544,14 +1544,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    cta_group: Int = 1,
-    num_clc_pipeline_stages: UInt = 2,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
-    block_swizzle_size: Int = 0,
-    rasterize_order: RasterOrder = RasterOrder.AlongM,
-    num_pipeline_stages: Optional[UInt] = None,
     register_based_epilogue: Bool = True,
     swapAB: Bool = False,
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
@@ -1580,13 +1575,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             a_layout,
             transpose_b,
             config=new_config,
-            cta_group=cta_group,
-            num_clc_pipeline_stages=num_clc_pipeline_stages,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            block_swizzle_size=block_swizzle_size,
-            rasterize_order=rasterize_order,
             register_based_epilogue=register_based_epilogue,
-            transpose_c=True,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](c_device, b_device, a_device, ctx)
     else:
@@ -1599,13 +1589,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             b_layout,
             transpose_b,
             config=config,
-            cta_group=cta_group,
-            num_clc_pipeline_stages=num_clc_pipeline_stages,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            block_swizzle_size=block_swizzle_size,
-            rasterize_order=rasterize_order,
             register_based_epilogue=register_based_epilogue,
-            transpose_c=False,
             max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
         ](c_device, a_device, b_device, ctx)
 
@@ -1620,16 +1605,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    cta_group: Int = 1,
-    num_clc_pipeline_stages: UInt = 2,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
-    block_swizzle_size: Int = 0,
-    rasterize_order: RasterOrder = RasterOrder.AlongM,
-    num_pipeline_stages: Optional[UInt] = None,
     register_based_epilogue: Bool = True,
-    transpose_c: Bool = False,
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, *_, **_],
@@ -1646,8 +1625,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias MMA_N = config.mma_shape[1]
     alias MMA_K = config.mma_shape[2]
 
-    alias BM = MMA_M // cta_group
-    alias BN = MMA_N // cta_group
+    alias BM = MMA_M // config.cta_group
+    alias BN = MMA_N // config.cta_group
     alias BK = config.block_tile_shape[2]
 
     constrained[
@@ -1672,8 +1651,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
 
     b_tma_op = create_tma_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            BN // (cluster_shape[0] // config.cta_group), BK
+        ) if transpose_b else Index(
+            BK, BN // (cluster_shape[0] // config.cta_group)
+        ),
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b_device)
@@ -1685,24 +1666,24 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias width = 32 if (MMA_M == 256 and MMA_N % 32 == 0) or (
         MMA_M == 128 and BN % 32 == 0
     ) else 16
-    alias output_tile_shape = Index(128, width) if not transpose_c else Index(
-        width, 128
-    )
-    alias split_tile_shape = Index(64, width) if not transpose_c else Index(
-        width, 64
-    )
+    alias output_tile_shape = Index(
+        128, width
+    ) if not config.AB_swapped else Index(width, 128)
+    alias split_tile_shape = Index(
+        64, width
+    ) if not config.AB_swapped else Index(width, 64)
     alias c_tma_tile_shape = output_tile_shape if MMA_M == 256 else split_tile_shape
-    alias c_swizzle = TensorMapSwizzle.SWIZZLE_32B if transpose_c else (
+    alias c_swizzle = TensorMapSwizzle.SWIZZLE_32B if config.AB_swapped else (
         TensorMapSwizzle.SWIZZLE_64B if width
         == 32 else TensorMapSwizzle.SWIZZLE_32B
     )
     # transpose_c => MMA_M == 256 is the same as (not transpose_c) or MMA_M == 256
     constrained[
-        (not transpose_c) or MMA_M == 256,
+        (not config.AB_swapped) or MMA_M == 256,
         "swapAB is only supported for MMA_M == 256",
     ]()
     var c_tma_op = create_tma_tile[
-        c_tma_tile_shape if not transpose_c else Index(
+        c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape[1] // 8
         ),
         swizzle_mode=c_swizzle,
@@ -1714,12 +1695,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
     # A and B per pipeline stage
     alias AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
-    # Support double-buffer for output stages.
-    alias num_output_stages = 2
 
+    # Support double-buffer for output stages.
     alias c_smem_bytes = output_tile_shape[0] * output_tile_shape[
         1
-    ] * num_output_stages * size_of[c_type]()
+    ] * config.num_output_stages * size_of[c_type]()
 
     alias MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
     alias CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
@@ -1734,11 +1714,11 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     alias accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
     alias accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
 
-    alias clc_response_bytes = CLC_RESPONSE_BYTES * num_clc_pipeline_stages
-    alias clc_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
-    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
+    alias clc_response_bytes = CLC_RESPONSE_BYTES * config.num_clc_pipeline_stages
+    alias clc_full_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    alias clc_empty_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    alias clc_throttle_full_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
+    alias clc_throttle_empty_mbar_bytes = MBAR_BYTES * config.num_clc_pipeline_stages
 
     alias tmem_addr_bytes = TMEM_ADDR_BYTES
     alias tmem_dealloc_mbar_bytes = MBAR_BYTES
@@ -1763,7 +1743,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages: UInt = UInt(
+    alias max_pipeline_stages = UInt(
         smem_leftover // producer_consumer_smem_per_stage
     )
 
@@ -1771,14 +1751,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
     ]()
 
-    @parameter
-    if num_pipeline_stages:
-        constrained[
-            num_pipeline_stages.value() <= max_pipeline_stages,
-            "Pipeline stage must be less than or equal to max pipeline stages",
-        ]()
-
-    alias pipeline_stage = num_pipeline_stages.value() if num_pipeline_stages else max_pipeline_stages
+    # TODO: the config should have the correct number of stages.
+    alias pipeline_stage = min(config.num_pipeline_stages, max_pipeline_stages)
     alias producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stage
 
     alias smem_size = (
@@ -1807,17 +1781,17 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
-        cta_group=cta_group,
+        cta_group = config.cta_group,
         num_pipeline_stages = UInt(pipeline_stage),
-        num_clc_pipeline_stages=num_clc_pipeline_stages,
+        num_clc_pipeline_stages = config.num_clc_pipeline_stages,
         num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
-        num_output_stages = UInt(num_output_stages),
+        num_output_stages = UInt(config.num_output_stages),
         output_tile_shape=output_tile_shape,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-        block_swizzle_size=block_swizzle_size,
-        rasterize_order=rasterize_order,
+        block_swizzle_size = config.block_swizzle_size,
+        rasterize_order = config.raster_order,
         register_based_epilogue=register_based_epilogue,
-        transpose_c=transpose_c,
+        transpose_c = config.AB_swapped,
         max_profiled_tiles_per_SM=max_profiled_tiles,
     ]
 
@@ -1866,7 +1840,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
         ),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
     )
 
     @parameter
@@ -2083,7 +2057,7 @@ fn matmul_sm100_fallback_kernel[
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x
     )
-    alias c_coord_type = __type_of(ctile_coords)
+    alias c_coord_type = type_of(ctile_coords)
 
     var M = c.dim[0]()
     alias N = c.layout.shape[1].value()
@@ -2122,7 +2096,7 @@ fn matmul_sm100_fallback_kernel[
                 @parameter
                 for m_vec in range(num_vecs_m):
                     alias i_vec = n_vec * num_vecs_m + m_vec
-                    alias dst_idx = __type_of(c_gmem_frag).layout(
+                    alias dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
                     alias dst_m_offset = dst_idx // N
@@ -2198,11 +2172,11 @@ fn matmul_sm100_fallback[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(c).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(c).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,

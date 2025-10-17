@@ -172,7 +172,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return self
 
     @always_inline("builtin")
-    fn __neg__(self) -> __type_of(0 - self):
+    fn __neg__(self) -> type_of(0 - self):
         """Return -self.
 
         Returns:
@@ -181,7 +181,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return 0 - self
 
     @always_inline("builtin")
-    fn __invert__(self) -> __type_of(self ^ -1):
+    fn __invert__(self) -> type_of(self ^ -1):
         """Return ~self.
 
         Returns:
@@ -504,7 +504,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     @always_inline("builtin")
     fn __ceildiv__(
         self, denominator: IntLiteral
-    ) -> __type_of(-(self // -denominator)):
+    ) -> type_of(-(self // -denominator)):
         """Return the rounded-up result of dividing self by denominator.
 
 

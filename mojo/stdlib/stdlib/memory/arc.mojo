@@ -147,7 +147,7 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
 
         # Calculate the offset to the beginning of the `_ArcPointerInner` allocation.
         var pointer_to_inner = (
-            pointer_to_payload - size_of[__type_of(self._inner[].refcount)]()
+            pointer_to_payload - size_of[type_of(self._inner[].refcount)]()
         )
         self._inner = pointer_to_inner.bitcast[Self._inner_type]()
 

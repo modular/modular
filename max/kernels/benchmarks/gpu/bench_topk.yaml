@@ -16,23 +16,26 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_topk.mojo
 
 params:
 
-# llama
-- $N: [128256]
-  $K: [50, 75, 255]
-  $block_size: 256 # [256, 512, 1024]
-  $batch_size: [1,4,16,64,256]
-  $num_blocks_per_input: [0]
-  $fill_fn_name: ["fill_random"] # ["fill_random", "fill_constant", "fill_iota"]
-  out_idx_type: [DType.uint64, DType.int32]
-  sampling: [True, False]
+# TTS
+- $N: [193856]
+  $K: [1, 50, 75, 255]
+  $batch_size: [1, 4, 16, 64, 256]
+  $fill_fn_name: ["fill_random"]
+  out_idx_type: [DType.uint64]
+  sampling: [True]
 
 # gemma
 - $N: [256000]
-  $K: [50, 75, 255]
-  $block_size: 256 # [256, 512, 1024]
-  $batch_size: [1,4,16,64,256]
-  $num_blocks_per_input: [0]
-  $fill_fn_name: ["fill_random"] # ["fill_random", "fill_constant", "fill_iota"]
-  out_idx_type: [DType.uint64, DType.int32]
-  sampling: [True, False]
+  $K: [1, 50, 75, 255]
+  $batch_size: [1, 4, 16, 64, 256]
+  $fill_fn_name: ["fill_random"]
+  out_idx_type: [DType.uint64]
+  sampling: [True]
 
+# llama
+- $N: [256000]
+  $K: [1, 50, 75, 255]
+  $batch_size: [1, 4, 16, 64, 256]
+  $fill_fn_name: ["fill_random"]
+  out_idx_type: [DType.uint64]
+  sampling: [True]

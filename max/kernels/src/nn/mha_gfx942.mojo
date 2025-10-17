@@ -132,7 +132,7 @@ fn convert_f32_to_bf16[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
 
     @parameter
     if use_truncation:
-        res = __type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
+        res = type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
     else:
         res = x.cast[dtype]()
 
@@ -273,9 +273,9 @@ struct KBuffer[
             mma_shape[2] * k_group_size == 16,
             "mma_shape[2] * k_group_size must be 16",
         ]()
-        self.load_tile = __type_of(self.load_tile).stack_allocation()
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
+        self.load_tile = type_of(self.load_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
+        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
         alias stride = Self.GlobalTiledIteratorType.layout.stride[0].value()
         self.bounds = num_b_rows.value() * stride if num_b_rows else Int.MAX
         self.global_iterator = global_tile.tiled_iterator[
@@ -499,9 +499,9 @@ struct VBuffer[
             0, 0
         )
 
-        self.load_tile = __type_of(self.load_tile).stack_allocation()
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
+        self.load_tile = type_of(self.load_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
+        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
 
     @always_inline
     @staticmethod
@@ -735,7 +735,7 @@ struct QRegisterBuffer[
             "mma_shape[2] * k_group_size must be 16",
         ]()
         self.gmem_tensor = tensor
-        self.mma_tile = __type_of(self.mma_tile).stack_allocation()
+        self.mma_tile = type_of(self.mma_tile).stack_allocation()
 
     @always_inline
     fn load_from_dram(mut self):
@@ -990,6 +990,7 @@ struct SharedMemoryManager[
     depth: Int,
     num_rowwise_warps: Int,
     token_gen: Bool,
+    depth_v: Int = depth,
 ](Defaultable):
     var p_smem: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.SHARED
@@ -1057,14 +1058,14 @@ struct SharedMemoryManager[
         self,
         out result: LayoutTensorIter[
             dtype,
-            Layout.row_major(BK, BN),
+            Layout.row_major(BK, Self.depth_v),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
             circular=True,
         ],
     ):
         constrained[token_gen, "this function is only used for token_gen"]()
-        return {self.k_v_smem, BN * depth}
+        return {self.k_v_smem, BN * Self.depth_v}
 
     @always_inline
     fn get_p_iter(
@@ -1141,14 +1142,14 @@ struct GlobalMemoryManager[
             + num_heads * q_tile_idx * BM
         )
 
-        self.q_runtime_layout = __type_of(self.q_runtime_layout)(
+        self.q_runtime_layout = type_of(self.q_runtime_layout)(
             RuntimeTuple[
                 Self.q_gmem_layout.shape,
-                element_type = __type_of(self.q_runtime_layout).element_type,
+                element_type = type_of(self.q_runtime_layout).element_type,
             ](Int(q_tile_num_rows), Int(depth)),
             RuntimeTuple[
                 Self.q_gmem_layout.stride,
-                element_type = __type_of(self.q_runtime_layout).linear_idx_type,
+                element_type = type_of(self.q_runtime_layout).linear_idx_type,
             ](Int(num_heads * depth if not token_gen else depth), 1),
         )
 
@@ -1202,11 +1203,11 @@ struct GlobalMemoryManager[
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = __type_of(result.runtime_layout)(
-            __type_of(result.runtime_layout.shape)(
+        var kv_runtime_layout = type_of(result.runtime_layout)(
+            type_of(result.runtime_layout.shape)(
                 Int(kv_tile_num_rows), Int(depth)
             ),
-            __type_of(result.runtime_layout.stride)(
+            type_of(result.runtime_layout.stride)(
                 Int(Self.kv_num_heads * depth), 1
             ),
         )
@@ -1270,13 +1271,14 @@ fn mha_single_batch_gfx942[
     alias WN = config.warp_n()
     alias num_m_mmas = ceildiv(WM, UInt(mma_shape[0]))
     alias num_n_mmas = ceildiv(WN, UInt(mma_shape[1]))
+    alias num_n_mmas_depth = ceildiv(depth // num_warps_n, UInt(mma_shape[1]))
     alias num_k_mmas2 = ceildiv(BK, UInt(mma_shape[2] * k_group_size))
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     var out_reg_tile = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, output_frag_size),
+            Layout.row_major(num_m_mmas * num_n_mmas_depth, output_frag_size),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -1511,6 +1513,9 @@ fn mha_single_batch_gfx942[
         alias reg_layout_by_mma_unit = Layout.row_major(
             num_m_mmas * num_n_mmas, output_frag_size
         )
+        alias reg_layout_by_mma_unit_depth = Layout.row_major(
+            num_m_mmas * num_n_mmas_depth, output_frag_size
+        )
         # don't know why we need this barrier but i get random failures without it
         barrier()
         _online_softmax_iter_for_mma_output[
@@ -1524,7 +1529,7 @@ fn mha_single_batch_gfx942[
             use_exp2=use_exp2,
             fragment_layout=fragment_layout,
         ](
-            out_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
+            out_reg_tile.reshape[reg_layout_by_mma_unit_depth]().vectorize[
                 1, output_frag_size
             ](),
             p_buffer.reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
@@ -1574,11 +1579,13 @@ fn mha_single_batch_gfx942[
     # Apply softmax denominator.
     apply_softmax_denominator[
         num_m_mmas=num_m_mmas,
-        num_n_mmas=num_n_mmas,
+        num_n_mmas=num_n_mmas_depth,
         fragment_layout=fragment_layout,
     ](out_reg_tile, rowsum)
 
-    var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
+    var output_warp_tile = output_tile.tile[WM, depth // num_warps_n](
+        warp_row, warp_col
+    )
 
     copy_local_to_dram2[
         dst_thread_layout=warp_layout,
@@ -1595,6 +1602,11 @@ fn mha_single_batch_gfx942[
 
 @always_inline
 fn mma[
+    BM: UInt,
+    BN: UInt,
+    BK: UInt,
+    WM: UInt,
+    WN: UInt,
     MMA_M: Int,
     MMA_N: Int,
     MMA_K: Int,
@@ -1616,16 +1628,10 @@ fn mma[
     ],
     num_b_rows: OptionalReg[Int] = None,
 ):
-    alias BK = config.block_k()
     # a can be either bfloat16 or float32 but b is always the same type as mma_input_type
     alias mma_input_type = b_iter.dtype
     alias simd_width = simd_width_of[mma_input_type]()
     alias accum_type = get_accum_type[mma_input_type]()
-    alias WM = config.warp_m()
-    alias WN = config.warp_n()
-    alias BM = config.block_m()
-    alias BN = config.block_n()
-    alias depth = config.depth
     var warp_id = get_warp_id()
     alias num_warps = config.num_threads() // UInt(WARP_SIZE)
     alias num_threads = config.num_threads()
@@ -1820,12 +1826,13 @@ fn mha_decoding_single_batch_gfx942[
     alias WN = config.warp_n()
     alias num_m_mmas = ceildiv(WM, UInt(MMA_M))
     alias num_n_mmas = ceildiv(WN, UInt(MMA_N))
+    alias num_n_mmas_depth = ceildiv(depth // num_warps_n, UInt(MMA_N))
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     var out_reg_tile = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, output_frag_size),
+            Layout.row_major(num_m_mmas * num_n_mmas_depth, output_frag_size),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -1961,7 +1968,7 @@ fn mha_decoding_single_batch_gfx942[
             kv_tile_num_rows,
         )
 
-        var v_global_iterator = v_tile.tiled_iterator[BK, BN, axis=0](0, 0)
+        var v_global_iterator = v_tile.tiled_iterator[BK, depth, axis=0](0, 0)
 
         var p_reg_tile = (
             LayoutTensor[
@@ -2000,6 +2007,11 @@ fn mha_decoding_single_batch_gfx942[
             ...
 
         mma[
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
             MMA_M=MMA_M,
             MMA_N=MMA_N,
             MMA_K=MMA_K,
@@ -2074,6 +2086,10 @@ fn mha_decoding_single_batch_gfx942[
             num_m_mmas * num_n_mmas, output_frag_size
         )
 
+        alias reg_layout_by_mma_unit_depth = Layout.row_major(
+            num_m_mmas * num_n_mmas_depth, output_frag_size
+        )
+
         # Not sure why we need this barrier here, but the code hangs without it
         barrier()
 
@@ -2088,7 +2104,7 @@ fn mha_decoding_single_batch_gfx942[
             use_exp2=use_exp2,
             fragment_layout=fragment_layout,
         ](
-            out_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
+            out_reg_tile.reshape[reg_layout_by_mma_unit_depth]().vectorize[
                 1, output_frag_size
             ](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
@@ -2124,6 +2140,11 @@ fn mha_decoding_single_batch_gfx942[
         barrier()
 
         mma[
+            BM=BM,
+            BN=depth,
+            BK=BK,
+            WM=WM,
+            WN = depth // num_warps_n,
             MMA_M=MMA_M,
             MMA_N=MMA_N,
             MMA_K=MMA_K,
@@ -2157,7 +2178,7 @@ fn mha_decoding_single_batch_gfx942[
     # Apply softmax denominator.
     apply_softmax_denominator[
         num_m_mmas=num_m_mmas,
-        num_n_mmas=num_n_mmas,
+        num_n_mmas=num_n_mmas_depth,
         fragment_layout=fragment_layout,
     ](out_reg_tile, rowsum)
 
@@ -2169,7 +2190,9 @@ fn mha_decoding_single_batch_gfx942[
             exp_sum_ptr[q_head_idx] = row_sum
             qk_max_ptr[q_head_idx] = row_max
 
-    var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
+    var output_warp_tile = output_tile.tile[WM, depth // num_warps_n](
+        warp_row, warp_col
+    )
     copy_local_to_dram[
         dst_thread_layout=warp_layout,
         thread_scope = ThreadScope.WARP,

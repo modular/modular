@@ -57,7 +57,7 @@ struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
         self.end = self.curr
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -101,7 +101,7 @@ struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
     var end: Int
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -145,7 +145,7 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized):
     var step: Int
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -191,7 +191,7 @@ struct _StridedRange(Iterable, Iterator, ReversibleRange, Sized):
         self.step = 1
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return _StridedRangeIterator(self.start, self.end, self.step)
 
     @always_inline
@@ -445,7 +445,7 @@ struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
         self.end = self.curr
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -484,7 +484,7 @@ struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
     var step: UInt
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -533,7 +533,7 @@ struct _UIntStridedRange(Iterable, Iterator, UIntSized):
         self.step = step
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return _UIntStridedRangeIterator(self.start, self.end, self.step)
 
     @always_inline
@@ -625,7 +625,7 @@ struct _ZeroStartingScalarRange[dtype: DType](
         self.end = self.curr
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -672,7 +672,7 @@ struct _SequentialScalarRange[dtype: DType](
     var end: Scalar[dtype]
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
@@ -720,7 +720,7 @@ struct _StridedScalarRange[dtype: DType](
     var step: Scalar[dtype]
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline

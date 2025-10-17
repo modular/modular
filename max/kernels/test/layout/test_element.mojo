@@ -291,7 +291,7 @@ fn test_element_masked_load():
             index_type = tensor_1x3_v4.linear_idx_type,
         ].masked_load(
             tensor_1x3_v4.ptr,
-            __type_of(tensor_1x3_v4.runtime_element_layout).row_major(
+            type_of(tensor_1x3_v4.runtime_element_layout).row_major(
                 IndexList[2, element_type = DType.int32](1, 3)
             ),
         )
@@ -307,7 +307,7 @@ fn test_element_masked_load():
     print(
         Element[index_type = tensor_3x1_v4.linear_idx_type].masked_load(
             tensor_3x1_v4.ptr,
-            __type_of(tensor_3x1_v4.runtime_element_layout).row_major(
+            type_of(tensor_3x1_v4.runtime_element_layout).row_major(
                 IndexList[2, element_type = DType.int32](3, 1)
             ),
         )
@@ -319,7 +319,7 @@ fn test_element_masked_load():
     print(
         Element[index_type = tensor_3x4_v4x4.linear_idx_type].masked_load(
             tensor_3x4_v4x4.ptr,
-            __type_of(tensor_3x4_v4x4.runtime_element_layout).row_major(
+            type_of(tensor_3x4_v4x4.runtime_element_layout).row_major(
                 IndexList[2, element_type = DType.int32](3, 4)
             ),
         )
@@ -341,7 +341,7 @@ fn test_element_masked_store():
         SIMD[
             tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout.size()
         ](1),
-        __type_of(tensor_4x4_vec_1_4.runtime_element_layout).row_major(
+        type_of(tensor_4x4_vec_1_4.runtime_element_layout).row_major(
             IndexList[2, element_type = DType.int32](1, 3)
         ),
     )
@@ -362,7 +362,7 @@ fn test_element_masked_store():
         SIMD[
             tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout.size()
         ](1),
-        __type_of(tensor_4x4_vec_4_1.runtime_element_layout).row_major(
+        type_of(tensor_4x4_vec_4_1.runtime_element_layout).row_major(
             IndexList[2, element_type = DType.int32](2, 1)
         ),
     )
@@ -381,7 +381,7 @@ fn test_element_masked_store():
         SIMD[
             tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout.size()
         ](1),
-        __type_of(tensor_4x4_vec_4_4.runtime_element_layout).row_major(
+        type_of(tensor_4x4_vec_4_4.runtime_element_layout).row_major(
             IndexList[2, element_type = DType.int32](3, 2)
         ),
     )

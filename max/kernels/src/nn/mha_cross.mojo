@@ -113,9 +113,9 @@ fn _bmm0_bs[
 
             @parameter
             if width == 1:
-                accum += rebind[__type_of(accum)](qk_val)
+                accum += rebind[type_of(accum)](qk_val)
             else:
-                accum_vec += rebind[__type_of(accum_vec)](qk_val)
+                accum_vec += rebind[type_of(accum_vec)](qk_val)
 
         vectorize[accum_fn, simd_width_of[p_type]()](depth)
         accum += accum_vec.reduce_add()
@@ -298,7 +298,7 @@ fn mha_cross_gpu_naive[
     alias kernel_0 = _bmm0_bs[
         q_layout = q.layout,
         kv_layout = kv_input_row_offsets.layout,
-        __type_of(k),
+        type_of(k),
         mask_t,
         q_type,
         p_type,
@@ -343,7 +343,7 @@ fn mha_cross_gpu_naive[
     alias kernel_1 = _bmm1_bs[
         q_layout = q.layout,
         kv_layout = kv_input_row_offsets.layout,
-        __type_of(v),
+        type_of(v),
         p_type,
         output.dtype,
     ]

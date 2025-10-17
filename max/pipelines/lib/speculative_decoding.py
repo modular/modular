@@ -510,6 +510,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         max_k: Tensor,
         temperature: Tensor,
         top_p: Tensor,
+        min_top_p: Tensor,
         seed: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
         graph_inputs = [
@@ -519,6 +520,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             max_k,
             temperature,
             top_p,
+            min_top_p,
             seed,
             prev_logits,
         ]
@@ -554,6 +556,9 @@ class SpeculativeDecodingTextGenerationPipeline(
             dtype=np.float32,
         )
         top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
+        # min_top_p must be provided as a scalar CPU tensor
+        min_top_p_np = np.array(np.min(top_p_np), dtype=np.float32)
+        min_top_p = Tensor.from_numpy(min_top_p_np)
         seed_np = np.array(
             [context.sampling_params.seed for context in batch], dtype=np.uint64
         )
@@ -597,6 +602,7 @@ class SpeculativeDecodingTextGenerationPipeline(
                     max_k,
                     temperature,
                     top_p,
+                    min_top_p,
                     seed,
                 )
             )

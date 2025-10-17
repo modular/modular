@@ -68,7 +68,7 @@ fn _load_a_reg_tile[
     ],
 ):
     constrained[ret.layout[0].shape[0].value() > 0]()
-    ret = __type_of(ret).stack_allocation()
+    ret = type_of(ret).stack_allocation()
     var tid = thread_idx.x
     var lane = tid % 32
     var wgid = tid // 32
@@ -332,11 +332,11 @@ def test_tma_wgmma[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
         Layout.row_major(M, N),
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
         transpose_b=transpose_b,

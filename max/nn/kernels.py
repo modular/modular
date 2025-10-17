@@ -25,6 +25,7 @@ from max.graph import (
     BufferValueLike,
     DeviceRef,
     Dim,
+    StaticDim,
     TensorType,
     TensorValue,
     TensorValueLike,
@@ -2215,6 +2216,11 @@ def quantize_dynamic_scaled_float8(
     if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
         raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
 
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
+        )
+
     if group_size_or_per_token == -1:
         if input_scale_spec.is_block or weight_scale_spec.is_block:
             assert input_scale_spec.block_size is not None
@@ -2258,6 +2264,7 @@ def quantize_dynamic_scaled_float8(
         ],
         parameters={
             "group_size_or_per_token": group_size,
+            "input_hidden_size": int(input.shape[1]),
         },
     )
 
@@ -2849,6 +2856,7 @@ def topk_fused_sampling(
     *,
     temperature: TensorValueLike = 1.0,
     max_k: TensorValueLike | None = None,
+    min_top_p: TensorValueLike | None = None,
     top_p: TensorValueLike = 1.0,
     seed: TensorValueLike = 0,
 ) -> TensorValue:
@@ -2874,10 +2882,13 @@ def topk_fused_sampling(
     max_k_tensor = max_k
 
     if isinstance(top_k, int):
-        if top_k <= 0 or top_k > 256:
+        if top_k <= -1 or top_k > 255:
             raise ValueError(
-                f"top_k must be greater than 0 and less than or equal to 256, got {top_k}"
+                f"top_k must be greater than -1 and less than or equal to 255, got {top_k}"
             )
+
+        if top_k == 0:
+            top_k = -1
 
         max_k_tensor = ops.constant(
             top_k, dtype=DType.int64, device=DeviceRef.CPU()
@@ -2910,6 +2921,7 @@ def topk_fused_sampling(
             )
 
     # Handle top_p parameter - can be scalar or tensor
+    min_top_p_tensor = min_top_p
     if isinstance(top_p, float | int):
         if top_p <= 0 or top_p > 1:
             raise ValueError(f"expected top_p to be in (0, 1], got {top_p}")
@@ -2917,12 +2929,24 @@ def topk_fused_sampling(
             ops.constant(top_p, dtype=DType.float32, device=device),
             [batch_size],
         )
+        # Set min_top_p to the scalar value if provided, otherwise use top_p
+        min_top_p_value = min_top_p if min_top_p is not None else top_p
+        assert isinstance(min_top_p_value, float | int)
+        min_top_p_tensor = ops.constant(
+            min_top_p_value, dtype=DType.float32, device=DeviceRef.CPU()
+        )
     else:
         top_p_tensor = TensorValue(top_p)
         if top_p_tensor.shape[0] != batch_size:
             raise ValueError(
                 f"top_p tensor shape {top_p_tensor.shape} does not match batch_size {batch_size}"
             )
+        # When top_p is a tensor, min_top_p must be provided
+        if min_top_p is None:
+            raise ValueError(
+                "min_top_p must be explicitly set when top_p is a tensor"
+            )
+        min_top_p_tensor = TensorValue(min_top_p)
 
     # Handle seed parameter - can be scalar or tensor
     if isinstance(seed, int):
@@ -2946,6 +2970,7 @@ def topk_fused_sampling(
             max_k_tensor,
             temperature_tensor,
             top_p_tensor,
+            min_top_p_tensor,
             seed_tensor,
             logits,
         ],

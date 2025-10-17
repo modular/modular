@@ -140,9 +140,7 @@ fn naive_grouped_matmul_kernel[
     expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
 ):
     # There has to be a better way :(
-    var M: UInt = UInt(
-        a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)]
-    )
+    var M = UInt(a_offsets[Int(block_idx.z) + 1] - a_offsets[Int(block_idx.z)])
     N = b.dim[1]()
     K = b.dim[2]()
 
@@ -511,7 +509,7 @@ fn grouped_matmul_kernel_sm100[
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x
     )
-    alias c_coord_type = __type_of(ctile_coords)
+    alias c_coord_type = type_of(ctile_coords)
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -547,7 +545,7 @@ fn grouped_matmul_kernel_sm100[
                 @parameter
                 for m_vec in range(num_vecs_m):
                     alias i_vec = n_vec * num_vecs_m + m_vec
-                    alias dst_idx = __type_of(c_gmem_frag).layout(
+                    alias dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
                     alias dst_m_offset = dst_idx // N
@@ -635,15 +633,15 @@ fn grouped_matmul_sm100[
         a_type,
         b_type,
         c_type,
-        __type_of(a_tensor).layout,
-        __type_of(b_tensor).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(c_tensor).layout,
+        type_of(a_tensor).layout,
+        type_of(b_tensor).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(c_tensor).layout,
         block_tile_shape,
         mma_shape,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
         a_swizzle,
         b_swizzle,
         c_swizzle,
@@ -876,9 +874,9 @@ fn grouped_matmul_amd[
         c_type,
         a_type,
         b_type,
-        __type_of(c_tensor).layout,
-        __type_of(a_tensor).layout,
-        __type_of(b_tensor).layout,
+        type_of(c_tensor).layout,
+        type_of(a_tensor).layout,
+        type_of(b_tensor).layout,
         transpose_b,
         config,
         elementwise_lambda_fn=elementwise_lambda_fn,

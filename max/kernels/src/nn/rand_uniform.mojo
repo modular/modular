@@ -65,7 +65,7 @@ fn random_uniform[
     ](idx: IndexList[_rank],):
         constrained[width <= 4]()
 
-        var offset = _dot_prod(rebind[__type_of(strides)](idx), strides)
+        var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 
         var generator = Random(seed=seed_value, offset=UInt64(offset))
 

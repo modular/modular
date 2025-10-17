@@ -29,7 +29,7 @@ from linalg.matmul.gpu.sm100.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
 from linalg.utils import elementwise_compute_lambda_type
-from linalg.utils_gpu import MatmulConfig
+from linalg.matmul.gpu.sm100.config import MatmulConfig
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -143,11 +143,11 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
 
     alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=block_tile_shape,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         mma_shape=mma_shape,
+        cta_group=2,
     )
 
     alias optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
@@ -157,7 +157,6 @@ def test_matmul_sm100_epilogue[
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        cta_group=2,
         elementwise_compute_lambda_fn=optional_lambda_fn,
         register_based_epilogue=register_based_epilogue,
         swapAB=swapAB,

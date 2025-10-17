@@ -1224,10 +1224,10 @@ fn permlane_swap[
 
 fn permlane_shuffle[
     dtype: DType, simd_width: Int, //, stride: Int
-](val: SIMD[dtype, simd_width], out res: __type_of(val)):
-    var lane_group = lane_id() // stride
+](val: SIMD[dtype, simd_width], out res: type_of(val)):
+    var lane_group = lane_id() // UInt(stride)
 
-    var out = __type_of(res)()
+    var out = type_of(res)()
 
     @parameter
     for i in range(simd_width):

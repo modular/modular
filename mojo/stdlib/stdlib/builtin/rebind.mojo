@@ -67,7 +67,7 @@ fn rebind[
         A reference to the value rebound as `dest_type`.
     """
     lit = __get_mvalue_as_litref(src)
-    rebound = rebind[Pointer[dest_type, __origin_of(src)]._mlir_type](lit)
+    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
     return __get_litref_as_mvalue(rebound)
 
 

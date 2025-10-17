@@ -265,11 +265,11 @@ def execute_matmul_k_cache_ragged_scale[
         target="gpu",
         scales_granularity_mnk = IndexList[3](1, block_scale, block_scale),
     ](
-        hidden_state_ragged_device.tensor,
-        input_row_offsets_device.tensor,
-        weight_device.tensor,
-        input_scale_device.tensor,
-        weight_scale_device.tensor,
+        hidden_state_ragged_device.to_layout_tensor(),
+        input_row_offsets_device.to_layout_tensor(),
+        weight_device.to_layout_tensor(),
+        input_scale_device.to_layout_tensor(),
+        weight_scale_device.to_layout_tensor(),
         k_cache_device,
         ctx,
     )

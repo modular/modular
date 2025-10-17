@@ -21,7 +21,7 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _is_amd_mi355x, _accelerator_arch
+from sys.info import _accelerator_arch
 
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -229,7 +229,7 @@ fn matmul_kernel_naive[
 
 fn _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
     @parameter
-    if transpose_b and _is_amd_mi355x():
+    if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
 
         @parameter
         if dtype.is_half_float():

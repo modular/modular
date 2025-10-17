@@ -126,7 +126,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             return ""
 
     var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](a, b, c)
-    d = rebind[__type_of(d)](r)
+    d = rebind[type_of(d)](r)
 
 
 @fieldwise_init
@@ -394,7 +394,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             _RegisterPackType[SIMD[DType.float16, 2], SIMD[DType.float16, 2]],
         ](sa[0], sa[1], b, sc[0], sc[1])
 
-        d = rebind[__type_of(d)](r[0].join(r[1]))
+        d = rebind[type_of(d)](r[0].join(r[1]))
     elif _has_type[DType.float16](
         a.dtype, b.dtype, c.dtype, d.dtype
     ) and _has_shape[(1, 1, 2, 2)](a.size, b.size, c.size, d.size):
@@ -402,7 +402,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             "llvm.nvvm.mma.m8n8k4.row.col.f16.f16",
             _RegisterPackType[Float16, Float16],
         ](a, b, c)
-        d = rebind[__type_of(d)](r[0].join(r[1]))
+        d = rebind[type_of(d)](r[0].join(r[1]))
 
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32
@@ -428,7 +428,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c0[3],
         )
 
-        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+        d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
     elif _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(1, 1, 2, 2)](
@@ -438,7 +438,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             "llvm.nvvm.mma.m8n8k4.row.col.f32.f32",
             _RegisterPackType[Float32, Float32],
         ](a, b, c)
-        d = rebind[__type_of(d)](r[0].join(r[1]))
+        d = rebind[type_of(d)](r[0].join(r[1]))
 
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
@@ -463,7 +463,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c0[2],
             c0[3],
         )
-        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+        d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
     elif _has_type[
         (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
@@ -491,7 +491,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c0[2],
             c0[3],
         )
-        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+        d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
     # ===------------------------------------------------------------------===#
     # F32 = tf32 * tf32 + F32
@@ -515,7 +515,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c0[2],
             c0[3],
         )
-        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+        d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
     elif _has_type[DType.float32](
         a.dtype, b.dtype, c.dtype, d.dtype
@@ -539,7 +539,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c0[2],
             c0[3],
         )
-        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+        d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
     # ===------------------------------------------------------------------===#
     # F32 = FP8 * FP8 + F32
@@ -571,7 +571,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c[2],
             c[3],
         )
-        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+        d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
     elif _has_type[
         (DType.float8_e5m2, DType.float8_e5m2, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(16, 8, 4, 4)](
@@ -599,7 +599,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c[2],
             c[3],
         )
-        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+        d = rebind[type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
     else:
         _unsupported_mma_op(d, a, b, c)
@@ -1128,7 +1128,7 @@ fn wgmma_async[
     mat_a_desc: WGMMADescriptor,
     mat_b_desc: WGMMADescriptor,
     c_reg: StaticTuple[Scalar[c_dtype], width],
-) -> __type_of(c_reg):
+) -> type_of(c_reg):
     """Performs warp group async Matrix-multiply and accumulate (WGMMA) operation.
 
     This function executes an asynchronous matrix multiplication using warp group MMA instructions.
@@ -1264,7 +1264,7 @@ fn wgmma_async[
     mat_a_desc: WGMMADescriptor,
     mat_b_desc: WGMMADescriptor,
     c_reg: SIMD[c_dtype, width],
-) -> __type_of(c_reg):
+) -> type_of(c_reg):
     """Performs warp group async Matrix-multiply and accumulate (WGMMA) operation.
 
     This function executes an asynchronous matrix multiplication using warp group MMA instructions.
@@ -1401,7 +1401,7 @@ fn wgmma_async[
     mat_a_frag: SIMD[a_dtype, frag_a_width],
     mat_b_desc: WGMMADescriptor,
     c: SIMD[c_dtype, frag_c_width],
-) -> __type_of(c):
+) -> type_of(c):
     """Performs warp group async Matrix-multiply and accumulate (WGMMA) operation.
 
     Parameters:
@@ -1527,7 +1527,7 @@ fn wgmma_async[
                 c[0], c[1], c[2], c[3],
             )
 
-            return rebind[__type_of(c)](
+            return rebind[type_of(c)](
                 SIMD[DType.float32, 4](r[0], r[1], r[2], r[3])
             )
         elif n == 16:
@@ -1552,7 +1552,7 @@ fn wgmma_async[
                 c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
             )
 
-            return rebind[__type_of(c)](
+            return rebind[type_of(c)](
                 SIMD[DType.float32, 8](
                     r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
                 )
@@ -1582,7 +1582,7 @@ fn wgmma_async[
                 c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
             )
 
-            return rebind[__type_of(c)](
+            return rebind[type_of(c)](
                 SIMD[DType.float32, 16](
                     r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
                     r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
@@ -1619,7 +1619,7 @@ fn wgmma_async[
                 c[24], c[25], c[26], c[27], c[28], c[29], c[30], c[31],
             )
 
-            return rebind[__type_of(c)](
+            return rebind[type_of(c)](
                 SIMD[DType.float32, 32](
                     r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
                     r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
@@ -1669,7 +1669,7 @@ fn wgmma_async[
                 c[48], c[49], c[50], c[51], c[52], c[53], c[54], c[55],
                 c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63],
             )
-            return rebind[__type_of(c)](
+            return rebind[type_of(c)](
                 SIMD[DType.float32, 64](
                     r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
                     r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17],
@@ -1748,7 +1748,7 @@ fn wgmma_async[
                 c[124], c[125], c[126], c[127],
             )
 
-            return rebind[__type_of(c)](
+            return rebind[type_of(c)](
                 SIMD[DType.float32, 128](
                     r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
                     r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17], r[18],

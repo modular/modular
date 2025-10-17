@@ -38,8 +38,7 @@ warnings.filterwarnings("ignore")
 LINE = 80 * "-"
 
 
-HEADER = """
-# ===----------------------------------------------------------------------=== #
+HEADER = """##===----------------------------------------------------------------------===##
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -50,7 +49,7 @@ HEADER = """
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ===----------------------------------------------------------------------=== #
+##===----------------------------------------------------------------------===##
 """
 
 
@@ -503,8 +502,7 @@ def codegen_yaml(specs: list[TuningSpec], output_path: Path) -> None:
     # collect first set of parameters (i.e., "params[0]") from all specs.
     params = [s.params[0] for s in specs]
     df = pd.DataFrame(params)
-    _, non_pivots = extract_pivots_df(df, exclude=[])
-    print("common columns", non_pivots)
+    pivots, non_pivots = extract_pivots_df(df, exclude=[])
 
     # remove common columns (non-pivots) to get unique rows of data
     uniq_rows = df.drop(columns=non_pivots)
@@ -536,6 +534,9 @@ def codegen_yaml(specs: list[TuningSpec], output_path: Path) -> None:
     with open(output_yaml, "w") as f:
         f.write(yaml_str)
 
+    print(f"common columns: {non_pivots}")
+    print(f"pivot columns: {pivots}")
+    print(f"num entries: [{len(uniq_rows)}]")
     print(f"wrote results to [{output_yaml}]")
     print(LINE)
 
@@ -578,7 +579,7 @@ def merge_specs(
     sort_pivots: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Merges a list of Spec objects into a single pandas DataFrame, aligning on specified pivot columns.
+    Merges a list of Spec objects into a single pandas DataFrame, join on specified pivot columns.
 
     Args:
         spec_list (list[Spec]): List of Spec objects to merge.
@@ -598,35 +599,34 @@ def merge_specs(
         for df in df_list[1:]:
             pivots = list_intersection(pivots, list(df.columns))
 
-    # assert all pivots are present in columns of both
-    for df in df_list:
+    # assert all pivots are present in columns of all df's
+    for i, df in enumerate(df_list):
         assert np.all([p in df.columns for p in pivots])
+        # ignore non-pivot columns
+        df = df[pivots]
+        df["spec"] = spec_list[i]
+        df_list[i] = df
+
+    # merge all df's
+    df_merged = df_list[0]
+    for df in df_list[1:]:
+        df_merged = pd.merge(df_merged, df, on=pivots, how="outer")
+
+    # Fill 'spec' with 'spec_x' if 'spec_x' is not NaN, otherwise with 'spec_y'.
+    # Then, drop 'spec_x' and 'spec_y'.
+    df_merged["spec"] = np.where(
+        df_merged["spec_x"].notna(), df_merged["spec_x"], df_merged["spec_y"]
+    )
+    df_merged = df_merged.drop(["spec_x", "spec_y"], axis=1)
 
     if not sort_pivots:
         sort_pivots = pivots
-
     assert set(sort_pivots).issubset(set(pivots))
-
-    for i, df in enumerate(df_list):
-        df = df[pivots]
-        df["spec"] = list(spec_list[i])
-        df_list[i] = df
-
-    # update df_list with overlapping values from other df's
-    for df in df_list[1:]:
-        df_list[0].update(df)
-
-    pivots_spec = pivots[:] + ["spec"]
-    # now concat the two and drop the duplicates by using common pivots
-    df_merged = pd.DataFrame(
-        pd.concat(df_list, ignore_index=True)
-        .drop_duplicates(pivots)
-        .reset_index(drop=True)[pivots_spec]
+    df_merged = (
+        df_merged.drop_duplicates(sort_pivots)
+        .sort_values(by=sort_pivots)
+        .reset_index(drop=True)
     )
-
-    if sort_pivots:
-        df_merged = df_merged.sort_values(by=sort_pivots)
-    df_merged = df_merged.reset_index(drop=True)
     return df_merged
 
 
@@ -818,6 +818,11 @@ help_str = "Profile kbench output pickle"
     help="Merge the first incoming pkl/yamls with the first one.",
 )
 @click.option(
+    "--query",
+    default=None,
+    help="Query the yaml. Example: kprofile --merge *yaml --query 'M>64 and K<1024' ",
+)
+@click.option(
     "--correlation",
     "-c",
     is_flag=True,
@@ -845,6 +850,7 @@ def cli(
     pivots,  # noqa: ANN001
     sort_pivots,  # noqa: ANN001
     merge: bool,
+    query: str,
     correlation: bool,
     verbose,  # noqa: ANN001
 ) -> bool:
@@ -872,9 +878,19 @@ def cli(
         merged_df = merge_specs(
             spec_list, pivots=pivots, sort_pivots=sort_pivots
         )
-        print(merged_df.to_string())
+
+        if query:
+            print(f"Applying query: [{query}]")
+            merged_df = merged_df.query(query).reset_index(drop=True)
+        if verbose:
+            print(merged_df.loc[:, merged_df.columns != "spec"].to_string())
+            print(LINE)
+        if len(merged_df) == 0:
+            raise ValueError(
+                "Query resulted in empty dataset. No data matches the specified query or filters."
+            )
+
         specs = spec_to_tuning_spec(merged_df["spec"])
-        print(specs)
 
         codegen_yaml(specs, output_path=output_path)
 

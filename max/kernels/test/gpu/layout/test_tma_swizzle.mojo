@@ -115,18 +115,18 @@ def test_tma_swizzle[
     print(test_name)
 
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    alias descM = __type_of(tma_tensor).desc_layout.shape[0].value()
-    alias descN = __type_of(tma_tensor).desc_layout.shape[1].value()
+    alias descM = type_of(tma_tensor).desc_layout.shape[0].value()
+    alias descN = type_of(tma_tensor).desc_layout.shape[1].value()
     alias desc_tile_size = descM * descN
     desc_tile = LayoutTensor[
-        dtype, __type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, type_of(tma_tensor).desc_layout, MutableAnyOrigin
     ].stack_allocation()
 
     alias kernel = tma_swizzle_load_kernel[
-        __type_of(tma_tensor).dtype,
+        type_of(tma_tensor).dtype,
         layout,
-        __type_of(tma_tensor).layout,
-        __type_of(tma_tensor).desc_layout,
+        type_of(tma_tensor).layout,
+        type_of(tma_tensor).desc_layout,
     ]
     ctx.enqueue_function[kernel](
         dst.device_tensor(),

@@ -22,8 +22,9 @@ from os import listdir
 
 from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
+from io import FileDescriptor
 from sys import CompilationTarget, external_call, is_gpu
-from sys.ffi import c_char
+from sys.ffi import c_char, c_int
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -134,7 +135,7 @@ struct _DirHandle:
                 break
             var name = ep.take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
-            var name_str = StringSlice[__origin_of(name)](
+            var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
                 length=_unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE),
             )
@@ -160,7 +161,7 @@ struct _DirHandle:
                 break
             var name = ep.take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
-            var name_str = StringSlice[__origin_of(name)](
+            var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
                 length=_unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE),
             )
@@ -401,3 +402,34 @@ fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
         except:
             break
         head, tail = os.path.split(head)
+
+
+# ===----------------------------------------------------------------------=== #
+# isatty
+# ===----------------------------------------------------------------------=== #
+
+
+fn isatty(fd: Int) -> Bool:
+    """Checks whether a file descriptor refers to a terminal.
+
+    Returns `True` if the file descriptor `fd` is open and connected to a
+    tty(-like) device, otherwise `False`.
+
+    Args:
+        fd: A file descriptor.
+
+    Returns:
+        `True` if `fd` is connected to a terminal, `False` otherwise.
+
+    Examples:
+        ```mojo
+        from os import isatty
+
+        # Check if stdout (fd=1) is a terminal
+        if isatty(1):
+            print("Running in a terminal")
+        else:
+            print("Output is redirected")
+        ```
+    """
+    return FileDescriptor(fd).isatty()

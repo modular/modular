@@ -105,60 +105,56 @@ struct HopperMatmulSM90Kernel_SMem[
     alias SMM = SharedMemoryManager[]
 
     # Tile iterator types - manage cycling through pipeline stages
-    alias ATileArrayType = Self.SMM.TileArray[
-        a_type, a_layout, num_pipeline_stages
-    ]
-    alias BTileArrayType = Self.SMM.TileArray[
-        b_type, b_layout, num_pipeline_stages
-    ]
-    alias CTileType = Self.SMM.Tile[c_type, c_layout]
+    alias ATileArray = Self.SMM.TileArray[a_type, a_layout, num_pipeline_stages]
+    alias BTileArray = Self.SMM.TileArray[b_type, b_layout, num_pipeline_stages]
+    alias CTile = Self.SMM.Tile[c_type, c_layout]
 
     # Pipeline barrier types - for producer/consumer synchronization
-    alias PipelineBarrierType = Self.SMM.Array[
+    alias PipelineBarrier = Self.SMM.Array[
         SharedMemBarrier, num_pipeline_stages
     ]
 
     # Tile iterators - cycle through pipeline stages
-    var a_tiles: Self.ATileArrayType.T
-    var b_tiles: Self.BTileArrayType.T
-    var c_tile: Self.CTileType.T
+    var a_tiles: Self.ATileArray
+    var b_tiles: Self.BTileArray
+    var c_tile: Self.CTile
 
     # Pipeline barriers:
     # - full_mbar: Signals when tiles are loaded and ready for consumption
     # - empty_mbar: Signals when tiles have been consumed and can be reused
-    var full_mbar: Self.PipelineBarrierType.T
-    var empty_mbar: Self.PipelineBarrierType.T
+    var full_mbar: Self.PipelineBarrier
+    var empty_mbar: Self.PipelineBarrier
 
     fn __init__(out self):
         var smem_mgr = Self.SMM()
         # Initialize tile iterators
-        self.a_tiles = Self.ATileArrayType.build(smem_mgr)
-        self.b_tiles = Self.BTileArrayType.build(smem_mgr)
-        self.c_tile = Self.CTileType.build(smem_mgr)
+        self.a_tiles = smem_mgr.build[T = Self.ATileArray]()
+        self.b_tiles = smem_mgr.build[T = Self.BTileArray]()
+        self.c_tile = smem_mgr.build[T = Self.CTile]()
         # Initialize barriers
-        self.full_mbar = Self.PipelineBarrierType.build(smem_mgr)
-        self.empty_mbar = Self.PipelineBarrierType.build(smem_mgr)
+        self.full_mbar = smem_mgr.build[T = Self.PipelineBarrier]()
+        self.empty_mbar = smem_mgr.build[T = Self.PipelineBarrier]()
 
     @staticmethod
     @always_inline
     fn pipeline_storage_size() -> Int:
         """Calculate the memory size for all pipeline stages."""
-        var a_size = Self.ATileArrayType.storage_size
-        var b_size = Self.BTileArrayType.storage_size
+        var a_size = Self.ATileArray.storage_size
+        var b_size = Self.BTileArray.storage_size
 
         return (
             # A and B tile iterators with padding
             a_size
             + b_size
             # Pipeline barriers (full + empty)
-            + 2 * Self.PipelineBarrierType.storage_size
+            + 2 * Self.PipelineBarrier.storage_size
         )
 
     @staticmethod
     @always_inline
     fn output_storage_size() -> Int:
         """Calculate the memory size for output tile."""
-        return Self.CTileType.storage_size
+        return Self.CTile.storage_size
 
     @staticmethod
     @always_inline
@@ -647,8 +643,8 @@ struct HopperMatmulSM90Kernel[
         # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
         # between producers and consumers
         var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -799,8 +795,8 @@ struct HopperMatmulSM90Kernel[
         # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
         # between producers and consumers
         var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -966,8 +962,8 @@ struct HopperMatmulSM90Kernel[
         # unaligned memory access capabilities. The ring buffer still manages producer-
         # consumer synchronization but uses different memory access patterns
         var ring_buffer = Self.RingBuffer[True](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -1131,8 +1127,8 @@ struct HopperMatmulSM90Kernel[
         # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
         # between producers and consumers
         var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -1342,8 +1338,8 @@ struct HopperMatmulSM90Kernel[
         # It uses two sets of barriers (full_mbar, empty_mbar) to synchronize access
         # between producers and consumers
         var ring_buffer = Self.RingBuffer[](
-            smem.full_mbar,
-            smem.empty_mbar,
+            smem.full_mbar.ptr,
+            smem.empty_mbar.ptr,
             warp_group_thread_idx,
             smem.a_tiles,
             smem.b_tiles,
@@ -2227,7 +2223,7 @@ fn warp_specialized_gemm_output[
         ):
             # Output dimensions in global memory.
             alias N = c_layout.shape[1].value()
-            var M: UInt = UInt(c.dim[0]())
+            var M = UInt(c.dim[0]())
 
             var lane = lane_id()
 

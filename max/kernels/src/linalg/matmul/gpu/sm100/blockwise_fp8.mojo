@@ -409,7 +409,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x
     )
-    alias c_coord_type = __type_of(ctile_coords)
+    alias c_coord_type = type_of(ctile_coords)
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -445,7 +445,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 @parameter
                 for m_vec in range(num_vecs_m):
                     alias i_vec = n_vec * num_vecs_m + m_vec
-                    alias dst_idx = __type_of(c_gmem_frag).layout(
+                    alias dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
                     alias dst_m_offset = dst_idx // N
@@ -730,16 +730,16 @@ fn matmul_sm100_blockwise_scaled_fp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        __type_of(a_3D).layout,
-        __type_of(c).layout,
-        __type_of(a_scales_3D).layout,
-        __type_of(b_scales).layout,
-        __type_of(a_tma_op).layout,
-        __type_of(b_tma_op).layout,
-        __type_of(a_scales_tma_op).layout,
-        __type_of(a_tma_op).desc_layout,
-        __type_of(b_tma_op).desc_layout,
-        __type_of(a_scales_tma_op).desc_layout,
+        type_of(a_3D).layout,
+        type_of(c).layout,
+        type_of(a_scales_3D).layout,
+        type_of(b_scales).layout,
+        type_of(a_tma_op).layout,
+        type_of(b_tma_op).layout,
+        type_of(a_scales_tma_op).layout,
+        type_of(a_tma_op).desc_layout,
+        type_of(b_tma_op).desc_layout,
+        type_of(a_scales_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,

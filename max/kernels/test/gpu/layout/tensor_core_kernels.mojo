@@ -145,7 +145,7 @@ fn mma_write_operand_kernel[
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
     var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
-    thread_reg_tile_v[0, 0] = rebind[__type_of(thread_reg_tile_v[0, 0])](
+    thread_reg_tile_v[0, 0] = rebind[type_of(thread_reg_tile_v[0, 0])](
         mma.c_reg_type(thread_idx.x)
     )
     mma.store_d(output, thread_reg_tile)

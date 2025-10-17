@@ -11,19 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import _type_is_eq
+from os import isatty
+from sys._io import stdin, stdout, stderr
+from testing import TestSuite, assert_equal, assert_false
 
-from stdlib.collections.list import _ListIter
-from testing import TestSuite, assert_true
+
+def test_isatty_matches_file_descriptor():
+    """Test that os.isatty(fd) matches FileDescriptor.isatty() for standard streams.
+    """
+    assert_equal(isatty(0), stdin.isatty())
+    assert_equal(isatty(1), stdout.isatty())
+    assert_equal(isatty(2), stderr.isatty())
 
 
-fn test_iter() raises:
-    var l = [1, 2, 3]
-    var it = iter(l)
-    assert_true(_type_is_eq[type_of(it), _ListIter[Int, origin_of(l)]]())
-    # Check that iter(iter(l)) is the same as iter(l)
-    var _it2 = iter(it)
-    assert_true(_type_is_eq[type_of(_it2), _ListIter[Int, origin_of(l)]]())
+def test_isatty_with_invalid_fd():
+    """Test that isatty returns False for invalid file descriptors."""
+    # Test with negative file descriptor
+    assert_false(isatty(-1))
+
+    # Test with a very large invalid file descriptor
+    assert_false(isatty(9999))
 
 
 def main():

@@ -34,7 +34,7 @@ fn assert_almost_equal[
     dtype: DType, //,
 ](
     x: UnsafePointer[Scalar[dtype]],
-    y: __type_of(x),
+    y: type_of(x),
     num_elements: Int,
     msg: String = "",
     *,
@@ -58,7 +58,7 @@ fn assert_almost_equal[
 @always_inline
 fn assert_almost_equal(
     x: NDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -81,7 +81,7 @@ fn assert_almost_equal(
 @always_inline
 fn assert_almost_equal(
     x: HostNDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -103,7 +103,7 @@ fn assert_almost_equal(
 @always_inline
 fn assert_almost_equal(
     x: TestTensor,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -130,7 +130,7 @@ fn assert_almost_equal(
 @always_inline
 fn assert_equal(
     x: NDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -147,7 +147,7 @@ fn assert_equal(
 @always_inline
 fn assert_equal(
     x: HostNDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -163,7 +163,7 @@ fn assert_equal(
 @always_inline
 fn assert_equal(
     x: TestTensor,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -191,7 +191,7 @@ fn _assert_with_measure_impl[
     ) -> Float64,
 ](
     x: UnsafePointer[Scalar[dtype], **_],
-    y: __type_of(x),
+    y: type_of(x),
     n: Int,
     msg: String = "",
     *,
@@ -225,7 +225,7 @@ fn assert_with_measure[
     ) -> Float64,
 ](
     x: NDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -250,7 +250,7 @@ fn assert_with_measure[
     ) -> Float64,
 ](
     x: HostNDBuffer,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,
@@ -275,7 +275,7 @@ fn assert_with_measure[
     ) -> Float64,
 ](
     x: TestTensor,
-    y: __type_of(x),
+    y: type_of(x),
     msg: String = "",
     *,
     location: OptionalReg[_SourceLocation] = None,

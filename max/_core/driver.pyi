@@ -552,6 +552,24 @@ class Tensor:
         device upon which the tensor is already resident.
         """
 
+    @overload
+    def to(self, devices: Sequence[Device]) -> list[Tensor]:
+        """
+        Return a list of tensors that are guaranteed to be on the given devices.
+
+        The tensors are only copied if the requested devices are different from the
+        device upon which the tensor is already resident.
+        """
+
+    @overload
+    def to(self, streams: Sequence[DeviceStream]) -> list[Tensor]:
+        """
+        Return a list of tensors that are guaranteed to be on the given streams.
+
+        The tensors are only copied if the requested streams are different from the
+        stream upon which the tensor is already resident.
+        """
+
     def to_numpy(self) -> numpy.ndarray:
         """
         Converts the tensor to a numpy array.

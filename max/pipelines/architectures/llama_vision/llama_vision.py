@@ -395,12 +395,9 @@ class MultimodalKVCacheManager(TPPagedKVCacheManager):
         return 0
 
     def external_claim(
-        self, request_id: RequestID, replica_idx: int | None = None
+        self, request_id: RequestID, replica_idx: int = 0
     ) -> None:
         """Reserves sequence IDs for the given request ID in both modalities' KV caches."""
-        if replica_idx is None:
-            replica_idx = 0
-
         self.text_kv_manager.external_claim(request_id, replica_idx)
         self.vision_kv_manager.external_claim(request_id, replica_idx)
 

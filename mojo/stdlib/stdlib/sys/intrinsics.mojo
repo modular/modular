@@ -1012,7 +1012,7 @@ fn readfirstlane(value: Int32) -> Int32:
 
 # TODO: this can be parameterized for AnyTrivialRegType but I am hitting compiler errors so skipping for now
 @always_inline
-fn readfirstlane(value: UnsafePointer) -> __type_of(value):
+fn readfirstlane(value: UnsafePointer) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -1024,12 +1024,12 @@ fn readfirstlane(value: UnsafePointer) -> __type_of(value):
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
 
 
 @always_inline
-fn readfirstlane(value: Int) -> __type_of(value):
+fn readfirstlane(value: Int) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -1041,7 +1041,7 @@ fn readfirstlane(value: Int) -> __type_of(value):
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
     ](value)
 
 

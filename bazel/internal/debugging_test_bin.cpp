@@ -28,7 +28,7 @@
 
 #include <iostream>
 
-#include "bazel/internal/debugging_test_lib.h"
+#include "debugging_test_lib.h"
 
 void test_binary_function() {
   std::cout << "Debugging test binary function called." << std::endl;

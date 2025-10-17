@@ -82,7 +82,19 @@ what we publish.
   `Tuple[Int, Float]`. It instead creates a tuple instance of two type values,
   i.e., `(Int, Float) : Tuple[__typeof(Int), __typeof(Float)]`.
 
+- The `__type_of` magic function has been been renamed to `type_of`. Using the
+  old spelling will yield a deprecation warning. Similarly, `__origin_of` has
+  been deprecated in favor of the new `origin_of`.
+
 ### Library changes {#25-7-library-changes}
+
+- Added `os.isatty()` function to check whether a file descriptor refers to a
+  terminal. This function accepts an `Int` file descriptor. If you have a
+  `FileDescriptor` object, use its `isatty()` method instead.
+
+- The `Hasher` trait's `_update_with_bytes` method now takes `Span[Byte]`
+  instead of `UnsafePointer[UInt8]` and a separate length parameter. This
+  change applies to all hasher implementations including `AHasher` and `Fnv1a`.
 
 - Added `unsafe_get`, `unsafe_swap_elements` and `unsafe_subspan` to `Span`.
 
@@ -124,10 +136,13 @@ what we publish.
 - Added `sys.compile.SanitizeAddress` providing a way for mojo code to detect
   `--sanitize address` at compile time.
 
-### Tooling changes {#25-7-tooling-changes}
-
 - Error messages now preserve symbolic calls to `always_inline("builtin")`
   functions rather than inlining them into the error message.
+
+### Tooling changes {#25-7-tooling-changes}
+
+- `mojo test` has [been deprecated](https://forum.modular.com/t/proposal-deprecating-mojo-test/2371)
+  and will be removed in a future release.
 
 ### ❌ Removed {#25-7-removed}
 

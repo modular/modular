@@ -286,7 +286,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
-            params=DeepseekV2Config.get_kv_params(
+            params=cls.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
@@ -345,7 +345,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = DeepseekV2Config.get_kv_params(
+        kv_params = self.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
             kv_cache_config=self.kv_cache_config,

@@ -274,11 +274,11 @@ struct MHAPosition[
     ):
         gmem_block = {
             ptr + self.q_out_offset,
-            __type_of(gmem_block.runtime_layout)(
-                __type_of(gmem_block.runtime_layout.shape)(
+            type_of(gmem_block.runtime_layout)(
+                type_of(gmem_block.runtime_layout.shape)(
                     Int(self.q_tile_num_rows()), depth
                 ),
-                __type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
+                type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
             ),
         }
 

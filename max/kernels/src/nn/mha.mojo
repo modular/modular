@@ -368,7 +368,7 @@ fn flash_attention[
         var v_operand = KVCacheMHAOperand(v)
 
         flash_attention_dispatch[
-            kv_num_heads=kv_num_heads,
+            kv_num_heads = Int(kv_num_heads),
             use_score_mod=use_score_mod,
             config=config,
             ragged=ragged,
@@ -502,14 +502,14 @@ fn flash_attention_dispatch[
                 and config.algorithm == FlashAttentionAlgorithm(3)
             ):
                 num_rows_q = q_num_matrix_view_rows[
-                    decoding=False, depth=depth
+                    decoding=False, depth = Int(depth)
                 ](q)
 
                 @parameter
                 if is_sm90:
                     mha_sm90_dispatch[
                         config=config,
-                        group=group,
+                        group = Int(group),
                         use_score_mod=use_score_mod,
                         ragged=ragged,
                         sink=sink,
@@ -538,7 +538,7 @@ fn flash_attention_dispatch[
                     constrained[is_sm100]()
                     mha_sm100_dispatch[
                         config=config,
-                        group=group,
+                        group = Int(group),
                         use_score_mod=use_score_mod,
                         ragged=ragged,
                         sink=sink,
@@ -574,7 +574,7 @@ fn flash_attention_dispatch[
                     output.dtype,
                     mask_t,
                     score_mod_t,
-                    __type_of(valid_length.to_layout_tensor()).layout,
+                    type_of(valid_length.to_layout_tensor()).layout,
                     config,
                     group=group,
                     use_score_mod=use_score_mod,
@@ -695,7 +695,7 @@ fn flash_attention_dispatch[
                     output.dtype,
                     mask_t,
                     score_mod_t,
-                    __type_of(valid_length.to_layout_tensor()).layout,
+                    type_of(valid_length.to_layout_tensor()).layout,
                     BM=BM,
                     BN=BN,
                     BK = UInt(BK),
@@ -1585,7 +1585,7 @@ fn mha_single_batch[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -1840,12 +1840,12 @@ fn mha_single_batch[
         @always_inline
         @parameter
         fn _mask_tensor_row(
-            tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
+            tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
             return {
                 tensor.ptr,
-                __type_of(tensor.runtime_layout)(
-                    __type_of(tensor.runtime_layout.shape)(
+                type_of(tensor.runtime_layout)(
+                    type_of(tensor.runtime_layout.shape)(
                         num_rows, tensor.dim[1]()
                     ),
                     tensor.runtime_layout.stride,
@@ -2304,7 +2304,7 @@ fn mha_single_batch_pipelined[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -2552,11 +2552,11 @@ fn mha_single_batch_pipelined[
                 swizzle_a=True,
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
-                next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
-                next_op_b_layout_int_type = __type_of(
+                next_op_b_iter_masked = type_of(v_gmem_iter).masked,
+                next_op_b_layout_int_type = type_of(
                     v_gmem_iter
                 ).layout_int_type,
-                next_op_b_linear_idx_type = __type_of(
+                next_op_b_linear_idx_type = type_of(
                     v_gmem_iter
                 ).linear_idx_type,
                 k_group_size = config.k_group_size,
@@ -2587,11 +2587,11 @@ fn mha_single_batch_pipelined[
                 swizzle_a=True,
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
-                next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
-                next_op_b_layout_int_type = __type_of(
+                next_op_b_iter_masked = type_of(v_gmem_iter).masked,
+                next_op_b_layout_int_type = type_of(
                     v_gmem_iter
                 ).layout_int_type,
-                next_op_b_linear_idx_type = __type_of(
+                next_op_b_linear_idx_type = type_of(
                     v_gmem_iter
                 ).linear_idx_type,
                 k_group_size = config.k_group_size,
@@ -2969,11 +2969,11 @@ fn mha_decoding[
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
-    var qk_max_batch_ptr = __type_of(qk_max_ptr)()
+    var qk_max_batch_ptr = type_of(qk_max_ptr)()
     if qk_max_ptr:
         qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
 
-    var exp_sum_batch_ptr = __type_of(exp_sum_ptr)()
+    var exp_sum_batch_ptr = type_of(exp_sum_ptr)()
     if exp_sum_ptr:
         exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
 
@@ -3329,7 +3329,7 @@ fn mha_decoding_single_batch[
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
@@ -3489,9 +3489,7 @@ fn mha_decoding_single_batch[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int
-    ) -> __type_of(tensor):
+    fn _mask_tensor_row(tensor: LayoutTensor, num_rows: Int) -> type_of(tensor):
         return {
             tensor.ptr,
             {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
@@ -4005,15 +4003,15 @@ fn mha_decoding_single_batch_pipelined[
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
-        Layout.row_major(BM, BK),
+        Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ](
         rebind[
-            __type_of(
+            type_of(
                 LayoutTensorIter[
                     q_type,
-                    Layout.row_major(BM, BK),
+                    Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
                     alignment=alignment,
@@ -4029,7 +4027,7 @@ fn mha_decoding_single_batch_pipelined[
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
     var k_smem_iter = LayoutTensorIter[
         k_type,
-        Layout.row_major(BN, BK),
+        Layout.row_major(Int(BN), Int(BK)),
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
@@ -4051,7 +4049,7 @@ fn mha_decoding_single_batch_pipelined[
 
     var p_reg_tile = LayoutTensor[
         accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation[stack_alignment=p_frag_align]()
@@ -4059,7 +4057,7 @@ fn mha_decoding_single_batch_pipelined[
     var output_reg_tile = (
         LayoutTensor[
             accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+            Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
@@ -4073,8 +4071,8 @@ fn mha_decoding_single_batch_pipelined[
 
     # Rowwise max and sum for online softmax
     alias row_align = align_of[SIMD[accum_type, simd_width_of[accum_type]()]]()
-    var rowmax = stack_allocation[WM, accum_type, alignment=row_align]()
-    var rowsum = stack_allocation[WM, accum_type, alignment=row_align]()
+    var rowmax = stack_allocation[Int(WM), accum_type, alignment=row_align]()
+    var rowsum = stack_allocation[Int(WM), accum_type, alignment=row_align]()
 
     var partition_idx = block_idx.x
 
@@ -4087,7 +4085,7 @@ fn mha_decoding_single_batch_pipelined[
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
             )
-            if thread_idx.x < UInt(4 * group):
+            if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
                     sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]()
                     * log2e
@@ -4109,7 +4107,7 @@ fn mha_decoding_single_batch_pipelined[
     var v_smem = k_smem.bitcast[Scalar[v_type]]()
     var v_smem_iter = LayoutTensorIter[
         v_type,
-        Layout.row_major(BK, BN),
+        Layout.row_major(Int(BK), Int(BN)),
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
@@ -4121,7 +4119,7 @@ fn mha_decoding_single_batch_pipelined[
     alias p_smem_size = BM * BN
     var p_smem_iter = LayoutTensorIter[
         v_type,
-        Layout.row_major(BM, BK),
+        Layout.row_major(Int(BM), Int(BK)),
         address_space = AddressSpace.SHARED,
         circular=True,
     ](p_smem, BM * BN)
@@ -4129,7 +4127,7 @@ fn mha_decoding_single_batch_pipelined[
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
         accum_type,
-        Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
+        Layout.row_major(p_frag_simdwidth * Int(num_warps_n), Int(BM)),
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
@@ -4139,7 +4137,7 @@ fn mha_decoding_single_batch_pipelined[
 
     var q_offset = depth * kv_head_idx * group
 
-    alias q_gmem_layout = Layout.row_major(BM, depth)
+    alias q_gmem_layout = Layout.row_major(Int(BM), Int(depth))
     var q_gmem_block = LayoutTensor[
         q_type,
         q_gmem_layout,
@@ -4152,18 +4150,20 @@ fn mha_decoding_single_batch_pipelined[
             element_type = DType.int32, linear_idx_type = DType.int32
         ](
             RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
-                group, depth
+                Int(group), Int(depth)
             ),
             RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
-                depth, 1
+                Int(depth), 1
             ),
         ),
     )
-    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+    var q_gmem_iter = q_gmem_block.tiled_iterator[Int(BM), Int(BK), axis=1](
+        0, 0
+    )
 
     # Loop over Key and Value tiles
-    start, end = get_start_and_end_for_partitions[BN](
-        num_keys, num_partitions, block_idx.x
+    start, end = get_start_and_end_for_partitions[Int(BN)](
+        Int(num_keys), Int(num_partitions), Int(block_idx.x)
     )
 
     var scale_log2e: Float32 = (
@@ -4177,7 +4177,7 @@ fn mha_decoding_single_batch_pipelined[
     fn loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, seq_len: Int):
-        var k_ptr = k.block_paged_ptr[BN](
+        var k_ptr = k.block_paged_ptr[Int(BN)](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
         var k_gmem_block = LayoutTensor[
@@ -4188,7 +4188,9 @@ fn mha_decoding_single_batch_pipelined[
             ),
             masked = not not_last_iter,
         ](k_ptr)
-        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
+        var k_gmem_iter = k_gmem_block.tiled_iterator[Int(BN), Int(BK), axis=1](
+            0, 0
+        )
 
         var kv_tile_num_rows = min(Int(BN), end - kv_tile_start_row)
 
@@ -4196,13 +4198,13 @@ fn mha_decoding_single_batch_pipelined[
 
         if kv_tile_start_row == start:
             multistage_mma[
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                num_threads,
-                num_pipeline_stages,
+                Int(BM),
+                Int(BN),
+                Int(BK),
+                Int(WM),
+                Int(WN),
+                Int(num_threads),
+                Int(num_pipeline_stages),
                 True,  # transpose_b
                 swizzle_a=True,
             ](
@@ -4211,18 +4213,18 @@ fn mha_decoding_single_batch_pipelined[
                 k_gmem_iter,
                 q_smem_iter,
                 k_smem_iter,
-                depth // BK,
+                Int(depth // BK),
                 num_b_rows=Int(kv_tile_num_rows),
             )
         else:
             multistage_mma[
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                num_threads,
-                num_pipeline_stages,
+                Int(BM),
+                Int(BN),
+                Int(BK),
+                Int(WM),
+                Int(WN),
+                Int(num_threads),
+                Int(num_pipeline_stages),
                 True,  # transpose_b
                 swizzle_a=True,
             ](
@@ -4231,17 +4233,17 @@ fn mha_decoding_single_batch_pipelined[
                 k_gmem_iter,
                 q_smem_iter,
                 k_smem_iter,
-                depth // BK,
+                Int(depth // BK),
                 num_b_rows=Int(kv_tile_num_rows),
             )
 
         scale_and_mask_helper[
-            num_n_mmas=num_n_mmas,
-            WN=WN,
+            num_n_mmas = Int(num_n_mmas),
+            WN = Int(WN),
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
             use_score_mod=use_score_mod,
-            group=group,
+            group = Int(group),
         ](
             p_reg_tile,
             scale_log2e,
@@ -4253,33 +4255,33 @@ fn mha_decoding_single_batch_pipelined[
             score_mod,
             kv_tile_start_row,
             stride,
-            max_cache_valid_length,
+            Int(max_cache_valid_length),
         )
 
         # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
         # G <= 8 typically holds
         var output_reg_vecs = output_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
+            Int(num_m_mmas * num_n_mmas), p_frag_size // 2
         ](0, 0).vectorize[1, p_frag_size // 2]()
         var p_reg_vecs = p_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
+            Int(num_m_mmas * num_n_mmas), p_frag_size // 2
         ](0, 0).vectorize[1, p_frag_size // 2]()
 
         _online_softmax_iter_for_mma_output[
             accum_type,
-            Layout.row_major(num_m_mmas, num_n_mmas),
-            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(Int(num_m_mmas), Int(num_n_mmas)),
+            Layout.row_major(Int(num_warps_m), Int(num_warps_n)),
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
             output_reg_vecs,
             p_reg_vecs,
-            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+            warp_scratch.tile[Int(num_warps_n), Int(WM)](0, Int(warp_y)),
             rowmax,
             rowsum,
         )
 
-        var v_ptr = v.block_paged_ptr[BN](
+        var v_ptr = v.block_paged_ptr[Int(BN)](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
         var v_gmem_block = LayoutTensor[
@@ -4290,7 +4292,9 @@ fn mha_decoding_single_batch_pipelined[
             ),
             masked = not not_last_iter,
         ](v_ptr)
-        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
+        var v_gmem_iter = v_gmem_block.tiled_iterator[Int(BK), Int(BN), axis=0](
+            0, 0
+        )
 
         # Copy score fragments to shared memory with swizzling to resolve bank
         # conflicts for ldmatrix in the 2nd matmul.
@@ -4300,13 +4304,13 @@ fn mha_decoding_single_batch_pipelined[
         barrier()
 
         multistage_mma[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            num_threads,
-            num_pipeline_stages,
+            Int(BM),
+            Int(BN),
+            Int(BK),
+            Int(WM),
+            Int(WN),
+            Int(num_threads),
+            Int(num_pipeline_stages),
             False,  # transpose_b
             swizzle_a=True,
         ](
@@ -4315,17 +4319,17 @@ fn mha_decoding_single_batch_pipelined[
             v_gmem_iter,
             p_smem_iter,
             v_smem_iter,
-            BN // BK,
+            Int(BN // BK),
             num_b_rows=Int(kv_tile_num_rows),
         )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](start, end)
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](Int(BN))](start, end)
 
     # Apply softmax denumerator.
 
     @parameter
     for m_mma in range(num_m_mmas):
-        var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
+        var rowsum_inv0 = 1.0 / rowsum[2 * Int(m_mma)]
 
         @parameter
         for n_mma in range(num_n_mmas):
@@ -4333,7 +4337,7 @@ fn mha_decoding_single_batch_pipelined[
             output_reg_tile[n_mma, 1] *= rowsum_inv0
 
     if num_partitions > 1:
-        if thread_idx.x % 4 == 0 and thread_idx.x < UInt(4 * group):
+        if thread_idx.x % 4 == 0 and thread_idx.x < UInt(4) * group:
             var row_sum = rowsum[0]
             var row_max = rowmax[0]
             var q_head_idx = kv_head_idx * group + thread_idx.x // 4
@@ -4343,7 +4347,7 @@ fn mha_decoding_single_batch_pipelined[
     # Pack results in shared memory for wider simd width.
     var accum_smem_warp_tile = LayoutTensor[
         output_type,
-        Layout.row_major(WM, WN),
+        Layout.row_major(Int(WM), Int(WN)),
         address_space = AddressSpace.SHARED,
     ](q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN)
 
@@ -4358,30 +4362,30 @@ fn mha_decoding_single_batch_pipelined[
     )
     # Guard writing to shared memory.
     barrier()
-    alias output_gmem_layout = Layout.row_major(BM, depth)
+    alias output_gmem_layout = Layout.row_major(Int(BM), Int(depth))
     var output_gmem_runtime_layout = RuntimeLayout[
         element_type = DType.int32, linear_idx_type = DType.int32
     ](
         RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
-            group, depth
+            Int(group), Int(depth)
         ),
         RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
-            depth, 1
+            Int(depth), 1
         ),
     )
     var output_gmem_tile = LayoutTensor[
         output_type,
-        Layout.row_major(BM, depth),
+        Layout.row_major(Int(BM), Int(depth)),
         layout_int_type = DType.int32,
         linear_idx_type = DType.int32,
         masked=True,
     ](output_ptr + q_offset, output_gmem_runtime_layout)
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+    var output_gmem_warp_tile = output_gmem_tile.tile[Int(WM), Int(WN)](
         Int(warp_y), Int(warp_x)
     )
     copy_sram_to_dram[
         thread_layout = Layout.row_major(
-            WARP_SIZE * simd_size // WN, WN // UInt(simd_size)
+            WARP_SIZE * simd_size // Int(WN), Int(WN // UInt(simd_size))
         ),
         swizzle=swizzle,
     ](
@@ -4448,7 +4452,7 @@ fn mha_splitk_reduce[
     ].stack_allocation()
 
     alias intermediate_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
+        UNKNOWN_VALUE, UNKNOWN_VALUE, Int(num_heads), Int(depth)
     )
     var intermediate_output = LayoutTensor[output_type, intermediate_layout](
         intermediate_ptr,
@@ -4456,7 +4460,9 @@ fn mha_splitk_reduce[
             Index(num_partitions, batch_size, num_heads, depth)
         ),
     )
-    alias output_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
+    alias output_layout = Layout.row_major(
+        UNKNOWN_VALUE, Int(num_heads), Int(depth)
+    )
     var output = LayoutTensor[output_type, output_layout](
         output_ptr,
         RuntimeLayout[output_layout].row_major(
@@ -4500,7 +4506,7 @@ fn mha_splitk_reduce[
 
             @parameter
             for w in range(width):
-                d = thread_idx.x + UInt(w * num_threads)
+                d = thread_idx.x + UInt(w) * num_threads
                 if d < depth:
                     var x = (
                         intermediate_output[
@@ -4513,7 +4519,7 @@ fn mha_splitk_reduce[
 
     @parameter
     for w in range(width):
-        d = thread_idx.x + UInt(w * num_threads)
+        d = thread_idx.x + UInt(w) * num_threads
         if d < depth:
             output[batch_idx, q_head_idx, d] = acc[w].cast[output_type]()
 
@@ -4590,7 +4596,7 @@ fn mha_gpu_naive[
         k_t,
         mask_t,
         p_type,
-        __type_of(valid_length.to_layout_tensor()).layout,
+        type_of(valid_length.to_layout_tensor()).layout,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -4635,7 +4641,7 @@ fn mha_gpu_naive[
         output_type,
         p_type,
         v_t,
-        __type_of(valid_length.to_layout_tensor()).layout,
+        type_of(valid_length.to_layout_tensor()).layout,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -4712,26 +4718,22 @@ fn _bmm0_bs[
 
         @parameter
         if not _is_cache_length_accurate:
-            start_pos = k.cache_length(batch)
+            start_pos = k.cache_length(Int(batch))
 
         seq_start = Int(valid_length[batch])
         seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
-        q_offset = Int((seq_start * num_heads + head) * depth)
+        q_offset = depth * (seq_start * num_heads + Int(head))
         cur_cache_len = Int(start_pos) + cur_query_len
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
-        q_offset = Int(
-            depth * (head + UInt(num_heads * max_prompt_len * batch))
-        )
-        cur_cache_len = k.cache_length(batch) + cur_query_len
+        q_offset = depth * (Int(head) + num_heads * max_prompt_len * Int(batch))
+        cur_cache_len = k.cache_length(Int(batch)) + cur_query_len
     # When inputs are all NDBuffers i.e. all sequences in batch have the same
     # length and same cache length
     else:
         cur_query_len = max_prompt_len
-        q_offset = Int(
-            depth * (head + UInt(num_heads * max_prompt_len * batch))
-        )
+        q_offset = depth * (Int(head) + num_heads * max_prompt_len * Int(batch))
         cur_cache_len = max_cache_size
         p_offset = batch_head * UInt(max_prompt_len) * UInt(max_cache_size)
 
@@ -4775,9 +4777,9 @@ fn _bmm0_bs[
 
                 @parameter
                 if width == 1:
-                    accum += rebind[__type_of(accum)](qk_val)
+                    accum += rebind[type_of(accum)](qk_val)
                 else:
-                    accum_vec += rebind[__type_of(accum_vec)](qk_val)
+                    accum_vec += rebind[type_of(accum_vec)](qk_val)
 
             vectorize[accum_fn, simd_width_of[p_type]()](depth)
             accum += accum_vec.reduce_add()
@@ -4850,25 +4852,25 @@ fn _bmm1_bs[
 
         @parameter
         if not _is_cache_length_accurate:
-            start_pos = v.cache_length(batch)
+            start_pos = v.cache_length(Int(batch))
 
         seq_start = Int(valid_length[batch])
         seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
-        output_offset = Int((seq_start * num_heads + head) * depth)
+        output_offset = (seq_start * num_heads + Int(head)) * depth
         cur_cache_len = cur_query_len + Int(start_pos)
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
         output_offset = depth * (
-            head + UInt(num_heads * max_prompt_len * batch)
+            Int(head) + num_heads * max_prompt_len * Int(batch)
         )
-        cur_cache_len = cur_query_len + v.cache_length(batch)
+        cur_cache_len = cur_query_len + v.cache_length(Int(batch))
     # When inputs are all NDBuffers i.e. all sequences in batch have the same
     # length and same cache length
     else:
         cur_query_len = max_prompt_len
         output_offset = depth * (
-            head + UInt(num_heads * max_prompt_len * batch)
+            Int(head) + num_heads * max_prompt_len * Int(batch)
         )
         cur_cache_len = max_cache_size
         p_offset = batch_head * UInt(max_prompt_len) * UInt(max_cache_size)

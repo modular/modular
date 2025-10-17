@@ -151,17 +151,17 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    alias INLINE_CAPACITY: UInt = UInt(Int.BITWIDTH // 8 * 3 - 1)
+    alias INLINE_CAPACITY = UInt(Int.BITWIDTH // 8 * 3 - 1)
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    alias FLAG_HAS_NUL_TERMINATOR: UInt = UInt(1) << UInt(UInt.BITWIDTH - 3)
+    alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << UInt(UInt.BITWIDTH - 3)
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    alias FLAG_IS_REF_COUNTED: UInt = UInt(1) << UInt(UInt.BITWIDTH - 2)
+    alias FLAG_IS_REF_COUNTED = UInt(1) << UInt(UInt.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    alias FLAG_IS_INLINE: UInt = UInt(1) << UInt(UInt.BITWIDTH - 1)
+    alias FLAG_IS_INLINE = UInt(1) << UInt(UInt.BITWIDTH - 1)
     # gives us 5 bits for the length.
     alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
     alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
@@ -702,7 +702,7 @@ struct String(
 
     fn __getitem__[
         I: Indexer, //
-    ](self, idx: I) -> StringSlice[__origin_of(self)]:
+    ](self, idx: I) -> StringSlice[origin_of(self)]:
         """Gets the character at the specified position.
 
         Parameters:
@@ -911,7 +911,7 @@ struct String(
         self._iadd(other.as_bytes())
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
-    fn __iter__(self) -> CodepointSliceIter[__origin_of(self)]:
+    fn __iter__(self) -> CodepointSliceIter[origin_of(self)]:
         """Iterate over the string, returning immutable references.
 
         Returns:
@@ -919,13 +919,13 @@ struct String(
         """
         return self.codepoint_slices()
 
-    fn __reversed__(self) -> CodepointSliceIter[__origin_of(self), False]:
+    fn __reversed__(self) -> CodepointSliceIter[origin_of(self), False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[__origin_of(self), forward=False](self)
+        return CodepointSliceIter[origin_of(self), forward=False](self)
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -1091,7 +1091,7 @@ struct String(
         """
         return self.as_string_slice().join(elems)
 
-    fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
+    fn codepoints(self) -> CodepointsIter[origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
         Returns:
@@ -1132,7 +1132,7 @@ struct String(
         """
         return self.as_string_slice().codepoints()
 
-    fn codepoint_slices(self) -> CodepointSliceIter[__origin_of(self)]:
+    fn codepoint_slices(self) -> CodepointSliceIter[origin_of(self)]:
         """Returns an iterator over single-character slices of this string.
 
         Each returned slice points to a single Unicode codepoint encoded in the
@@ -1161,7 +1161,7 @@ struct String(
     @always_inline("nodebug")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, mut=False, origin = __origin_of(self)]:
+    ) -> UnsafePointer[Byte, mut=False, origin = origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1174,16 +1174,16 @@ struct String(
                 UnsafePointer(to=self)
                 .bitcast[Byte]()
                 .as_immutable()
-                .unsafe_origin_cast[__origin_of(self)]()
+                .unsafe_origin_cast[origin_of(self)]()
             )
         else:
             return self._ptr_or_data.as_immutable().unsafe_origin_cast[
-                __origin_of(self)
+                origin_of(self)
             ]()
 
     fn unsafe_ptr_mut(
         mut self, var capacity: UInt = 0
-    ) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
+    ) -> UnsafePointer[Byte, mut=True, origin = origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -1206,7 +1206,7 @@ struct String(
 
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=False, origin = __origin_of(self)]:
+    ) -> UnsafePointer[c_char, mut=False, origin = origin_of(self)]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1224,18 +1224,18 @@ struct String(
 
         return self.unsafe_ptr().bitcast[c_char]()
 
-    fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
+    fn as_bytes(self) -> Span[Byte, origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.
 
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
         """
 
-        return Span[Byte, __origin_of(self)](
+        return Span[Byte, origin_of(self)](
             ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
         )
 
-    fn as_bytes_mut(mut self) -> Span[Byte, __origin_of(self)]:
+    fn as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
         guarantee mutability.
@@ -1243,11 +1243,11 @@ struct String(
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
         """
-        return Span[Byte, __origin_of(self)](
+        return Span[Byte, origin_of(self)](
             ptr=self.unsafe_ptr_mut(), length=UInt(self.byte_length())
         )
 
-    fn as_string_slice(self) -> StringSlice[__origin_of(self)]:
+    fn as_string_slice(self) -> StringSlice[origin_of(self)]:
         """Returns a string slice of the data owned by this string.
 
         Returns:
@@ -1258,7 +1258,7 @@ struct String(
         #   guaranteed to be valid.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
-    fn as_string_slice_mut(mut self) -> StringSlice[__origin_of(self)]:
+    fn as_string_slice_mut(mut self) -> StringSlice[origin_of(self)]:
         """Returns a mutable string slice of the data owned by this string.
 
         Returns:
@@ -1356,7 +1356,7 @@ struct String(
         return self.as_string_slice().isspace()
 
     @always_inline
-    fn split(self, sep: StringSlice) -> List[StringSlice[__origin_of(self)]]:
+    fn split(self, sep: StringSlice) -> List[StringSlice[origin_of(self)]]:
         """Split the string by a separator.
 
         Args:
@@ -1383,7 +1383,7 @@ struct String(
     @always_inline
     fn split(
         self, sep: StringSlice, maxsplit: Int
-    ) -> List[StringSlice[__origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)]]:
         """Split the string by a separator.
 
         Args:
@@ -1406,9 +1406,7 @@ struct String(
         return self.as_string_slice().split(sep, maxsplit=maxsplit)
 
     @always_inline
-    fn split(
-        self, sep: NoneType = None
-    ) -> List[StringSlice[__origin_of(self)]]:
+    fn split(self, sep: NoneType = None) -> List[StringSlice[origin_of(self)]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1437,7 +1435,7 @@ struct String(
     @always_inline
     fn split(
         self, sep: NoneType = None, *, maxsplit: Int
-    ) -> List[StringSlice[__origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1457,7 +1455,7 @@ struct String(
 
     fn splitlines(
         self, keepends: Bool = False
-    ) -> List[StringSlice[__origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)]]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
@@ -1484,7 +1482,7 @@ struct String(
         """
         return StringSlice(self).replace(old, new)
 
-    fn strip(self, chars: StringSlice) -> StringSlice[__origin_of(self)]:
+    fn strip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading and trailing characters
         removed.
 
@@ -1497,7 +1495,7 @@ struct String(
 
         return self.lstrip(chars).rstrip(chars)
 
-    fn strip(self) -> StringSlice[__origin_of(self)]:
+    fn strip(self) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading and trailing whitespaces
         removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1507,7 +1505,7 @@ struct String(
         """
         return self.lstrip().rstrip()
 
-    fn rstrip(self, chars: StringSlice) -> StringSlice[__origin_of(self)]:
+    fn rstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with trailing characters removed.
 
         Args:
@@ -1519,7 +1517,7 @@ struct String(
 
         return self.as_string_slice().rstrip(chars)
 
-    fn rstrip(self) -> StringSlice[__origin_of(self)]:
+    fn rstrip(self) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with trailing whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1529,7 +1527,7 @@ struct String(
         """
         return self.as_string_slice().rstrip()
 
-    fn lstrip(self, chars: StringSlice) -> StringSlice[__origin_of(self)]:
+    fn lstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading characters removed.
 
         Args:
@@ -1541,7 +1539,7 @@ struct String(
 
         return self.as_string_slice().lstrip(chars)
 
-    fn lstrip(self) -> StringSlice[__origin_of(self)]:
+    fn lstrip(self) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1616,7 +1614,7 @@ struct String(
 
     fn removeprefix(
         self, prefix: StringSlice, /
-    ) -> StringSlice[__origin_of(self)]:
+    ) -> StringSlice[origin_of(self)]:
         """Returns a new string with the prefix removed if it was present.
 
         Args:
@@ -1637,7 +1635,7 @@ struct String(
 
     fn removesuffix(
         self, suffix: StringSlice, /
-    ) -> StringSlice[__origin_of(self)]:
+    ) -> StringSlice[origin_of(self)]:
         """Returns a new string with the suffix removed if it was present.
 
         Args:

@@ -209,10 +209,10 @@ fn load_AB[
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
 
-    var a_smem_slice = __type_of(a_smem_tile)(
+    var a_smem_slice = type_of(a_smem_tile)(
         a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
     )
-    var b_smem_slice = __type_of(b_smem_tile)(
+    var b_smem_slice = type_of(b_smem_tile)(
         b_smem_tile.ptr + peer_cta_coord[1] * UInt(b_tma_load_size)
     )
 
@@ -1624,11 +1624,11 @@ fn grouped_matmul_sm100_persistent[
 
     _grouped_matmul_sm100_persistent[
         c_type=c_type,
-        c_layout = __type_of(c_tensor).layout,
+        c_layout = type_of(c_tensor).layout,
         a_type=b_type,
-        a_layout = __type_of(a_tensor).layout,
+        a_layout = type_of(a_tensor).layout,
         b_type=a_type,
-        b_layout = __type_of(b_tensor).layout,
+        b_layout = type_of(b_tensor).layout,
         transpose_b=transpose_b,
         config=new_config,
         expert_m=M,
@@ -1781,7 +1781,7 @@ fn _grouped_matmul_sm100_persistent[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages: UInt = UInt(
+    alias max_pipeline_stages = UInt(
         smem_leftover // producer_consumer_smem_per_stage
     )
 

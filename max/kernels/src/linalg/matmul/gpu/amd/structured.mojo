@@ -408,9 +408,9 @@ struct RingBuffer[
     ):
         @parameter
         if is_a:
-            return rebind[__type_of(bar)](self.barrier_a)
+            return rebind[type_of(bar)](self.barrier_a)
         else:
-            return rebind[__type_of(bar)](self.barrier_b)
+            return rebind[type_of(bar)](self.barrier_b)
 
     @always_inline
     fn _get_current_barrier_value[
@@ -444,13 +444,9 @@ struct RingBuffer[
     ):
         @parameter
         if is_a:
-            return rebind[__type_of(smem_tile)](
-                self.smem_tile_a.get_tile(stage)
-            )
+            return rebind[type_of(smem_tile)](self.smem_tile_a.get_tile(stage))
         else:
-            return rebind[__type_of(smem_tile)](
-                self.smem_tile_b.get_tile(stage)
-            )
+            return rebind[type_of(smem_tile)](self.smem_tile_b.get_tile(stage))
 
     @always_inline
     fn _get_shared_memory_warp_tile[
@@ -471,7 +467,7 @@ struct RingBuffer[
 
         phase += phase_inc
         var staged_smem_tile = self._get_shared_memory_tile[is_a](stage)
-        return rebind[__type_of(smem_warp_tile)](
+        return rebind[type_of(smem_warp_tile)](
             staged_smem_tile.tile[WM if is_a else WN, WK](tile_idx, 0)
         )
 
@@ -497,7 +493,7 @@ struct RingBuffer[
     fn commit[is_a: Bool](mut self, stage: Int, tile_idx: Int):
         var bar = self._get_barrier[is_a]()
         var bar_tile = bar.tile[1, consumer_warps](tile_idx, stage)
-        var warp_id = get_warp_id() % consumer_warps
+        var warp_id = get_warp_id() % UInt(consumer_warps)
         bar_tile[1, warp_id] = bar_tile[1, warp_id] + 1
 
 
@@ -862,7 +858,7 @@ struct AmdTileOperator[
                     ):
                         c_vector = SIMD[OutType, Self.register_count_a](0)
                     else:
-                        c_vector = rebind[__type_of(c_vector)](
+                        c_vector = rebind[type_of(c_vector)](
                             c_fragment.vectorize[1, Self.register_count_a]()[
                                 0, 0
                             ]

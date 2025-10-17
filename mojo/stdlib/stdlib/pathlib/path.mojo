@@ -393,7 +393,7 @@ struct Path(
         """
         return os.path.basename(self)
 
-    fn parts(self) -> List[StringSlice[__origin_of(self.path)]]:
+    fn parts(self) -> List[StringSlice[origin_of(self.path)]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
         Returns:

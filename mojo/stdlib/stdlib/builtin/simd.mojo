@@ -459,7 +459,7 @@ struct SIMD[dtype: DType, size: Int](
 
     alias _Mask = SIMD[DType.bool, size]
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
@@ -615,7 +615,7 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[_type_is_eq[__type_of(self), Self]()]()
+        constrained[_type_is_eq[type_of(self), Self]()]()
         self = value.__float__()
 
     @always_inline
@@ -632,7 +632,7 @@ struct SIMD[dtype: DType, size: Int](
             If the type does not have a float point representation.
         """
         # TODO(MOCO-2186): remove when the parser ensures this for constructors.
-        constrained[_type_is_eq[__type_of(self), Self]()]()
+        constrained[_type_is_eq[type_of(self), Self]()]()
         self = value.__float__()
 
     @always_inline("nodebug")
@@ -689,7 +689,7 @@ struct SIMD[dtype: DType, size: Int](
 
         # TODO(MOCO-2186): remove when the parser ensures this for constructors.
         constrained[
-            _type_is_eq[__type_of(self), Self](),
+            _type_is_eq[type_of(self), Self](),
             "Target type doesn't support conversion from `Bool`",
         ]()
         _simd_construction_checks[dtype, size]()
@@ -710,7 +710,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         # TODO(MOCO-2186): remove when the parser ensures this for constructors.
         constrained[
-            _type_is_eq[__type_of(self), Self](),
+            _type_is_eq[type_of(self), Self](),
             "Target type doesn't support conversion from `Bool`",
         ]()
         _simd_construction_checks[dtype, size]()
@@ -3229,7 +3229,7 @@ fn _tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
 @always_inline
 fn _pow[
     width: Int
-](base: SIMD[_, width], exp: SIMD[_, width], out result: __type_of(base)):
+](base: SIMD[_, width], exp: SIMD[_, width], out result: type_of(base)):
     """Computes the power of the elements of a SIMD vector raised to the
     corresponding elements of another SIMD vector.
 
@@ -3251,9 +3251,9 @@ fn _pow[
         if is_apple_gpu():
             return llvm_intrinsic[
                 "llvm.air.pow",
-                __type_of(base),
-                __type_of(base),
-                __type_of(exp),
+                type_of(base),
+                type_of(base),
+                type_of(exp),
                 has_side_effect=False,
             ](base, exp)
         else:
@@ -3276,7 +3276,7 @@ fn _pow[
 
 
 @always_inline
-fn _powf_scalar(base: Scalar, exponent: Scalar) -> __type_of(base):
+fn _powf_scalar(base: Scalar, exponent: Scalar) -> type_of(base):
     constrained[
         exponent.dtype.is_floating_point(), "exponent must be floating point"
     ]()
@@ -3295,7 +3295,7 @@ fn _powf_scalar(base: Scalar, exponent: Scalar) -> __type_of(base):
 @always_inline
 fn _powf[
     width: Int
-](base: SIMD[_, width], exp: SIMD[_, width], out result: __type_of(base)):
+](base: SIMD[_, width], exp: SIMD[_, width], out result: type_of(base)):
     constrained[
         exp.dtype.is_floating_point(), "exponent must be floating point"
     ]()
@@ -3307,7 +3307,7 @@ fn _powf[
 
 
 @always_inline
-fn _powi(base: Scalar, exp: Int32) -> __type_of(base):
+fn _powi(base: Scalar, exp: Int32) -> type_of(base):
     if base.dtype.is_integral() and exp < 0:
         # Not defined for Integers, this should raise an
         # exception.
@@ -3807,7 +3807,7 @@ fn _simd_apply[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _modf_scalar(x: Scalar) -> Tuple[__type_of(x), __type_of(x)]:
+fn _modf_scalar(x: Scalar) -> Tuple[type_of(x), type_of(x)]:
     constrained[
         x.dtype.is_floating_point(), "the type must be floating point"
     ]()
@@ -3823,15 +3823,15 @@ fn _modf_scalar(x: Scalar) -> Tuple[__type_of(x), __type_of(x)]:
     return (f, x - f)
 
 
-fn _modf(x: SIMD) -> Tuple[__type_of(x), __type_of(x)]:
+fn _modf(x: SIMD) -> Tuple[type_of(x), type_of(x)]:
     constrained[x.dtype.is_numeric(), "the type must be numeric"]()
 
     @parameter
     if x.dtype.is_integral():
         return (x, {0})
 
-    var result_int: __type_of(x) = {}
-    var result_frac: __type_of(x) = {}
+    var result_int: type_of(x) = {}
+    var result_frac: type_of(x) = {}
 
     @parameter
     for i in range(x.size):
@@ -3847,7 +3847,7 @@ fn _modf(x: SIMD) -> Tuple[__type_of(x), __type_of(x)]:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _floor(x: SIMD) -> __type_of(x):
+fn _floor(x: SIMD) -> type_of(x):
     @parameter
     if x.dtype.is_integral():
         return x
@@ -3866,7 +3866,7 @@ fn _floor(x: SIMD) -> __type_of(x):
         bits & ~((1 << (shift_factor - e)) - 1),
         bits,
     )
-    return __type_of(x)(from_bits=bits)
+    return type_of(x)(from_bits=bits)
 
 
 fn _write_scalar[
