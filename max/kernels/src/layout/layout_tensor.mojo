@@ -311,7 +311,7 @@ struct LayoutTensor[
     """
 
     # `trait DevicePassable` implementation, to allow LayoutTensor to be passed directly to kernels
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

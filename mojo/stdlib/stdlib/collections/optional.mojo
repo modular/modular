@@ -494,7 +494,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable, DevicePassable):
     alias _mlir_type = __mlir_type[`!kgen.variant<`, T, `, i1>`]
     var _value: Self._mlir_type
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

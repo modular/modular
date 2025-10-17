@@ -87,7 +87,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     alias dtype = cache_t.dtype
     var cache: cache_t
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -163,7 +163,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
     alias dtype = dtype_
     var buffer: LayoutTensor[Self.dtype, layout, MutableAnyOrigin]
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -265,7 +265,7 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         DType.uint32, cache_layout, MutableAnyOrigin
     ]
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

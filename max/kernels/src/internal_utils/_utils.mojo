@@ -285,7 +285,7 @@ struct InitializationType(
     alias arange = InitializationType(3)
     alias fill = InitializationType(4)
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

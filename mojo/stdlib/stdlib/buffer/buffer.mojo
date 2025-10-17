@@ -1423,7 +1423,7 @@ struct NDBuffer[
         prefetch[params](self._offset(indices))
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         """Convert the host type object to a device_type and store it at the

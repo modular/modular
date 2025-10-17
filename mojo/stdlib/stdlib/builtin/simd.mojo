@@ -459,7 +459,7 @@ struct SIMD[dtype: DType, size: Int](
 
     alias _Mask = SIMD[DType.bool, size]
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):

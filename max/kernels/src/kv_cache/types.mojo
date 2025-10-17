@@ -279,7 +279,7 @@ struct ContinuousBatchingKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -524,7 +524,7 @@ struct PagedKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self

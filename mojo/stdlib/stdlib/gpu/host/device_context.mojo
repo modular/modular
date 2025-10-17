@@ -782,7 +782,7 @@ struct DeviceBuffer[dtype: DType](
     """
 
     # Implementation of `DevicePassable`
-    alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[dtype]]
+    alias device_type: AnyType = UnsafePointer[Scalar[dtype]]
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):

@@ -54,7 +54,7 @@ struct AlibiScoreMod[
     """
 
     alias name_str: String = "alibi"
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
@@ -142,7 +142,7 @@ struct IdentityScoreMod(ImplicitlyCopyable, Movable, ScoreModTrait):
 
     alias name_str: String = "no_pos"
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
 
     fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
