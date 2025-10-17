@@ -74,12 +74,12 @@ kgen.func @union_create_4(%arg0: !kgen.struct<(i32, i64, i32)>) -> !pop.union<st
 // CHECK-LABEL: @union_create_5
 kgen.func @union_create_5(%arg0: !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>) -> !pop.union<struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>> {
   // CHECK:           %[[VAL_0:.*]] = llvm.mlir.constant(1 : i64) : i64
-  // CHECK:           %[[VAL_1:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(vector<2xf32>, array<16 x i8>)> {alignment = 4 : i64} : (i64) -> !llvm.ptr
+  // CHECK:           %[[VAL_1:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(f32, array<16 x i8>)> {alignment = 4 : i64} : (i64) -> !llvm.ptr
   // CHECK:           llvm.intr.lifetime.start %[[VAL_1]] : !llvm.ptr
   // CHECK:           llvm.store %arg0, %[[VAL_1]] : !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>, !llvm.ptr
-  // CHECK:           %[[VAL_2:.*]] = llvm.load %[[VAL_1]] : !llvm.ptr -> !llvm.struct<(vector<2xf32>, array<16 x i8>)>
+  // CHECK:           %[[VAL_2:.*]] = llvm.load %[[VAL_1]] : !llvm.ptr -> !llvm.struct<(f32, array<16 x i8>)>
   // CHECK:           llvm.intr.lifetime.end %[[VAL_1]] : !llvm.ptr
-  // CHECK:           llvm.return %[[VAL_2]] : !llvm.struct<(vector<2xf32>, array<16 x i8>)>
+  // CHECK:           llvm.return %[[VAL_2]] : !llvm.struct<(f32, array<16 x i8>)>
   %0 = pop.union.wrap %arg0 : !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)> as <struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>
   kgen.return %0 : !pop.union<struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>
 }
@@ -150,9 +150,9 @@ kgen.func @union_get_3(%arg0: !pop.union<struct<(i32, i64, i32)>, array<4, i64>>
 // CHECK-LABEL: @union_get_4
 kgen.func @union_get_4(%arg0: !pop.union<struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>>) -> !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)> {
   // CHECK:           %[[VAL_0:.*]] = llvm.mlir.constant(1 : i64) : i64
-  // CHECK:           %[[VAL_1:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(vector<2xf32>, array<16 x i8>)> {alignment = 4 : i64} : (i64) -> !llvm.ptr
+  // CHECK:           %[[VAL_1:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(f32, array<16 x i8>)> {alignment = 4 : i64} : (i64) -> !llvm.ptr
   // CHECK:           llvm.intr.lifetime.start %[[VAL_1]] : !llvm.ptr
-  // CHECK:           llvm.store %arg0, %[[VAL_1]] : !llvm.struct<(vector<2xf32>, array<16 x i8>)>, !llvm.ptr
+  // CHECK:           llvm.store %arg0, %[[VAL_1]] : !llvm.struct<(f32, array<16 x i8>)>, !llvm.ptr
   // CHECK:           %[[VAL_2:.*]] = llvm.load %[[VAL_1]] : !llvm.ptr -> !llvm.struct<(array<2 x i16>, struct<(struct<(i8, i32)>, vector<2xf32>)>)>
   // CHECK:           llvm.intr.lifetime.end %[[VAL_1]] : !llvm.ptr
   %0 = pop.union.unwrap %arg0 : <struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>> as !kgen.struct<(array<2, i16>, struct<(struct<(i8, i32)>, simd<2, f32>)>)>
