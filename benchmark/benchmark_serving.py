@@ -144,8 +144,8 @@ class RequestFuncInput:
     ignore_eos: bool
     model: str
     session_id: str | None = None
-    temperature: float = 0.0
-    top_p: float = 1.0
+    temperature: float | None = None
+    top_p: float | None = None
     top_k: int | None = None
 
 
