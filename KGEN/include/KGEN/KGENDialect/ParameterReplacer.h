@@ -38,6 +38,11 @@ public:
     return llvm::map_to_vector(values, [&](T value) { return replace(value); });
   }
 
+  template <typename T>
+  T failableReplace(T value) {
+    return dyn_cast_if_present<T>(replaceImpl(value, /*depth=*/0));
+  }
+
 protected:
   template <typename T>
   std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
@@ -75,6 +80,7 @@ protected:
 private:
   DerivedT *getDerived() { return static_cast<DerivedT *>(this); }
 
+protected:
   /// Depth-aware cache from original attribute or type to rewritten attribute
   /// or type and remembers complex values that haven't been rewritten (noted as
   /// being mapped to themselves).

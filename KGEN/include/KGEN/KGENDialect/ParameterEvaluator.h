@@ -123,9 +123,15 @@ public:
   ParameterEvaluator(ArrayRef<TypedAttr> declBindings);
 
   /// Instantiate a new parameter evaluator with the given parameter values.
-  ParameterEvaluator(DenseMap<StringAttr, Attribute> declBindings =
-                         DenseMap<StringAttr, Attribute>())
-      : declBindings(std::move(declBindings)) {}
+  ParameterEvaluator(
+      DenseMap<StringAttr, Attribute> declBindings =
+          DenseMap<StringAttr, Attribute>(),
+      ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>(),
+      size_t expectedNumIndexBindings = 0, size_t inputDepth = 0)
+      : declBindings(std::move(declBindings)),
+        indexBindings(std::move(indexBindings)),
+        expectedNumIndexBindings(expectedNumIndexBindings),
+        inputDepth(inputDepth) {}
 
   /// Set the evaluation context to use.
   void setEvaluationContext(ParameterEvaluationContext *context) {
@@ -137,12 +143,32 @@ public:
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
-  void setDeclBinding(StringAttr name, Attribute value) {
-    assert(!declBindings.count(name) && "parameter already declared!");
+  void setDeclBinding(StringAttr name, Attribute value,
+                      bool overwrite = false) {
+    assert(overwrite ||
+           !declBindings.count(name) && "parameter already declared!");
     declBindings[name] = value;
   }
-  void setDeclBinding(ParamDeclAttr decl, Attribute value) {
-    setDeclBinding(decl.getName(), value);
+  void setDeclBinding(ParamDeclAttr decl, Attribute value,
+                      bool overwrite = false) {
+    setDeclBinding(decl.getName(), value, overwrite);
+  }
+
+  void setRewritten(
+      const DenseMap<std::pair<size_t, const void *>, const void *> &value) {
+    rewritten = value;
+  }
+
+  const DenseMap<std::pair<size_t, const void *>, const void *> &
+  getRewritten() {
+    return rewritten;
+  }
+
+  bool overwriteDeclBinding(ParamDeclAttr decl, Attribute value) {
+    auto iter = declBindings.find(decl.getName());
+    bool exist = iter != declBindings.end();
+    declBindings[decl.getName()] = value;
+    return exist;
   }
 
   /// Iterate over the current parameter values.
@@ -165,6 +191,10 @@ public:
   /// Get the specified attribute with any nested parameter expressions
   /// rewritten.
   TypedAttr getReboundAttribute(TypedAttr attr) { return replace(attr); }
+
+  TypedAttr getFailableReboundAttribute(TypedAttr attr) {
+    return failableReplace(attr);
+  }
 
   /// Dump the parameter evaluator state.
   void dump() const;
@@ -192,6 +222,8 @@ public:
   /// Set the relative input depth.
   void setInputDepth(size_t depth) { inputDepth = depth; }
 
+  void clearCache() { rewritten.clear(); }
+
 private:
   // CRTP methods.
   Type doReplace(Type type, size_t rootDepth);
@@ -215,15 +247,16 @@ private:
   /// `inputDepth` must have an index smaller than this value.
   size_t expectedNumIndexBindings = 0;
 
+  /// The optional context to use for evaluating contextually evaluated
+  /// attributes.
+  ParameterEvaluationContext *evaluationContext = nullptr;
+
+public:
   /// The relative depth from the generator where the index-based parameter
   /// bindings are from. This is zero for most applications, but should be set
   /// accordingly when substituting attributes or types inside a generator, see
   /// PSTIAIRAID.
   size_t inputDepth = 0;
-
-  /// The optional context to use for evaluating contexually evaluated
-  /// attributes.
-  ParameterEvaluationContext *evaluationContext = nullptr;
 };
 
 //===----------------------------------------------------------------------===//
@@ -247,6 +280,28 @@ struct PartiallySpecializedInputParams {
        ParameterEvaluationContext *evaluationContext,
        function_ref<InFlightDiagnostic()> emitErrorFn);
 };
+
+//===----------------------------------------------------------------------===//
+// ParameterEvaluator for ParametricElaborator that
+// does parametric interpreting
+//===----------------------------------------------------------------------===//
+class ParametricParameterEvaluator : public ParameterEvaluator {
+public:
+  /// Fields added for interpreting parametric functions
+  /// for memorizing ParameterReplacer's rewritten cache
+  /// to avoid having to rebuild the cache when re-entering the same
+  /// parameter domain with the same parameters.
+
+  /// Operation as part of cache key.
+  Operation *cachedOpKey = nullptr;
+  /// Region as part of the cache key.
+  Region *cachedRegionKey = nullptr;
+  /// Parameters as part of the cache key.
+  ParameterExprArrayAttr cachedAttrKey;
+  /// A flag to note if the cache has been memorized.
+  bool foundCached = false;
+};
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_PARAMETEREVALUATOR_H
