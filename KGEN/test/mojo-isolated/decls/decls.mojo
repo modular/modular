@@ -1446,15 +1446,25 @@ fn autoparam_mangler_crash[*types: Int, constraints: StructWithParam]():
 # Dependent Constraints
 ##===----------------------------------------------------------------------===##
 
+fn need_positive_int[x: Int where x > 0]():
+    pass
+
 # CHECK-LABEL: lit.struct.decl @ConstraintStruct
 # CHECK-SAME: <a: !Int {{.*}}ge(#lit.struct.extract<:!Int a, "_mlir_value">, 1)
 struct ConstraintStruct[a: Int where a > 0]:
     alias b = a + 1
 
+    fn use_known_assumption(self):
+        need_positive_int[self.a]()
+
+    @staticmethod
+    fn static_use_known_assumption():
+        need_positive_int[Self.a]()
+
 # CHECK-LABEL: lit.fn @"use_constraint_struct
 # CHECK-SAME: <x: !Int {{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
 fn use_constraint_struct[x: Int where x > 0, cs: ConstraintStruct[x]]():
-    pass
+    need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
 # CHECK-SAME: <["a`"]*"a`": !Int {{.*}}ge(#lit.struct.extract<:!Int *"a`", "_mlir_value">, 1)

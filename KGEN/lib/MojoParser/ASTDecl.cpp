@@ -124,6 +124,7 @@ void ASTDecl::takeDecls(ASTDecl &src) {
       child->parentDecl = this;
   declsInScope = std::move(src.declsInScope);
   counter = src.counter;
+  knownAssumptions = std::move(src.knownAssumptions);
 }
 
 DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *
