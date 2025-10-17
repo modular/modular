@@ -198,7 +198,7 @@ struct Codepoint(
     @staticmethod
     fn unsafe_decode_utf8_codepoint(
         s: Span[mut=False, UInt8, *_],
-    ) -> (Codepoint, Int):
+    ) -> Tuple[Codepoint, Int]:
         """Decodes a single `Codepoint` and number of bytes read from a given
         UTF-8 string pointer.
 

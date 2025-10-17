@@ -21,7 +21,7 @@ struct Foo[z: Int]:
 
 @fieldwise_init
 struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](
-    Intable, ImplicitlyCopyable
+    ImplicitlyCopyable, Intable
 ):
     fn __int__(self) -> Int:
         return self.x + self.y + self.foo.z + self.bar.z

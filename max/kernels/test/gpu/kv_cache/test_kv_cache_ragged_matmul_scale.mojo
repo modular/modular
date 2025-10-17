@@ -45,11 +45,11 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> (
+) -> Tuple[
     DeviceNDBuffer[DType.uint32, 1],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
-):
+]:
     """Initializes input row offsets and hidden state ragged tensor inputs."""
     var total_length = 0
     var max_seq_length_batch = -1

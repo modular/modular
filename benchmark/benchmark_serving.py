@@ -1832,6 +1832,14 @@ async def benchmark(  # noqa: ANN201
 
     # Add server-side metrics to result if available
     if server_metrics:
+        # Extract prefill/decode stats for easy access
+        prefill_hist = server_metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+        )
+        decode_hist = server_metrics.get_histogram(
+            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+        )
+
         result["server_metrics"] = {
             "counters": server_metrics.counters,
             "gauges": server_metrics.gauges,
@@ -1844,6 +1852,17 @@ async def benchmark(  # noqa: ANN201
                 }
                 for name, hist in server_metrics.histograms.items()
             },
+            # Add prefill/decode breakdown for easy access
+            "prefill_batch_execution_time_ms": (
+                prefill_hist.mean if prefill_hist else None
+            ),
+            "prefill_batch_count": (
+                int(prefill_hist.count) if prefill_hist else 0
+            ),
+            "decode_batch_execution_time_ms": (
+                decode_hist.mean if decode_hist else None
+            ),
+            "decode_batch_count": int(decode_hist.count) if decode_hist else 0,
         }
 
     return result

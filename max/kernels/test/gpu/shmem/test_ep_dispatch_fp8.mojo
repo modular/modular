@@ -233,8 +233,8 @@ fn test_dispatch[
     var format_handler = BlockwiseFP8TokenFormat[
         hidden_size, top_k, gpu_alignment
     ](
-        output_tensor.origin_cast[True, MutableAnyOrigin](),
-        output_scales_tensor.origin_cast[True, MutableAnyOrigin](),
+        output_tensor.as_any_origin(),
+        output_scales_tensor.as_any_origin(),
     )
 
     alias hw_info = ctx.default_device_info

@@ -43,9 +43,6 @@ struct MyTrue(ImplicitlyBoolable):
     fn __bool__(self) -> Bool:
         return True
 
-    fn __as_bool__(self) -> Bool:
-        return self.__bool__()
-
 
 fn takes_bool(cond: Bool) -> Bool:
     return cond

@@ -358,6 +358,9 @@ fn matmul_dynamic_scaled_fp8[
     b_scales_type: DType, //,
     input_scale_granularity: StaticString,
     weight_scale_granularity: StaticString,
+    m_scale_granularity: Int,
+    n_scale_granularity: Int,
+    k_scale_granularity: Int,
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
@@ -509,6 +512,8 @@ fn matmul_dynamic_scaled_fp8[
             ctx.default_device_info is B200
             and transpose_b
             and c_type == DType.bfloat16
+            and m_scale_granularity == 1
+            and n_scale_granularity == k_scale_granularity == 128
         ):
             var a_tensor = from_ndbuffer_row_major(a)
             var b_tensor = from_ndbuffer_row_major(b)
@@ -542,9 +547,14 @@ fn matmul_dynamic_scaled_fp8[
             )
 
         else:
-            naive_blockwise_scaled_fp8_matmul[transpose_b=transpose_b,](
-                c, a, b, a_scales, b_scales, ctx
-            )
+            naive_blockwise_scaled_fp8_matmul[
+                transpose_b=transpose_b,
+                scales_granularity_mnk = IndexList[3](
+                    m_scale_granularity,
+                    n_scale_granularity,
+                    k_scale_granularity,
+                ),
+            ](c, a, b, a_scales, b_scales, ctx)
     else:
         constrained[
             False,
@@ -797,7 +807,10 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    scales_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType,
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
@@ -805,24 +818,27 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     b_scale_layout: Layout,
     a_offsets_layout: Layout,
     expert_ids_layout: Layout, //,
-    *,
     BLOCK_DIM_N: Int = 32,
     BLOCK_DIM_M: Int = 16,
     transpose_b: Bool = True,
+    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    s_type: DType = DType.float32,
 ](
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutableAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutableAnyOrigin],
-    a_scales: LayoutTensor[scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[scales_type, b_scale_layout, MutableAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutableAnyOrigin],
+    expert_ids: LayoutTensor[
+        expert_ids_type, expert_ids_layout, MutableAnyOrigin
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    alias accum_type = get_accum_type[a_type]()
+
     constrained[
         transpose_b,
         "Only support transposed B in grouped fp8 matmul.",
@@ -835,8 +851,23 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
         ),
     ]()
     constrained[
-        s_type == DType.float32,
+        accum_type == DType.float32,
         "Only float32 is supported for accumulation for scaled matmul",
+    ]()
+
+    constrained[
+        a_offsets_type == DType.uint32,
+        (
+            "Only uint32 is supported for a_offsets in grouped blockwise scaled"
+            " fp8 matmul"
+        ),
+    ]()
+    constrained[
+        expert_ids_type == DType.int32,
+        (
+            "Only int32 is supported for expert_ids in grouped blockwise scaled"
+            " fp8 matmul"
+        ),
     ]()
 
     var logger = Logger()
@@ -853,9 +884,13 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
         c_type,
         a_type,
         b_type,
-        scales_type,
-        s_type,
+        a_scales_type,
+        b_scales_type,
+        a_offsets_type,
+        expert_ids_type,
+        accum_type,
         transpose_b,
+        scales_granularity_mnk,
         elementwise_lambda_fn,
     ]
 
@@ -887,21 +922,27 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    scales_type: DType,
-    s_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    a_offsets_type: DType,
+    expert_ids_type: DType,
+    accum_type: DType,
     transpose_b: Bool = True,
+    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutableAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutableAnyOrigin],
-    a_scales: LayoutTensor[scales_type, a_scale_layout, MutableAnyOrigin],
-    b_scales: LayoutTensor[scales_type, b_scale_layout, MutableAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutableAnyOrigin],
+    expert_ids: LayoutTensor[
+        expert_ids_type, expert_ids_layout, MutableAnyOrigin
+    ],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutableAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutableAnyOrigin],
 ):
     constrained[
-        s_type == DType.float32,
+        accum_type == DType.float32,
         "Only float32 is supported for accumulation for scaled matmul",
     ]()
 
@@ -919,35 +960,50 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     if n >= N or m_local >= M_local:
         return
 
-    var a_start_row = Int(a_offsets[expert_idx])
+    var MAT_A_ROWS_SCALE_SIZE: UInt
+    var MAT_A_COLS_SCALE_SIZE: UInt
+    var MAT_B_ROWS_SCALE_SIZE: UInt
+    var MAT_B_COLS_SCALE_SIZE: UInt
 
-    var expert = Int(expert_ids[expert_idx])
-    var skip = expert == -1
-    var accum = Scalar[s_type](0)
-    if not skip:
+    @parameter
+    if scales_granularity_mnk:
+        alias scales_granularity = scales_granularity_mnk.value()
+        MAT_A_ROWS_SCALE_SIZE = UInt(scales_granularity[2])
+        MAT_A_COLS_SCALE_SIZE = UInt(scales_granularity[0])
+        MAT_B_ROWS_SCALE_SIZE = UInt(scales_granularity[1])
+        MAT_B_COLS_SCALE_SIZE = UInt(scales_granularity[2])
+
+    else:
         var a_s0 = a_scales.dim(0)
         var a_s1 = a_scales.dim(1)
         var b_s0 = b_scales.dim(1)
         var b_s1 = b_scales.dim(2)
-        var MAT_A_ROWS_SCALE_SIZE = K // a_s0
-        var MAT_A_COLS_SCALE_SIZE = c.dim(0) // a_s1
-        var MAT_B_ROWS_SCALE_SIZE = N // b_s0
-        var MAT_B_COLS_SCALE_SIZE = K // b_s1
+        MAT_A_ROWS_SCALE_SIZE = K // a_s0
+        MAT_A_COLS_SCALE_SIZE = c.dim(0) // a_s1
+        MAT_B_ROWS_SCALE_SIZE = N // b_s0
+        MAT_B_COLS_SCALE_SIZE = K // b_s1
+
+    var a_start_row = Int(a_offsets[expert_idx])
+    var expert = Int(expert_ids[expert_idx])
+    var skip = expert == -1
+    var accum = Scalar[accum_type](0)
+
+    if not skip:
         var m_global = a_start_row + m_local
         var a_row_ptr = a.ptr + m_global * K
         var b_expert_ptr = b.ptr + expert * N * K
         for k in range(K):
-            var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[s_type]()
-            var a_scale = rebind[Scalar[s_type]](
+            var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[accum_type]()
+            var a_scale = rebind[Scalar[accum_type]](
                 a_scales[
                     k // MAT_A_ROWS_SCALE_SIZE,
                     m_global // MAT_A_COLS_SCALE_SIZE,
                 ]
             )
             var b_val = rebind[Scalar[b_type]](b_expert_ptr[n * K + k]).cast[
-                s_type
+                accum_type
             ]()
-            var b_scale = rebind[Scalar[s_type]](
+            var b_scale = rebind[Scalar[accum_type]](
                 b_scales[
                     UInt(expert),
                     n // MAT_B_ROWS_SCALE_SIZE,

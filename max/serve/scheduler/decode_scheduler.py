@@ -32,7 +32,7 @@ from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
@@ -68,7 +68,7 @@ class DecodeScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: PagedKVCacheManager,
+        paged_manager: TPPagedKVCacheManager,
         *,
         request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[

@@ -13,21 +13,21 @@
 from __future__ import annotations
 
 from max.interfaces import RequestID, TextGenerationInputs
-from max.nn.kv_cache import MultiPagedKVCacheManager, PagedKVCacheManager
+from max.nn.kv_cache import DPPagedKVCacheManager, TPPagedKVCacheManager
 from max.pipelines.core import TextContext
 
 
 def split_by_replica_idx(
     inputs: TextGenerationInputs[TextContext],
     num_replicas: int,
-    paged_cache: PagedKVCacheManager | None = None,
+    paged_cache: TPPagedKVCacheManager | None = None,
 ) -> None:
     """Splits a batch into a list of batches."""
     if num_replicas == 1:
         inputs.batches = [inputs.batch]
         return
 
-    assert isinstance(paged_cache, MultiPagedKVCacheManager)
+    assert isinstance(paged_cache, DPPagedKVCacheManager)
 
     batches: list[dict[RequestID, TextContext]] = [
         {} for _ in range(num_replicas)

@@ -149,7 +149,7 @@ fn append_bytes(
     service_id: UInt32,
     msg_desc: UInt64,
     mut data: Span[UInt8],
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     var msg_desc_ = msg_set_len(msg_desc, (len(data) + 7) // 8)
 
     @parameter
@@ -190,7 +190,7 @@ fn append_bytes(
 @no_inline
 fn message_append_bytes(
     service_id: UInt32, msg_desc: UInt64, data: Span[UInt8]
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Append an array of bytes to a message.
 
@@ -249,7 +249,7 @@ fn message_append_args(
     arg4: UInt64,
     arg5: UInt64,
     arg6: UInt64,
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Append up to seven ulong values to a message.
 
@@ -554,7 +554,7 @@ struct Header(ImplicitlyCopyable, Movable):
 
     fn get_return_value(
         mut self, payload: Payload, me: UInt32, low: UInt32
-    ) -> (UInt64, UInt64):
+    ) -> Tuple[UInt64, UInt64]:
         """
         Wait for the host response and return the first two ulong
         entries per workitem.
@@ -834,7 +834,7 @@ fn hostcall(
     arg5: UInt64,
     arg6: UInt64,
     arg7: UInt64,
-) -> (UInt64, UInt64):
+) -> Tuple[UInt64, UInt64]:
     """
     Submit a wave-wide hostcall packet.
 

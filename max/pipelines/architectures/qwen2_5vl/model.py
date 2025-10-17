@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import cached_property
 from typing import Any
 
@@ -37,7 +38,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -62,25 +63,20 @@ from .qwen2_5vl import Qwen2_5VL
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass(eq=False)
 class Qwen2_5VLInputs(ModelInputs):
     """A class representing inputs for the Qwen2.5VL model.
 
-    This class encapsulates the input tensors required for the Qwen2.5VL model execution:
-    - input_ids: A tensor containing the input token IDs
-    - input_row_offsets: Per-device tensors containing the offsets for each row in the ragged input sequence
-    - pixel_values: image pixel values for vision processing
-    - window_index: window indices for vision attention mechanism
-    - position_ids: 3D RoPE position IDs for vision inputs
-    - attention_mask_full:  full attention masks for vision inputs
-    - attention_mask_window:  window attention masks for vision inputs
-    - max_grid_size: Maximum grid size for vision inputs
-    """
+    This class encapsulates the input tensors required for the Qwen2.5VL model execution,
+    including both text and vision inputs. Vision inputs are optional and can be None
+    for text-only processing."""
 
     input_ids: Tensor
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Tensor]
     """Per-device tensors containing the offsets for each row in the ragged input sequence."""
+
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
 
@@ -128,42 +124,6 @@ class Qwen2_5VLInputs(ModelInputs):
 
     max_window_seqlen: list[Tensor] | None = None
     """Maximum sequence length for window attention for vision inputs."""
-
-    def __init__(
-        self,
-        input_ids: Tensor,
-        input_row_offsets: list[Tensor],
-        signal_buffers: list[Tensor],
-        position_ids: Tensor,
-        return_n_logits: Tensor,
-        kv_cache_inputs: KVCacheInputs,
-        scatter_indices: list[Tensor] | None = None,
-        gather_indices: list[Tensor] | None = None,
-        pixel_values: list[Tensor] | None = None,
-        window_index: list[Tensor] | None = None,
-        vision_position_ids: list[Tensor] | None = None,
-        max_grid_size: list[Tensor] | None = None,
-        cu_seqlens: list[Tensor] | None = None,
-        cu_window_seqlens: list[Tensor] | None = None,
-        max_seqlen: list[Tensor] | None = None,
-        max_window_seqlen: list[Tensor] | None = None,
-    ) -> None:
-        self.signal_buffers = signal_buffers
-        self.input_ids = input_ids
-        self.input_row_offsets = input_row_offsets
-        self.position_ids = position_ids
-        self.return_n_logits = return_n_logits
-        self.kv_cache_inputs = kv_cache_inputs
-        self.scatter_indices = scatter_indices
-        self.gather_indices = gather_indices
-        self.pixel_values = pixel_values
-        self.window_index = window_index
-        self.vision_position_ids = vision_position_ids
-        self.max_grid_size = max_grid_size
-        self.cu_seqlens = cu_seqlens
-        self.cu_window_seqlens = cu_window_seqlens
-        self.max_seqlen = max_seqlen
-        self.max_window_seqlen = max_window_seqlen
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -1304,8 +1264,8 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
-        """Loads and initializes the PagedKVCacheManager for the Qwen2.5VL model."""
+    ) -> TPPagedKVCacheManager:
+        """Loads and initializes the TPPagedKVCacheManager for the Qwen2.5VL model."""
         return load_kv_manager(
             params=Qwen2_5VLConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,

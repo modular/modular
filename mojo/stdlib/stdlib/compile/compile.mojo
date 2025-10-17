@@ -64,7 +64,7 @@ struct _Info:
     var asm: __mlir_type.`!kgen.string`
     var module_name: __mlir_type.`!kgen.string`
     var num_captures: __mlir_type.index
-    var capture_sizes: __mlir_type.`!kgen.pointer<ui64>`
+    var capture_sizes: UnsafePointer[UInt64]
 
 
 @register_passable("trivial")
@@ -270,14 +270,10 @@ fn compile_info[
         _type=_Info,
     ]()
 
-    var num_captures_ptr_ui64 = __mlir_op.`pop.pointer.bitcast`[
-        _type = UnsafePointer[UInt64,]._mlir_type,
-    ](offload.capture_sizes)
-
     return CompiledFunctionInfo[func_type, func, target](
         asm=StaticString(offload.asm),
-        function_name=get_linkage_name[target, func](),
+        function_name=get_linkage_name[func, target=target](),
         module_name=StaticString(offload.module_name),
         num_captures=Int(mlir_value=offload.num_captures),
-        capture_sizes=num_captures_ptr_ui64,
+        capture_sizes=offload.capture_sizes,
     )

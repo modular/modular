@@ -24,7 +24,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.nn.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import TPPagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import (
     LoRAManager,
@@ -120,7 +120,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        paged_cache: PagedKVCacheManager | None = None,
+        paged_cache: TPPagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -384,10 +384,9 @@ class TextBatchConstructor:
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
+                    # TODO: This should not be used until we have a DP Aware Paged Cache
                     replica_idx = self.paged_cache.get_or_recommend_replica(ctx)
-                    self.paged_cache.external_claim(
-                        req_id, replica_idx=replica_idx
-                    )
+                    self.paged_cache.external_claim(req_id, replica_idx=None)
 
             if self.paged_cache is not None:
                 # Attempt to schedule the request.

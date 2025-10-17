@@ -20,6 +20,7 @@ from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
 from testing import assert_almost_equal
+from gpu.host.info import B200
 
 from utils import IndexList
 from utils.index import Index
@@ -127,6 +128,7 @@ fn test[
     ctx.enqueue_copy(b_dev.buffer, b_host.tensor.data)
     ctx.enqueue_copy(a_offsets_dev.buffer, a_offsets_host.tensor.data)
     ctx.enqueue_copy(expert_ids_dev.buffer, expert_ids_host.tensor.data)
+    ctx.synchronize()
 
     naive_grouped_matmul(
         c_ref_dev.tensor,
@@ -138,6 +140,7 @@ fn test[
         num_active_experts,
         ctx,
     )
+    ctx.synchronize()
 
     var c_dev_ndbuffer = c_dev.tensor
 
@@ -172,6 +175,7 @@ fn test[
         ctx,
     )
 
+    ctx.synchronize()
     ctx.enqueue_copy(c_ref_host.tensor.data, c_ref_dev.buffer)
     ctx.enqueue_copy(c_host.tensor.data, c_dev.buffer)
     ctx.synchronize()
@@ -375,8 +379,61 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
+            expert_shape = Index(16, 256),
+        ](1, List[Int](128), List[Int](0), ctx)
+
+        # unaligned matmul
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=1,
+            expert_shape = Index(1024, 256),
+        ](1, List[Int](200), List[Int](0), ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=1,
             expert_shape = Index(512, 1024),
         ](1, List[Int](256), List[Int](0), ctx)
+
+        # simple expert routing
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(256, 64),
+        ](1, List[Int](128), List[Int](2), ctx)
+
+        # simple aligned group routing
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(256, 64),
+        ](3, List[Int](32, 32 * 3, 32 * 7), List[Int](2, 0, 1), ctx)
+
+        # simple unaligned group routing
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(256, 64),
+        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(2880, 512),
+        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=4,
+            expert_shape = Index(5760, 512),
+        ](2, List[Int](10, 60), List[Int](2, 0), ctx)
 
         # Multiple matmuls selecting part of experts
         test[
@@ -405,6 +462,22 @@ def main():
             expert_shape = Index(192, 1024),
         ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
 
+        @parameter
+        if ctx.default_device_info is B200:
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                num_experts=6,
+                expert_shape = Index(1280, 16),
+            ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            num_experts=6,
+            expert_shape = Index(16, 1024),
+        ](4, List[Int](27, 1500, 300, 150), List[Int](0, 3, 2, 4), ctx)
+
         # Multiple matmuls selecting part of experts with epilogue
         test[
             DType.bfloat16,
@@ -414,18 +487,35 @@ def main():
             has_epilogue=True,
         ](2, List[Int](128, 256), List[Int](0, 2), ctx)
 
-        # Test that expert id of -1 results in 0s in the output
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            num_experts=2,
-            expert_shape = Index(256, 512),
-        ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+        alias ns = List[Int](16, 256)
+        alias ms = List[Int](16, 512)
 
-        # Test negative lora_id behavior with naive matmul
-        test_negative_lora_id[
-            DType.bfloat16,
-            DType.bfloat16,
-            num_experts=2,
-            expert_shape = Index(256, 512),
-        ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+        @parameter
+        for n_idx in range(len(ns)):
+
+            @parameter
+            for m_idx in range(len(ms)):
+                alias n = ns[n_idx]
+                alias m = ms[m_idx]
+
+                @parameter
+                if m == 16 or n == 16:
+
+                    @parameter
+                    if ctx.default_device_info != B200:
+                        continue
+                # Test that expert id of -1 results in 0s in the output
+                test[
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_experts=2,
+                    expert_shape = Index(n, m),
+                ](2, List[Int](64, 128), List[Int](0, -1), ctx)
+
+                # Test negative lora_id behavior with naive matmul
+                test_negative_lora_id[
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    num_experts=2,
+                    expert_shape = Index(n, m),
+                ](2, List[Int](64, 128), List[Int](0, -1), ctx)

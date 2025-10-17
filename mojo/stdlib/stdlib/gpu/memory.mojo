@@ -1027,8 +1027,10 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     dst_mem: UnsafePointer[
         dst_type, mut=True, origin=_, address_space = GPUAddressSpace.SHARED
     ],
-    tma_descriptor: OpaquePointer,
-    mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
+    tma_descriptor: UnsafePointer[NoneType, mut=False],
+    mem_bar: UnsafePointer[
+        mbr_type, mut=False, address_space = GPUAddressSpace.SHARED
+    ],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous bulk copy operation of tensor data from global memory to shared memory.
@@ -1176,8 +1178,10 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     dst_mem: UnsafePointer[
         dst_type, mut=True, origin=_, address_space = GPUAddressSpace.SHARED
     ],
-    tma_descriptor: OpaquePointer,
-    mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
+    tma_descriptor: UnsafePointer[NoneType, mut=False],
+    mem_bar: UnsafePointer[
+        mbr_type, mut=False, address_space = GPUAddressSpace.SHARED
+    ],
     coords: IndexList[rank],
     multicast_mask: UInt16,
 ):
@@ -1299,7 +1303,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
     src_mem: UnsafePointer[
         src_type, address_space = GPUAddressSpace.SHARED, **_
     ],
-    tma_descriptor: OpaquePointer,
+    tma_descriptor: UnsafePointer[NoneType, mut=False],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous copy operation to transfer tensor data from shared CTA
@@ -1368,7 +1372,7 @@ fn cp_async_bulk_tensor_reduce[
     src_mem: UnsafePointer[
         src_type, address_space = GPUAddressSpace.SHARED, **_
     ],
-    tma_descriptor: OpaquePointer,
+    tma_descriptor: UnsafePointer[NoneType, mut=False],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous reduction operation between shared CTA memory and global memory

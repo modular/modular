@@ -1881,7 +1881,7 @@ struct Transpose:
     fn transpose_in_place(
         input: InputTensor,
         permutations: InputTensor[rank=1],
-        out result: (IndexList[input.rank], IndexList[input.rank]),
+        out result: Tuple[IndexList[input.rank], IndexList[input.rank]],
     ):
         var new_shape = IndexList[input.rank]()
         var new_stride = IndexList[input.rank]()
@@ -5639,9 +5639,7 @@ struct VroomQ40Matmul:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_qint4[32](
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
 
     @staticmethod
@@ -5665,8 +5663,7 @@ struct VroomQ40RepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_qint4_pack_b[32](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
 
     @staticmethod
@@ -5725,9 +5722,7 @@ struct VroomQ4KMatmul:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q4_K(
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
 
     @staticmethod
@@ -5751,8 +5746,7 @@ struct VroomQ4KRepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q4_K_pack_b(
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
 
     @staticmethod
@@ -5818,9 +5812,7 @@ struct VroomQ6KMatmul:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q6_K(
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
 
     @staticmethod
@@ -5844,8 +5836,7 @@ struct VroomQ6KRepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q6_K_pack_b(
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
 
     @staticmethod
@@ -5880,9 +5871,9 @@ struct QMatmulGPU_b4_g32:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             matmul_gpu_qint4[32, target](
-                managed_tensor_slice_to_ndbuffer(c),
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
+                c.to_layout_tensor(),
+                a.to_layout_tensor(),
+                b.to_layout_tensor(),
                 ctx,
             )
 
@@ -5914,9 +5905,9 @@ struct QMatmulGPU_b4_g128:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             matmul_gpu_qint4[128, target](
-                managed_tensor_slice_to_ndbuffer(c),
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
+                c.to_layout_tensor(),
+                a.to_layout_tensor(),
+                b.to_layout_tensor(),
                 ctx,
             )
 
@@ -5947,9 +5938,7 @@ struct QMatmulGPURepackGGUF:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             gpu_qint4_repack_Q4_0[b_shape = b.static_spec.shape, target](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
-                ctx,
+                b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
             )
 
     @staticmethod
@@ -5978,9 +5967,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             gpu_qint4_repack_GPTQ[128, target](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
-                ctx=ctx,
+                b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx=ctx
             )
 
     @staticmethod
@@ -6009,11 +5996,15 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
+            var perm_idx_lt = perm_idx.to_layout_tensor()
             gpu_qint4_repack_GPTQ[128, target](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
-                rebind[NDBuffer[DType.int32, 1, MutableAnyOrigin]](
-                    managed_tensor_slice_to_ndbuffer(perm_idx)
+                b.to_layout_tensor(),
+                b_packed.to_layout_tensor(),
+                LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
+                    perm_idx_lt.ptr,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                        perm_idx_lt.runtime_layout.shape.value.canonicalize()
+                    ),
                 ),
                 ctx=ctx,
             )
@@ -6949,11 +6940,11 @@ struct KCacheToBuffer:
         )
         var k = kv_collection.get_key_cache(Int(layer_idx))
         _k_cache_to_buffer(
-            managed_tensor_slice_to_ndbuffer(buffer_row_offsets_1d),
-            managed_tensor_slice_to_ndbuffer(cache_offsets_1d),
+            buffer_row_offsets_1d.to_layout_tensor(),
+            cache_offsets_1d.to_layout_tensor(),
             k,
             Int(buffer_length),
-            managed_tensor_slice_to_ndbuffer(k_latent_buffer),
+            k_latent_buffer.to_layout_tensor(),
             context.get_device_context(),
         )
 
@@ -7090,6 +7081,9 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         b_scales_type: DType, //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2],
@@ -7114,6 +7108,9 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         grouped_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
             transpose_b=True,
             target=target,
         ](
@@ -7142,6 +7139,9 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         b_scales_type: DType, //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=3],
@@ -7162,6 +7162,9 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         batched_matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
             transpose_b=True,
             target=target,
         ](
@@ -8735,6 +8738,9 @@ struct MatmulDynamicScaledFloat8:
         output_type: DType, //,
         input_scale_granularity: StaticString,
         weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2],
@@ -8749,6 +8755,9 @@ struct MatmulDynamicScaledFloat8:
         matmul_dynamic_scaled_fp8[
             input_scale_granularity,
             weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
             transpose_b=True,
             target=target,
         ](

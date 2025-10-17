@@ -28,6 +28,8 @@ from max.pipelines.core import TTSContext
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
+from max.serve.telemetry.metrics import METRICS
+
 from .pipeline import PipelineModel
 
 AudioGeneratorPipelineType = Pipeline[
@@ -73,8 +75,24 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
     def execute(
         self, inputs: AudioGenerationInputs[TTSContext]
     ) -> dict[RequestID, AudioGenerationOutput]:
+        METRICS.input_tokens(
+            sum(ctx.active_length for ctx in inputs.batch.values())
+        )
+
         next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]  # noqa: B009
-        return next_chunk(inputs.batch)
+        outputs = next_chunk(inputs.batch)
+        METRICS.output_tokens(
+            sum(output.steps_executed for output in outputs.values())
+        )
+
+        if hasattr(self.pipeline_model, "tts_config"):  # type: ignore[has-type]
+            sample_rate = self.pipeline_model.tts_config.decoder_sample_rate  # type: ignore[has-type]
+            for output in outputs.values():
+                METRICS.audio_output_length(
+                    output.audio_data.shape[0] / float(sample_rate) * 1000
+                )
+
+        return outputs
 
     def release(self, request_id: RequestID) -> None:
         release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]  # noqa: B009

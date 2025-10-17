@@ -1,0 +1,38 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_topk
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_topk.mojo
+
+params:
+
+# llama
+- $N: [128256]
+  $K: [50, 75, 255]
+  $block_size: 256 # [256, 512, 1024]
+  $batch_size: [1,4,16,64,256]
+  $num_blocks_per_input: [0]
+  $fill_fn_name: ["fill_random"] # ["fill_random", "fill_constant", "fill_iota"]
+  out_idx_type: [DType.uint64, DType.int32]
+  sampling: [True, False]
+
+# gemma
+- $N: [256000]
+  $K: [50, 75, 255]
+  $block_size: 256 # [256, 512, 1024]
+  $batch_size: [1,4,16,64,256]
+  $num_blocks_per_input: [0]
+  $fill_fn_name: ["fill_random"] # ["fill_random", "fill_constant", "fill_iota"]
+  out_idx_type: [DType.uint64, DType.int32]
+  sampling: [True, False]
+

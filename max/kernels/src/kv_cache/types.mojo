@@ -69,10 +69,10 @@ fn _strides_from_shape[shape: DimList, *, skip: Int = 0]() -> DimList:
 @always_inline
 fn _compute_kv_cache_dynamic_shape_strides[
     dtype: DType, rank: Int, //, kv_cache_rank: Int, drop_list: Tuple
-](blocks: NDBuffer[dtype, rank, **_]) -> (
+](blocks: NDBuffer[dtype, rank, **_]) -> Tuple[
     IndexList[kv_cache_rank],
     IndexList[kv_cache_rank],
-):
+]:
     var kv_cache_shape = IndexList[kv_cache_rank]()
     var kv_cache_strides = IndexList[kv_cache_rank]()
     var out_index = kv_cache_rank - 1

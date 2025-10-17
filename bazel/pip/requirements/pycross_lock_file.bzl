@@ -44,6 +44,7 @@ PINS = {
     "editdistance": "editdistance@0.8.1",
     "einops": "einops@0.8.0",
     "einx": "einx@0.3.0",
+    "expandvars": "expandvars@1.1.2",
     "fastapi": "fastapi@0.116.1",
     "faster-whisper": "faster-whisper@1.1.1",
     "filelock": "filelock@3.16.1",
@@ -64,7 +65,7 @@ PINS = {
     "kepler": "kepler@0.2.2",
     "librosa": "librosa@0.10.2",
     "llguidance": "llguidance@1.0.1",
-    "lm-eval": "lm-eval@0.4.7",
+    "lm-eval": "lm-eval@0.4.9.1",
     "locust": "locust@2.18.4",
     "logbar": "logbar@0.0.3",
     "markupsafe": "markupsafe@3.0.2",
@@ -1333,6 +1334,17 @@ def targets():
         name = "executing@2.1.0",
         wheel = ":_wheel_executing@2.1.0",
         testonly = "executing" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_expandvars@1.1.2",
+        actual = "@pycross_lock_file_wheel_expandvars_1.1.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "expandvars@1.1.2",
+        wheel = ":_wheel_expandvars@1.1.2",
+        testonly = "expandvars" in _TESTONLY_DEPS,
     )
 
     _fastapi_0_116_1_deps = [
@@ -2727,6 +2739,23 @@ def targets():
         testonly = "langdetect" in _TESTONLY_DEPS,
     )
 
+    _latex2sympy2_extended_1_10_2_deps = [
+        ":antlr4-python3-runtime@4.11.0",
+        ":sympy@1.13.3",
+    ]
+
+    native.alias(
+        name = "_wheel_latex2sympy2-extended@1.10.2",
+        actual = "@pycross_lock_file_wheel_latex2sympy2_extended_1.10.2_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "latex2sympy2-extended@1.10.2",
+        deps = _latex2sympy2_extended_1_10_2_deps,
+        wheel = ":_wheel_latex2sympy2-extended@1.10.2",
+        testonly = "latex2sympy2-extended" in _TESTONLY_DEPS,
+    )
+
     _lazy_loader_0_4_deps = [
         ":packaging@24.1",
     ]
@@ -2837,7 +2866,7 @@ def targets():
         testonly = "llvmlite" in _TESTONLY_DEPS,
     )
 
-    _lm_eval_0_4_7_deps = [
+    _lm_eval_0_4_9_1_deps = [
         ":accelerate@1.0.1",
         ":aiohttp@3.10.5",
         ":antlr4-python3-runtime@4.11.0",
@@ -2847,6 +2876,7 @@ def targets():
         ":immutabledict@4.2.1",
         ":jsonlines@4.0.0",
         ":langdetect@1.0.9",
+        ":math-verify@0.8.0",
         ":more-itertools@10.5.0",
         ":nltk@3.9.1",
         ":numexpr@2.10.2",
@@ -2870,14 +2900,14 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_lm-eval@0.4.7",
-        actual = "@pycross_lock_file_wheel_lm_eval_0.4.7_py3_none_any//file",
+        name = "_wheel_lm-eval@0.4.9.1",
+        actual = "@pycross_lock_file_wheel_lm_eval_0.4.9.1_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "lm-eval@0.4.7",
-        deps = _lm_eval_0_4_7_deps,
-        wheel = ":_wheel_lm-eval@0.4.7",
+        name = "lm-eval@0.4.9.1",
+        deps = _lm_eval_0_4_9_1_deps,
+        wheel = ":_wheel_lm-eval@0.4.9.1",
         testonly = "lm-eval" in _TESTONLY_DEPS,
     )
 
@@ -3000,6 +3030,22 @@ def targets():
         name = "markupsafe@3.0.2",
         wheel = ":_wheel_markupsafe@3.0.2",
         testonly = "markupsafe" in _TESTONLY_DEPS,
+    )
+
+    _math_verify_0_8_0_deps = [
+        ":latex2sympy2-extended@1.10.2",
+    ]
+
+    native.alias(
+        name = "_wheel_math-verify@0.8.0",
+        actual = "@pycross_lock_file_wheel_math_verify_0.8.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "math-verify@0.8.0",
+        deps = _math_verify_0_8_0_deps,
+        wheel = ":_wheel_math-verify@0.8.0",
+        testonly = "math-verify" in _TESTONLY_DEPS,
     )
 
     _matplotlib_3_9_4_deps = [
@@ -9177,6 +9223,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_expandvars_1.1.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/7f/e6/79c43f7a55264e479a9fbf21ddba6a73530b3ea8439a8bb7fa5a281721af/expandvars-1.1.2-py3-none-any.whl",
+        ],
+        sha256 = "d1652fe4e61914f5b88ada93aaedb396446f55ae4621de45c8cb9f66e5712526",
+        downloaded_file_path = "expandvars-1.1.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_fastapi_0.116.1_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/e5/47/d63c60f59a59467fda0f93f46335c9d18526d7071f025cb5b89d5353ea42/fastapi-0.116.1-py3-none-any.whl",
@@ -10877,6 +10933,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_wheel_latex2sympy2_extended_1.10.2_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/ab/60/dfbbf40e3a371388c0e03ff65b01319b7d4023e883df6d7261125772ffdc/latex2sympy2_extended-1.10.2-py3-none-any.whl",
+        ],
+        sha256 = "f910442c5b02a466c1046f47d05cc5285181068b882399281f30102715337fb7",
+        downloaded_file_path = "latex2sympy2_extended-1.10.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_wheel_lazy_loader_0.4_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/83/60/d497a310bde3f01cb805196ac61b7ad6dc5dcf8dce66634dc34364b20b4f/lazy_loader-0.4-py3-none-any.whl",
@@ -11057,12 +11123,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_lm_eval_0.4.7_py3_none_any",
+        name = "pycross_lock_file_wheel_lm_eval_0.4.9.1_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/45/b9/1b4e3268b590d9ff16e087685d9526455bb677c3e4d0caeba4451f20c586/lm_eval-0.4.7-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/18/ba/3a992d435deaf5461f50417bd7ba38a21831a04520941a9ecf1020dcf900/lm_eval-0.4.9.1-py3-none-any.whl",
         ],
-        sha256 = "d84a52580468fdc1d812e511db36e86679b69ee27f5a5e3dbd50f233d0bec69f",
-        downloaded_file_path = "lm_eval-0.4.7-py3-none-any.whl",
+        sha256 = "315e5a3af7a600c8e4240e059e132376d6582538e1aa6484ccba647f6ea3fae9",
+        downloaded_file_path = "lm_eval-0.4.9.1-py3-none-any.whl",
     )
 
     maybe(
@@ -11323,6 +11389,16 @@ def repositories():
         ],
         sha256 = "15ab75ef81add55874e7ab7055e9c397312385bd9ced94920f2802310c930396",
         downloaded_file_path = "MarkupSafe-3.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_math_verify_0.8.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/fe/9f/59979f699b5c97334298f1295bc9fcdc9904d98d2276479bffff863d23b1/math_verify-0.8.0-py3-none-any.whl",
+        ],
+        sha256 = "31ca651296d817a9bb3fd58ca1fd0d192dcea709b1e5ecf2d0a4514c16f89087",
+        downloaded_file_path = "math_verify-0.8.0-py3-none-any.whl",
     )
 
     maybe(

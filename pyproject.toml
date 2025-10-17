@@ -3,6 +3,8 @@ name = "modular"
 version = "0"
 requires-python = ">= 3.10"
 
+
+# TODO: restrict utils/packaging/conda/test_inputs to only test_format.mojo
 [tool.black]
 include = '\.mojo$'
 line-length = 80
@@ -18,7 +20,9 @@ force-exclude = '''
     | utils/mblack
     | KGEN/test/mojo-parser
     | KGEN/test/mojo-isolated
+    | KGEN/test/mojo-tool/format
     | SDK/lib/API/python/max/serve/schemas
+    | utils/packaging/conda/test_inputs
   )/
 )
 '''

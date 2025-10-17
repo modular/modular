@@ -185,7 +185,9 @@ fn assert_equal(
 fn _assert_with_measure_impl[
     dtype: DType, //,
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
+        UnsafePointer[Scalar[dtype], mut=False],
+        UnsafePointer[Scalar[dtype], mut=False],
+        Int,
     ) -> Float64,
 ](
     x: UnsafePointer[Scalar[dtype], **_],
@@ -217,7 +219,9 @@ fn _assert_with_measure_impl[
 @always_inline
 fn assert_with_measure[
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
+        UnsafePointer[Scalar[dtype], mut=False],
+        UnsafePointer[Scalar[dtype], mut=False],
+        Int,
     ) -> Float64,
 ](
     x: NDBuffer,
@@ -240,7 +244,9 @@ fn assert_with_measure[
 @always_inline
 fn assert_with_measure[
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
+        UnsafePointer[Scalar[dtype], mut=False],
+        UnsafePointer[Scalar[dtype], mut=False],
+        Int,
     ) -> Float64,
 ](
     x: HostNDBuffer,
@@ -263,7 +269,9 @@ fn assert_with_measure[
 @always_inline
 fn assert_with_measure[
     measure: fn[dtype: DType] (
-        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
+        UnsafePointer[Scalar[dtype], mut=False],
+        UnsafePointer[Scalar[dtype], mut=False],
+        Int,
     ) -> Float64,
 ](
     x: TestTensor,

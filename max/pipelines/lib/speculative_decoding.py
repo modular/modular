@@ -46,7 +46,7 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from max.pipelines.core import TextContext
 from max.profiler import traced
@@ -416,7 +416,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager]:
+    ) -> list[TPPagedKVCacheManager]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @traced

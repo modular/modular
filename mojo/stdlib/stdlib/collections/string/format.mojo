@@ -223,7 +223,7 @@ struct _FormatCurlyEntry(ImplicitlyCopyable, Movable):
     @staticmethod
     fn _create_entries(
         fmt_src: StringSlice, len_pos_args: Int
-    ) raises -> (List[Self], Int):
+    ) raises -> Tuple[List[Self], Int]:
         """Returns a list of entries and its total estimated entry byte width.
         """
         var manual_indexing_count = 0

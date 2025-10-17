@@ -162,7 +162,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # Unary Operators
     # ===------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """A FloatLiteral value is true if it is non-zero.
 
@@ -171,7 +171,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         """
         return self != 0.0
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __as_bool__(self) -> Bool:
         """A FloatLiteral value is true if it is non-zero.
 

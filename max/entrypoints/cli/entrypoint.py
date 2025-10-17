@@ -20,13 +20,29 @@ import logging
 import click
 
 
-def configure_cli_logging(level: str = "INFO") -> None:
+class PrefixFormatter(logging.Formatter):
+    """Formatter that adds a prefix to log messages."""
+
+    def __init__(self, prefix: str, base_formatter: logging.Formatter):
+        super().__init__()
+        self.prefix = prefix
+        self.base_formatter = base_formatter
+
+    def format(self, record: logging.LogRecord) -> str:
+        # Format the message using the base formatter
+        formatted_message = self.base_formatter.format(record)
+        # Add the prefix to the message
+        return f"{self.prefix} {formatted_message}"
+
+
+def configure_cli_logging(
+    level: str = "INFO", log_prefix: str | None = None
+) -> None:
     """Configure logging for CLI operations without using Settings.
 
     Args:
         level: Log level as string (DEBUG, INFO, WARNING, ERROR)
-        quiet: If True, set logging to WARNING level
-        verbose: If True, set logging to DEBUG level
+        log_prefix: Optional prefix to prepend to all log messages
     """
     if level == "INFO":
         log_level = logging.INFO
@@ -45,10 +61,15 @@ def configure_cli_logging(level: str = "INFO") -> None:
 
     # Create console handler
     console_handler = logging.StreamHandler()
-    console_formatter = logging.Formatter(
+    console_formatter: logging.Formatter = logging.Formatter(
         "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    # Apply log prefix if provided
+    if log_prefix is not None:
+        console_formatter = PrefixFormatter(log_prefix, console_formatter)
+
     console_handler.setFormatter(console_formatter)
     console_handler.setLevel(log_level)
 

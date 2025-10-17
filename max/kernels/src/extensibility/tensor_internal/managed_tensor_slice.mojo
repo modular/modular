@@ -700,7 +700,9 @@ struct ManagedTensorSlice[
 
         Note that forwarding of static shape, strides, and lambdas won't work.
         """
-        self = Self(ndbuffer.data, ndbuffer.get_shape())
+        self = Self(
+            ndbuffer.data.mut_cast[True]().as_any_origin(), ndbuffer.get_shape()
+        )
 
     @always_inline
     fn __getitem__(self, indices: IndexList[rank]) -> Scalar[dtype]:

@@ -233,13 +233,13 @@ struct NDBuffer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
 ](
+    Defaultable,
+    DevicePassable,
+    ImplicitlyCopyable,
+    Movable,
     Sized,
     Stringable,
     Writable,
-    ImplicitlyCopyable,
-    Movable,
-    Defaultable,
-    DevicePassable,
 ):
     """An N-dimensional buffer.
 
@@ -610,44 +610,6 @@ struct NDBuffer[
         address_space=address_space,
         exclusive=exclusive,
     ]
-
-    @deprecated(
-        "`origin_cast` for NDBuffer is deprecated, use the safer"
-        " `as_any_origin` instead."
-    )
-    @always_inline("nodebug")
-    fn origin_cast[
-        target_mut: Bool = Self.mut,
-        target_origin: Origin[target_mut] = Origin[target_mut].cast_from[
-            Self.origin
-        ],
-    ](self) -> NDBuffer[
-        dtype,
-        rank,
-        target_origin,
-        shape,
-        strides,
-        alignment2=alignment2,
-        address_space=address_space,
-        exclusive=exclusive,
-    ]:
-        """Changes the origin or mutability of a pointer.
-
-        Parameters:
-            target_mut: Whether the origin is mutable.
-            target_origin: Origin of the destination pointer.
-
-        Returns:
-            A new `NDBuffer` object with the same type and the same address,
-            as the original `NDBuffer` and the new specified mutability and origin.
-        """
-        return {
-            self.data.unsafe_mut_cast[target_mut]().unsafe_origin_cast[
-                target_origin
-            ](),
-            self.dynamic_shape,
-            self.dynamic_stride,
-        }
 
     @always_inline("nodebug")
     fn get_immutable(

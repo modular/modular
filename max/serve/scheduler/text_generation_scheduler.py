@@ -26,7 +26,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.interfaces.queue import BackgroundQueueDrainer, drain_queue
-from max.nn.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import TPPagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
@@ -61,7 +61,7 @@ class TokenGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: PagedKVCacheManager | None = None,
+        paged_manager: TPPagedKVCacheManager | None = None,
         offload_queue_draining: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config

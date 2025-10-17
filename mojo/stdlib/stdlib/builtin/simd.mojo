@@ -292,7 +292,6 @@ struct SIMD[dtype: DType, size: Int](
     CeilDivable,
     Ceilable,
     Comparable,
-    ConvertibleToPython,
     Defaultable,
     DevicePassable,
     Floorable,
@@ -635,40 +634,6 @@ struct SIMD[dtype: DType, size: Int](
         # TODO(MOCO-2186): remove when the parser ensures this for constructors.
         constrained[_type_is_eq[__type_of(self), Self]()]()
         self = value.__float__()
-
-    # TODO(MSTDL-1587): Remove the dummy parameter.
-    @always_inline
-    fn __init__[
-        *, `_`: NoneType = None
-    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
-        """Initialize a SIMD value from a PythonObject.
-
-        Parameters:
-            _: A dummy parameter to ensure this overload has lower priority than
-                the others. Its value is ignored.
-
-        Args:
-            obj: The PythonObject to convert.
-
-        Raises:
-            If the conversion to double fails.
-        """
-
-        @parameter
-        if dtype.is_floating_point():
-            ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
-            if float_value == -1.0 and cpy.PyErr_Occurred():
-                # Note that -1.0 does not guarantee an error, it just means we
-                # need to check if there was an exception.
-                raise cpy.unsafe_get_error()
-            # NOTE: if dtype is not float64, we truncate.
-            self = Scalar[dtype](float_value)
-        elif dtype.is_integral() and dtype.bit_width() <= 64:
-            self = Int(obj)
-        else:
-            self = Scalar[dtype]()
-            constrained[False, "unsupported dtype"]()
 
     @always_inline("nodebug")
     @implicit
@@ -1817,15 +1782,6 @@ struct SIMD[dtype: DType, size: Int](
     # ===------------------------------------------------------------------=== #
     # Trait implementations
     # ===------------------------------------------------------------------=== #
-
-    fn to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-        """
-        constrained[size == 1, "only works with scalar values"]()
-        return PythonObject(self._refine[new_size=1]())
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -3934,3 +3890,48 @@ fn _write_scalar[
         constrained[
             False, "unable to write dtype, only integral/float/bool supported"
         ]()
+
+
+__extension SIMD(ConvertibleToPython):
+    # TODO(MSTDL-1587): Remove the dummy parameter.
+    @always_inline
+    fn __init__[
+        *, `_`: NoneType = None
+    ](out self: Scalar[dtype], obj: PythonObject, /) raises:
+        """Initialize a SIMD value from a PythonObject.
+
+        Parameters:
+            _: A dummy parameter to ensure this overload has lower priority than
+                the others. Its value is ignored.
+
+        Args:
+            obj: The PythonObject to convert.
+
+        Raises:
+            If the conversion to double fails.
+        """
+
+        @parameter
+        if dtype.is_floating_point():
+            ref cpy = Python().cpython()
+            var float_value = cpy.PyFloat_AsDouble(obj._obj_ptr)
+            if float_value == -1.0 and cpy.PyErr_Occurred():
+                # Note that -1.0 does not guarantee an error, it just means we
+                # need to check if there was an exception.
+                raise cpy.unsafe_get_error()
+            # NOTE: if dtype is not float64, we truncate.
+            self = Scalar[dtype](float_value)
+        elif dtype.is_integral() and dtype.bit_width() <= 64:
+            self = Int(obj)
+        else:
+            self = Scalar[dtype]()
+            constrained[False, "unsupported dtype"]()
+
+    fn to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        constrained[size == 1, "only works with scalar values"]()
+        return PythonObject(self._refine[new_size=1]())

@@ -64,11 +64,11 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.kv_cache import (
+    DPPagedKVCacheManager,
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
-    MultiPagedKVCacheManager,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
     infer_optimal_batch_size,
 )
 from max.nn.transformer import ReturnLogits
@@ -438,7 +438,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 class KVCacheMixin(Protocol):
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> PagedKVCacheManager:
+    ) -> TPPagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -489,11 +489,13 @@ class KVCacheMixin(Protocol):
 
 def get_paged_manager(
     pipeline: Pipeline[Any, Any],
-) -> PagedKVCacheManager | None:
+) -> TPPagedKVCacheManager | None:
     if (
         hasattr(pipeline, "_pipeline_model")
         and hasattr(pipeline._pipeline_model, "kv_manager")
-        and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
+        and isinstance(
+            pipeline._pipeline_model.kv_manager, TPPagedKVCacheManager
+        )
     ):
         return pipeline._pipeline_model.kv_manager
 
@@ -519,7 +521,7 @@ class _TextGenerationProtocol(
     Protocol, Generic[TextGenerationContextType, RequestType]
 ):
     @property
-    def kv_managers(self) -> list[PagedKVCacheManager]: ...
+    def kv_managers(self) -> list[TPPagedKVCacheManager]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...
@@ -588,38 +590,43 @@ class GenerateMixin(
         # by replica.
         batches: list[dict[RequestID, TextGenerationContextType]] = []
         batch_to_replica_idx: dict[RequestID, int] = {}
-        if data_parallel_degree > 1 and len(kv_managers) > 1:
-            # We don't support speculative decoding when data parallelism is
-            # enabled, because the KV cache managers might place the same
-            # context on different devices/replicas.
-            raise ValueError(
-                "Having multiple KV managers (e.g. when using"
-                " speculative decoding) is not supported when data "
-                "parallelism is enabled."
-            )
-        if data_parallel_degree > 1 and not isinstance(
-            kv_managers[0], MultiPagedKVCacheManager
-        ):
-            raise ValueError(
-                "MultiPagedKVCacheManager is required when data parallelism is enabled."
-            )
+
+        if data_parallel_degree > 1:
+            if len(kv_managers) > 1:
+                raise ValueError(
+                    "Having multiple KV managers (e.g. when using"
+                    " speculative decoding) is not supported when data "
+                    "parallelism is enabled."
+                )
+
+            if not isinstance(kv_managers[0], DPPagedKVCacheManager):
+                raise ValueError(
+                    "DPPagedKVCacheManager is required when data parallelism is enabled."
+                )
+
         batches = [{} for _ in range(data_parallel_degree)]
         for context in context_batch:
-            req_id = context.request_id
-            # Use whatever replica the main models KVCache recommends.
-            replica_idx = kv_managers[0].get_or_recommend_replica(context)
-            # Claim the slot for all kv_managers (eg: main + draft model)
+            replica_idx: int | None = None
+            if data_parallel_degree > 1:
+                replica_idx = kv_managers[0].get_or_recommend_replica(context)
+
             for kv_manager in self.kv_managers:
-                kv_manager.external_claim(req_id, replica_idx=replica_idx)
-            batches[replica_idx][req_id] = context
-            batch_to_replica_idx[req_id] = replica_idx
+                kv_manager.external_claim(
+                    context.request_id, replica_idx=replica_idx
+                )
+
+            if replica_idx is None:
+                replica_idx = 0
+
+            batches[replica_idx][context.request_id] = context
+            batch_to_replica_idx[context.request_id] = replica_idx
+
         inputs = TextGenerationInputs(
             batches=batches,
             num_steps=self.pipeline_config.max_num_steps,
         )
 
         # Generate outputs until all requests are done.
-
         done = 0
 
         try:
@@ -815,7 +822,7 @@ class TextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager]:
+    ) -> list[TPPagedKVCacheManager]:
         return [self._pipeline_model.kv_manager]
 
     def calculate_num_steps(

@@ -47,11 +47,11 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> (
+) -> Tuple[
     DeviceNDBuffer[DType.uint32, 1],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
     DeviceNDBuffer[dtype, 2, DimList(Dim(), hidden_size)],
-):
+]:
     """Initializes input row offsets and hidden state ragged tensor inputs."""
     total_length = 0
     max_seq_length_batch = -1
@@ -597,7 +597,7 @@ def generic_execute_fused_qkv_cache_ragged[
     k_cache: cache_t,
     v_cache: cache_t,
     ctx: DeviceContext,
-    out result: (
+    out result: Tuple[
         DeviceNDBuffer[
             dtype,
             2,
@@ -610,7 +610,7 @@ def generic_execute_fused_qkv_cache_ragged[
         DeviceNDBuffer[
             dtype, 2, DimList(Dim(), num_q_heads * kv_params.head_size)
         ],
-    ),
+    ],
 ):
     """Executes fused QKV matmul, writing results kv_cache objects.
 

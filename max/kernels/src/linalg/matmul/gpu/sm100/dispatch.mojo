@@ -38,6 +38,8 @@ from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
     matmul_sm100_fallback,
 )
+from internal_utils import Table
+from .tuning_configs import _get_tuning_list_sm100_fp8, TuningConfigSM100
 
 alias DISPATCH_MISS = 0
 alias DISPATCH_HIT = 1
@@ -491,6 +493,15 @@ fn matmul_dispatch_sm100[
     alias static_K = a.shape.get[1]()
 
     var logger = Logger()
+
+    var epilogue_type = String("None")
+
+    @parameter
+    if elementwise_compute_lambda_fn:
+        epilogue_type = String("Compute Epilogue")
+    elif elementwise_lambda_fn:
+        epilogue_type = String("Normal Epilogue")
+
     logger.info("------ Dispatching to SM100 (B200+) ------")
     logger.info(
         "Input Data Types: ",
@@ -506,6 +517,8 @@ fn matmul_dispatch_sm100[
         ", ",
         static_K,
         "]",
+        " Epilogue Type: ",
+        epilogue_type,
     )
 
     # default matmul config for sm100
@@ -526,7 +539,8 @@ fn matmul_dispatch_sm100[
                 a_type=a_type,
                 b_type=b_type,
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
 
@@ -594,8 +608,80 @@ fn matmul_dispatch_sm100_fp8[
 
     alias MMA_K = 32
     alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-
     var m = c.dim[0]()
+
+    @parameter
+    @always_inline("nodebug")
+    fn _dispatch[entry: TuningConfigSM100]() raises:
+        var c_tensor = from_ndbuffer_row_major(c)
+        var a_tensor = from_ndbuffer_row_major(a)
+        var b_tensor = from_ndbuffer_row_major(b)
+
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            block_tile_shape=entry.block_tile_shape,
+            mma_shape=entry.mma_shape,
+            cluster_shape=entry.cluster_shape,
+        )
+
+        return _matmul_dispatch_sm100[
+            transpose_b=transpose_b,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+            block_swizzle_size = entry.block_swizzle_size,
+        ](c, a, b, ctx)
+
+    @parameter
+    @always_inline("nodebug")
+    fn _search[
+        T: Table[TuningConfigSM100],
+        domain: List[Int] = List[Int](),
+    ]() raises -> Int:
+        @parameter
+        @always_inline
+        fn get_m(x: TuningConfigSM100) -> Int:
+            return x.M
+
+        alias m_values = T.query_values[Int, get_m, domain]()
+
+        @parameter
+        for static_m in m_values:
+
+            @parameter
+            @always_inline
+            fn rule_eq_m(x: TuningConfigSM100) -> Bool:
+                return x.M == static_m
+
+            if m <= static_m:
+                alias idx_list = T.query_index[rule_eq_m, domain=domain]()
+
+                @parameter
+                if idx_list:
+                    alias entry = T.configs[idx_list[0]]
+                    _dispatch[entry]()
+                    return DISPATCH_HIT
+                else:
+                    # dynamic m is in the range but cannot find any corresponding config in the table.
+                    break
+
+        return DISPATCH_MISS
+
+    alias tuning_list = _get_tuning_list_sm100_fp8[mma_k=MMA_K, bk=BK]()
+    alias tuning_table = Table(tuning_list, "tuning_table_sm100_fp8")
+
+    @parameter
+    @always_inline
+    fn rule_eq_nk(x: TuningConfigSM100) -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    alias nk_idx_list = tuning_table.query_index[rule_eq_nk]()
+
+    # make sure the domain (nk_idx_list) is not empty!
+    @parameter
+    if nk_idx_list:
+        if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
+            return DISPATCH_HIT
 
     @parameter
     fn matmul_swapab[static_m: Int]() raises -> Int:

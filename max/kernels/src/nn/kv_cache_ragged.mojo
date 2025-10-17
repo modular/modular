@@ -1033,18 +1033,44 @@ fn _qmatmul_common[
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = weight.shape.get[0]()
-    var c_nd: NDBuffer[dtype, 2, MutableAnyOrigin, DimList(Dim(), N)]
+    alias c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+    var c_nd: LayoutTensor[dtype, c_layout, MutableAnyOrigin]
 
     c_nd = {
         UnsafePointer[Scalar[dtype]](),
-        IndexList[2](TOTAL_SEQ_LEN, N),
+        RuntimeLayout[c_layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
+
+    var hidden_state_lt = LayoutTensor[
+        dtype,
+        Layout.row_major[2](hidden_state.shape),
+        address_space = hidden_state.address_space,
+    ](
+        hidden_state.data,
+        RuntimeLayout[Layout.row_major[2](hidden_state.shape)].row_major(
+            hidden_state.get_shape().canonicalize()
+        ),
+    )
+
+    var weight_lt = LayoutTensor[
+        DType.uint8, Layout.row_major[2](weight.shape)
+    ](
+        weight.data,
+        RuntimeLayout[Layout.row_major[2](weight.shape)].row_major(
+            weight.get_shape().canonicalize()
+        ),
+    )
 
     matmul_gpu_qint4_impl[
         target=target,
         group_size=group_size,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](c_nd, hidden_state, weight, context)
+    ](
+        c_nd,
+        hidden_state_lt,
+        weight_lt,
+        context,
+    )
 
 
 @always_inline
@@ -1959,24 +1985,49 @@ fn _qmatmul_gguf_quantized_common[
     weight: NDBuffer[DType.uint8, 2, _, _],
     output: NDBuffer[mut=True, DType.float32, 2, _, _],
 ) raises:
+    var hidden_state_lt = LayoutTensor[
+        DType.float32, Layout.row_major[2](hidden_state.shape)
+    ](
+        hidden_state.data,
+        RuntimeLayout[Layout.row_major[2](hidden_state.shape)].row_major(
+            hidden_state.get_shape().canonicalize()
+        ),
+    )
+    var weight_lt = LayoutTensor[
+        DType.uint8, Layout.row_major[2](weight.shape)
+    ](
+        weight.data,
+        RuntimeLayout[Layout.row_major[2](weight.shape)].row_major(
+            weight.get_shape().canonicalize()
+        ),
+    )
+    var output_lt = LayoutTensor[
+        DType.float32, Layout.row_major[2](output.shape)
+    ](
+        output.data,
+        RuntimeLayout[Layout.row_major[2](output.shape)].row_major(
+            output.get_shape().canonicalize()
+        ),
+    )
+
     @parameter
     if quantization_encoding == "q4_0":
         matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            hidden_state_lt,
+            weight_lt,
+            output_lt,
         )
     elif quantization_encoding == "q4_k":
         matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            hidden_state_lt,
+            weight_lt,
+            output_lt,
         )
     elif quantization_encoding == "q6_k":
         matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
+            hidden_state_lt,
+            weight_lt,
+            output_lt,
         )
     else:
         raise Error(
@@ -2673,13 +2724,37 @@ fn _flare_mla_decode_kv_cache_ragged[
     fn _dispatch_mla[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
-        flare_mla_decoding[ragged=True](
-            output,
-            q,
+        flare_mla_decoding[rank = q.rank, ragged=True](
+            LayoutTensor[
+                output.dtype, Layout.row_major[output.rank](output.shape)
+            ](
+                output.data,
+                RuntimeLayout[
+                    Layout.row_major[output.rank](output.shape)
+                ].row_major(output.get_shape().canonicalize()),
+            ),
+            LayoutTensor[q.dtype, Layout.row_major[q.rank](q.shape)](
+                q.data,
+                RuntimeLayout[Layout.row_major[q.rank](q.shape)].row_major(
+                    q.get_shape().canonicalize()
+                ),
+            ),
             k,
             mask,
             score_mod,
-            input_row_offsets,
+            LayoutTensor[
+                input_row_offsets.dtype,
+                Layout.row_major[input_row_offsets.rank](
+                    input_row_offsets.shape
+                ),
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    )
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
             scale,
             context.get_device_context(),
         )
@@ -2831,6 +2906,28 @@ fn _flare_mla_prefill_kv_cache_ragged[
 
     var layer_idx_cast = Int(layer_idx)
     var k_rope = kv_collection.get_key_cache(layer_idx_cast)
+    var prev_output_lt: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major[3](), MutableAnyOrigin]
+    ] = None
+    if prev_output:
+        var po = prev_output.value()
+        prev_output_lt = prev_output_lt.T(
+            po.data,
+            RuntimeLayout[Layout.row_major[3]()].row_major(
+                po.get_shape().canonicalize()
+            ),
+        )
+    var prev_softmax_info_lt: OptionalReg[
+        LayoutTensor[softmax_type, Layout.row_major[3](), MutableAnyOrigin]
+    ] = None
+    if prev_softmax_info:
+        var psi = prev_softmax_info.value()
+        prev_softmax_info_lt = prev_softmax_info_lt.T(
+            psi.data,
+            RuntimeLayout[Layout.row_major[3]()].row_major(
+                psi.get_shape().canonicalize()
+            ),
+        )
 
     @parameter
     @__copy_capture(k_rope)
@@ -2838,28 +2935,77 @@ fn _flare_mla_prefill_kv_cache_ragged[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
         flare_mla_prefill[
+            rank=3,
             write_softmax_info=write_softmax_info,
             use_cascade_attention=use_cascade_attention,
         ](
-            output,
-            q,
-            k,
-            v,
+            LayoutTensor[
+                output.dtype, Layout.row_major[output.rank](output.shape)
+            ](
+                output.data,
+                RuntimeLayout[
+                    Layout.row_major[output.rank](output.shape)
+                ].row_major(output.get_shape().canonicalize()),
+            ),
+            LayoutTensor[q.dtype, Layout.row_major[q.rank](q.shape)](
+                q.data,
+                RuntimeLayout[Layout.row_major[q.rank](q.shape)].row_major(
+                    q.get_shape().canonicalize()
+                ),
+            ),
+            LayoutTensor[k.dtype, Layout.row_major[k.rank](k.shape)](
+                k.data,
+                RuntimeLayout[Layout.row_major[k.rank](k.shape)].row_major(
+                    k.get_shape().canonicalize()
+                ),
+            ),
+            LayoutTensor[v.dtype, Layout.row_major[v.rank](v.shape)](
+                v.data,
+                RuntimeLayout[Layout.row_major[v.rank](v.shape)].row_major(
+                    v.get_shape().canonicalize()
+                ),
+            ),
             k_rope,
             mask,
             score_mod,
-            input_row_offsets,
-            buffer_row_offsets,
+            LayoutTensor[
+                input_row_offsets.dtype,
+                Layout.row_major[input_row_offsets.rank](),
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[input_row_offsets.rank]()
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
+            LayoutTensor[
+                buffer_row_offsets.dtype,
+                Layout.row_major[buffer_row_offsets.rank](),
+            ](
+                buffer_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[buffer_row_offsets.rank]()
+                ].row_major(buffer_row_offsets.get_shape().canonicalize()),
+            ),
             scale,
             context.get_device_context(),
-            softmax_info=OptionalReg[
-                NDBuffer[softmax_type, 3, MutableAnyOrigin]
-            ](softmax_info),
-            cache_offsets=OptionalReg[
-                NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-            ](cache_offsets),
-            prev_output=prev_output,
-            prev_softmax_info=prev_softmax_info,
+            softmax_info=LayoutTensor[
+                softmax_type, Layout.row_major[3](), MutableAnyOrigin
+            ](
+                softmax_info.data,
+                RuntimeLayout[Layout.row_major[3]()].row_major(
+                    softmax_info.get_shape().canonicalize()
+                ),
+            ),
+            cache_offsets=LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+            ](
+                cache_offsets.data,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](len(cache_offsets))
+                ),
+            ),
+            prev_output=prev_output_lt,
+            prev_softmax_info=prev_softmax_info_lt,
         )
 
     dispatch_mask_and_score_mod[
@@ -2897,10 +3043,50 @@ fn generic_flare_mla_prefill_ragged_paged_plan[
         task_id=Int(context.get_device_context().id()),
     ):
         mla_prefill_plan(
-            buffer_row_offsets,
-            cache_offsets,
-            buffer_lengths,
-            input_row_offsets,
+            LayoutTensor[
+                buffer_row_offsets.dtype,
+                Layout.row_major[buffer_row_offsets.rank](
+                    buffer_row_offsets.shape
+                ),
+            ](
+                buffer_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[buffer_row_offsets.rank](
+                        buffer_row_offsets.shape
+                    )
+                ].row_major(buffer_row_offsets.get_shape().canonicalize()),
+            ),
+            LayoutTensor[
+                cache_offsets.dtype,
+                Layout.row_major[cache_offsets.rank](cache_offsets.shape),
+            ](
+                cache_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[cache_offsets.rank](cache_offsets.shape)
+                ].row_major(cache_offsets.get_shape().canonicalize()),
+            ),
+            LayoutTensor[
+                buffer_lengths.dtype,
+                Layout.row_major[buffer_lengths.rank](buffer_lengths.shape),
+            ](
+                buffer_lengths.data,
+                RuntimeLayout[
+                    Layout.row_major[buffer_lengths.rank](buffer_lengths.shape)
+                ].row_major(buffer_lengths.get_shape().canonicalize()),
+            ),
+            LayoutTensor[
+                input_row_offsets.dtype,
+                Layout.row_major[input_row_offsets.rank](
+                    input_row_offsets.shape
+                ),
+            ](
+                input_row_offsets.data,
+                RuntimeLayout[
+                    Layout.row_major[input_row_offsets.rank](
+                        input_row_offsets.shape
+                    )
+                ].row_major(input_row_offsets.get_shape().canonicalize()),
+            ),
             k,
             buffer_token_size,
             cuda_ctx,
@@ -2928,12 +3114,40 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
-    _k_cache_to_buffer(
-        buffer_row_offsets_1d,
-        cache_offsets_1d,
+    _k_cache_to_buffer[k_latent_buffer.dtype](
+        LayoutTensor[
+            buffer_row_offsets_1d.dtype,
+            Layout.row_major[buffer_row_offsets_1d.rank](
+                buffer_row_offsets_1d.shape
+            ),
+        ](
+            buffer_row_offsets_1d.data,
+            RuntimeLayout[
+                Layout.row_major[buffer_row_offsets_1d.rank](
+                    buffer_row_offsets_1d.shape
+                )
+            ].row_major(buffer_row_offsets_1d.get_shape().canonicalize()),
+        ),
+        LayoutTensor[
+            cache_offsets_1d.dtype,
+            Layout.row_major[cache_offsets_1d.rank](cache_offsets_1d.shape),
+        ](
+            cache_offsets_1d.data,
+            RuntimeLayout[
+                Layout.row_major[cache_offsets_1d.rank](cache_offsets_1d.shape)
+            ].row_major(cache_offsets_1d.get_shape().canonicalize()),
+        ),
         k,
         buffer_length_int,
-        k_latent_buffer,
+        LayoutTensor[
+            k_latent_buffer.dtype,
+            Layout.row_major[k_latent_buffer.rank](k_latent_buffer.shape),
+        ](
+            k_latent_buffer.data,
+            RuntimeLayout[
+                Layout.row_major[k_latent_buffer.rank](k_latent_buffer.shape)
+            ].row_major(k_latent_buffer.get_shape().canonicalize()),
+        ),
         cuda_ctx,
     )
 

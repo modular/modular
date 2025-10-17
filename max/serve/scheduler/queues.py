@@ -261,7 +261,3 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
 
         finally:
             logger.debug("Terminating response worker [self=%s]", os.getpid())
-
-            # un-deadlock the tasks waiting in this.stream()
-            for q in self.pending_out_queues.values():
-                await q.put(SchedulerResult(is_done=True, result=None))

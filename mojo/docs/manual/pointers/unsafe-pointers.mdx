@@ -357,9 +357,7 @@ fn unsafe_ptr(
     origin = __origin_of(self),
 ]:
 
-    return self.data.origin_cast[
-        mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
-    ]()
+    return self.data.unsafe_origin_cast[__origin_of(self)]()
 ```
 
 This returns a copy of the original pointer, with the origin set to match the

@@ -95,6 +95,13 @@ fn test_producer_consumer[
     constrained[m_warps_per_block % producer_warps_a == 0]()
     constrained[n_warps_per_block % producer_warps_b == 0]()
     constrained[m_warps_per_block * n_warps_per_block % consumer_warps == 0]()
+    constrained[
+        consumer_warps >= producer_warps_a
+        and consumer_warps >= producer_warps_b
+    ]()
+    constrained[
+        consumer_warps.is_power_of_two(), "consumer_warps must be a power of 2"
+    ]()
 
     var role: ThreadRole
     var warp_id = get_warp_id()
@@ -139,6 +146,7 @@ fn test_producer_consumer[
         WK,
         m_warps_per_block,
         n_warps_per_block,
+        consumer_warps,
     ](smem_buffer_a, smem_buffer_b)
 
     barrier()  # NOTE: probably not nessecary but I saw it in the HF code around the same point
@@ -317,6 +325,7 @@ fn test_producer_consumer[
                     m_warp_idx,
                     n_warp_idx,
                     local_tile_count,
+                    i,
                 )
 
                 local_tile_count += 1
@@ -360,7 +369,7 @@ fn store_c[
     warp_m: Int,
     warp_n: Int,
 ):
-    var c_block_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var c_block_tile = c.tile[BM, BN](Int(block_idx.x), Int(block_idx.y))
     var c_warp_tile = c_block_tile.tile[WM, WN](Int(warp_m), Int(warp_n))
 
     # NOTE: these numbers are hardcoded based on register fragments shapes
@@ -568,13 +577,14 @@ def test_warp_specialization_amd[
             producer_warps_a=producer_warps_a,
             producer_warps_b=producer_warps_b,
             consumer_warps=consumer_warps,
+            pipeline_stages=pipeline_stages,
         ]
 
         ctx.enqueue_function_checked[kernel, kernel](
             global_a_device_tensor,
             global_b_device_tensor,
             global_c_device_tensor,
-            grid_dim=(1, 1),
+            grid_dim=(M // BM, N // BN),
             block_dim=(
                 WARP_SIZE
                 * (producer_warps_a + producer_warps_b + consumer_warps)
@@ -600,7 +610,7 @@ def test_warp_specialization_amd[
         for i in range(M * N):
             # print(i // N, i % N, c_host.tensor.data[i], c_host_ref.tensor.data[i])
             if host_c[i] != host_c_ref[i]:  # and errors < 100:
-                print(i // N, i % N, host_c[i], host_c_ref[i])
+                # print(i // N, i % N, host_c[i], host_c_ref[i])
                 errors += 1
 
             # if errors < 100:
@@ -620,7 +630,11 @@ def main():
 
         print("Running AMD Warp Specialization Tests")
         test_warp_specialization_amd[
-            64, 64, 64, 64, 64, 64, 32, 32, 64, 2, 2, 4
+            4096, 4096, 4096, 64, 64, 64, 32, 32, 64, 2, 2, 4, pipeline_stages=1
+        ](ctx)
+
+        test_warp_specialization_amd[
+            1024, 1024, 256, 64, 64, 64, 32, 32, 64, 2, 2, 4, pipeline_stages=1
         ](ctx)
 
         test_warp_specialization_amd[

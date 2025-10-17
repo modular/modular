@@ -1523,6 +1523,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     use_exp2: Bool = False,
 ](
     output_reg_tile: LayoutTensor[
+        mut=True,
         dtype,
         output_layout,
         *_,
@@ -1532,7 +1533,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         dtype, *_, address_space = AddressSpace.SHARED, **_
     ],
     o_smem_ptr_base: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, **_
+        Scalar[dtype], mut=True, address_space = AddressSpace.SHARED, **_
     ],
     rowmax: UnsafePointer[Scalar[dtype], **_],
     rowsum: UnsafePointer[Scalar[dtype], **_],

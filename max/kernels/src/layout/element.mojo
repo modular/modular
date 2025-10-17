@@ -635,12 +635,16 @@ struct Element[
 
 
 struct MemoryElement[
+    mut: Bool, //,
     dtype: DType,
     layout: Layout,
-    address_space: AddressSpace,
+    origin: Origin[mut],
     /,
+    address_space: AddressSpace,
     *,
-    index_type: DType = _get_index_type(layout, address_space),
+    index_type: DType = _get_index_type(
+        address_space=address_space, layout=layout
+    ),
 ]:
     """Represents data in memory organized according to a specific layout.
 
@@ -653,13 +657,28 @@ struct MemoryElement[
     different memory layouts transparently.
 
     Parameters:
+        mut: Whether the memory element is mutable.
         dtype: The data type of the elements.
         layout: The memory layout describing how elements are organized.
+        origin: The origin of the memory element.
         address_space: The memory address space where the data is located.
         index_type: The integer type of the index pointing to each memory element.
     """
 
-    var ptr: UnsafePointer[Scalar[dtype], address_space=address_space]
+    alias _AsMut[
+        mut_origin: MutableOrigin,
+    ] = MemoryElement[
+        mut=True,
+        dtype,
+        layout,
+        mut_origin,
+        address_space,
+        index_type=index_type,
+    ]
+
+    var ptr: UnsafePointer[
+        Scalar[dtype], mut=mut, origin=origin, address_space=address_space
+    ]
     """Pointer to the memory location where the data is stored.
 
     This pointer provides access to the underlying memory with the specified
@@ -681,7 +700,9 @@ struct MemoryElement[
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[dtype], address_space=address_space],
+        ptr: UnsafePointer[
+            Scalar[dtype], mut=mut, origin=origin, address_space=address_space
+        ],
         runtime_layout: RuntimeLayout[
             layout,
             element_type = DType.int32,
@@ -716,7 +737,10 @@ struct MemoryElement[
         return __type_of(result).load(self.ptr, self.runtime_layout)
 
     @always_inline("nodebug")
-    fn store(self, src: Element[dtype, layout, **_]):
+    fn store(
+        self: Self._AsMut,
+        src: Element[dtype, layout, **_],
+    ):
         """Stores element data to the memory location of this MemoryElement.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -733,7 +757,7 @@ struct MemoryElement[
         return src.store(self.ptr)
 
     @always_inline("nodebug")
-    fn transfer(self, src: MemoryElement):
+    fn transfer(self: Self._AsMut, src: MemoryElement):
         """Transfers data from another `MemoryElement` to this one.
 
         This method efficiently transfers data between memory locations with potentially

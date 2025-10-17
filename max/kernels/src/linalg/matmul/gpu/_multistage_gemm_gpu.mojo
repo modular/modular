@@ -208,10 +208,16 @@ fn multistage_mma[
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
     a_smem_iter_arg: LayoutTensorIter[
-        a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
+        mut=True,
+        a_type,
+        a_smem_layout,
+        address_space = AddressSpace.SHARED, **_,
     ],
     mut b_smem_iter: LayoutTensorIter[
-        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
+        mut=True,
+        b_type,
+        b_smem_layout,
+        address_space = AddressSpace.SHARED, **_,
     ],
     num_iters: Int,
     /,
@@ -296,7 +302,7 @@ fn multistage_mma[
     @parameter
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor, src: LayoutTensor):
+    ](dst: LayoutTensor[mut=True, *_, **_], src: LayoutTensor):
         @parameter
         if is_nvidia_gpu():
             copy_dram_to_sram_async[

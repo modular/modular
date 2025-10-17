@@ -50,7 +50,7 @@ from max.nn.comm.allreduce import Allreduce
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.kv_cache import (
     PagedCacheValues,
-    PagedKVCacheManager,
+    TPPagedKVCacheManager,
 )
 from max.nn.moe import MoE
 from max.nn.rotary_embedding import (
@@ -537,7 +537,7 @@ class DeepseekV3(Module):
             return (last_logits,)
 
     def input_types(
-        self, kv_manager: PagedKVCacheManager
+        self, kv_manager: TPPagedKVCacheManager
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

@@ -61,6 +61,7 @@ from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
+from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
 from .matmul.gpu.amd import gemm_kernel_amd
 from algorithm import vectorize
@@ -181,6 +182,54 @@ fn naive_grouped_matmul_kernel[
     else:
         c_by_expert = c.data + a_start_row * N
         c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
+
+
+fn naive_epilogue[
+    c_type: DType,
+    c_shape: DimList,
+    *,
+    elementwise_lambda_fn: elementwise_epilogue_type,
+](
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    ctx: DeviceContext,
+) raises:
+    alias kernel = naive_epilogue_kernel[
+        c_type,
+        c_shape,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+    alias simd_size = simd_width_of[c_type]()
+    var block_dim = (128 // simd_size, simd_size, 1)
+    ctx.enqueue_function[kernel](
+        c,
+        grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
+        block_dim=block_dim,
+    )
+
+
+fn naive_epilogue_kernel[
+    c_type: DType,
+    c_shape: DimList,
+    *,
+    elementwise_lambda_fn: elementwise_epilogue_type,
+](c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],):
+    alias simd_size = simd_width_of[c_type]()
+    alias alignment = align_of[SIMD[c_type, simd_size]]()
+    var n = global_idx.x * UInt(simd_size)
+    var m = global_idx.y
+    alias N = c_shape.get[1]()
+    var M = c.dim[0]()
+
+    # note that the most naive implementation of simd_size=1 won't work because
+    # different threads will be loading and storing in the same 32-bit region
+    # leading to synchronization/data race issues.
+    if m < UInt(M) and n < UInt(N):
+        var val = c.load[width=simd_size, alignment=alignment](Index(m, n))
+        elementwise_lambda_fn[c_type, simd_size, alignment=alignment](
+            Index(m, n), val
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -900,7 +949,52 @@ fn grouped_matmul[
             ctx,
         )
     elif is_sm100_kernel_applicable:
-        grouped_matmul_sm100[elementwise_lambda_fn=elementwise_lambda_fn](
+        alias N = b.shape.get[1]()
+        alias K = b.shape.get[2]()
+        alias contiguous_bytes = K * size_of[a_type]()
+
+        fn get_swizzle_mode(contiguous_bytes: Int) -> TensorMapSwizzle:
+            if contiguous_bytes >= TensorMapSwizzle.SWIZZLE_128B.bytes():
+                return TensorMapSwizzle.SWIZZLE_128B
+            elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_64B.bytes():
+                return TensorMapSwizzle.SWIZZLE_64B
+            elif contiguous_bytes >= TensorMapSwizzle.SWIZZLE_32B.bytes():
+                return TensorMapSwizzle.SWIZZLE_32B
+            else:
+                return TensorMapSwizzle.SWIZZLE_NONE
+
+        alias a_swizzle = get_swizzle_mode(contiguous_bytes)
+        alias b_swizzle = a_swizzle
+        alias BK = (a_swizzle.bytes() // size_of[a_type]())
+        alias _MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+        alias MMA_K = min(_MMA_K, K)
+        # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
+        alias cta_group = 2 if N % 256 == 0 else 1
+        alias block_tile_shape = Index(128, 32 // cta_group, BK)
+        alias umma_shape = Index(
+            block_tile_shape[0] * cta_group,
+            block_tile_shape[1] * cta_group,
+            MMA_K,
+        )
+        alias cluster_shape = Index(cta_group, 1, 1)
+        alias transpose_b = True
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            block_tile_shape=block_tile_shape,
+            mma_shape=umma_shape,
+            cluster_shape=cluster_shape,
+        )
+        constrained[
+            K % BK == 0,
+            "b_shape[2] must be a multiple of BK. Got " + String(K),
+        ]()
+
+        grouped_matmul_sm100_persistent[
+            transpose_b=transpose_b,
+            config=config,
+            cta_group=cta_group,
+            a_swizzle=a_swizzle,
+            b_swizzle=b_swizzle,
+        ](
             c,
             a,
             a_offsets,
@@ -910,6 +1004,16 @@ fn grouped_matmul[
             num_active_experts,
             ctx,
         )
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            naive_epilogue[
+                c_type, c_shape, elementwise_lambda_fn=elementwise_lambda
+            ](
+                c,
+                ctx,
+            )
     elif is_amd_kernel_applicable:
         grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
             c,
