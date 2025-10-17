@@ -2882,10 +2882,13 @@ def topk_fused_sampling(
     max_k_tensor = max_k
 
     if isinstance(top_k, int):
-        if top_k <= 0 or top_k > 255:
+        if top_k <= -1 or top_k > 255:
             raise ValueError(
-                f"top_k must be greater than 0 and less than or equal to 255, got {top_k}"
+                f"top_k must be greater than -1 and less than or equal to 255, got {top_k}"
             )
+
+        if top_k == 0:
+            top_k = -1
 
         max_k_tensor = ops.constant(
             top_k, dtype=DType.int64, device=DeviceRef.CPU()

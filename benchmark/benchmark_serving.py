@@ -216,11 +216,9 @@ async def async_request_trt_llm(
     assert api_url.endswith("generate_stream")
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        payload = {
+        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
             "accumulate_tokens": True,
             "text_input": request_func_input.prompt,
-            "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
             "ignore_eos": request_func_input.ignore_eos,
             "stream": True,
         }
@@ -229,6 +227,10 @@ async def async_request_trt_llm(
             payload["max_tokens"] = request_func_input.max_tokens
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
+        if request_func_input.temperature is not None:
+            payload["temperature"] = request_func_input.temperature
+        if request_func_input.top_p is not None:
+            payload["top_p"] = request_func_input.top_p
 
         output = RequestFuncOutput()
         output.prompt_len = request_func_input.prompt_len

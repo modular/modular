@@ -82,16 +82,22 @@ fn top_k_shape_impl[
         The output shape.
     """
 
+    # Clamp max_k
+    var bound_max_k = (
+        input.runtime_layout.shape.value.canonicalize()[axis] if max_k
+        == -1 else max_k
+    )
+
     if (
-        max_k < 0
-        or max_k > input.runtime_layout.shape.value.canonicalize()[axis]
+        bound_max_k < 0
+        or bound_max_k > input.runtime_layout.shape.value.canonicalize()[axis]
     ):
         raise Error("[top/bottom-k] k must be within [0, input_shape[axis]]")
 
     var shape = rebind[IndexList[input.rank]](
         input.runtime_layout.shape.value.canonicalize()
     )
-    shape[normalize_neg_index(axis, input.rank)] = max_k
+    shape[normalize_neg_index(axis, input.rank)] = bound_max_k
 
     return shape
 
@@ -168,6 +174,9 @@ fn top_k[
 
     var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
 
+    # Clamp max_k
+    var bound_max_k = 255 if max_k == -1 else max_k
+
     @parameter
     if is_cpu[target]():
         constrained[
@@ -178,7 +187,7 @@ fn top_k[
         alias grain_size = 1000
         _top_k_cpu[largest=largest](
             input,
-            max_k,
+            bound_max_k,
             Int(normalized_axis),
             out_vals,
             out_idxs,
@@ -197,7 +206,7 @@ fn top_k[
         var cuda_ctx = ctx.get_device_context()
         topk_gpu[sampling=False, largest=largest](
             cuda_ctx,
-            max_k,
+            bound_max_k,
             input,
             out_vals,
             out_idxs,
@@ -242,10 +251,10 @@ fn _top_k_cpu[
             iota(idxs)
 
             var batch_idx = indices[0] if axis != 0 else 0
-            var k_val = 255 if max_k == -1 else max_k
+            var k_val = max_k
             if k:
                 var k_raw = Int(k.value()[batch_idx])
-                k_val = 255 if k_raw == -1 else k_raw
+                k_val = max_k if k_raw == -1 else k_raw
 
             # Clamp k to the size of the axis to avoid out-of-bounds access
             if k_val > shape[axis]:
@@ -400,9 +409,12 @@ fn fused_token_sampling_cpu[
         input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
     ]()
     constrained[out_idx_type is DType.int64, "out_idx_type must be int64"]()
+
+    bound_max_k = 255 if max_k == -1 else max_k
+
     # materialize the out_vals which is of shape [input[:-1]] + [k]
     var out_vals_shape = input.runtime_layout.shape.value.canonicalize()
-    out_vals_shape[input.rank - 1] = 255 if max_k == -1 else max_k
+    out_vals_shape[input.rank - 1] = bound_max_k
     var out_vals = LayoutTensor[dtype, Layout.row_major[input.rank]()](
         UnsafePointer[Scalar[dtype]].alloc(out_vals_shape.flattened_length()),
         RuntimeLayout[Layout.row_major[input.rank]()].row_major(out_vals_shape),
@@ -411,7 +423,7 @@ fn fused_token_sampling_cpu[
     alias out_layout = Layout.row_major[input.rank]()
 
     _top_k_sampling(
-        max_k,
+        bound_max_k,
         input,
         out_vals,
         LayoutTensor[
@@ -488,6 +500,7 @@ fn _top_k_sampling[
     constrained[
         input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
     ]()
+
     # Now reshape for sampling
     var orig_in_shape: IndexList[input.rank] = rebind[IndexList[input.rank]](
         input.runtime_layout.shape.value.canonicalize()
@@ -544,10 +557,17 @@ fn _top_k_sampling[
         if temperature:
             temperature_val = temperature.value()[batch][0]
 
-        var k_val = 255 if max_k == -1 else max_k
+        var k_val = max_k
         if k:
             var k_raw = Int(k.value()[batch])
-            k_val = 255 if k_raw == -1 else k_raw
+            k_val = max_k if k_raw == -1 else k_raw
+
+        # Clamp k_val to the number of valid top-k entries available in internal_out_vals
+        var avail_k = (
+            internal_out_vals.runtime_layout.shape.value.canonicalize()[1]
+        )
+        if k_val > avail_k:
+            k_val = avail_k
 
         # Calculate softmax normalization
         var max_val = internal_out_vals[batch, 0][0]
@@ -820,6 +840,7 @@ fn _topk_stage1_old[
     Note:
         The output buffers (local_topk_vals and local_topk_idxs) should be of size num_blocks_per_input * max_k.
     """
+
     tid = thread_idx.x
     bid = block_idx.x
     block_size = block_dim.x
@@ -847,7 +868,7 @@ fn _topk_stage1_old[
         var k_batch = max_k
         if K:
             var k_raw = Int(K[batch_id])
-            k_batch = 255 if k_raw == -1 else k_raw
+            k_batch = max_k if k_raw == -1 else k_raw
         # Prepare for K iterations to find the local top-K elements
         for k in range(k_batch):
             # Initialize each thread with its own TopK_2 value and index
@@ -924,6 +945,7 @@ fn _topk_stage1[
     Note:
         The output buffers (local_topk_vals and local_topk_idxs) should be of size num_blocks_per_input * max_k.
     """
+
     tid = thread_idx.x
     bid = block_idx.x
     block_size = block_dim.x
@@ -944,7 +966,11 @@ fn _topk_stage1[
     var k_batch = max_k
     if K:
         var k_raw = Int(K[batch_id])
-        k_batch = 255 if k_raw == -1 else k_raw
+        k_batch = max_k if k_raw == -1 else k_raw
+
+    # Clamp k_batch to the number of elements we can actually draw from
+    if k_batch > num_elements:
+        k_batch = num_elements
 
     # Allocate shared memory for the values and indices
     var topk_sram = external_memory[
@@ -1086,7 +1112,13 @@ fn _topk_stage2[
         # Handle the case where stage 1 is executed with a single block
         var k_batch = max_k
         if K:
-            k_batch = Int(K[batch_id])
+            var k_raw = Int(K[batch_id])
+            k_batch = max_k if k_raw == -1 else k_raw
+
+        # Clamp k_batch to not exceed the reduced elements per batch and max_k
+        if k_batch > num_elem_reduced:
+            k_batch = num_elem_reduced
+
         if num_blocks_per_input == 1 and not sampling:
             if tid < UInt(k_batch):
                 batch_i_topk_vals[tid] = _local_topk_vals[tid]
@@ -1536,6 +1568,9 @@ fn topk_gpu[
     var N = orig_in_shape[input.rank - 1]
     var last_idx_dim = 1 if sampling else max_k
 
+    # Clamp max_k
+    bound_max_k = 255 if max_k == -1 else max_k
+
     # heuristic to set block size
     var block_size_: Int
     if input.size() <= 1024 * 64 * 3:
@@ -1574,7 +1609,7 @@ fn topk_gpu[
         # Handle 1D input: treat it as a single batch with one element
         internal_bs = 1
         var internal_in_shape = IndexList[internal_rank](1, input.size())
-        var internal_out_vals_shape = IndexList[internal_rank](1, max_k)
+        var internal_out_vals_shape = IndexList[internal_rank](1, bound_max_k)
         var internal_out_idxs_shape = IndexList[internal_rank](1, last_idx_dim)
         # Reshape 1D inputs to 2D
         internal_input = reshape(input, internal_in_shape)
@@ -1629,7 +1664,7 @@ fn topk_gpu[
             internal_bs, last_idx_dim
         )
         var internal_out_vals_shape = IndexList[internal_rank](
-            internal_bs, max_k
+            internal_bs, bound_max_k
         )
 
         # Reshape higher dimensional inputs to 2D
@@ -1644,7 +1679,7 @@ fn topk_gpu[
 
     # Define shape for the kernel's internal cache buffers
     var internal_cache_shape = IndexList[2](
-        internal_bs, num_blocks_per_input_ * max_k
+        internal_bs, num_blocks_per_input_ * bound_max_k
     )
 
     # Create temporary buffer for local top-K values
@@ -1673,7 +1708,7 @@ fn topk_gpu[
         _force_old_impl=_force_old_impl,
     ](
         ctx,
-        max_k,
+        bound_max_k,
         internal_input,
         device_local_topk_vals,
         device_local_topk_idxs,
@@ -1746,8 +1781,11 @@ fn fused_token_sampling_gpu[
     constrained[
         input.rank == out_idxs.rank, "input.rank must match out_idx.rank"
     ]()
+
+    var bound_max_k = 255 if max_k == -1 else max_k
+
     var out_vals_shape = input.runtime_layout.shape.value.canonicalize()
-    out_vals_shape[input.rank - 1] = max_k
+    out_vals_shape[input.rank - 1] = bound_max_k
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
     )
@@ -1758,7 +1796,7 @@ fn fused_token_sampling_gpu[
 
     topk_gpu[sampling=True, largest=True](
         ctx,
-        max_k,
+        bound_max_k,
         input,
         out_vals,
         out_idxs,
