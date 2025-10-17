@@ -243,7 +243,7 @@ struct ParameterUseDefGraph {
   /// provided parameter declaration scope. If the the root scope is not
   /// isolated from above, the use-def graph expects to be primed with the
   /// parent scope's declarations before this function is called.
-  void calculate(ParameterCollector::Analysis &cache);
+  virtual void calculate(ParameterCollector::Analysis &cache);
 
   /// Verify the validity of the parameter declarations, uses, and definitions
   /// within the current scope.
@@ -268,6 +268,26 @@ private:
   /// table is provided.
   LogicalResult calculateOrVerify(SymTabEvaluationContext *evaluationContext,
                                   ParameterCollector::Analysis &cache);
+};
+
+struct FunctionParameterUseDefGraph : ParameterUseDefGraph {
+  FunctionParameterUseDefGraph(Region &scope);
+  FunctionParameterUseDefGraph(Region *scope);
+  virtual ~FunctionParameterUseDefGraph() {}
+
+  /// A flattened set of parametric operations includes ops in all nested
+  /// regions. This is used to help speed up interpreting parametric functions.
+  DenseSet<Operation *> paramOpsSet;
+
+  /// Quick flag indicating whether a region has parameters or not.
+  /// This is used to help speed up interpreting parametric functions.
+  bool hasParams = true;
+
+  /// Compute the parameter declarations, definitions, and uses within the
+  /// provided parameter declaration scope. If the the root scope is not
+  /// isolated from above, the use-def graph expects to be primed with the
+  /// parent scope's declarations before this function is called.
+  void calculate(ParameterCollector::Analysis &cache) override;
 };
 
 } // namespace M::KGEN

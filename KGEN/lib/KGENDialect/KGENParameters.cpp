@@ -988,3 +988,25 @@ void ParameterUseDefGraph::dump() const {
       bfsDump.emplace_back(&top.nestedScopes.at(nested), depth + 1);
   }
 }
+
+static void collectAllParamOpsHelper(ParameterUseDefGraph &graph,
+                                     DenseSet<Operation *> &set,
+                                     bool &hasParams) {
+  set.insert(graph.paramOps.begin(), graph.paramOps.end());
+  hasParams |= !graph.params.empty();
+  for (auto &scope : graph.nestedScopes)
+    collectAllParamOpsHelper(scope.second, set, hasParams);
+}
+
+FunctionParameterUseDefGraph::FunctionParameterUseDefGraph(Region &scope)
+    : ParameterUseDefGraph(scope) {}
+
+FunctionParameterUseDefGraph::FunctionParameterUseDefGraph(Region *scope)
+    : ParameterUseDefGraph(scope) {}
+
+void FunctionParameterUseDefGraph::calculate(
+    ParameterCollector::Analysis &cache) {
+  ParameterUseDefGraph::calculate(cache);
+  hasParams = false;
+  collectAllParamOpsHelper(*this, paramOpsSet, hasParams);
+}
