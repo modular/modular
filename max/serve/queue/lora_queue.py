@@ -46,7 +46,8 @@ class LoRAQueue:
         )
 
         self.pending_out_queues: dict[
-            RequestID, asyncio.Queue[LoRAResponse]
+            RequestID,
+            tuple[asyncio.Queue[LoRAResponse], asyncio.AbstractEventLoop],
         ] = {}
 
     @contextlib.contextmanager
@@ -62,7 +63,8 @@ class LoRAQueue:
                 )
 
             out_queue: asyncio.Queue[LoRAResponse] = asyncio.Queue()
-            self.pending_out_queues[req_id] = out_queue
+            event_loop = asyncio.get_running_loop()
+            self.pending_out_queues[req_id] = (out_queue, event_loop)
 
             # put_nowait will fail if the request_push_socket is unavailable
             # this will immediately trigger the finally block, resulting in
@@ -91,7 +93,12 @@ class LoRAQueue:
                 try:
                     request_id, response = self._response_socket.get_nowait()
                     if request_id in self.pending_out_queues:
-                        await self.pending_out_queues[request_id].put(response)
+                        out_queue, event_loop = self.pending_out_queues[
+                            request_id
+                        ]
+                        asyncio.run_coroutine_threadsafe(
+                            out_queue.put(response), event_loop
+                        )
                 except queue.Empty:
                     await asyncio.sleep(0.1)
 
