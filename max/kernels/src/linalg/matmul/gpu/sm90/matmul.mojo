@@ -119,6 +119,8 @@ fn warp_specialize_gemm_with_multicasting[
     ctx: DeviceContext,
 ) raises:
     """Unified dispatcher for all matmul kernel variants."""
+
+    @parameter
     if splits > 0:
         # Dispatch to split-k kernel
         warp_specialize_gemm_with_multicasting_splitk[
