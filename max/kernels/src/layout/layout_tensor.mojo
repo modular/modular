@@ -370,6 +370,8 @@ struct LayoutTensor[
     This pointer respects the specified address space, alignment, mutability,
     and origin tracking for memory safety and performance optimization."""
 
+    alias storage_size = size_of[dtype]() * layout.size()
+
     alias RuntimeLayoutType = RuntimeLayout[
         layout,
         element_type=layout_int_type,
