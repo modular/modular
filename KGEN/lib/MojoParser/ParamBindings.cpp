@@ -78,11 +78,13 @@ LogicalResult
 LIT::checkConstraints(ASTDecl &declScope, ArrayRef<ConstraintAttr> constraints,
                       const ParamBindings::DiagEmitter *diagEmitter,
                       ParameterEvaluator *evaluator) {
-  return checkConstraints(
-      declScope, constraints,
-      diagEmitter ? diagEmitter->emitConstraintViolations : nullptr,
-      diagEmitter ? diagEmitter->emitUnprovableConstraints : nullptr,
-      evaluator);
+  if (diagEmitter)
+    return checkConstraints(declScope, constraints,
+                            diagEmitter->emitConstraintViolations,
+                            diagEmitter->emitUnprovableConstraints, evaluator);
+  return checkConstraints(declScope, constraints,
+                          /*emitConstraintViolations=*/nullptr,
+                          /*emitUnprovableConstraints=*/nullptr, evaluator);
 }
 
 LogicalResult LIT::checkConstraints(

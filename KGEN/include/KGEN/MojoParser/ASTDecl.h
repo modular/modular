@@ -226,9 +226,10 @@ public:
   /// depth, and a unique ID.
   StringAttr mangleParamName(const Twine &name);
 
-  /// Move the children decls of `src` into this decl. This is useful when a
-  /// temporary decl needs to be created for parsing subexpressions but whose
-  /// children will be inherited later by a decl being resolved.
+  /// Move the children decls of `src` (along with their constraints) into this
+  /// decl. This is useful when a temporary decl needs to be created for parsing
+  /// subexpressions but whose children will be inherited later by a decl being
+  /// resolved.
   void takeDecls(ASTDecl &src);
 
   /// Anonymous origins, closure impl structs, and potentially other names are
