@@ -151,6 +151,7 @@ struct Pipe:
 # Process execution
 # ===----------------------------------------------------------------------=== #
 
+alias ERR_STR_LEN = 8
 
 struct Process:
     """Create and manage child processes from file executables.
@@ -220,7 +221,7 @@ struct Process:
         if CompilationTarget.is_linux() or CompilationTarget.is_macos():
             var file_name = String(path.split(sep)[-1])
             var pipe = Pipe(out_close_on_exec=True)
-            var exec_err_code = String("EXEC_ERR")
+            var exec_err_code = StaticString("EXEC_ERR")
 
             var pid = vfork()
 
@@ -260,18 +261,18 @@ struct Process:
             elif pid < 0:
                 raise Error("Unable to fork parent")
 
-            pipe.set_input_only()
             var err: Optional[StringSlice[MutableAnyOrigin]] = None
+            var err_buff_data = InlineArray[Byte, ERR_STR_LEN](fill=0)
+
             try:
-                var err_len = exec_err_code.byte_length()
+                pipe.set_input_only()
                 var buf = Span[Byte, MutableAnyOrigin](
-                    ptr=UnsafePointer[Byte].alloc(err_len), length=err_len
+                    ptr=err_buff_data.unsafe_ptr(), length=ERR_STR_LEN
                 )
-                buf[0] = 0  # Explicitly default to empty C string
                 var bytes_read = pipe.read_bytes(buf)
                 err = StringSlice(unsafe_from_utf8=buf)
             except e:
-                err = None
+                raise Error("Failed to read child process response from pipe, exception was: " + String(e))
 
             if err and len(err.value()) > 0 and err.value() == exec_err_code:
                 raise Error("Failed to execute " + path)
