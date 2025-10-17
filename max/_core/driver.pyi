@@ -543,7 +543,7 @@ class Tensor:
         """
 
     @overload
-    def to(self, device: DeviceStream) -> Tensor:
+    def to(self, stream: DeviceStream) -> Tensor:
         """
         Return a tensor that's guaranteed to be on the given device and associated
         with the given stream.
