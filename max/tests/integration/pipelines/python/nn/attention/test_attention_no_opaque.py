@@ -30,7 +30,10 @@ from max.nn.attention.attention_with_rope import (
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.kv_cache import PagedCacheValues, TPPagedKVCacheManager
+from max.nn.kv_cache import (
+    PagedCacheValues,
+    TPPagedKVCacheManager,
+)
 from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
@@ -128,10 +131,13 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         cache_strategy=KVCacheStrategy.PAGED,
     )
 
-    rope = RotaryEmbedding(dim, n_heads, 10000.0, max_seq_len, device_ref)
+    rope_ref = RotaryEmbedding(dim, n_heads, 10000.0, max_seq_len, device_ref)
+    rope_no_opaque = RotaryEmbedding(
+        dim, n_heads, 10000.0, max_seq_len, device_ref
+    )
 
     no_opaque_attention = AttentionWithRopeNoOpaque(
-        rope=rope,
+        rope=rope_no_opaque,
         num_attention_heads=n_heads,
         num_key_value_heads=n_kv_heads,
         hidden_size=dim,
@@ -139,7 +145,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         scale=0.125,
     )
     reference_attention = AttentionWithRope(
-        rope=rope,
+        rope=rope_ref,
         num_attention_heads=n_heads,
         num_key_value_heads=n_kv_heads,
         hidden_size=dim,
@@ -205,7 +211,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             layer_idx,
             hidden_state.tensor,
             kv_collection,
-            rope.freqs_cis,
+            reference_attention.rope.freqs_cis,
             input_row_offsets.tensor,
         )
 
@@ -239,17 +245,16 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         [0, max_seq_len, max_seq_len * 2], dtype=np.uint32
     )
 
-    # TODO(GEX-2510): uncommenting this currently segfaults
-    # reference_output = build_and_execute_graph(
-    #     session,
-    #     hidden_state,
-    #     input_row_offsets,
-    #     device,
-    #     reference_attention_fn,
-    #     kv_inputs=kv_inputs,
-    #     model=reference_attention,
-    #     kv_input_symbols=kv_input_symbols,
-    # )
+    reference_output = build_and_execute_graph(
+        session,
+        hidden_state,
+        input_row_offsets,
+        device,
+        reference_attention_fn,
+        kv_inputs=kv_inputs,
+        model=reference_attention,
+        kv_input_symbols=kv_input_symbols,
+    )
     with pytest.raises(NotImplementedError) as e:
         _no_opaque_output = build_and_execute_graph(
             session,
@@ -261,5 +266,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             model=no_opaque_attention,
             kv_input_symbols=kv_input_symbols,
         )
-    assert "flash_attention_ragged_no_opaque not implemented" in str(e.value)
+        assert "flash_attention_ragged_no_opaque not implemented" in str(
+            e.value
+        )
     # assert torch.allclose(no_opaque_output, reference_output)
