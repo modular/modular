@@ -1003,7 +1003,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     _matmul_common[
         target=target,
         elementwise_lambda_fn=write_to_cache,
-        output_dtype = DType.float32,
+        output_dtype=output_dtype,
     ](hidden_state, weight.bitcast[dtype](), context)
 
 
