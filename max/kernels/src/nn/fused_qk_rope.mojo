@@ -16,11 +16,11 @@ from math import gcd
 from sys.info import _current_target, simd_width_of
 
 from algorithm.functional import elementwise
-from buffer import NDBuffer
 from complex import ComplexSIMD
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout import IntTuple
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -65,12 +65,14 @@ fn rope_q_proj[
     *,
     interleaved: Bool,
 ](
-    q_proj: NDBuffer[dtype, rank, *_],
-    output: NDBuffer[mut=True, dtype, rank, *_],
+    q_proj: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
+    constrained[q_proj.rank == rank]()
+    constrained[output.rank == rank]()
     var indices = get_safetensors_idx(idx[rank - 1], head_size)
     var pos_re = idx
     var pos_im = idx
@@ -149,20 +151,24 @@ fn fused_qk_rope[
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: NDBuffer[dtype, 4, *_],
+    q_proj: LayoutTensor[dtype, **_],
     kv_collection: collection_t,
-    freqs_cis: NDBuffer[dtype, 2, *_],
+    freqs_cis: LayoutTensor[dtype, **_],
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, dtype, 4, *_],
+    output: LayoutTensor[mut=True, dtype, **_],
     context: Optional[DeviceContext],
 ) raises:
+    constrained[q_proj.rank == 4]()
+    constrained[freqs_cis.rank == 2]()
+    constrained[output.rank == 4]()
+
     alias kv_params = cache_t.kv_params
 
     var batch_size = q_proj.dim[0]()
     var new_seq_len = q_proj.dim[1]()
-    alias num_q_heads = q_proj.shape.get[2]()
+    alias num_q_heads = Int(q_proj.layout.shape[2])
     alias num_k_heads = kv_params.num_heads
-    alias head_size = q_proj.shape.get[3]()
+    alias head_size = Int(q_proj.layout.shape[3])
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
@@ -243,13 +249,15 @@ fn fused_qk_rope_ragged[
     target: StaticString,
     mrope_section: Optional[IntTuple] = None,
 ](
-    q_proj: NDBuffer[dtype, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_proj: LayoutTensor[dtype, **_],
+    input_row_offsets: LayoutTensor[DType.uint32, **_],
     kv_collection: collection_t,
-    freqs_cis: NDBuffer[freq_dtype, 2, *_],
-    position_ids: OptionalReg[NDBuffer[DType.uint32, 2, MutableAnyOrigin]],
+    freqs_cis: LayoutTensor[freq_dtype, **_],
+    position_ids: OptionalReg[
+        LayoutTensor[DType.uint32, Layout.row_major[2](), MutableAnyOrigin]
+    ],
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, dtype, 3, *_],
+    output: LayoutTensor[mut=True, dtype, **_],
     context: Optional[DeviceContext],
 ) raises:
     """Applies RoPE (Rotary Position Embedding) to query and key tensors.
@@ -259,15 +267,21 @@ fn fused_qk_rope_ragged[
     for DeepSeek models where only part of each head undergoes rotary
     transformation.
     """
+    constrained[q_proj.rank == 3, "q_proj must be rank 3"]()
+    constrained[freqs_cis.rank == 2, "freqs_cis must be rank 2"]()
+    constrained[output.rank == 3, "output must be rank 3"]()
+    constrained[
+        input_row_offsets.rank == 1, "input_row_offsets must be rank 1"
+    ]()
     alias kv_params = cache_t.kv_params
-    alias num_q_heads = q_proj.shape.get[1]()
+    alias num_q_heads = Int(q_proj.layout.shape[1])
     alias num_k_heads = kv_params.num_heads
-    alias q_head_size = q_proj.shape.get[2]()
+    alias q_head_size = Int(q_proj.layout.shape[2])
     alias k_head_size = kv_params.head_size
     var batch_size = input_row_offsets.dim[0]() - 1
 
     # Add rope dimension parameters
-    alias rope_dim = freqs_cis.shape.get[1]()
+    alias rope_dim = Int(freqs_cis.layout.shape[1])
 
     # Check if shape of freqs_cis matches head_size.
     # If not, we only rope the last `rope_dim` dimensions of each head.
@@ -275,7 +289,8 @@ fn fused_qk_rope_ragged[
     alias has_nope = unroped_dim > 0
 
     constrained[
-        freqs_cis.shape.has_value[1](), "Need static shape for freqs_cis"
+        freqs_cis.layout.shape[1] != UNKNOWN_VALUE,
+        "Need static shape for freqs_cis",
     ]()
     constrained[
         rope_dim <= q_head_size and rope_dim <= k_head_size,

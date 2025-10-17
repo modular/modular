@@ -80,9 +80,4 @@ def test_all_sizes_reverse():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_all_sizes]()
-    suite.test[test_all_sizes_reverse]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

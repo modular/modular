@@ -230,7 +230,7 @@ def cli_serve(
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags
     from max.entrypoints.workers import start_workers
-    from max.interfaces import PipelineTask, SamplingParams
+    from max.interfaces import PipelineTask, SamplingParams, SamplingParamsInput
     from max.pipelines import AudioGenerationConfig, PipelineConfig
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
@@ -264,7 +264,10 @@ def cli_serve(
         pipeline_config.log_pipeline_info()
 
         # Log Default Sampling Configuration
-        sampling_params = SamplingParams()
+        sampling_params = SamplingParams.from_input_and_generation_config(
+            SamplingParamsInput(),
+            sampling_params_defaults=pipeline_config.model_config.sampling_params_defaults,
+        )
         sampling_params.log_sampling_info()
 
         # Log API Server Related Info
@@ -369,7 +372,10 @@ def cli_pipeline(
     pipeline_config.log_basic_config()
     generate_text_for_pipeline(
         pipeline_config,
-        sampling_params=SamplingParams.from_input(params),
+        sampling_params=SamplingParams.from_input_and_generation_config(
+            params,
+            sampling_params_defaults=pipeline_config.model_config.sampling_params_defaults,
+        ),
         prompt=prompt,
         image_urls=image_url,
         num_warmups=num_warmups,

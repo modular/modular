@@ -17,7 +17,6 @@ from math.constants import log2e
 from sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.warp as warp
-from buffer import NDBuffer
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -33,7 +32,7 @@ from gpu.host.info import H100
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import named_barrier
-from layout.int_tuple import IntTuple
+from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import (
     LayoutTensor,
@@ -128,12 +127,16 @@ fn mha_sm90_dispatch[
     max_cache_valid_length_arg: Int,
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
+    sink_weights: OptionalReg[
+        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin]
+    ],
 ) raises:
     constrained[
         config.dtype == KVType.dtype and config.dtype == q_type,
@@ -250,9 +253,15 @@ fn mha_sm90_dispatch[
             max_cache_valid_length,
             valid_length,
             kv_input_row_offsets,
-            rebind[OptionalReg[NDBuffer[KVType.dtype, 1, MutableAnyOrigin]]](
-                sink_weights
-            ),
+            rebind[
+                OptionalReg[
+                    LayoutTensor[
+                        KVType.dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ]
+            ](sink_weights),
             partition,
             mask_functor,
             score_mod,
@@ -291,9 +300,15 @@ fn mha_sm90_dispatch[
             max_cache_valid_length,
             valid_length,
             kv_input_row_offsets,
-            rebind[OptionalReg[NDBuffer[KVType.dtype, 1, MutableAnyOrigin]]](
-                sink_weights
-            ),
+            rebind[
+                OptionalReg[
+                    LayoutTensor[
+                        KVType.dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ]
+            ](sink_weights),
             partition,
             mask_functor,
             score_mod,
@@ -336,9 +351,15 @@ fn mha_sm90_dispatch[
             max_cache_valid_length,
             valid_length,
             kv_input_row_offsets,
-            rebind[OptionalReg[NDBuffer[KVType.dtype, 1, MutableAnyOrigin]]](
-                sink_weights
-            ),
+            rebind[
+                OptionalReg[
+                    LayoutTensor[
+                        KVType.dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ]
+                ]
+            ](sink_weights),
             partition,
             mask_functor,
             score_mod,
@@ -396,9 +417,15 @@ fn _mha_sm90_sink_dispatch[
     num_keys_arg: UInt32,
     valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ],
-    sink_weights: OptionalReg[NDBuffer[KVLUTType.dtype, 1, MutableAnyOrigin]],
+    sink_weights: OptionalReg[
+        LayoutTensor[
+            KVLUTType.dtype, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
+    ],
     partition: PartitionType,
     mask: MaskType,
     score_mod: ScoreModType,
@@ -407,7 +434,7 @@ fn _mha_sm90_sink_dispatch[
     @parameter
     if sink:
         alias SinkType = NonNullPointer[KVLUTType.dtype]
-        var sink_ptr: SinkType = {sink_weights.value().data}
+        var sink_ptr: SinkType = {sink_weights.value().ptr}
         _mha_sm90_kv_input_row_offset_dispatch[
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
@@ -535,7 +562,9 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     num_keys_arg: UInt32,
     valid_length: UnsafePointer[UInt32],
     kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutableAnyOrigin
+        ]
     ],
     sink_weights: SinkType,
     partition: PartitionType,
@@ -547,7 +576,7 @@ fn _mha_sm90_kv_input_row_offset_dispatch[
     alias KVRowOffsetsNull = NullPointer[DType.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
-            kv_input_row_offsets.value().data
+            kv_input_row_offsets.value().ptr
         }
         _mha_sm90_valid_length_dispatch[
             SchedulerType=SchedulerType,

@@ -27,8 +27,4 @@ fn test_iter() raises:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_iter]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

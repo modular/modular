@@ -899,6 +899,28 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 return False
         return True
 
+    fn all_known[start: Int, end: Int](self) -> Bool:
+        """Check if all values in this tuple hierarchy are known (not `UNKNOWN_VALUE`).
+
+        Recursively traverses the nested tuple structure and checks if any value
+        is equal to `UNKNOWN_VALUE`.
+
+        Parameters:
+            start: The starting index (inclusive) for the range to check.
+            end: The ending index (exclusive) for the range to check.
+
+        Returns:
+            True if all values in this tuple and nested tuples are known,
+            False if any value is `UNKNOWN_VALUE`.
+        """
+        for i in range(start, end):
+            if self.is_tuple(i):
+                if not self[i].all_known():
+                    return False
+            elif self.value(i) == UNKNOWN_VALUE:
+                return False
+        return True
+
     @always_inline
     fn append(mut self, *elements: IntTuple):
         """Append one or more `IntTuple` elements to this tuple.
@@ -1398,9 +1420,12 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Returns:
             The integer value stored in this `IntTuple`.
 
-        Notes:
-            If the `IntTuple` is not a single value, the behavior is undefined.
+        Aborts:
+            If the `IntTuple` is not a single value.
         """
+        if self.is_tuple():
+            abort("IntTuple is not a single value. Cannot convert to Int.")
+
         return self.value()
 
     @always_inline("nodebug")
@@ -2263,10 +2288,12 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
             var r = IntTuple()
             for v in a:
                 r.append(_prefix_product2(v, v_init))
-                v_init = (
-                    UNKNOWN_VALUE if v_init
-                    == UNKNOWN_VALUE else v_init * product(v)
-                )
+
+                var is_unknown = (
+                    v.is_value() and Int(v) == UNKNOWN_VALUE
+                ) or v_init == UNKNOWN_VALUE
+
+                v_init = UNKNOWN_VALUE if is_unknown else v_init * product(v)
             return r
     else:
 

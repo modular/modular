@@ -55,7 +55,11 @@ from transformers.models.auto.configuration_auto import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
-from .tokenizer import IMAGE_CONTEXT_TOKEN_ID, IMAGE_NDIMS, InternVLImageConfig
+from .tokenizer import (
+    IMAGE_NDIMS,
+    InternVLImageConfig,
+    _get_image_context_token_id,
+)
 from .weight_adapters import (
     convert_internvl_language_model_state_dict,
     convert_internvl_vision_model_state_dict,
@@ -224,8 +228,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        self._check_supported_version(huggingface_config)
-
         super().__init__(
             pipeline_config,
             session,
@@ -251,32 +253,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Initialize vision stacker for optimized parallel stacking.
         self._stacker = _VisionStacker()
-
-    @staticmethod
-    def _check_supported_version(huggingface_config: AutoConfig) -> None:
-        """Check if the InternVL model version is supported.
-
-        InternVL3.5+ models are not currently supported.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Raises:
-            NotImplementedError: If the model is InternVL3.5 or later.
-        """
-        model_name = getattr(huggingface_config, "_name_or_path", "")
-
-        model_name_lower = model_name.lower()
-        if (
-            "internvl3.5" in model_name_lower
-            or "internvl3-5" in model_name_lower
-            or "internvl3_5" in model_name_lower
-        ):
-            raise NotImplementedError(
-                f"InternVL3.5+ models are not currently supported. "
-                f"Model '{model_name}' appears to be InternVL3.5 or later. "
-                f"Please use InternVL3 models (e.g., OpenGVLab/InternVL3-8B-Instruct) instead."
-            )
 
     @staticmethod
     def calculate_max_seq_len(
@@ -682,9 +658,11 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         with Graph(
             "internvl_language", input_types=self._language_graph_input_types()
         ) as graph:
-            # Build language model architecture.
+            image_context_token_id = _get_image_context_token_id(
+                self.huggingface_config
+            )
             language_model = InternVLLanguageModel(
-                config, IMAGE_CONTEXT_TOKEN_ID
+                config, image_context_token_id
             )
             language_model.load_state_dict(
                 state_dict=state_dict,

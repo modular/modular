@@ -57,6 +57,7 @@ from .._multistage_gemm_gpu import (
     warp_split_k_reduction,
     WarpSplitKReductionSMem,
 )
+from itertools import product
 
 
 struct MmaOpAMD[
@@ -784,35 +785,30 @@ fn write_output_fragments[
     alias frag_width = c_gmem_fragment.layout.shape[1].value()
 
     @parameter
-    for frag_m in range(frag_height):
+    for frag_m, frag_n in product(range(frag_height), range(frag_width)):
+        if frag_m < max_valid_frag_m and frag_n < max_valid_frag_n:
+            # Load result vector, cast to output tensor data type
+            var result_vec = c_reg_fragment[frag_m, frag_n, 0].cast[c_type]()
 
-        @parameter
-        for frag_n in range(frag_width):
-            if frag_m < max_valid_frag_m and frag_n < max_valid_frag_n:
-                # Load result vector, cast to output tensor data type
-                var result_vec = c_reg_fragment[frag_m, frag_n, 0].cast[
-                    c_type
+            @parameter
+            if elementwise_lambda_fn:
+                # Apply custom elementwise operation to each output element
+                constrained[
+                    elementwise_lambda_fn is not None,
+                    "elementwise_lambda_fn is not valid",
                 ]()
+                alias epilogue_fn = elementwise_lambda_fn.value()
 
-                @parameter
-                if elementwise_lambda_fn:
-                    # Apply custom elementwise operation to each output element
-                    constrained[
-                        elementwise_lambda_fn is not None,
-                        "elementwise_lambda_fn is not valid",
-                    ]()
-                    alias epilogue_fn = elementwise_lambda_fn.value()
+                # Compute global coordinates
+                var m = thread_tile_m + frag_m * MMA_M
+                var n = thread_tile_n + frag_n * MMA_N
 
-                    # Compute global coordinates
-                    var m = thread_tile_m + frag_m * MMA_M
-                    var n = thread_tile_n + frag_n * MMA_N
-
-                    epilogue_fn[
-                        alignment = align_of[SIMD[c_type, c_frag_size]]()
-                    ]((m, n), result_vec)
-                else:
-                    # Store output fragment
-                    # FIXME: why do we need to rebind to c_gmem_fragment.element_type?
-                    c_gmem_fragment[frag_m, frag_n] = rebind[
-                        c_gmem_fragment.element_type
-                    ](result_vec)
+                epilogue_fn[alignment = align_of[SIMD[c_type, c_frag_size]]()](
+                    (m, n), result_vec
+                )
+            else:
+                # Store output fragment
+                # FIXME: why do we need to rebind to c_gmem_fragment.element_type?
+                c_gmem_fragment[frag_m, frag_n] = rebind[
+                    c_gmem_fragment.element_type
+                ](result_vec)

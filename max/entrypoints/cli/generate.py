@@ -23,13 +23,13 @@ from typing import Any
 
 import requests
 from max.interfaces import (
-    InputContext,
     LogitsProcessor,
     Pipeline,
     PipelineTokenizer,
     ProcessorInputs,
     RequestID,
     SamplingParams,
+    TextGenerationContext,
     TextGenerationRequest,
 )
 from max.pipelines import (
@@ -62,7 +62,9 @@ class TrackMetrics:
 
 async def stream_text_to_console(
     pipeline: Pipeline[Any, Any],
-    tokenizer: PipelineTokenizer[InputContext, Any, TextGenerationRequest],
+    tokenizer: PipelineTokenizer[
+        TextGenerationContext, Any, TextGenerationRequest
+    ],
     prompt: str,
     images: list[bytes] | None,
     sampling_params: SamplingParams,

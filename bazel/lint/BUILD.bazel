@@ -4,9 +4,7 @@ load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//bazel:api.bzl", "mojo_binary")
-
-exports_files(["mblack-wrapper.py"])
+load("//bazel:api.bzl", "modular_py_binary", "mojo_binary")
 
 _BUILDIFIER_IGNORES = [
     "./.derived/*",
@@ -78,6 +76,14 @@ command(
 )
 
 command(
+    name = "markdownlint.fix-fast",
+    arguments = ["--fix"],
+    command = "markdownlint-wrapper",
+    environment = {"FAST": "1"},
+    visibility = ["//visibility:public"],
+)
+
+command(
     name = "markdownlint.fix",
     arguments = ["--fix"],
     command = "markdownlint-wrapper",
@@ -109,6 +115,12 @@ command(
     visibility = ["//visibility:public"],
 )
 
+modular_py_binary(
+    name = "mblack-wrapper",
+    srcs = ["mblack-wrapper.py"],
+    deps = ["@mblack"],
+)
+
 command(
     name = "mblack.check",
     arguments = [
@@ -117,7 +129,7 @@ command(
         "--diff",
         ".",
     ],
-    command = "@mblack",
+    command = ":mblack-wrapper",
     visibility = ["//visibility:public"],
 )
 
@@ -127,7 +139,17 @@ command(
         "--quiet",
         ".",
     ],
-    command = "@mblack",
+    command = ":mblack-wrapper",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "mblack.fix-fast",
+    arguments = [
+        "--quiet",
+    ],
+    command = ":mblack-wrapper",
+    environment = {"FAST": "1"},
     visibility = ["//visibility:public"],
 )
 
@@ -164,15 +186,29 @@ multirun(
     visibility = ["//visibility:public"],
 )
 
+COMMON_FIX_COMMANDS = [
+    ":buildifier.fix",
+    ":check_licenses.fix",
+    ":ruff.fix",
+]
+
+multirun(
+    name = "fix-fast",
+    buffer_output = True,
+    commands = COMMON_FIX_COMMANDS + [
+        ":markdownlint.fix-fast",
+        ":mblack.fix-fast",
+    ],
+    jobs = 0,
+    visibility = ["//visibility:public"],
+)
+
 multirun(
     name = "fix",
     buffer_output = True,
-    commands = [
-        ":buildifier.fix",
-        ":check_licenses.fix",
+    commands = COMMON_FIX_COMMANDS + [
         ":markdownlint.fix",
         ":mblack.fix",
-        ":ruff.fix",
     ],
     jobs = 0,
     visibility = ["//visibility:public"],

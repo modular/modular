@@ -55,9 +55,4 @@ def test_map_function_can_take_owned_value():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_map]()
-    suite.test[test_map_function_can_take_owned_value]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

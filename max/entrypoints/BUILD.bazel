@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_filegroup", "pkg_files", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -85,25 +85,6 @@ modular_py_binary(
         "//SDK/lib/API/python/max/serve/recordreplay",
         requirement("click"),
         requirement("httpx"),
-    ],
-)
-
-pkg_files(
-    name = "python_files",
-    srcs = glob(
-        [
-            "**/*.py",
-        ],
-    ),
-    # Don't strip the prefix of subdirectories.
-    strip_prefix = "",
-)
-
-pkg_filegroup(
-    name = "entrypoints_python",
-    srcs = [
-        ":python_files",
-        "//SDK/lib/API/python/max/benchmark:python_files",
     ],
 )
 

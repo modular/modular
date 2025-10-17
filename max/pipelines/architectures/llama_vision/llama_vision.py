@@ -36,7 +36,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import InputContext
+from max.interfaces import TextGenerationContext
 from max.interfaces.nested_iterable import NestedIterableDataclass
 from max.interfaces.request import RequestID
 from max.nn import LinearV1, ReturnLogits
@@ -268,7 +268,7 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
 
     @final
     def fetch(
-        self, batch: Sequence[InputContext], num_steps: int = 1
+        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
     ) -> Sequence[RaggedKVCacheInputs]:
         """Returns KV cache inputs for both modalities' KV managers."""
         # Here we call into the text KV manager's fetch method to update
@@ -384,12 +384,12 @@ class MultimodalKVCacheManager(PagedKVCacheManager):
             )
         ]
 
-    def step(self, batch: Sequence[InputContext]) -> None:
+    def step(self, batch: Sequence[TextGenerationContext]) -> None:
         """Steps both text and vision modalities' KV managers."""
         # Step the text KV manager as usual for autoregressive text generation.
         self.text_kv_manager.step(batch)
 
-    def get_or_recommend_replica(self, _: InputContext) -> int:
+    def get_or_recommend_replica(self, _: TextGenerationContext) -> int:
         """Return idx of the replica that should be used for the given request."""
         # As there is only one replica, we always return 0
         return 0

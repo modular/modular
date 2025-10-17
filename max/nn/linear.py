@@ -41,6 +41,7 @@ from max.nn.float8_config import (
 from max.nn.kernels import (
     convert_weights_to_fp8_fnuz_if_needed,
 )
+from max.support.math import ceildiv
 
 from .clamp import clamp
 from .kernels import (
@@ -167,10 +168,11 @@ class Linear(Module, Shardable):
             if float8_config.input_scale.granularity not in (
                 Float8ScaleGranularity.TENSOR,
                 Float8ScaleGranularity.COLWISE,
+                Float8ScaleGranularity.BLOCK,
             ):
                 raise ValueError(
                     f"unsupported input scale granularity {float8_config.input_scale.granularity}. "
-                    "Only tensor and col-wise are supported, currently"
+                    "Only TENSOR, COLWISE and BLOCK granularities are supported, currently"
                 )
 
             weight_scale_shape: tuple[int, ...]
@@ -179,6 +181,18 @@ class Linear(Module, Shardable):
                 weight_scale_shape = (int(self.weight.shape[0]), 1)
             elif weight_scale.is_tensor:
                 weight_scale_shape = ()
+            elif weight_scale.is_block:
+                assert float8_config.weight_scale.block_size is not None
+                weight_scale_shape = (
+                    ceildiv(
+                        int(self.weight.shape[0]),
+                        float8_config.weight_scale.block_size[0],
+                    ),
+                    ceildiv(
+                        int(self.weight.shape[1]),
+                        float8_config.weight_scale.block_size[1],
+                    ),
+                )
             else:
                 raise ValueError(
                     "only row-wise and tensor scaling are "
@@ -213,18 +227,35 @@ class Linear(Module, Shardable):
             # Weight scale should only be added when a float8 config is passed.
             assert self.float8_config
 
-            # When the weight scale is rowwise of shape (M, 1), or tensor of
-            # shape (1,), replicate it across devices when weight sharding is
-            # colwise.
-            should_replicate = self.float8_config.weight_scale.is_tensor or (
-                (strategy.is_colwise or strategy.is_head_aware_colwise)
-                and self.float8_config.weight_scale.is_rowwise
-            )
-            self.weight_scale.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-                if should_replicate
-                else strategy
-            )
+            # Determine weight scale sharding strategy based on weight scale type
+            # and weight sharding strategy.
+            if self.float8_config.weight_scale.is_tensor:
+                # Tensor scaling: always replicate
+                self.weight_scale.sharding_strategy = (
+                    ShardingStrategy.replicate(strategy.num_devices)
+                )
+            elif self.float8_config.weight_scale.is_rowwise:
+                if strategy.is_colwise or strategy.is_head_aware_colwise:
+                    # Rowwise scale + columnwise weight: replicate to avoid shape mismatch
+                    self.weight_scale.sharding_strategy = (
+                        ShardingStrategy.replicate(strategy.num_devices)
+                    )
+                else:
+                    # Rowwise scale + rowwise weight: shard along same dimension
+                    self.weight_scale.sharding_strategy = strategy
+            elif self.float8_config.weight_scale.is_block:
+                # Block scaling: always follow weight sharding since blocks correspond
+                # to regions in the weight matrix
+                if int(self.weight_scale.shape[0]) % strategy.num_devices != 0:
+                    raise ValueError(
+                        f"Weight scale dim ({self.weight_scale.shape[0]}) is "
+                        f"not divisible by the number of devices ({strategy.num_devices}) for block-wise scaling."
+                    )
+
+                self.weight_scale.sharding_strategy = strategy
+            else:
+                # Colwise scaling (if supported in future)
+                self.weight_scale.sharding_strategy = strategy
 
         if self.bias:
             # Only truly shard the bias across devices when the weight sharding

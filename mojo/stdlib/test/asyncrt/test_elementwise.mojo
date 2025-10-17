@@ -99,11 +99,4 @@ def test_elementwise_int8():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_elementwise_float32]()
-    suite.test[test_elementwise_bfloat16]()
-    suite.test[test_elementwise_float16]()
-    suite.test[test_elementwise_int8]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

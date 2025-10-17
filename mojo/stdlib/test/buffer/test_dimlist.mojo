@@ -123,13 +123,4 @@ fn test_dim_ceildiv() raises:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_dim_list]()
-    suite.test[test_dim]()
-    suite.test[test_dim_to_string]()
-    suite.test[test_dimlist_repr]()
-    suite.test[test_dimlist_eq]()
-    suite.test[test_dim_ceildiv]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

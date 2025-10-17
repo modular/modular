@@ -24,6 +24,7 @@ from layout.layout_tensor import (
     _copy_dram_to_local,
     _copy_local_to_dram,
 )
+from layout.tma_async import SharedMemBarrier
 
 
 # Tile based AMD Data Movement Delegate
@@ -106,12 +107,14 @@ alias SMemTileIterType[
     _dtype: DType,
     layout: Layout,
     alignment: Int = align_of[SIMD[_dtype, simd_width_of[_dtype]()]](),
+    circular: Bool = False,
 ] = LayoutTensorIter[
     _dtype,
     layout,
     MutableAnyOrigin,
     address_space = AddressSpace.SHARED,
     alignment=alignment,
+    circular=circular,
 ]
 
 alias SMemWarpTileType[
@@ -128,6 +131,10 @@ alias RegTileType[
     MutableAnyOrigin,
     address_space = AddressSpace.LOCAL,
     alignment=alignment,
+]
+
+alias SMemBarrier = UnsafePointer[
+    SharedMemBarrier, address_space = AddressSpace.SHARED
 ]
 
 

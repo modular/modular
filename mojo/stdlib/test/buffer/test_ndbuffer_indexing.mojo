@@ -91,8 +91,4 @@ def test_ndbuffer_indexing():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_ndbuffer_indexing]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,0 +1,20 @@
+diff --git a/mojo/extensions.bzl b/mojo/extensions.bzl
+index f1ee985..f99aa49 100644
+--- a/mojo/extensions.bzl
++++ b/mojo/extensions.bzl
+@@ -203,6 +203,7 @@ _gpu_toolchains_tag = tag_class(
+                 "l4": "nvidia:89",
+                 "mi300x": "amdgpu:gfx942",
+                 "mi325": "amdgpu:gfx942",
++                "mi355": "amdgpu:gfx950",
+                 "rtx5090": "nvidia:120a",
+                 "metal3": "metal:30",
+                 "metal4": "metal:40",
+@@ -227,6 +228,7 @@ _gpu_toolchains_tag = tag_class(
+                 "NVIDIA GeForce RTX 3090": "",
+                 "MI300X": "mi300x",
+                 "MI325": "mi325",
++                "MI355": "mi355",
+                 "Navi": "radeon",
+                 "AMD Radeon Graphics": "radeon",
+                 "Metal 3": "metal3",

@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import itertools
 import json
 import logging
 import math
@@ -81,6 +80,10 @@ try:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
+    from .benchmark_shared.server_metrics import (  # type: ignore[import-not-found]
+        fetch_and_parse_metrics,
+        print_server_metrics,
+    )
 except ImportError:
     from benchmark_shared.config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
         ServingBenchmarkConfig,
@@ -110,6 +113,11 @@ except ImportError:
         LoRAMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
+    )
+    from benchmark_shared.server_metrics import (
+        compute_metrics_delta,
+        fetch_and_parse_metrics,
+        print_server_metrics,
     )
 
 
@@ -1173,6 +1181,7 @@ async def benchmark(  # noqa: ANN201
     do_test_prompt: bool,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
+    collect_server_stats: bool,
     print_inputs_and_outputs: bool,
     max_requests: int,
     num_chat_sessions: int | None,
@@ -1331,6 +1340,21 @@ async def benchmark(  # noqa: ANN201
             benchmark_should_end_time = (
                 benchmark_start_time + max_benchmark_duration_s * 1e9
             )
+
+        # Capture baseline server metrics before benchmark starts
+        baseline_server_metrics = None
+        if collect_server_stats:
+            try:
+                baseline_server_metrics = fetch_and_parse_metrics(
+                    backend=full_backend,
+                    base_url=base_url,
+                )
+                logger.info("Captured baseline server metrics")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to capture baseline server metrics: {e}"
+                )
+
         tasks: list[asyncio.Task] = []  # type: ignore[type-arg, unused-ignore]
         outputs: list[RequestFuncOutput] = []
         if not num_chat_sessions:
@@ -1391,7 +1415,6 @@ async def benchmark(  # noqa: ANN201
                     )
                 )
             outputs = await asyncio.gather(*tasks)
-
         else:
             # multi-turn chat scenario
             if disable_tqdm:
@@ -1509,6 +1532,37 @@ async def benchmark(  # noqa: ANN201
         cpu_metrics = cpu_collector.dump_stats()
     else:
         cpu_metrics = {}
+
+    # Parse server-side metrics from Prometheus endpoint
+    server_metrics = None
+    if collect_server_stats:
+        try:
+            final_server_metrics = fetch_and_parse_metrics(
+                backend=full_backend,
+                base_url=base_url,
+            )
+
+            # Compute delta if we have baseline metrics
+            if baseline_server_metrics is not None:
+                server_metrics = compute_metrics_delta(
+                    baseline=baseline_server_metrics,
+                    final=final_server_metrics,
+                )
+                logger.info(
+                    f"Computed server metrics delta: {len(server_metrics.counters)} counters, "
+                    f"{len(server_metrics.gauges)} gauges, "
+                    f"{len(server_metrics.histograms)} histograms"
+                )
+            else:
+                # If no baseline, use final metrics as-is
+                server_metrics = final_server_metrics
+                logger.info(
+                    f"Collected {len(server_metrics.counters)} counters, "
+                    f"{len(server_metrics.gauges)} gauges, "
+                    f"{len(server_metrics.histograms)} histograms from server"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to parse server metrics: {e}")
 
     metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
@@ -1708,6 +1762,10 @@ async def benchmark(  # noqa: ANN201
 
         print("=" * 50)
 
+    # Print server-side metrics if available
+    if server_metrics:
+        print_server_metrics(server_metrics)
+
     result = {
         "duration": benchmark_duration,
         "completed": metrics.completed,
@@ -1770,6 +1828,22 @@ async def benchmark(  # noqa: ANN201
             "total_unloads": lora_metrics.total_unloads,
             "load_times_ms": lora_metrics.load_times_ms,
             "unload_times_ms": lora_metrics.unload_times_ms,
+        }
+
+    # Add server-side metrics to result if available
+    if server_metrics:
+        result["server_metrics"] = {
+            "counters": server_metrics.counters,
+            "gauges": server_metrics.gauges,
+            "histograms": {
+                name: {
+                    "buckets": hist.buckets,
+                    "sum": hist.sum,
+                    "count": hist.count,
+                    "mean": hist.mean,
+                }
+                for name, hist in server_metrics.histograms.items()
+            },
         }
 
     return result
@@ -2051,6 +2125,7 @@ def main(args: argparse.Namespace) -> None:
             do_test_prompt=not args.skip_test_prompt,
             collect_gpu_stats=args.collect_gpu_stats,
             collect_cpu_stats=args.collect_cpu_stats,
+            collect_server_stats=args.collect_server_stats,
             print_inputs_and_outputs=args.print_inputs_and_outputs,
             max_requests=args.num_prompts,
             num_chat_sessions=args.num_chat_sessions,
@@ -2075,7 +2150,7 @@ def main(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Save config and results to json
-    if args.save_result:
+    if args.result_filename:
         logger.info("saving results")
         result_json: dict[str, Any] = {}
 
@@ -2086,7 +2161,6 @@ def main(args: argparse.Namespace) -> None:
         result_json["model_id"] = model_id
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
-        result_json["server_args"] = args.server_args
         result_json["dataset_name"] = args.dataset_name
         result_json["client_args"] = dict(vars(args))
         # json doesn't allow infinity as numeric, so cast this to string
@@ -2127,32 +2201,7 @@ def main(args: argparse.Namespace) -> None:
             result_json["lora_metrics"] = benchmark_result["lora_metrics"]
 
         # Save to file
-        if args.result_filename:
-            file_name = os.path.join(
-                args.result_dir or "", args.result_filename
-            )
-        else:
-            base_model_id = model_id.split("/")[-1]
-            max_concurrency_str = (
-                f"-concurrency{args.max_concurrency}"
-                if args.max_concurrency is not None
-                else ""
-            )
-            # When auto-generating file names, add suffixes if we have to to
-            # ensure we're not overwriting an existing file (best effort,
-            # subject to TOCTTOU).
-            for uniq_count in itertools.count(1):
-                if uniq_count == 1:
-                    uniq_suffix = ""
-                else:
-                    uniq_suffix = f"-{uniq_count}"
-                file_name = (
-                    f"{backend}-{args.request_rate}qps{max_concurrency_str}-"
-                    f"{base_model_id}-{current_dt}{uniq_suffix}.json"
-                )
-                file_name = os.path.join(args.result_dir or "", file_name)
-                if not os.path.exists(file_name):
-                    break
+        file_name = args.result_filename
         logger.info(f"Writing file: {file_name}")
         if os.path.isfile(file_name):
             logger.warning(

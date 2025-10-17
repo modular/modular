@@ -31,6 +31,7 @@ from layout.swizzle import Swizzle
 from sys._assembly import inlined_assembly
 from gpu.mma import mma
 from sys import size_of, is_amd_gpu, _RegisterPackType
+from itertools import product
 
 from layout.layout_tensor import _get_worker_idx
 
@@ -390,6 +391,77 @@ struct RingBuffer[
             Self.BarrierTensorType[warps_per_block_n].stack_allocation().fill(0)
         )
 
+    @always_inline
+    fn _get_barrier[
+        is_a: Bool
+    ](
+        self,
+        out bar: Self.BarrierTensorType[
+            warps_per_block_m if is_a else warps_per_block_n
+        ],
+    ):
+        @parameter
+        if is_a:
+            return rebind[__type_of(bar)](self.barrier_a)
+        else:
+            return rebind[__type_of(bar)](self.barrier_b)
+
+    @always_inline
+    fn _producer_wait[is_a: Bool](self, phase: Int, tile_idx: Int, stage: Int):
+        while self._get_barrier[is_a]()[tile_idx, stage] != phase:
+            inlined_assembly[
+                "s_sleep 0", NoneType, constraints="", has_side_effect=True
+            ]()
+
+    @always_inline
+    fn _consumer_wait[is_a: Bool](self, phase: Int, tile_idx: Int, stage: Int):
+        while self._get_barrier[is_a]()[tile_idx, stage] < phase:
+            inlined_assembly[
+                "s_sleep 0", NoneType, constraints="", has_side_effect=True
+            ]()
+
+    @always_inline
+    fn _get_shared_memory_tile[
+        is_a: Bool
+    ](
+        self,
+        stage: Int,
+        out smem_tile: Self.SharedMemoryBufferType[is_a].SmemTileType2D,
+    ):
+        @parameter
+        if is_a:
+            return rebind[__type_of(smem_tile)](
+                self.smem_tile_a.get_tile(stage)
+            )
+        else:
+            return rebind[__type_of(smem_tile)](
+                self.smem_tile_b.get_tile(stage)
+            )
+
+    @always_inline
+    fn _get_shared_memory_warp_tile[
+        is_a: Bool, is_producer: Bool
+    ](
+        mut self,
+        mut phase: Int,
+        tile_idx: Int,
+        stage: Int,
+        phase_inc: Int,
+        out smem_warp_tile: Self.SharedMemoryBufferType[is_a].WarpTileType,
+    ):
+        @parameter
+        if is_producer:
+            self._producer_wait[is_a](phase, tile_idx, stage)
+        else:
+            self._consumer_wait[is_a](phase, tile_idx, stage)
+
+        phase += phase_inc
+        var staged_smem_tile = self._get_shared_memory_tile[is_a](stage)
+        return rebind[__type_of(smem_warp_tile)](
+            staged_smem_tile.tile[WM if is_a else WN, WK](tile_idx, 0)
+        )
+
+    @always_inline
     fn put_tile[
         is_a: Bool
     ](
@@ -398,55 +470,41 @@ struct RingBuffer[
         stage: Int,
         tile_idx: Int,
     ) -> Self.SharedMemoryBufferType[is_a].WarpTileType:
-        while self.barrier_a[tile_idx, stage] != phase:
-            inlined_assembly[
-                "s_sleep 0", NoneType, constraints="", has_side_effect=True
-            ]()
-
-        # When the producer commits, it adds 1,
-        # when all the consumers commits it adds warps_per_block_m
-        # so the next time this will be ready to be filled it will be a combo of both
-
-        phase += 1 + warps_per_block_n
+        var phase_inc: Int
 
         @parameter
         if is_a:
-            var smem_tensor = self.smem_tile_a.get_tile(stage)
-            return rebind[Self.SharedMemoryBufferType[is_a].WarpTileType](
-                smem_tensor.tile[WM, WK](tile_idx, 0)
-            )
+            phase_inc = 1 + warps_per_block_n
         else:
-            var smem_tensor = self.smem_tile_b.get_tile(stage)
-            return rebind[Self.SharedMemoryBufferType[is_a].WarpTileType](
-                smem_tensor.tile[WN, WK](tile_idx, 0)
-            )
+            phase_inc = 1 + warps_per_block_m
 
+        return self._get_shared_memory_warp_tile[is_a, True](
+            phase, tile_idx, stage, phase_inc
+        )
+
+    @always_inline
     fn get_tile[
         is_a: Bool
     ](
         mut self, mut phase: Int, stage: Int, tile_idx: Int
     ) -> Self.SharedMemoryBufferType[is_a].WarpTileType:
-        while self.barrier_a[tile_idx, stage] < phase:
-            inlined_assembly[
-                "s_sleep 0", NoneType, constraints="", has_side_effect=True
-            ]()
-
-        phase += warps_per_block_m
+        var phase_inc: Int
 
         @parameter
         if is_a:
-            var smem_tensor = self.smem_tile_a.get_tile(stage)
-            return rebind[Self.SharedMemoryBufferType[is_a].WarpTileType](
-                smem_tensor.tile[WM, WK](tile_idx, 0)
-            )
+            phase_inc = warps_per_block_m
         else:
-            var smem_tensor = self.smem_tile_b.get_tile(stage)
-            return rebind[Self.SharedMemoryBufferType[is_a].WarpTileType](
-                smem_tensor.tile[WN, WK](tile_idx, 0)
-            )
+            phase_inc = warps_per_block_n
 
+        return self._get_shared_memory_warp_tile[is_a, False](
+            phase, tile_idx, stage, phase_inc
+        )
+
+    @always_inline
     fn commit[is_a: Bool](mut self, stage: Int, tile_idx: Int):
         var bar: Self.BarrierTensorType
+
+        # NOTE this may need atomics
 
         @parameter
         if is_a:
@@ -482,10 +540,30 @@ struct AmdWarpBlockScatterGather[
         address_space = AddressSpace.LOCAL,
     ]
 
-    alias LoadFragmentType = Self.SmemTensorType.DistributeType[thread_layout]
+    alias LoadFragmentShape = Self.SmemTensorType.DistributeType[
+        thread_layout
+    ].layout.shape
+    alias LoadFragmentLayout = Layout.row_major(
+        Self.LoadFragmentShape[0].value(), Self.LoadFragmentShape[1].value()
+    )
+    alias LoadFragmentType = LayoutTensor[
+        SmemType,
+        Self.LoadFragmentLayout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ]
+
     var fragment: Self.LoadFragmentType
 
     fn __init__(out self):
+        constrained[
+            len(Self.LoadFragmentShape) == 2,
+            (
+                "LoadFragmentShape must be equal to"
+                " SmemTensorType.DistributeType[thread_layout].layout.shape"
+            ),
+        ]()
+
         self.fragment = Self.LoadFragmentType.stack_allocation()
 
     @always_inline
@@ -773,37 +851,33 @@ struct AmdTileOperator[
             )
 
             @parameter
-            for fragment in range(Self.fragments_per_simd_a):
+            for fragment, mma_m_idx in product(
+                range(Self.fragments_per_simd_a), range(Self.num_m_mmas)
+            ):
+                var a_fragment = a_tile.tile[1, Self.register_count_a](
+                    mma_m_idx, fragment
+                )
 
                 @parameter
-                for mma_m_idx in range(Self.num_m_mmas):
-                    var a_fragment = a_tile.tile[1, Self.register_count_a](
-                        mma_m_idx, fragment
+                for mma_n_idx in range(Self.num_n_mmas):
+                    var b_fragment = b_tile.tile[1, Self.register_count_b](
+                        mma_n_idx, fragment
                     )
 
-                    @parameter
-                    for mma_n_idx in range(Self.num_n_mmas):
-                        var b_fragment = b_tile.tile[1, Self.register_count_b](
-                            mma_n_idx, fragment
-                        )
-                        var c_fragment = c_slice.tile[1, Self.register_count_a](
-                            mma_m_idx * Self.num_n_mmas + mma_n_idx, 0
-                        )
+                    # NOTE: this storage scheme is column major, because distribute needs it
+                    # when writing back to global memory
 
-                        mma(
-                            c_fragment.vectorize[1, Self.register_count_a]()[
-                                0, 0
-                            ],
-                            b_fragment.vectorize[1, Self.register_count_b]()[
-                                0, 0
-                            ],
-                            a_fragment.vectorize[1, Self.register_count_a]()[
-                                0, 0
-                            ],
-                            c_fragment.vectorize[1, Self.register_count_a]()[
-                                0, 0
-                            ],
-                        )
+                    # TODO make c_layout column major
+                    var c_fragment = c_slice.tile[1, Self.register_count_a](
+                        mma_n_idx * Self.num_m_mmas + mma_m_idx, 0
+                    )
+
+                    mma(
+                        c_fragment.vectorize[1, Self.register_count_a]()[0, 0],
+                        b_fragment.vectorize[1, Self.register_count_b]()[0, 0],
+                        a_fragment.vectorize[1, Self.register_count_a]()[0, 0],
+                        c_fragment.vectorize[1, Self.register_count_a]()[0, 0],
+                    )
 
         cache_manager.commit[True](stage, tile_idx_a)
         cache_manager.commit[False](stage, tile_idx_b)

@@ -230,5 +230,19 @@ build:ci-remote-mi300 --config=ci-gpu-common
 build:ci-remote-mi300 --config=remote-mi300
 build:ci-remote-mi300 --test_keep_going=false
 
+build:remote-mi355 --config=remote
+build:remote-mi355 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
+build:remote-mi355 --platforms=//:mi355-platform
+build:remote-mi355 --extra_execution_platforms=//:m7i-platform,//:mi355-platform,@mojo_host_platform
+build:remote-mi355 --spawn_strategy=remote,worker,sandboxed,standalone
+build:remote-mi355 --repo_env=MODULAR_TARGET=linux:x86_64
+build:remote-mi355 --build_metadata=TAG_GPU=mi355
+build:remote-mi355 --build_metadata=TAG_TARGET_OS=linux
+
+build:ci-remote-mi355 --config=ci-gpu-common
+build:ci-remote-mi355 --config=remote-mi355
+# TODO: Enable once tests are fixed
+# build:ci-remote-mi355 --test_keep_going=false
+
 # TODO: Remove once transitives are fixed
 common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo

@@ -38,14 +38,16 @@ from sys import (
     is_nvidia_gpu,
     llvm_intrinsic,
     size_of,
+    _RegisterPackType,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_100x_or_newer
+from sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 
 from bit import log2_floor
 from builtin.math import max as _max
 from builtin.math import min as _min
 from gpu import lane_id
+from gpu.intrinsics import permlane_shuffle
 from gpu.globals import WARP_SIZE
 from memory import bitcast
 
@@ -743,9 +745,23 @@ fn lane_group_sum_and_broadcast[
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
 
-    return lane_group_reduce[
-        shuffle_xor, _reduce_add, num_lanes=num_lanes, stride=stride
-    ](val)
+    @parameter
+    if (
+        num_lanes == WARP_SIZE // stride
+        and stride in (16, 32)
+        and _cdna_4_or_newer()
+    ):
+        var out = _reduce_add(val, permlane_shuffle[32](val))
+
+        @parameter
+        if stride == 16:
+            out = _reduce_add(out, permlane_shuffle[16](out))
+
+        return out
+    else:
+        return lane_group_reduce[
+            shuffle_xor, _reduce_add, num_lanes=num_lanes, stride=stride
+        ](val)
 
 
 @always_inline
@@ -1022,9 +1038,23 @@ fn lane_group_max_and_broadcast[
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
 
-    return lane_group_reduce[
-        shuffle_xor, _reduce_max, num_lanes=num_lanes, stride=stride
-    ](val)
+    @parameter
+    if (
+        num_lanes == WARP_SIZE // stride
+        and stride in (16, 32)
+        and _cdna_4_or_newer()
+    ):
+        var out = _reduce_max(val, permlane_shuffle[32](val))
+
+        @parameter
+        if stride == 16:
+            out = _reduce_max(out, permlane_shuffle[16](out))
+
+        return out
+    else:
+        return lane_group_reduce[
+            shuffle_xor, _reduce_max, num_lanes=num_lanes, stride=stride
+        ](val)
 
 
 @always_inline

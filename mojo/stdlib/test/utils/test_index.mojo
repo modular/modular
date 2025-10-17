@@ -70,11 +70,4 @@ def test_list_literal():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_basics]()
-    suite.test[test_cast]()
-    suite.test[test_index]()
-    suite.test[test_list_literal]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

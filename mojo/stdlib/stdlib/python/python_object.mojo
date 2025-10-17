@@ -373,8 +373,7 @@ struct PythonObject(
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].copy().to_python_object()
-            cpython.Py_IncRef(obj._obj_ptr)
-            var result = cpython.PySet_Add(obj_ptr, obj._obj_ptr)
+            var result = cpython.PySet_Add(obj_ptr, obj.steal_data())
             if result == -1:
                 raise cpython.get_error()
 
@@ -395,17 +394,13 @@ struct PythonObject(
         """
         ref cpython = Python().cpython()
         var dict_obj_ptr = cpython.PyDict_New()
-        if not dict_obj_ptr:
-            raise Error("internal error: PyDict_New failed")
 
-        for key, value in zip(keys, values):
-            var key_obj = key.copy().to_python_object()
-            var val_obj = value.copy().to_python_object()
-            var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
+        for key, val in zip(keys, values):
+            var errno = cpython.PyDict_SetItem(
+                dict_obj_ptr, key._obj_ptr, val._obj_ptr
             )
-            if result != 0:
-                raise Error("internal error: PyDict_SetItem failed")
+            if errno == -1:
+                raise cpython.unsafe_get_error()
 
         return PythonObject(from_owned=dict_obj_ptr)
 
@@ -517,17 +512,16 @@ struct PythonObject(
         var size = len(args)
         var key_obj: PyObjectPtr
         if size == 1:
-            key_obj = args[0]._obj_ptr
+            key_obj = cpython.Py_NewRef(args[0]._obj_ptr)
         else:
             key_obj = cpython.PyTuple_New(size)
             for i in range(size):
-                var arg_value = args[i]._obj_ptr
-                cpython.Py_IncRef(arg_value)
-                var result = cpython.PyTuple_SetItem(key_obj, i, arg_value)
+                var result = cpython.PyTuple_SetItem(
+                    key_obj, i, cpython.Py_NewRef(args[i]._obj_ptr)
+                )
                 if result != 0:
                     raise Error("internal error: PyTuple_SetItem failed")
 
-        cpython.Py_IncRef(key_obj)
         var result = cpython.PyObject_GetItem(self._obj_ptr, key_obj)
         cpython.Py_DecRef(key_obj)
         if not result:
@@ -557,7 +551,6 @@ struct PythonObject(
                 if result != 0:
                     raise Error("internal error: PyTuple_SetItem failed")
 
-        cpython.Py_IncRef(key_obj)
         var result = cpython.PyObject_GetItem(self._obj_ptr, key_obj)
         cpython.Py_DecRef(key_obj)
         if not result:
@@ -576,25 +569,22 @@ struct PythonObject(
         var key_obj: PyObjectPtr
 
         if size == 1:
-            key_obj = args[0]._obj_ptr
+            key_obj = cpython.Py_NewRef(args[0]._obj_ptr)
         else:
             key_obj = cpython.PyTuple_New(size)
             for i in range(size):
-                var arg_value = args[i]._obj_ptr
-                cpython.Py_IncRef(arg_value)
-                var result = cpython.PyTuple_SetItem(key_obj, i, arg_value)
+                var result = cpython.PyTuple_SetItem(
+                    key_obj, i, cpython.Py_NewRef(args[i]._obj_ptr)
+                )
                 if result != 0:
                     raise Error("internal error: PyTuple_SetItem failed")
 
-        cpython.Py_IncRef(key_obj)
-        cpython.Py_IncRef(value._obj_ptr)
         var result = cpython.PyObject_SetItem(
             self._obj_ptr, key_obj, value._obj_ptr
         )
+        cpython.Py_DecRef(key_obj)
         if result != 0:
             raise cpython.get_error()
-        cpython.Py_DecRef(key_obj)
-        cpython.Py_DecRef(value._obj_ptr)
 
     @doc_private
     fn __call_single_arg_inplace_method__(
@@ -1174,11 +1164,7 @@ struct PythonObject(
         var num_pos_args = len(args)
         var args_ = cpy.PyTuple_New(num_pos_args)
         for i in range(num_pos_args):
-            var arg = args[i]._obj_ptr
-            # increment the refcount for `PyTuple_SetItem` steals the reference
-            # to `arg`
-            cpy.Py_IncRef(arg)
-            _ = cpy.PyTuple_SetItem(args_, i, arg)
+            _ = cpy.PyTuple_SetItem(args_, i, cpy.Py_NewRef(args[i]._obj_ptr))
         var kwargs_ = Python._dict(kwargs)
         var result = cpy.PyObject_Call(self._obj_ptr, args_, kwargs_)
         cpy.Py_DecRef(args_)
@@ -1286,8 +1272,7 @@ struct PythonObject(
             The underlying data.
         """
         var ptr = self._obj_ptr
-        self._obj_ptr = PyObjectPtr()
-
+        self._obj_ptr = {}
         return ptr
 
     fn unsafe_get_as_pointer[
@@ -1306,10 +1291,7 @@ struct PythonObject(
         Returns:
             An `UnsafePointer` for the underlying Python data.
         """
-        var tmp = Int(self)
-        var result = _unsafe_aliasing_address_to_pointer[dtype](tmp)
-        _ = tmp
-        return result
+        return _unsafe_aliasing_address_to_pointer[Scalar[dtype]](Int(self))
 
     fn downcast_value_ptr[
         T: AnyType
@@ -1418,7 +1400,11 @@ struct PythonObject(
         ref obj = self._obj_ptr.bitcast[PyMojoObject[T]]()[]
         # TODO(MSTDL-950): Should use something like `addr_of!`
         # Safety: The mutability matches that of `self`.
-        return UnsafePointer(to=obj.mojo_value).origin_cast[mut, origin]()
+        return (
+            UnsafePointer(to=obj.mojo_value)
+            .unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
 
 
 # ===-----------------------------------------------------------------------===#

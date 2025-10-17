@@ -689,32 +689,4 @@ def test_partition():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_sort_small_3]()
-    suite.test[test_sort_small_5]()
-    suite.test[test_sort0]()
-    suite.test[test_sort2]()
-    suite.test[test_sort3]()
-    suite.test[test_sort3_dupe_elements]()
-    suite.test[test_sort4]()
-    suite.test[test_sort5]()
-    suite.test[test_sort_reverse]()
-    suite.test[test_sort_semi_random]()
-    suite.test[test_sort9]()
-    suite.test[test_sort103]()
-    suite.test[test_sort_any_103]()
-    suite.test[test_quick_sort_repeated_val]()
-    suite.test[test_sort_stress]()
-    suite.test[test_stable_sort_stress]()
-    suite.test[test_sort_custom]()
-    suite.test[test_partition]()
-    suite.test[test_sort_string_small_list]()
-    suite.test[test_sort_string_big_list]()
-    suite.test[test_sort_strings]()
-    suite.test[test_sort_comparamble_elements_list]()
-    suite.test[test_sort_empty_comparable_elements_list]()
-    suite.test[test_sort_scalar]()
-    suite.test[test_ensure_no_copies]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -320,18 +320,4 @@ def test_nextafter():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_FPUtils]()
-    suite.test[test_get_accum_type]()
-    suite.test[test_isfinite]()
-    suite.test[test_isinf]()
-    suite.test[test_isnan]()
-    suite.test[test_max_finite]()
-    suite.test[test_max_or_inf]()
-    suite.test[test_min_finite]()
-    suite.test[test_min_or_neg_inf]()
-    suite.test[test_neg_inf]()
-    suite.test[test_nextafter]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

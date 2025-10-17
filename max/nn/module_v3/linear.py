@@ -50,7 +50,9 @@ class Linear(Module):
     # By convention weight is stored transposed
     # ie. weight.shape == [out_dim, in_dim]
     weight: Tensor
+    """The weight :obj:`~max.experimental.tensor.Tensor` for the linear transformation."""
     bias: Tensor | Literal[0]
+    """The bias :obj:`~max.experimental.tensor.Tensor` for the linear transformation (or 0 if bias is disabled)."""
 
     def __init__(self, in_dim: DimLike, out_dim: DimLike, *, bias: bool = True):
         """Constructs a random linear transformation of the given dimensions.

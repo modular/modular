@@ -185,11 +185,4 @@ def test_tanh_libm_wrapper():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_direct]()
-    suite.test[test_tanh_tfvals_fp32]()
-    suite.test[test_tanh_tfvals_fp64]()
-    suite.test[test_tanh_libm_wrapper]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

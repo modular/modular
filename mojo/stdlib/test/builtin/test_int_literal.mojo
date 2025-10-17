@@ -125,19 +125,4 @@ def test_shift():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_add]()
-    suite.test[test_sub]()
-    suite.test[test_ceil]()
-    suite.test[test_floor]()
-    suite.test[test_trunc]()
-    suite.test[test_floordiv]()
-    suite.test[test_mod]()
-    suite.test[test_abs]()
-    suite.test[test_indexer]()
-    suite.test[test_bool]()
-    suite.test[test_comparison]()
-    suite.test[test_shift]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -80,15 +80,15 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
 
     def __getitem__(self, device: DeviceRef) -> _ChainValue:
         if device not in self:
-            super().__setitem__(
-                device,
+            self[device] = (
                 self._graph._add_chain_block_arg()
                 if self._graph._has_chain_input
-                else self._graph._current_chain,
+                else self._graph._current_chain
             )
         return super().__getitem__(device)
 
     def __setitem__(self, device: DeviceRef, chain: _ChainValue) -> None:
+        assert isinstance(chain, _ChainValue)
         super().__setitem__(device, chain)
 
     def __iter__(self):
@@ -97,11 +97,26 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
     def _value(self, device: DeviceRef) -> _ChainValue:
         return super().__getitem__(device)
 
+    def ordered_values(self) -> Generator[_ChainValue]:
+        for device in self:
+            yield self._value(device)
+
     def copy(self) -> _DeviceChainMap:
         result = _DeviceChainMap(self._graph)
         for device in self:
             result[device] = self._value(device)
         return result
+
+    def _merge_chains(self, others: Sequence[_DeviceChainMap]) -> None:
+        for device in self:
+            # Collect all chains for this device
+            chains = [self[device]] + [other[device] for other in others]
+            # Unique them
+            chains = list(dict.fromkeys(chains).keys())
+            # Create the new chain
+            chain = self._graph._add_op(mo.chain_create, chains)[0]
+            assert isinstance(chain, _ChainValue)
+            self[device] = chain
 
     def __repr__(self) -> str:
         items = ", ".join(f"{device}: {self._value(device)}" for device in self)
@@ -345,7 +360,7 @@ class Graph:
     _should_verify_ops: bool
     _has_chain_input: bool
     # Per-device chains that ensure the correct sequence of device execution.
-    device_chains: OrderedDict[DeviceRef, _ChainValue]
+    device_chains: _DeviceChainMap
 
     _kernel_library: KernelLibrary
 
@@ -540,7 +555,11 @@ class Graph:
         self._current_chain = new_chain
 
     def _merge_chains(self, chains: Sequence[_ChainValue]) -> _ChainValue:
-        chain = self._add_op(mo.chain_create, chains)[0]
+        unique_chains = list(dict.fromkeys(chains))
+        if len(unique_chains) == 1:
+            return unique_chains[0]
+
+        chain = self._add_op(mo.chain_create, unique_chains)[0]
         assert isinstance(chain, _ChainValue)
         self._current_chain = chain
         return self._current_chain
@@ -588,16 +607,21 @@ class Graph:
         """
 
         old_chain = Graph.current._current_chain
+        old_device_chains = Graph.current.device_chains.copy()
         new_chains = []
+        new_device_chains = []
 
         class Async:
             def __enter__(self):
                 Graph.current._update_chain(old_chain)
+                Graph.current.device_chains = old_device_chains
                 return self
 
             def __exit__(self, *exc):
                 new_chains.append(Graph.current._current_chain)
+                new_device_chains.append(Graph.current.device_chains.copy())
                 Graph.current._update_chain(old_chain)
+                Graph.current.device_chains = old_device_chains
 
             def __call__(self):
                 return self
@@ -616,6 +640,7 @@ class Graph:
 
             if new_chains:
                 Graph.current._merge_chains(new_chains)
+                Graph.current.device_chains._merge_chains(new_device_chains)
 
     def __enter__(self) -> Graph:
         self._context_state.append(state := self._enter())
@@ -873,7 +898,12 @@ class Graph:
                 )
 
             _ = self._add_op(
-                block_terminator_op, results + [self._current_chain]
+                block_terminator_op,
+                [
+                    *results,
+                    self._current_chain,
+                    *self.device_chains.ordered_values(),
+                ],
             )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:

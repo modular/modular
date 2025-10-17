@@ -52,9 +52,4 @@ def test_setitem():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_getitem]()
-    suite.test[test_setitem]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -566,9 +566,7 @@ def test_indexing():
 def test_list_dtor():
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).origin_cast[
-        False, ImmutableAnyOrigin
-    ]()
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
     var l = LinkedList[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
@@ -615,40 +613,4 @@ def test_repr_wrap():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_construction]()
-    suite.test[test_linkedlist_literal]()
-    suite.test[test_append]()
-    suite.test[test_prepend]()
-    suite.test[test_copy]()
-    suite.test[test_reverse]()
-    suite.test[test_pop]()
-    suite.test[test_pop_copies]()
-    suite.test[test_getitem]()
-    suite.test[test_setitem]()
-    suite.test[test_str]()
-    suite.test[test_repr]()
-    suite.test[test_pop_on_empty_list]()
-    suite.test[test_optional_pop_on_empty_linked_list]()
-    suite.test[test_list]()
-    suite.test[test_list_clear]()
-    suite.test[test_list_to_bool_conversion]()
-    suite.test[test_list_pop]()
-    suite.test[test_list_variadic_constructor]()
-    suite.test[test_list_reverse]()
-    suite.test[test_list_extend_non_trivial]()
-    suite.test[test_list_explicit_copy]()
-    suite.test[test_no_extra_copies_with_sugared_set_by_field]()
-    suite.test[test_2d_dynamic_list]()
-    suite.test[test_list_boolable]()
-    suite.test[test_list_count]()
-    suite.test[test_list_contains]()
-    suite.test[test_indexing]()
-    suite.test[test_list_dtor]()
-    suite.test[test_list_insert]()
-    suite.test[test_list_eq_ne]()
-    suite.test[test_iter]()
-    suite.test[test_repr_wrap]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

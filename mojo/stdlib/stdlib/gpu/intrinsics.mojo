@@ -27,9 +27,15 @@ underlying GPU architecture.
 
 from collections.string.string_slice import get_static_string
 from os.atomic import Consistency
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of
+from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of, _RegisterPackType
 from sys._assembly import inlined_assembly
-from sys.info import CompilationTarget, _is_sm_9x, align_of, bit_width_of
+from sys.info import (
+    CompilationTarget,
+    _is_sm_9x,
+    align_of,
+    bit_width_of,
+    _cdna_4_or_newer,
+)
 from sys.intrinsics import llvm_intrinsic, readfirstlane
 
 from memory.unsafe import bitcast
@@ -622,6 +628,10 @@ fn threadfence[scope: Scope = Scope.GPU]():
         scope in (Scope.GPU, Scope.BLOCK, Scope.SYSTEM),
         "invalid threadfence scope",
     ]()
+    constrained[
+        is_nvidia_gpu(), "threadfence is only implemented on NVIDIA GPUs"
+    ]()
+
     alias suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
     llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
 
@@ -1159,11 +1169,67 @@ fn ds_read_tr16_b64[
         is_amd_gpu(),
         "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware.",
     ]()
+
     constrained[
         size_of[dtype]() == 2,
         "ds_read_tr16_b64 supports 16-bit dtypes.",
     ]()
 
+    # constrained[
+    #     _cdna_4_or_newer(), "ds_read_tr16_b64 is only supported on CDNA4+"
+    # ]()
+
     return llvm_intrinsic[
         "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=False
     ](shared_ptr)
+
+
+# ===-----------------------------------------------------------------------===#
+# AMD permlane shuffle
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn permlane_swap[
+    dtype: DType, //, stride: Int
+](val1: Scalar[dtype], val2: Scalar[dtype]) -> SIMD[dtype, 2]:
+    constrained[
+        is_amd_gpu(),
+        (
+            "The _amd_permlane_swap function is only applicable on AMDGPU"
+            " hardware."
+        ),
+    ]()
+    # constrained[
+    #     _cdna_4_or_newer(), "permlane swap is only supported on CDNA4+"
+    # ]()
+    constrained[bit_width_of[dtype]() == 32, "Unsupported dtype"]()
+    constrained[stride in (16, 32), "Unsupported stride"]()
+
+    alias asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
+    var result = llvm_intrinsic[
+        asm,
+        _RegisterPackType[Int32, Int32],
+        has_side_effect=False,
+    ](
+        bitcast[DType.int32, 1](val1),
+        bitcast[DType.int32, 1](val2),
+        False,
+        False,
+    )
+    return SIMD[dtype, 2](
+        bitcast[dtype, 1](result[0]), bitcast[dtype, 1](result[1])
+    )
+
+
+fn permlane_shuffle[
+    dtype: DType, simd_width: Int, //, stride: Int
+](val: SIMD[dtype, simd_width], out res: __type_of(val)):
+    var lane_group = lane_id() // stride
+
+    var out = __type_of(res)()
+
+    @parameter
+    for i in range(simd_width):
+        out[i] = permlane_swap[stride](val[i], val[i])[(lane_group + 1) % 2]
+    return out

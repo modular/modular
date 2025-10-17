@@ -23,8 +23,4 @@ def test_range_uint_bad_step_size():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_range_uint_bad_step_size]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

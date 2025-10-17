@@ -288,7 +288,7 @@ fn max[
     dtype: DType, layout: Layout
 ](
     x: LayoutTensor[dtype, layout, **_], y: LayoutTensor[dtype, layout, **_]
-) -> __type_of(x.origin_cast[True, MutableAnyOrigin]()):
+) -> __type_of(x).MutableAnyType:
     """Computes element-wise maximum of two tensors.
 
     Returns a new tensor containing the element-wise maximum between the

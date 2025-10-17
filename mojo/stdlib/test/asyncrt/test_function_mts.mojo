@@ -128,6 +128,8 @@ def test_color_to_grayscale():
 
 
 def main():
+    # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
+    # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_color_to_grayscale]()

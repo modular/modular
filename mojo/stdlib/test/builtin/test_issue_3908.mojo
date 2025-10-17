@@ -25,8 +25,4 @@ fn test_read_until_delimiter_raises_eof() raises:
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_read_until_delimiter_raises_eof]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

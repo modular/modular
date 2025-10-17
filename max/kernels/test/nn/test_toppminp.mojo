@@ -17,7 +17,6 @@ from random import random_float64
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId
 from layout import Layout, LayoutTensor, RuntimeLayout
-from nn.softmax import softmax
 from nn.toppminp import min_p_sampling, top_p_sampling
 from testing import assert_equal
 

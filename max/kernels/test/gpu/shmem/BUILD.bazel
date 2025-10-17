@@ -3,11 +3,6 @@ load("//bazel:api.bzl", "lit_tests")
 lit_tests(
     name = "test",
     srcs = glob(["**/*.mojo"]),
-    # TODO(SDLC-2481): add nvshmem libs using cc_library for distribution
-    # in python wheels, and remove this env var for bazel tests.
-    env = {
-        "LD_LIBRARY_PATH": "../+http_archive+libnvshmem/lib/",
-    },
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },

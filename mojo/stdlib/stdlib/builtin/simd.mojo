@@ -234,6 +234,52 @@ fn _has_native_f8_support() -> Bool:
 
 
 # ===----------------------------------------------------------------------=== #
+# FastMathFlag
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+@register_passable
+struct FastMathFlag(ImplicitlyCopyable):
+    var _value: UInt8
+
+    alias NONE = Self(0)
+    alias NNAN = Self(1)
+    alias NINF = Self(2)
+    alias NSZ = Self(3)
+    alias ARCP = Self(4)
+    alias CONTRACT = Self(5)
+    alias AFN = Self(6)
+    alias REASSOC = Self(7)
+    alias FAST = Self(8)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn _mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
+        if self is FastMathFlag.NONE:
+            return __mlir_attr.`#pop<fmf none>`
+        if self is FastMathFlag.NNAN:
+            return __mlir_attr.`#pop<fmf nnan>`
+        if self is FastMathFlag.NINF:
+            return __mlir_attr.`#pop<fmf ninf>`
+        if self is FastMathFlag.NSZ:
+            return __mlir_attr.`#pop<fmf nsz>`
+        if self is FastMathFlag.ARCP:
+            return __mlir_attr.`#pop<fmf arcp>`
+        if self is FastMathFlag.CONTRACT:
+            return __mlir_attr.`#pop<fmf contract>`
+        if self is FastMathFlag.AFN:
+            return __mlir_attr.`#pop<fmf afn>`
+        if self is FastMathFlag.REASSOC:
+            return __mlir_attr.`#pop<fmf reassoc>`
+        if self is FastMathFlag.FAST:
+            return __mlir_attr.`#pop<fmf fast>`
+
+        return __mlir_attr.`#pop<fmf none>`
+
+
+# ===----------------------------------------------------------------------=== #
 # SIMD
 # ===----------------------------------------------------------------------=== #
 
@@ -2326,7 +2372,9 @@ struct SIMD[dtype: DType, size: Int](
 
     # TODO: Move to global function.
     @always_inline("nodebug")
-    fn fma(self, multiplier: Self, accumulator: Self) -> Self:
+    fn fma[
+        flag: FastMathFlag = FastMathFlag.CONTRACT
+    ](self, multiplier: Self, accumulator: Self) -> Self:
         """Performs a fused multiply-add operation, i.e.
         `self*multiplier + accumulator`.
 
@@ -2341,9 +2389,11 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
 
         return Self(
-            mlir_value=__mlir_op.`pop.fma`[
-                fastmathFlags = __mlir_attr.`#pop<fmf contract>`
-            ](self._mlir_value, multiplier._mlir_value, accumulator._mlir_value)
+            mlir_value=__mlir_op.`pop.fma`[fastmathFlags = flag._mlir_attr()](
+                self._mlir_value,
+                multiplier._mlir_value,
+                accumulator._mlir_value,
+            )
         )
 
     @always_inline("nodebug")
@@ -3240,7 +3290,18 @@ fn _pow[
 
     @parameter
     if exp.dtype.is_floating_point() and base.dtype is exp.dtype:
-        return _powf(base, exp)
+
+        @parameter
+        if is_apple_gpu():
+            return llvm_intrinsic[
+                "llvm.air.pow",
+                __type_of(base),
+                __type_of(base),
+                __type_of(exp),
+                has_side_effect=False,
+            ](base, exp)
+        else:
+            return _powf(base, exp)
     elif exp.dtype.is_integral():
         # Common cases
         if all(exp.eq(2)):

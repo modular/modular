@@ -70,11 +70,4 @@ def test_enumerate_bounds():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_enumerate]()
-    suite.test[test_enumerate_with_start]()
-    suite.test[test_enumerate_destructure]()
-    suite.test[test_enumerate_bounds]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -39,6 +39,11 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 archive_override(
     module_name = "rules_mojo",
     integrity = "sha256-fOkBbbvPAZmBji2zJ7KSXxpvCgxSTi6buwMJal4zOEE=",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/modular/rules_mojo/pull/63
+        "//bazel/public-patches:rules_mojo_mi355.patch",
+    ],
     strip_prefix = "rules_mojo-ffd2636629835c1f1287dcf6846251e088eec1d8",
     urls = [
         "https://github.com/modular/rules_mojo/archive/ffd2636629835c1f1287dcf6846251e088eec1d8.tar.gz",
@@ -235,25 +240,46 @@ RUFF_VERSION = "0.11.13"
     ]
 ]
 
-NVSHMEM_VERSION = "3.4.5"
-
 http_archive(
-    name = "libnvshmem",
+    name = "nvshmem_prebuilt",
     build_file_content = """
+package(default_visibility = ["//visibility:public"])
+
+# This is the device-side bitcode that is linked into shmem.mojopkg.
 filegroup(
     name = "device",
     srcs = ["lib/libnvshmem_device.bc"],
-    visibility = ["//visibility:public"],
 )
-filegroup(
-    name = "host",
+
+# For linking the nvshmem hostlibs when compiling Mojo binaries from bazel
+cc_library(
+    name = "hostlibs",
     srcs = glob(["lib/*.so*"]),
-    visibility = ["//visibility:public"],
+)
+
+# This has three purposes:
+#  - copy the libs to python wheel `site-packages/modular/lib` folder
+#  - relink and copy the libs to conda package `lib` folder
+#  - enable `bmojo` to dlopen the libs from `bazel-bin/external/+http_archive+nvshmem_prebuilt`
+genrule(
+    name = "hostlibs_data",
+    srcs = glob(["lib/*.so*"]),
+    outs = [
+        "libnvshmem_host.so.3",
+        "nvshmem_bootstrap_mpi.so.3",
+        "nvshmem_transport_ibrc.so.3",
+        "nvshmem_transport_ibgda.so.3",
+    ],
+    cmd = '''
+        # Copy all lib/*.so* files from our prebuilt tar
+        for src in $(SRCS); do
+            cp -L $$src $(@D)
+        done
+    ''',
 )
 """,
-    # custom NVSHMEM at commit: https://github.com/modularml/NVSHMEM/commit/6ce0e34
-    sha256 = "786253323825e8b13a511069071f4b4ace4190129551e2f03c488081a660997f",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/{}/786253323825e8b13a511069071f4b4ace4190129551e2f03c488081a660997f/nvshmem.tar.gz".format(NVSHMEM_VERSION),
+    sha256 = "8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/nvshmem/3.4.5/8f74673b958e8c3b2e5c2cacfa48aa90139d36377317f48cbd1851f993789655/nvshmem.tar.gz",
 )
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")

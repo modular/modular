@@ -102,14 +102,4 @@ def test_numpy_float():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_string]()
-    suite.test[test_range]()
-    suite.test[test_int]()
-    suite.test[test_float]()
-    suite.test[test_bool]()
-    suite.test[test_numpy_int]()
-    suite.test[test_numpy_float]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

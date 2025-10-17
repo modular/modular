@@ -94,16 +94,34 @@ fn _compute_kv_cache_dynamic_shape_strides[
     return (kv_cache_shape, kv_cache_strides)
 
 
-@fieldwise_init
 @register_passable("trivial")
 struct KVCacheStaticParams(EqualityComparable, ImplicitlyCopyable, Movable):
     var num_heads: UInt
     var head_size: UInt
+    var is_mla: Bool
+
+    fn __init__(
+        out self, num_heads: UInt, head_size: UInt, is_mla: Bool = False
+    ):
+        """
+        Initialize KVCacheStaticParams.
+        Args:
+            num_heads (UInt): Number of attention heads.
+            head_size (UInt): Size of each attention head.
+            is_mla (Bool, optional): Whether to use Multi-Linear Attention (MLA) mode.
+                If true, we only store k cache. If False, we store k and v cache.
+                Defaults to False.
+        """
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.is_mla = is_mla
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: KVCacheStaticParams) -> Bool:
         return (
-            self.num_heads == rhs.num_heads and self.head_size == rhs.head_size
+            self.num_heads == rhs.num_heads
+            and self.head_size == rhs.head_size
+            and self.is_mla == rhs.is_mla
         )
 
     @always_inline("nodebug")
@@ -823,6 +841,10 @@ struct ContinuousBatchingKVCacheCollection[
 
     @always_inline
     fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
+        debug_assert(
+            kv_idx == 0 or self.blocks.dynamic_shape[1] > 1,
+            "invalid kv_idx for MLA cache",
+        )
         return self.CacheType(
             self.CacheType.blocks_type(
                 self.blocks._offset(
@@ -856,7 +878,7 @@ struct PagedKVCacheCollection[
     # (total_num_blocks, 2, num_layers, page_size) x (num_heads, head_size)
     alias blocks_shape = DimList(
         Dim(),
-        Dim(),
+        2 if not Self.kv_params.is_mla else 1,
         Dim(),
         Dim(page_size),
         Dim(Int(Self.kv_params.num_heads)),
@@ -898,10 +920,18 @@ struct PagedKVCacheCollection[
 
     @always_inline
     fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
+        constrained[
+            not Self.kv_params.is_mla,
+            "Cannot call get_value_cache for MLA cache",
+        ]()
         return self._get_cache[1](layer_idx)
 
     @always_inline
     fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
+        constrained[
+            kv_idx >= 0 and kv_idx < 2,
+            "Invalid kv_idx for KV cache",
+        ]()
         return self.CacheType(
             Self.CacheType.blocks_type(
                 self.blocks._offset(

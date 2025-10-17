@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import OptionalReg, Dict
 from math import align_down, ceildiv
 from os import abort
 from sys.ffi import _get_global_or_null, external_call
@@ -65,6 +65,7 @@ from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
 from gpu.id import block_dim, block_idx, thread_idx
+from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from runtime.asyncrt import parallelism_level
@@ -418,11 +419,16 @@ struct ConvDirectNHWC[
         # TODO: extend to 1d/3d.
         alias WO = output_shape.at[
             output_rank - 2
-        ]() if input_rank == 4 else Dim()
+        ]().get() if input_rank == 4 and output_shape.at[
+            output_rank - 2
+        ]().has_value() else UNKNOWN_VALUE
+        alias F = output_shape.at[output_rank - 1]().get() if output_shape.at[
+            output_rank - 1
+        ]().has_value() else UNKNOWN_VALUE
         alias micro_kernel_shape = get_micro_kernel_shape[
             input_rank - 2,
             WO,
-            output_shape.at[output_rank - 1](),  # F
+            F,
             conv_attr,
             simd_size,
         ]()
@@ -437,9 +443,9 @@ struct ConvDirectNHWC[
         )
 
         @parameter
-        if conv_attr.num_groups.has_value():
+        if conv_attr.num_groups != UNKNOWN_VALUE:
             constrained[
-                filter_packed or conv_attr.num_groups == Dim(1),
+                filter_packed or conv_attr.num_groups == 1,
                 (
                     "if number of conv groups is statically known, conv filter"
                     " must be prepacked when num_groups > 1"
@@ -572,7 +578,7 @@ struct ConvDirectNHWC[
         alias apply_static_shape_optimization = \
             self.packed_and_fully_static \
             and padded \
-            and conv_attr.num_groups == Dim(1) \
+            and conv_attr.num_groups == 1 \
             and input_rank == 4
         # fmt: on
 
@@ -2601,18 +2607,25 @@ fn pack_filter_shape[
     var F_per_group = F // num_groups
 
     alias conv_attr = ConvInfoStatic[filter.rank - 2](
-        pad=reorder_padding[filter.rank - 2](paddings),
-        stride=strides,
-        dilation=dilations,
+        pad=reorder_padding[filter.rank - 2](IntTuple(paddings)),
+        stride=IntTuple(strides),
+        dilation=IntTuple(dilations),
         num_groups=num_groups,
     )
 
     # TODO: extend to 1D/3D.
-    alias WO = output_shape.at[2]() if filter.rank == 4 else Dim()
+    alias WO = output_shape.at[
+        2
+    ]().get() if filter.rank == 4 and output_shape.at[
+        2
+    ]().has_value() else UNKNOWN_VALUE
+    alias F_NHWC = output_shape.at[filter.rank - 1]().get() if output_shape.at[
+        filter.rank - 1
+    ]().has_value() else UNKNOWN_VALUE
     alias micro_kernel_shape = get_micro_kernel_shape[
         filter.rank - 2,
         WO,
-        output_shape.at[filter.rank - 1](),  # F , NHWC layout
+        F_NHWC,
         conv_attr,
         simd_size,
     ]()
@@ -2972,9 +2985,42 @@ fn conv_nhwc_direct[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         var conv_shape = get_conv_shape[input_rank - 2, filter_packed](
-            output,
-            input,
-            filter,
+            LayoutTensor[
+                output.type,
+                Layout(IntTuple(output.shape), IntTuple(output.strides)),
+            ](
+                output.data,
+                RuntimeLayout[
+                    Layout(IntTuple(output.shape), IntTuple(output.strides))
+                ](
+                    output.get_shape().canonicalize(),
+                    output.get_strides().canonicalize(),
+                ),
+            ),
+            LayoutTensor[
+                input.type,
+                Layout(IntTuple(input.shape), IntTuple(input.strides)),
+            ](
+                input.data,
+                RuntimeLayout[
+                    Layout(IntTuple(input.shape), IntTuple(input.strides))
+                ](
+                    input.get_shape().canonicalize(),
+                    input.get_strides().canonicalize(),
+                ),
+            ),
+            LayoutTensor[
+                filter.type,
+                Layout(IntTuple(filter.shape), IntTuple(filter.strides)),
+            ](
+                filter.data,
+                RuntimeLayout[
+                    Layout(IntTuple(filter.shape), IntTuple(filter.strides))
+                ](
+                    filter.get_shape().canonicalize(),
+                    filter.get_strides().canonicalize(),
+                ),
+            ),
             stride,
             dilation,
             pad_d,
@@ -3163,9 +3209,21 @@ struct CuDNNConvMeta(ImplicitlyCopyable, Movable):
 
 
 fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
-    """Get the cuDNN metadata.
-    If the metadata is not found, create a new one and insert it into the global
-    cache.
+    """Get the cuDNN metadata with proper device context management.
+
+    If the metadata is not found for this device, create a new one and insert
+    it into the global cache keyed by device ID.
+
+    IMPORTANT: this function _must_ be called with `ctx`'s CUcontext active via:
+
+    ```mojo
+    from gpu.host import DeviceContext
+    var ctx = DeviceContext()
+    with ctx.push_context():
+        ptr_meta = _get_cudnn_meta(ctx)
+    ```
+
+    This is to satisfy the stateful `cudnn*` API calls.
 
     Args:
         ctx: The device context.
@@ -3173,8 +3231,11 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     Returns:
         The cuDNN metadata.
     """
-    var name = "CUDA_CUDNN_META"
-    if ptr_meta := _get_global_or_null(name).bitcast[CuDNNConvMeta]():
+    # Key the cuDNN metadata cache on the device ID.
+    var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
+
+    # Get or create the per-device cache dictionary.
+    if ptr_meta := _get_global_or_null(cache_key).bitcast[CuDNNConvMeta]():
         check_cudnn_error(
             cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
         )
@@ -3184,7 +3245,7 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     ptr_meta.init_pointee_move(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(name),
+        StringSlice(cache_key),
         ptr_meta.bitcast[NoneType](),
     )
 
@@ -3208,7 +3269,7 @@ fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
         raise Error("unsupported dtype", dtype, "for cuDNN")
 
 
-fn conv_cudnn[
+fn _conv_cudnn[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3329,6 +3390,27 @@ fn conv_cudnn[
         )
     )
     _ = workspace_buffer^
+
+
+fn conv_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, *_, **_],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, *_, **_],
+    output: NDBuffer[output_type, 4, MutableAnyOrigin, *_, **_],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    # Set `ctx`'s CUcontext as current to satisfy cudnn's stateful API.
+    with ctx.push_context() as ctx:
+        _conv_cudnn(
+            input, filter, output, stride, dilation, padding, num_groups, ctx
+        )
 
 
 fn conv_gpu[

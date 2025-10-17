@@ -597,6 +597,24 @@ struct NDBuffer[
         """
         self = Self(span.unsafe_ptr(), dynamic_shape, dynamic_stride)
 
+    alias OriginCastType[
+        target_mut: Bool,
+        target_origin: Origin[target_mut],
+    ] = NDBuffer[
+        dtype,
+        rank,
+        target_origin,
+        shape,
+        strides,
+        alignment2=alignment2,
+        address_space=address_space,
+        exclusive=exclusive,
+    ]
+
+    @deprecated(
+        "`origin_cast` for NDBuffer is deprecated, use the safer"
+        " `as_any_origin` instead."
+    )
     @always_inline("nodebug")
     fn origin_cast[
         target_mut: Bool = Self.mut,
@@ -624,7 +642,67 @@ struct NDBuffer[
             as the original `NDBuffer` and the new specified mutability and origin.
         """
         return {
-            self.data.origin_cast[target_mut, target_origin](),
+            self.data.unsafe_mut_cast[target_mut]().unsafe_origin_cast[
+                target_origin
+            ](),
+            self.dynamic_shape,
+            self.dynamic_stride,
+        }
+
+    @always_inline("nodebug")
+    fn get_immutable(
+        self,
+    ) -> Self.OriginCastType[False, ImmutableOrigin.cast_from[origin]]:
+        """Changes the mutability of the `NDBuffer` to immutable.
+
+        Returns:
+            A buffer with the mutability set to immutable.
+        """
+        return {
+            self.data.as_immutable(),
+            self.dynamic_shape,
+            self.dynamic_stride,
+        }
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: NDBuffer[mut=True, *_, **_],
+    ) -> __type_of(self).OriginCastType[True, MutableAnyOrigin]:
+        """Changes the origin of the `NDBuffer` to `MutableAnyOrigin`.
+
+        Returns:
+            A buffer with the origin set to `MutableAnyOrigin`.
+
+        This requires the buffer to already be mutable as casting mutability
+        is inherently very unsafe.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `MutableAnyOrigin`. However, if it is needed, keep in mind that
+        `MutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the buffer.
+        """
+        return {
+            self.data.as_any_origin(),
+            self.dynamic_shape,
+            self.dynamic_stride,
+        }
+
+    @always_inline("nodebug")
+    fn as_any_origin(
+        self: NDBuffer[mut=False, *_, **_],
+    ) -> __type_of(self).OriginCastType[False, ImmutableAnyOrigin]:
+        """Changes the origin of the `NDBuffer` to `ImmutableAnyOrigin`.
+
+        Returns:
+            A buffer with the origin set to `ImmutableAnyOrigin`.
+
+        It is usually preferred to maintain concrete origin values instead of
+        using `ImmutableAnyOrigin`. However, if it is needed, keep in mind that
+        `ImmutableAnyOrigin` can alias any memory value, so Mojo's ASAP
+        destruction will not apply during the lifetime of the buffer.
+        """
+        return {
+            self.data.as_any_origin(),
             self.dynamic_shape,
             self.dynamic_stride,
         }
@@ -1346,12 +1424,16 @@ struct NDBuffer[
                 " allocation"
             ),
         ]()
-        var data_pointer = stack_allocation[
-            shape.product[rank]().get(),
-            dtype,
-            alignment=alignment,
-            address_space=address_space,
-        ]().origin_cast[mut, origin]()
+        var data_pointer = (
+            stack_allocation[
+                shape.product[rank]().get(),
+                dtype,
+                alignment=alignment,
+                address_space=address_space,
+            ]()
+            .unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
         return Self(data_pointer)
 
     @always_inline

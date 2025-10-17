@@ -896,41 +896,65 @@ fn _batched_matmul_gpu[
             ),
         )
     elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
-        alias block_m = 128
-        alias block_n = 128
-        alias block_k = 64
-        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            block_tile_shape=Index(block_m, block_n, block_k),
-            warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
-            num_pipeline_stages=1,
-            num_k_partitions=1,
-        )
-        alias batched_matmul_type = batched_matmul_kernel_gpu[
-            c_tensor_reshaped.dtype,
-            a_tensor_reshaped.dtype,
-            b_tensor_reshaped.dtype,
-            c_tensor_reshaped.layout,
-            a_tensor_reshaped.layout,
-            b_tensor_reshaped.layout,
-            transpose_b,
-            config,
-            elementwise_epilogue_fn,
-        ]
 
-        ctx.enqueue_function_checked[batched_matmul_type, batched_matmul_type](
-            c_tensor_reshaped,
-            a_tensor_reshaped,
-            b_tensor_reshaped,
-            m,
-            n,
-            k,
-            grid_dim=(
-                ceildiv(n, block_n),
-                ceildiv(m, block_m),
-                batch_size,
-            ),
-            block_dim=(256, 1, 1),
-        )
+        @always_inline
+        @parameter
+        fn kernel_helper[
+            block_m: Int,
+            block_n: Int,
+            *,
+            num_k_partitions: Int = 1,
+            num_pipeline_stages: Int = 1,
+        ]() raises:
+            alias block_k = 64
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=Index(block_m, block_n, block_k),
+                warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
+                num_pipeline_stages=1,
+                num_k_partitions=1,
+            )
+
+            alias batched_matmul_type = batched_matmul_kernel_gpu[
+                c_tensor_reshaped.dtype,
+                a_tensor_reshaped.dtype,
+                b_tensor_reshaped.dtype,
+                c_tensor_reshaped.layout,
+                a_tensor_reshaped.layout,
+                b_tensor_reshaped.layout,
+                transpose_b,
+                config,
+                elementwise_epilogue_fn,
+            ]
+
+            ctx.enqueue_function_checked[
+                batched_matmul_type, batched_matmul_type
+            ](
+                c_tensor_reshaped,
+                a_tensor_reshaped,
+                b_tensor_reshaped,
+                m,
+                n,
+                k,
+                grid_dim=(
+                    ceildiv(n, block_n),
+                    ceildiv(m, block_m),
+                    batch_size,
+                ),
+                block_dim=(256, 1, 1),
+            )
+
+        # DeepSeek size tuning
+        if m == 256 and n == 128 and k == 512:
+            kernel_helper[128, 64]()
+        elif m == 256 and n == 512 and k == 128:
+            kernel_helper[64, 64]()
+        elif m == 14 and n == 3072 and k == 12288:
+            kernel_helper[32, 32]()
+        elif m == 600 and n == 18256 and k == 4096:
+            kernel_helper[128, 64]()
+        else:
+            kernel_helper[128, 128]()
+
     else:
         # TODO: support non-A100 transposed kernels
         constrained[

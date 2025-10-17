@@ -34,6 +34,8 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     GenerationStatus,
+    Pipeline,
+    PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
@@ -57,7 +59,6 @@ from .pipeline import (
     ModelInputs,
     ModelOutputs,
     PipelineModel,
-    TextGenerationPipelineType,
     upper_bounded_default,
 )
 from .ragged_token_merger import ragged_token_merger
@@ -146,7 +147,7 @@ class SpeculativeDecodingMetrics:
 
 @final
 class SpeculativeDecodingTextGenerationPipeline(
-    TextGenerationPipelineType[TextContext],
+    Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
     GenerateMixin[TextContext, TextGenerationRequest],
 ):
     """Generalized token generator pipeline with speculative decoding."""
@@ -690,7 +691,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     def execute(
         self,
         inputs: TextGenerationInputs[TextContext],
-    ) -> dict[RequestID, TextGenerationOutput]:
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
         # Flatten our batch for consistent indexing.

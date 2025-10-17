@@ -37,29 +37,29 @@ if TYPE_CHECKING:
 class Module:
     """The core unit of composition for modeling in MAX.
 
-    Informally, a Module is a container class. It can contain
-    other Module instances, Tensors (the Module's *local parameters*)
+    Informally, a ``Module`` is a container class. It can contain
+    other ``Module`` instances, tensors (the ``Module``'s "local parameters")
     or other arbitrary Python data.
 
-    A Module also has a ``__call__`` which applies that Module to
-    some input. In the simplest case this is a function from one Tensor
-    to another Tensor.
+    A ``Module`` also has a ``__call__()`` which applies that ``Module`` to
+    some input. In the simplest case this is a function from one tensor
+    to another tensor.
 
-    Formally Modules form a tree, and subtrees of Modules can be manipulate
-    directly. A Module may also be thought of as a closure, where the parameters
-    form the data of the closure and ``__call__`` is the application of the closure.
+    Formally modules form a tree, and subtrees of modules can be manipulated
+    directly. A ``Module`` may also be thought of as a closure, where the parameters
+    form the data of the closure and ``__call__()`` is the application of the closure.
 
-    **Terms:**
+    **Terminology:**
 
-    - A *child* of a Module is sub-Module stored directly on that Module.
-    - A *descendant* of a Module is one of its children, or one of their
+    - A "child" of a ``Module`` is a sub-``Module`` stored directly on that ``Module``.
+    - A "descendant" of a ``Module`` is one of its children, or one of their
       descendants.
-    - A *parameter* is a Tensor storing data on the Module or one of its
+    - A "parameter" is a tensor storing data on the ``Module`` or one of its
       descendants.
-    - The *qualified path* of a descendant is a period-separated string
+    - The "qualified path" of a descendant is a period-separated string
       of the names of the child module attributes which lead to that
       descendant module, for instance ``child.sub.last``.
-    - The *qualified path* of a parameter is the qualified path of the
+    - The "qualified path" of a parameter is the qualified path of the
       descendant directly holding that parameter, followed by a final
       path component for the attribute name of the tensor.
       For instance ``weight`` for a local parameter, or
@@ -87,11 +87,11 @@ class Module:
 
     @property
     def local_parameters(self) -> Iterable[tuple[str, Tensor]]:
-        """Iterates over the local parameters of the Module.
+        """Iterates over the local parameters of the ``Module``.
 
-        Returns:
-            An iterable of (name, tensor) pairs, where name is the attribute
-            name of the tensor on the module.
+        Yields:
+            ``(name, tensor)`` pairs, where ``name`` is the attribute name of
+            the tensor on the module.
         """
         for name, value in vars(self).items():
             if isinstance(value, Tensor):
@@ -137,48 +137,50 @@ class Module:
             )
             print(f"Total parameters: {total_params}")
 
-        Returns:
-            An iterable of (name, parameter) tuples where ``name`` is the
+        Yields:
+            ``(name, parameter)`` tuples where ``name`` is the
             dot-separated qualified path of the parameter and ``parameter``
             is the :obj:`Tensor`.
         """
         yield from self.local_parameters
-        for prefix, descendent in self.descendents:
-            for name, parameter in descendent.local_parameters:
+        for prefix, descendant in self.descendants:
+            for name, parameter in descendant.local_parameters:
                 yield f"{prefix}.{name}", parameter
 
     @property
     def children(self) -> Iterable[tuple[str, Module]]:
-        """Iterates over the direct child modules of the Module.
+        """Iterates over the direct child modules of the ``Module``.
 
-        Returns:
-            An iterable of (name, module) pairs, where name is the attribute
-            name of the child on the module.
+        Yields:
+            ``(name, module)`` pairs, where ``name`` is the attribute name of
+            the child on the module.
         """
         for name, value in vars(self).items():
             if isinstance(value, Module):
                 yield name, value
 
     @property
-    def descendents(self) -> Iterable[tuple[str, Module]]:
-        """Iterates over the Module's descendant modules.
+    def descendants(self) -> Iterable[tuple[str, Module]]:
+        """Iterates over the ``Module``'s descendant modules.
 
-        Returns:
-            An iterable of (name, module) pairs, where name is the qualified
-            path of the descendant with respect to the module.
+        Yields:
+            ``(name, module)`` pairs, where ``name`` is the qualified path
+            of the descendant with respect to the module.
         """
         for prefix, child in self.children:
             yield prefix, child
-            for name, descendent in child.descendents:
-                yield f"{prefix}.{name}", descendent
+            for name, descendant in child.descendants:
+                yield f"{prefix}.{name}", descendant
 
     def apply_to_local_parameters(
         self, f: Callable[[str, Tensor], Tensor]
     ) -> None:
-        """Applies a transformation to each local parameter tensor on the Module.
+        """Applies a transformation to each local parameter tensor on the ``Module``.
 
         The transformation is applied in-place, updating the module's values.
         It will not be applied to descendant's parameters.
+
+        For example:
 
         .. code-block:: python
 
@@ -190,9 +192,11 @@ class Module:
 
         Args:
             f: The transformation to apply to each local parameter.
-                The transformation takes two arguments, a name and a tensor.
-                - The name is the attribute name of the parameter on the module
-                - The tensor is the current value of that parameter
+                The transformation takes two arguments, a name and a tensor:
+
+                - The name is the attribute name of the parameter on the module.
+                - The tensor is the current value of that parameter.
+
                 The return value of this function is the new value that will
                 replace the value at that name.
         """
@@ -279,7 +283,7 @@ class Module:
         for functional remapping of names during this process to account
         for differences in common weight naming and storage conventions.
 
-        For instance certain representations may not store weights as
+        For instance, certain representations may not store weights as
         transposed, or may need to be quantized, or split out from a shared
         qkv block, or may just have slightly different names or paths.
 
@@ -291,7 +295,7 @@ class Module:
 
                 - The argument to the lookup function is the qualified name
                   of the parameter with respect to the module on which
-                  `load_state` was called.
+                  ``load_state()`` was called.
                 - The return value of this function is the new value that will
                   replace the value at that name in the module tree.
         """
@@ -311,7 +315,6 @@ class Module:
         The ``strict`` mode (default) ensures all weights in the dictionary are
         actually used, catching errors from mismatched architectures or incorrect
         weight names.
-
 
         For example, the following loads weights from a dictionary into a model:
 
@@ -369,11 +372,13 @@ class Module:
             )
 
     def map_parameters(self, f: Callable[[str, Tensor], Tensor]) -> Self:
-        """Creates a new Module with its parameters transformed by the function.
+        """Creates a new ``Module`` with its parameters transformed by the function.
 
         The transformation is functional rather than in-place. The module is
         deep-copied; its descendants are also replaced via the same transform
         without affecting the original module.
+
+        For example:
 
         .. code-block:: python
 
@@ -388,7 +393,7 @@ class Module:
                 The transformation takes two arguments, a name and a tensor:
 
                 - The name is the qualified name of the parameter
-                  with respect to the module on which ``map_parameters``
+                  with respect to the module on which ``map_parameters()``
                   was called.
                 - The tensor is the current value of that parameter.
 

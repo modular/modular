@@ -36,7 +36,7 @@ def test_from_unsafe_pointer_constructor():
     var deleted = False
     var unsafe_ptr = UnsafePointer[ObservableDel].alloc(1)
     unsafe_ptr.init_pointee_move(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[False]())
+        ObservableDel(UnsafePointer(to=deleted).as_immutable())
     )
 
     var ptr = OwnedPointer(unsafe_from_raw_pointer=unsafe_ptr)
@@ -143,17 +143,4 @@ def test_steal_data():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_basic_ref]()
-    suite.test[test_owned_pointer_copy_constructor]()
-    suite.test[test_moving_constructor]()
-    suite.test[test_copying_constructor]()
-    suite.test[test_explicitly_copying_constructor]()
-    suite.test[test_basic_ref_mutate]()
-    suite.test[test_basic_del]()
-    suite.test[test_take]()
-    suite.test[test_moveinit]()
-    suite.test[test_steal_data]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

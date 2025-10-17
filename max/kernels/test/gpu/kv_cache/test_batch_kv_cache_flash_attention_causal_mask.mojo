@@ -215,8 +215,8 @@ def execute_flash_attention[
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     flash_attention(
-        test_output_device.tensor,
-        q_device.tensor,
+        test_output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         CausalMask(),
@@ -230,8 +230,8 @@ def execute_flash_attention[
     )
 
     flash_attention(
-        ref_output_device.tensor,
-        q_device.tensor,
+        ref_output_device.to_layout_tensor(),
+        q_device.to_layout_tensor(),
         k_cache_device,
         v_cache_device,
         MaterializedMask(

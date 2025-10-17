@@ -82,8 +82,12 @@ def run_elementwise[dtype: DType](ctx: DeviceContext):
                 )
 
 
-def main():
+def test_exp():
     with DeviceContext() as ctx:
         run_elementwise[DType.float16](ctx)
         run_elementwise[DType.bfloat16](ctx)
         run_elementwise[DType.float32](ctx)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

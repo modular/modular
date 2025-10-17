@@ -135,12 +135,4 @@ def test_slice_indices():
 
 
 def main():
-    var suite = TestSuite()
-
-    suite.test[test_none_end_folds]()
-    suite.test[test_sliceable]()
-    suite.test[test_slice_stringable]()
-    suite.test[test_slice_eq]()
-    suite.test[test_slice_indices]()
-
-    suite^.run()
+    TestSuite.discover_tests[__functions_in_module()]().run()

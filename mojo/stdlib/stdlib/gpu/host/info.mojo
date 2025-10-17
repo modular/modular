@@ -25,6 +25,156 @@ from sys.info import CompilationTarget, _accelerator_arch, _TargetType
 alias _KB = 1024
 alias _K = 1024
 
+# NVIDIA Architecture Families
+alias NvidiaMaxwellFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=96 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias NvidiaPascalFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=64 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias NvidiaTuringFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=64 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
+)
+
+# Ampere architecture has three distinct variants based on compute capability:
+# - sm_80: High-end datacenter (A100)
+# - sm_86: Workstation/cloud (A10, RTX A-series)
+# - sm_87: Embedded/edge (Jetson Orin)
+
+alias NvidiaAmpereDatacenterFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=164 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias NvidiaAmpereWorkstationFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=48 * 32,
+    shared_memory_per_multiprocessor=100 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias NvidiaAmpereEmbeddedFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=48 * 32,
+    shared_memory_per_multiprocessor=164 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias NvidiaAdaFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=48 * 32,
+    shared_memory_per_multiprocessor=100 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias NvidiaHopperFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=228 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias NvidiaBlackwellFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=228 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias NvidiaBlackwellConsumerFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=48 * 32,
+    shared_memory_per_multiprocessor=100 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+# AMD Architecture Families
+alias AMDCDNA3Family = AcceleratorArchitectureFamily(
+    warp_size=64,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=64 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias AMDCDNA4Family = AcceleratorArchitectureFamily(
+    warp_size=64,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=160 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+alias AMDRDNAFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=32 * _K,
+    max_thread_block_size=_K,
+)
+
+# Apple Architecture Families
+alias AppleMetalFamily = AcceleratorArchitectureFamily(
+    warp_size=32,
+    threads_per_multiprocessor=32 * 32,
+    shared_memory_per_multiprocessor=32 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+
+# ===-----------------------------------------------------------------------===#
+# AcceleratorArchitectureFamily
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct AcceleratorArchitectureFamily:
+    """Defines common defaults for a GPU architecture family.
+
+    This struct captures the shared characteristics across GPUs in the same
+    architecture family, reducing redundancy when defining new GPU models.
+    """
+
+    var warp_size: Int
+    """Number of threads in a warp/wavefront."""
+
+    var threads_per_multiprocessor: Int
+    """Maximum number of threads per streaming multiprocessor."""
+
+    var shared_memory_per_multiprocessor: Int
+    """Size of shared memory available per multiprocessor in bytes."""
+
+    var max_registers_per_block: Int
+    """Maximum number of registers that can be allocated to a thread block."""
+
+    var max_thread_block_size: Int
+    """Maximum number of threads allowed in a thread block."""
+
+
 # ===-----------------------------------------------------------------------===#
 # Vendor
 # ===-----------------------------------------------------------------------===#
@@ -137,8 +287,8 @@ fn _get_empty_target() -> _TargetType:
         `arch = "", `,
         `features = "", `,
         `data_layout="",`,
-        `simd_bit_width = 0,`,
-        `index_bit_width = 0`,
+        `index_bit_width = 0,`,
+        `simd_bit_width = 0`,
         `> : !kgen.target`,
     ]
 
@@ -152,7 +302,7 @@ alias NoGPU = GPUInfo(
     version="",
     sm_count=0,
     warp_size=0,
-    threads_per_sm=0,
+    threads_per_multiprocessor=0,
     shared_memory_per_multiprocessor=0,
     max_registers_per_block=0,
     max_thread_block_size=0,
@@ -162,13 +312,12 @@ alias NoGPU = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 # Apple M1
 # ===-----------------------------------------------------------------------===#
-fn _get_metal_m1_target() -> __mlir_type.`!kgen.target`:
+fn _get_metal_m1_target() -> _TargetType:
     """Creates an MLIR target configuration for M1 Metal GPU.
 
     Returns:
         MLIR target configuration for M1 Metal.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m1", `,
@@ -179,13 +328,12 @@ fn _get_metal_m1_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_metal_m2_target() -> __mlir_type.`!kgen.target`:
+fn _get_metal_m2_target() -> _TargetType:
     """Creates an MLIR target configuration for M2 Metal GPU.
 
     Returns:
         MLIR target configuration for M2 Metal.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m2", `,
@@ -196,13 +344,12 @@ fn _get_metal_m2_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_metal_m3_target() -> __mlir_type.`!kgen.target`:
+fn _get_metal_m3_target() -> _TargetType:
     """Creates an MLIR target configuration for M3 Metal GPU.
 
     Returns:
         MLIR target configuration for M3 Metal.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m3", `,
@@ -213,13 +360,12 @@ fn _get_metal_m3_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-fn _get_metal_m4_target() -> __mlir_type.`!kgen.target`:
+fn _get_metal_m4_target() -> _TargetType:
     """Creates an MLIR target configuration for M4 Metal GPU.
 
     Returns:
         MLIR target configuration for M4 Metal.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m4", `,
@@ -230,7 +376,8 @@ fn _get_metal_m4_target() -> __mlir_type.`!kgen.target`:
     ]
 
 
-alias MetalM1 = GPUInfo(
+alias MetalM1 = GPUInfo.from_family(
+    family=AppleMetalFamily,
     name="M1",
     vendor=Vendor.APPLE_GPU,
     api="metal",
@@ -238,15 +385,10 @@ alias MetalM1 = GPUInfo(
     compute=3.0,  # Metal version 3.0
     version="metal_3",
     sm_count=8,  # M1 has 8 GPU cores
-    warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
-    threads_per_sm=32 * 32,  # Threads per compute unit
-    shared_memory_per_multiprocessor=32
-    * _KB,  # 32KB shared memory per compute unit
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,  # Max threads per threadgroup
 )
 
-alias MetalM2 = GPUInfo(
+alias MetalM2 = GPUInfo.from_family(
+    family=AppleMetalFamily,
     name="M2",
     vendor=Vendor.APPLE_GPU,
     api="metal",
@@ -254,15 +396,10 @@ alias MetalM2 = GPUInfo(
     compute=3.0,  # Metal version 3.0
     version="metal_3",
     sm_count=10,  # M2 has 10 GPU cores
-    warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
-    threads_per_sm=32 * 32,  # Threads per compute unit
-    shared_memory_per_multiprocessor=32
-    * _KB,  # 32KB shared memory per compute unit
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,  # Max threads per threadgroup
 )
 
-alias MetalM3 = GPUInfo(
+alias MetalM3 = GPUInfo.from_family(
+    family=AppleMetalFamily,
     name="M3",
     vendor=Vendor.APPLE_GPU,
     api="metal",
@@ -270,15 +407,10 @@ alias MetalM3 = GPUInfo(
     compute=3.0,  # Metal version 3.0 for M3
     version="metal_3",
     sm_count=10,  # M3 has 10 GPU cores
-    warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
-    threads_per_sm=32 * 32,  # Threads per compute unit
-    shared_memory_per_multiprocessor=32
-    * _KB,  # 32KB shared memory per compute unit
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,  # Max threads per threadgroup
 )
 
-alias MetalM4 = GPUInfo(
+alias MetalM4 = GPUInfo.from_family(
+    family=AppleMetalFamily,
     name="M4",
     vendor=Vendor.APPLE_GPU,
     api="metal",
@@ -286,12 +418,6 @@ alias MetalM4 = GPUInfo(
     compute=4.0,  # Metal version 4.0 for M4
     version="metal_4",
     sm_count=10,  # M4 has 10 GPU cores
-    warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
-    threads_per_sm=32 * 32,  # Threads per compute unit
-    shared_memory_per_multiprocessor=32
-    * _KB,  # 32KB shared memory per compute unit
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,  # Max threads per threadgroup
 )
 
 
@@ -314,20 +440,20 @@ fn _get_a100_target() -> _TargetType:
     Returns:
         MLIR target configuration for A100.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_80", `,
         `features = "+ptx81,+sm_80", `,
         `tune_cpu = "sm_80", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 64`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-alias A100 = GPUInfo(
+alias A100 = GPUInfo.from_family(
+    family=NvidiaAmpereDatacenterFamily,
     name="A100",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -335,11 +461,6 @@ alias A100 = GPUInfo(
     compute=8.0,
     version="sm_80",
     sm_count=108,
-    warp_size=32,
-    threads_per_sm=64 * 32,
-    shared_memory_per_multiprocessor=164 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -353,20 +474,20 @@ fn _get_a10_target() -> _TargetType:
     Returns:
         MLIR target configuration for A10.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_86", `,
         `features = "+ptx81,+sm_86", `,
         `tune_cpu = "sm_86", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 64`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-alias A10 = GPUInfo(
+alias A10 = GPUInfo.from_family(
+    family=NvidiaAmpereWorkstationFamily,
     name="A10",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -374,11 +495,6 @@ alias A10 = GPUInfo(
     compute=8.6,
     version="sm_86",
     sm_count=72,
-    warp_size=32,
-    threads_per_sm=48 * 32,
-    shared_memory_per_multiprocessor=100 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -392,20 +508,20 @@ fn _get_orin_nano_target() -> _TargetType:
     Returns:
         MLIR target configuration for Orin Nano.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_87", `,
         `features = "+ptx81,+sm_87", `,
         `tune_cpu = "sm_87", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 64`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-alias OrinNano = GPUInfo(
+alias OrinNano = GPUInfo.from_family(
+    family=NvidiaAmpereEmbeddedFamily,
     name="Orin Nano",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -413,13 +529,42 @@ alias OrinNano = GPUInfo(
     compute=8.7,
     version="sm_87",
     sm_count=8,
-    warp_size=32,
-    threads_per_sm=48 * 32,
-    shared_memory_per_multiprocessor=164 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
+# ===-----------------------------------------------------------------------===#
+# Jetson Thor
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_jetson_thor_target() -> _TargetType:
+    """Creates an MLIR target configuration for NVIDIA Jetson Thor.
+
+    Returns:
+        MLIR target configuration for Jetson Thor.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_110", `,
+        `features = "+ptx85,+sm_110", `,
+        `tune_cpu = "sm_110", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128,`,
+        `index_bit_width = 64`,
+        `> : !kgen.target`,
+    ]
+
+
+alias JetsonThor = GPUInfo.from_family(
+    family=NvidiaBlackwellFamily,
+    name="Jetson Thor",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="blackwell",
+    compute=11.0,
+    version="sm_110",
+    sm_count=20,
+)
 
 # ===-----------------------------------------------------------------------===#
 # L4
@@ -432,20 +577,20 @@ fn _get_l4_target() -> _TargetType:
     Returns:
         MLIR target configuration for L4.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_89", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 64`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-alias L4 = GPUInfo(
+alias L4 = GPUInfo.from_family(
+    family=NvidiaAdaFamily,
     name="L4",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -453,11 +598,6 @@ alias L4 = GPUInfo(
     compute=8.9,
     version="sm_89",
     sm_count=58,
-    warp_size=32,
-    threads_per_sm=48 * 32,
-    shared_memory_per_multiprocessor=100 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -469,22 +609,22 @@ fn _get_rtx4090m_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
 
     Returns:
-        MLIR target configuration for H100.
+        MLIR target configuration for RTX 4090M.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_90a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-alias RTX4090m = GPUInfo(
+alias RTX4090m = GPUInfo.from_family(
+    family=NvidiaAdaFamily,
     name="RTX4090m",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -492,11 +632,6 @@ alias RTX4090m = GPUInfo(
     compute=8.9,
     version="sm_89",
     sm_count=76,
-    warp_size=32,
-    threads_per_sm=-1,
-    shared_memory_per_multiprocessor=100 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -508,22 +643,22 @@ fn _get_rtx4090_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 4090.
 
     Returns:
-        MLIR target configuration for H100.
+        MLIR target configuration for RTX 4090.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_90a", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-alias RTX4090 = GPUInfo(
+alias RTX4090 = GPUInfo.from_family(
+    family=NvidiaAdaFamily,
     name="RTX4090",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -531,11 +666,6 @@ alias RTX4090 = GPUInfo(
     compute=8.9,
     version="sm_89",
     sm_count=128,
-    warp_size=32,
-    threads_per_sm=-1,
-    shared_memory_per_multiprocessor=100 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -550,7 +680,6 @@ fn _get_h100_target() -> _TargetType:
     Returns:
         MLIR target configuration for H100.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_90a", `,
@@ -564,7 +693,8 @@ fn _get_h100_target() -> _TargetType:
 
 
 # https://resources.nvidia.com/en-us-tensor-core/gtc22-whitepaper-hopper
-alias H100 = GPUInfo(
+alias H100 = GPUInfo.from_family(
+    family=NvidiaHopperFamily,
     name="H100",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -572,25 +702,7 @@ alias H100 = GPUInfo(
     compute=9.0,
     version="sm_90a",
     sm_count=132,
-    warp_size=32,
-    threads_per_sm=64 * 32,
-    shared_memory_per_multiprocessor=228 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
-
-# ===-----------------------------------------------------------------------===#
-# Blackwell constants
-# ===-----------------------------------------------------------------------===#
-
-# https://docs.nvidia.com/cuda/blackwell-tuning-guide/index.html#occupancy
-alias _blackwell_warp_size = 32
-alias _blackwell_shared_mem_10_0 = 228 * _KB
-alias _blackwell_shared_mem_12_0 = 100 * _KB
-alias _blackwell_max_registers_per_block = 64 * _K
-alias _blackwell_max_threads_per_sm_10_0 = 64 * _blackwell_warp_size
-alias _blackwell_max_threads_per_sm_12_0 = 48 * _blackwell_warp_size
-alias _blackwell_max_thread_blocks_per_sm = 32
 
 # ===-----------------------------------------------------------------------===#
 # B100
@@ -603,7 +715,6 @@ fn _get_b100_target() -> _TargetType:
     Returns:
         MLIR target configuration for B100.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_100a", `,
@@ -618,7 +729,8 @@ fn _get_b100_target() -> _TargetType:
 
 # https://resources.nvidia.com/en-us-blackwell-architecture
 # TODO: Update once we have B100 access.
-alias B100 = GPUInfo(
+alias B100 = GPUInfo.from_family(
+    family=NvidiaBlackwellFamily,
     name="B100",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -626,14 +738,10 @@ alias B100 = GPUInfo(
     compute=10.0,
     version="sm_100a",
     sm_count=132,
-    warp_size=_blackwell_warp_size,
-    threads_per_sm=_blackwell_max_threads_per_sm_10_0,
-    shared_memory_per_multiprocessor=_blackwell_shared_mem_10_0,
-    max_registers_per_block=_blackwell_max_registers_per_block,
-    max_thread_block_size=_K,
 )
 
-alias B200 = GPUInfo(
+alias B200 = GPUInfo.from_family(
+    family=NvidiaBlackwellFamily,
     name="B200",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -641,11 +749,6 @@ alias B200 = GPUInfo(
     compute=10.0,
     version="sm_100a",
     sm_count=148,
-    warp_size=_blackwell_warp_size,
-    threads_per_sm=_blackwell_max_threads_per_sm_10_0,
-    shared_memory_per_multiprocessor=_blackwell_shared_mem_10_0,
-    max_registers_per_block=_blackwell_max_registers_per_block,
-    max_thread_block_size=_K,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -659,7 +762,6 @@ fn _get_rtx5090_target() -> _TargetType:
     Returns:
         MLIR target configuration for RTX5090.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_120a", `,
@@ -673,7 +775,8 @@ fn _get_rtx5090_target() -> _TargetType:
 
 
 # https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/
-alias RTX5090 = GPUInfo(
+alias RTX5090 = GPUInfo.from_family(
+    family=NvidiaBlackwellConsumerFamily,
     name="RTX5090",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -681,11 +784,6 @@ alias RTX5090 = GPUInfo(
     compute=12.0,
     version="sm_120a",
     sm_count=170,
-    warp_size=_blackwell_warp_size,
-    threads_per_sm=_blackwell_max_threads_per_sm_12_0,
-    shared_memory_per_multiprocessor=_blackwell_shared_mem_12_0,
-    max_registers_per_block=_blackwell_max_registers_per_block,
-    max_thread_block_size=_K,
 )
 
 
@@ -700,13 +798,12 @@ fn _get_rtx3090_target() -> _TargetType:
     Returns:
         MLIR target configuration for NVIDIA GeForce RTX 3090.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_86", `,
         `features = "+ptx63,+sm_86", `,
         `tune_cpu = "sm_86", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -714,7 +811,8 @@ fn _get_rtx3090_target() -> _TargetType:
 
 
 # https://www.nvidia.com/en-us/geforce/graphics-cards/30-series/rtx-3090-3090ti/
-alias RTX3090 = GPUInfo(
+alias RTX3090 = GPUInfo.from_family(
+    family=NvidiaAmpereWorkstationFamily,
     name="NVIDIA GeForce RTX 3090",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -722,11 +820,6 @@ alias RTX3090 = GPUInfo(
     compute=8.6,
     version="sm_86",
     sm_count=82,
-    warp_size=32,
-    threads_per_sm=-1,
-    shared_memory_per_multiprocessor=100 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -741,6 +834,7 @@ fn _get_gtx1080ti_target() -> _TargetType:
     Returns:
         MLIR target configuration for GTX 1080 Ti.
     """
+    # Note: GTX 1080 Ti doesn't specify tune_cpu, data_layout, or index_bit_width
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_61", `,
@@ -750,7 +844,8 @@ fn _get_gtx1080ti_target() -> _TargetType:
     ]
 
 
-alias GTX1080Ti = GPUInfo(
+alias GTX1080Ti = GPUInfo.from_family(
+    family=NvidiaPascalFamily,
     name="NVIDIA GeForce GTX 1080 Ti",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -758,11 +853,6 @@ alias GTX1080Ti = GPUInfo(
     compute=6.1,
     version="sm_61",
     sm_count=28,
-    warp_size=32,
-    threads_per_sm=64 * 32,
-    shared_memory_per_multiprocessor=98304,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -777,6 +867,7 @@ fn _get_gtx970_target() -> _TargetType:
     Returns:
         MLIR target configuration for GTX 970.
     """
+    # Note: GTX 970 doesn't specify tune_cpu, data_layout, or index_bit_width
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_52", `,
@@ -786,7 +877,8 @@ fn _get_gtx970_target() -> _TargetType:
     ]
 
 
-alias GTX970 = GPUInfo(
+alias GTX970 = GPUInfo.from_family(
+    family=NvidiaMaxwellFamily,
     name="NVIDIA GeForce GTX 970",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -794,11 +886,6 @@ alias GTX970 = GPUInfo(
     compute=5.2,
     version="sm_52",
     sm_count=13,
-    warp_size=32,
-    threads_per_sm=64 * 32,
-    shared_memory_per_multiprocessor=96 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -813,20 +900,20 @@ fn _get_teslap100_target() -> _TargetType:
     Returns:
         MLIR target configuration for Tesla P100.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_60", `,
         `features = "+ptx50,+sm_60", `,
         `tune_cpu = "sm_60", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-alias TeslaP100 = GPUInfo(
+alias TeslaP100 = GPUInfo.from_family(
+    family=NvidiaPascalFamily,
     name="NVIDIA Tesla P100",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -834,11 +921,6 @@ alias TeslaP100 = GPUInfo(
     compute=6.0,
     version="sm_60",
     sm_count=56,
-    warp_size=32,
-    threads_per_sm=64 * 32,
-    shared_memory_per_multiprocessor=64 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -853,20 +935,20 @@ fn _get_rtx2060_target() -> _TargetType:
     Returns:
         MLIR target configuration for RTX 2060.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_75", `,
         `features = "+ptx63,+sm_75", `,
         `tune_cpu = "sm_75", `,
-        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-alias RTX2060 = GPUInfo(
+alias RTX2060 = GPUInfo.from_family(
+    family=NvidiaTuringFamily,
     name="RTX2060",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -874,11 +956,6 @@ alias RTX2060 = GPUInfo(
     compute=7.5,
     version="sm_75",
     sm_count=30,
-    warp_size=32,
-    threads_per_sm=64 * 32,
-    shared_memory_per_multiprocessor=64 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -893,7 +970,6 @@ fn _get_mi300x_target() -> _TargetType:
     Returns:
         MLIR target configuration for MI300X.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx942", `,
@@ -905,7 +981,8 @@ fn _get_mi300x_target() -> _TargetType:
     ]
 
 
-alias MI300X = GPUInfo(
+alias MI300X = GPUInfo.from_family(
+    family=AMDCDNA3Family,
     name="MI300X",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -913,11 +990,6 @@ alias MI300X = GPUInfo(
     compute=9.4,
     version="CDNA3",
     sm_count=304,
-    warp_size=64,
-    threads_per_sm=64 * 32,
-    shared_memory_per_multiprocessor=64 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -932,7 +1004,6 @@ fn _get_mi355x_target() -> _TargetType:
     Returns:
         MLIR target configuration for MI355X.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx950", `,
@@ -944,7 +1015,8 @@ fn _get_mi355x_target() -> _TargetType:
     ]
 
 
-alias MI355X = GPUInfo(
+alias MI355X = GPUInfo.from_family(
+    family=AMDCDNA4Family,
     name="MI355X",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -952,11 +1024,6 @@ alias MI355X = GPUInfo(
     compute=9.5,
     version="CDNA4",
     sm_count=256,
-    warp_size=64,
-    threads_per_sm=64 * 32,
-    shared_memory_per_multiprocessor=160 * _KB,
-    max_registers_per_block=64 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -971,7 +1038,6 @@ fn _get_9070_target() -> _TargetType:
     Returns:
         MLIR target configuration for 9070.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1201", `,
@@ -989,7 +1055,6 @@ fn _get_9060_target() -> _TargetType:
     Returns:
         MLIR target configuration for 9060.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1200", `,
@@ -1007,7 +1072,6 @@ fn _get_7900_target() -> _TargetType:
     Returns:
         MLIR target configuration for 7900.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1100", `,
@@ -1025,7 +1089,6 @@ fn _get_7800_target() -> _TargetType:
     Returns:
         MLIR target configuration for 7800/7700.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1101", `,
@@ -1043,7 +1106,6 @@ fn _get_7600_target() -> _TargetType:
     Returns:
         MLIR target configuration for 7600.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1102", `,
@@ -1061,7 +1123,6 @@ fn _get_6900_target() -> _TargetType:
     Returns:
         MLIR target configuration for 6900.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1030", `,
@@ -1079,7 +1140,6 @@ fn _get_780m_target() -> _TargetType:
     Returns:
         MLIR target configuration for 780m.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1103", `,
@@ -1097,7 +1157,6 @@ fn _get_880m_target() -> _TargetType:
     Returns:
         MLIR target configuration for 880M.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1150", `,
@@ -1115,7 +1174,6 @@ fn _get_8060s_target() -> _TargetType:
     Returns:
         MLIR target configuration for 8060S.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1151", `,
@@ -1133,7 +1191,6 @@ fn _get_860m_target() -> _TargetType:
     Returns:
         MLIR target configuration for 860M.
     """
-
     return __mlir_attr[
         `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
         `arch = "gfx1152", `,
@@ -1145,7 +1202,8 @@ fn _get_860m_target() -> _TargetType:
     ]
 
 
-alias Radeon9070 = GPUInfo(
+alias Radeon9070 = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 9070",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1153,14 +1211,10 @@ alias Radeon9070 = GPUInfo(
     compute=12.0,
     version="RDNA4",
     sm_count=64,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
-alias Radeon9060 = GPUInfo(
+alias Radeon9060 = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 9060",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1168,14 +1222,10 @@ alias Radeon9060 = GPUInfo(
     compute=12.0,
     version="RDNA4",
     sm_count=32,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
-alias Radeon7900 = GPUInfo(
+alias Radeon7900 = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 7900",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1183,14 +1233,10 @@ alias Radeon7900 = GPUInfo(
     compute=11.0,
     version="RDNA3",
     sm_count=96,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
-alias Radeon7800 = GPUInfo(
+alias Radeon7800 = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 7800/7700",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1198,14 +1244,10 @@ alias Radeon7800 = GPUInfo(
     compute=11.0,
     version="RDNA3",
     sm_count=60,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
-alias Radeon7600 = GPUInfo(
+alias Radeon7600 = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 7600",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1213,14 +1255,10 @@ alias Radeon7600 = GPUInfo(
     compute=11.0,
     version="RDNA3",
     sm_count=32,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
-alias Radeon6900 = GPUInfo(
+alias Radeon6900 = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 6900",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1228,15 +1266,11 @@ alias Radeon6900 = GPUInfo(
     compute=10.3,
     version="RDNA2",
     sm_count=60,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
 
-alias Radeon780m = GPUInfo(
+alias Radeon780m = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 780M",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1244,14 +1278,10 @@ alias Radeon780m = GPUInfo(
     compute=11.0,
     version="RDNA3",
     sm_count=12,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
-alias Radeon880m = GPUInfo(
+alias Radeon880m = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 880M",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1259,14 +1289,10 @@ alias Radeon880m = GPUInfo(
     compute=11.5,
     version="RDNA3.5",
     sm_count=12,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
-alias Radeon8060s = GPUInfo(
+alias Radeon8060s = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 8060S",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1274,14 +1300,10 @@ alias Radeon8060s = GPUInfo(
     compute=11.5,
     version="RDNA3.5",
     sm_count=40,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
-alias Radeon860m = GPUInfo(
+alias Radeon860m = GPUInfo.from_family(
+    family=AMDRDNAFamily,
     name="Radeon 860M",
     vendor=Vendor.AMD_GPU,
     api="hip",
@@ -1289,11 +1311,6 @@ alias Radeon860m = GPUInfo(
     compute=11.5,
     version="RDNA3.5",
     sm_count=8,
-    warp_size=32,
-    threads_per_sm=32 * 32,
-    shared_memory_per_multiprocessor=32 * _KB,
-    max_registers_per_block=32 * _K,
-    max_thread_block_size=_K,
 )
 
 
@@ -1336,7 +1353,7 @@ struct GPUInfo(Identifiable, Stringable, Writable):
     var warp_size: Int
     """Number of threads in a warp/wavefront."""
 
-    var threads_per_sm: Int
+    var threads_per_multiprocessor: Int
     """Maximum number of threads per streaming multiprocessor."""
 
     var shared_memory_per_multiprocessor: Int
@@ -1380,6 +1397,8 @@ struct GPUInfo(Identifiable, Stringable, Writable):
             return _get_b100_target()
         if self.name == "RTX5090":
             return _get_rtx5090_target()
+        if self.name == "Jetson Thor":
+            return _get_jetson_thor_target()
         if self.name == "MI300X":
             return _get_mi300x_target()
         if self.name == "MI355X":
@@ -1440,6 +1459,51 @@ struct GPUInfo(Identifiable, Stringable, Writable):
             GPU info corresponding to the architecture name.
         """
         return _get_info_from_target[name]()
+
+    @staticmethod
+    fn from_family(
+        family: AcceleratorArchitectureFamily,
+        name: StaticString,
+        vendor: Vendor,
+        api: StaticString,
+        arch_name: StaticString,
+        compute: Float32,
+        version: StaticString,
+        sm_count: Int,
+    ) -> Self:
+        """Creates a `GPUInfo` instance using architecture family defaults.
+
+        This constructor simplifies GPU definition by inheriting common
+        characteristics from an architecture family while allowing specific
+        values to be overridden.
+
+        Args:
+            family: Architecture family providing default values.
+            name: The model name of the GPU.
+            vendor: The vendor/manufacturer of the GPU.
+            api: The graphics/compute API supported by the GPU.
+            arch_name: The architecture name of the GPU.
+            compute: Compute capability version number.
+            version: Version string of the GPU architecture.
+            sm_count: Number of streaming multiprocessors.
+
+        Returns:
+            A fully configured GPUInfo instance.
+        """
+        return Self(
+            name=name,
+            vendor=vendor,
+            api=api,
+            arch_name=arch_name,
+            compute=compute,
+            version=version,
+            sm_count=sm_count,
+            warp_size=family.warp_size,
+            threads_per_multiprocessor=family.threads_per_multiprocessor,
+            shared_memory_per_multiprocessor=family.shared_memory_per_multiprocessor,
+            max_registers_per_block=family.max_registers_per_block,
+            max_thread_block_size=family.max_thread_block_size,
+        )
 
     fn __lt__(self, other: Self) -> Bool:
         """Compares if this GPU has lower compute capability than another.
@@ -1548,7 +1612,11 @@ struct GPUInfo(Identifiable, Stringable, Writable):
         writer.write("version: ", self.version, "\n")
         writer.write("sm_count: ", self.sm_count, "\n")
         writer.write("warp_size: ", self.warp_size, "\n")
-        writer.write("threads_per_sm: ", self.threads_per_sm, "\n")
+        writer.write(
+            "threads_per_multiprocessor: ",
+            self.threads_per_multiprocessor,
+            "\n",
+        )
         writer.write(
             "shared_memory_per_multiprocessor: ",
             self.shared_memory_per_multiprocessor,
@@ -1612,6 +1680,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
             StaticString("90a"),
             StaticString("100"),
             StaticString("100a"),
+            StaticString("110"),
+            StaticString("110a"),
             StaticString("120"),
             StaticString("120a"),
             # AMD
@@ -1662,6 +1732,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
         # architecture wise are different. We need to differentiate between them here.
         return materialize[B200]()
+    elif target_arch == "110" or target_arch == "110a":
+        return materialize[JetsonThor]()
     elif target_arch == "120" or target_arch == "120a":
         return materialize[RTX5090]()
     elif target_arch == "gfx942" or target_arch == "mi300x":
