@@ -81,6 +81,7 @@ common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 # layers, and we're not using this ourselves yet.
 build --features=-layering_check --host_features=-layering_check
 
+build --remote_retries=2
 # Buildbuddy cache optimization recommendations
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
