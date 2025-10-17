@@ -332,7 +332,7 @@ struct NVIDIASharedMemoryManager[
     fn build[
         dtype: DType,
         layout: Layout, //,
-        T: __type_of(Self.Tile[dtype, layout]),
+        T: type_of(Self.Tile[dtype, layout]),
     ](mut self) -> T:
         """Allocate a single tile.
 
@@ -350,7 +350,7 @@ struct NVIDIASharedMemoryManager[
         dtype: DType,
         layout: Layout,
         num_tiles: Int, //,
-        T: __type_of(Self.TileArray[dtype, layout, num_tiles]),
+        T: type_of(Self.TileArray[dtype, layout, num_tiles]),
     ](mut self) -> T:
         """Allocate a tile array.
 
@@ -367,7 +367,7 @@ struct NVIDIASharedMemoryManager[
     fn build[
         type: AnyType,
         size: Int, //,
-        T: __type_of(Self.Array[type, size]),
+        T: type_of(Self.Array[type, size]),
     ](mut self) -> T:
         """Allocate a regular array.
 
